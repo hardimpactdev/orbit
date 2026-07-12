@@ -20,7 +20,6 @@ final class ToolCredentialsCommand extends GatewayCommand
         {tool? : Tool catalog name to read credentials for}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json}';
 
     #[\Override]

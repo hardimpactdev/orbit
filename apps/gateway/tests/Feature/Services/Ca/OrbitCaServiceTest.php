@@ -262,6 +262,7 @@ describe('OrbitCaService', function () {
         it('throws mentioning "gateway" when no local gateway node exists', function () {
             Node::create([
                 'name' => 'not-a-gateway',
+                'tld' => 'not-a-gateway',
                 'status' => 'active',
                 'host' => '127.0.0.1',
                 'orbit_path' => base_path(),
@@ -483,6 +484,7 @@ describe('OrbitCaService', function () {
             Node::query()->delete();
             Node::create([
                 'name' => 'test-control',
+                'tld' => 'test-control',
                 'status' => 'active',
                 'host' => '127.0.0.1',
                 'orbit_path' => base_path(),
@@ -501,6 +503,7 @@ describe('OrbitCaService', function () {
             Node::query()->delete();
             Node::create([
                 'name' => 'test-control',
+                'tld' => 'test-control',
                 'status' => 'active',
                 'host' => '127.0.0.1',
                 'orbit_path' => base_path(),

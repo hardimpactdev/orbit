@@ -79,8 +79,8 @@ explicit operator/deploy grant to the target app node.
    database. An existing path not yet managed by Orbit is adopted at this step.
 3. **Move**: Existing apps can move to another eligible node/path only when both
    `--node` and `--path` are explicit.
-4. **Apply**: Connects to the node over SSH to configure runtime container and
-   install runtime configuration. It then records app-owned proxy route
+4. **Apply**: Uses Agent push on the concrete app-instance node to configure the
+   runtime container and install runtime configuration. It then records app-owned proxy route
    configuration for the `proxy` family to converge.
 5. **Production Activation**: Performs DNS and TLS checks to activate production routing.
 
@@ -109,7 +109,7 @@ A machine-readable result with the app's registry data. It includes a durable `a
 ## Requirements
 
 - The CLI caller must be able to reach the Orbit gateway.
-- The gateway must be able to reach the target node over SSH.
+- The target non-gateway node must be reachable through Agent push.
 - The target node must be an active node.
 - The supplied `--path` on the resolved node must not already be owned by a different registered app. A path collision fails before side effects with `app.path_collision`.
 - Moving an existing app to another node/path requires explicit `--node` and `--path`.

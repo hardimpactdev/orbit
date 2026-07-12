@@ -15,8 +15,8 @@ function post_retired_orbit_agent_protocol_json(Node $node, string $uri): TestRe
 
 it('does not expose the retired Orbit Agent claim endpoint', function (): void {
     $node = Node::factory()
-        ->appDev(['tld' => 'agent-a.app'])
-        ->orbitAgentCapable()
+        ->appDev(['tld' => 'agent-a'])
+        ->managed()
         ->create([
             'name' => 'agent-a',
             'host' => 'agent-a.test',
@@ -33,8 +33,8 @@ it('does not expose the retired Orbit Agent claim endpoint', function (): void {
 
 it('does not expose the retired Orbit Agent lifecycle event endpoint', function (): void {
     $node = Node::factory()
-        ->appDev(['tld' => 'agent-a.app'])
-        ->orbitAgentCapable()
+        ->appDev(['tld' => 'agent-a'])
+        ->managed()
         ->create([
             'name' => 'agent-a',
             'host' => 'agent-a.test',

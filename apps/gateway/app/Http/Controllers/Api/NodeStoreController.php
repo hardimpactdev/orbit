@@ -147,6 +147,7 @@ final readonly class NodeStoreController implements Loggable
         $this->addStringOption($arguments, '--ingress', $request, 'ingress_node');
         $this->addStringOption($arguments, '--tld', $request, 'tld');
         $this->addStringOption($arguments, '--operator-name', $request, 'operator_name');
+        $this->addStringOption($arguments, '--operator-tld', $request, 'operator_tld');
         $this->addStringOption($arguments, '--redis-node', $request, 'redis_node');
         $this->addStringOption($arguments, '--postgres-node', $request, 'postgres_node');
         $this->addStringOption($arguments, '--clickhouse-node', $request, 'clickhouse_node');

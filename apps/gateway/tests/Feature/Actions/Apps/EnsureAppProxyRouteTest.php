@@ -81,7 +81,7 @@ final readonly class EnsureAppProxyRouteTestCa extends OrbitCaService
 it('creates a PHP app proxy route targeting the FrankenPHP runtime container', function (): void {
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'tld' => 'test',
             'wireguard_address' => '10.47.0.31',
@@ -156,7 +156,7 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
 it('creates a static app proxy route with file_server', function (): void {
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'tld' => 'test',
             'wireguard_address' => '10.47.0.32',
@@ -220,7 +220,7 @@ it('creates a static app proxy route with file_server', function (): void {
 it('installs app-dev runtime trust pool through the managed file agent path', function (): void {
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'tld' => 'test',
             'wireguard_address' => '10.47.0.33',

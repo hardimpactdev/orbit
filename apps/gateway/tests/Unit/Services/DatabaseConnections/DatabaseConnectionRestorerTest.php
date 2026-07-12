@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
@@ -34,7 +36,7 @@ describe('DatabaseConnectionRestorer', function (): void {
             KEEP_ME=yes
             ENV);
 
-        $app = App::factory()->create([
+        $app = databaseConnectionRestorerApp([
             'node_id' => $node->id,
             'path' => $path,
         ]);
@@ -47,7 +49,7 @@ describe('DatabaseConnectionRestorer', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         $target = DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionRestorerAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -79,7 +81,7 @@ describe('DatabaseConnectionRestorer', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=mysql\nDB_HOST=10.6.0.7\nDB_PORT=3308\n");
 
-        $app = App::factory()->create([
+        $app = databaseConnectionRestorerApp([
             'node_id' => $node->id,
             'name' => 'dlf-leden',
             'path' => $path,
@@ -115,7 +117,7 @@ describe('DatabaseConnectionRestorer', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         $target = DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionRestorerAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -142,7 +144,7 @@ describe('DatabaseConnectionRestorer', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=mysql\nDB_HOST=dlf-leden-mysql\nDB_PORT=3306\n");
 
-        $app = App::factory()->create([
+        $app = databaseConnectionRestorerApp([
             'node_id' => $node->id,
             'name' => 'dlf-leden',
             'path' => $path,
@@ -178,7 +180,7 @@ describe('DatabaseConnectionRestorer', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         $target = DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionRestorerAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -208,7 +210,7 @@ describe('DatabaseConnectionRestorer', function (): void {
         $credentialValue = substr(hash('sha256', 'restorer managed host'), 0, 16);
         File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=localhost\n");
 
-        $app = App::factory()->create([
+        $app = databaseConnectionRestorerApp([
             'node_id' => $appNode->id,
             'path' => $path,
         ]);
@@ -222,7 +224,7 @@ describe('DatabaseConnectionRestorer', function (): void {
             'credentials' => ['password' => $credentialValue],
         ]);
         $target = DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionRestorerAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -246,7 +248,6 @@ describe('DatabaseConnectionRestorer', function (): void {
         ]);
         $node = Node::factory()
             ->appDev()
-            ->orbitAgentCapable()
             ->create([
                 'status' => 'active',
                 'wireguard_address' => '10.44.0.75',
@@ -257,7 +258,7 @@ describe('DatabaseConnectionRestorer', function (): void {
                 'name' => 'database-1',
                 'wireguard_address' => '10.6.0.7',
             ]);
-        $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
+        $app = databaseConnectionRestorerApp(['node_id' => $node->id, 'name' => 'docs']);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
             'name' => 'feature',
@@ -303,6 +304,30 @@ describe('DatabaseConnectionRestorer', function (): void {
             ->not->toContain('DB_HOST=127.0.0.1');
     });
 });
+
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function databaseConnectionRestorerApp(array $attributes): App
+{
+    $app = App::factory()->create($attributes);
+
+    AppInstance::factory()->for($app)->create([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $app->node_id,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+
+    return $app;
+}
+
+function databaseConnectionRestorerAppInstance(App $app): AppInstance
+{
+    return $app->instances()->firstOrFail();
+}
 
 /**
  * @return array<string, mixed>

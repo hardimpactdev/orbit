@@ -19,7 +19,7 @@ const SHOW_CALLER_WG_IP = '10.6.0.99';
  */
 function apiShowNodeRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'app-1',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
@@ -30,12 +30,17 @@ function apiShowNodeRow(array $overrides = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    $row['tld'] ??= $row['name'];
+
+    return $row;
 }
 
 function createShowCallerNode(): void
 {
     DB::table('nodes')->insert([
         'name' => 'caller',
+        'tld' => 'caller',
         'host' => SHOW_CALLER_WG_IP,
         'orbit_path' => '/home/test/orbit',
         'status' => 'active',
@@ -93,7 +98,7 @@ describe('NodeShowController', function (): void {
                 'status' => 'active',
             ]),
         ]);
-        assignApiShowNodeRole('app-1', 'app-dev', ['tld' => 'test']);
+        assignApiShowNodeRole('app-1', 'app-dev');
 
         $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
@@ -110,7 +115,7 @@ describe('NodeShowController', function (): void {
                                 [
                                     'role' => 'app-dev',
                                     'status' => 'active',
-                                    'settings' => ['tld' => 'test'],
+                                    'settings' => [],
                                     'last_error' => null,
                                 ],
                             ],

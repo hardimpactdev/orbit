@@ -1,90 +1,77 @@
-# `orbit profile [target]`
+# `orbit profile [url]`
 
 [Back to Operation commands.](../README.md)
 
-Profile one Orbit-managed app request and report request timing.
-
-`profile` runs a fresh HTTP `GET` request against a resolved app route, reports
-network timing from Orbit's request profiler, and enriches the result with
-Laravel Toolbar data when the app exposes it for that request. It is a
-development diagnostic command that observes one request without changing app
-configuration, proxy routes, process state, or deployment state.
+Profile one HTTP request directly from the machine running Orbit. `profile` is
+a local, read-only probe: it never contacts the gateway, resolves an Orbit app,
+checks grants, or creates gateway activity.
 
 ## Usage
 
 ```bash
-orbit profile [target] [--app=<app>] [--node=<node>] [--uri=<uri>] [--as-first-user|--user=<id>] [--json]
+orbit profile [url] [--as-first-user|--user=<id>] [--json]
 ```
 
 ## Examples
 
 ```bash
-orbit profile
-orbit profile docs.test --uri=/login
 orbit profile https://docs.test/login
-orbit profile /srv/docs --json
-orbit profile --app=docs --as-first-user
-orbit profile --app=docs --user=1
+orbit profile --json
+orbit profile https://docs.test/admin --as-first-user
+orbit profile https://docs.test/users --user=42
 ```
 
-## Behavior Summary
+## URL Resolution
 
-`profile` resolves a target app, sends one timed HTTP request, and returns the result.
+Resolution is local and deterministic:
 
-### Target Resolution
+1. Use the explicit absolute `http` or `https` URL when supplied.
+2. Otherwise, start at `ORBIT_HOST_CWD` (or the process working directory) and
+   walk to the nearest ancestor `.env`; read only its `APP_URL` value.
+3. If neither source yields a URL, or the discovered `APP_URL` is invalid,
+   prompt for `profile.url` in interactive mode. Non-interactive or JSON mode
+   returns the corresponding structured validation failure. An invalid explicit
+   URL always fails immediately.
 
-Resolves a target app from `[target]`, `--app`, or the current directory. A full URL target is split into host target and request URI.
+The selected URL is requested exactly as supplied, including its path, query,
+port, and fragment. Orbit does not translate it through app, workspace, node,
+DNS, or proxy registry state.
 
-### Request
+## Request
 
-Sends one HTTP `GET` request with a per-run request id. Redirect responses are
-reported as completed HTTP responses; the CLI does not follow them. The request
-uses the active gateway timeout as its total timeout.
+`profile` sends one timed HTTP `GET` request with a per-run request id. It
+verifies TLS, does not follow redirects, and treats any completed HTTP response
+as a successful profile result, including 3xx, 4xx, and 5xx responses.
 
-### Timing
+`--as-first-user` and `--user=<id>` add the explicit Laravel Toolbar auth
+headers to that same direct request. The options are mutually exclusive.
 
-Measures DNS, connect, TLS, time to first byte, download, total time, response status, and response size.
+## Timing and Toolbar Data
 
-### Authentication
-
-Sends explicit Toolbar auth headers for `--as-first-user` or `--user=<id>`.
-
-### Toolbar Enrichment
-
-Enriches the baseline timings with Laravel Toolbar summary data exposed by the app for the request. Toolbar enrichment never changes the measured baseline timing values.
-
-### Success Condition
-
-Treats a completed HTTP response as a successful profile run, even for responses
-outside the 2xx range.
+The result includes DNS, connect, TLS, time-to-first-byte, download, total time,
+status, and response size. When the response exposes a valid
+`x-toolbar-summary`, the command adds its Laravel timing and query summary
+without changing the measured baseline values.
 
 ## Requirements
 
-- The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the calling WireGuard peer to read the resolved app.
-- The target app is an Orbit-managed app.
-- The resolved request URL is reachable from the caller machine. Caller-local
-  DNS overrides and routing determine where the profile request goes.
-- Authenticated profiles require app-side support for Orbit's Toolbar auth headers.
+- The caller machine can resolve and reach the selected URL.
+- HTTPS endpoints present a certificate trusted by the caller machine.
+- Authenticated profiles require app-side support for Orbit's Toolbar headers.
+
+No configured gateway, node identity, authorization grant, or Agent is
+required.
 
 ## Output Summary
 
-The output format depends on whether `--json` is passed.
-
-### Human
-
-Renders the resolved request, status, total time, timing timeline, and query summary. The query summary appears with available Toolbar data.
-
-### JSON
-
-Returns the same result as machine-readable output. See the [JSON renderer contract](technical/6.2_profile_output-render_json.md) for the exact shape.
+Human output renders the request headline, timing breakdown, and optional
+Toolbar query summary. `--json` returns the same local result in the shared JSON
+envelope.
 
 ## Related
 
 - [`doctor --family=app`](../../5_app/app-doctor.md)
 - [`doctor --family=proxy`](../../8_proxy/proxy-doctor.md)
-- [`orbit app:show [app]`](../../5_app/4_app-show/app-show.md)
-- [`orbit activity:show [id]`](../../17_activity/2_activity-show/activity-show.md)
 
 ***
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Solo;
 
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
@@ -128,6 +129,7 @@ final readonly class HttpSoloUpstreamClient implements SoloUpstreamClient
                     'ORBIT_OPERATION_ID' => 'solo-upstream-request',
                 ],
                 'strict' => false,
+                'transport' => NodeTransportPreference::AgentPush,
                 'redact_stdout' => true,
                 'redact_command_options' => ['operation-token'],
             ],

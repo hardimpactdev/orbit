@@ -14,28 +14,33 @@ uses(RefreshDatabase::class);
 
 it('orders workspace setup and teardown steps independently', function (): void {
     $app = App::factory()->create();
+    $instance = AppInstance::factory()->create(['app_id' => $app->id]);
     $addStep = app(AddWorkspaceStep::class);
     $removeStep = app(RemoveWorkspaceStep::class);
 
     $first = $addStep->handle(
         appId: $app->id,
         phase: WorkspaceLifecyclePhase::Setup,
+        appInstanceId: $instance->id,
         command: 'composer install',
     );
     $second = $addStep->handle(
         appId: $app->id,
         phase: WorkspaceLifecyclePhase::Setup,
+        appInstanceId: $instance->id,
         command: 'php artisan migrate',
     );
     $inserted = $addStep->handle(
         appId: $app->id,
         phase: WorkspaceLifecyclePhase::Setup,
+        appInstanceId: $instance->id,
         command: 'npm run build',
         beforeStepId: $second->id,
     );
     $teardown = $addStep->handle(
         appId: $app->id,
         phase: WorkspaceLifecyclePhase::Teardown,
+        appInstanceId: $instance->id,
         command: 'php artisan down',
     );
 

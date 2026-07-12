@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Orbit\Sdk\Laravel\Testing\GatewayMockClient;
 
-test('streamed tool:update requests forward explicit node transport preference', function (): void {
+test('streamed tool:update requests use their fixed Agent-push lane without a transport selector', function (): void {
     fakeGatewayProgressStream(body: gatewayProgressFrame(event: 'complete', data: [
         'exit_code' => 0,
         'data' => [
@@ -15,7 +15,6 @@ test('streamed tool:update requests forward explicit node transport preference',
     [$exitCode] = runCommand(test: $this, command: 'tool:update', params: [
         'tool' => 'caddy',
         '--node' => 'beast',
-        '--node-transport' => 'transitional-ssh-fallback',
         '--stream-json' => true,
     ]);
 
@@ -33,5 +32,5 @@ test('streamed tool:update requests forward explicit node transport preference',
     expect($exitCode)
         ->toBe(0)
         ->and($pendingRequest?->header('X-Orbit-Node-Transport-Preference'))
-        ->toBe('transitional-ssh-fallback');
+        ->toBeNull();
 });

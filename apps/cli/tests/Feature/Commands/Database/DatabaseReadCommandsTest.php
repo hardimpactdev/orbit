@@ -246,7 +246,12 @@ describe('database:show', function (): void {
                 'username' => 'orbit',
                 'node' => 'beast',
                 'targets' => [
-                    ['type' => 'app', 'name' => 'ditis-hr.test', 'env_prefix' => 'DB'],
+                    [
+                        'type' => 'app_instance',
+                        'app' => 'ditis-hr',
+                        'instance' => 'development',
+                        'env_prefix' => 'DB',
+                    ],
                 ],
             ],
         ]));
@@ -278,9 +283,9 @@ describe('database:show', function (): void {
             ->and($output)
             ->toContain('orbit')
             ->and($output)
-            ->toContain('Apps')
+            ->toContain('Targets')
             ->and($output)
-            ->toContain('ditis-hr.test')
+            ->toContain('ditis-hr.development')
             ->and($output)
             ->toContain('Node')
             ->and($output)

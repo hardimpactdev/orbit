@@ -20,9 +20,9 @@ execution.
 - The gateway is the source of truth for node records, node roles, and metadata.
 - Gateway execution may update durable node state directly.
 - Gateway execution may trigger node-side artifact re-applying when a changed
-  field requires it.
-- Gateway execution must not SSH to the target node unless re-applying a
-  changed field requires it.
+  field requires it. Gateway-targeted work executes locally; non-gateway
+  node-local work uses Agent push.
+- Gateway execution must not SSH to the target node.
 
 ## Update Flow
 
@@ -35,8 +35,8 @@ execution.
    node.
 6. Validate `node_update.gateway_endpoint` when present: it must be a valid IP
    address or dotted DNS name.
-7. Validate `node_update.orbit_agent_capable` when present: it must be an
-   explicit boolean opt-in or opt-out value.
+7. Validate `node_update.managed` when present: `true` requires an eligible
+   roleless non-gateway operator, while `false` is valid for every node.
 8. Compute the configuration delta (which fields actually changed).
 9. Write the updated node record.
 10. Re-apply node-owned host artifacts for changed fields.
@@ -55,8 +55,11 @@ change outside `node:update`.
   operator-identity node, or `--user` on the gateway node).
 - Fail before side effects with `node.tld_in_use` when `--tld` matches another
   active node's stored TLD.
-- Fail before side effects when both Orbit Agent capability flags are supplied
+- Fail before side effects when both managed Agent intent flags are supplied
   in one invocation.
+- Fail before side effects with `node.field_role_incompatible` when
+  `--managed` targets a gateway or role-bearing node, or a node without the
+  required active platform and WireGuard identity.
 - Fail before side effects when the same field flag is supplied more than
   once in a single invocation.
 - Report artifact applying failures as structured warnings under

@@ -29,7 +29,7 @@ it('verifies workspace target reachability through agent-push', function (): voi
     ]);
     $node = createTestAppHostNode([
         'name' => 'app-1',
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => '10.44.0.92',
     ]);
 
@@ -54,7 +54,7 @@ it('throws a transport-neutral workspace failure when reachability fails', funct
     ]);
     $node = createTestAppHostNode([
         'name' => 'app-1',
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => '10.44.0.93',
     ]);
 

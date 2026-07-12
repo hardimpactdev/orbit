@@ -4,18 +4,20 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeWireGuardServiceAddress;
+use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class DatabaseConnectionTargetEndpointResolver
 {
     public function __construct(
         private NodeWireGuardServiceAddress $serviceAddress,
         private ManagedDockerMysqlEndpointResolver $managedDockerMysqlEndpointResolver,
+        private WorkspacePlacement $workspacePlacement,
     ) {}
 
     /**
@@ -64,16 +66,20 @@ final readonly class DatabaseConnectionTargetEndpointResolver
 
     private function targetNode(DatabaseConnectionTarget $target): Node
     {
-        if ($target->app instanceof App && $target->app->node instanceof Node) {
-            return $target->app->node;
+        if ($target->appInstance instanceof AppInstance) {
+            $node = $this->workspacePlacement->nodeForInstance($target->appInstance);
+
+            if ($node instanceof Node) {
+                return $node;
+            }
         }
 
-        if (
-            $target->workspace instanceof Workspace
-            && $target->workspace->app instanceof App
-            && $target->workspace->app->node instanceof Node
-        ) {
-            return $target->workspace->app->node;
+        if ($target->workspace instanceof Workspace) {
+            $node = $this->workspacePlacement->nodeForWorkspace($target->workspace);
+
+            if ($node instanceof Node) {
+                return $node;
+            }
         }
 
         throw new \RuntimeException('Database connection target has no owning node.');

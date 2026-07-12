@@ -12,6 +12,7 @@ use function Laravel\Prompts\confirm;
 
 final class MetricsDisableCommand extends GatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
 
     #[\Override]

@@ -13,7 +13,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "effect",
                 "correlation",
                 "include-internal",
@@ -863,7 +862,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -1151,6 +1149,7 @@
             "options": [
                 "dry-run",
                 "force",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -1317,6 +1316,7 @@
             ],
             "options": [
                 "force",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -2419,7 +2419,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -2853,7 +2852,6 @@
                 "app",
                 "workspace",
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -3535,6 +3533,8 @@
                 "apps/cli/tests/Feature/Commands/Deploy/DeployInteractiveInputModeTest.php",
                 "apps/cli/tests/Feature/Commands/Deploy/DeployRunStreamCommandTest.php",
                 "apps/cli/tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php",
+                "apps/gateway/tests/Feature/Services/Deploy/DeployOperationRunnerTest.php",
                 "apps/gateway/tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php"
             ],
             "verification_hints": [
@@ -3558,6 +3558,20 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/DeployControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/DeployControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Services/Deploy/DeployOperationRunnerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Services/Deploy/DeployOperationRunnerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Services/Deploy/DeployOperationRunnerTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php",
@@ -4363,7 +4377,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -5153,7 +5166,6 @@
                 "role"
             ],
             "options": [
-                "tld",
                 "redis-node",
                 "postgres-node",
                 "clickhouse-node",
@@ -5600,6 +5612,7 @@
             "arguments": [],
             "options": [
                 "user",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -5669,6 +5682,7 @@
                 "roles",
                 "host",
                 "operator-name",
+                "operator-tld",
                 "tld",
                 "user",
                 "gateway-endpoint",
@@ -6077,8 +6091,8 @@
                 "gateway-endpoint",
                 "public-ipv4",
                 "public-ipv6",
-                "orbit-agent-capable",
-                "no-orbit-agent-capable",
+                "managed",
+                "no-managed",
                 "json"
             ],
             "renderers": {
@@ -6151,7 +6165,6 @@
                 "app",
                 "workspace",
                 "node",
-                "node-transport",
                 "live",
                 "json"
             ],
@@ -6215,7 +6228,9 @@
                     "path": "apps/gateway/app/Http/Controllers/Api/PhpRuntimeController.php",
                     "action": "__invoke"
                 },
-                "authorization_permission": [],
+                "authorization_permission": [
+                    "php:read"
+                ],
                 "response_dto": {
                     "class": "Orbit\\Sdk\\Laravel\\Responses\\Php\\PhpRuntimeResponse",
                     "path": "packages/sdk/src/Responses/Php/PhpRuntimeResponse.php"
@@ -6233,7 +6248,6 @@
                 "app",
                 "workspace",
                 "node",
-                "node-transport",
                 "inherit",
                 "cli",
                 "json"
@@ -6298,7 +6312,9 @@
                     "path": "apps/gateway/app/Http/Controllers/Api/PhpUseController.php",
                     "action": "__invoke"
                 },
-                "authorization_permission": [],
+                "authorization_permission": [
+                    "php:write"
+                ],
                 "response_dto": {
                     "class": "Orbit\\Sdk\\Laravel\\Responses\\Php\\PhpRuntimeUseResponse",
                     "path": "packages/sdk/src/Responses/Php/PhpRuntimeUseResponse.php"
@@ -6315,7 +6331,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "app",
                 "workspace",
                 "tool",
@@ -6327,7 +6342,6 @@
                 "runtime",
                 "replace-container",
                 "force",
-                "start",
                 "no-start",
                 "json"
             ],
@@ -6407,7 +6421,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "app",
                 "workspace",
                 "json"
@@ -6480,7 +6493,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "app",
                 "workspace",
                 "follow",
@@ -6565,7 +6577,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "app",
                 "workspace",
                 "force",
@@ -6626,7 +6637,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "app",
                 "workspace",
                 "json"
@@ -6686,7 +6696,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "app",
                 "workspace",
                 "json"
@@ -6746,7 +6755,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "app",
                 "workspace",
                 "json"
@@ -6807,7 +6815,6 @@
             "options": [
                 "name",
                 "node",
-                "node-transport",
                 "app",
                 "workspace",
                 "command",
@@ -6868,13 +6875,9 @@
             "slug": "profile",
             "family": "profile",
             "arguments": [
-                "target"
+                "url"
             ],
             "options": [
-                "app",
-                "node",
-                "node-transport",
-                "uri",
                 "as-first-user",
                 "user",
                 "json"
@@ -6899,9 +6902,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Operation/ProfileCommandTest.php",
-                "apps/cli/tests/Feature/Services/CurlProfileRequestProfilerTest.php",
-                "apps/gateway/tests/Feature/Http/Api/ProfileControllerTest.php",
-                "apps/gateway/tests/Unit/Services/CurlRequestProfilerTest.php"
+                "apps/cli/tests/Feature/Services/Profile/CurlProfileRequestProfilerTest.php"
             ],
             "verification_hints": [
                 {
@@ -6912,25 +6913,11 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Operation/ProfileCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/cli/tests/Feature/Services/CurlProfileRequestProfilerTest.php",
+                    "repo_test_path": "apps/cli/tests/Feature/Services/Profile/CurlProfileRequestProfilerTest.php",
                     "working_directory": "apps/cli",
                     "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Services/CurlProfileRequestProfilerTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Services/CurlProfileRequestProfilerTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ProfileControllerTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/ProfileControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ProfileControllerTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Unit/Services/CurlRequestProfilerTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Unit/Services/CurlRequestProfilerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/CurlRequestProfilerTest.php"
+                    "runner_test_path": "tests/Feature/Services/Profile/CurlProfileRequestProfilerTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Services/Profile/CurlProfileRequestProfilerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -6950,7 +6937,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "upstream",
                 "redirect",
                 "code",
@@ -7039,7 +7025,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "filter",
                 "json"
             ],
@@ -7484,7 +7469,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -7616,7 +7600,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "force",
                 "json"
             ],
@@ -7639,7 +7622,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php"
+                "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Models/ScheduleTest.php"
             ],
             "verification_hints": [
                 {
@@ -7648,6 +7632,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Models/ScheduleTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Models/ScheduleTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Models/ScheduleTest.php"
                 }
             ],
             "p4_mapping": {
@@ -7848,7 +7839,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -7918,7 +7908,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -7988,7 +7977,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -8056,7 +8044,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -8126,7 +8113,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "force",
                 "json"
             ],
@@ -8197,7 +8183,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "force",
                 "json"
             ],
@@ -8268,7 +8253,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "input",
                 "json"
             ],
@@ -8337,7 +8321,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -8407,7 +8390,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "lines",
                 "json"
             ],
@@ -8478,7 +8460,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "name",
                 "json"
             ],
@@ -8549,7 +8530,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "force",
                 "json"
             ],
@@ -8620,7 +8600,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -8690,7 +8669,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "project",
                 "json"
             ],
@@ -8761,7 +8739,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "force",
                 "json"
             ],
@@ -8832,7 +8809,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "force",
                 "json"
             ],
@@ -8903,7 +8879,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -8973,7 +8948,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "force",
                 "json"
             ],
@@ -9042,7 +9016,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -9112,7 +9085,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "name",
                 "json"
             ],
@@ -9183,7 +9155,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -9253,7 +9224,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -9323,7 +9293,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -9393,7 +9362,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -9463,7 +9431,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -9540,7 +9507,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -9617,7 +9583,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -9694,7 +9659,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -9771,7 +9735,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "content",
                 "json"
             ],
@@ -9842,7 +9805,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -9919,7 +9881,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -9996,7 +9957,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10064,7 +10024,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10134,7 +10093,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -10211,7 +10169,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10281,7 +10238,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -10356,7 +10312,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10426,7 +10381,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10494,7 +10448,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10564,7 +10517,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10634,7 +10586,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10704,7 +10655,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "seconds",
                 "json"
             ],
@@ -10775,7 +10725,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "body",
                 "json"
             ],
@@ -10846,7 +10795,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "force",
                 "json"
             ],
@@ -10917,7 +10865,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "body",
                 "json"
             ],
@@ -10988,7 +10935,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "project",
                 "title",
                 "body",
@@ -11062,7 +11008,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "project",
                 "body",
                 "json"
@@ -11134,7 +11079,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "project",
                 "title",
                 "body",
@@ -11206,7 +11150,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "project",
                 "json"
             ],
@@ -11277,7 +11220,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "project",
                 "title",
                 "body",
@@ -11351,7 +11293,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "project",
                 "title",
                 "body",
@@ -11425,7 +11366,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "project",
                 "json"
             ],
@@ -11496,7 +11436,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "project",
                 "title",
                 "body",
@@ -11570,7 +11509,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "project",
                 "title",
                 "body",
@@ -11642,7 +11580,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -11713,7 +11650,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -11780,7 +11716,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "tool-version",
                 "user",
                 "status",
@@ -11813,6 +11748,7 @@
                 "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/ToolInstallControllerTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/ToolInstallPreflightTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolsProbeTest.php"
             ],
             "verification_hints": [
@@ -11850,6 +11786,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Unit/Services/Tools/ToolCommandContractTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolCommandContractTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolInstallPreflightTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/ToolInstallPreflightTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolInstallPreflightTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolsProbeTest.php",
@@ -11890,7 +11833,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "all",
                 "json"
             ],
@@ -11948,6 +11890,78 @@
                 "response_dto": null
             }
         },
+        "tool:logs": {
+            "name": "tool:logs",
+            "slug": "tool-logs",
+            "family": "tool",
+            "arguments": [
+                "tool"
+            ],
+            "options": [
+                "app",
+                "node",
+                "lines",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/3_tool/8_tool-logs",
+                "public": "domains/3_tool/8_tool-logs/tool-logs.md",
+                "technical": "domains/3_tool/8_tool-logs/technical/1_tool-logs.md",
+                "repo_directory": "apps/docs/content/domains/3_tool/8_tool-logs",
+                "repo_public": "apps/docs/content/domains/3_tool/8_tool-logs/tool-logs.md",
+                "repo_technical": "apps/docs/content/domains/3_tool/8_tool-logs/technical/1_tool-logs.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Tools\\LogsToolRequest",
+                    "path": "packages/sdk/src/Requests/Tools/LogsToolRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/tools/{tool}/logs"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ToolLogsController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ToolLogsController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Tools\\ToolLogsResponse",
+                    "path": "packages/sdk/src/Responses/Tools/ToolLogsResponse.php"
+                }
+            }
+        },
         "tool:reconfigure": {
             "name": "tool:reconfigure",
             "slug": "tool-reconfigure",
@@ -11958,7 +11972,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "password",
                 "json",
                 "stream-json"
@@ -12032,6 +12045,73 @@
                 }
             }
         },
+        "tool:reload": {
+            "name": "tool:reload",
+            "slug": "tool-reload",
+            "family": "tool",
+            "arguments": [
+                "tool"
+            ],
+            "options": [
+                "app",
+                "node",
+                "json",
+                "stream-json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": true
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/3_tool/11_tool-reload",
+                "public": "domains/3_tool/11_tool-reload/tool-reload.md",
+                "technical": "domains/3_tool/11_tool-reload/technical/1_tool-reload.md",
+                "repo_directory": "apps/docs/content/domains/3_tool/11_tool-reload",
+                "repo_public": "apps/docs/content/domains/3_tool/11_tool-reload/tool-reload.md",
+                "repo_technical": "apps/docs/content/domains/3_tool/11_tool-reload/technical/1_tool-reload.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": true
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/ToolCatalogTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolCatalogTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
         "tool:remove": {
             "name": "tool:remove",
             "slug": "tool-remove",
@@ -12042,7 +12122,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "force",
                 "json"
             ],
@@ -12125,7 +12204,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "json",
                 "stream-json"
             ],
@@ -12276,7 +12354,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "json",
                 "stream-json"
             ],
@@ -12352,7 +12429,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "json",
                 "stream-json"
             ],
@@ -12420,7 +12496,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "expected-version",
                 "json",
                 "stream-json"
@@ -13634,7 +13709,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -14079,7 +14153,6 @@
             ],
             "shared": [
                 "authorization_failed",
-                "caller_role_not_allowed",
                 "gateway_unavailable",
                 "local_context_invalid",
                 "validation_failed"
@@ -14148,11 +14221,25 @@
                     "orbit workspace:setup"
                 ]
             },
+            "firewall_rule.host_upstream_may_block": {
+                "family": "firewall_rule",
+                "kind": "command_handoff",
+                "allowed_next_commands": [
+                    "firewall:allow"
+                ]
+            },
             "proxy.domain_inactive": {
                 "family": "proxy",
                 "kind": "command_handoff",
                 "allowed_next_commands": [
                     "app:register"
+                ]
+            },
+            "proxy.enactment_deferred": {
+                "family": "proxy",
+                "kind": "command_handoff",
+                "allowed_next_commands": [
+                    "doctor --family=proxy --restore"
                 ]
             },
             "proxy.docker_runtime_unavailable": {
@@ -14265,6 +14352,7 @@
                 "required": {
                     "name": "string",
                     "app": "string",
+                    "app_instance": "string",
                     "node": "string|object",
                     "url": "string"
                 },

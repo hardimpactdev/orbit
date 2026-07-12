@@ -6,9 +6,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\Concerns\ResolvesVisibleToolNodes;
 use App\Http\Controllers\Api\Concerns\StreamsToolActionProgress;
 use App\Models\Node;
+use App\Services\Authorization\ServingNodeResolver;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolLifecycleManager;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
@@ -28,6 +32,7 @@ final class ToolLifecycleController implements Loggable
         Request $request,
         string $tool,
         ToolLifecycleManager $lifecycle,
+        ToolCatalog $catalog,
         ProgressEventStreamResponseFactory $streams,
     ): JsonResponse|StreamedResponse {
         $action = $request->route('action');
@@ -43,19 +48,9 @@ final class ToolLifecycleController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $visibleNodeIds = $this->visibleToolNodeIds($caller, true, "tool:{$action}");
-
-        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === []) {
-            return $this->authorizationFailed('This node is not authorized to manage tools.');
-        }
-
-        $target = $this->authorizedToolTarget(
-            $request,
-            $caller,
-            $visibleNodeIds,
-            allowAnyActiveNode: true,
-            tool: $tool,
-        );
+        $target = $catalog->gatewayLocal($tool)
+            ? $this->gatewayLocalTarget($request, $caller, $action)
+            : $this->remoteTarget($request, $caller, $tool, $action);
 
         if ($target instanceof JsonResponse) {
             return $target;
@@ -117,6 +112,7 @@ final class ToolLifecycleController implements Loggable
             'start' => ['title' => 'Starting Tool', 'done' => 'Tool started', 'fail' => 'Tool start failed'],
             'stop' => ['title' => 'Stopping Tool', 'done' => 'Tool stopped', 'fail' => 'Tool stop failed'],
             'restart' => ['title' => 'Restarting Tool', 'done' => 'Tool restarted', 'fail' => 'Tool restart failed'],
+            'reload' => ['title' => 'Reloading Tool', 'done' => 'Tool reloaded', 'fail' => 'Tool reload failed'],
             default => ['title' => 'Running Tool', 'done' => 'Tool action completed', 'fail' => 'Tool action failed'],
         };
     }
@@ -126,7 +122,13 @@ final class ToolLifecycleController implements Loggable
         $status = match ($failure->code) {
             'tool.not_found' => 404,
             'authorization_failed' => 403,
-            'node_transport_required', 'validation_failed', 'node_target_required', 'tool.unsupported_on_node' => 422,
+            'node_transport_required',
+            'validation_failed',
+            'node_target_required',
+            'tool.unsupported_on_node',
+            'tool.runtime_missing',
+            'tool.runtime_ambiguous',
+                => 422,
             'tool.unsupported_action' => 400,
             default => 400,
         };
@@ -140,15 +142,84 @@ final class ToolLifecycleController implements Loggable
         ], $status);
     }
 
-    private function authorizationFailed(string $message): JsonResponse
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function authorizationFailed(string $message, array $meta = []): JsonResponse
     {
         return response()->json([
             'error' => [
                 'code' => 'authorization_failed',
                 'message' => $message,
-                'meta' => [],
+                'meta' => $meta === [] ? (object) [] : $meta,
             ],
         ], 403);
+    }
+
+    /**
+     * @return array{node: string, app: null}|JsonResponse
+     */
+    private function gatewayLocalTarget(
+        Request $request,
+        Node $caller,
+        string $action,
+    ): array|JsonResponse {
+        $authorizer = app(NodeAccessAuthorizer::class);
+        $servingNodeResolver = app(ServingNodeResolver::class);
+        $gateway = $servingNodeResolver->resolve($request, ServingNode::Gateway);
+        $permission = "tool:{$action}";
+
+        if (! $gateway instanceof Node) {
+            return $this->authorizationFailed('Serving gateway could not be resolved for this tool action.', [
+                'reason' => 'serving_node_unresolved',
+                'missing_permission' => $permission,
+            ]);
+        }
+
+        $requestedNode = $this->toolTargetString($request, 'node');
+
+        if ($requestedNode !== null && $requestedNode !== $gateway->name) {
+            return $this->toolTargetValidationFailed(
+                'node',
+                $requestedNode,
+                'Gateway-local tool actions target the active serving gateway only.',
+            );
+        }
+
+        $authorization = $authorizer->authorize($caller, $gateway, $permission);
+
+        if (! $authorization->allowed) {
+            return $this->authorizationFailed(
+                "This node is not authorized for '{$permission}' on '{$gateway->name}'.",
+                [
+                    'reason' => $authorization->reason,
+                    'missing_permission' => $authorization->missingPermission,
+                    'serving_node' => $gateway->name,
+                ],
+            );
+        }
+
+        return ['node' => $gateway->name, 'app' => null];
+    }
+
+    /**
+     * @return array{node: ?string, app: ?string}|JsonResponse
+     */
+    private function remoteTarget(Request $request, Node $caller, string $tool, string $action): array|JsonResponse
+    {
+        $visibleNodeIds = $this->visibleToolNodeIds($caller, true, "tool:{$action}");
+
+        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === []) {
+            return $this->authorizationFailed('This node is not authorized to manage tools.');
+        }
+
+        return $this->authorizedToolTarget(
+            $request,
+            $caller,
+            $visibleNodeIds,
+            allowAnyActiveNode: true,
+            tool: $tool,
+        );
     }
 
     public function effect(): ActivityLogType

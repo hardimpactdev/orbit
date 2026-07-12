@@ -59,7 +59,7 @@ function createWorkspaceStepDeleteInstance(App $app, Node $node, string $instanc
 }
 
 describe('WorkspaceStepDeleteController', function (): void {
-    it('does not delete legacy app-level steps through a dotted selector', function (): void {
+    it('does not delete another app instance step through a dotted selector', function (): void {
         $caller = createWorkspaceStepDeleteCallerNode();
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
@@ -70,15 +70,17 @@ describe('WorkspaceStepDeleteController', function (): void {
             'path' => '/home/nckrtl/apps/happie',
         ]);
         createWorkspaceStepDeleteInstance($app, $localNode, 'nmbp');
-        $legacy = WorkspaceStep::factory()->create([
+        $other = createWorkspaceStepDeleteInstance($app, $canonicalNode, 'development');
+        $foreignStep = WorkspaceStep::factory()->create([
             'app_id' => $app->id,
+            'app_instance_id' => $other->id,
             'phase' => WorkspaceLifecyclePhase::Setup,
             'command' => 'composer install',
         ]);
 
         $response = $this->call(
             'DELETE',
-            "/api/workspaces/steps/setup/{$legacy->id}",
+            "/api/workspaces/steps/setup/{$foreignStep->id}",
             [
                 'app' => 'happie.nmbp',
                 'destructive_consent' => true,
@@ -92,7 +94,7 @@ describe('WorkspaceStepDeleteController', function (): void {
             ->assertNotFound()
             ->assertJsonPath('error.code', 'workspace.step_not_found');
 
-        expect(WorkspaceStep::query()->whereKey($legacy->id)->exists())->toBeTrue();
+        expect(WorkspaceStep::query()->whereKey($foreignStep->id)->exists())->toBeTrue();
     });
 
     it('deletes only instance-specific steps for the selected app instance', function (): void {

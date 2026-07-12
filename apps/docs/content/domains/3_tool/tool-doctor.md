@@ -10,9 +10,11 @@ The tool family doctor implements the
 capabilities those rows expect. It covers both managed tools, where Orbit owns
 installation, update, adoption, removal, or configuration artifacts, and
 observational tools, where Orbit only records and verifies expected capability
-state. Long-running lifecycle belongs to processes. A tool row's expected
-capability state is `installed` or `absent`; runtime up/down state and logs
-are process-family facts and never tool drift.
+state. Concrete service lifecycle belongs to processes unless a tool
+definition explicitly owns one direct runtime and declares the corresponding
+lifecycle or logs capability. A tool row's expected capability state is
+`installed` or `absent`; undeclared runtime state is never inferred as tool
+drift.
 
 The tool family owns these facts:
 
@@ -46,9 +48,9 @@ The tools probe reads gateway tool rows and checks these layers:
 1. **Registry configuration:** every selected tool row has a valid node reference,
    known tool definition, expected capability state, managed flag, and
    definition-specific required fields.
-2. **Node eligibility:** the node reference resolves to a visible active node
-   that is not the gateway. The selected tool definition must support the node
-   operating system.
+2. **Node eligibility:** the node reference resolves to a visible active node.
+   The selected tool definition must support the node operating system and its
+   declared runtime-user, route/TLD, isolation, and gateway-local constraints.
 3. **Capability presence:** the expected package, binary, container, service, or
    observational capability is present when the row expects it to exist.
 4. **Version state:** the observed version matches gateway expected version when
@@ -92,22 +94,20 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.dns_config_drift` | The on-disk `dnsmasq.conf` differs from what the gateway would emit from the current `node.tld` and `node.wireguard_address` of active nodes, including node-host records and role-consumed wildcard mappings. |
 | `tool.dns_client_dns_drift` | The persisted wg-easy default DNS or enabled client DNS is not pinned to the active VPN DNS endpoint. |
 | `tool.dns_forwarding_missing` | The Swarm VPN task is missing the UDP/TCP 53 DNAT and MASQUERADE rules that forward WireGuard peer DNS traffic to `orbit-dns`. |
-| `tool.agent_route_missing` | An installed agent tool with a declared internal proxy route has no tool-owned route under the active agent role TLD. |
+| `tool.agent_route_missing` | An installed agent tool with a declared internal proxy route has no tool-owned route under the target node's configured TLD. |
 | `tool.agent_user_missing` | An agent tool is installed on a node whose `agent` user is absent or not configured as the tool's runtime user. |
 | `tool.agent_orbit_cli_inaccessible` | An agent tool is installed on a node whose `agent` runtime user cannot execute `/home/agent/.local/bin/orbit --version --local` through the owner-user shim. |
 | `tool.agent_credentials_missing` | An agent tool declares credentials but no managed credential material is present on the node tool row. |
 | `tool.seaweedfs.row_missing` | No `seaweedfs` tool row exists on an active `s3` role node. Not auto-fixable; requires manual tool adoption or re-provision. |
 | `tool.seaweedfs.credentials_missing` | The `seaweedfs` tool row exists but lacks service-level credentials (`credentials['fields']['access_key_id']` / `secret_access_key`). |
-| `tool.seaweedfs.runtime_container_missing` | The SeaweedFS runtime container (`orbit-seaweedfs`) is absent on the node, or its rendered config diverges from gateway intent (missing or divergent). |
-| `tool.seaweedfs.bind_public_interface` | The SeaweedFS API is bound to a public or non-WireGuard interface instead of the node's WireGuard address only. |
 
 The five `tool.dns_*` codes are owned by the VPN-facing development DNS
 bootstrap contract; see [`dns-bootstrap-contract.md`](dns-bootstrap-contract.md)
 for the runtime layout they probe.
 
-The four `tool.seaweedfs.*` codes are owned by the S3 role's SeaweedFS managed tool
-contract; they are detected by the `S3DoctorProbe` via container introspection
-over `RemoteHostExecutor` (SSH host substrate + Docker inspection).
+The two `tool.seaweedfs.*` codes cover only the tool row and service
+credentials. The canonical `seaweedfs` process row owns container presence,
+runtime-unit shape, WireGuard bind posture, lifecycle, logs, and restore.
 
 Managed config and secret rows are repairable only when gateway intent contains
 an absolute `path`, declared SHA-256 `hash`, and `content` whose hash matches
@@ -139,18 +139,16 @@ credential repair logic.
 | `tool.dns_config_drift` | Rewrite `dnsmasq.conf` from gateway intent and force the Swarm DNS service update or restart the standalone `orbit-dns` container; Swarm restore also reconverges VPN DNS forwarding. |
 | `tool.dns_client_dns_drift` | Rewrite wg-easy default/client DNS to the active VPN DNS endpoint. |
 | `tool.dns_forwarding_missing` | Reapply the VPN task namespace forwarding rules that DNAT WireGuard peer DNS traffic to `orbit-dns` and preserve return traffic. |
-| `tool.agent_route_missing` | Recreate the tool-owned internal proxy route for the agent tool under the active agent role TLD. |
+| `tool.agent_route_missing` | Recreate the tool-owned internal proxy route for the agent tool under the target node's configured TLD. |
 | `tool.agent_user_missing` | Re-apply the `agent` role baseline to recreate the `agent` user. |
 | `tool.agent_credentials_missing` | Regenerate managed credential material when the tool definition declares credential generation safe. |
 | `tool.seaweedfs.credentials_missing` | Regenerate managed SeaweedFS credentials via the `seaweedfs` tool definition credential generation path. |
-| `tool.seaweedfs.runtime_container_missing` | Recreate or restart the `orbit-seaweedfs` runtime container from gateway S3 config using `SeaweedfsTool` repair commands. |
-| `tool.seaweedfs.bind_public_interface` | Restart and re-render the `orbit-seaweedfs` container bound to the node's WireGuard address only. |
 
 `doctor --restore` does not handle `tool.record_incomplete`, `tool.node_invalid`,
 `tool.definition_missing`, `tool.unsupported_on_node`, `tool.unregistered_capability`,
 `tool.config_probe_failed`, `tool.credentials_probe_failed`,
 `tool.agent_orbit_cli_inaccessible`, or `tool.seaweedfs.row_missing` (the
-`seaweedfs` tool row must be created through `tool:adopt` or re-provision;
+`seaweedfs` tool row must be recreated by converging the `s3` role baseline;
 restore does not create tool rows).
 
 Tools without a safe repair path are reported with the required manual action.
@@ -174,16 +172,13 @@ This table shows what `doctor --adopt` does for each adoptable issue code.
 | `tool.version_mismatch` | Update expected version only when the observed version is supported and the operator selected the specific tool for adoption. |
 | `tool.config_mismatch` | Update expected config when the tool definition can prove the observed config belongs to the selected tool row and every adopted field is supported. |
 | `tool.credentials_mismatch` | Update credential metadata only when the tool definition declares the observed credential material safe to adopt. |
-| `tool.dns_config_drift` | Parse the observed `dnsmasq.conf` into node-family mapping triples and adopt those into node-family state; re-render `dnsmasq.conf` from canonical state afterward. See note below. |
 
-`tool.dns_config_drift` adoption crosses into node-family state on purpose. The
-tool family does not own DNS records; the node family does (see
-[Architecture: DNS responsibilities](../../architecture.md#dns-responsibilities)).
-The adopt path parses each `(node, tld, wireguard_address)` triple from the
-observed `dnsmasq.conf`, records those triples into node-family state, then
-re-renders `dnsmasq.conf` from the canonical node state so the file and DB
-stay in lockstep. Narrow use case: an operator hand-edited the file for an
-emergency and wants Orbit to adopt the change.
+DNS runtime drift is never adoptable. Translate emergency edits into explicit
+node or proxy intent, then run `doctor --family=tool --restore` to re-render the
+tool-owned DNS runtime from canonical state. All five public DNS runtime codes
+are restore-only: `tool.dns_container_missing`,
+`tool.dns_port_not_listening`, `tool.dns_config_drift`,
+`tool.dns_client_dns_drift`, and `tool.dns_forwarding_missing`.
 
 `tool.unregistered_capability` adoption requires three conditions:
 
@@ -211,4 +206,5 @@ No current E2E test is mapped for tool-family read-only or adopt coverage.
 presence, version/configuration/credential drift, and adoption
 scopes. It also asserts that app, workspace, process, schedule, proxy,
 firewall, and node drift do not surface as tool issue codes, and that runtime
-up/down state never surfaces as tool drift.
+state surfaces as tool drift only for an explicitly declared direct tool-owned
+runtime such as the DNS substrate.

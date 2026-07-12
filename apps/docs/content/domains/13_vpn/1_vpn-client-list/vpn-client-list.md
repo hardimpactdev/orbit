@@ -27,10 +27,8 @@ Run this command to inspect the active `vpn` role runtime backend's current
 client inventory.
 
 `vpn-client:list` resolves the active `vpn` role and reads that runtime
-backend's client inventory. In this version the active `vpn` role is
-gateway-coupled, so Orbit still executes on the gateway host. From a client,
-Orbit connects to the active `vpn` role host over the Orbit/WireGuard SSH path
-and runs the operation against that runtime.
+backend's client inventory. Every caller uses the typed gateway HTTPS API over
+WireGuard. The gateway executes the gateway-coupled backend operation locally.
 
 The command may show backend peers that correspond to active Orbit node
 identities, but it does not verify node reachability or repair node drift.
@@ -47,7 +45,7 @@ machine-readable output.
 
 - The caller is the gateway node, has `vpn:read` on the active gateway node,
   or has gateway-admin authority.
-- Non-gateway callers can SSH to the active `vpn` role host over Orbit/WireGuard.
+- Every caller can reach the typed gateway HTTPS API over WireGuard.
 - The active `vpn` role is resolvable and its runtime backend is installed and reachable.
 - The operator can authenticate to the VPN backend when TOTP is required.
 

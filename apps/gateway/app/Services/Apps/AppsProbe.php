@@ -8,7 +8,6 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
-use App\Enums\Apps\NodeRuntimeContainersProbeStatus;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\AppInstance;
@@ -26,7 +25,6 @@ final readonly class AppsProbe
         private ?NodeRoleAssignments $nodeRoleAssignments = null,
         private ?RemoteAppIntrospectProbe $introspectProbe = null,
         private ?RemoteAppRuntimeConfigsProbe $runtimeConfigsProbe = null,
-        private ?RemoteAppRuntimeContainersProbe $runtimeContainersProbe = null,
     ) {}
 
     public function key(): string
@@ -248,106 +246,6 @@ final readonly class AppsProbe
         return $this->runtimeConfigsProbe ?? app(RemoteAppRuntimeConfigsProbe::class);
     }
 
-    private function runtimeContainersProbe(): RemoteAppRuntimeContainersProbe
-    {
-        return $this->runtimeContainersProbe ?? app(RemoteAppRuntimeContainersProbe::class);
-    }
-
-    /**
-     * Probe the node for Orbit-managed app runtime containers regardless of
-     * gateway app records. Returns a tri-state probe result so the
-     * orchestrator can distinguish:
-     *
-     * - **Present**: docker scanned successfully; the snapshot is keyed by
-     *   the encoded app slug label and is authoritative for orphan detection.
-     * - **Absent**: docker is not installed on the node (no Orbit-managed
-     *   runtime containers can exist) — an empty snapshot is correct.
-     * - **Error**: docker container ls failed for an unknown reason (daemon
-     *   down, permission denied, SSH/remote transport error). Empty snapshot
-     *   is returned so the orchestrator does NOT mistake it for a clean
-     *   absence and silently hide stale `app.runtime_container_extra`
-     *   artifacts.
-     *
-     * Probe failure must never abort the whole doctor run; the caller maps
-     * Error status to a dedicated `app.runtime_container_probe_failed` drift.
-     */
-    public function introspectNode(Node $node): NodeRuntimeContainersProbe
-    {
-        try {
-            $stdout = $this->runtimeContainersProbe()->stdout($node);
-        } catch (\Throwable $exception) {
-            return new NodeRuntimeContainersProbe(
-                status: NodeRuntimeContainersProbeStatus::Error,
-                containers: new ProbeSnapshot([]),
-                error: $exception->getMessage(),
-            );
-        }
-
-        $status = NodeRuntimeContainersProbeStatus::Error;
-        $error = 'orbit-container-scan probe returned no status sentinel';
-        $items = [];
-
-        foreach (explode("\n", rtrim($stdout, "\n\r")) as $rawLine) {
-            $line = trim($rawLine);
-
-            if ($line === '') {
-                continue;
-            }
-
-            if (str_starts_with($line, 'orbit-container-scan:')) {
-                $marker = substr($line, strlen('orbit-container-scan:'));
-
-                if ($marker === 'present') {
-                    $status = NodeRuntimeContainersProbeStatus::Present;
-                    $error = '';
-                } elseif ($marker === 'absent') {
-                    $status = NodeRuntimeContainersProbeStatus::Absent;
-                    $error = '';
-                } else {
-                    $status = NodeRuntimeContainersProbeStatus::Error;
-                    $error = ltrim(substr($marker, strlen('error')));
-
-                    if ($error === '') {
-                        $error = 'unknown docker container ls failure';
-                    }
-                }
-
-                continue;
-            }
-
-            $parts = explode("\t", $rawLine, 2);
-
-            if (count($parts) !== 2) {
-                continue;
-            }
-
-            [$containerName, $appSlug] = $parts;
-            $appSlug = trim($appSlug);
-
-            if ($appSlug === '') {
-                continue;
-            }
-
-            $items[$appSlug] = [
-                'container_name' => trim($containerName),
-                'app_slug' => $appSlug,
-            ];
-        }
-
-        // Only Present probes surface listed containers; Absent/Error return
-        // an empty snapshot so doctor cannot mistake them for a clean orphan
-        // list.
-        $containers = $status === NodeRuntimeContainersProbeStatus::Present
-            ? new ProbeSnapshot($items)
-            : new ProbeSnapshot([]);
-
-        return new NodeRuntimeContainersProbe(
-            status: $status,
-            containers: $containers,
-            error: $error,
-        );
-    }
-
     /**
      * @return list<DriftEntry>
      */
@@ -360,7 +258,6 @@ final readonly class AppsProbe
         $drift = array_merge($drift, $this->checkSourcePath($app, $snapshot));
         $drift = array_merge($drift, $this->checkDocumentRoot($app, $snapshot));
         $drift = array_merge($drift, $this->checkPhpRuntime($app, $snapshot));
-        $drift = array_merge($drift, $this->checkRuntimeContainer($app, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeConfig($app, $snapshot));
         $drift = array_merge($drift, $this->checkProductionSecurity($app, $snapshot));
         $drift = array_merge($drift, $this->checkAgentIdeDefault($app));
@@ -380,13 +277,6 @@ final readonly class AppsProbe
         $drift = array_merge($drift, $this->checkSourcePath($runtimeApp, $snapshot, $targetName, $app, $instance));
         $drift = array_merge($drift, $this->checkDocumentRoot($runtimeApp, $snapshot, $targetName, $app, $instance));
         $drift = array_merge($drift, $this->checkPhpRuntime($runtimeApp, $snapshot, $targetName, $app, $instance));
-        $drift = array_merge($drift, $this->checkRuntimeContainer(
-            $runtimeApp,
-            $snapshot,
-            $targetName,
-            $app,
-            $instance,
-        ));
         $drift = array_merge($drift, $this->checkRuntimeConfig($runtimeApp, $snapshot, $targetName, $app, $instance));
 
         return $drift;
@@ -417,100 +307,6 @@ final readonly class AppsProbe
                     key: 'app.record_incomplete',
                     kind: DriftKind::Missing,
                     summary: "App record for {$app->name} is missing required fields.",
-                ),
-            ];
-        }
-
-        return [];
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkRuntimeContainer(
-        App $app,
-        ProbeSnapshot $snapshot,
-        ?string $targetName = null,
-        ?App $canonicalApp = null,
-        ?AppInstance $instance = null,
-    ): array {
-        if ($app->runtimeKind() !== AppRuntimeKind::Php) {
-            return [];
-        }
-
-        $targetName ??= $app->name;
-        $canonicalApp ??= $app;
-        $observed = $snapshot->get($targetName);
-
-        if (
-            $observed === null
-            || ($observed['path_exists'] ?? null) === false
-            || ($observed['docker_available'] ?? null) === false
-        // When the selected image is proven absent the runtime container
-        // cannot exist either; checkPhpRuntime emits the canonical
-        // `app.php_version_unavailable` drift in that case. Unknown
-        // image-probe failures (Docker daemon unreachable, permission,
-        // transport error) do NOT short-circuit here — they fall through
-        // to surface as the documented `app.runtime_container_missing`
-        // (when no container exists) or `app.runtime_container_mismatch`
-        // (when one does) so the doctor restore path can re-attempt apply.
-        ) {
-            return [];
-        }
-
-        if (
-            ($observed['runtime_image_available'] ?? null) === false
-            && ($observed['runtime_image_probe_failed'] ?? null) !== true
-        ) {
-            // Image proven missing: checkPhpRuntime owns the
-            // `app.php_version_unavailable` drift; suppress container drift
-            // because the container cannot exist without its image.
-            return [];
-        }
-
-        if (($observed['container_exists'] ?? null) === false) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'app.runtime_container_missing',
-                    kind: DriftKind::Missing,
-                    summary: "App {$targetName} FrankenPHP runtime container is missing on the owning app node.",
-                    detail: $this->targetDetail($canonicalApp, $instance, [
-                        'expected' => $this->containerNameForTarget($canonicalApp, $app, $instance),
-                    ]),
-                ),
-            ];
-        }
-
-        if (($observed['container_spec_matches'] ?? null) === false) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'app.runtime_container_mismatch',
-                    kind: DriftKind::Divergent,
-                    summary: "App {$targetName} FrankenPHP runtime container differs from gateway app configuration.",
-                    detail: $this->targetDetail($canonicalApp, $instance, [
-                        'expected' => $this->containerNameForTarget($canonicalApp, $app, $instance),
-                    ]),
-                ),
-            ];
-        }
-
-        // A stopped container exposes no runtime endpoint, so doctor docs
-        // treat it as `app.runtime_container_missing` ("absent endpoint")
-        // even though the container record itself still exists. Restore
-        // restarts it via AppRuntimeContainerManager::apply().
-        if (($observed['container_running'] ?? null) === false) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'app.runtime_container_missing',
-                    kind: DriftKind::Missing,
-                    summary: "App {$targetName} FrankenPHP runtime container is stopped; runtime endpoint is absent.",
-                    detail: $this->targetDetail($canonicalApp, $instance, [
-                        'expected' => $this->containerNameForTarget($canonicalApp, $app, $instance),
-                        'reason' => 'container_stopped',
-                    ]),
                 ),
             ];
         }
@@ -625,15 +421,10 @@ final readonly class AppsProbe
             ];
         }
 
-        // Unknown image probe failures (Docker daemon unreachable, permission
-        // denied, SSH transport error) MUST NOT collapse into
-        // `app.php_version_unavailable` — that drift means the selected
-        // FrankenPHP image is proven missing on the node. Suppress here;
-        // checkRuntimeContainer surfaces the documented
-        // `app.runtime_container_missing` / `app.runtime_container_mismatch`
-        // drift instead, so doctor restore can re-attempt apply through the
-        // manager's image preflight (which throws
-        // AppRuntimeContainerApplyException on persistent probe failure).
+        // Unknown image probe failures must not collapse into
+        // `app.php_version_unavailable`; that key means the selected image is
+        // proven missing. Concrete runtime-unit failures are process-family
+        // drift, so the app family emits no substitute container issue here.
         if (($observed['runtime_image_probe_failed'] ?? null) === true) {
             return [];
         }

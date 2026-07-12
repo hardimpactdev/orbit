@@ -19,7 +19,6 @@ final class ToolListCommand extends GatewayCommand
     protected $signature = 'tool:list
         {--app= : Filter by app selector}
         {--node= : Filter by owning node}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--all : Show tools across all visible nodes}
         {--json}';
 

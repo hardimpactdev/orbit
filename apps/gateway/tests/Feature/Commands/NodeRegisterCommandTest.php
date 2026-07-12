@@ -11,6 +11,7 @@ it('registers a node through the hidden internal bootstrap command', function ()
     $this
         ->artisan('orbit:internal:node-register', [
             'name' => 'gateway',
+            '--tld' => 'gateway',
             '--host' => 'gateway',
             '--user' => 'gateway',
             '--orbit-path' => '/home/gateway/orbit',
@@ -24,5 +25,5 @@ it('registers a node through the hidden internal bootstrap command', function ()
         ->not->toBeNull()->and((array) $node)
         ->not->toHaveKeys(['role', 'environment'])->and($node->host)->toBe('gateway')->and($node->user)->toBe(
             'gateway',
-        )->and($node->orbit_path)->toBe('/home/gateway/orbit');
+        )->and($node->orbit_path)->toBe('/home/gateway/orbit')->and($node->tld)->toBe('gateway');
 });

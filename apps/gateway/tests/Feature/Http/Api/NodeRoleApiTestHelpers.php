@@ -18,7 +18,7 @@ function nodeRoleApiContractCallerIp(): string
  */
 function nodeRoleApiContractRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'target-1',
         'host' => '10.6.0.20',
         'user' => 'nckrtl',
@@ -29,6 +29,12 @@ function nodeRoleApiContractRow(array $overrides = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    if (! array_key_exists('tld', $overrides)) {
+        $row['tld'] = strtolower((string) $row['name']);
+    }
+
+    return $row;
 }
 
 function createNodeRoleApiContractCaller(): Node

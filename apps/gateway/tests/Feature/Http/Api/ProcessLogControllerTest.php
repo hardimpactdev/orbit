@@ -25,7 +25,7 @@ function createProcessLogCallerNode(array $overrides = [], ?string $role = null)
     $attributes = array_merge([
         'name' => 'caller',
         'host' => PROCESS_LOG_CALLER_WG_IP,
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => PROCESS_LOG_CALLER_WG_IP,
     ], $overrides);
 
@@ -39,7 +39,7 @@ function createProcessLogCallerNode(array $overrides = [], ?string $role = null)
 function create_process_log_agent_node(array $overrides = [], string $role = 'app-dev'): Node
 {
     return createTestAppHostNode(array_merge([
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => '10.6.0.44',
     ], $overrides), $role);
 }
@@ -138,6 +138,39 @@ describe('ProcessLogController', function (): void {
                     'lines' => 5,
                     'follow' => false,
                 ]
+            ),
+        );
+    });
+
+    it('keeps GET log reads bounded when a stale follow query is supplied', function (): void {
+        $caller = createProcessLogCallerNode();
+        $appNode = create_process_log_agent_node();
+        grantProcessLogAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->forOwner($app)->create(['name' => 'vite']);
+        fake_process_log_agent("Vite ready\n");
+
+        $response = $this->call(
+            'GET',
+            '/api/processes/vite/log',
+            [
+                'app' => 'docs',
+                'lines' => 5,
+                'follow' => true,
+            ],
+            [],
+            [],
+            process_log_agent_push_server(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.logs.lines.0.message', 'Vite ready');
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->url() === 'http://10.6.0.44:9477/v1/commands'
+                && json_decode((string) $request['input'], associative: true)['follow'] === false
             ),
         );
     });

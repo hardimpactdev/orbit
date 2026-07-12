@@ -17,6 +17,7 @@ use JsonException;
 
 final readonly class ManagedFile
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         public string $path,
         public string $content,

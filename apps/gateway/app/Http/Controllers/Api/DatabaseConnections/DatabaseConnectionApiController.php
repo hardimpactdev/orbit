@@ -21,6 +21,7 @@ use App\Services\DatabaseConnections\DatabaseConnectionTargetResolver;
 use App\Services\DatabaseConnections\DatabaseQueryRunnerFailure;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -40,6 +41,7 @@ abstract class DatabaseConnectionApiController implements Loggable
         protected readonly DatabaseConnectionSelector $selector,
         protected readonly DatabaseConnectionExecutor $executor,
         protected readonly DatabaseAuditPayload $audit,
+        protected readonly WorkspacePlacement $workspacePlacement,
     ) {}
 
     abstract public function effect(): ActivityLogType;
@@ -209,9 +211,8 @@ abstract class DatabaseConnectionApiController implements Loggable
     {
         $connection->loadMissing([
             'node',
-            'targets.app.node',
+            'targets.appInstance.app.node',
             'targets.workspace.app.node',
-            'instanceTargets.instance.app.node',
         ]);
 
         $nodes = [];
@@ -221,22 +222,20 @@ abstract class DatabaseConnectionApiController implements Loggable
         }
 
         foreach ($connection->targets as $target) {
-            $appNode = $target->app?->node;
+            $instanceNode = $target->appInstance instanceof AppInstance
+                ? $this->workspacePlacement->nodeForInstance($target->appInstance)
+                : null;
 
-            if ($appNode instanceof Node) {
-                $nodes[$appNode->id] = $appNode;
+            if ($instanceNode instanceof Node) {
+                $nodes[$instanceNode->id] = $instanceNode;
             }
 
-            $workspaceNode = $target->workspace?->app?->node;
+            $workspaceNode = $target->workspace instanceof Workspace
+                ? $this->workspacePlacement->nodeForWorkspace($target->workspace)
+                : null;
 
             if ($workspaceNode instanceof Node) {
                 $nodes[$workspaceNode->id] = $workspaceNode;
-            }
-        }
-
-        foreach ($connection->instanceTargets as $target) {
-            if ($target->instance->app->node instanceof Node) {
-                $nodes[$target->instance->app->node->id] = $target->instance->app->node;
             }
         }
 
@@ -245,10 +244,10 @@ abstract class DatabaseConnectionApiController implements Loggable
 
     protected function targetOwnerNode(string $target): ?Node
     {
-        $app = $this->resolver->resolveApp($target);
+        $instance = $this->resolver->resolveAppInstanceSelector($target);
 
-        if ($app instanceof App) {
-            return $this->ownerNode($app);
+        if ($instance instanceof AppInstance) {
+            return $this->ownerNode($instance);
         }
 
         $workspace = $this->resolver->resolveWorkspace($target);
@@ -263,9 +262,7 @@ abstract class DatabaseConnectionApiController implements Loggable
     protected function ownerNode(App|Workspace|AppInstance $owner): ?Node
     {
         if ($owner instanceof AppInstance) {
-            $owner->loadMissing('app.node');
-
-            return $owner->app->node;
+            return $this->workspacePlacement->nodeForInstance($owner);
         }
 
         if ($owner instanceof App) {
@@ -274,9 +271,7 @@ abstract class DatabaseConnectionApiController implements Loggable
             return $owner->node;
         }
 
-        $owner->loadMissing('app.node');
-
-        return $owner->app?->node;
+        return $this->workspacePlacement->nodeForWorkspace($owner);
     }
 
     protected function gatewayNode(): ?Node
@@ -359,7 +354,7 @@ abstract class DatabaseConnectionApiController implements Loggable
     }
 
     /**
-     * @return array{0: string, 1: App|Workspace|AppInstance}|JsonResponse
+     * @return array{0: 'app_instance', 1: AppInstance}|array{0: 'workspace', 1: Workspace}|JsonResponse
      */
     protected function resolveTargetScope(Request $request, string $envPrefix): array|JsonResponse
     {
@@ -409,26 +404,31 @@ abstract class DatabaseConnectionApiController implements Loggable
                 );
             }
 
-            if ($instance !== null) {
-                $instanceModel = $this->resolver->resolveAppInstance($appModel, $instance);
-
-                if (! $instanceModel instanceof AppInstance) {
-                    return $this->validationFailed(
-                        'instance',
-                        "Invalid value for --instance: '{$instance}'.",
-                        [
-                            'field' => 'instance',
-                            'app' => $appModel->name,
-                            'value' => $instance,
-                        ],
-                        422,
-                    );
-                }
-
-                return ['app_instance', $instanceModel];
+            if ($instance === null) {
+                return $this->validationFailed(
+                    'instance',
+                    'The --instance option is required for app database targets.',
+                    ['field' => 'instance', 'reason' => 'app_instance_required'],
+                    422,
+                );
             }
 
-            return ['app', $appModel];
+            $instanceModel = $this->resolver->resolveAppInstance($appModel, $instance);
+
+            if (! $instanceModel instanceof AppInstance) {
+                return $this->validationFailed(
+                    'instance',
+                    "Invalid value for --instance: '{$instance}'.",
+                    [
+                        'field' => 'instance',
+                        'app' => $appModel->name,
+                        'value' => $instance,
+                    ],
+                    422,
+                );
+            }
+
+            return ['app_instance', $instanceModel];
         }
 
         $workspaceModel = $this->resolver->resolveWorkspace($workspace);

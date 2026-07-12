@@ -5335,12 +5335,6 @@ message = "Constant name `PortChecks` should be in constant case."
 count = 1
 
 [[issues]]
-file = "app/Services/Gateway/GatewayHostAgentConverger.php"
-code = "no-shorthand-ternary"
-message = "Use of the shorthand ternary operator."
-count = 3
-
-[[issues]]
 file = "app/Services/Gateway/GatewayImageAcquirer.php"
 code = "no-else-clause"
 message = "Avoid `else` clauses."
@@ -6442,12 +6436,6 @@ count = 2
 file = "app/Services/Operations/GatewayCliArtifactRelay.php"
 code = "too-many-methods"
 message = "Class has too many methods."
-count = 1
-
-[[issues]]
-file = "app/Services/Operations/GatewayHostAgentServiceRestarter.php"
-code = "no-else-clause"
-message = "Avoid `else` clauses."
 count = 1
 
 [[issues]]
@@ -19598,18 +19586,6 @@ count = 2
 
 [[issues]]
 file = "tests/Feature/Services/Gateway/GatewayApiContainerInstallerTest.php"
-code = "no-isset"
-message = "Use of the `isset` construct."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Services/Gateway/GatewayHostAgentConvergerTest.php"
-code = "literal-named-argument"
-message = "Literal argument `0o600` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Services/Gateway/GatewayHostAgentConvergerTest.php"
 code = "no-isset"
 message = "Use of the `isset` construct."
 count = 1

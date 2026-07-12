@@ -45,48 +45,7 @@ function grantWorkspaceStepListAccess(Node $caller, Node $appNode): void
 }
 
 describe('WorkspaceStepListController', function (): void {
-    it('lists instance-specific steps for dotted selectors and falls back to legacy app-level rows', function (): void {
-        $caller = createWorkspaceStepListCallerNode();
-        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
-        $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
-        grantWorkspaceStepListAccess($caller, $localNode);
-        $app = App::factory()->create([
-            'name' => 'happie',
-            'node_id' => $canonicalNode->id,
-            'path' => '/home/nckrtl/apps/happie',
-        ]);
-        AppInstance::factory()->create([
-            'app_id' => $app->id,
-            'name' => 'nmbp',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
-                node_id: $localNode->id,
-                path: '/Users/nckrtl/apps/happie',
-                domain: 'happie.nmbp',
-            ),
-        ]);
-        WorkspaceStep::factory()->create([
-            'app_id' => $app->id,
-            'phase' => WorkspaceLifecyclePhase::Setup,
-            'command' => 'legacy composer install',
-        ]);
-
-        $response = $this->call(
-            'GET',
-            '/api/workspaces/steps/setup?app=happie.nmbp',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP],
-        );
-
-        $response
-            ->assertOk()
-            ->assertJsonPath('success.data.steps.0.app', 'happie')
-            ->assertJsonPath('success.data.steps.0.command', 'legacy composer install');
-    });
-
-    it('prefers instance-specific steps over legacy app-level fallback rows', function (): void {
+    it('lists only the selected app instance steps', function (): void {
         $caller = createWorkspaceStepListCallerNode();
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
@@ -105,11 +64,6 @@ describe('WorkspaceStepListController', function (): void {
                 path: '/Users/nckrtl/apps/happie',
                 domain: 'happie.nmbp',
             ),
-        ]);
-        WorkspaceStep::factory()->create([
-            'app_id' => $app->id,
-            'phase' => WorkspaceLifecyclePhase::Setup,
-            'command' => 'legacy composer install',
         ]);
         WorkspaceStep::factory()->create([
             'app_id' => $app->id,
@@ -139,14 +93,17 @@ describe('WorkspaceStepListController', function (): void {
         $node = createTestAppHostNode();
         grantWorkspaceStepListAccess($caller, $node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $instance = AppInstance::factory()->create(['app_id' => $app->id, 'name' => 'development']);
         WorkspaceStep::factory()->create([
             'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
             'phase' => WorkspaceLifecyclePhase::Setup,
             'sort_order' => 2,
             'command' => 'npm install',
         ]);
         WorkspaceStep::factory()->create([
             'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
             'phase' => WorkspaceLifecyclePhase::Setup,
             'sort_order' => 1,
             'command' => 'composer install',
@@ -154,7 +111,7 @@ describe('WorkspaceStepListController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/steps/setup?app=docs',
+            '/api/workspaces/steps/setup?app=docs.development',
             [],
             [],
             [],
@@ -173,9 +130,13 @@ describe('WorkspaceStepListController', function (): void {
         $node = createTestAppHostNode();
         grantWorkspaceStepListAccess($caller, $node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
-        Workspace::factory()->create(['app_id' => $app->id, 'path' => '/srv/docs/.worktrees/feature-docs']);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'path' => '/srv/docs/.worktrees/feature-docs',
+        ]);
         WorkspaceStep::factory()->create([
             'app_id' => $app->id,
+            'app_instance_id' => $workspace->app_instance_id,
             'phase' => WorkspaceLifecyclePhase::Teardown,
             'command' => 'dropdb docs',
         ]);
@@ -214,11 +175,12 @@ describe('WorkspaceStepListController', function (): void {
     it('returns authorization failures for hidden apps', function (): void {
         createWorkspaceStepListCallerNode();
         $node = createTestAppHostNode();
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        AppInstance::factory()->create(['app_id' => $app->id, 'name' => 'development']);
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/steps/setup?app=docs',
+            '/api/workspaces/steps/setup?app=docs.development',
             [],
             [],
             [],

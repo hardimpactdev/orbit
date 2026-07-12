@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
@@ -21,11 +23,14 @@ use App\Models\SchedulerState;
 use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\CaddyGlobalConfig;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Platform\PlatformDetector;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process as ProcessFacade;
 
 uses(RefreshDatabase::class);
 
@@ -39,6 +44,37 @@ beforeEach(function (): void {
 });
 
 const DOCTOR_RUN_CALLER_WG_IP = '10.6.0.94';
+
+/**
+ * @return array<string, mixed>
+ */
+function doctor_run_runtime_inventory_agent_response(): array
+{
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => 'process-runtime-containers.probe',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => [
+                            'stdout' => "orbit-container-scan:absent\n",
+                        ],
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => '0',
+            ],
+        ],
+    ];
+}
 
 function createDoctorRunCallerNode(array $overrides = [], string $role = 'gateway'): Node
 {
@@ -535,6 +571,10 @@ describe('DoctorRunController', function (): void {
 
     it('accepts the process family scope when metrics is co-located with gateway', function (): void {
         createDoctorRunCallerNode();
+        ProcessFacade::preventStrayProcesses();
+        ProcessFacade::fake([
+            '*' => ProcessFacade::result(output: "orbit-container-scan:absent\n"),
+        ]);
         $gateway = Node::factory()
             ->gateway()
             ->create([
@@ -570,12 +610,22 @@ describe('DoctorRunController', function (): void {
 
     it('runs process family doctor across active role nodes only with explicit all scope', function (): void {
         createDoctorRunCallerNode();
-        createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         Node::factory()->create([
             'name' => 'operator-1',
             'status' => 'active',
             'platform' => 'ubuntu',
             'wireguard_address' => '10.6.0.3',
+        ]);
+        ProcessFacade::preventStrayProcesses();
+        ProcessFacade::fake([
+            '*' => ProcessFacade::result(output: "orbit-container-scan:absent\n"),
+        ]);
+        Http::preventStrayRequests();
+        Http::fake([
+            "http://{$appNode->wireguard_address}:9477/v1/commands" => Http::response(
+                doctor_run_runtime_inventory_agent_response(),
+            ),
         ]);
 
         $response = $this->call(
@@ -588,7 +638,10 @@ describe('DoctorRunController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+            [
+                'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => NodeTransportPreference::AgentPush->value,
+                'REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP,
+            ],
         );
 
         $response
@@ -804,7 +857,7 @@ describe('DoctorRunController', function (): void {
                 'credentials' => ['password' => $fixturePassword],
             ]);
             DatabaseConnectionTarget::factory()
-                ->forApp($app)
+                ->forAppInstance(doctorRunDatabaseAppInstance($app))
                 ->create([
                     'database_connection_id' => $connection->id,
                     'env_prefix' => 'DB',
@@ -1023,16 +1076,18 @@ describe('DoctorRunController', function (): void {
         File::ensureDirectoryExists($dngdmtPath);
         File::ensureDirectoryExists($otherPath);
 
-        App::factory()->create([
+        $dngdmt = App::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'dngdmt',
             'path' => $dngdmtPath,
         ]);
-        App::factory()->create([
+        doctorRunDatabaseAppInstance($dngdmt);
+        $other = App::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'other-app',
             'path' => $otherPath,
         ]);
+        doctorRunDatabaseAppInstance($other);
 
         $completeEnv = "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n";
 
@@ -1081,16 +1136,18 @@ describe('DoctorRunController', function (): void {
         File::ensureDirectoryExists($dngdmtPath);
         File::ensureDirectoryExists($otherPath);
 
-        App::factory()->create([
+        $dngdmt = App::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'dngdmt',
             'path' => $dngdmtPath,
         ]);
-        App::factory()->create([
+        doctorRunDatabaseAppInstance($dngdmt);
+        $other = App::factory()->create([
             'node_id' => $appNode->id,
             'name' => 'other-app',
             'path' => $otherPath,
         ]);
+        doctorRunDatabaseAppInstance($other);
 
         $completeEnv = "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n";
 
@@ -1119,12 +1176,30 @@ describe('DoctorRunController', function (): void {
 
         expect(DatabaseConnection::query()->count())
             ->toBe(1)
-            ->and(DatabaseConnection::query()->where('slug', 'dngdmt')->exists())
+            ->and(DatabaseConnection::query()->where('slug', 'dngdmt-development')->exists())
             ->toBeTrue()
-            ->and(DatabaseConnection::query()->where('slug', 'other-app')->exists())
+            ->and(DatabaseConnection::query()->where('slug', 'other-app-development')->exists())
             ->toBeFalse();
     });
 });
+
+function doctorRunDatabaseAppInstance(App $app): AppInstance
+{
+    $instance = $app->instances()->first();
+
+    if ($instance instanceof AppInstance) {
+        return $instance;
+    }
+
+    return AppInstance::factory()->for($app)->create([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $app->node_id,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+}
 
 final readonly class DoctorRunDatabaseScopeRemoteShell implements RemoteShell
 {

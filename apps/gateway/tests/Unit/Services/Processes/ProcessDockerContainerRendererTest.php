@@ -23,7 +23,7 @@ uses(RefreshDatabase::class);
 
 function makeProcessRendererApp(array $overrides = []): App
 {
-    $node = Node::factory()->create(['user' => 'orbit', 'tld' => 'orbit.beast']);
+    $node = Node::factory()->create(['user' => 'orbit', 'tld' => 'beast']);
 
     return App::factory()->for($node, 'node')->create(array_merge([
         'name' => 'docs',
@@ -183,25 +183,25 @@ it('populates the runtime unit environment contract for the docker process runti
         ->and($environment['ORBIT_PHP_VERSION'])
         ->toBe('8.5')
         ->and($environment['APP_URL'])
-        ->toBe('https://docs.orbit.beast')
+        ->toBe('https://docs.beast')
         ->and($environment['VITE_APP_URL'])
-        ->toBe('https://docs.orbit.beast')
+        ->toBe('https://docs.beast')
         ->and($environment['VITE_VALET_HOST'])
-        ->toBe('docs.orbit.beast')
+        ->toBe('docs.beast')
         ->and($environment['VITE_DEV_SERVER_KEY'])
-        ->toBe('/etc/orbit/certs/docs.orbit.beast.key')
+        ->toBe('/etc/orbit/certs/docs.beast.key')
         ->and($environment['VITE_DEV_SERVER_CERT'])
-        ->toBe('/etc/orbit/certs/docs.orbit.beast.crt');
+        ->toBe('/etc/orbit/certs/docs.beast.crt');
 
     expect(processDockerRenderer()->render($app, $process)->mounts())
         ->toContain([
-            'source' => '/home/orbit/.config/orbit/certs/docs.orbit.beast.key',
-            'target' => '/etc/orbit/certs/docs.orbit.beast.key',
+            'source' => '/home/orbit/.config/orbit/certs/docs.beast.key',
+            'target' => '/etc/orbit/certs/docs.beast.key',
             'read_only' => true,
         ])
         ->toContain([
-            'source' => '/home/orbit/.config/orbit/certs/docs.orbit.beast.crt',
-            'target' => '/etc/orbit/certs/docs.orbit.beast.crt',
+            'source' => '/home/orbit/.config/orbit/certs/docs.beast.crt',
+            'target' => '/etc/orbit/certs/docs.beast.crt',
             'read_only' => true,
         ]);
 });
@@ -216,21 +216,21 @@ it('includes ORBIT_WORKSPACE in the environment when rendering a workspace proce
     expect($environment['ORBIT_WORKSPACE'])
         ->toBe('feature-x')
         ->and($environment['APP_URL'])
-        ->toBe('https://feature-x.docs.orbit.beast')
+        ->toBe('https://feature-x.docs.beast')
         ->and($environment['VITE_DEV_SERVER_KEY'])
-        ->toBe('/etc/orbit/certs/feature-x.docs.orbit.beast.key')
+        ->toBe('/etc/orbit/certs/feature-x.docs.beast.key')
         ->and($environment['VITE_DEV_SERVER_CERT'])
-        ->toBe('/etc/orbit/certs/feature-x.docs.orbit.beast.crt');
+        ->toBe('/etc/orbit/certs/feature-x.docs.beast.crt');
 
     expect(processDockerRenderer()->render($app, $process, $workspace)->mounts())
         ->toContain([
-            'source' => '/home/orbit/.config/orbit/certs/feature-x.docs.orbit.beast.key',
-            'target' => '/etc/orbit/certs/feature-x.docs.orbit.beast.key',
+            'source' => '/home/orbit/.config/orbit/certs/feature-x.docs.beast.key',
+            'target' => '/etc/orbit/certs/feature-x.docs.beast.key',
             'read_only' => true,
         ])
         ->toContain([
-            'source' => '/home/orbit/.config/orbit/certs/feature-x.docs.orbit.beast.crt',
-            'target' => '/etc/orbit/certs/feature-x.docs.orbit.beast.crt',
+            'source' => '/home/orbit/.config/orbit/certs/feature-x.docs.beast.crt',
+            'target' => '/etc/orbit/certs/feature-x.docs.beast.crt',
             'read_only' => true,
         ]);
 });
@@ -366,7 +366,7 @@ it('renders structured service ports for node owned managed service docker proce
 
     expect($container->ports())
         ->toBe([
-            ['published' => 1025, 'target' => 1025, 'protocol' => 'tcp'],
+            ['host' => null, 'published' => 1025, 'target' => 1025, 'protocol' => 'tcp'],
         ])
         ->and($container->publishedPorts())
         ->toBe(['1025:1025']);

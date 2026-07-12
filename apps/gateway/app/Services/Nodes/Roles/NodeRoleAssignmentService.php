@@ -77,7 +77,6 @@ class NodeRoleAssignmentService
         $this->guardWebSocketRedisNode($role, $settingsData);
         $this->guardAnalyticsDatabaseNodes($role, $settingsData);
         $this->guardAppProductionIngressNode($node, $role, $settingsData);
-        $this->guardUniqueDevelopmentTld($node, $role, $settingsData);
 
         $assignment = $node->roleAssignments()->create([
             'role' => $role,
@@ -87,7 +86,7 @@ class NodeRoleAssignmentService
             'converged_at' => null,
         ]);
 
-        return $this->converge($node, $assignment);
+        return $this->clearManagedOptInAfterActiveRole($node, $this->converge($node, $assignment));
     }
 
     /**
@@ -116,9 +115,6 @@ class NodeRoleAssignmentService
         $this->guardWebSocketRedisNode($role, $settingsData);
         $this->guardAnalyticsDatabaseNodes($role, $settingsData);
         $this->guardAppProductionIngressNode($node, $role, $settingsData);
-        $this->guardUniqueDevelopmentTld($node, $role, $settingsData);
-
-        $previousAssignment = $assignment->replicate();
 
         $assignment->forceFill([
             'settings' => $settingsData,
@@ -127,7 +123,7 @@ class NodeRoleAssignmentService
             'converged_at' => null,
         ])->save();
 
-        return $this->converge($node, $assignment->fresh() ?? $assignment, $previousAssignment);
+        return $this->converge($node, $assignment->fresh() ?? $assignment);
     }
 
     public function remove(Node $node, string $role, bool $force = false, bool $purgeData = false): void
@@ -181,7 +177,6 @@ class NodeRoleAssignmentService
 
                 $transactionAssignment->delete();
 
-                $this->syncNodeTldFromRoles($node);
                 $this->roleSelfGrantMaterializer->reconcileOnRoleRemoved($node, NodeRoleName::from($role));
             });
         } catch (InvalidArgumentException $exception) {
@@ -211,17 +206,19 @@ class NodeRoleAssignmentService
         throw new InvalidArgumentException("Role '{$role}' is gateway-coupled and cannot be assigned independently.");
     }
 
-    private function converge(
-        Node $node,
-        NodeRoleAssignment $assignment,
-        ?NodeRoleAssignment $previousAssignment = null,
-    ): NodeRoleAssignment {
-        try {
-            $this->syncNodeTldFromRoles($node, $assignment);
-            $node->refresh();
+    private function clearManagedOptInAfterActiveRole(Node $node, NodeRoleAssignment $assignment): NodeRoleAssignment
+    {
+        if ($assignment->status === NodeRoleStatus::Active && $node->managed) {
+            $node->forceFill(['managed' => false])->save();
+        }
 
+        return $assignment;
+    }
+
+    private function converge(Node $node, NodeRoleAssignment $assignment): NodeRoleAssignment
+    {
+        try {
             $this->converger->converge($node, $assignment);
-            $this->removePreviousDevelopmentDnsMapping($node, $assignment, $previousAssignment);
 
             $assignment->forceFill([
                 'status' => NodeRoleStatus::Active->value,
@@ -229,8 +226,6 @@ class NodeRoleAssignmentService
                 'last_error' => null,
             ])->save();
 
-            $this->syncNodeTldFromRoles($node, $assignment);
-            $node->refresh();
             $this->roleSelfGrantMaterializer->materializeOnRoleApplied($node, NodeRoleName::from($assignment->role));
         } catch (Throwable $throwable) {
             $assignment->forceFill([
@@ -244,71 +239,6 @@ class NodeRoleAssignmentService
         $freshAssignment = $assignment->fresh();
 
         return $freshAssignment;
-    }
-
-    private function removePreviousDevelopmentDnsMapping(
-        Node $node,
-        NodeRoleAssignment $assignment,
-        ?NodeRoleAssignment $previousAssignment,
-    ): void {
-        if (! $previousAssignment instanceof NodeRoleAssignment) {
-            return;
-        }
-
-        if (! in_array($assignment->role, [NodeRoleName::AppDevelopment->value, NodeRoleName::Agent->value], true)) {
-            return;
-        }
-
-        $previousTld = $previousAssignment->settings['tld'] ?? null;
-        $currentTld = $assignment->settings['tld'] ?? null;
-
-        if (! is_string($previousTld) || ! is_string($currentTld) || $previousTld === $currentTld) {
-            return;
-        }
-
-        $this->converger->remove($node, $previousAssignment, purgeData: false);
-    }
-
-    private function syncNodeTldFromRoles(Node $node, ?NodeRoleAssignment $convergingAssignment = null): void
-    {
-        $node->refresh();
-
-        $activeAssignments = $node
-            ->roleAssignments()
-            ->where('status', NodeRoleStatus::Active->value)
-            ->orderBy('role')
-            ->get();
-
-        if (
-            $convergingAssignment instanceof NodeRoleAssignment
-            && ! $activeAssignments->contains('id', $convergingAssignment->id)
-        ) {
-            $activeAssignments->push($convergingAssignment);
-        }
-
-        $tld = null;
-
-        $appDevelopment = $activeAssignments->firstWhere('role', NodeRoleName::AppDevelopment->value);
-        $agent = $activeAssignments->firstWhere('role', NodeRoleName::Agent->value);
-        $database = $activeAssignments->firstWhere('role', NodeRoleName::Database->value);
-
-        if ($appDevelopment instanceof NodeRoleAssignment) {
-            $developmentTld = $appDevelopment->settings['tld'] ?? null;
-            $tld = is_string($developmentTld) ? $developmentTld : null;
-        } elseif ($agent instanceof NodeRoleAssignment) {
-            $agentTld = $agent->settings['tld'] ?? null;
-            $tld = is_string($agentTld) ? $agentTld : null;
-        } elseif ($database instanceof NodeRoleAssignment) {
-            $nodeTld = is_string($node->tld) ? trim($node->tld) : '';
-            $tld = $nodeTld !== '' ? $nodeTld : null;
-        } else {
-            $nodeTld = is_string($node->tld) ? trim($node->tld) : '';
-            $tld = $nodeTld !== '' ? $nodeTld : null;
-        }
-
-        $node->forceFill(['tld' => $tld])->save();
-
-        $node->unsetRelation('roleAssignments');
     }
 
     private function guardSupportedPlatform(Node $node, NodeRoleDefinition $definition): void
@@ -421,41 +351,5 @@ class NodeRoleAssignmentService
             ->where('role', NodeRoleName::Ingress->value)
             ->where('status', NodeRoleStatus::Active->value)
             ->exists();
-    }
-
-    /**
-     * @param  array<string, mixed>  $settings
-     */
-    private function guardUniqueDevelopmentTld(Node $node, string $role, array $settings): void
-    {
-        if (! in_array($role, [NodeRoleName::AppDevelopment->value, NodeRoleName::Agent->value], true)) {
-            return;
-        }
-
-        $tld = $settings['tld'] ?? null;
-
-        if (! is_string($tld) || $tld === '') {
-            return;
-        }
-
-        $nodeTldCollision = Node::query()
-            ->where('status', NodeStatus::Active->value)
-            ->where('tld', $tld)
-            ->whereKeyNot($node->id)
-            ->exists();
-
-        $roleCollision = NodeRoleAssignment::query()
-            ->whereIn('role', [NodeRoleName::AppDevelopment->value, NodeRoleName::Agent->value])
-            ->where('status', NodeRoleStatus::Active->value)
-            ->where('node_id', '!=', $node->id)
-            ->where('settings->tld', $tld)
-            ->whereRelation('node', 'status', 'active')
-            ->exists();
-
-        if (! $nodeTldCollision && ! $roleCollision) {
-            return;
-        }
-
-        throw new InvalidArgumentException("Node TLD '{$tld}' is already assigned to another node.");
     }
 }

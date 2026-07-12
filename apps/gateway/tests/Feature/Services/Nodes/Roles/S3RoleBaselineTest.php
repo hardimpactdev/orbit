@@ -8,6 +8,7 @@ use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Process;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\RoleBaselines\AgentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
@@ -113,35 +114,40 @@ it('writes credentials to the seaweedfs NodeTool row on first converge', functio
         ->not->toBeEmpty()->and($fields['region'])->toBe('orbit')->and($fields['endpoint'])->toBe('https://s3.orbit');
 });
 
-it('renders the runtime container config and persists container metadata', function (): void {
+it('persists the runtime container config on the process row', function (): void {
     $node = s3BaselineNode(['wireguard_address' => '10.6.0.44']);
     $assignment = s3BaselineAssignment($node);
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
-    $seaweedfsTool = NodeTool::query()
+    $seaweedfsProcess = Process::query()
         ->where('node_id', $node->id)
-        ->where('name', 'seaweedfs')
+        ->where('tool', 'seaweedfs')
         ->firstOrFail();
 
-    expect($seaweedfsTool->config['container_name'])
+    expect($seaweedfsProcess->runtime_config['container_name'])
         ->toBe(S3RuntimeContainer::ContainerName)
-        ->and($seaweedfsTool->config['runtime'])
-        ->toBe('docker-container');
+        ->and($seaweedfsProcess->runtime->value)
+        ->toBe('docker');
 });
 
-it('preserves the role-owned data path in the seaweedfs tool config', function (): void {
+it('preserves the role-owned data path in the process runtime mounts', function (): void {
     $node = s3BaselineNode();
     $assignment = s3BaselineAssignment($node, settings: ['data_path' => '/mnt/fast-disk/s3']);
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
-    $seaweedfsTool = NodeTool::query()
+    $seaweedfsProcess = Process::query()
         ->where('node_id', $node->id)
-        ->where('name', 'seaweedfs')
+        ->where('tool', 'seaweedfs')
         ->firstOrFail();
 
-    expect($seaweedfsTool->config['data_path'])->toBe('/mnt/fast-disk/s3');
+    expect($seaweedfsProcess->runtime_config['mounts'])
+        ->toContain([
+            'source' => '/mnt/fast-disk/s3',
+            'target' => '/data',
+            'read_only' => false,
+        ]);
 });
 
 // ---------------------------------------------------------------------------

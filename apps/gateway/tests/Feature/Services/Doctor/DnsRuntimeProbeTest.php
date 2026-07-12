@@ -27,17 +27,17 @@ afterEach(function (): void {
     }
 });
 
-it('reports dns.container_missing when orbit-dns is absent', function (): void {
+it('reports tool.dns_container_missing when orbit-dns is absent', function (): void {
     Process::fake([
         'docker ps*' => Process::result(''),
     ]);
 
     $drift = $this->probe->probe();
 
-    expect($drift)->toHaveCount(1)->and($drift[0]->key)->toBe('dns.container_missing');
+    expect($drift)->toHaveCount(1)->and($drift[0]->key)->toBe('tool.dns_container_missing');
 });
 
-it('reports dns.port_not_listening when port 53 is silent', function (): void {
+it('reports tool.dns_port_not_listening when port 53 is silent', function (): void {
     Process::fake([
         'docker ps*' => Process::result('orbit-dns-id'),
         'docker exec*' => Process::result(''),
@@ -52,10 +52,10 @@ it('reports dns.port_not_listening when port 53 is silent', function (): void {
 
     $drift = $this->probe->probe();
 
-    expect(collect($drift)->pluck('key')->all())->toContain('dns.port_not_listening');
+    expect(collect($drift)->pluck('key')->all())->toContain('tool.dns_port_not_listening');
 });
 
-it('reports dns.config_drift when on-disk dnsmasq.conf differs from intent', function (): void {
+it('reports tool.dns_config_drift when on-disk dnsmasq.conf differs from intent', function (): void {
     Process::fake([
         'docker ps*' => Process::result('orbit-dns-id'),
         'docker exec*' => Process::result('udp 0 0 :::53 :::* LISTEN'),
@@ -69,7 +69,7 @@ it('reports dns.config_drift when on-disk dnsmasq.conf differs from intent', fun
 
     $drift = $this->probe->probe();
 
-    expect(collect($drift)->pluck('key')->all())->toContain('dns.config_drift');
+    expect(collect($drift)->pluck('key')->all())->toContain('tool.dns_config_drift');
 });
 
 it('does not report drift when runtime is healthy and config matches intent', function (): void {
@@ -111,13 +111,13 @@ it('recognizes the swarm dns task as the dns runtime container', function (): vo
     expect($drift)->toBe([]);
 });
 
-it('reports dns.forwarding_missing when swarm vpn dns forwarding is absent', function (): void {
+it('reports tool.dns_forwarding_missing when swarm vpn dns forwarding is absent', function (): void {
     create_dns_runtime_probe_swarm_stack_marker($this->workdir);
     write_dns_runtime_probe_expected_config($this->workdir);
     fake_dns_runtime_probe_swarm_runtime_without_forwarding();
 
     $drift = $this->probe->probe();
-    $entry = collect($drift)->first(fn ($entry): bool => $entry->key === 'dns.forwarding_missing');
+    $entry = collect($drift)->first(fn ($entry): bool => $entry->key === 'tool.dns_forwarding_missing');
 
     expect($entry)
         ->not
@@ -130,17 +130,17 @@ it('reports dns.forwarding_missing when swarm vpn dns forwarding is absent', fun
         ->toBe('orbit_orbit-dns');
 });
 
-it('does not report dns.forwarding_missing when swarm vpn dns forwarding is present', function (): void {
+it('does not report tool.dns_forwarding_missing when swarm vpn dns forwarding is present', function (): void {
     create_dns_runtime_probe_swarm_stack_marker($this->workdir);
     write_dns_runtime_probe_expected_config($this->workdir);
     fake_dns_runtime_probe_swarm_runtime_with_forwarding();
 
     $drift = $this->probe->probe();
 
-    expect(collect($drift)->pluck('key')->all())->not->toContain('dns.forwarding_missing');
+    expect(collect($drift)->pluck('key')->all())->not->toContain('tool.dns_forwarding_missing');
 });
 
-it('reports dns.client_dns_drift when wg-easy client DNS is not pinned to the vpn dns endpoint', function (): void {
+it('reports tool.dns_client_dns_drift when wg-easy client DNS is not pinned to the vpn dns endpoint', function (): void {
     Process::fake([
         'docker ps*' => Process::result('orbit-dns-id'),
         'docker exec*' => Process::result('udp 0 0 :::53 :::* LISTEN'),
@@ -158,7 +158,7 @@ it('reports dns.client_dns_drift when wg-easy client DNS is not pinned to the vp
     ]);
 
     $drift = $this->probe->probe();
-    $entry = collect($drift)->first(fn ($entry): bool => $entry->key === 'dns.client_dns_drift');
+    $entry = collect($drift)->first(fn ($entry): bool => $entry->key === 'tool.dns_client_dns_drift');
 
     expect($entry)
         ->not
@@ -195,7 +195,7 @@ it('does not report client dns drift when wg-easy default and client DNS match i
 
     $drift = $this->probe->probe();
 
-    expect(collect($drift)->pluck('key')->all())->not->toContain('dns.client_dns_drift');
+    expect(collect($drift)->pluck('key')->all())->not->toContain('tool.dns_client_dns_drift');
 });
 
 it('restores wg-easy client dns drift by updating persisted default and client DNS', function (): void {
@@ -208,7 +208,7 @@ it('restores wg-easy client dns drift by updating persisted default and client D
         ],
     );
 
-    $result = $this->probe->restore('dns.client_dns_drift');
+    $result = $this->probe->restore('tool.dns_client_dns_drift');
 
     expect($result)
         ->toBeTrue()
@@ -222,30 +222,30 @@ it('restores wg-easy client dns drift by updating persisted default and client D
 });
 
 it('marks the five drift kinds as restorable', function (): void {
-    expect($this->probe->isRestorable('dns.container_missing'))
+    expect($this->probe->isRestorable('tool.dns_container_missing'))
         ->toBeTrue()
-        ->and($this->probe->isRestorable('dns.port_not_listening'))
+        ->and($this->probe->isRestorable('tool.dns_port_not_listening'))
         ->toBeTrue()
-        ->and($this->probe->isRestorable('dns.config_drift'))
+        ->and($this->probe->isRestorable('tool.dns_config_drift'))
         ->toBeTrue()
-        ->and($this->probe->isRestorable('dns.client_dns_drift'))
+        ->and($this->probe->isRestorable('tool.dns_client_dns_drift'))
         ->toBeTrue()
-        ->and($this->probe->isRestorable('dns.forwarding_missing'))
+        ->and($this->probe->isRestorable('tool.dns_forwarding_missing'))
         ->toBeTrue()
         ->and($this->probe->isRestorable('dns.unknown'))
         ->toBeFalse();
 });
 
 it('does not mark dns runtime drift as adoptable', function (): void {
-    expect($this->probe->isAdoptable('dns.config_drift'))
+    expect($this->probe->isAdoptable('tool.dns_config_drift'))
         ->toBeFalse()
-        ->and($this->probe->isAdoptable('dns.container_missing'))
+        ->and($this->probe->isAdoptable('tool.dns_container_missing'))
         ->toBeFalse()
-        ->and($this->probe->isAdoptable('dns.port_not_listening'))
+        ->and($this->probe->isAdoptable('tool.dns_port_not_listening'))
         ->toBeFalse()
-        ->and($this->probe->isAdoptable('dns.client_dns_drift'))
+        ->and($this->probe->isAdoptable('tool.dns_client_dns_drift'))
         ->toBeFalse()
-        ->and($this->probe->isAdoptable('dns.forwarding_missing'))
+        ->and($this->probe->isAdoptable('tool.dns_forwarding_missing'))
         ->toBeFalse();
 });
 
@@ -260,12 +260,12 @@ it('restores config drift by rewriting dnsmasq.conf and restarting orbit-dns', f
     ]);
     File::put($this->workdir.'/dnsmasq.conf', "stale\n");
 
-    $result = $this->probe->restore('dns.config_drift');
+    $result = $this->probe->restore('tool.dns_config_drift');
 
     expect($result)
         ->toBeTrue()
         ->and(File::get($this->workdir.'/dnsmasq.conf'))
-        ->toContain('address=/gateway/10.6.0.2');
+        ->toContain('address=/orbit.gateway/10.6.0.2');
 
     Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker restart orbit-dns'));
 });
@@ -288,12 +288,12 @@ it('restores config drift in swarm by forcing the orbit dns service update and r
     ]);
     File::put($this->workdir.'/dnsmasq.conf', "stale\n");
 
-    $result = $this->probe->restore('dns.config_drift');
+    $result = $this->probe->restore('tool.dns_config_drift');
 
     expect($result)
         ->toBeTrue()
         ->and(File::get($this->workdir.'/dnsmasq.conf'))
-        ->toContain('address=/gateway/10.6.0.2');
+        ->toContain('address=/orbit.gateway/10.6.0.2');
 
     Process::assertRan(
         fn ($process): bool => (string) $process->command === "docker service update --force 'orbit_orbit-dns'",
@@ -315,7 +315,7 @@ it('restores missing swarm vpn dns forwarding by converging the vpn task namespa
         'docker exec*' => Process::result(),
     ]);
 
-    $result = $this->probe->restore('dns.forwarding_missing');
+    $result = $this->probe->restore('tool.dns_forwarding_missing');
 
     expect($result)->toBeTrue();
 

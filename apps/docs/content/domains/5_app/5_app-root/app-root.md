@@ -34,8 +34,9 @@ and then re-applies the necessary runtime artifacts on the application node.
 1.  **Configuration Update:** Updates the gateway's recorded document root for the
     application. If the supplied root equals the current configuration, the configuration
     write is a no-op (`changed: false`); application still runs.
-2.  **Artifact Re-application:** Triggers the gateway to re-render and upload the
-    runtime container configuration to the node over SSH. The runtime container restart
+2.  **Artifact Re-application:** Triggers the gateway to re-render and apply the
+    runtime container configuration to the concrete app-instance node through
+    Agent push. The runtime container restart
     required to pick up the new document root is part of this step. App-owned
     proxy route configuration continues to belong to the app, but backend proxy
     artifact convergence belongs to the `proxy` family.
@@ -65,7 +66,7 @@ Use `--json` to receive structured output; omit it for a human-readable summary.
 - The application must exist and be managed by Orbit.
 - The caller's grant on the app's owning node must include the `app:root`
   permission. Denials surface as `authorization_failed`.
-- The application node must be reachable by the gateway over SSH.
+- The concrete application-instance node must be reachable through Agent push.
 
 ## Related Commands
 

@@ -32,10 +32,8 @@ HTTP and WebSocket tools expose tool-owned `proxy` routes, such as
 PostgreSQL, and Redis are process-owned service endpoints. They are protected by
 the firewall policy that Orbit manages, not represented as HTTP proxy routes.
 
-Catalog placeholders such as `<node-tld>` and `<agent-tld>` are contextual
-references to that same node-level TLD field. Use `<node-tld>` for generic
-HTTP/WebSocket tool routes and `<agent-tld>` only when the example is explicitly
-scoped to an agent node; neither placeholder names a separate TLD owner.
+Catalog routes use `<node-tld>`, the mandatory TLD stored on the target node.
+Roles do not own or duplicate TLD values.
 
 ## Tool-Specific Command Families
 
@@ -54,15 +52,14 @@ Admitted examples:
   SQL execution, and database backup/restore workflows belong to `database:*`,
   not separate `mysql:*` and `postgres:*` families.
 - `s3:*` owns role-backed object-storage publication and service credentials
-  for the SeaweedFS-backed S3 role. Generic SeaweedFS capability update and inventory
-  remain under `tool:*`; lifecycle and logs belong to the related runtime
-  process.
+  for the SeaweedFS-backed S3 role. SeaweedFS tool-row inventory remains under
+  `tool:*`; lifecycle and logs belong to the canonical `seaweedfs` process.
 
 ## Required Baseline Tools
 
 These tools are expected to exist through node provisioning or host bootstrap.
-Orbit adopts, observes, and keeps them converged, but `tool:install` does not
-create them from scratch unless the tool file says otherwise.
+Each definition states whether adoption is permitted. `tool:install` does not
+create baseline tools from scratch unless the tool file says otherwise.
 
 | Tool | Notes |
 | --- | --- |
@@ -82,7 +79,6 @@ materialized by their owning role and only required on nodes carrying that role:
 
 | Tool | Owning role(s) |
 | --- | --- |
-| [`viteplus`](viteplus.md) | `app-dev`, `app-prod` |
 | [`php-cli`](php-cli.md) | `app-dev`, `app-prod` |
 | [`composer`](composer.md) | `app-dev`, `app-prod` |
 | [`laravel-installer`](laravel-installer.md) | `app-dev` |
@@ -90,6 +86,10 @@ materialized by their owning role and only required on nodes carrying that role:
 | [`gh`](gh.md) | `app-dev`, `app-prod` (repository cloning and deployment) |
 | [`seaweedfs`](seaweedfs.md) | `s3` |
 | [`node-exporter`](node-exporter.md) | `metrics`; active workload nodes selected by metrics convergence |
+
+VitePlus is optional observational runtime inventory, not a role baseline tool.
+An explicitly selected existing `vp` binary may be adopted into a tool row, but
+an absent row or binary is not role-baseline drift.
 
 ## Installable Tools
 
@@ -136,8 +136,8 @@ membership.
 
 These installable tools represent external macOS runtime-provider capabilities.
 They use the generic `tool:*` surface for install, update, probe, adoption, and
-explicit lifecycle when declared, but do not create Orbit process rows or expose
-tool log streaming or reload commands.
+only the runtime verbs their definition declares. OrbStack declares start,
+stop, and restart; it does not create an Orbit process row.
 
 14. [`orbstack`](orbstack.md)
 
@@ -147,8 +147,17 @@ Each tool file owns:
 
 - supported slug, label, backend, support model, and category;
 - supported command capability surface;
+- supported operating systems plus required container-provider, runtime-user,
+  route/TLD, isolation, gateway-local, and bootstrap-role constraints;
 - supported tool versions when the tool tracks a host capability version;
 - credential behavior and example output when credentials are supported;
 - service endpoint behavior when the tool is reachable over the Orbit network;
 - ownership notes specific to the tool and Orbit's management of it;
 - doctor fix and adopt boundaries.
+
+`tool:install` executes these declarations as a read-only preflight before any
+gateway or node mutation. A node without explicit platform metadata is not
+assumed to be Linux. Docker-backed definitions declare
+`docker-compatible`; host-managed definitions explicitly have no container
+provider requirement. Constraint failures use `tool.constraint_unsatisfied`
+with stable `constraint`, `required`, and `actual` metadata.

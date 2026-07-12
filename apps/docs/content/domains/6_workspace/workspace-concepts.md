@@ -9,17 +9,23 @@ the workspace command contracts and the
 
 The terms below define the core identity vocabulary for the workspace family.
 
-- **Workspace:** Gateway-owned working copy of an app, bound to one parent app
-  on the app's owning node, with a canonical workspace name, workspace path,
-  and one workspace route lifecycle.
+- **Workspace:** Gateway-owned working copy of an app, bound to exactly one app
+  instance on that instance's node, with a canonical workspace name, workspace
+  path, and one workspace route lifecycle.
+- **Concrete app-instance ownership:** Every workspace row stores a non-null
+  `app_instance_id`. A bare parent-app selector or parent-app path is only a
+  shorthand resolver: it succeeds when exactly one registered app instance
+  matches and otherwise fails with `app_instance_required`. It never creates a
+  parent-app-only workspace.
 - **Workspace identity slug:** Lowercase identity slug used as the workspace
   name. Unique within the parent app, maximum 63 characters, independent of the
   parent app slug.
 - **Workspace hostname:** Hostname formed by prepending the workspace slug as
   its own DNS label to the parent app's primary hostname. For development apps
   this yields `{workspace}.{app}.{tld}`.
-- **Workspace path:** Absolute path on the owning node where workspace
-  files live. Derived from gateway configuration and applied over SSH.
+- **Workspace path:** Absolute path on the owning app-instance node where
+  workspace files live. Derived from gateway configuration and applied through
+  Agent push.
 - **Workspace lifecycle status:** Registry configuration lifecycle field,
   currently `expected` or `setup-pending`. It is not setup-run status and not a
   live readiness result.
@@ -39,8 +45,7 @@ The terms below define the core identity vocabulary for the workspace family.
 
   Workspaces inherit configurable runtime mounts from their selected app
   instance through `app:mount`; the workspace family does not own separate
-  runtime mount intent. App-level mounts apply only when the selected
-  instance has no instance mounts configured.
+  runtime mount intent.
   Workspace FrankenPHP XDG state is ephemeral inside the container under
   `/tmp/orbit-frankenphp`, matching app runtimes, and is not stored in the
   workspace checkout, `~/.config/orbit`, or `/var/lib/orbit`.

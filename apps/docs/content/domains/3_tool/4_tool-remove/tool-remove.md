@@ -53,6 +53,10 @@ Run this command to remove Orbit-managed artifacts for a tool and delete its gat
 6. Removes the gateway tool row when cleanup succeeds.
 7. Reports partial cleanup if gateway configuration and node reality diverge.
 
+Gateway row and tool-owned configuration cleanup stays gateway-local.
+Target-node cleanup uses Agent push; `tool:remove` exposes no node transport
+selector and never falls back to SSH.
+
 The command does not remove unrelated user-managed data unless the tool
 definition explicitly owns that data.
 

@@ -12,6 +12,7 @@ use function Laravel\Prompts\table;
 
 final class MetricsStatusCommand extends GatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
 
     #[\Override]

@@ -311,7 +311,7 @@ function updateTarget(): UpdateTarget
         family: 'node',
         node: Node::factory()
             ->appDev()
-            ->orbitAgentCapable()
+            ->managed()
             ->create([
                 'platform' => 'ubuntu_24-04',
                 'wireguard_address' => '10.44.0.42',

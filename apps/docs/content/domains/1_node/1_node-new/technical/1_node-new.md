@@ -20,7 +20,7 @@
 ## Signature
 
 ```bash
-orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--gateway-endpoint=<endpoint>] [--ingress=<node>] [--redis-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--host-key-fingerprint=<fingerprint>] [--self-grant=<mode>] [--self-grant-permissions=<permissions>] [--grant-to=<node>] [--grant-to-preset=<preset>] [--grant-to-permissions=<permissions>] [--grant-from=<node>] [--grant-from-preset=<preset>] [--grant-from-permissions=<permissions>] [--agent-tool=<tool>] [--json|--stream-json]
+orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--gateway-endpoint=<endpoint>] [--ingress=<node>] [--redis-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--host-key-fingerprint=<fingerprint>] [--self-grant=<mode>] [--self-grant-permissions=<permissions>] [--grant-to=<node>] [--grant-to-preset=<preset>] [--grant-to-permissions=<permissions>] [--grant-from=<node>] [--grant-from-preset=<preset>] [--grant-from-permissions=<permissions>] [--agent-tool=<tool>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -35,8 +35,9 @@ This command follows the shared
 | `operator` | `--operator` | Never required. | When `--template` is present unless `--template=operator`, or when `--roles` is present. | `false`. | Creates a client identity with the operator permission preset and no workload roles. Operator is not a node role. |
 | `roles` | `--roles` | Never required. | When `--template` or `--operator` is present. | `[]`. | Comma-separated canonical role values (see role values below). |
 | `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `database`, `ingress`, `agent`, `websocket`, `s3`, `metrics`, `analytics`, and every template that provisions a host. | Client identity with no roles or `--operator`. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
-| `operator_name` | `--operator-name` | `--template=gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
-| `tld` | `--tld` | Never required when `node_new.name` is a valid unique DNS label. | Client identity and gateway bootstrap (defaults apply). | `node_new.name` for hosted roles and client enrollment; `gateway` for gateway bootstrap. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
+| `operator_name` | `--operator-name` | First-gateway bootstrap. | Outside first-gateway bootstrap. | None. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
+| `operator_tld` | `--operator-tld` | First-gateway bootstrap. | Outside first-gateway bootstrap. | None. | Single lowercase DNS label; unique among active node TLDs and different from the gateway TLD. |
+| `tld` | `--tld` | Always. | Never. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. |
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Client identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
 | `gateway_endpoint` | `--gateway-endpoint` | Never required. | Client identity with no roles or `--operator`. | Gateway VPN public endpoint. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `ingress_node` | `--ingress` | Private `app-prod` placement. | Every path other than private `app-prod` placement. | None. | Must match an active node with the `ingress` role. |
@@ -92,17 +93,17 @@ their implementations land.
 2. Resolve `node_new.template` from `--template` when present.
 3. Resolve `node_new.operator` from `--operator` when present.
 4. Resolve all `node_new.roles` from comma-separated `--roles` when present.
-5. Expand templates to role sets before normalization side effects.
-6. Normalize the requested role set before side effects.
+5. Resolve and validate the mandatory explicit `node_new.tld` for every path.
+6. Expand templates to role sets before normalization side effects.
+7. Normalize the requested role set before side effects.
    - `--operator` or `--template=operator` means a client identity with the
      operator preset and no workload roles.
    - No `--roles` values and no workload-bearing template means a client identity
      with no assigned roles.
    - `--roles` values must already be canonical.
    - Gateway bootstrap/convergence is selected only by `--template=gateway`.
-7. Resolve role-specific inputs.
-   - For `app-dev`, resolve `node_new.host`, `node_new.tld`, and
-     `node_new.user`.
+8. Resolve role-specific inputs.
+   - For `app-dev`, resolve `node_new.host` and `node_new.user`.
    - For `app-prod`, resolve `node_new.host`, `node_new.user`, and the
      production placement choice.
    - For `ingress`, resolve `node_new.host` and `node_new.user`.
@@ -116,8 +117,9 @@ their implementations land.
    - For `database`, no extra input is required unless another requested role
      requires provisioning.
    - For `gateway`, resolve `node_new.host` always, plus
-     `node_new.operator_name` for first-gateway bootstrap.
-8. Validate required, forbidden, and path-eligibility rules as soon as the
+     `node_new.operator_name` and `node_new.operator_tld` for first-gateway
+     bootstrap.
+9. Validate required, forbidden, and path-eligibility rules as soon as the
    fields needed for each rule are known.
    - Field-local validation runs when the field is supplied or submitted.
    - Path eligibility runs immediately when the requested path can be
@@ -126,7 +128,7 @@ their implementations land.
      current corrective prompt when the user can safely choose a different path.
      Otherwise they stop the command before asking for later inputs that cannot
      affect the blocker.
-6. Send the typed request to the gateway. The gateway authenticates the
+10. Send the typed request to the gateway. The gateway authenticates the
    presented WireGuard identity and applies the grant authorization rules
    described in [`2_node-new_on-client.md`](2_node-new_on-client.md) or
    [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md) before any
@@ -263,15 +265,16 @@ routes.
 ## Shared Provisioning Details
 
 - The `node_new.user` value is the bootstrap SSH credential. Successful
-  gateway and app-role provisioning creates or verifies the Orbit-managed SSH
-  user, normally `orbit`, stores that steady-state user in gateway node
-  configuration as `nodes.user`, and `RemoteShell` uses that stored user for
-  later gateway-to-node applying.
+  gateway and app-role provisioning creates or verifies the Orbit owner/runtime
+  user, normally `orbit`, and stores that user in gateway node configuration as
+  `nodes.user`. Later gateway work executes locally and non-gateway node-local
+  work uses Agent push with the stored user context.
 - Successful SSH provisioning copies the bootstrap user's authorized SSH keys
   to the Orbit-managed runtime user before lock-down, installs an Orbit-owned
-  sshd drop-in that disables password and root SSH login, restricts SSH login
-  to the runtime user, validates the sshd configuration, reloads sshd, locks
-  the root password, and removes `/root/.ssh/authorized_keys`.
+  sshd drop-in that disables password and root SSH login, and validates the
+  sshd configuration. It limits retained key-only access to break-glass use
+  that belongs to the operator and sits outside Orbit commands, reloads sshd,
+  locks the root password, and removes `/root/.ssh/authorized_keys`.
 
 ## Adoption and Drift Boundaries
 

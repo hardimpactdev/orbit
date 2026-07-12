@@ -36,9 +36,9 @@ orbit node:agent-ide app-1 polyscope --json
 
 ## What Happens
 
-`node:agent-ide` writes the adapter you choose into gateway node
-configuration. Gateway callers execute locally; configured non-gateway callers
-forward the request to the gateway over HTTPS through WireGuard.
+`node:agent-ide` writes the adapter you choose into gateway node configuration.
+Every public CLI caller, including one on the gateway host, sends the request
+to the gateway over typed HTTPS through WireGuard.
 
 The command:
 

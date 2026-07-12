@@ -66,11 +66,15 @@ abstract class AbstractWorkspaceStepRemoveCommand extends WorkspaceGatewayComman
         $removed = is_array($data['step'] ?? null) ? $data['step'] : [];
         $stepId = is_int($removed['id'] ?? null) ? $removed['id'] : $step;
         $app = is_string($removed['app'] ?? null) && $removed['app'] !== '' ? $removed['app'] : '';
+        $instance = is_string($removed['app_instance'] ?? null) && $removed['app_instance'] !== ''
+            ? $removed['app_instance']
+            : '';
+        $target = $instance === '' ? $app : "{$app}.{$instance}";
 
-        $this->line("✓ Removed {$this->phaseLabel()} step {$stepId} from app '{$app}'.");
+        $this->line("✓ Removed {$this->phaseLabel()} step {$stepId} from app instance '{$target}'.");
 
         if ($this->remainingStepCount($response) === 0) {
-            $this->line("App '{$app}' now has no workspace {$this->phaseLabel()} steps.");
+            $this->line("App instance '{$target}' now has no workspace {$this->phaseLabel()} steps.");
         } else {
             $this->line('Remaining steps renumbered.');
         }

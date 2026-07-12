@@ -60,7 +60,7 @@ it('converges a missing docker process container through the agent-push local ex
     ]);
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'beast',
             'wireguard_address' => '10.44.0.72',
@@ -129,7 +129,7 @@ it('wraps docker process container agent apply failures with the existing had-ex
     ]);
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'beast',
             'wireguard_address' => '10.44.0.72',
@@ -174,7 +174,7 @@ it('runs docker container lifecycle actions through the agent-push local executo
     ]);
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'beast',
             'wireguard_address' => '10.44.0.72',

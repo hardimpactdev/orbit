@@ -6,6 +6,17 @@ namespace App\Tools;
 
 final class DnsTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux'];
+
+    protected const ?string REQUIRED_CONTAINER_PROVIDER = 'docker-compatible';
+
+    protected const ?string ISOLATION = 'docker-network-namespace';
+
+    protected const bool GATEWAY_LOCAL = true;
+
     public function slug(): string
     {
         return 'dns';
@@ -20,7 +31,7 @@ final class DnsTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['update', 'safe-fix', 'safe-adopt'];
+        return ['update', 'safe-fix', 'safe-adopt', 'restart', 'logs'];
     }
 
     public function installScript(array $config = []): string
@@ -40,6 +51,22 @@ final class DnsTool extends BaseTool
     public function updateScript(array $config = []): string
     {
         return $this->installScript($config);
+    }
+
+    #[\Override]
+    public function restartScript(array $config = []): string
+    {
+        return 'docker restart '.escapeshellarg('orbit-dns');
+    }
+
+    #[\Override]
+    public function probeMetadata(): array
+    {
+        return [
+            'binary' => 'docker',
+            'version_command' => 'docker --version',
+            'container' => 'orbit-dns',
+        ];
     }
 
     private function orbitPath(array $config): string

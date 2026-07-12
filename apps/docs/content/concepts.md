@@ -79,7 +79,7 @@ owning family concept document.
 - **Gateway API** — typed HTTPS API served on the gateway WireGuard address. See [Tech Stack: Gateway API](tech-stack.md#gateway-api).
 - **Agent IDE adapter** — Orbit's integration point for an agent IDE (PolyScope, OpenCode, or similar), configured per node with an optional per-app override. See [Architecture: Agent IDE Integration](architecture.md#agent-ide-integration).
 - **Command contract** — user-visible command behavior, input, output, and failure contract. See [Architecture: Command And API Model](architecture.md#command-and-api-model) and [Command Contracts](domains/README.md).
-- **Public command ownership** — public operator commands are owned by the `apps/cli` application; gateway Artisan is gateway maintenance and internal automation only and is not a public Orbit command target, with no compatibility fallback for moved public commands. See [Architecture: CLI](architecture.md#cli).
+- **Public command ownership** — public operator commands are owned by the `apps/cli` application; gateway Artisan is gateway maintenance and internal automation only, and moved public commands are not gateway command targets. See [Architecture: CLI](architecture.md#cli).
 - **E2E verification ownership** — E2E is root-owned monorepo verification run through root Composer scripts and implemented by the dedicated external `apps/e2e` black-box/gray-box runner (the harness, support layer, test suites, and `e2e:*` runner commands all live in `apps/e2e`); there is no gateway-owned E2E runner. New S3/SeaweedFS E2E coverage is added under `apps/e2e`. See [Testing](testing/README.md).
 - **Database connection restore** — doctor direction that writes gateway-owned database connection values into a selected app or workspace `.env` while preserving unrelated keys. See [Database Doctor](domains/18_database/database-doctor.md).
 - **Database connection adopt** — doctor direction that reads supported database env prefixes from a selected app or workspace `.env` and records them into gateway state. See [Database Doctor](domains/18_database/database-doctor.md).
@@ -210,11 +210,11 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **App instance**
 - **App instance driver**
 - **Driver config**
-- **Default app instance**
+- **Canonical app instance**
 - **App identity slug**
 - **App name argument**
 - **App selector argument**
-- **Owning node**
+- **Default node**
 - **Development app**
 - **Production app**
 - **App PHP version**
@@ -256,6 +256,7 @@ Source: [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 
 <!-- concept-index:domains/6_workspace/workspace-concepts.md -->
 - **Workspace**
+- **Concrete app-instance ownership**
 - **Workspace identity slug**
 - **Workspace hostname**
 - **Workspace path**
@@ -501,7 +502,7 @@ Source: [Operation Concepts](domains/11_operation/operation-concepts.md).
 - **Doctor restore permission**
 - **Doctor adopt permission**
 - **Operator preset doctor boundary**
-- **Profile target**
+- **Profile URL**
 - **Profile request origin**
 - **Baseline profile result**
 - **Toolbar enrichment**

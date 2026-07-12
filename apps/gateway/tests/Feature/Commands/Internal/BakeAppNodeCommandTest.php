@@ -182,7 +182,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->and($assignment?->status)
             ->toBe(NodeRoleStatus::Active)
             ->and($assignment?->settings)
-            ->toBe(['tld' => 'test']);
+            ->toBe([]);
     });
 
     it('is idempotent across repeated runs', function (): void {
@@ -193,6 +193,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             '--wireguard-address' => '10.6.0.5',
             '--gateway-endpoint' => '10.6.0.2',
             '--user' => 'orbit',
+            '--tld' => 'production',
         ];
 
         $this->artisan('orbit:internal:bake-app-node', $args)->assertSuccessful();
@@ -203,7 +204,7 @@ describe('orbit:internal:bake-app-node', function (): void {
         expect(Node::query()->where('name', 'app-prod-1')->count())
             ->toBe(1)
             ->and($node->tld)
-            ->toBeNull()
+            ->toBe('production')
             ->and(
                 NodeRoleAssignment::query()
                     ->where('node_id', $node->id)
@@ -233,6 +234,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             '--wireguard-address' => '10.6.0.5',
             '--gateway-endpoint' => '10.6.0.2',
             '--user' => 'orbit',
+            '--tld' => 'production',
             '--ingress-node' => 'edge-1',
         ])->assertSuccessful();
 
@@ -269,6 +271,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             '--wireguard-address' => '10.6.0.5',
             '--gateway-endpoint' => '10.6.0.2',
             '--user' => 'orbit',
+            '--tld' => 'production',
             '--ingress-node' => 'app-prod-1',
         ])->assertSuccessful();
 
@@ -330,6 +333,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             '--wireguard-address' => '10.6.0.5',
             '--gateway-endpoint' => '10.6.0.2',
             '--user' => 'orbit',
+            '--tld' => 'production',
             '--ingress-node' => 'edge-1',
         ])->assertSuccessful();
 
@@ -367,6 +371,7 @@ describe('orbit:internal:bake-app-node', function (): void {
                 '--wireguard-address' => '10.6.0.5',
                 '--gateway-endpoint' => '10.6.0.2',
                 '--user' => 'orbit',
+                '--tld' => 'production',
                 '--ingress-node' => 'edge-1',
             ])->run(),
         )

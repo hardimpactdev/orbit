@@ -4,14 +4,16 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DoctorTargetScope;
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\RemoteShell\RemoteEnvFile;
+use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class DatabaseConnectionProbe
 {
@@ -22,11 +24,11 @@ final readonly class DatabaseConnectionProbe
     private const array SQLITE_REQUIRED_SUFFIXES = ['CONNECTION', 'DATABASE'];
 
     public function __construct(
-        private EnvFileEditor $envFileEditor,
-        private DatabaseConnectionEnvMapper $envMapper,
+        private DatabaseConnectionEnvInspection $envInspection,
         private RemoteEnvFile $remoteEnvFile,
         private DatabaseConnectionTargetEndpointResolver $endpointResolver,
         private NodeWireGuardSelfRouteProbe $wireGuardSelfRouteProbe,
+        private WorkspacePlacement $workspacePlacement,
     ) {}
 
     /**
@@ -49,7 +51,7 @@ final readonly class DatabaseConnectionProbe
                 continue;
             }
 
-            $observed = $this->envFileEditor->parse($contents);
+            $observed = $this->envInspection->parse($contents);
             $scannedTargets[] = $this->detailKey($this->targetDetail($target));
             $expected = $this->expectedEnvValues($target);
             $missing = array_keys(array_diff_key($expected, $observed));
@@ -85,8 +87,8 @@ final readonly class DatabaseConnectionProbe
             }
         }
 
-        foreach ($this->appsForNode($node, $scope) as $scopedApp) {
-            $issues = [...$issues, ...$this->extraIssuesForObservedPrefixes($node, $scopedApp, $scannedTargets)];
+        foreach ($this->appInstancesForNode($node, $scope) as $scopedInstance) {
+            $issues = [...$issues, ...$this->extraIssuesForObservedPrefixes($node, $scopedInstance, $scannedTargets)];
         }
 
         foreach ($this->workspacesForNode($node, $scope) as $scopedWorkspace) {
@@ -121,8 +123,8 @@ final readonly class DatabaseConnectionProbe
         $connection = $target->connection;
         $endpoint = $this->endpointResolver->forTarget($target);
 
-        return $this->envMapper->toEnvValues(
-            $target->env_prefix,
+        return $this->envInspection->expectedValues(
+            $target,
             DatabaseConnectionPayload::fromArray([
                 'driver' => $connection->driver,
                 'host' => $endpoint['host'],
@@ -179,50 +181,55 @@ final readonly class DatabaseConnectionProbe
      */
     private function targetsForNode(Node $node, DoctorTargetScope $scope): array
     {
-        $query = DatabaseConnectionTarget::query()
-            ->with(['connection.node', 'app.node', 'workspace.app.node'])
-            ->where(function ($query) use ($node): void {
-                $query
-                    ->whereHas('app', static fn ($appQuery) => $appQuery->where('node_id', $node->id))
-                    ->orWhereHas('workspace.app', static fn ($workspaceQuery) => $workspaceQuery->where(
-                        'node_id',
-                        $node->id,
-                    ));
-            });
+        $targets = [];
 
-        if ($scope->workspace !== null) {
-            $query->whereHas('workspace', static function ($workspaceQuery) use ($scope): void {
-                $workspaceQuery->where('name', $scope->workspace);
+        foreach (DatabaseConnectionTarget::query()
+            ->with(['connection.node', 'appInstance.app', 'workspace.app', 'workspace.appInstance'])
+            ->get() as $target) {
+            if (! $target instanceof DatabaseConnectionTarget || ! $this->targetNode($target)->is($node)) {
+                continue;
+            }
 
-                if ($scope->app !== null) {
-                    $workspaceQuery->whereHas('app', static fn ($appQuery) => $appQuery->where('name', $scope->app));
-                }
-            });
+            if (
+                $scope->workspace !== null
+                && ($target->workspace?->name !== $scope->workspace
+                || $scope->app !== null
+                && $target->workspace?->app?->name !== $scope->app)
+            ) {
+                continue;
+            }
 
-            /** @var list<DatabaseConnectionTarget> */
-            return $query->get()->all();
+            if (
+                $scope->workspace === null
+                && $scope->app !== null
+                && $target->appInstance?->app?->name !== $scope->app
+                && $target->workspace?->app?->name !== $scope->app
+            ) {
+                continue;
+            }
+
+            $targets[] = $target;
         }
 
-        if ($scope->app !== null) {
-            $query->whereHas('app', static fn ($appQuery) => $appQuery->where('name', $scope->app));
-        }
-
-        /** @var list<DatabaseConnectionTarget> */
-        return $query->get()->all();
+        return $targets;
     }
 
     private function targetNode(DatabaseConnectionTarget $target): Node
     {
-        if ($target->app instanceof App && $target->app->node instanceof Node) {
-            return $target->app->node;
+        if ($target->appInstance instanceof AppInstance) {
+            $node = $this->workspacePlacement->nodeForInstance($target->appInstance);
+
+            if ($node instanceof Node) {
+                return $node;
+            }
         }
 
-        if (
-            $target->workspace instanceof Workspace
-            && $target->workspace->app instanceof App
-            && $target->workspace->app->node instanceof Node
-        ) {
-            return $target->workspace->app->node;
+        if ($target->workspace instanceof Workspace) {
+            $node = $this->workspacePlacement->nodeForWorkspace($target->workspace);
+
+            if ($node instanceof Node) {
+                return $node;
+            }
         }
 
         throw new \RuntimeException('Database connection target has no owning node.');
@@ -271,11 +278,12 @@ final readonly class DatabaseConnectionProbe
      */
     private function targetDetail(DatabaseConnectionTarget $target): array
     {
-        if ($target->app instanceof App) {
+        if ($target->appInstance instanceof AppInstance) {
             return [
-                'target_type' => 'app',
-                'target_id' => $target->app->id,
-                'app' => $target->app->name,
+                'target_type' => 'app_instance',
+                'target_id' => $target->appInstance->id,
+                'app' => $target->appInstance->app->name,
+                'app_instance' => $target->appInstance->name,
                 'env_prefix' => $target->env_prefix,
             ];
         }
@@ -293,8 +301,8 @@ final readonly class DatabaseConnectionProbe
 
     private function envPath(DatabaseConnectionTarget $target): ?string
     {
-        if ($target->app instanceof App) {
-            return rtrim($target->app->path, '/').'/.env';
+        if ($target->appInstance instanceof AppInstance) {
+            return $this->appInstancePath($target->appInstance);
         }
 
         if ($target->workspace instanceof Workspace) {
@@ -308,9 +316,18 @@ final readonly class DatabaseConnectionProbe
      * @param  list<string>  $scannedTargets
      * @return list<array<string, mixed>>
      */
-    private function extraIssuesForObservedPrefixes(Node $node, App|Workspace $target, array $scannedTargets): array
-    {
-        $path = rtrim($target->path, '/').'/.env';
+    private function extraIssuesForObservedPrefixes(
+        Node $node,
+        AppInstance|Workspace $target,
+        array $scannedTargets,
+    ): array {
+        $path = $target instanceof AppInstance
+            ? $this->appInstancePath($target)
+            : rtrim($target->path, '/').'/.env';
+
+        if ($path === null) {
+            return [];
+        }
         $contents = $this->shouldUseLocalFilesystem($node) && is_file($path)
             ? file_get_contents($path)
             : $this->remoteEnvFile->read($node, $path);
@@ -319,12 +336,18 @@ final readonly class DatabaseConnectionProbe
             return [];
         }
 
-        $values = $this->envFileEditor->parse($contents);
+        $values = $this->envInspection->parse($contents);
         $issues = [];
 
         foreach ($this->observedPrefixes($values) as $prefix) {
-            $detail = $target instanceof App
-                ? ['target_type' => 'app', 'target_id' => $target->id, 'app' => $target->name, 'env_prefix' => $prefix]
+            $detail = $target instanceof AppInstance
+                ? [
+                    'target_type' => 'app_instance',
+                    'target_id' => $target->id,
+                    'app' => $target->app->name,
+                    'app_instance' => $target->name,
+                    'env_prefix' => $prefix,
+                ]
                 : [
                     'target_type' => 'workspace',
                     'target_id' => $target->id,
@@ -529,21 +552,33 @@ final readonly class DatabaseConnectionProbe
     }
 
     /**
-     * @return list<App>
+     * @return list<AppInstance>
      */
-    private function appsForNode(Node $node, DoctorTargetScope $scope): array
+    private function appInstancesForNode(Node $node, DoctorTargetScope $scope): array
     {
         if ($scope->workspace !== null) {
             return [];
         }
 
-        $query = App::query()->where('node_id', $node->id);
+        $instances = [];
 
-        if ($scope->app !== null) {
-            $query->where('name', $scope->app);
+        foreach (AppInstance::query()->with('app')->get() as $instance) {
+            if (! $instance instanceof AppInstance) {
+                continue;
+            }
+
+            if ($this->workspacePlacement->nodeForInstance($instance)?->is($node) !== true) {
+                continue;
+            }
+
+            if ($scope->app !== null && $instance->app->name !== $scope->app) {
+                continue;
+            }
+
+            $instances[] = $instance;
         }
 
-        return $query->get()->all();
+        return $instances;
     }
 
     /**
@@ -556,8 +591,7 @@ final readonly class DatabaseConnectionProbe
         }
 
         $query = Workspace::query()
-            ->with('app')
-            ->whereHas('app', static fn ($appQuery) => $appQuery->where('node_id', $node->id));
+            ->with(['app', 'appInstance']);
 
         if ($scope->workspace !== null) {
             $query->where('name', $scope->workspace);
@@ -567,7 +601,27 @@ final readonly class DatabaseConnectionProbe
             }
         }
 
-        return $query->get()->all();
+        /** @var list<Workspace> */
+        return $query
+            ->get()
+            ->filter(
+                fn (Workspace $workspace): bool => (
+                    $this->workspacePlacement->nodeForWorkspace($workspace)?->is($node) === true
+                ),
+            )
+            ->values()
+            ->all();
+    }
+
+    private function appInstancePath(AppInstance $instance): ?string
+    {
+        $config = $instance->driver_config;
+
+        if (! $config instanceof OrbitAppInstanceDriverConfigData || ! is_string($config->path)) {
+            return null;
+        }
+
+        return rtrim($config->path, '/').'/.env';
     }
 
     private function shouldUseLocalFilesystem(Node $node): bool

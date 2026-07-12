@@ -26,6 +26,7 @@ use Throwable;
  */
 final readonly class NodeSecurityPostureProbe
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private ?RemoteShell $remoteShell = null,
         private ?RemoteLocalExecutor $localExecutor = null,
@@ -164,9 +165,9 @@ final readonly class NodeSecurityPostureProbe
                 family: 'node',
                 key: 'node.security.runtime_user',
                 kind: DriftKind::Divergent,
-                summary: "Node {$node->name} is missing a steady-state SSH runtime user.",
+                summary: "Node {$node->name} is missing its Orbit runtime user.",
                 detail: [
-                    'expected' => 'non-empty managed SSH user',
+                    'expected' => 'non-empty Orbit runtime user',
                     'actual' => $node->user,
                 ],
             );

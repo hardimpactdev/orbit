@@ -224,6 +224,7 @@ final class NodePermissionPresets
             'tool:start',
             'tool:stop',
             'tool:restart',
+            'tool:reload',
             'tool:reconfigure',
             'agent-ide:message',
             'node:read',
@@ -345,6 +346,7 @@ final class NodePermissionPresets
             'tool:start',
             'tool:stop',
             'tool:restart',
+            'tool:reload',
             'tool:reconfigure',
             'tool:credentials',
 

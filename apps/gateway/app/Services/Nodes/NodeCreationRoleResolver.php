@@ -77,7 +77,7 @@ final class NodeCreationRoleResolver
                 gateway: false,
                 operator: true,
                 clientIdentity: false,
-                hosted: [],
+                workloadRoles: [],
                 template: null,
                 requestedRoleMeta: 'operator',
             );
@@ -88,7 +88,7 @@ final class NodeCreationRoleResolver
                 gateway: false,
                 operator: false,
                 clientIdentity: true,
-                hosted: [],
+                workloadRoles: [],
                 template: null,
                 requestedRoleMeta: 'client',
             );
@@ -273,7 +273,7 @@ final class NodeCreationRoleResolver
             gateway: false,
             operator: false,
             clientIdentity: false,
-            hosted: $roles,
+            workloadRoles: $roles,
             template: null,
             requestedRoleMeta: $roles[0] ?? null,
         );
@@ -291,7 +291,7 @@ final class NodeCreationRoleResolver
         if (in_array(NodeRoleName::Agent->value, $roles, true) && count($roles) > 1) {
             throw new NodeCreationRoleInputException(
                 errorCode: 'validation_failed',
-                message: 'The agent role cannot be combined with other hosted roles.',
+                message: 'The agent role cannot be combined with other workload roles.',
                 meta: [
                     'field' => 'roles',
                     'role' => NodeRoleName::Agent->value,
@@ -311,7 +311,7 @@ final class NodeCreationRoleResolver
 
         throw new NodeCreationRoleInputException(
             errorCode: 'validation_failed',
-            message: "Hosted roles {$firstRole} and {$secondRole} cannot be combined.",
+            message: "Workload roles {$firstRole} and {$secondRole} cannot be combined.",
             meta: [
                 'field' => 'roles',
                 'conflicts' => [$firstRole, $secondRole],

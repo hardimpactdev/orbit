@@ -17,12 +17,12 @@ it('resolves to DELETE /api/workspaces/steps/{phase}/{step}', function (): void 
     $request = new RemoveWorkspaceStepRequest(
         phase: 'setup',
         step: 12,
-        app: 'docs',
+        app: 'docs.development',
     );
 
     expect($request->resolveEndpoint())->toBe('/api/workspaces/steps/setup/12');
     expect($request->getMethod())->toBe(Method::DELETE);
-    expect($request->query()->all())->toBe(['app' => 'docs']);
+    expect($request->query()->all())->toBe(['app' => 'docs.development']);
     expect($request->body()->all())->toBe([
         'destructive_consent' => true,
         'destructive_consent_source' => 'force',
@@ -35,7 +35,15 @@ it('returns a WorkspaceStepMutationResponse DTO', function (): void {
             'success' => [
                 'data' => [
                     'result' => ['action' => 'removed'],
-                    'step' => ['id' => 12, 'app' => 'docs', 'phase' => 'setup'],
+                    'step' => [
+                        'id' => 12,
+                        'app' => 'docs',
+                        'app_instance' => 'development',
+                        'phase' => 'setup',
+                        'order' => 1,
+                        'command' => 'composer install',
+                        'timeout_seconds' => 600,
+                    ],
                 ],
                 'meta' => ['remaining_step_count' => 0],
             ],
@@ -48,11 +56,19 @@ it('returns a WorkspaceStepMutationResponse DTO', function (): void {
     $dto = $connector->send(new RemoveWorkspaceStepRequest(
         phase: 'setup',
         step: 12,
-        app: 'docs',
+        app: 'docs.development',
     ))->dto();
 
     expect($dto)->toBeInstanceOf(WorkspaceStepMutationResponse::class);
     expect($dto->result)->toBe(['action' => 'removed']);
-    expect($dto->step)->toBe(['id' => 12, 'app' => 'docs', 'phase' => 'setup']);
+    expect($dto->step)->toBe([
+        'id' => 12,
+        'app' => 'docs',
+        'app_instance' => 'development',
+        'phase' => 'setup',
+        'order' => 1,
+        'command' => 'composer install',
+        'timeout_seconds' => 600,
+    ]);
     expect($dto->meta)->toBe(['remaining_step_count' => 0]);
 });

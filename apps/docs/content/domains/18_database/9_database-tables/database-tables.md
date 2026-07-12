@@ -2,7 +2,7 @@
 
 [Back to Database commands.](../README.md)
 
-List visible tables for a stored database connection resolved from an app or workspace target.
+List visible tables for a stored database connection resolved from a dotted app-instance or workspace target.
 
 ## Usage
 

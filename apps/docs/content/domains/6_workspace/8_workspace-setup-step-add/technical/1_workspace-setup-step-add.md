@@ -33,15 +33,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## State Model
 
-Gateway-owned workspace step policy stores rows in `workspace_steps`:
-
-- Instance-scoped rows keyed by `(app_instance_id, phase, sort_order)` hold
-  the writable policy for `workspace-setup-step:add` and
-  `workspace-teardown-step:add`.
-- Legacy app-level rows keyed only by `(app_id, phase, sort_order)` with
-  `app_instance_id=null` remain read-only compatibility fallback for list and
-  lifecycle execution when no instance rows exist for the selected app instance.
-  They are not mutable through add or remove.
+The gateway owns workspace step policy. It stores only rows owned by an app
+instance in `workspace_steps`, keyed by `(app_instance_id, phase, sort_order)`.
 
 ## Input Resolution
 
@@ -94,15 +87,15 @@ this command; it is applied by `workspace:new` and `workspace:setup` at
    [`workspace-teardown-step:add`](../../11_workspace-teardown-step-add/workspace-teardown-step-add.md).
 3. **Order Calculation**:
    - `--before=<id>`: New step receives the referenced step's `order`. The
-     referenced step and all subsequent steps in `(app, phase=setup)` are
+     referenced step and all subsequent steps in `(app_instance, phase=setup)` are
      incremented by one.
    - `--after=<id>`: New step receives `order + 1` of the referenced step.
      All subsequent steps are incremented by one.
    - Both omitted: New step is appended at the end of the existing list with
-     `order = max(existing_order_for_app_and_phase) + 1` (or `1` if no steps
+     `order = max(existing_order_for_instance_and_phase) + 1` (or `1` if no steps
      exist yet).
 4. **Step-Record Shape**: The persisted record exposes
-   `{ id, app, phase, order, command, timeout_seconds }`. Steps have no
+   `{ id, app, app_instance, phase, order, command, timeout_seconds }`. Steps have no
    `name`, no per-step `working_directory`, no `env_overrides`, and no
    per-step `on_failure` knob. Working directory is pinned to the workspace
    path on the owning node and exposed through `ORBIT_WORKSPACE_PATH`
@@ -139,7 +132,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   (`error.code=workspace.invalid_position`,
   `error.meta.{before, after}`).
 - **Step Not Found**: Referenced `--before` / `--after` ID does not exist
-  for the resolved app and `phase=setup`
+  for the resolved app instance and `phase=setup`
   (`error.code=workspace.step_not_found`,
   `error.meta.{id, app, phase=setup}`).
 

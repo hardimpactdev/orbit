@@ -19,7 +19,6 @@ final class CodexAppCommand extends GatewayCommand
         {action? : Codex action: add, remove, or list}
         {app? : App name or hostname}
         {--node= : Target node running Codex App}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}';
 
     #[\Override]

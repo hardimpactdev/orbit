@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
@@ -67,6 +69,25 @@ function grantDatabaseApiAccess(Node $consumer, Node $serving, array $permission
     ]);
 }
 
+function databaseApiInstanceForApp(App $app): AppInstance
+{
+    $instance = $app->instances()->first();
+
+    if ($instance instanceof AppInstance) {
+        return $instance;
+    }
+
+    return AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $app->node_id,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+}
+
 /**
  * @return array<string, string>
  */
@@ -87,7 +108,7 @@ describe('database connection api', function (): void {
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db', 'node_id' => $node->id]);
         DatabaseConnectionTarget::factory()
             ->for($connection, 'connection')
-            ->forApp($app)
+            ->forAppInstance(databaseApiInstanceForApp($app))
             ->create(['env_prefix' => 'DB']);
 
         $listResponse = $this->call(
@@ -103,6 +124,7 @@ describe('database connection api', function (): void {
             '/api/database-connections/primary-db/targets',
             [
                 'app' => 'docs',
+                'instance' => 'development',
                 'env_prefix' => 'ANALYTICS_DB',
             ],
             [],
@@ -116,8 +138,9 @@ describe('database connection api', function (): void {
 
         expect($attachResponse->json('success.data.connection.targets'))
             ->toContain([
-                'type' => 'app',
-                'name' => 'docs',
+                'type' => 'app_instance',
+                'app' => 'docs',
+                'instance' => 'development',
                 'env_prefix' => 'ANALYTICS_DB',
             ]);
     });
@@ -257,7 +280,7 @@ describe('database connection api', function (): void {
         ]);
         DatabaseConnectionTarget::factory()
             ->for($connection, 'connection')
-            ->forApp($app)
+            ->forAppInstance(databaseApiInstanceForApp($app))
             ->create(['env_prefix' => 'DB']);
         bindDatabaseApiLocalExecutor(new DatabaseApiQueryRemoteShell(new RemoteShellResult(
             exitCode: 0,
@@ -278,7 +301,7 @@ describe('database connection api', function (): void {
             'POST',
             '/api/database-connections/query',
             [
-                'target' => 'docs',
+                'target' => 'docs.development',
                 'sql' => 'select id from users',
             ],
             [],
@@ -289,7 +312,7 @@ describe('database connection api', function (): void {
             'POST',
             '/api/database-connections/query',
             [
-                'target' => 'docs',
+                'target' => 'docs.development',
                 'sql' => 'delete from users where id = 1',
                 'write' => true,
             ],
@@ -401,7 +424,7 @@ describe('database connection api', function (): void {
         ]);
         DatabaseConnectionTarget::factory()
             ->for($connection, 'connection')
-            ->forApp($app)
+            ->forAppInstance(databaseApiInstanceForApp($app))
             ->create(['env_prefix' => 'DB']);
 
         $listResponse = $this->call(
@@ -429,8 +452,9 @@ describe('database connection api', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.connection.slug', 'primary-db')
             ->assertJsonPath('success.data.connection.targets.0', [
-                'type' => 'app',
-                'name' => 'docs',
+                'type' => 'app_instance',
+                'app' => 'docs',
+                'instance' => 'development',
                 'env_prefix' => 'DB',
             ]);
 
@@ -533,7 +557,7 @@ describe('database connection api', function (): void {
             ]);
 
         DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseApiInstanceForApp($app))
             ->create([
                 'database_connection_id' => DatabaseConnection::query()->where('slug', 'renamed-db')->firstOrFail()->id,
                 'env_prefix' => 'DB',
@@ -581,7 +605,7 @@ describe('database connection api', function (): void {
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
         DatabaseConnectionTarget::factory()
             ->for($connection, 'connection')
-            ->forApp($app)
+            ->forAppInstance(databaseApiInstanceForApp($app))
             ->create(['env_prefix' => 'DB']);
 
         $removeWithoutForce = $this->call(
@@ -696,6 +720,7 @@ describe('database connection api', function (): void {
             'node_id' => $node->id,
             'path' => '/srv/apps/docs',
         ]);
+        databaseApiInstanceForApp($app);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
 
         $before = DB::table('database_connection_targets')->count();
@@ -705,6 +730,7 @@ describe('database connection api', function (): void {
             '/api/database-connections/primary-db/targets',
             [
                 'app' => 'docs',
+                'instance' => 'development',
                 'env_prefix' => 'DB',
             ],
             [],
@@ -719,6 +745,7 @@ describe('database connection api', function (): void {
             '/api/database-connections/primary-db/targets',
             [
                 'app' => 'docs',
+                'instance' => 'development',
                 'env_prefix' => 'DB',
             ],
             [],
@@ -726,7 +753,10 @@ describe('database connection api', function (): void {
             database_api_fallback_server(),
         );
 
-        $detachResponse->assertOk();
+        $detachResponse
+            ->assertOk()
+            ->assertJsonPath('success.data.result.target_type', 'app_instance')
+            ->assertJsonPath('success.data.result.target', 'docs.development');
 
         expect($before)
             ->toBe(0)
@@ -743,13 +773,16 @@ describe('database connection api', function (): void {
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $attached = DatabaseConnection::factory()->create(['slug' => 'docs-db', 'node_id' => $node->id]);
         $other = DatabaseConnection::factory()->create(['slug' => 'other-db', 'node_id' => $node->id]);
-        DatabaseConnectionTarget::factory()->for($attached, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
+        DatabaseConnectionTarget::factory()
+            ->for($attached, 'connection')
+            ->forAppInstance(databaseApiInstanceForApp($app))
+            ->create(['env_prefix' => 'DB']);
 
         $response = $this->call(
             'POST',
             '/api/database-connections/query',
             [
-                'target' => 'docs',
+                'target' => 'docs.development',
                 'connection' => $other->slug,
                 'sql' => 'select 1',
             ],
@@ -773,18 +806,18 @@ describe('database connection api', function (): void {
         $analytics = DatabaseConnection::factory()->create(['slug' => 'analytics-db', 'node_id' => $node->id]);
         DatabaseConnectionTarget::factory()
             ->for($primary, 'connection')
-            ->forApp($app)
+            ->forAppInstance(databaseApiInstanceForApp($app))
             ->create(['env_prefix' => 'PRIMARY_DB']);
         DatabaseConnectionTarget::factory()
             ->for($analytics, 'connection')
-            ->forApp($app)
+            ->forAppInstance(databaseApiInstanceForApp($app))
             ->create(['env_prefix' => 'ANALYTICS_DB']);
 
         $response = $this->call(
             'POST',
             '/api/database-connections/query',
             [
-                'target' => 'docs',
+                'target' => 'docs.development',
                 'sql' => 'select 1',
             ],
             [],

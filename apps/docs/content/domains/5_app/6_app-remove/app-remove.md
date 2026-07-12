@@ -9,7 +9,7 @@ Use this command to decommission a service or move it to a different node.
 ## Usage
 
 ```bash
-orbit app:remove [app] [--force] [--json]
+orbit app:remove [app] [--force] [--node-transport=<transport>] [--json]
 ```
 
 ### Arguments
@@ -19,6 +19,9 @@ orbit app:remove [app] [--force] [--json]
 ### Options
 
 - `--force`: Skip interactive confirmation.
+- `--node-transport=<transport>`: Uses Agent push for typed runtime cleanup by
+  default. The exact `transitional-ssh-fallback` value opts into the tracked
+  residual SSH cleanup seam; no other SSH selector is accepted.
 - `--json`: Output JSON.
 
 ## Examples
@@ -29,6 +32,9 @@ orbit app:remove my-app
 
 # Force removal without confirmation
 orbit app:remove my-app --force
+
+# Opt into the exact-marked transitional residual cleanup seam
+orbit app:remove my-app --force --node-transport=transitional-ssh-fallback
 ```
 
 ## Behavior Summary
@@ -37,7 +43,9 @@ The following steps describe the removal sequence in order.
 
 1. **Configuration Removal:** Deletes the gateway app configuration record. This is the point of no return.
 2. **Dependent Cleanup:** Removes app-owned records from `proxy`, schedules, workspace configuration, and process artifacts.
-3. **Artifact Cleanup:** Cleans node-side runtime artifacts (runtime container config, app-owned directories) over SSH where possible.
+3. **Artifact Cleanup:** Cleans typed runtime artifacts through Agent push.
+   Residual route/process/path cleanup runs only when the exact transitional
+   SSH marker was supplied; otherwise any residue is reported as drift.
 4. **Drift Monitoring:** Removed apps disappear from `app:list` and `app:show`. Once Step 1 succeeds, any failure during later cleanup is a non-fatal warning pointing at the affected `doctor --family=<family> --restore`. App-owned node artifacts are reported as orphaned app drift by [`app-doctor.md`](../app-doctor.md).
 
 ## Output Summary
@@ -52,8 +60,9 @@ You will receive a summary of the removal result in the chosen output format.
 
 - CLI caller must reach the Orbit gateway.
 - Authorized node identity for the target app or node.
-- Gateway SSH access to the node is used for artifact cleanup when
-  available. If cleanup cannot finish after app configuration removal, the command
+- Agent-push access to the concrete app-instance node is used for typed runtime
+  cleanup. Residual shell cleanup requires the exact-marked transitional
+  selector. If cleanup cannot finish after app configuration removal, the command
   still succeeds and reports warnings with repair commands.
 
 ## Related

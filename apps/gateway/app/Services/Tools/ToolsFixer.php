@@ -7,13 +7,10 @@ namespace App\Services\Tools;
 use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
-use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Convergence\ManagedFile;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Proxy\RemoteCaddyConfig;
 use App\Services\RemoteShell\RemoteLocalExecutor;
@@ -25,6 +22,7 @@ use RuntimeException;
  */
 final readonly class ToolsFixer
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private RemoteShell $remoteShell,
         private ?ToolCatalog $catalog = null,
@@ -457,17 +455,6 @@ final readonly class ToolsFixer
 
     private function agentTldForNode(Node $node): ?string
     {
-        $assignment = app(NodeRoleAssignments::class)->activeAssignment($node, NodeRoleName::Agent->value);
-
-        if ($assignment instanceof NodeRoleAssignment) {
-            $settings = $assignment->settings ?? [];
-            $tld = is_array($settings) ? $settings['tld'] ?? null : null;
-
-            if (is_string($tld) && trim($tld) !== '') {
-                return trim($tld);
-            }
-        }
-
         if (is_string($node->tld) && trim($node->tld) !== '') {
             return trim($node->tld);
         }

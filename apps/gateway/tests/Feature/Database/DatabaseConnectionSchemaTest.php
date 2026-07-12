@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Database\QueryException;
@@ -41,7 +41,7 @@ it('creates the database connection tables with the expected columns and broad t
         ->and(Schema::hasColumns('database_connection_targets', [
             'id',
             'database_connection_id',
-            'app_id',
+            'app_instance_id',
             'workspace_id',
             'env_prefix',
             'created_at',
@@ -76,8 +76,9 @@ it('enforces unique database connection slugs at the database level', function (
         ->toThrow(QueryException::class);
 });
 
-it('enforces env prefix uniqueness per app target', function (): void {
-    $app = App::factory()->create();
+it('enforces env prefix uniqueness per app instance target', function (): void {
+    $instance = AppInstance::factory()->create();
+    assert($instance instanceof AppInstance);
 
     $firstConnectionId = DB::table('database_connections')->insertGetId([
         'slug' => 'app-primary',
@@ -94,7 +95,7 @@ it('enforces env prefix uniqueness per app target', function (): void {
 
     DB::table('database_connection_targets')->insert([
         'database_connection_id' => $firstConnectionId,
-        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
         'workspace_id' => null,
         'env_prefix' => 'DB',
         'created_at' => now(),
@@ -103,7 +104,7 @@ it('enforces env prefix uniqueness per app target', function (): void {
 
     expect(fn () => DB::table('database_connection_targets')->insert([
         'database_connection_id' => $secondConnectionId,
-        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
         'workspace_id' => null,
         'env_prefix' => 'DB',
         'created_at' => now(),
@@ -114,6 +115,7 @@ it('enforces env prefix uniqueness per app target', function (): void {
 
 it('enforces env prefix uniqueness per workspace target', function (): void {
     $workspace = Workspace::factory()->create();
+    assert($workspace instanceof Workspace);
 
     $firstConnectionId = DB::table('database_connections')->insertGetId([
         'slug' => 'workspace-primary',
@@ -130,7 +132,7 @@ it('enforces env prefix uniqueness per workspace target', function (): void {
 
     DB::table('database_connection_targets')->insert([
         'database_connection_id' => $firstConnectionId,
-        'app_id' => null,
+        'app_instance_id' => null,
         'workspace_id' => $workspace->id,
         'env_prefix' => 'DB',
         'created_at' => now(),
@@ -139,7 +141,7 @@ it('enforces env prefix uniqueness per workspace target', function (): void {
 
     expect(fn () => DB::table('database_connection_targets')->insert([
         'database_connection_id' => $secondConnectionId,
-        'app_id' => null,
+        'app_instance_id' => null,
         'workspace_id' => $workspace->id,
         'env_prefix' => 'DB',
         'created_at' => now(),
@@ -148,9 +150,11 @@ it('enforces env prefix uniqueness per workspace target', function (): void {
         ->toThrow(QueryException::class);
 });
 
-it('requires each target row to belong to exactly one app or workspace', function (): void {
-    $app = App::factory()->create();
+it('requires each target row to belong to exactly one app instance or workspace', function (): void {
+    $instance = AppInstance::factory()->create();
     $workspace = Workspace::factory()->create();
+    assert($instance instanceof AppInstance);
+    assert($workspace instanceof Workspace);
 
     $connectionId = DB::table('database_connections')->insertGetId([
         'slug' => 'exclusive-target',
@@ -164,7 +168,7 @@ it('requires each target row to belong to exactly one app or workspace', functio
     try {
         DB::table('database_connection_targets')->insert([
             'database_connection_id' => $connectionId,
-            'app_id' => null,
+            'app_instance_id' => null,
             'workspace_id' => null,
             'env_prefix' => 'DB',
             'created_at' => now(),
@@ -184,7 +188,7 @@ it('requires each target row to belong to exactly one app or workspace', functio
     try {
         DB::table('database_connection_targets')->insert([
             'database_connection_id' => $connectionId,
-            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
             'workspace_id' => $workspace->id,
             'env_prefix' => 'ANALYTICS_DB',
             'created_at' => now(),
@@ -201,7 +205,8 @@ it('requires each target row to belong to exactly one app or workspace', functio
 });
 
 it('cascades target rows when the database connection is deleted', function (): void {
-    $app = App::factory()->create();
+    $instance = AppInstance::factory()->create();
+    assert($instance instanceof AppInstance);
 
     $connectionId = DB::table('database_connections')->insertGetId([
         'slug' => 'primary',
@@ -212,7 +217,7 @@ it('cascades target rows when the database connection is deleted', function (): 
 
     DB::table('database_connection_targets')->insert([
         'database_connection_id' => $connectionId,
-        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
         'workspace_id' => null,
         'env_prefix' => 'DB',
         'created_at' => now(),
@@ -224,10 +229,16 @@ it('cascades target rows when the database connection is deleted', function (): 
     expect(DB::table('database_connection_targets')->count())->toBe(0);
 });
 
-it('cascades target rows when the owning app or workspace is deleted', function (): void {
-    $app = App::factory()->create();
-    $workspace = Workspace::factory()->create(['app_id' => $app->id]);
+it('cascades target rows when the owning app instance or workspace is deleted', function (): void {
+    $instance = AppInstance::factory()->create();
+    assert($instance instanceof AppInstance);
+    $workspace = Workspace::factory()->create([
+        'app_id' => $instance->app_id,
+        'app_instance_id' => $instance->id,
+    ]);
     $node = Node::factory()->create();
+    assert($workspace instanceof Workspace);
+    assert($node instanceof Node);
 
     $appConnectionId = DB::table('database_connections')->insertGetId([
         'slug' => 'app-primary',
@@ -247,7 +258,7 @@ it('cascades target rows when the owning app or workspace is deleted', function 
     DB::table('database_connection_targets')->insert([
         [
             'database_connection_id' => $appConnectionId,
-            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
             'workspace_id' => null,
             'env_prefix' => 'DB',
             'created_at' => now(),
@@ -255,7 +266,7 @@ it('cascades target rows when the owning app or workspace is deleted', function 
         ],
         [
             'database_connection_id' => $workspaceConnectionId,
-            'app_id' => null,
+            'app_instance_id' => null,
             'workspace_id' => $workspace->id,
             'env_prefix' => 'DB',
             'created_at' => now(),
@@ -270,7 +281,7 @@ it('cascades target rows when the owning app or workspace is deleted', function 
         ->and(DB::table('database_connection_targets')->where('database_connection_id', $appConnectionId)->count())
         ->toBe(1);
 
-    $app->delete();
+    $instance->delete();
 
     expect(DB::table('database_connection_targets')->where('database_connection_id', $appConnectionId)->count())
         ->toBe(0);

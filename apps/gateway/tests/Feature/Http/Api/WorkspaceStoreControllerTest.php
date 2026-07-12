@@ -32,12 +32,20 @@ beforeEach(function (): void {
         'wireguard_address' => '10.6.0.7',
     ]);
 
-    App::factory()->for($appNode, 'node')->create([
+    $app = App::factory()->for($appNode, 'node')->create([
         'name' => 'demo',
         'domain' => 'demo.beast',
         'path' => '/home/nckrtl/apps/demo',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
+    ]);
+    AppInstance::factory()->for($app)->create([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $appNode->id,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
     ]);
 
     app()->instance(RemoteShell::class, new WorkspaceStoreTestShell);
@@ -211,6 +219,7 @@ it('rejects invalid workspace names', function (): void {
 it('rejects duplicate workspace names per app', function (): void {
     Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => AppInstance::query()->where('app_id', 1)->valueOrFail('id'),
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
@@ -238,7 +247,7 @@ it('rejects workspace creation for production app nodes', function (): void {
         'host' => 'prod-1',
         'wireguard_address' => '10.6.0.8',
     ], role: 'app-prod');
-    App::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->create([
             'name' => 'prod',
@@ -246,6 +255,14 @@ it('rejects workspace creation for production app nodes', function (): void {
             'path' => '/home/orbit/apps/prod',
             'php_version' => '8.5',
         ]);
+    AppInstance::factory()->for($app)->create([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
 
     $response = $this->call(
         'POST',

@@ -213,7 +213,7 @@ function webSocketBaselineNode(array $overrides = []): Node
         'name' => 'app-dev-1',
         'platform' => 'ubuntu',
         'host' => 'app-dev-1.example.com',
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => '10.6.0.44',
         'status' => NodeStatus::Active,
     ], $overrides));

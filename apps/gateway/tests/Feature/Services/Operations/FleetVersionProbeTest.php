@@ -140,7 +140,7 @@ it('counts the gateway as outdated when matching artifacts came from a failed up
 
     Node::factory()
         ->gateway()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'gateway-1',
             'platform' => 'debian_12',
@@ -185,7 +185,7 @@ it('counts a workload as outdated when matching artifacts came from a failed upd
         ]);
     Node::factory()
         ->agent()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'agent-1',
             'platform' => 'ubuntu_24-04',
@@ -275,7 +275,7 @@ it('counts an agent-capable workload as outdated when its agent artifact differs
         ]);
     Node::factory()
         ->agent()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'agent-1',
             'platform' => 'ubuntu_24-04',
@@ -313,7 +313,7 @@ it('treats matching installed agent artifacts as current', function (): void {
         ]);
     Node::factory()
         ->agent()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'agent-1',
             'platform' => 'ubuntu_24-04',

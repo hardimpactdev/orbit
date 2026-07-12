@@ -34,7 +34,7 @@ it('applies caddy container updates on the typed agent path without fallback', f
 
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create(['wireguard_address' => '10.47.0.41']);
     NodeTool::factory()->create([
         'node_id' => $node->id,
@@ -84,7 +84,7 @@ it('keeps route config writes and reloads on the typed agent path when no caddy 
 
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create(['wireguard_address' => '10.47.0.42']);
 
     $shell = new AppProxyRouteInstallerRecordingShell;

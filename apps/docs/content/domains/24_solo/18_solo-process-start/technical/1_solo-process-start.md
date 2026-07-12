@@ -9,12 +9,12 @@
 **Prerequisites:**
 - The local Solo extension is enabled on the CLI node.
 - The gateway Solo extension is enabled before proxy execution.
-- The caller has `solo:process:lifecycle` on the target node, or on the gateway node when `--node` is omitted.
+- The caller has `solo:process:lifecycle` on the target node.
 
 ## Signature
 
 ```bash
-orbit solo:process:start <process> [--node=<node>] [--node-transport=<transport>] [--force] [--json]
+orbit solo:process:start <process> [--node=<node>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -29,11 +29,11 @@ The command checks local Solo extension state before making a gateway request. D
 
 ### Gateway Proxy
 
-The command calls `POST /api/solo/process/start` through the configured gateway client. Gateway execution requires gateway Solo extension state and the caller permission listed above on the target node, or on the gateway node when `--node` is omitted.
+The command calls `POST /api/solo/process/start` through the configured gateway client. The CLI resolves an omitted target from local `node:default`, then falls back to the authenticated caller node. Gateway execution requires gateway Solo extension state and the caller permission listed above on the target node.
 
 ### Upstream Boundary
 
-The gateway proxies only to the Solo API configured as a loopback URL on the target node, or on the gateway node when `--node` is omitted. Solo ports are not exposed directly to WireGuard.
+The gateway calls a gateway target directly over its configured loopback URL. For a non-gateway target, the gateway requires an active Agent-eligible node and sends the typed Solo HTTP request through Agent push to target-local loopback. Solo ports and SSH transport are never exposed.
 
 ### Activity
 

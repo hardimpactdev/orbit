@@ -24,6 +24,7 @@ use Throwable;
 
 final readonly class EnsureAppProxyRoute
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private RemoteShell $remoteShell,
         private SiteCertificateInstaller $siteCertificateInstaller,

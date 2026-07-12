@@ -8,9 +8,8 @@ The workspace family doctor implements the
 
 `doctor --family=workspace` verifies whether gateway workspace records still
 match the workspace facts that make those records usable development contexts
-on their effective workspace node. Instance-bound workspaces use their selected
-app instance node; app-only legacy workspaces use the parent app's canonical
-node. It also detects stale workspace artifacts owned by Orbit with identities
+on their effective workspace node. Every workspace belongs to an app instance,
+which selects its effective node. It also detects stale workspace artifacts owned by Orbit with identities
 absent from active gateway workspace configuration, so
 post-removal cleanup can be repaired without recreating deleted workspace
 records.
@@ -22,11 +21,11 @@ The workspace family owns these facts:
 - workspace source location: the managed workspace path exists on the
   effective workspace node and is allowed by the workspace source driver that
   created it;
-- workspace runtime artifacts: workspace FrankenPHP container configuration,
-  effective PHP image selection, managed runtime configuration, and filesystem
+- workspace runtime intent: effective PHP image selection, managed runtime
+  configuration, and filesystem
   ownership required for the workspace environment;
-- development workspace security: per-workspace runtime user, filesystem
-  permissions, and runtime container isolation for nodes with the
+- development workspace security: per-workspace runtime user and filesystem
+  permissions for nodes with the
   `app-dev` role, reported as `workspace.security.*` issue keys;
 - workspace-owned adoption facts: selected existing workspace paths that can be
   tied to an explicit app and workspace name during `doctor --adopt`.
@@ -37,7 +36,8 @@ A workspace record that points at a missing, unauthorized, or non-workspaceable
 parent app is a workspace record issue because the workspace cannot resolve.
 Parent app runtime health belongs to the app family. Node reachability belongs
 to the node family. Workspace-owned proxy routes belong to `proxy`.
-Inherited process runtime units belong to `process`. Tool installation and
+Workspace FrankenPHP runtime units, containers, lifecycle, and logs belong to
+`process`. Tool installation and
 firewall policy belong to `tool` and `firewall_rule`. HTTP probe warnings from setup time, such as `workspace.http_probe_unhealthy`, are command outcome
 metadata from `workspace:setup`, not doctor issue codes for the workspace family.
 
@@ -56,10 +56,10 @@ The workspaces probe reads gateway workspace records and checks these layers:
    app root. Generic and adapter-owned workspace sources may live outside the
    parent app path.
 4. **PHP runtime:** active workspaces have an effective PHP image that can serve
-   the workspace runtime on the owning node, and their workspace FrankenPHP
-   container endpoint matches gateway workspace configuration. Workspaces still
+   the workspace runtime on the owning node. Concrete FrankenPHP unit presence
+   and shape are process-family checks. Workspaces still
    in `expected`, `setup-pending`, or `setting_up` lifecycle states do not
-   require runtime containers or image availability yet.
+   require image availability yet.
 5. **Runtime artifacts:** workspace runtime configuration and managed
    filesystem ownership match gateway workspace configuration.
 6. **Development workspace security:** workspace runtime isolation is checked
@@ -69,9 +69,9 @@ The workspaces probe reads gateway workspace records and checks these layers:
    workspace path may be inspected for compatible workspace facts. `composer.json`
    is the only project file that may provide a PHP version hint, and only for a
    PHP project.
-8. **Stale workspace artifacts:** Orbit-owned worktrees, runtime containers, or
-   runtime artifacts whose encoded workspace identity is absent from
-   active workspace records are reported as orphaned workspace drift.
+8. **Stale workspace artifacts:** Orbit-owned worktrees or managed workspace
+   configuration whose identity is absent from active workspace records are
+   reported as workspace drift. Stale runtime units are process-family drift.
 
 The workspaces probe may mention related family drift only as a handoff. It
 must not duplicate proxy route, process, app, node, tool, or firewall probe
@@ -89,14 +89,11 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | `workspace.path_unusable` | The configured workspace path exists but cannot be read, entered, or managed by Orbit. |
 | `workspace.path_outside_policy` | A generic workspace path equals the parent app root instead of a distinct workspace path. Adapter-owned paths are checked against their adapter metadata instead of this generic policy. |
 | `workspace.php_version_unavailable` | An active workspace's effective PHP version cannot serve the workspace runtime on the owning node. |
-| `workspace.runtime_container_missing` | The workspace runtime container or endpoint is absent. |
-| `workspace.runtime_container_mismatch` | The workspace runtime container or endpoint differs from gateway workspace configuration. |
 | `workspace.runtime_config_missing` | Managed workspace runtime configuration required by Orbit is absent. |
 | `workspace.runtime_config_mismatch` | Managed workspace runtime configuration exists but differs from gateway workspace configuration. |
 | `workspace.security.system_user` | A development workspace is missing its expected runtime user or group. |
 | `workspace.security.fs_permissions` | Workspace filesystem ownership or permissions are weaker than workspace runtime policy. |
-| `workspace.security.runtime_container_isolation` | The workspace runtime container lacks required isolation settings. |
-| `workspace.artifact_extra` | An Orbit-owned workspace worktree, runtime container, or runtime artifact exists on a node with an app role without matching active workspace configuration. |
+| `workspace.artifact_extra` | An Orbit-owned workspace worktree or managed workspace artifact exists without matching active workspace configuration. |
 | `workspace.unregistered_path` | During an explicit adoption scope, a selected workspace path exists without a matching gateway workspace record. |
 | `workspace.php_hint_unsupported` | During adoption, `composer.json` provides a PHP version hint that Orbit does not support. |
 
@@ -107,13 +104,10 @@ The table below shows what `doctor --restore` does for each fixable code.
 | Code | `doctor --restore` behavior |
 | --- | --- |
 | `workspace.path_missing` | Recreate the workspace path only when gateway workspace configuration has enough source information and the repair will not overwrite unrelated files. |
-| `workspace.runtime_container_missing` | Recreate or restart the workspace runtime container from gateway workspace configuration and the selected PHP image. |
-| `workspace.runtime_container_mismatch` | Recreate the workspace runtime container to match gateway workspace configuration. |
 | `workspace.runtime_config_missing` | Reinstall managed workspace runtime configuration from gateway workspace configuration. |
 | `workspace.runtime_config_mismatch` | Rewrite managed workspace runtime configuration to match gateway workspace configuration. |
 | `workspace.security.system_user` | Restore the development workspace runtime user and group when workspace configuration is complete. |
 | `workspace.security.fs_permissions` | Reapply development workspace ownership and permission policy. |
-| `workspace.security.runtime_container_isolation` | Recreate the workspace runtime container with required isolation settings. |
 | `workspace.artifact_extra` | Remove the stale Orbit-owned workspace artifact when its encoded identity is absent from active workspace configuration. |
 
 `doctor --restore` does not handle `workspace.record_incomplete`,
@@ -140,7 +134,6 @@ The table below shows what `doctor --adopt` does for each adoptable code.
 | Code | `doctor --adopt` behavior |
 | --- | --- |
 | `workspace.unregistered_path` | Create workspace configuration only when the selected scope provides an explicit app, workspace name, and path, and the observed path is compatible with `workspace:setup` adoption rules. |
-| `workspace.runtime_container_mismatch` | Update workspace runtime configuration only when the observed runtime container metadata proves the same app and workspace identity and the observed values are supported. |
 | `workspace.runtime_config_mismatch` | Update workspace runtime configuration only when the observed runtime configuration proves the same app and workspace identity and the observed values are supported. |
 
 `doctor --adopt` does not scan arbitrary filesystem paths for workspaces, adopt unknown
@@ -161,7 +154,8 @@ Required test files:
 No current E2E test is mapped for workspace-family fix or adopt coverage.
 
 `WorkspacesProbeTest.php` covers registry configuration, parent app eligibility,
-source path, workspace path policy, PHP runtime, runtime container configuration,
-runtime configuration, stale Orbit-owned workspace artifacts, adoption hints,
+source path, workspace path policy, PHP runtime, managed runtime configuration,
+stale Orbit-owned workspace artifacts, adoption hints, and handoff of concrete
+runtime-unit drift to process. It also covers
 `.php-version` exclusion, and exclusion of proxy route/process/app/node/tool/firewall
 drift from workspace issue codes.

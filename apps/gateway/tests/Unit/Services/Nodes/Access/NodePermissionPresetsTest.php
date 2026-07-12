@@ -290,7 +290,9 @@ describe('node permission presets', function (): void {
                 ->and($permissions)
                 ->toContain('tool:stop')
                 ->and($permissions)
-                ->toContain('tool:restart');
+                ->toContain('tool:restart')
+                ->and($permissions)
+                ->toContain('tool:reload');
         });
 
         it('includes agent ide messaging', function (): void {
@@ -324,6 +326,8 @@ describe('node permission presets', function (): void {
                 ->toContain('tool:stop')
                 ->and($permissions)
                 ->toContain('tool:restart')
+                ->and($permissions)
+                ->toContain('tool:reload')
                 ->and($permissions)
                 ->toContain('tool:credentials');
         });

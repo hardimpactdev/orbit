@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Models\App;
-use App\Models\AppInstanceDatabaseConnectionTarget;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Workspace;
+use LogicException;
 
 final class DatabaseConnectionPayloadMapper
 {
@@ -17,34 +17,16 @@ final class DatabaseConnectionPayloadMapper
      */
     public function toArray(DatabaseConnection $connection): array
     {
-        $connection->loadMissing(['node', 'targets.app', 'targets.workspace', 'instanceTargets.instance.app']);
+        $connection->loadMissing(['node', 'targets.appInstance.app', 'targets.workspace.app']);
 
-        $targets = collect([
-            ...$connection->targets->map(fn (DatabaseConnectionTarget $target): array => [
-                'type' => $target->app_id !== null ? 'app' : 'workspace',
-                'name' => $this->targetName($target),
-                'env_prefix' => $target->env_prefix,
-            ])->all(),
-            ...$connection->instanceTargets->map(fn (AppInstanceDatabaseConnectionTarget $target): array => [
-                'type' => 'app_instance',
-                'app' => $target->instance->app->name,
-                'instance' => $target->instance->name,
-                'env_prefix' => $target->env_prefix,
-            ])->all(),
-        ])
-            ->sortBy(
-                fn (array $target): string => (
-                    $target['type']
-                    .':'
-                    .($target['name'] ?? $target['app'] ?? '')
-                    .':'
-                    .($target['instance'] ?? '')
-                    .':'
-                    .$target['env_prefix']
-                ),
-            )
-            ->values()
-            ->all();
+        /** @var list<array<string, string>> $targets */
+        $targets = [];
+
+        foreach ($connection->targets as $target) {
+            $targets[] = $this->targetPayload($target);
+        }
+
+        usort($targets, $this->compareTargets(...));
 
         return [
             'slug' => $connection->slug,
@@ -59,16 +41,48 @@ final class DatabaseConnectionPayloadMapper
         ];
     }
 
-    private function targetName(DatabaseConnectionTarget $target): string
+    /**
+     * @return array<string, string>
+     */
+    private function targetPayload(DatabaseConnectionTarget $target): array
     {
-        if ($target->app instanceof App) {
-            return $target->app->name;
+        if ($target->appInstance instanceof AppInstance) {
+            return [
+                'type' => 'app_instance',
+                'app' => $target->appInstance->app->name,
+                'instance' => $target->appInstance->name,
+                'env_prefix' => $target->env_prefix,
+            ];
         }
 
         if ($target->workspace instanceof Workspace) {
-            return $target->workspace->name;
+            return [
+                'type' => 'workspace',
+                'name' => $target->workspace->name,
+                'env_prefix' => $target->env_prefix,
+            ];
         }
 
-        return '';
+        throw new LogicException('Database connection target must belong to an app instance or workspace.');
+    }
+
+    /**
+     * @param  array<string, string>  $first
+     * @param  array<string, string>  $second
+     */
+    private function compareTargets(array $first, array $second): int
+    {
+        return $this->targetSortKey($first) <=> $this->targetSortKey($second);
+    }
+
+    /** @param array<string, string> $target */
+    private function targetSortKey(array $target): string
+    {
+        return implode(':', [
+            $target['type'],
+            $target['name'] ?? $target['app'] ?? '',
+            $target['instance'] ?? '',
+            $target['env_prefix'],
+        ]);
     }
 }

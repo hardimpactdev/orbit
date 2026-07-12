@@ -7,8 +7,10 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Process as ProcessModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process as ProcessFacade;
 
 uses(RefreshDatabase::class);
 
@@ -66,7 +68,7 @@ it('dispatches orbstack lifecycle scripts through the remote shell', function (s
         'platform' => 'macos_15-4',
         'status' => 'active',
     ]);
-    assignToolLifecycleApiRole($node, 'app-dev');
+    assignToolLifecycleApiRole($node, role: 'app-dev');
     grantToolLifecycleApiAccess($caller, $node, ["tool:{$action}"]);
     NodeTool::factory()->create([
         'node_id' => $node->id,
@@ -107,7 +109,7 @@ it('requires agent-push transport before running lifecycle scripts', function ()
         'platform' => 'macos_15-4',
         'status' => 'active',
     ]);
-    assignToolLifecycleApiRole($node, 'app-dev');
+    assignToolLifecycleApiRole($node, role: 'app-dev');
     grantToolLifecycleApiAccess($caller, $node, ['tool:start']);
     NodeTool::factory()->create([
         'node_id' => $node->id,
@@ -141,7 +143,7 @@ it('fails unsupported lifecycle tools before running host commands', function ()
         'platform' => 'macos_15-4',
         'status' => 'active',
     ]);
-    assignToolLifecycleApiRole($node, 'app-dev');
+    assignToolLifecycleApiRole($node, role: 'app-dev');
     grantToolLifecycleApiAccess($caller, $node, ['tool:start']);
     NodeTool::factory()->create([
         'node_id' => $node->id,
@@ -168,6 +170,235 @@ it('fails unsupported lifecycle tools before running host commands', function ()
     expect($shell->scripts)->toBe([]);
 });
 
+it('runs the declared DNS restart against the gateway-local runtime', function (): void {
+    $gateway = createTestGatewayNode([
+        'name' => 'gateway-dns',
+        'host' => TOOL_LIFECYCLE_API_CALLER_WG_IP,
+        'wireguard_address' => TOOL_LIFECYCLE_API_CALLER_WG_IP,
+    ]);
+    NodeTool::factory()->create([
+        'node_id' => $gateway->id,
+        'name' => 'dns',
+    ]);
+    ProcessFacade::fake([
+        '*' => ProcessFacade::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/dns/restart',
+        ['node' => 'gateway-dns'],
+        [],
+        [],
+        ['REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('success.data.tool.name', 'dns')
+        ->assertJsonPath('success.data.tool.action', 'restart');
+
+    ProcessFacade::assertRan(
+        fn ($process): bool => (
+            str_contains($process->command, 'docker restart') && str_contains($process->command, 'orbit-dns')
+        ),
+    );
+});
+
+it('reads declared DNS logs directly from the gateway-local runtime', function (): void {
+    $gateway = createTestGatewayNode([
+        'name' => 'gateway-dns-logs',
+        'host' => TOOL_LIFECYCLE_API_CALLER_WG_IP,
+        'wireguard_address' => TOOL_LIFECYCLE_API_CALLER_WG_IP,
+        'tld' => 'gateway-dns-logs',
+    ]);
+    NodeTool::factory()->create([
+        'node_id' => $gateway->id,
+        'name' => 'dns',
+    ]);
+    ProcessFacade::fake([
+        '*' => ProcessFacade::result(output: "dns ready\nquery docs.orbit\n", errorOutput: '', exitCode: 0),
+    ]);
+
+    $response = $this->call(
+        'GET',
+        '/api/tools/dns/logs',
+        ['node' => 'gateway-dns-logs', 'lines' => 25],
+        [],
+        [],
+        ['REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('success.data.logs.tool', 'dns')
+        ->assertJsonPath('success.data.logs.runtime', 'tool')
+        ->assertJsonPath('success.data.logs.lines.0.message', 'dns ready')
+        ->assertJsonPath('success.meta.line_count', 2);
+
+    ProcessFacade::assertRan(
+        fn ($process): bool => (
+            str_contains($process->command, 'docker logs')
+            && str_contains($process->command, '--tail')
+            && str_contains($process->command, '25')
+            && str_contains($process->command, 'orbit-dns')
+        ),
+    );
+});
+
+it('authorizes a non-gateway caller to restart a gateway-local tool through a gateway grant', function (): void {
+    $caller = createToolLifecycleApiCallerNode();
+    $gateway = createTestGatewayNode(['name' => 'gateway-dns-granted']);
+    grantToolLifecycleApiAccess($caller, $gateway, ['tool:restart']);
+    NodeTool::factory()->create([
+        'node_id' => $gateway->id,
+        'name' => 'dns',
+    ]);
+    ProcessFacade::fake([
+        '*' => ProcessFacade::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/dns/restart',
+        ['node' => 'gateway-dns-granted'],
+        [],
+        [],
+        ['REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('success.data.tool.node', 'gateway-dns-granted')
+        ->assertJsonPath('success.data.tool.action', 'restart');
+
+    ProcessFacade::assertRan(fn ($process): bool => str_contains($process->command, 'docker restart'));
+});
+
+it('denies gateway-local lifecycle actions when the gateway grant has the wrong permission', function (): void {
+    $caller = createToolLifecycleApiCallerNode();
+    $gateway = createTestGatewayNode(['name' => 'gateway-dns-denied']);
+    grantToolLifecycleApiAccess($caller, $gateway, ['tool:read']);
+    NodeTool::factory()->create([
+        'node_id' => $gateway->id,
+        'name' => 'dns',
+    ]);
+    ProcessFacade::fake();
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/dns/restart',
+        ['node' => 'gateway-dns-denied'],
+        [],
+        [],
+        ['REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'authorization_failed')
+        ->assertJsonPath('error.meta.reason', 'missing_permission')
+        ->assertJsonPath('error.meta.missing_permission', 'tool:restart')
+        ->assertJsonPath('error.meta.serving_node', 'gateway-dns-denied');
+
+    ProcessFacade::assertNothingRan();
+});
+
+it('authorizes a non-gateway caller to read gateway-local logs through a gateway read grant', function (): void {
+    $caller = createToolLifecycleApiCallerNode();
+    $gateway = createTestGatewayNode(['name' => 'gateway-dns-logs-granted']);
+    grantToolLifecycleApiAccess($caller, $gateway, ['tool:read']);
+    NodeTool::factory()->create([
+        'node_id' => $gateway->id,
+        'name' => 'dns',
+    ]);
+    ProcessFacade::fake([
+        '*' => ProcessFacade::result(output: "dns ready\n", errorOutput: '', exitCode: 0),
+    ]);
+
+    $response = $this->call(
+        'GET',
+        '/api/tools/dns/logs',
+        ['node' => 'gateway-dns-logs-granted'],
+        [],
+        [],
+        ['REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('success.data.logs.tool', 'dns')
+        ->assertJsonPath('success.data.logs.lines.0.message', 'dns ready');
+});
+
+it('denies gateway-local logs when the gateway grant has the wrong permission', function (): void {
+    $caller = createToolLifecycleApiCallerNode();
+    $gateway = createTestGatewayNode(['name' => 'gateway-dns-logs-denied']);
+    grantToolLifecycleApiAccess($caller, $gateway, ['tool:restart']);
+    NodeTool::factory()->create([
+        'node_id' => $gateway->id,
+        'name' => 'dns',
+    ]);
+    ProcessFacade::fake();
+
+    $response = $this->call(
+        'GET',
+        '/api/tools/dns/logs',
+        ['node' => 'gateway-dns-logs-denied'],
+        [],
+        [],
+        ['REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'authorization_failed')
+        ->assertJsonPath('error.meta.reason', 'missing_permission')
+        ->assertJsonPath('error.meta.missing_permission', 'tool:logs')
+        ->assertJsonPath('error.meta.serving_node', 'gateway-dns-logs-denied');
+
+    ProcessFacade::assertNothingRan();
+});
+
+it('fails explicitly when a capability-declared tool maps to multiple process runtimes', function (): void {
+    $caller = createToolLifecycleApiCallerNode();
+    $node = Node::factory()->create([
+        'name' => 'app-1',
+        'platform' => 'ubuntu_24-04',
+        'status' => 'active',
+        'tld' => 'app-one',
+    ]);
+    assignToolLifecycleApiRole($node, role: 'app-dev');
+    grantToolLifecycleApiAccess($caller, $node, ['tool:start']);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'opencode-cli',
+    ]);
+    ProcessModel::factory()
+        ->count(2)
+        ->forOwner($node)
+        ->sequence(
+            ['name' => 'opencode-one'],
+            ['name' => 'opencode-two'],
+        )
+        ->create(['tool' => 'opencode-cli']);
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/opencode-cli/start',
+        ['node' => 'app-1'],
+        [],
+        [],
+        tool_lifecycle_api_server_headers(),
+    );
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'tool.runtime_ambiguous')
+        ->assertJsonPath('error.meta.tool', 'opencode-cli')
+        ->assertJsonCount(2, 'error.meta.processes');
+});
+
 it('fails unsupported orbstack platforms before running host commands', function (): void {
     $caller = createToolLifecycleApiCallerNode();
     $node = Node::factory()->create([
@@ -175,7 +406,7 @@ it('fails unsupported orbstack platforms before running host commands', function
         'platform' => 'ubuntu_24-04',
         'status' => 'active',
     ]);
-    assignToolLifecycleApiRole($node, 'app-dev');
+    assignToolLifecycleApiRole($node, role: 'app-dev');
     grantToolLifecycleApiAccess($caller, $node, ['tool:start']);
     NodeTool::factory()->create([
         'node_id' => $node->id,
@@ -209,7 +440,7 @@ it('requires an adopted orbstack tool row before lifecycle execution', function 
         'platform' => 'macos_15-4',
         'status' => 'active',
     ]);
-    assignToolLifecycleApiRole($node, 'app-dev');
+    assignToolLifecycleApiRole($node, role: 'app-dev');
     grantToolLifecycleApiAccess($caller, $node, ['tool:start']);
     $shell = new ToolLifecycleApiRecordingShell;
     app()->instance(RemoteShell::class, $shell);
@@ -239,7 +470,7 @@ it('reports remote shell lifecycle failures without retrying', function (): void
         'platform' => 'macos_15-4',
         'status' => 'active',
     ]);
-    assignToolLifecycleApiRole($node, 'app-dev');
+    assignToolLifecycleApiRole($node, role: 'app-dev');
     grantToolLifecycleApiAccess($caller, $node, ['tool:stop']);
     NodeTool::factory()->create([
         'node_id' => $node->id,

@@ -133,14 +133,15 @@ Each term below has a precise meaning in the node command family.
   this as setup during `node:new` and restore during doctor repair, not expose
   the service name.
 - **Node TLD:** Mandatory node-level identity for every active Orbit node.
-  A node holds at most one unique `tld` value at a time; `node:new` assigns a
-  default from the node name when omitted. Role features such as `app-dev` and
-  `agent` consume the same field for wildcard development DNS mappings and
+  A node holds exactly one unique `tld` value at a time; every `node:new` path
+  requires it explicitly. Role assignments never copy or own this value.
+  Role features such as `app-dev` and `agent` consume the node field for
+  wildcard development DNS mappings and
   agent tool internal HTTPS hostnames such as `openclaw.agent` and `hermes.agent`.
-  Gateway VPN DNS also publishes `orbit.<node-tld>` to the node's WireGuard
-  address. The reserved private service TLD `.orbit` stays router-owned; node
-  TLD `orbit` is skipped for `orbit.orbit` node-host records to avoid colliding
-  with service routes like `websocket.orbit`.
+  Gateway VPN DNS publishes the concrete `orbit.<node-tld>` record for every
+  active node. It publishes wildcard `<node-tld>` DNS only for active
+  `app-dev` and `agent` nodes. The private service TLD `.orbit` remains
+  router-owned for routes such as `websocket.orbit`.
 - **Agent role baseline:** Code-defined desired state for a node with the
   `agent` role: `orbit-caddy`, WireGuard/node identity and trust material, the
   shared unprivileged `agent` runtime user, and any role-specific runtime
@@ -269,6 +270,12 @@ convergence path. After a node is active, `doctor --restore` uses the same
 internal path for overlapping safe repairs while keeping family-specific issue
 ownership and output.
 
+VitePlus is optional observational runtime inventory, not an `app-dev` or
+`app-prod` role baseline requirement. An absent VitePlus tool row or `vp`
+binary does not produce node role-baseline drift. Explicit tool adoption may
+record an observed binary, after which tool doctor verifies that row's expected
+capability state.
+
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the
 `database_connection` state family and `database:*` commands, which run
@@ -337,11 +344,11 @@ not eligible firewall targets, and the WireGuard self-route diagnostic reports
 that it is only supported on Linux without mutating routes.
 
 Managed Ubuntu nodes use a Docker-first provisioning baseline. Provisioning
-creates or adopts the node's WireGuard/SSH identity material, the Orbit config
-root on the node, WireGuard service-address routing, and the Orbit CLI entry
-point on the node for gateway, app, agent, ingress, database, and other managed
-roles. That state belongs to topology/provisioning, not to app, process, tool,
-or database runtime prerequisite inventories.
+creates or adopts the node's WireGuard identity, SSH hardening material, Orbit
+config root, WireGuard service-address routing, and Orbit CLI entry point. This
+applies to the gateway and to nodes with app, agent, ingress, database, or other
+managed roles. That state belongs to topology/provisioning, not to app, process,
+tool, or database runtime prerequisite inventories.
 
 Production artifact installs use the prebuilt Orbit CLI binary (embedded PHP 8.5 +
 `pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`/`zlib`). A node running the gateway role in production requires Docker Engine/CLI,
@@ -410,27 +417,31 @@ These terms describe how nodes communicate and how authority is enforced.
   command does not dispatch to gateway Artisan.
 - **Gateway-to-node edge:** Typed command envelopes are delivered by transport
   selection. `gateway-only` covers gateway-owned reads/writes; `agent-push` is
-  available for active `orbit_agent_capable` nodes when the gateway can reach
-  the node's Agent listener over Orbit/WireGuard and the envelope opts in.
-  `auto` selects agent-push for capable envelopes and fails clearly otherwise;
-  `transitional-ssh-fallback` is an explicit migration or break-glass
-  preference. SSH/RemoteShell is recovery/migration infrastructure, not the
-  long-term managed execution transport. Break-glass SSH is owned by a super
-  admin and stays outside normal Orbit command execution. The Agent lane executes
+  available for Agent-eligible nodes when the gateway can reach the node's
+  listener over Orbit/WireGuard and the envelope opts in. `auto` selects
+  agent-push for eligible envelopes and fails clearly otherwise. SSH remains
+  only on the provisioning path. Break-glass SSH belongs to the operator and
+  remains outside normal Orbit command execution. The Agent lane executes
   gateway-built `binary + argv` requests with scoped operation tokens and a
   node-local binary allowlist, never arbitrary shell.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built
   lifecycle events, not node-side control-plane authority.
 - **Node reality:** Observed role assignments, assignment status, platform,
-  WireGuard, SSH, reachability, and gateway service readiness for a node.
+  WireGuard, Agent transport, provisioning SSH posture, reachability, and
+  gateway service readiness for a node.
 - **VPN role settings:** Assignment-local `vpn` settings: `public_endpoint`,
   `wireguard_cidr`, `wireguard_port`, and `dns_ip`.
 
-The Orbit Agent lane supports explicitly `orbit_agent_capable` Linux (Ubuntu)
-and macOS `app-dev` (and other self-managed workload) nodes. The gateway remains
-authoritative and owns caller authorization, grants, node targeting, argv
-construction, Agent listener delivery authenticated over Orbit/WireGuard,
-scoped operation tokens, lifecycle reporting, and operation/activity history.
+Orbit Agent intent is derived from an active workload role. A roleless,
+non-gateway operator can opt in explicitly through canonical `managed=true`.
+Eligibility additionally requires an active node, a supported Ubuntu/macOS/
+Darwin platform, and a valid WireGuard identity. Gateway nodes are never Agent
+targets.
+
+The gateway remains authoritative and owns caller authorization, grants, node
+targeting, argv construction, Agent listener delivery authenticated over
+Orbit/WireGuard, scoped operation tokens, lifecycle reporting, and
+operation/activity history.
 Agent-push V1 carries `operation_id`, `binary`, `argv`, `operation_token`,
 `timeout_seconds`, and `stream`. The node Agent is the final local protection
 point: it allows only known binaries, initially `orbit`, executes them through
@@ -441,8 +452,9 @@ initiator and the Agent runs no background retrieval loop.
 The local runtime is split between `apps/agent`, the headless Rust/Axum service
 binary that owns the Agent listener and execution loop (Linux and macOS), and
 `apps/macos`, the Tauri tray UI that runs only on macOS. The gateway marks
-eligible nodes with explicit Orbit Agent capability state; the existing `agent`
-workload role does not imply Orbit Agent capability.
+roleless operator intent with `managed`; workload role intent is derived and
+does not require a duplicated capability flag. Fleet convergence writes the
+node-local Agent config from the node and active gateway WireGuard identities.
 
 The headless service receives structured `binary + argv` Orbit envelopes from
 the gateway, reports lifecycle events back to gateway operation/activity
@@ -487,8 +499,8 @@ exists.
   labels, descriptions, namespaces, implications, and dynamic wildcard
   matching rules.
 - **Permission implication:** Registry-declared relationship where one
-  permission implies another. For example, `tool:read` implies `tool:list`
-  and `tool:show`.
+  permission implies another. For example, `tool:read` implies `tool:list`,
+  `tool:show`, and `tool:logs`.
 - **Permission normalization:** Process of removing redundant permissions
   (implied or duplicated) and rejecting unknown permission strings before a
   grant is stored.
@@ -503,9 +515,9 @@ exists.
 - **Agent self preset:** Preset used by `agent` self-grants. Contains
   `doctor:verify`, `node:read`, `tool:read`, and `tool:update:agent-tools`.
   Excludes `node:update`, `tool:credentials`, `tool:install`, `tool:remove`,
-  `tool:start`, `tool:stop`, `tool:restart`, `tool:reconfigure`, firewall
-  writes, grant writes, node role writes, VPN writes, `doctor:restore`, and
-  `doctor:adopt`.
+  `tool:start`, `tool:stop`, `tool:restart`, `tool:reload`,
+  `tool:reconfigure`, firewall writes, grant writes, node role writes, VPN
+  writes, `doctor:restore`, and `doctor:adopt`.
 - **Operator preset:** Default cross-node preset for nodes with the `agent`
   role and the general-purpose preset for fleet operators. Reads firewall
   rules and database registry or schema metadata, and reports firewall doctor

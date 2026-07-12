@@ -13,7 +13,6 @@ class NodeRoleAddPayloadBuilder
      */
     public function build(
         string $role,
-        ?string $tld,
         ?string $redisNode,
         ?string $postgresNode,
         ?string $clickhouseNode,
@@ -36,21 +35,6 @@ class NodeRoleAddPayloadBuilder
         }
 
         $settings = [];
-
-        if ($role === 'app-dev') {
-            if ($tld === null) {
-                throw new NodeWriteInputException('validation_failed', 'The app-dev role requires --tld.', [
-                    'field' => 'tld',
-                ]);
-            }
-
-            $settings['tld'] = $tld;
-        } elseif ($tld !== null) {
-            throw new NodeWriteInputException('validation_failed', "Role '{$role}' does not accept --tld.", [
-                'field' => 'tld',
-                'role' => $role,
-            ]);
-        }
 
         if ($role === 'websocket') {
             if ($redisNode === null) {

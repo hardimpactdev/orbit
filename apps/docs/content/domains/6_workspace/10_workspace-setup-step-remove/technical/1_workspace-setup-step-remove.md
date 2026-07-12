@@ -11,7 +11,7 @@
 - The current node identity is authorized to manage workspace policy for the
   target app.
 - The target app exists in gateway configuration.
-- The target step exists for the resolved `(app, phase=setup)`.
+- The target step exists for the resolved `(app_instance, phase=setup)`.
 
 This is the canonical technical contract for `workspace-setup-step:remove`. It
 owns the signature, input resolution, behavior, and failure semantics.
@@ -59,7 +59,7 @@ This command follows the shared
      absent (`error.code=validation_failed`, `error.meta.field=step`).
    - Must be a strict positive integer.
    - Must match an existing setup-step record belonging to the resolved app
-     and `phase=setup`.
+     instance and `phase=setup`.
 3. **Resolve `force`.** From `--force`. Default `false`.
 4. **Apply Destructive Consent.**
    - If `--force` is present, destructive consent is resolved and no
@@ -80,28 +80,28 @@ This command follows the shared
 ### Setup Step Removal Rules
 
 `workspace-setup-step:remove` deletes a single gateway-owned setup-step
-record from an app's workspace lifecycle policy and compacts the surviving
+record from an app instance's workspace lifecycle policy and compacts the surviving
 steps' `order` to a continuous sequence. The command writes only to gateway
 configuration. Nodes are not contacted.
 
-1. **Lookup.** Find the setup-step record by `(step_id, app, phase=setup)`.
+1. **Lookup.** Find the setup-step record by `(step_id, app_instance, phase=setup)`.
    If not found, fail before side effects with
    `error.code=workspace.step_not_found`. Already-absent removal is not an
    idempotent success; it is an imperative validation failure.
 2. **Destructive Consent.** Apply the destructive consent rules from the
    selected input mode.
 3. **Atomic Edit.** Within a single gateway transaction, scoped by an
-   app-scoped policy-edit lock that serializes only concurrent policy-table
+   app-instance-scoped policy-edit lock that serializes only concurrent policy-table
    edits (it does not wait on lifecycle runs):
-   - Capture the removed record's `(id, app, phase, order, command,
+   - Capture the removed record's `(id, app, app_instance, phase, order, command,
      timeout_seconds)` tuple for the response payload.
    - Delete the setup-step record from the gateway registry.
    - Decrement the `order` of every surviving step in the same
-     `(app, phase=setup)` whose original `order` was greater than the
+     `(app_instance, phase=setup)` whose original `order` was greater than the
      removed step's `order` by exactly one. The surviving sequence is
      contiguous from `1` to `N`.
 4. **Report.** Return the removed step record, the action verb (`removed`),
-   and the new total step count for `(app, phase=setup)`.
+   and the new total step count for `(app_instance, phase=setup)`.
 
 ### Scope Boundaries
 
@@ -138,7 +138,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Missing step ID | `--step` is absent in non-interactive mode. | Failure (`error.code=validation_failed`, `error.meta.field=step`). |
 | Step not a positive integer | `--step` is non-numeric, zero, or negative. | Failure (`error.code=validation_failed`, `error.meta.field=step`, `error.meta.reason=must_be_positive_integer`). |
 | App instance required | Bare app slug or path-only resolution without a concrete app instance. | Failure (`error.code=validation_failed`, `error.meta.field=app`, `error.meta.reason=app_instance_required`). |
-| Step not found | No instance-owned setup-step record matches `(step_id, app_instance, phase=setup)`. Legacy app-level rows are not removable. Already-absent removal is not idempotent. | Failure (`error.code=workspace.step_not_found`, `error.meta.{step_id, app}`). |
+| Step not found | No setup-step record matches `(step_id, app_instance, phase=setup)`. Already-absent removal is not idempotent. | Failure (`error.code=workspace.step_not_found`, `error.meta.{step_id, app}`). |
 | App not found | Resolved app slug does not exist in gateway configuration. | Failure (`error.code=workspace.app_not_found`, `error.meta.app`). |
 | App unresolved | Parent app cannot be resolved from `--app`, `.orbit/config`, or gateway path-ownership lookup, and prompting is disabled. | Failure (`error.code=validation_failed`, `error.meta.field=app`). |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |

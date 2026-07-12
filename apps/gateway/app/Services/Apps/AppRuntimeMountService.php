@@ -9,11 +9,9 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRuntimeMount;
-use App\Models\AppRuntimeMount;
 use App\Models\Node;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Workspaces\WorkspacePlacement;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 
 /**
@@ -34,63 +32,20 @@ final readonly class AppRuntimeMountService
             return [];
         }
 
-        if ($instance instanceof AppInstance) {
-            $instance->loadMissing('runtimeMounts');
-
-            if ($instance->runtimeMounts->isNotEmpty()) {
-                $mounts = $instance
-                    ->runtimeMounts
-                    ->map($this->instanceMountPayload(...))
-                    ->values()
-                    ->all();
-
-                /** @var list<array{source: string, target: string, read_only: bool}> $mounts */
-                return $mounts;
-            }
+        if (! $instance instanceof AppInstance) {
+            return [];
         }
 
-        $app->loadMissing('runtimeMounts');
+        $instance->loadMissing('runtimeMounts');
 
-        $mounts = $app
+        $mounts = $instance
             ->runtimeMounts
-            ->map($this->mountPayload(...))
+            ->map($this->instanceMountPayload(...))
             ->values()
             ->all();
 
         /** @var list<array{source: string, target: string, read_only: bool}> $mounts */
         return $mounts;
-    }
-
-    /**
-     * @return array{action: string, mount: AppRuntimeMount, mounts: EloquentCollection<int, AppRuntimeMount>}
-     */
-    public function add(App $app, string $source, string $target, bool $readOnly = true): array
-    {
-        [$source, $target] = $this->validateIntent($app, $source, $target);
-
-        $mount = $app->runtimeMounts()->firstOrNew(['target' => $target]);
-        $exists = $mount->exists;
-
-        $mount->source = $source;
-        $mount->target = $target;
-        $mount->read_only = $readOnly;
-
-        $changed = ! $exists || $mount->isDirty(['source', 'target', 'read_only']);
-        $mount->save();
-
-        $app->unsetRelation('runtimeMounts');
-
-        $action = 'created';
-
-        if ($exists) {
-            $action = $changed ? 'updated' : 'unchanged';
-        }
-
-        return [
-            'action' => $action,
-            'mount' => $mount->refresh(),
-            'mounts' => $this->list($app),
-        ];
     }
 
     /**
@@ -129,36 +84,6 @@ final readonly class AppRuntimeMountService
     }
 
     /**
-     * @return array{action: string, mount: AppRuntimeMount|null, mounts: EloquentCollection<int, AppRuntimeMount>}
-     */
-    public function remove(App $app, string $target): array
-    {
-        $target = $this->normalizePath($target, 'target');
-
-        $mount = $app
-            ->runtimeMounts()
-            ->where('target', $target)
-            ->first();
-
-        if (! $mount instanceof AppRuntimeMount) {
-            return [
-                'action' => 'missing',
-                'mount' => null,
-                'mounts' => $this->list($app),
-            ];
-        }
-
-        $mount->delete();
-        $app->unsetRelation('runtimeMounts');
-
-        return [
-            'action' => 'removed',
-            'mount' => $mount,
-            'mounts' => $this->list($app),
-        ];
-    }
-
-    /**
      * @return array{action: string, mount: AppInstanceRuntimeMount|null, mounts: Collection<int, AppInstanceRuntimeMount>}
      */
     public function removeFromInstance(AppInstance $instance, string $target): array
@@ -189,17 +114,6 @@ final readonly class AppRuntimeMountService
     }
 
     /**
-     * @return EloquentCollection<int, AppRuntimeMount>
-     */
-    public function list(App $app): EloquentCollection
-    {
-        return $app
-            ->runtimeMounts()
-            ->orderBy('target')
-            ->get();
-    }
-
-    /**
      * @return Collection<int, AppInstanceRuntimeMount>
      */
     public function listForInstance(AppInstance $instance): Collection
@@ -216,18 +130,6 @@ final readonly class AppRuntimeMountService
         }
 
         return new Collection($mounts);
-    }
-
-    /**
-     * @return array{source: string, target: string, read_only: bool}
-     */
-    public function mountPayload(AppRuntimeMount $mount): array
-    {
-        return [
-            'source' => $mount->source,
-            'target' => $mount->target,
-            'read_only' => $mount->read_only,
-        ];
     }
 
     /**

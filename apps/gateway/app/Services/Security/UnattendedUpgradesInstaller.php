@@ -11,6 +11,7 @@ use Orbit\Core\Updates\UnattendedUpgradesAptConfig;
 
 final readonly class UnattendedUpgradesInstaller implements SecurityInstaller
 {
+    // @orbit-ssh-lane transitional-ssh
     private UnattendedUpgradesAptConfig $config;
 
     public function __construct(?UnattendedUpgradesAptConfig $config = null)

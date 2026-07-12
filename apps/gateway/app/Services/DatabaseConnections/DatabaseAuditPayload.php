@@ -119,19 +119,29 @@ final readonly class DatabaseAuditPayload
      */
     private function target(DatabaseConnection $connection, string $target): array
     {
-        $targetRow = $connection
-            ->targets()
-            ->with(['app', 'workspace'])
-            ->get()
-            ->first(fn ($row): bool => $row->app?->name === $target || $row->workspace?->name === $target);
+        $targetRow = null;
+
+        foreach ($connection->targets()->with(['appInstance.app', 'workspace'])->get() as $candidate) {
+            if (! $candidate instanceof DatabaseConnectionTarget) {
+                continue;
+            }
+
+            $instanceTarget = $candidate->appInstance?->app?->name.'.'.$candidate->appInstance?->name;
+
+            if ($instanceTarget === $target || $candidate->workspace?->name === $target) {
+                $targetRow = $candidate;
+
+                break;
+            }
+        }
 
         $targetType = null;
         $targetName = null;
 
         if ($targetRow instanceof DatabaseConnectionTarget) {
-            if ($targetRow->app !== null) {
-                $targetType = 'app';
-                $targetName = $targetRow->app->name;
+            if ($targetRow->appInstance !== null) {
+                $targetType = 'app_instance';
+                $targetName = $targetRow->appInstance->app->name.'.'.$targetRow->appInstance->name;
             } elseif ($targetRow->workspace !== null) {
                 $targetType = 'workspace';
                 $targetName = $targetRow->workspace->name;

@@ -11,6 +11,7 @@ describe('deploy write commands', function (): void {
             'step' => [
                 'id' => 12,
                 'app' => 'docs',
+                'app_instance' => 'production',
                 'title' => 'Run migrations',
                 'command' => 'php artisan migrate --force',
                 'order' => 20,
@@ -20,7 +21,7 @@ describe('deploy write commands', function (): void {
         ], ['action' => 'created']));
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-add', [
-            'app' => 'docs',
+            'app' => 'docs.production',
             'deploy_command' => 'php artisan migrate --force',
             '--title' => 'Run migrations',
             '--order' => '20',
@@ -36,7 +37,7 @@ describe('deploy write commands', function (): void {
                 $request->method() === 'POST'
                 && str_contains($request->url(), '/api/deploy/steps')
                 && $request->data() === [
-                    'app' => 'docs',
+                    'app' => 'docs.production',
                     'command' => 'php artisan migrate --force',
                     'title' => 'Run migrations',
                     'order' => 20,
@@ -122,6 +123,7 @@ describe('deploy write commands', function (): void {
             'step' => [
                 'id' => 12,
                 'app' => 'docs',
+                'app_instance' => 'production',
                 'title' => 'Run migrations',
                 'command' => 'php artisan migrate --force',
                 'order' => 20,
@@ -160,18 +162,16 @@ describe('deploy write commands', function (): void {
     });
 
     it('posts deploy:run payloads to the gateway', function (): void {
-        $complete = [
-            'exit_code' => 0,
-            'data' => [
-                'run' => [
-                    'id' => 43,
-                    'app' => 'docs',
-                    'status' => 'running',
+        fakeGateway(
+            fakeSuccessEnvelope([
+                'operation' => [
+                    'uuid' => 'deploy-operation-1',
+                    'stream_descriptor_url' => '/api/operations/deploy-operation-1/stream',
+                    'events_url' => '/api/operations/deploy-operation-1/events',
                 ],
-            ],
-        ];
-
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
+            ], ['detached' => true]),
+            202,
+        );
 
         [$exitCode, $output] = runCommand($this, 'deploy:run', [
             'app' => 'docs',
@@ -181,11 +181,11 @@ describe('deploy write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        assertGatewayStreamSent(function (FakeGatewayStreamRequest $request): bool {
+        Http::assertSent(function (Request $request): bool {
             return (
                 $request->method() === 'POST'
                 && str_contains($request->url(), '/api/deploy/run')
-                && $request->hasHeader('Accept', 'text/event-stream')
+                && ! $request->hasHeader('Accept', 'text/event-stream')
                 && $request->data() === [
                     'app' => 'docs',
                     'detach' => true,
@@ -195,11 +195,10 @@ describe('deploy write commands', function (): void {
 
         expect($exitCode)
             ->toBe(0)
-            ->and($decoded)
-            ->toBe([
-                'event' => 'complete',
-                'data' => $complete,
-            ]);
+            ->and($decoded['success']['data']['operation']['uuid'])
+            ->toBe('deploy-operation-1')
+            ->and($decoded['success']['meta']['detached'])
+            ->toBeTrue();
     });
 
     it('rejects deploy:run without an app before contacting the gateway', function (): void {
@@ -222,9 +221,9 @@ describe('deploy write commands', function (): void {
     });
 
     it('passes through gateway errors from deploy writes', function (): void {
-        fakeGatewayProgressStream(json_encode(fakeErrorEnvelope('authorization_failed', 'Missing deploy permission.', [
+        fakeGateway(fakeErrorEnvelope('authorization_failed', 'Missing deploy permission.', [
             'missing_permission' => 'deploy:run',
-        ]), JSON_THROW_ON_ERROR), 403);
+        ]), 403);
 
         [$exitCode, $output] = runCommand($this, 'deploy:run', [
             'app' => 'docs',
@@ -246,6 +245,7 @@ describe('deploy write commands', function (): void {
             'step' => [
                 'id' => 12,
                 'app' => 'docs',
+                'app_instance' => 'production',
                 'title' => 'Run migrations',
                 'command' => 'php artisan migrate --force',
                 'order' => 20,
@@ -255,7 +255,7 @@ describe('deploy write commands', function (): void {
         ], ['action' => 'created']));
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-add', [
-            'app' => 'docs',
+            'app' => 'docs.production',
             'deploy_command' => 'php artisan migrate --force',
             '--title' => 'Run migrations',
             '--order' => '20',
@@ -265,7 +265,7 @@ describe('deploy write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Added deployment step #12 'Run migrations' to app 'docs'.")
+            ->toContain("Added deployment step #12 'Run migrations' to app instance 'docs.production'.")
             ->and($output)
             ->toContain('php artisan migrate --force')
             ->and($output)
@@ -283,6 +283,7 @@ describe('deploy write commands', function (): void {
             'step' => [
                 'id' => 13,
                 'app' => 'docs',
+                'app_instance' => 'production',
                 'title' => 'Clear cache',
                 'command' => 'php artisan cache:clear',
                 'order' => 30,
@@ -292,7 +293,7 @@ describe('deploy write commands', function (): void {
         ], ['action' => 'created']));
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-add', [
-            'app' => 'docs',
+            'app' => 'docs.production',
             'deploy_command' => 'php artisan cache:clear',
             '--title' => 'Clear cache',
         ]);
@@ -300,7 +301,7 @@ describe('deploy write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Added deployment step #13 'Clear cache' to app 'docs'.")
+            ->toContain("Added deployment step #13 'Clear cache' to app instance 'docs.production'.")
             ->and($output)
             ->toContain('retention unlimited')
             ->and($output)
@@ -312,6 +313,7 @@ describe('deploy write commands', function (): void {
             'step' => [
                 'id' => 12,
                 'app' => 'docs',
+                'app_instance' => 'production',
                 'title' => 'Run migrations',
                 'command' => 'php artisan migrate --force',
                 'order' => 20,
@@ -322,7 +324,7 @@ describe('deploy write commands', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-remove', [
-            'app' => 'docs',
+            'app' => 'docs.production',
             'step' => 'Run migrations',
             '--force' => true,
         ]);
@@ -330,7 +332,7 @@ describe('deploy write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Removed deployment step #12 'Run migrations' from app 'docs'.")
+            ->toContain("Removed deployment step #12 'Run migrations' from app instance 'docs.production'.")
             ->and($output)
             ->toContain('order 20')
             ->and($output)

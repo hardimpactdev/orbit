@@ -46,7 +46,7 @@ it('applies websocket runtime containers through the agent-push local executor',
     ]);
     $node = Node::factory()
         ->withActiveRole('websocket')
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'realtime-1',
             'wireguard_address' => '10.44.0.80',

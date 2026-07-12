@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace App\Services\Php;
 
+use App\Data\Apps\AppSelection;
 use App\Data\Php\PhpRuntimeFailure;
 use App\Data\Php\PhpRuntimeOperation;
 use App\Enums\Nodes\NodeStatus;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Workspace;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use Illuminate\Database\Eloquent\Builder;
+use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class PhpRuntimeManager
 {
@@ -21,6 +25,8 @@ final readonly class PhpRuntimeManager
     public function __construct(
         private PhpRuntimeCatalog $catalog,
         private NodeRoleAssignments $nodeRoleAssignments,
+        private AppSelectorResolver $appSelectorResolver,
+        private WorkspacePlacement $workspacePlacement,
     ) {}
 
     public function view(
@@ -91,8 +97,13 @@ final readonly class PhpRuntimeManager
 
         return match ($target['scope']) {
             'node_cli' => $this->useNodeCli($target['node'], (string) $requestedVersion),
-            'workspace' => $this->useWorkspace($target['workspace'], $inherit, $requestedVersion),
-            default => $this->useApp($target['app'], (string) $requestedVersion),
+            'workspace' => $this->useWorkspace(
+                $target['workspace'],
+                $target['node'],
+                $inherit,
+                $requestedVersion,
+            ),
+            default => $this->useApp($target['app'], $target['node'], (string) $requestedVersion),
         };
     }
 
@@ -101,13 +112,13 @@ final readonly class PhpRuntimeManager
      */
     private function resolveTarget(?string $app, ?string $workspace, ?string $node): array|PhpRuntimeFailure
     {
-        $appModel = $this->resolveApp($app);
+        $appSelection = $this->resolveAppSelection($app);
 
-        if ($app !== null && ! $appModel instanceof App) {
-            return $this->validationFailure('app', $app, "App '{$app}' not found or not visible.");
+        if ($appSelection instanceof PhpRuntimeFailure) {
+            return $appSelection;
         }
 
-        $workspaceModel = $this->resolveWorkspace($workspace, $appModel);
+        $workspaceModel = $this->resolveWorkspace($workspace, $appSelection);
 
         if ($workspace !== null && ! $workspaceModel instanceof Workspace) {
             return $this->validationFailure(
@@ -117,8 +128,10 @@ final readonly class PhpRuntimeManager
             );
         }
 
+        $appModel = $appSelection?->app;
+
         if (! $appModel instanceof App && $workspaceModel instanceof Workspace) {
-            $workspaceModel->loadMissing('app.node');
+            $workspaceModel->loadMissing('app');
             $appModel = $workspaceModel->app;
         }
 
@@ -128,19 +141,22 @@ final readonly class PhpRuntimeManager
             return $this->validationFailure('node', $node, "Node '{$node}' not found or not visible.");
         }
 
-        if ($appModel instanceof App) {
-            $appModel->loadMissing('node');
+        $owningNode = $this->resolveOwningNode($appSelection, $workspaceModel);
 
-            if (
-                $nodeModel instanceof Node
-                && $appModel->node instanceof Node
-                && $nodeModel->id !== $appModel->node->id
-            ) {
-                return $this->nodeTargetMismatch($nodeModel, $appModel);
-            }
-
-            $nodeModel ??= $appModel->node;
+        if ($owningNode instanceof PhpRuntimeFailure) {
+            return $owningNode;
         }
+
+        if (
+            $nodeModel instanceof Node
+            && $owningNode instanceof Node
+            && $nodeModel->id !== $owningNode->id
+            && $appModel instanceof App
+        ) {
+            return $this->nodeTargetMismatch($nodeModel, $appModel, $owningNode);
+        }
+
+        $nodeModel ??= $owningNode;
 
         if ($nodeModel === null) {
             $nodeModel = $this->defaultNode();
@@ -162,6 +178,79 @@ final readonly class PhpRuntimeManager
             'app' => $appModel,
             'workspace' => $workspaceModel,
         ];
+    }
+
+    private function resolveAppSelection(?string $selector): AppSelection|PhpRuntimeFailure|null
+    {
+        if ($selector === null) {
+            return null;
+        }
+
+        try {
+            $selection = $this->appSelectorResolver->resolve($selector);
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->selectionResolutionFailure($exception);
+        }
+
+        if ($selection instanceof AppSelection) {
+            return $selection;
+        }
+
+        return $this->validationFailure('app', $selector, "App '{$selector}' not found or not visible.");
+    }
+
+    private function resolveOwningNode(
+        ?AppSelection $selection,
+        ?Workspace $workspace,
+    ): Node|PhpRuntimeFailure|null {
+        if ($workspace instanceof Workspace) {
+            return (
+                $this->workspacePlacement->nodeForWorkspace($workspace) ?? $this->unresolvedServingNodeFailure(
+                    'workspace',
+                )
+            );
+        }
+
+        if (! $selection instanceof AppSelection) {
+            return null;
+        }
+
+        try {
+            $selection = $this->appSelectorResolver->requireInstance($selection);
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->selectionResolutionFailure($exception);
+        }
+
+        if (! $selection->instance instanceof AppInstance) {
+            return $this->unresolvedServingNodeFailure('app');
+        }
+
+        return (
+            $this->workspacePlacement->nodeForInstance($selection->instance) ?? $this->unresolvedServingNodeFailure(
+                'app',
+            )
+        );
+    }
+
+    private function selectionResolutionFailure(AppSelectionResolutionFailed $exception): PhpRuntimeFailure
+    {
+        return new PhpRuntimeFailure(
+            $exception->errorCode,
+            $exception->getMessage(),
+            $exception->meta,
+        );
+    }
+
+    private function unresolvedServingNodeFailure(string $field): PhpRuntimeFailure
+    {
+        return new PhpRuntimeFailure(
+            code: 'validation_failed',
+            message: 'The PHP runtime target has no concrete serving node.',
+            meta: [
+                'field' => $field,
+                'reason' => 'serving_node_unresolved',
+            ],
+        );
     }
 
     /**
@@ -270,7 +359,7 @@ final readonly class PhpRuntimeManager
         return null;
     }
 
-    private function useApp(?App $app, string $version): PhpRuntimeOperation
+    private function useApp(?App $app, Node $node, string $version): PhpRuntimeOperation
     {
         if (! $app instanceof App) {
             return new PhpRuntimeOperation(failure: new PhpRuntimeFailure(
@@ -283,14 +372,10 @@ final readonly class PhpRuntimeManager
             ));
         }
 
-        $app->loadMissing('node');
+        $availabilityFailure = $this->versionAvailabilityFailure($node, $version);
 
-        if ($app->node instanceof Node) {
-            $availabilityFailure = $this->versionAvailabilityFailure($app->node, $version);
-
-            if ($availabilityFailure instanceof PhpRuntimeFailure) {
-                return new PhpRuntimeOperation(failure: $availabilityFailure);
-            }
+        if ($availabilityFailure instanceof PhpRuntimeFailure) {
+            return new PhpRuntimeOperation(failure: $availabilityFailure);
         }
 
         $previous = $app->php_version;
@@ -298,12 +383,12 @@ final readonly class PhpRuntimeManager
         $app->forceFill(['php_version' => $version])->save();
 
         return $this->selectionOperation(
-            node: $app->node,
+            node: $node,
             app: $app->refresh(),
             workspace: null,
             result: [
                 'target' => 'app',
-                'node' => $app->node?->name,
+                'node' => $node->name,
                 'app' => $app->name,
                 'workspace' => null,
                 'previous' => $previous,
@@ -315,8 +400,12 @@ final readonly class PhpRuntimeManager
         );
     }
 
-    private function useWorkspace(?Workspace $workspace, bool $inherit, ?string $version): PhpRuntimeOperation
-    {
+    private function useWorkspace(
+        ?Workspace $workspace,
+        Node $node,
+        bool $inherit,
+        ?string $version,
+    ): PhpRuntimeOperation {
         if (! $workspace instanceof Workspace) {
             return new PhpRuntimeOperation(failure: new PhpRuntimeFailure(
                 'validation_failed',
@@ -328,14 +417,14 @@ final readonly class PhpRuntimeManager
             ));
         }
 
-        $workspace->loadMissing('app.node');
+        $workspace->loadMissing('app');
         $previous = $workspace->php_version ?? $workspace->app?->php_version;
         $previousRaw = $workspace->php_version;
         $nextRaw = $inherit ? null : $version;
         $nextEffective = $nextRaw ?? $workspace->app?->php_version;
 
-        if ($workspace->app?->node instanceof Node && is_string($nextEffective)) {
-            $availabilityFailure = $this->versionAvailabilityFailure($workspace->app?->node, $nextEffective);
+        if (is_string($nextEffective)) {
+            $availabilityFailure = $this->versionAvailabilityFailure($node, $nextEffective);
 
             if ($availabilityFailure instanceof PhpRuntimeFailure) {
                 return new PhpRuntimeOperation(failure: $availabilityFailure);
@@ -343,16 +432,16 @@ final readonly class PhpRuntimeManager
         }
 
         $workspace->forceFill(['php_version' => $nextRaw])->save();
-        $workspace->refresh()->loadMissing('app.node');
+        $workspace->refresh()->loadMissing('app');
         $effective = $workspace->effectivePhpVersion();
 
         return $this->selectionOperation(
-            node: $workspace->app?->node,
+            node: $node,
             app: $workspace->app,
             workspace: $workspace,
             result: [
                 'target' => 'workspace',
-                'node' => $workspace->app?->node?->name,
+                'node' => $node->name,
                 'app' => $workspace->app?->name,
                 'workspace' => $workspace->name,
                 'previous' => $previous,
@@ -584,33 +673,22 @@ final readonly class PhpRuntimeManager
             ->first();
     }
 
-    private function resolveApp(?string $selector): ?App
-    {
-        if ($selector === null) {
-            return null;
-        }
-
-        return App::query()
-            ->with('node')
-            ->where(function (Builder $query) use ($selector): void {
-                $query->where('name', $selector)
-                    ->orWhere('domain', $selector);
-            })
-            ->first();
-    }
-
-    private function resolveWorkspace(?string $selector, ?App $app): ?Workspace
+    private function resolveWorkspace(?string $selector, ?AppSelection $selection): ?Workspace
     {
         if ($selector === null) {
             return null;
         }
 
         $query = Workspace::query()
-            ->with('app.node')
+            ->with(['app', 'app.instances', 'appInstance'])
             ->where('name', $selector);
 
-        if ($app instanceof App) {
-            $query->where('app_id', $app->id);
+        if ($selection instanceof AppSelection) {
+            $query->where('app_id', $selection->app->id);
+
+            if ($selection->instance instanceof AppInstance) {
+                $query->where('app_instance_id', $selection->instance->id);
+            }
         }
 
         $matches = $query->limit(2)->get();
@@ -649,7 +727,7 @@ final readonly class PhpRuntimeManager
         ]);
     }
 
-    private function nodeTargetMismatch(Node $node, App $app): PhpRuntimeFailure
+    private function nodeTargetMismatch(Node $node, App $app, Node $owningNode): PhpRuntimeFailure
     {
         return new PhpRuntimeFailure(
             code: 'validation_failed',
@@ -659,7 +737,7 @@ final readonly class PhpRuntimeManager
                 'reason' => 'target_mismatch',
                 'node' => $node->name,
                 'app' => $app->name,
-                'owning_node' => $app->node?->name,
+                'owning_node' => $owningNode->name,
             ],
         );
     }

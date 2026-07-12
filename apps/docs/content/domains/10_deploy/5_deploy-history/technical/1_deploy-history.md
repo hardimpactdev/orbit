@@ -8,7 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity has `deploy:read` on the production app's owning node.
+- The current node identity has `deploy:read` at the selected instance's grant
+  boundary: its owning Orbit node, or the gateway for an external instance.
 
 ## Signature
 
@@ -22,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `argument` | `Required.` | `Never.` | `None.` | Visible production app the caller may inspect. |
+| `app` | `argument` | `Required.` | `Never.` | `None.` | Visible production app-instance selector. A bare app is valid only when it has exactly one instance. |
 | `limit` | `--limit` | `Optional.` | `Never.` | `50`. | Positive integer. Values greater than `500` are clamped to `500` and reported via `success.meta.pagination.limit_capped`. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -30,10 +31,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Deployment History Visibility Rules
 
-- Reads deployment run history for one production app from gateway app state.
+- Reads deployment run history for one concrete production app instance from gateway state.
 - Sorts runs by `started_at` descending.
 - Applies the effective `--limit` after clamping to the hard cap.
-- Returns an empty list for production apps with no recorded deployment runs.
+- Returns an empty list for production app instances with no recorded deployment runs.
 
 ### History Boundary Rules
 
@@ -62,10 +63,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | App not found | No visible app matches the selector. | `error.code=app.not_found` |
 | Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
+| App instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
 
 ## Doctor Relationship
 
-`deploy:history` reads deployment history that the app owns. It does not own a
+`deploy:history` reads deployment history that the app instance owns. It does not own a
 doctor family. [`app-doctor.md`](../../../5_app/app-doctor.md) owns production
 app health checks that may incorporate latest deployment status through
 `app.latest_deployment_failed` and `app.deployment_run_stuck`.

@@ -18,7 +18,7 @@ final class DatabaseAttachCommand extends DatabaseGatewayCommand
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Attach a database connection to an app or workspace target.';
+    protected $description = 'Attach a database connection to an app instance or workspace target.';
 
     public function handle(): int
     {
@@ -84,11 +84,7 @@ final class DatabaseAttachCommand extends DatabaseGatewayCommand
         $workspace = $this->stringOption('workspace');
 
         if ($app !== null && $instance !== null) {
-            return ['app_instance', "{$app}:{$instance}"];
-        }
-
-        if ($app !== null) {
-            return ['app', $app];
+            return ['app_instance', "{$app}.{$instance}"];
         }
 
         return ['workspace', (string) $workspace];

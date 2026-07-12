@@ -18,11 +18,10 @@ These terms define the VPN command domain and how commands reach the gateway.
   `vpn` role is gateway-coupled, so execution remains on the gateway node, but
   the command domain must resolve the `vpn` role rather than assuming every VPN
   backend lives under the `gateway` role.
-- **VPN-role execution path:** Operator-caller path that uses SSH over
-  Orbit/WireGuard to the host carrying the active `vpn` role, then runs the
-  VPN command there. In v1 that host is the gateway-coupled node. It is limited
-  to VPN-role runtime administration and is not a general public SSH path or an
-  app-role orchestration path.
+- **VPN-role execution path:** Every operator caller reaches the gateway through
+  the typed HTTPS API over WireGuard. The gateway resolves the active `vpn` role
+  and executes the gateway-coupled backend operation locally. Caller location
+  changes authorization context, not transport.
 - **VPN runtime backend:** WireGuard administration backend that runs on the
   active `vpn` role host, used by VPN commands to read, create, enable,
   disable, remove, and authenticate VPN clients. Backend storage layout and API

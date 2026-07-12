@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
-use App\Contracts\RemoteShellStream;
 use App\Models\Node;
 use App\Models\Process;
 use App\Services\Nodes\NodeHostPaths;
@@ -32,7 +31,6 @@ final readonly class ShowProcessLogs
      * @mago-expect lint:excessive-parameter-list
      */
     public function __construct(
-        private RemoteShellStream $remoteShellStream,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private RemoteProcessLogs $remoteLogs,
         private ProcessServiceMetadataPayload $serviceMetadata,
@@ -150,26 +148,6 @@ final readonly class ShowProcessLogs
             stderrPath: $target['stderr_path'],
             operationStream: $target['operation_stream'] ?? null,
         );
-    }
-
-    /**
-     * @param  array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int, stdout_path: string|null, stderr_path: string|null}  $target
-     * @param  callable(string): void  $onOutput
-     */
-    public function followTargetViaRemoteShell(array $target, callable $onOutput): void
-    {
-        $exitCode = $this->remoteShellStream->stream($target['node'], $target['script'], $onOutput);
-
-        if ($exitCode !== 0) {
-            throw new GatewayApiException(
-                'The runtime backend could not stream the process log.',
-                'process.log_read_failed',
-                [
-                    'process' => $target['process']->name,
-                    'runtime_unit' => $target['runtime_unit'],
-                ],
-            );
-        }
     }
 
     /**

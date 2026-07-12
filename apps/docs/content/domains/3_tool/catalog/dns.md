@@ -11,15 +11,20 @@ These fields describe the DNS tool's identity, backend, and support model in Orb
 | Slug | `dns` |
 | Label | DNS |
 | Backend | Docker service |
-| Support model | Required infrastructure tool, adopted and kept converged |
+| Support model | Required gateway-local infrastructure tool, restored from canonical intent |
 | Category | `infrastructure` |
+| Supported operating systems | Linux |
+| Required container provider | Docker-compatible |
+| Isolation | Docker network namespace |
+| Locality | Gateway-local |
 
 ## Capabilities
 
-`dns` supports `tool:update`, safe doctor fix, and safe doctor adopt for the
-gateway DNS substrate capability. Compatibility lifecycle and log commands may
-route to the related DNS runtime process while this tool row remains the
-bootstrap/adoption record; lifecycle ownership belongs to the runtime process.
+`dns` supports `tool:update`, safe doctor restore, `tool:restart`, and
+`tool:logs` for its one direct gateway-local `orbit-dns` runtime. It does not
+support start, stop, reload, or adoption. Restart is public because dnsmasq
+address-rule changes require it; availability remains bootstrap/restore-owned.
+No related-process adapter is involved.
 
 `tool:install dns` and `tool:remove dns` are not operator-facing commands.
 They are reachable only through the gateway bootstrap path described in
@@ -41,8 +46,9 @@ caller-local resolver overrides on operator machines. See
 [Architecture: DNS responsibilities](../../../architecture.md#dns-responsibilities)
 for the full split.
 
-In the current topology, the DNS runtime tool is gateway infrastructure. App
-nodes and clients do not own DNS runtime rows.
+The DNS runtime is gateway-local infrastructure. App nodes and clients do not
+own DNS runtime rows, and the command must execute locally on the gateway rather
+than dispatching to a workload node.
 
 The runtime layout — `wg-easy` plus `orbit-dns` sharing wg-easy's network
 namespace so dnsmasq binds the wg-easy WG IP — is specified in
@@ -54,7 +60,10 @@ namespace so dnsmasq binds the wg-easy WG IP — is specified in
 config-content drift. Drift in *which DNS mappings should exist* — a new
 `app-dev` or `agent` role appeared without a matching mapping line —
 is node-family drift, not tool drift, and is verified by
-`doctor --family=node`. The three drift kinds covered by `doctor --family=tool`
-(`tool.dns_container_missing`, `tool.dns_port_not_listening`,
-`tool.dns_config_drift`) are specified in
-[the DNS bootstrap contract](../dns-bootstrap-contract.md).
+`doctor --family=node`. All five DNS runtime codes are restore-only:
+`tool.dns_container_missing`, `tool.dns_port_not_listening`,
+`tool.dns_config_drift`, `tool.dns_client_dns_drift`, and
+`tool.dns_forwarding_missing`. Their exact recovery behavior is specified in
+[the DNS bootstrap contract](../dns-bootstrap-contract.md). Emergency edits
+must be translated into node or proxy intent before restore re-renders DNS from
+canonical state.

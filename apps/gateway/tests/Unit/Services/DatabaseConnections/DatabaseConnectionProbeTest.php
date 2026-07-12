@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
@@ -20,6 +22,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process as ProcessFacade;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -32,7 +35,7 @@ describe('DatabaseConnectionProbe', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "APP_NAME=Docs\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\n");
 
-        $app = App::factory()->create([
+        $app = databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -47,7 +50,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionProbeAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -73,7 +76,7 @@ describe('DatabaseConnectionProbe', function (): void {
             "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=observed-secret\n",
         );
 
-        $app = App::factory()->create([
+        $app = databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -88,7 +91,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'stored-secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionProbeAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -120,7 +123,7 @@ describe('DatabaseConnectionProbe', function (): void {
             "DB_CONNECTION=mysql\nDB_HOST=dlf-leden-mysql\nDB_PORT=3306\nDB_DATABASE=dlf_leden\nDB_USERNAME=dlf_leden\nDB_PASSWORD=secret\n",
         );
 
-        $app = App::factory()->create([
+        $app = databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'dlf-leden',
             'path' => $path,
@@ -157,7 +160,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionProbeAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -181,7 +184,7 @@ describe('DatabaseConnectionProbe', function (): void {
             "DB_CONNECTION=mysql\nDB_HOST=dlf-leden-db\nDB_PORT=3306\nDB_DATABASE=dlf_leden\nDB_USERNAME=dlf_leden\nDB_PASSWORD=secret\n",
         );
 
-        $app = App::factory()->create([
+        $app = databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'dlf-leden',
             'path' => $path,
@@ -218,7 +221,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionProbeAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -243,7 +246,7 @@ describe('DatabaseConnectionProbe', function (): void {
             "DB_CONNECTION=pgsql\nDB_HOST=10.6.0.7\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD={$credentialValue}\n",
         );
 
-        $app = App::factory()->create([
+        $app = databaseConnectionProbeApp([
             'node_id' => $appNode->id,
             'name' => 'docs',
             'path' => $path,
@@ -259,7 +262,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => $credentialValue],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionProbeAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -286,7 +289,7 @@ describe('DatabaseConnectionProbe', function (): void {
             "DB_CONNECTION=pgsql\nDB_HOST=10.6.0.7\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n",
         );
 
-        $app = App::factory()->create([
+        $app = databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -302,26 +305,22 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionProbeAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
             ]);
-        $shell = new DatabaseConnectionProbeRemoteShell([
-            new RemoteShellResult(
-                exitCode: 0,
-                stdout: json_encode([
-                    'success' => [
-                        'data' => [
-                            'exit_code' => 0,
-                            'output' => "10.6.0.7 dev wg-orbit src 10.6.0.2\n",
-                        ],
-                    ],
-                ], JSON_THROW_ON_ERROR),
-                stderr: '',
-                durationMs: 1,
-            ),
-        ]);
+        ProcessFacade::preventStrayProcesses();
+        ProcessFacade::fake(fn ($process) => ProcessFacade::result(output: json_encode([
+            'success' => [
+                'data' => [
+                    'exit_code' => 0,
+                    'output' => "10.6.0.7 dev wg-orbit src 10.6.0.2\n",
+                ],
+                'meta' => [],
+            ],
+        ], JSON_THROW_ON_ERROR)));
+        $shell = new DatabaseConnectionProbeRemoteShell([]);
         app()->instance(RemoteShell::class, $shell);
 
         $issue = collect(app(DatabaseConnectionProbe::class)->probe($node))
@@ -334,8 +333,9 @@ describe('DatabaseConnectionProbe', function (): void {
             ->toBe('unverifiable')
             ->and($issue['detail'])
             ->toMatchArray([
-                'target_type' => 'app',
+                'target_type' => 'app_instance',
                 'app' => 'docs',
+                'app_instance' => 'development',
                 'env_prefix' => 'DB',
                 'connection' => 'docs',
                 'node' => 'gateway-1',
@@ -345,9 +345,14 @@ describe('DatabaseConnectionProbe', function (): void {
                 'message' => 'Linux node does not route its own WireGuard address locally.',
             ])
             ->and($shell->scripts)
-            ->toHaveCount(1)
-            ->and($shell->scripts[0])
-            ->toContain("internal:wireguard-self-route '10.6.0.7'");
+            ->toBe([]);
+
+        ProcessFacade::assertRan(
+            fn ($process): bool => (
+                str_contains((string) $process->command, 'internal:wireguard-self-route')
+                && str_contains((string) $process->command, '10.6.0.7')
+            ),
+        );
     });
 
     it('reports macOS as unsupported for same-node managed database self-route diagnostics without route mutation', function (): void {
@@ -366,7 +371,7 @@ describe('DatabaseConnectionProbe', function (): void {
             "DB_CONNECTION=pgsql\nDB_HOST=10.6.0.7\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n",
         );
 
-        $app = App::factory()->create([
+        $app = databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -382,7 +387,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionProbeAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -425,13 +430,12 @@ describe('DatabaseConnectionProbe', function (): void {
         ]);
         $node = Node::factory()
             ->appDev()
-            ->orbitAgentCapable()
             ->create([
                 'name' => 'app-1',
                 'status' => 'active',
                 'wireguard_address' => '10.44.0.73',
             ]);
-        $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
+        $app = databaseConnectionProbeApp(['node_id' => $node->id, 'name' => 'docs']);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
             'name' => 'feature',
@@ -491,7 +495,7 @@ describe('DatabaseConnectionProbe', function (): void {
             ANALYTICS_DB_PASSWORD=top-secret
             ENV);
 
-        App::factory()->create([
+        databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -519,7 +523,7 @@ describe('DatabaseConnectionProbe', function (): void {
             "REPORTING_DB_CONNECTION=pgsql\nREPORTING_DB_HOST=reporting.internal\nREPORTING_DB_PORT=5432\nREPORTING_DB_DATABASE=reporting\nREPORTING_DB_USERNAME=reporting\n",
         );
 
-        App::factory()->create([
+        databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -541,7 +545,7 @@ describe('DatabaseConnectionProbe', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "REPORTING_DB_CONNECTION=pgsql\nREPORTING_DB_HOST=reporting.internal\n");
 
-        App::factory()->create([
+        databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -564,7 +568,7 @@ describe('DatabaseConnectionProbe', function (): void {
             "SESSION_DRIVER=database\nBROADCAST_CONNECTION=log\nQUEUE_CONNECTION=database\nCACHE_STORE=database\n",
         );
 
-        App::factory()->create([
+        databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -582,7 +586,7 @@ describe('DatabaseConnectionProbe', function (): void {
             "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n",
         );
 
-        App::factory()->create([
+        databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -624,7 +628,7 @@ describe('DatabaseConnectionProbe', function (): void {
             "DB_CONNECTION=pgsql\nDB_HOST=10.6.0.7\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n",
         );
 
-        App::factory()->create([
+        databaseConnectionProbeApp([
             'node_id' => $appNode->id,
             'name' => 'docs',
             'path' => $path,
@@ -661,7 +665,7 @@ describe('DatabaseConnectionProbe', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=sqlite\nDB_DATABASE=/srv/docs/database/database.sqlite\n");
 
-        App::factory()->create([
+        databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -697,7 +701,7 @@ describe('DatabaseConnectionProbe', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=mysql\nDB_HOST=local-shadow\n");
 
-        $app = App::factory()->create([
+        $app = databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -713,7 +717,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'credentials' => ['password' => $credentialValue],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionProbeAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -726,7 +730,6 @@ describe('DatabaseConnectionProbe', function (): void {
             )),
         ]);
         $node->forceFill([
-            'orbit_agent_capable' => true,
             'wireguard_address' => '10.44.0.74',
         ])->save();
 
@@ -758,12 +761,12 @@ describe('DatabaseConnectionProbe', function (): void {
         File::put($docsFeaturePath.'/.env', "DB_CONNECTION=mysql\n");
         File::put($billingFeaturePath.'/.env', "DB_CONNECTION=mysql\n");
 
-        $docs = App::factory()->create([
+        $docs = databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => storage_path('framework/testing/database-probe-docs-root'),
         ]);
-        $billing = App::factory()->create([
+        $billing = databaseConnectionProbeApp([
             'node_id' => $node->id,
             'name' => 'billing',
             'path' => storage_path('framework/testing/database-probe-billing-root'),
@@ -814,6 +817,30 @@ describe('DatabaseConnectionProbe', function (): void {
             ->toBe(['docs']);
     });
 });
+
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function databaseConnectionProbeApp(array $attributes): App
+{
+    $app = App::factory()->create($attributes);
+
+    AppInstance::factory()->for($app)->create([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $app->node_id,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+
+    return $app;
+}
+
+function databaseConnectionProbeAppInstance(App $app): AppInstance
+{
+    return $app->instances()->firstOrFail();
+}
 
 final class DatabaseConnectionProbeRemoteShell implements RemoteShell
 {

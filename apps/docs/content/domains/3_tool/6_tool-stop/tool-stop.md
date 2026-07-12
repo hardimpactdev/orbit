@@ -7,17 +7,20 @@ Stop a lifecycle-capable tool on a target node.
 ```bash
 orbit tool:stop <tool> --node=<node>
 orbit tool:stop orbstack --node=<mac-node>
+orbit tool:stop opencode-cli --app=<app>
 orbit tool:stop orbstack --node=<mac-node> --json
 ```
 
 ## Behavior
 
-`tool:stop` is available only for tools whose catalog definition explicitly
-declares a tool-owned stop capability. The first supported tool is macOS-only
-`orbstack`. Unsupported tools fail without running host commands.
+`tool:stop` is available only when the selected tool declares `stop`. Orbit
+must resolve exactly one runtime: either one direct tool-owned runtime, or one
+process row whose canonical `tool` value matches the selected tool. Missing or
+ambiguous runtimes fail without running host commands.
 
-For `orbstack`, this dispatches OrbStack's stop command for the provider, not an
-Orbit process-row action.
+Direct remote runtimes use Agent push. Process-backed tools use their exact
+process row; this is an explicit catalog contract, not a generic compatibility
+fallback.
 
 ## Options
 

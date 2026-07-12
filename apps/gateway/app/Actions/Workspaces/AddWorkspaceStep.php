@@ -14,11 +14,11 @@ final readonly class AddWorkspaceStep
     public function handle(
         int $appId,
         WorkspaceLifecyclePhase $phase,
+        int $appInstanceId,
         string $command,
         int $timeoutSeconds = WorkspaceStep::DEFAULT_TIMEOUT_SECONDS,
         ?int $beforeStepId = null,
         ?int $afterStepId = null,
-        ?int $appInstanceId = null,
     ): WorkspaceStep {
         return DB::transaction(function () use (
             $appId,
@@ -32,11 +32,7 @@ final readonly class AddWorkspaceStep
             $phaseSteps = WorkspaceStep::query()
                 ->where('app_id', $appId)
                 ->where('phase', $phase)
-                ->when(
-                    $appInstanceId === null,
-                    fn ($query) => $query->whereNull('app_instance_id'),
-                    fn ($query) => $query->where('app_instance_id', $appInstanceId),
-                );
+                ->where('app_instance_id', $appInstanceId);
 
             if ($beforeStepId !== null) {
                 $anchor = (clone $phaseSteps)->find($beforeStepId);

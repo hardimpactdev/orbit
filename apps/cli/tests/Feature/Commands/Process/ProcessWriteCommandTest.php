@@ -21,7 +21,6 @@ describe('process write commands', function (): void {
             '--restart-policy' => 'always',
             '--crash-notification' => 'agent_ide',
             '--runtime' => 'systemd',
-            '--start' => true,
             '--json' => true,
         ]);
 
@@ -746,7 +745,7 @@ describe('process write commands', function (): void {
             ->toContain("Process 'vite' added for app 'docs'");
     });
 
-    it('shows the process:add start step by default and when --start is present', function (): void {
+    it('shows the process:add start step by default', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
             'runtime_units' => [],
@@ -759,7 +758,6 @@ describe('process write commands', function (): void {
             'process_command' => 'npm run dev',
             '--app' => 'docs',
             '--runtime' => 'systemd',
-            '--start' => true,
         ]);
 
         expect($exitCode)
@@ -770,6 +768,12 @@ describe('process write commands', function (): void {
             ->toContain('Start runtime units')
             ->and($output)
             ->toContain("Process 'vite' added for app 'docs'");
+    });
+
+    it('does not expose the removed redundant process:add start option', function (): void {
+        $command = app(\Illuminate\Contracts\Console\Kernel::class)->all()['process:add'];
+
+        expect($command->getDefinition()->hasOption('start'))->toBeFalse();
     });
 
     it('renders process:add runtime drift as a success footer with a drift note', function (): void {

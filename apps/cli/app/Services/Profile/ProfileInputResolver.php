@@ -6,23 +6,8 @@ namespace App\Services\Profile;
 
 final class ProfileInputResolver
 {
-    public function resolve(
-        ?string $target,
-        ?string $app,
-        mixed $uriOption,
-        bool $asFirstUser,
-        ?string $user,
-        ?string $node,
-        ?string $appMarker,
-        ?string $hostCwd,
-    ): ProfileInput|ProfileInputFailure {
-        if ($target !== null && $app !== null) {
-            return new ProfileInputFailure('validation_failed', 'Use either target or --app, not both.', [
-                'field' => 'target',
-                'reason' => 'conflicts_with_app',
-            ]);
-        }
-
+    public function resolve(?string $url, bool $asFirstUser, ?string $user): ProfileInput|ProfileInputFailure
+    {
         if ($asFirstUser && $user !== null) {
             return new ProfileInputFailure('validation_failed', 'Use either --as-first-user or --user, not both.', [
                 'field' => 'auth',
@@ -30,83 +15,138 @@ final class ProfileInputResolver
             ]);
         }
 
-        $uri = $this->normalizedUri($uriOption);
+        $url ??= $this->appUrlFromNearestEnv();
 
-        if ($uri === null) {
-            return new ProfileInputFailure('validation_failed', 'Profile URI must be a non-empty path.', [
-                'field' => 'uri',
-                'reason' => 'invalid_path',
-            ]);
-        }
-
-        $targetWasOmitted = $target === null && $app === null;
-        $selector = $app ?? $target ?? $appMarker ?? $hostCwd;
-
-        if ($selector !== null && preg_match('#^https?://#i', $selector) === 1) {
-            $parsed = $this->parseUrlTarget($selector, $uri, $uriOption);
-
-            if ($parsed === null) {
-                return new ProfileInputFailure('validation_failed', "Could not parse host from URL '{$selector}'.", [
-                    'field' => 'target',
-                    'reason' => 'invalid_url',
-                ]);
-            }
-
-            [$selector, $uri] = $parsed;
-        }
-
-        if ($selector === null) {
-            return new ProfileInputFailure('validation_failed', 'Specify a target or --app.', [
-                'field' => 'target',
+        if ($url === null) {
+            return new ProfileInputFailure('validation_failed', 'URL to profile is required.', [
+                'field' => 'url',
                 'reason' => 'missing_required_input',
             ]);
         }
 
+        if ($this->urlValidationMessage($url) !== null) {
+            return new ProfileInputFailure(
+                'validation_failed',
+                'URL to profile must be an absolute HTTP or HTTPS URL.',
+                [
+                    'field' => 'url',
+                    'reason' => 'invalid_url',
+                ],
+            );
+        }
+
         return new ProfileInput(
-            target: $selector,
-            uri: $uri,
+            url: $url,
             authMode: $this->authMode($asFirstUser, $user),
             user: $user,
-            node: $node,
-            targetWasOmitted: $targetWasOmitted,
         );
     }
 
-    private function normalizedUri(mixed $value): ?string
+    public function urlValidationMessage(string $url): ?string
     {
-        if ($value === null || $value === false) {
-            return '/';
+        $parts = parse_url($url);
+        $scheme = is_array($parts) ? $parts['scheme'] ?? null : null;
+        $host = is_array($parts) ? $parts['host'] ?? null : null;
+
+        if (
+            filter_var($url, FILTER_VALIDATE_URL) === false
+            || ! is_string($scheme)
+            || ! in_array(strtolower($scheme), ['http', 'https'], strict: true)
+            || ! is_string($host)
+            || $host === ''
+        ) {
+            return 'Enter an absolute HTTP or HTTPS URL.';
         }
 
-        if (! is_string($value) || trim($value) === '') {
-            return null;
-        }
-
-        $uri = trim($value);
-
-        return str_starts_with($uri, '/') ? $uri : "/{$uri}";
+        return null;
     }
 
-    /**
-     * @return array{string, string}|null
-     */
-    private function parseUrlTarget(string $target, string $currentUri, mixed $uriOption): ?array
+    private function appUrlFromNearestEnv(): ?string
     {
-        $parts = parse_url($target);
+        $directory = $this->hostCwd();
 
-        if (! is_array($parts) || ! is_string($parts['host'] ?? null) || $parts['host'] === '') {
+        if ($directory === null) {
             return null;
         }
 
-        $uri = $currentUri;
+        while (true) {
+            $envPath = rtrim($directory, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'.env';
 
-        if ($uriOption === null || $uriOption === false) {
-            $path = is_string($parts['path'] ?? null) && $parts['path'] !== '' ? $parts['path'] : '/';
-            $query = is_string($parts['query'] ?? null) && $parts['query'] !== '' ? "?{$parts['query']}" : '';
-            $uri = "{$path}{$query}";
+            if (is_file($envPath)) {
+                return $this->appUrlFromEnvFile($envPath);
+            }
+
+            $parent = dirname($directory);
+
+            if ($parent === $directory) {
+                return null;
+            }
+
+            $directory = $parent;
+        }
+    }
+
+    private function hostCwd(): ?string
+    {
+        $hostCwd = getenv('ORBIT_HOST_CWD');
+
+        if (is_string($hostCwd) && trim($hostCwd) !== '') {
+            return trim($hostCwd);
         }
 
-        return [$parts['host'], $uri];
+        $cwd = getcwd();
+
+        return is_string($cwd) && trim($cwd) !== '' ? trim($cwd) : null;
+    }
+
+    private function appUrlFromEnvFile(string $path): ?string
+    {
+        $handle = fopen(filename: $path, mode: 'rb');
+
+        if ($handle === false) {
+            return null;
+        }
+
+        try {
+            while (($line = fgets($handle)) !== false) {
+                $matches = [];
+
+                if (preg_match('/^\s*(?:export\s+)?APP_URL\s*=\s*(.*)$/', $line, $matches) !== 1) {
+                    continue;
+                }
+
+                return $this->parseEnvValue($matches[1]);
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return null;
+    }
+
+    private function parseEnvValue(string $value): string
+    {
+        $value = trim($value);
+
+        if ($value === '') {
+            return '';
+        }
+
+        $quote = $value[0];
+
+        if ($quote === "'" || $quote === '"') {
+            $closingQuote = strrpos($value, $quote);
+
+            if ($closingQuote === false || $closingQuote === 0) {
+                return $value;
+            }
+
+            return substr(string: $value, offset: 1, length: $closingQuote - 1);
+        }
+
+        $valueWithoutComment = preg_replace(pattern: '/\s+#.*$/', replacement: '', subject: $value);
+
+        return is_string($valueWithoutComment) ? rtrim($valueWithoutComment) : $value;
     }
 
     private function authMode(bool $asFirstUser, ?string $user): string
@@ -115,10 +155,6 @@ final class ProfileInputResolver
             return 'user';
         }
 
-        if ($asFirstUser) {
-            return 'first-user';
-        }
-
-        return 'guest';
+        return $asFirstUser ? 'first-user' : 'guest';
     }
 }

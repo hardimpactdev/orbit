@@ -2,7 +2,7 @@
 
 [Back to Database commands.](../README.md)
 
-List stored database connections and their app or workspace mappings.
+List stored database connections and their app-instance or workspace mappings.
 
 ## Usage
 

@@ -67,8 +67,6 @@ describe('orbit:internal:bake-agent-node', function (): void {
             ->not->toBeNull()->and($this->hostKeyPinner->calls)->toBe([
                 ['host' => '10.6.0.6', 'expected' => null],
             ])->and($assignment)
-            ->not->toBeNull()->and($assignment?->status)->toBe(NodeRoleStatus::Active)->and($assignment?->settings)->toBe([
-                'tld' => 'agent',
-            ]);
+            ->not->toBeNull()->and($assignment?->status)->toBe(NodeRoleStatus::Active)->and($assignment?->settings)->toBe([]);
     });
 });

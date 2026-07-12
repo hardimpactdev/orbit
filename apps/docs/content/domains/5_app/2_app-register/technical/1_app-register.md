@@ -9,7 +9,7 @@
 - The current node identity has `app:register` on the resolved target app node.
 - `app-dev` self-grants provide that permission only for the same node;
   `app-prod` self-grants do not.
-- The gateway can reach the target node over SSH.
+- The target non-gateway node is reachable through Agent push.
 
 [Back to the public command page.](../app-register.md)
 
@@ -97,7 +97,8 @@ This command follows the shared
 `app:register` converges gateway app configuration and node artifacts:
 
 - **Registry Convergence**: Ensures a gateway app record exists with the resolved name, node, path, root, and PHP version.
-- **Artifact Apply**: Connects to the node over SSH to:
+- **Artifact Apply**: Sends typed apply commands to the concrete app-instance
+  node through Agent push to:
   - Configure and restart the runtime container for the app.
   - Install managed app runtime configuration (e.g., environment files).
   - Ensure app-owned route configuration exists in `proxy`.
@@ -151,8 +152,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   `error.meta.existing_app`, `error.meta.node`). Fails before any side
   effects. The remediation is to pick a different path or remove the
   existing app first; there is no interactive re-assign prompt.
-- **Remote Execution Failures**: SSH timeout before configuration can be written, permission
-  denied that prevents Orbit from determining whether configuration was applied, or
+- **Remote Execution Failures**: Agent-push timeout before configuration can be
+  written, permission denied that prevents Orbit from determining whether configuration was applied, or
   an app-role execution failure that is not convergent
   (`error.code=app.enactment_failed`).
 - **Retryable Artifact Drift**: After configuration is durable, runtime container or runtime
@@ -192,7 +193,7 @@ registration attempts.
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | CLI payload/validation, human registered/adopted/converged output, and warning pass-through. |
 | `apps/gateway/tests/Feature/Http/Api/AppRegisterControllerTest.php` | Register/adopt/converged actions, authorization, and ineligible-node rejection. |
-| `apps/gateway/tests/Feature/Actions/Apps/EnactAppRuntimeTest.php` | SSH-based artifact convergence with mocked `RemoteShell` across dev/prod runtimes. |
+| `apps/gateway/tests/Feature/Actions/Apps/EnactAppRuntimeTest.php` | Agent-push artifact convergence across development and production runtimes. |
 
 Context-specific behavior and test mapping live in:
 

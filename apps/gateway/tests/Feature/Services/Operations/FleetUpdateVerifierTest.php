@@ -89,7 +89,7 @@ it('verifies gateway scheduler workload CLI and required role images', function 
     $run = fleetVerifierRun();
     Node::factory()
         ->agent()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'agent-1',
             'platform' => 'ubuntu_24-04',
@@ -97,15 +97,15 @@ it('verifies gateway scheduler workload CLI and required role images', function 
         ]);
     Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.44.0.12',
         ]);
     Node::factory()
         ->database()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'database-1',
             'platform' => 'ubuntu',
@@ -114,7 +114,7 @@ it('verifies gateway scheduler workload CLI and required role images', function 
     Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
     Node::factory()
         ->ingress()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'ingress-1',
             'platform' => 'ubuntu_24-04',
@@ -128,7 +128,7 @@ it('verifies gateway scheduler workload CLI and required role images', function 
     $requests = fleet_verifier_agent_requests();
 
     expect($requests)
-        ->toHaveCount(11)
+        ->toHaveCount(7)
         ->and($requests[0]['node'])
         ->toBe('10.44.0.11')
         ->and($requests[0]['argv'])
@@ -138,30 +138,24 @@ it('verifies gateway scheduler workload CLI and required role images', function 
         ])
         ->and($requests[0]['input'])
         ->toBe(json_encode(['bin_path' => '/home/orbit/.local/bin/orbit'], JSON_THROW_ON_ERROR))
-        ->and($requests[1]['input'])
-        ->toBe(json_encode(['bin_path' => '/usr/local/bin/orbit'], JSON_THROW_ON_ERROR))
         ->and($requests[0]['operation_id'])
         ->toBe($run->id)
         ->and(array_column($requests, 'node'))
         ->toBe([
             '10.44.0.11',
-            '10.44.0.11',
-            '10.44.0.12',
             '10.44.0.12',
             '10.44.0.13',
-            '10.44.0.13',
-            '10.44.0.14',
             '10.44.0.14',
             '10.44.0.11',
             '10.44.0.12',
             '10.44.0.14',
         ])
-        ->and($requests[8]['argv'])
+        ->and($requests[4]['argv'])
         ->toMatchArray([
             'internal:fleet-update:verify',
             'role-images',
         ])
-        ->and($requests[8]['input'])
+        ->and($requests[4]['input'])
         ->toBe(json_encode(['images' => ['caddy:2-alpine']], JSON_THROW_ON_ERROR));
 });
 
@@ -181,7 +175,7 @@ it('verifies macos workload CLI through the user launcher and skips required rol
     $run = fleetVerifierRun();
     Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'mini',
             'platform' => 'darwin',
@@ -208,7 +202,7 @@ it('verifies macos workload CLI through the user launcher and skips required rol
         ->toBe(json_encode(['bin_path' => '/Users/nckrtl/.local/bin/orbit'], JSON_THROW_ON_ERROR));
 });
 
-it('verifies Orbit Agent artifacts on agent-capable gateway and workload nodes', function (): void {
+it('verifies Orbit Agent artifacts on agent-capable workload nodes and excludes the gateway', function (): void {
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
             output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
@@ -224,7 +218,7 @@ it('verifies Orbit Agent artifacts on agent-capable gateway and workload nodes',
     $run = fleetVerifierRun();
     Node::factory()
         ->gateway()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'gateway-1',
             'platform' => 'debian_12',
@@ -232,15 +226,15 @@ it('verifies Orbit Agent artifacts on agent-capable gateway and workload nodes',
         ]);
     Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.44.0.12',
         ]);
     Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'mini',
             'platform' => 'darwin',
@@ -271,15 +265,15 @@ it('verifies Orbit Agent artifacts on agent-capable gateway and workload nodes',
     ));
 
     expect($agentRequests)
-        ->toHaveCount(3)
+        ->toHaveCount(2)
         ->and(array_column($agentRequests, 'node'))
-        ->toBe(['10.44.0.1', '10.44.0.12', '10.44.0.8'])
+        ->toBe(['10.44.0.12', '10.44.0.8'])
         ->and($agentRequests[0]['input'])
         ->toBe(json_encode([
             'bin_path' => '/home/orbit/.local/bin/orbit-agent',
             'sha256' => str_repeat('9', times: 64),
         ], JSON_THROW_ON_ERROR))
-        ->and($agentRequests[2]['input'])
+        ->and($agentRequests[1]['input'])
         ->toBe(json_encode([
             'bin_path' => '/Users/nckrtl/.local/bin/orbit-agent',
             'sha256' => str_repeat('7', times: 64),
@@ -313,10 +307,10 @@ it('fails when Orbit Agent artifact verification fails', function (): void {
     );
     Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.44.0.12',
         ]);
 
@@ -341,10 +335,10 @@ it('fails when workload CLI verification fails', function (): void {
     $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVerifierSnapshot());
     Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.44.0.12',
         ]);
 
@@ -369,10 +363,10 @@ it('fails when a required role image is missing on a workload node', function ()
     $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVerifierSnapshot());
     Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.44.0.12',
         ]);
 
@@ -388,7 +382,7 @@ it('emits terminal success only after runner verification passes', function (): 
     $run = fleetVerifierRun();
     Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
             'platform' => 'linux',
@@ -416,42 +410,38 @@ it('emits terminal success only after runner verification passes', function (): 
         ->toBe(OperationStatus::Succeeded)
         ->and(fleetVerifierStepEvents($run))
         ->toBe([
-            ['runner',                'running'],
-            ['check-updates',         'running'],
-            ['check-updates',         'done'],
-            ['check-fleet-versions',  'running'],
-            ['check-fleet-versions',  'done'],
-            ['lease.fleet',           'done'],
-            ['update-artifacts',      'running'],
-            ['update-artifacts',      'done'],
-            ['gateway',               'running'],
-            ['lease.gateway',         'done'],
-            ['scheduler.stop',        'running'],
-            ['scheduler.stop',        'done'],
-            ['migrations',            'running'],
-            ['migrations',            'done'],
-            ['gateway.service',       'running'],
-            ['gateway.service',       'done'],
-            ['scheduler.start',       'running'],
-            ['scheduler.start',       'done'],
-            ['gateway.stack',         'running'],
-            ['gateway.stack',         'done'],
-            ['gateway.agent-config',  'running'],
-            ['gateway.agent-config',  'done'],
-            ['gateway.host-cli',      'running'],
-            ['gateway.host-cli',      'done'],
-            ['gateway.agent-service', 'running'],
-            ['gateway.agent-service', 'done'],
-            ['gateway',               'done'],
-            ['workload-nodes',        'running'],
-            ['workload.app-dev-1',    'running'],
-            ['workload.app-dev-1',    'running'],
-            ['workload.app-dev-1',    'running'],
-            ['workload.app-dev-1',    'running'],
-            ['workload.app-dev-1',    'done'],
-            ['workload-nodes',        'done'],
-            ['verification',          'running'],
-            ['verification',          'done'],
+            ['runner',               'running'],
+            ['check-updates',        'running'],
+            ['check-updates',        'done'],
+            ['check-fleet-versions', 'running'],
+            ['check-fleet-versions', 'done'],
+            ['lease.fleet',          'done'],
+            ['update-artifacts',     'running'],
+            ['update-artifacts',     'done'],
+            ['gateway',              'running'],
+            ['lease.gateway',        'done'],
+            ['scheduler.stop',       'running'],
+            ['scheduler.stop',       'done'],
+            ['migrations',           'running'],
+            ['migrations',           'done'],
+            ['gateway.service',      'running'],
+            ['gateway.service',      'done'],
+            ['scheduler.start',      'running'],
+            ['scheduler.start',      'done'],
+            ['gateway.stack',        'running'],
+            ['gateway.stack',        'done'],
+            ['gateway.host-cli',     'running'],
+            ['gateway.host-cli',     'done'],
+            ['gateway',              'done'],
+            ['workload-nodes',       'running'],
+            ['workload.app-dev-1',   'running'],
+            ['workload.app-dev-1',   'running'],
+            ['workload.app-dev-1',   'running'],
+            ['workload.app-dev-1',   'running'],
+            ['workload.app-dev-1',   'done'],
+            ['workload-nodes',       'done'],
+            ['verification',         'running'],
+            ['verification',         'done'],
         ])
         ->and($run->events()->where('event_type', 'complete')->first()?->payload)
         ->toMatchArray([
@@ -473,7 +463,7 @@ it('emits terminal failure when runner verification fails', function (): void {
     $run = fleetVerifierRun();
     Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
             'platform' => 'linux',

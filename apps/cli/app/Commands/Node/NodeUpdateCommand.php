@@ -17,17 +17,17 @@ final class NodeUpdateCommand extends GatewayCommand
     protected $signature = 'node:update
         {name? : Node name to update}
         {--host= : New SSH/bootstrap endpoint}
-        {--user= : SSH user the gateway should use for node operations}
+        {--user= : Orbit runtime user for node-owned files and commands}
         {--tld= : Node TLD}
         {--gateway-endpoint= : WireGuard endpoint host this node should use to reach the gateway}
         {--public-ipv4= : Public IPv4 address metadata}
         {--public-ipv6= : Public IPv6 address metadata}
-        {--orbit-agent-capable : Mark this node as Orbit Agent capable}
-        {--no-orbit-agent-capable : Mark this node as not Orbit Agent capable}
+        {--managed : Opt a roleless operator node into Orbit-managed Agent execution}
+        {--no-managed : Clear the explicit managed opt-in for this node}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Update node registry metadata and role-owned settings.';
+    protected $description = 'Update node registry metadata and explicit managed intent.';
 
     public function handle(): int
     {
@@ -37,12 +37,10 @@ final class NodeUpdateCommand extends GatewayCommand
             return $this->renderFailure('validation_failed', 'Node name is required.', ['field' => 'name']);
         }
 
-        if ($this->orbitAgentCapabilityOptionConflict()) {
-            return $this->renderFailure(
-                'validation_failed',
-                'Use only one of --orbit-agent-capable or --no-orbit-agent-capable.',
-                ['field' => 'orbit_agent_capable'],
-            );
+        if ($this->managedOptionConflict()) {
+            return $this->renderFailure('validation_failed', 'Use only one of --managed or --no-managed.', [
+                'field' => 'managed',
+            ]);
         }
 
         $payload = array_filter(
@@ -53,7 +51,7 @@ final class NodeUpdateCommand extends GatewayCommand
                 'gateway_endpoint' => $this->stringOption('gateway-endpoint'),
                 'public_ipv4' => $this->stringOption('public-ipv4'),
                 'public_ipv6' => $this->stringOption('public-ipv6'),
-                'orbit_agent_capable' => $this->orbitAgentCapabilityOption(),
+                'managed' => $this->managedOption(),
             ],
             fn (mixed $value): bool => $value !== null,
         );
@@ -250,22 +248,22 @@ final class NodeUpdateCommand extends GatewayCommand
         return is_string($value) && $value !== '' ? $value : null;
     }
 
-    private function orbitAgentCapabilityOption(): ?bool
+    private function managedOption(): ?bool
     {
-        if ($this->booleanFlagOption('orbit-agent-capable')) {
+        if ($this->booleanFlagOption('managed')) {
             return true;
         }
 
-        if ($this->booleanFlagOption('no-orbit-agent-capable')) {
+        if ($this->booleanFlagOption('no-managed')) {
             return false;
         }
 
         return null;
     }
 
-    private function orbitAgentCapabilityOptionConflict(): bool
+    private function managedOptionConflict(): bool
     {
-        return $this->booleanFlagOption('orbit-agent-capable') && $this->booleanFlagOption('no-orbit-agent-capable');
+        return $this->booleanFlagOption('managed') && $this->booleanFlagOption('no-managed');
     }
 
     private function booleanFlagOption(string $key): bool

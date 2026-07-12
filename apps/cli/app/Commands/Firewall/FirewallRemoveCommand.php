@@ -10,6 +10,7 @@ use RuntimeException;
 
 final class FirewallRemoveCommand extends FirewallGatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use WithStepTree;
 
     #[\Override]

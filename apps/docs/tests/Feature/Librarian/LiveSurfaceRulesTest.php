@@ -96,14 +96,14 @@ it('maps space-namespaced command names onto command doc slugs', function (): vo
     config()->set('librarian.rules', [CommandSurfaceCoverageRule::class]);
     bindLiveSurfaceFake([
         new CliCommand(name: 'node:new', arguments: ['name'], options: ['json']),
-        new CliCommand(name: 'node role:add', arguments: ['node', 'role'], options: ['json', 'tld']),
+        new CliCommand(name: 'node role:add', arguments: ['node', 'role'], options: ['json', 'redis-node']),
     ]);
     writeLiveSurfaceFamily($this->fixtureRoot);
     writeLiveSurfaceCommandDirectory(
         $this->fixtureRoot,
         'domains/1_node/2_node-role-add',
         'node-role-add',
-        'orbit node role:add <node> <role> [--tld=<tld>] [--json]',
+        'orbit node role:add <node> <role> [--redis-node=<node>] [--json]',
     );
 
     $payload = runLiveSurfaceLint();
@@ -306,13 +306,13 @@ it('reports banned terms outside their allow paths', function (): void {
         ->toContain('process:start');
 });
 
-it('allows restored tool lifecycle commands while keeping logs and reload banned', function (): void {
+it('allows declared tool lifecycle verbs while flagging configured non-surface verbs', function (): void {
     config()->set('librarian.rules', [BannedTermsRule::class]);
     config()->set('librarian.banned_terms', [
         [
-            'terms' => ['tool:logs', 'tool:reload'],
-            'decision' => '2026-06-06 tool logs and reload remain process-owned (solo todo #703)',
-            'replacement' => '`process:logs` or a process-owned reload/restart flow',
+            'terms' => ['tool:tail', 'tool:refresh'],
+            'decision' => 'test-only removed tool verbs',
+            'replacement' => 'a capability-declared tool verb',
             'allow_paths' => [],
         ],
     ]);
@@ -320,7 +320,7 @@ it('allows restored tool lifecycle commands while keeping logs and reload banned
     writeLiveSurfaceFile(
         $this->fixtureRoot,
         'content/domains/3_tool/tool-concepts.md',
-        "# Tool Concepts\n\n`tool:start`, `tool:stop`, and `tool:restart` are restored for lifecycle-capable tools.\n\n`tool:logs` and `tool:reload` remain outside the tool surface.\n",
+        "# Tool Concepts\n\n`tool:start`, `tool:stop`, `tool:restart`, `tool:logs`, and `tool:reload` require declared capabilities.\n\n`tool:tail` and `tool:refresh` are not commands.\n",
     );
 
     $payload = runLiveSurfaceLint();
@@ -333,11 +333,13 @@ it('allows restored tool lifecycle commands while keeping logs and reload banned
         ->and($findings)
         ->toHaveCount(2)
         ->and($messages)
-        ->toContain('tool:logs')
-        ->toContain('tool:reload')
+        ->toContain('tool:tail')
+        ->toContain('tool:refresh')
         ->not->toContain('tool:start')
         ->not->toContain('tool:stop')
-        ->not->toContain('tool:restart');
+        ->not->toContain('tool:restart')
+        ->not->toContain('tool:logs')
+        ->not->toContain('tool:reload');
 });
 
 it('does not flag terms that only embed a banned term as a substring', function (): void {

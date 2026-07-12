@@ -2,7 +2,7 @@
 
 [Back to Deploy commands.](../README.md)
 
-Add a deployment pipeline step to a production app.
+Add a deployment pipeline step to a concrete production app instance.
 
 Use `deploy:step-add` to define one shell command or multiline script that runs during
 [`deploy:run`](../4_deploy-run/deploy-run.md). The command records deployment
@@ -17,15 +17,16 @@ orbit deploy:step-add [app] [command] [--title=<title>] [--order=<number>] [--ti
 ## Examples
 
 ```bash
-orbit deploy:step-add docs "git pull origin main" --title="Pull latest"
-orbit deploy:step-add docs "php artisan migrate --force" --order=20 --timeout=120 --title="Run migrations"
-orbit deploy:step-add docs "./release.sh" --retention=5
-orbit deploy:step-add docs $'cd {{ release_path }}\ncomposer install --no-dev --optimize-autoloader --no-interaction' --title="Install dependencies"
+orbit deploy:step-add docs.production "git pull origin main" --title="Pull latest"
+orbit deploy:step-add docs.production "php artisan migrate --force" --order=20 --timeout=120 --title="Run migrations"
+orbit deploy:step-add docs.production "./release.sh" --retention=5
+orbit deploy:step-add docs.production $'cd {{ release_path }}\ncomposer install --no-dev --optimize-autoloader --no-interaction' --title="Install dependencies"
 ```
 
 ## Arguments and options
 
-- `app`: production app name or domain.
+- `app`: dotted production app-instance selector. A bare app name or domain is
+  valid only when the app has exactly one instance.
 - `command`: shell command or multiline shell script to run during deployment.
 - `--title`: display label. Defaults to a concise command-derived title.
 - `--order`: insertion order. Defaults to the next position.
@@ -36,8 +37,10 @@ orbit deploy:step-add docs $'cd {{ release_path }}\ncomposer install --no-dev --
 
 ## What Happens
 
-Use `deploy:step-add` when you need to add a new shell command to the app's deployment pipeline. `deploy:step-add` validates the production app, command, timeout, and optional
-metadata, then writes one deployment step definition owned by the app on the gateway.
+Use `deploy:step-add` when you need to add a new shell command to an app
+instance's deployment pipeline. It validates the production app instance,
+command, timeout, and optional metadata, then writes one deployment step
+definition owned by that instance on the gateway.
 It does not execute the step, inspect node state, create app process
 definitions, or apply global deployment retention.
 
@@ -53,9 +56,9 @@ JSON output returns the created deploy step entity.
 
 ## Requirements
 
-- The CLI caller can reach the Orbit gateway, or the command runs on the
-  gateway.
-- The caller has `deploy:step` on the production app's owning node.
+- The CLI caller can reach the Orbit gateway.
+- The caller has `deploy:step` on the instance's owning Orbit node, or on the
+  gateway when the instance is external.
 
 ## Related
 

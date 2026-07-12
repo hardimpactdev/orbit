@@ -80,14 +80,14 @@ Gateway maintenance uses `bin/orbit-gateway-artisan` or direct
 command never dispatches to gateway Artisan.
 
 Nodes do not own fleet state or run a local control plane. They run workload
-services, call the gateway when a local command is invoked, and currently
-receive gateway-applied changes over explicit SSH fallback paths. The Orbit
-Agent runs on the node and lets supported nodes receive typed command envelopes
-pushed by the gateway, but it does not make the node a source of truth.
+services, call the gateway when a local command is invoked, and receive typed
+command envelopes that the gateway sends through Agent push. Work for the
+gateway executes locally. The Orbit Agent does not make a node a source of truth.
 
 Node-side CLI availability is not general write permission. Any node-side
-write that follows the standard `node → gateway → SSH-back-via-RemoteShell`
-path requires the node's self-grant to include the permissions for that write. See
+write is authorized by the gateway before gateway-local handling or Agent push
+to a non-gateway node. The node's self-grant must include the permissions for
+that write. See
 [architecture.md#self-grants-and-self-serving](../../architecture.md#self-grants-and-self-serving).
 [`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md) is
 the most visible example today — it works because the `app-dev` and
@@ -176,26 +176,26 @@ connected to the gateway; they do not coordinate Orbit work with each other
 directly.
 
 ```text
-                      +--------------+
-                      | client |
-                      +------+-------+
-                             |
-                             | HTTPS over WireGuard
-                             v
-+-----------+   SSH   +------+-------+   SSH   +-----------+
-| workload  | <------ |   gateway    | ------> | workload  |
-| node      |         |              |         | node      |
-+-----+-----+         +------+-------+         +-----+-----+
-                             ^
-                             | event callbacks only
-                             |
-                        node hooks
+                              +--------------+
+                              |    client    |
+                              +------+-------+
+                                     |
+                                     | HTTPS over WireGuard
+                                     v
++-----------+     Agent push     +-----------+     Agent push     +-----------+
+| workload  | <----------------- |  gateway  | -----------------> | workload  |
+| node      |                    +-----+-----+                    | node      |
++-----------+                          ^                          +-----------+
+                                       | event callbacks only
+                                       |
+                                  node hooks
 ```
 
-Clients consume the gateway API. Nodes serve workloads and receive
-gateway-applied changes over SSH. CLI calls from nodes also consume the gateway
-API and may infer local app or workspace context. Non-CLI node to gateway
-traffic is limited to narrow event callbacks such as process lifecycle hooks.
+Clients consume the gateway API. Nodes serve workloads and receive typed Agent
+push over Orbit/WireGuard. Gateway-owned work executes locally on the gateway.
+CLI calls from nodes also consume the gateway API and may infer local app or
+workspace context. Non-CLI node-to-gateway traffic is limited to Agent responses
+and narrow event callbacks such as process lifecycle hooks.
 
 ## Domain Rules
 
@@ -208,7 +208,8 @@ These rules apply to all node commands and define the invariants the family enfo
   [node-concepts.md](node-concepts.md#role-platform-support). Commands that
   provision a host or apply node-side artifacts must validate the observed host
   platform against that matrix before side effects.
-- Initial provisioning of the gateway and other nodes is always performed over SSH.
+- Initial provisioning of the gateway and other nodes is always performed over
+  SSH. This is Orbit's sole permanent SSH lane.
 - After bootstrap, CLI callers communicate with the gateway over HTTPS through
   WireGuard; the gateway applies node changes through its node execution
   primitive.
@@ -270,24 +271,24 @@ These rules apply to all node commands and define the invariants the family enfo
   `--force` removes Orbit-owned dependents and configuration but preserves data.
   `--force --purge-data` deletes role-owned data only where an explicit command
   contract supports that purge.
-- WireGuard, SSH, and certificates are node infrastructure details. They support
-  node identity and reachability, but they are not separate product domains in
-  the command contract.
+- WireGuard, provisioning SSH, and certificates are node infrastructure
+  details. They support node identity and bootstrap reachability, but they are
+  not separate product domains in the command contract.
 - Local node defaults do not grant access. The gateway still authenticates the
   caller and authorizes the requested operation through node access policy.
 - For gateway nodes, node readiness includes the `orbit-gateway` service,
   `orbit-scheduler` service, gateway config root, and the selected gateway
   exposure mode. Runtime container provisioning commands specific to the
   process manager are not a public node command surface.
-- `orbit doctor --family=node` verifies role, platform, WireGuard, SSH, and
-  reachability expectations, including gateway service readiness for gateway
-  nodes.
+- `orbit doctor --family=node` verifies role, platform, WireGuard, Agent
+  transport, provisioning SSH policy, and reachability expectations, including
+  gateway service readiness for gateway nodes.
 
 The node host contract is Docker-first. Provisioning creates or adopts
-WireGuard/SSH identity material, the Orbit config local to the node, WireGuard
-service-address routing, and the Orbit CLI entry point on the node for every
-managed Ubuntu node. That state is topology infrastructure, not app, process,
-tool, or database runtime prerequisite state.
+WireGuard identity and provisioning SSH hardening material, the Orbit config
+local to the node, WireGuard service-address routing, and the Orbit CLI entry
+point on the node for every managed Ubuntu node. That state is topology
+infrastructure, not app, process, tool, or database runtime prerequisite state.
 
 Production artifact installs use the prebuilt Orbit CLI binary (embedded PHP 8.5 +
 `pdo_sqlite`/`openssl`/`curl`/`mbstring`/`tokenizer`/`ctype`/`filter`/`fileinfo`/`json`/`phar`/`zlib`). A node running the gateway role in production requires Docker Engine/CLI,
@@ -312,43 +313,45 @@ Node transport has different rules before and after bootstrap:
 - CLI callers use HTTPS over WireGuard to communicate with the gateway after
   local gateway configuration. This lets clients and CLI clients on nodes
   operate without owning fleet state.
-- A roleless active operator node can opt into gateway-owned SSH management by
-  running `orbit node:manage` locally. The command does not add a role or a
-  managed flag.
-- `node:manage` installs the gateway management public key into the current
+- A roleless active operator node can explicitly opt into managed Agent intent
+  by running `orbit node:manage --node-transport=transitional-ssh-fallback`
+  locally. The command does not add a role; it sets `node.managed=true` only
+  after its exact-marked transitional bootstrap succeeds.
+- `node:manage` preflights the exact transitional SSH marker, installs the gateway management public key into the current
   local user's `~/.ssh/authorized_keys`, persists `node.user` and
   `node.platform`, pins the node SSH host key by `node.wireguard_address`, and
   verifies that the gateway can reach the node over SSH at that WireGuard
   address.
-- VPN-role runtime administration is the exception: `vpn-client:*` and
-  `vpn-web-ui:*` commands run against the active `vpn` role runtime, so in v1 a
-  client initiating them needs SSH access to the gateway-coupled host over
-  Orbit/WireGuard.
-- The gateway currently uses SSH to communicate with nodes. On-node work such
-  as file writes, service control, log access, package installation, and shell
-  execution is explicit over SSH.
+- Provisioning is the sole permanent SSH lane. The exact-marked `node:manage`
+  seam is transitional and remains in the generated SSH inventory until it is
+  ported to Agent push.
+- Provisioning uses SSH to establish a node's managed substrate.
+  After bootstrap, the gateway sends typed `binary + argv` envelopes to the
+  Orbit Agent for work on that node. Work for the gateway executes locally.
 - The Orbit Agent lane is reserved for supported nodes, starting with macOS
   `app-dev` and self-managed workload nodes. The runtime in `apps/agent`
   receives gateway-pushed `binary + argv` command envelopes over the node-local
   Agent listener; it is not arbitrary shell transport, not a WebSocket
   requirement, and not an HTTP capability API on the node.
-- The current runtime bootstrap does not implement a privileged Agent work queue.
-  Later privileged Orbit Agent slices may use the OS prompt when the gateway
-  submits protected local work through direct agent-push. V1 has no separate
+- Protected Agent commands may use the OS prompt when the gateway submits local
+  work through direct Agent push. V1 has no separate
   Orbit approval UI or pending/approve flow. The macOS menu icon only means the
   process is running;
   opening the menu may perform a one-shot gateway ping that shows Connected or
   Disconnected, node name, and gateway name/host, plus Restart and Quit actions.
-  It does not show Agent job history.
+  It does not show command history.
 - Orbit Agent is distinct from the existing `agent` workload role and from
   Agent IDE adapters.
 
 The current steady-state paths are therefore:
 
 1. CLI caller to gateway over HTTPS through WireGuard;
-2. gateway to node through gateway-pushed Agent HTTP for supported node-local
-   execution, with explicit transitional SSH fallback retained only for
-   bootstrap, recovery, and migration.
+2. gateway-local execution for gateway work, or gateway-pushed Agent HTTP for
+   non-gateway node-local execution.
+
+Provisioning is the sole permanent Orbit SSH lane. The SSH seam in
+`node:manage` is transitional and requires its exact transport marker.
+Break-glass SSH belongs to the operator and remains outside Orbit commands.
 
 ## Role Bootstrap Network Policy
 
@@ -370,7 +373,9 @@ is role-aware:
 - only nodes with active `ingress` expose public production HTTP/HTTPS, with
   HTTPS represented as TCP/443 plus UDP/443 on the public listener;
 - `app-prod` backend port `80` is private backend traffic reachable only through the Orbit/WireGuard network;
-- SSH and other node-management access stay on the Orbit network.
+- The Agent listener and other endpoints used to manage a node stay on the
+  Orbit network. Provisioning SSH must not remain publicly exposed after
+  bootstrap.
 
 The node's assigned WireGuard IP is its private service address. TCP service
 endpoints and private backend routes use that address directly instead of a
@@ -380,9 +385,9 @@ address that remote Orbit peers use.
 
 Node bootstrap applies this baseline with rollback and reachability checks so a
 failed policy change does not silently strand a node. Operator-managed firewall
-configuration after bootstrap belongs to the `firewall_rule` family, but public
-SSH is not part of the steady-state baseline. SSH management traffic must use
-the Orbit/WireGuard path.
+configuration after bootstrap belongs to the `firewall_rule` family. Orbit does
+not use SSH as command transport after provisioning. Break-glass SSH belongs to
+the operator and remains outside Orbit commands.
 
 Development DNS infrastructure is also node-owned during gateway/node
 bootstrap. Gateway-provisioned development DNS must be reachable through the

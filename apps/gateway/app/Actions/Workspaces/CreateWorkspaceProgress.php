@@ -21,7 +21,7 @@ final readonly class CreateWorkspaceProgress
         string $name,
         string $base,
         ?string $phpVersion,
-        ?AppInstance $instance = null,
+        AppInstance $instance,
     ): CreateWorkspaceProgressPlan {
         return new CreateWorkspaceProgressPlan(
             createWorkspace: $this->createWorkspace,

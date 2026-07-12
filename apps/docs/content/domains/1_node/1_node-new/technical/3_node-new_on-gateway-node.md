@@ -182,7 +182,7 @@ before any durable write:
 
 1. Build an in-memory candidate from the explicit request:
    `node_new.name`, the requested `app-dev` or `app-prod` role assignment,
-   role settings such as `node_new.tld`, `node_new.host`, `node_new.user`,
+   node identity such as `node_new.tld`, plus `node_new.host`, `node_new.user`,
    default runtime user `orbit`, and default Orbit path `/home/orbit/orbit`.
 2. Read the bounded node identity artifact from the candidate host. This read
    may use `node_new.user` as the transport credential but must not persist
@@ -194,8 +194,8 @@ before any durable write:
    with exactly one allowed address, and that address must equal the artifact
    WireGuard address.
 5. Validate app-specific gateway configuration before materialization:
-   development TLDs must be valid and unassigned, production nodes must not
-   carry a TLD, and the requested host, role assignment, and role settings must
+   node TLDs must be valid and unassigned for every path, and the requested
+   host, role assignment, and role settings must
    not collide with an incompatible active node record.
 6. Materialize the gateway row and peer together: create the active app-role row
    from the request plus artifact platform and WireGuard address, then attach a
@@ -225,9 +225,9 @@ identity. It must not overwrite a proven but incompatible host.
   address that matches the node record.
 - Provisioning on a node with an app role reports partial provisioning when gateway
   configuration is written but node readiness verification fails.
-- Missing app-role host or development TLD is handled by the selected input
+- Missing host or mandatory node TLD is handled by the selected input
   mode before side effects, as defined in the canonical contract.
-- Resolved development TLDs fail before side effects when they are invalid,
+- Resolved node TLDs fail before side effects when they are invalid,
   already assigned to another active node, or already mapped to another
   WireGuard target.
 

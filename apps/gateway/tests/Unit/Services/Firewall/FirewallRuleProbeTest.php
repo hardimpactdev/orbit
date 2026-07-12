@@ -141,7 +141,7 @@ describe('firewall backend UFW reality', function (): void {
                 UFW),
         ]);
         $node = createFirewallRuleProbeAppHostNode([
-            'orbit_agent_capable' => true,
+            'managed' => true,
             'wireguard_address' => '10.44.0.81',
         ]);
         $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);

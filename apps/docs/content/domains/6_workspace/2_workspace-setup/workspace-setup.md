@@ -147,7 +147,7 @@ The following steps describe what the command does during a successful run.
 - **Proxy Routing**: Ensures a workspace-owned route record exists in
   `proxy`.
 - **Artifact Apply**: Applies runtime and proxy backend artifacts on the
-  selected workspace node via SSH. Instance-bound workspaces inherit the app
+  selected workspace node through Agent push. Instance-bound workspaces inherit the app
   instance node, base path, document root, and domain.
 - **Setup Steps**: Runs setup steps when configured.
 - **HTTP Probe**: Performs a setup-time HTTP probe against the workspace URL.
@@ -164,7 +164,7 @@ operators and agents can see what changed.
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to manage the target workspace or
   parent app.
-- The gateway can reach the owning node over SSH.
+- The gateway can reach the owning node through Agent push.
 
 ## Output Summary
 

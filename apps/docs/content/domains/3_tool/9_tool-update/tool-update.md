@@ -11,7 +11,7 @@ first install, process runtime migration, or configuration-only repair.
 ## Usage
 
 ```bash
-orbit tool:update [tool] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--expected-version=<version>] [--json|--stream-json]
+orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]
 ```
 
 ## Examples
@@ -22,7 +22,6 @@ orbit tool:update composer --node=app-1 --expected-version=2.9.2
 orbit tool:update --node=app-1
 orbit tool:update opencode-cli --app=docs --json
 orbit tool:update opencode-cli --app=docs --stream-json
-orbit tool:update caddy --node=beast --node-transport=transitional-ssh-fallback --stream-json
 ```
 
 ## Arguments and options
@@ -33,10 +32,6 @@ orbit tool:update caddy --node=beast --node-transport=transitional-ssh-fallback 
   `--version` console option. When omitted, the tool definition's latest
   supported version is used.
 - `--node`: Target node. Defaults to local `node:default` when configured.
-- `--node-transport`: Node execution transport preference. Defaults to `auto`.
-  Catalog update scripts dispatch through the typed `internal:tool:run-script`
-  command over agent-push. The preference is honored for normal output,
-  `--json`, and `--stream-json`.
 - `--app`: Resolve the target node from an app.
 - `--json`: Output JSON.
 - `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive
@@ -54,6 +49,11 @@ Target context is required when neither `--node`, `--app`, nor local
 3. Updates the gateway expected version.
 4. Applies the version update through the gateway.
 5. Reports updated, skipped, and failed tools.
+
+Expected-version writes stay gateway-local. Target-node update actions use
+Agent push; `tool:update` exposes no node transport selector and never falls
+back to SSH. This applies equally to human, `--json`, and `--stream-json`
+output.
 
 Use [`tool:install`](../3_tool-install/tool-install.md) to create or configure a tool for the
 first time. Use [`tool:reconfigure`](../12_tool-reconfigure/tool-reconfigure.md) to rerun setup

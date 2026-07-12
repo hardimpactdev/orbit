@@ -20,20 +20,22 @@ similar backing services. PHP-FPM and Supervisor are not app/workspace runtime
 fallbacks.
 
 The gateway role also renders an `orbit-operations-reverb` Swarm service for
-future Orbit operation streams. That gateway-owned operations surface reuses the
+durable Orbit operation progress. That gateway-owned operations surface reuses the
 `orbit-reverb` image but is separate from app-facing `websocket` role traffic,
 `websocket.orbit`, app WebSocket bindings, and the websocket role's Redis
 scaling dependency.
 
 Orbit Agent is a separate native lane. The headless Orbit Agent service lives
-under `apps/agent` as a Rust/Axum service binary for supported explicitly
-agent-capable Linux/Ubuntu and macOS `app-dev` or self-managed workload nodes.
+under `apps/agent` as a Rust/Axum service binary for supported Linux/Ubuntu and
+macOS nodes with an active workload role or an explicit roleless `managed`
+opt-in. Gateway nodes are never Agent targets.
 It listens on the node's Agent process port for gateway-pushed typed command
 envelopes; it does not run a background retrieval or polling loop.
 The macOS tray UI lives under `apps/macos` as a Tauri/Rust menu-bar app that
 does not own the long-running service loop. It is not the `agent` workload role
 and is not an agent tool installed through `tool:install`.
-The `agent` workload role does not imply Orbit Agent capability.
+Like every workload role, the `agent` role creates managed Agent intent, but it
+does not by itself prove platform support or listener reachability.
 A locally installed or locally launched `Orbit Agent.app` on macOS is
 host-local runtime evidence for native tray work, but the current Orbit CLI
 product surface does not install, start, update, restart, or uninstall the
@@ -42,8 +44,9 @@ macOS app.
 The CLI is the public product contract. Gateway Artisan is maintenance/internal
 automation only. When node-local command execution is supported by Orbit Agent,
 the gateway pushes typed envelopes to the node over the Orbit/WireGuard
-network. SSH/RemoteShell remains an explicit migration, recovery, or utility
-fallback, not the default managed execution path.
+network. SSH is permanent only for provisioning/bootstrap. Any remaining
+non-provisioning SSH consumer is an exact-marked `transitional-ssh` seam until
+it is ported; it is never an implicit managed-execution fallback.
 
 ## Universal output rules
 
@@ -93,7 +96,7 @@ command catalog when command completeness matters.
 | `orbit doctor` | Diagnose state-family drift; `--restore` reapplies intent, `--adopt` records node reality, `--all` verifies the fleet |
 | `orbit update` | Update the caller-local Orbit CLI binary, gated by the active gateway version |
 | `orbit update:all` | Update Orbit nodes gateway-first, then caller-local and workload nodes as fan-out targets |
-| `orbit profile [target]` | Profile one HTTP request against an Orbit-managed app (DNS/connect/TLS/TTFB + Toolbar enrichment) |
+| `orbit profile [url]` | Locally profile one direct absolute URL (DNS/connect/TLS/TTFB + Toolbar enrichment) |
 
 ### Local skill install  -  [`references/skill.md`](references/skill.md)
 
@@ -119,7 +122,7 @@ command catalog when command completeness matters.
 | `orbit node:new [name]` | Create a client identity or provision a workload-role node |
 | `orbit node:list` | List nodes in the gateway registry |
 | `orbit node:show [name]` | Show one node's registry record |
-| `orbit node:update [name]` | Update node host, TLD, gateway endpoint, public IP metadata, or explicit Orbit Agent capability |
+| `orbit node:update [name]` | Update node host/user/TLD, endpoint and public-IP metadata, or roleless managed opt-in |
 | `orbit node:remove [name]` | Remove a node from the registry |
 | `orbit node:default [name]` | Choose, show, or clear the local default development node |
 | `orbit node:grant <consumer> <server>` | Grant one node access to another |
@@ -195,10 +198,10 @@ command catalog when command completeness matters.
 
 ### Tools and services  -  [`references/tool.md`](references/tool.md)
 
-Generic surface for node capabilities. Tools do not own start/stop/restart/log
-lifecycle for runnable services, except explicit tool-owned lifecycle
-capabilities such as macOS-only `orbstack`. Logs and reload remain outside the
-tool command surface.
+Generic surface for node capabilities. Runnable services normally expose
+lifecycle through their owning processes. A tool may instead declare explicit
+tool-owned lifecycle capabilities; Orbit exposes only the verbs declared by
+that tool definition.
 
 | Command | What it does |
 |---|---|
@@ -208,6 +211,8 @@ tool command surface.
 | `orbit tool:update [tool]` | Update a managed tool |
 | `orbit tool:remove <tool>` | Remove a managed tool |
 | `orbit tool:start\|stop\|restart <tool>` | Control lifecycle-capable tools such as `orbstack` |
+| `orbit tool:reload <tool>` | Reload a tool that declares the `reload` capability |
+| `orbit tool:logs <tool>` | Read logs from a tool that declares the `logs` capability |
 | `orbit tool:reconfigure <tool>` | Rotate auth or re-provision (e.g. `--password=`) |
 | `orbit tool:credentials [tool]` | Read connection credentials |
 
@@ -318,7 +323,7 @@ tool command surface.
 
 ```bash
 # On the gateway:
-orbit node:new my-mac --operator
+orbit node:new my-mac --operator --tld=my-mac
 # Install the returned WireGuard config on the Mac, then on the Mac:
 orbit gateway:add 10.6.0.1
 ```
@@ -326,7 +331,7 @@ orbit gateway:add 10.6.0.1
 **Bootstrap the first gateway from a fresh Mac**
 
 ```bash
-orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --operator-name=my-mac
+orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --tld=gateway --operator-name=my-mac --operator-tld=my-mac
 ```
 
 **Create a development app + database**
@@ -353,7 +358,7 @@ orbit deploy:history myapp
 **Publish the fleet S3 endpoint**
 
 ```bash
-orbit node:new storage-1 --template=s3 --host=10.0.0.20 --s3-data-path=/srv/orbit/s3/data
+orbit node:new storage-1 --template=s3 --host=10.0.0.20 --tld=storage-1 --s3-data-path=/srv/orbit/s3/data
 orbit s3:credentials --node=storage-1
 orbit s3:publish s3.example.com --node=storage-1
 ```
@@ -391,15 +396,16 @@ orbit app:agent-ide myapp inherit    # use node default
 orbit app:agent-ide myapp polyscope  # per-app override
 ```
 
-**Mark a supported node as Orbit Agent capable**
+**Opt a supported roleless node into managed Agent execution**
 
 ```bash
-orbit node:update mini --orbit-agent-capable
+orbit node:update mini --managed
 ```
 
-This only toggles gateway registry state for typed Orbit Agent job delivery. It
-does not install, start, update, restart, or uninstall the macOS app, and the
-`agent` workload role does not imply Orbit Agent capability.
+This records explicit managed intent for a roleless node. Workload roles already
+provide that intent. Eligibility still requires a supported platform, a
+WireGuard address, and a non-gateway identity; this option does not install,
+start, update, restart, or uninstall the macOS app.
 
 ## Conventions when calling Orbit
 

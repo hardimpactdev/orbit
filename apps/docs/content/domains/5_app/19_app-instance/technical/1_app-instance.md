@@ -50,8 +50,9 @@ Gateway-owned `app_instances` rows belong to one app. Each row stores:
 | `driver` | Instance driver. |
 | `driver_config` | Spatie Laravel Data object for the selected driver. |
 | `runtime_requirements` | Required PHP extensions and future runtime requirements. |
-| `latest_deployment_status` | Reserved for instance-scoped deployment status. |
-| `latest_deployment_run_id` | Reserved for instance-scoped deployment history. |
+| `deploy_warmup_paths` | HTTP paths warmed after a successful deployment of this instance. |
+| `latest_deployment_status` | Latest deployment status for this instance. |
+| `latest_deployment_run_id` | Latest deployment run owned by this instance. |
 
 ## API Surface
 
@@ -75,6 +76,9 @@ Gateway-owned `app_instances` rows belong to one app. Each row stores:
    the instance runtime payload.
 5. **Destructive remove.** Removing an instance requires `--force` or
    `destructive_consent=true`.
+6. **Deployment ownership.** Deployment policy, steps, warmup paths, runs,
+   history, logs, and latest status belong to the concrete instance. Logical
+   app rows do not carry deployment state.
 
 ### Laravel Cloud Environment Selection
 

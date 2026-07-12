@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:start <tool> [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--json|--stream-json]`
+# Technical Contract: `orbit tool:start <tool> [--app=<app>] [--node=<node>] [--json|--stream-json]`
 
 [Back to public `tool-start` documentation.](../tool-start.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:start <tool> [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--json|--stream-json]
+orbit tool:start <tool> [--app=<app>] [--node=<node>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -23,29 +23,31 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | Always. | Never. | None. | Registered lifecycle-capable tool name. |
-| `node` | `--node` | When no `--app` or local `node:default` is available. | Never. | `node:default` when set. | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
+| `node` | `--node` | When no `--app` or local `node:default` is available. | Never. | `node:default` when set. | Visible active node slug; selected tool must satisfy its operating-system, runtime-user, TLD/route, isolation, and gateway-local constraints. |
 | `app` | `--app` | Optional. | Never. | None. | Visible app selector used to resolve the owning node. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 | `stream-json` | `--stream-json` | Optional. | Never. | `false` | Selects newline-delimited progress frames and non-interactive input mode. Mutually exclusive with `--json`. |
 
 ## Behavior Contract
 
-### Tool-Owned Lifecycle
+### Declared Lifecycle
 
-- Dispatches the selected tool definition's explicit start script.
-- The initial supported tool is `orbstack` on macOS.
+- Requires the selected tool definition to declare `start`.
+- Resolves exactly one direct tool-owned runtime or exactly one process row
+  whose canonical `tool` value matches the selected tool.
+- A direct remote runtime dispatches through Agent push. A process-backed
+  runtime dispatches the native process start action.
 - Unsupported tools fail before host command execution.
-- Unsupported target operating systems fail before host command execution.
-- The command does not create, update, or route through process rows.
-- `tool:start` does not imply support for tool log streaming or reload commands.
+- Unsupported target constraints fail before runtime execution.
+- A missing or ambiguous runtime fails explicitly before runtime execution.
+- Support for `start` does not imply support for any other runtime verb.
 
 ### Scope Boundaries
 
 `tool-start` must not create apps, workspaces, processes, schedules, proxy
-routes, firewall rules, node identities, node grants, or related-process
-compatibility adapters. Related drift belongs to each owning family doctor
-contract.
+routes, firewall rules, node identities, or node grants. It may address the
+one exact matching process row but never creates or repairs that row and never
+falls back to a similarly named process.
 
 ## Renderer Contracts
 
@@ -64,6 +66,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support start. | `error.code=tool.unsupported_action` |
 | Unsupported platform | The selected tool does not support the target node operating system. | `error.code=tool.unsupported_on_node` |
+| Runtime missing | No direct runtime or matching process row exists. | `error.code=tool.runtime_missing` |
+| Runtime ambiguous | More than one direct/process runtime target resolves. | `error.code=tool.runtime_ambiguous` |
+| Agent push required | A direct remote runtime cannot be reached through Agent push. | `error.code=node_transport_required` |
 | Remote action failed | Gateway configuration was readable, but node execution failed. | `error.code=tool.remote_action_failed` |
 
 ## Doctor Relationship
@@ -78,5 +83,5 @@ probe, issue codes, fix map, and adopt map.
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI `tool:start` target resolution, JSON envelope, stream request shape, and gateway error envelope pass-through. |
 | `apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php` | Gateway lifecycle API success, unsupported tool, unsupported platform, and no-side-effect failure paths. |
-| `apps/gateway/tests/Unit/Services/Tools/OrbStackToolTest.php` | OrbStack lifecycle scripts and macOS-only support. |
-| `apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php` | Catalog `lifecycleScript()` returns OrbStack start scripts and returns `null` for non-lifecycle Docker. |
+| `apps/gateway/tests/Unit/Services/Tools/OrbStackToolTest.php` | OrbStack direct lifecycle scripts and macOS-only support. |
+| `apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php` | Catalog-declared lifecycle capabilities and unsupported actions. |

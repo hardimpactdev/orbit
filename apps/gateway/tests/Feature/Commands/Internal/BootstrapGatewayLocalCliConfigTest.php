@@ -56,6 +56,7 @@ it('seeds gateway-local CLI config for the orbit user with WireGuard HTTPS gatew
     $exitCode = Artisan::call('orbit:internal:bootstrap-gateway-local', [
         'name' => 'gateway-1',
         'wireguard-address' => '10.6.0.2',
+        '--tld' => 'gateway',
         '--skip-gateway-service-install' => true,
     ]);
 

@@ -12,13 +12,15 @@ use Throwable;
 
 final class NodeManageCommand extends GatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     #[\Override]
     protected $signature = 'node:manage
         {--user= : Local SSH user the gateway should use}
+        {--node-transport= : Required transitional transport (transitional-ssh-fallback)}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Opt this roleless node into gateway SSH management.';
+    protected $description = 'Opt this roleless node into transitional gateway SSH management.';
 
     public function handle(AuthorizedKeysInstaller $authorizedKeys, LocalPlatformDetector $platform): int
     {

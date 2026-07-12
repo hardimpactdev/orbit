@@ -67,7 +67,7 @@ class NodeRemoveDnsEnactorFake extends DevelopmentDnsMappingEnactor
  */
 function nodeRemoveDnsRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'app-1',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
@@ -75,10 +75,13 @@ function nodeRemoveDnsRow(array $overrides = []): array
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
-        'tld' => 'test',
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    $row['tld'] ??= $row['name'];
+
+    return $row;
 }
 
 function assignNodeRemoveDnsRole(string $nodeName, string $role): void
@@ -122,14 +125,14 @@ function setupNodeRemoveDnsGatewayApiCaller(): void
         'name' => 'control-api',
         'host' => '10.6.0.99',
         'wireguard_address' => '10.6.0.99',
-        'tld' => null,
+        'tld' => 'control-api',
     ]));
 
     $gatewayId = (int) DB::table('nodes')->insertGetId(nodeRemoveDnsRow([
         'name' => 'gateway-1',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
-        'tld' => null,
+        'tld' => 'gateway-1',
     ]));
 
     NodeRoleAssignment::factory()->create([

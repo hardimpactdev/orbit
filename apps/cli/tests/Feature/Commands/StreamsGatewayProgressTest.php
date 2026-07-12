@@ -355,7 +355,6 @@ describe('StreamsGatewayProgress', function (): void {
             'POST',
             '/api/nodes',
         ],
-        'deploy:run' => ['deploy:run', ['app' => 'docs'], 'POST', '/api/deploy/run'],
         'tool:install' => [
             'tool:install',
             ['tool' => 'composer', '--node' => 'app-1'],

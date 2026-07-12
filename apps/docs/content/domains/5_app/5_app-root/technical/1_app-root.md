@@ -15,7 +15,7 @@ command that writes production runtime state.
 
 **Prerequisites:**
 - The application record must exist in the gateway database.
-- The owning node must be reachable from the gateway via SSH.
+- The owning non-gateway node must be reachable through Agent push.
 - The caller has `app:root` on the app's owning node.
 
 ## Signature
@@ -62,7 +62,7 @@ This command follows the shared
    - Reject empty/null inputs and any value that resolves to an absolute path.
    - Resolve `root` against the gateway-known `app_path` purely as strings
      (lexical normalization, e.g. `Path::canonicalize($app_path . '/' . $root)`).
-     No SSH, no filesystem touch.
+     No node transport and no filesystem touch.
    - Require the normalized result to start with `app_path` (with `app_path`
      itself permitted when `root` is `.`).
    - Failure shape: `error.code=app.invalid_root` with
@@ -94,8 +94,8 @@ is unchanged.
     are affected by the document root change.
 3.  **Re-apply Artifacts:**
     - Re-render the affected artifacts using the current configuration.
-    - Upload and apply the artifacts to the node over SSH via
-      `RemoteShell::upload` / `run`.
+    - Apply the artifacts to the concrete app-instance node through typed Agent
+      push commands. Gateway-owned work, if any, executes locally.
     - The runtime container reload required to pick up the new document root is
       part of this step. It is not a separate user-facing surface; it is the
       apply plumbing for the runtime container artifact, in line with ARCHITECTURE

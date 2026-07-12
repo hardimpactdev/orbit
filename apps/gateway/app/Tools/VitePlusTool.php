@@ -6,6 +6,11 @@ namespace App\Tools;
 
 final class VitePlusTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux'];
+
     public function slug(): string
     {
         return 'viteplus';
@@ -14,6 +19,6 @@ final class VitePlusTool extends BaseTool
     #[\Override]
     public function category(): string
     {
-        return 'always';
+        return 'runtime';
     }
 }

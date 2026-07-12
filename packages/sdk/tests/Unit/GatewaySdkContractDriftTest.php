@@ -85,15 +85,15 @@ function core_dashboard_request_contracts(): array
             'arguments' => [
                 'connection' => 'main',
                 'payload' => [
-                    'target_type' => 'app',
-                    'target' => 'docs',
+                    'app' => 'docs',
+                    'instance' => 'development',
                     'env_prefix' => 'APP_DB',
                 ],
             ],
             'method' => Method::DELETE,
             'endpoint' => '/api/database-connections/main/targets',
             'query' => [],
-            'body' => ['target_type' => 'app', 'target' => 'docs', 'env_prefix' => 'APP_DB'],
+            'body' => ['app' => 'docs', 'instance' => 'development', 'env_prefix' => 'APP_DB'],
         ],
         [
             'name' => 'GET /dashboard/runtime-inventory',

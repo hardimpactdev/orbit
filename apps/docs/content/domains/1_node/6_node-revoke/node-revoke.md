@@ -38,8 +38,9 @@ gateway node configuration.
 Run `node:revoke` to delete a specific access grant and confirm the result.
 
 `node:revoke` deletes a gateway-owned `node_access` grant configuration from
-`consuming_node` to `serving_node`. Gateway callers execute locally; configured
-clients forward the request to the gateway over HTTPS through WireGuard.
+`consuming_node` to `serving_node`. Every public CLI caller, including one on
+the gateway host, sends the request to the gateway over typed HTTPS through
+WireGuard.
 
 1. Validates that both nodes exist in gateway node configuration.
 2. Validates that the caller is authorized to manage node access grants.

@@ -89,7 +89,7 @@ The following steps describe the removal sequence in order.
 
 `workspace:remove` performs gateway-orchestrated removal of a workspace. The
 gateway owns the workspace registry record and applies artifact cleanup on the
-node over SSH. The execution sequence has two phases.
+node through Agent push. The execution sequence has two phases.
 
 1. **Pre-flight:** Resolve the target workspace from `name` or CWD; detect
    self-targeting when the caller is inside the worktree.
@@ -99,7 +99,7 @@ node over SSH. The execution sequence has two phases.
 3. **Phase A — Gateway configuration (atomic, point of no return):** Delete
    workspace-owned proxy route rows and the `workspace` row in one
    transaction.
-4. **Phase B — Node-side application (over SSH):** Stop traffic, stop
+4. **Phase B — Node-side application (through Agent push):** Stop traffic, stop
    inherited processes, run teardown steps, remove the runtime container, and remove
    the worktree (skipped with `--keep-files`). Each step reports `removed`,
    `already_absent`, or `failed`; failures become structured warnings.
@@ -128,8 +128,10 @@ The output format depends on whether `--json` is passed.
 - CLI caller must reach the Orbit gateway.
 - Caller identity must have `workspace:remove` on the workspace's owning node.
   Instance-bound workspaces use the selected app instance node for cleanup.
-- Gateway SSH access to the node is used for artifact cleanup when
-  available. If cleanup cannot finish after workspace configuration removal,
+- Agent push handles typed runtime cleanup on the concrete app-instance node.
+  Process, teardown-step, and worktree cleanup use the exact-marked
+  `transitional-ssh-fallback` seam only when explicitly selected. If cleanup
+  cannot finish after workspace configuration removal,
   the command still succeeds and reports warnings with repair commands.
 - Destructive consent is required through the interactive confirmation prompt
   or `--force`. Non-interactive input mode requires `--force`.

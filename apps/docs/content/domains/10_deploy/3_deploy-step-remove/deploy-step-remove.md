@@ -2,9 +2,9 @@
 
 [Back to Deploy commands.](../README.md)
 
-Remove a deployment pipeline step from a production app.
+Remove a deployment pipeline step from a concrete production app instance.
 
-Use `deploy:step-remove` to remove a deployment task from the app-owned
+Use `deploy:step-remove` to remove a deployment task from the app-instance-owned
 deployment policy. Removing a step does not mutate past deployment
 history.
 
@@ -17,20 +17,24 @@ orbit deploy:step-remove [app] [step] [--force] [--json]
 ## Examples
 
 ```bash
-orbit deploy:step-remove docs 12
-orbit deploy:step-remove docs "Run migrations" --force
+orbit deploy:step-remove docs.production 12
+orbit deploy:step-remove docs.production "Run migrations" --force
 ```
 
 ## Arguments and options
 
-- `app`: production app name or domain.
+- `app`: dotted production app-instance selector. A bare app name or domain is
+  valid only when the app has exactly one instance.
 - `step`: step id or exact title.
 - `--force`: Skip destructive confirmation.
 - `--json`: Output JSON.
 
 ## What Happens
 
-Run `deploy:step-remove` to remove a task from the deployment pipeline. `deploy:step-remove` resolves the production app and step, requires destructive consent, and removes the step from deployment policy on the gateway. It does not remove deployment run history or logs.
+Run `deploy:step-remove` to remove a task from one app instance's deployment
+pipeline. It resolves the production app instance and step, requires
+destructive consent, and removes the step from that instance's gateway policy.
+It does not remove deployment run history or logs.
 
 ## Output
 
@@ -40,9 +44,9 @@ JSON output returns the removed step entity with removal metadata.
 
 ## Requirements
 
-- The CLI caller can reach the Orbit gateway, or the command runs on the
-  gateway.
-- The caller has `deploy:step` on the production app's owning node.
+- The CLI caller can reach the Orbit gateway.
+- The caller has `deploy:step` on the instance's owning Orbit node, or on the
+  gateway when the instance is external.
 - Destructive consent is required: confirmation in interactive mode or
   `--force` in non-interactive mode.
 

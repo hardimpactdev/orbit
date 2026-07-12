@@ -6,6 +6,11 @@ namespace App\Tools;
 
 final class PolyscopeServerTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux'];
+
     public function slug(): string
     {
         return 'polyscope-server';
@@ -20,7 +25,18 @@ final class PolyscopeServerTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['install', 'remove', 'update', 'reconfigure', 'safe-fix', 'safe-adopt'];
+        return [
+            'install',
+            'remove',
+            'update',
+            'reconfigure',
+            'safe-fix',
+            'safe-adopt',
+            'start',
+            'stop',
+            'restart',
+            'logs',
+        ];
     }
 
     /**
@@ -33,7 +49,7 @@ final class PolyscopeServerTool extends BaseTool
             'name' => 'polyscope-server',
             'command' => 'polyscope-server',
             'runtime' => 'systemd',
-            'tool' => 'polyscope',
+            'tool' => 'polyscope-server',
         ];
     }
 

@@ -15,19 +15,9 @@ final class WorkspacePlacement
 {
     public function instanceForWorkspace(Workspace $workspace): ?AppInstance
     {
-        $workspace->loadMissing(['app.instances', 'appInstance']);
+        $workspace->loadMissing('appInstance');
 
-        if ($workspace->appInstance instanceof AppInstance) {
-            return $workspace->appInstance;
-        }
-
-        $app = $workspace->app;
-
-        if (! $app instanceof App) {
-            return null;
-        }
-
-        return $this->matchingOrbitInstanceForPath($app, $workspace->path);
+        return $workspace->appInstance instanceof AppInstance ? $workspace->appInstance : null;
     }
 
     public function nodeForWorkspace(Workspace $workspace): ?Node
@@ -44,7 +34,7 @@ final class WorkspacePlacement
             }
         }
 
-        return $workspace->app?->node;
+        return null;
     }
 
     public function nodeForInstance(AppInstance $instance): ?Node
@@ -111,32 +101,13 @@ final class WorkspacePlacement
             return $workspace->name;
         }
 
-        $instance = $this->instanceForWorkspace($workspace);
-        $host = $instance instanceof AppInstance
-            ? $this->baseUrlHost($workspace, $app)
-            : $this->legacyAppWorkspaceHost($app);
+        $host = $this->baseUrlHost($workspace, $app);
 
         if ($host === '') {
             return $workspace->name;
         }
 
         return "{$workspace->name}.{$host}";
-    }
-
-    private function legacyAppWorkspaceHost(App $app): string
-    {
-        if ($app->environment === 'production' && is_string($app->domain) && $app->domain !== '') {
-            return $app->domain;
-        }
-
-        $app->loadMissing('node');
-        $tld = is_string($app->node?->tld) ? trim($app->node?->tld, '.') : '';
-
-        if ($tld === '') {
-            return $app->name;
-        }
-
-        return "{$app->name}.{$tld}";
     }
 
     public function baseUrlHost(Workspace $workspace, App $app): string
@@ -151,9 +122,7 @@ final class WorkspacePlacement
             }
         }
 
-        $host = parse_url($app->url(), PHP_URL_HOST);
-
-        return is_string($host) ? $host : $app->name;
+        return '';
     }
 
     public function instanceUrlHost(AppInstance $instance, App $app): string

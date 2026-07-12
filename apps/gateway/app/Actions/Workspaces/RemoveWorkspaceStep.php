@@ -22,11 +22,7 @@ final readonly class RemoveWorkspaceStep
             WorkspaceStep::query()
                 ->where('app_id', $appId)
                 ->where('phase', $phase)
-                ->when(
-                    $appInstanceId === null,
-                    fn ($query) => $query->whereNull('app_instance_id'),
-                    fn ($query) => $query->where('app_instance_id', $appInstanceId),
-                )
+                ->where('app_instance_id', $appInstanceId)
                 ->where('sort_order', '>', $sortOrder)
                 ->decrement('sort_order');
         });

@@ -152,39 +152,6 @@ describe('process:logs', function (): void {
         expect($exitCode)->toBe(0)->and($output)->toBe("one\ntwo");
     });
 
-    it('keeps explicit ssh fallback followed logs on the gateway text stream', function (): void {
-        config()->set('orbit.gateway.url', 'https://gateway.test');
-        config()->set('orbit.gateway.timeout', 30);
-
-        Http::fake([
-            'https://gateway.test/*' => Http::response("one\ntwo\n", 200, [
-                'Content-Type' => 'text/plain',
-            ]),
-        ]);
-
-        [$exitCode, $output] = runCommand($this, 'process:logs', [
-            'name' => 'vite',
-            '--app' => 'docs',
-            '--follow' => true,
-            '--lines' => 5,
-            '--node-transport' => 'transitional-ssh-fallback',
-        ]);
-
-        Http::assertSent(function (Request $request): bool {
-            $url = urldecode($request->url());
-
-            return (
-                $request->method() === 'GET'
-                && str_contains($url, '/api/processes/vite/log')
-                && str_contains($url, 'follow=1')
-                && ! str_contains($url, 'stream_transport=operation-websocket')
-                && $request->hasHeader('X-Orbit-Node-Transport-Preference', 'transitional-ssh-fallback')
-            );
-        });
-
-        expect($exitCode)->toBe(0)->and($output)->toBe("one\ntwo");
-    });
-
     it('rejects json output for followed logs before opening a gateway stream', function (): void {
         Http::fake();
 

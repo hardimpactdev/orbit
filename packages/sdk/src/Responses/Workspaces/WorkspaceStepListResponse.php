@@ -7,7 +7,7 @@ namespace Orbit\Sdk\Laravel\Responses\Workspaces;
 final readonly class WorkspaceStepListResponse
 {
     /**
-     * @param  list<array<string, mixed>>  $steps
+     * @param  list<array{id: int, app: string, app_instance: string, phase: string, order: int, command: string, timeout_seconds: int}>  $steps
      */
     public function __construct(
         public array $steps,

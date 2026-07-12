@@ -25,7 +25,7 @@ beforeEach(function (): void {
 it('runs node doctor self through agent-push internal command', function (): void {
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
             'wireguard_address' => '10.44.0.55',
@@ -67,7 +67,7 @@ it('runs node doctor self through agent-push internal command', function (): voi
 it('returns null when agent-push doctor transport fails', function (): void {
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
             'wireguard_address' => '10.44.0.56',

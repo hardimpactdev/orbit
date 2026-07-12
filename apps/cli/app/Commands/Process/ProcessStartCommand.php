@@ -10,7 +10,6 @@ final class ProcessStartCommand extends ProcessRuntimeActionCommand
     protected $signature = 'process:start
         {name? : Existing process name}
         {--node= : Owning node name}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--json : Output JSON}';

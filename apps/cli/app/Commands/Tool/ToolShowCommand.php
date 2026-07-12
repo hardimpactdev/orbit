@@ -12,15 +12,22 @@ use App\Exceptions\OrbitConfigStoreException;
 
 final class ToolShowCommand extends GatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use RendersShowDetails;
     use ResolvesHostContext;
+
+    private const string TRANSITIONAL_SSH_FALLBACK = 'transitional-ssh-fallback';
+
+    private const array SUPPORTED_NODE_TRANSPORT_PREFERENCES = [
+        self::TRANSITIONAL_SSH_FALLBACK,
+    ];
 
     #[\Override]
     protected $signature = 'tool:show
         {tool? : Tool catalog name to inspect}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
+        {--node-transport= : Exact transitional SSH opt-in for --live (transitional-ssh-fallback)}
         {--live : Request gateway live inspection}
         {--json}';
 
@@ -35,11 +42,47 @@ final class ToolShowCommand extends GatewayCommand
             return $this->renderFailure('validation_failed', 'The tool argument is required.', ['field' => 'tool']);
         }
 
+        $live = $this->option('live') === true;
+        $nodeTransport = $this->stringOption('node-transport');
+
+        if (
+            $nodeTransport !== null
+            && ! in_array($nodeTransport, self::SUPPORTED_NODE_TRANSPORT_PREFERENCES, strict: true)
+        ) {
+            return $this->renderFailure(
+                'validation_failed',
+                "Invalid node transport preference [{$nodeTransport}].",
+                [
+                    'field' => 'node-transport',
+                    'allowed' => self::SUPPORTED_NODE_TRANSPORT_PREFERENCES,
+                ],
+            );
+        }
+
+        if (! $live && $nodeTransport !== null) {
+            return $this->renderFailure(
+                'validation_failed',
+                'The --node-transport option is only supported with --live.',
+                ['field' => 'node-transport'],
+            );
+        }
+
+        if ($live && $nodeTransport !== self::TRANSITIONAL_SSH_FALLBACK) {
+            return $this->renderFailure(
+                'node_transport_required',
+                'tool:show --live still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
+                [
+                    'field' => 'node-transport',
+                    'required' => self::TRANSITIONAL_SSH_FALLBACK,
+                ],
+            );
+        }
+
         try {
             $response = $this->gatewayGet('/api/tools/'.rawurlencode($tool), $this->filledQuery([
                 'app' => $this->stringOption('app'),
                 'node' => $this->targetNodeOptionOrDefault(),
-                'live' => $this->option('live') === true ? '1' : null,
+                'live' => $live ? '1' : null,
             ]));
         } catch (OrbitConfigStoreException $exception) {
             return $this->renderFailure($exception->orbitCode, $exception->getMessage());

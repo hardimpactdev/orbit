@@ -264,7 +264,7 @@ it('uses the wireguard address by default outside Docker topology runs', functio
     });
 });
 
-it('falls back to ssh user when steady state user is not recorded', function (): void {
+it('falls back to the bootstrap user when no Orbit runtime user is recorded', function (): void {
     Process::preventStrayProcesses();
     Process::fake([
         '*' => Process::result(output: "ok\n"),

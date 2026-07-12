@@ -35,10 +35,10 @@ orbit php:list --node=app-1 --json
 Run this command to inspect PHP image support and selection for a node, app, or workspace.
 
 `php:list` resolves a node, app, or workspace context from explicit options,
-caller context, app ownership, workspace ownership, or local `node:default`.
-It reads gateway configuration and the PHP image facts tracked by the gateway
-for the resolved node. With `--live`, it also asks the gateway to inspect the target node for
-available PHP images.
+caller context, concrete app-instance placement, workspace-instance placement,
+or local `node:default`. It reads gateway configuration and the PHP image facts
+tracked by the gateway for the resolved node. With `--live`, it also asks the
+gateway to inspect the target node for available PHP images.
 
 The command does not install PHP, remove PHP, change app configuration, change
 workspace overrides, or edit project files.
@@ -55,10 +55,9 @@ available. Use `--json` for machine-readable output.
 
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
-- The current node identity is authorized to inspect the resolved app,
-  workspace, or node.
-- `--live` image inspection requires the gateway to reach the
-  target node over SSH.
+- The current node identity has `php:read` granted on the resolved serving
+  node. Gateway identity remains implicit.
+- `--live` image inspection requires an Agent-eligible, reachable target node.
 
 ## Related Commands
 

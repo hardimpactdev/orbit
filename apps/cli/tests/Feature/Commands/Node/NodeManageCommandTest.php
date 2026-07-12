@@ -56,6 +56,7 @@ describe('node:manage', function (): void {
         try {
             [$exitCode, $output] = runCommand($this, 'node:manage', [
                 '--user' => 'nicky',
+                '--node-transport' => 'transitional-ssh-fallback',
                 '--json' => true,
             ]);
         } finally {
@@ -79,9 +80,11 @@ describe('node:manage', function (): void {
             ),
         );
         Http::assertSent(
-            fn (Request $request): bool => (
-                $request->method() === 'GET'
-                && $request->url() === 'https://gateway.test/api/nodes/self/manage-key'
+            fn (Request $request): bool => $request->method() === 'GET'
+            && $request->url() === 'https://gateway.test/api/nodes/self/manage-key'
+            && $request->hasHeader(
+                'X-Orbit-Node-Transport-Preference',
+                'transitional-ssh-fallback',
             ),
         );
         Http::assertSent(
@@ -91,6 +94,10 @@ describe('node:manage', function (): void {
                 && $request['user'] === 'nicky'
                 && is_string($request['platform'])
                 && $request['platform'] !== ''
+                && $request->hasHeader(
+                    'X-Orbit-Node-Transport-Preference',
+                    'transitional-ssh-fallback',
+                )
             ),
         );
 
@@ -140,6 +147,7 @@ describe('node:manage', function (): void {
         try {
             [$exitCode, $output] = runCommand($this, 'node:manage', [
                 '--user' => 'other-user',
+                '--node-transport' => 'transitional-ssh-fallback',
                 '--json' => true,
             ]);
         } finally {

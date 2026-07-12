@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Workspace;
@@ -35,18 +36,19 @@ describe('DatabaseConnection models', function (): void {
             ->not->toBe($jsonCredentials)->and($connection->fresh()->credentials)->toBe(['password' => 'secret']);
     });
 
-    it('relates an app target to its connection and owning app', function (): void {
+    it('relates an app instance target to its connection and owning instance', function (): void {
         $app = App::factory()->create();
+        $instance = AppInstance::factory()->for($app)->create();
         $connection = DatabaseConnection::factory()->create();
 
         $target = DatabaseConnectionTarget::factory()
             ->for($connection, 'connection')
-            ->forApp($app)
+            ->forAppInstance($instance)
             ->create(['env_prefix' => 'DB']);
 
         expect($target->connection->is($connection))
             ->toBeTrue()
-            ->and($target->app->is($app))
+            ->and($target->appInstance->is($instance))
             ->toBeTrue()
             ->and($target->workspace)
             ->toBeNull();
@@ -65,24 +67,28 @@ describe('DatabaseConnection models', function (): void {
             ->toBeTrue()
             ->and($target->workspace->is($workspace))
             ->toBeTrue()
-            ->and($target->app)
+            ->and($target->appInstance)
             ->toBeNull();
     });
 
-    it('maps app database connections through its target rows', function (): void {
+    it('maps app instance database connections through its target rows', function (): void {
         $app = App::factory()->create();
+        $instance = AppInstance::factory()->for($app)->create();
         $primary = DatabaseConnection::factory()->create(['slug' => 'app-primary']);
         $analytics = DatabaseConnection::factory()->create(['slug' => 'app-analytics']);
 
-        DatabaseConnectionTarget::factory()->for($primary, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
+        DatabaseConnectionTarget::factory()
+            ->for($primary, 'connection')
+            ->forAppInstance($instance)
+            ->create(['env_prefix' => 'DB']);
         DatabaseConnectionTarget::factory()
             ->for($analytics, 'connection')
-            ->forApp($app)
+            ->forAppInstance($instance)
             ->create(['env_prefix' => 'ANALYTICS_DB']);
 
-        expect($app->databaseConnectionTargets)
+        expect($instance->databaseConnectionTargets)
             ->toHaveCount(2)
-            ->and($app->databaseConnections->modelKeys())
+            ->and($instance->databaseConnections->modelKeys())
             ->toEqualCanonicalizing([$primary->id, $analytics->id]);
     });
 

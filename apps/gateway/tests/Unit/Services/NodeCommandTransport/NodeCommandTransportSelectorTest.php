@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\NodeCommandTransport\NodeCommandEnvelope;
 use App\Services\NodeCommandTransport\NodeCommandTransportSelector;
 use App\Services\NodeCommandTransport\NodeTransport;
@@ -20,8 +21,10 @@ function activeCapableNode(): Node
         ->create([
             'name' => 'capable-node',
             'host' => 'capable.test',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.44.0.10',
             'status' => NodeStatus::Active,
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ]);
 }
 
@@ -31,8 +34,10 @@ function activeAgentUnavailableNode(): Node
         ->create([
             'name' => 'agent-unavailable-node',
             'host' => 'agent-unavailable.test',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.44.0.11',
             'status' => NodeStatus::Active,
-            'orbit_agent_capable' => false,
+            'managed' => false,
         ]);
 }
 
@@ -42,9 +47,35 @@ function inactiveCapableNode(): Node
         ->create([
             'name' => 'inactive-capable',
             'host' => 'inactive.test',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.44.0.12',
             'status' => NodeStatus::Inactive,
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ]);
+}
+
+function active_gateway_node(): Node
+{
+    $node = Node::factory()->create([
+        'name' => 'gateway-node',
+        'host' => 'gateway.test',
+        'platform' => 'ubuntu_24-04',
+        'wireguard_address' => '10.44.0.13',
+        'status' => NodeStatus::Active,
+        'managed' => false,
+    ]);
+
+    if (! $node instanceof Node) {
+        throw new RuntimeException('Expected node factory to create a node model.');
+    }
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    return $node;
 }
 
 it('selects gateway-only for gateway-owned reads like app:list regardless of requested transport', function (): void {
@@ -56,6 +87,21 @@ it('selects gateway-only for gateway-owned reads like app:list regardless of req
     expect($selector->select($node, $envelope, NodeTransportPreference::TransitionalSshFallback))
         ->toBe(NodeTransport::GatewayOnly);
     expect($selector->select($node, $envelope, NodeTransportPreference::AgentPush))->toBe(NodeTransport::GatewayOnly);
+});
+
+it('selects gateway-only for gateway targets even when the envelope requires node execution', function (): void {
+    $node = active_gateway_node();
+    $selector = new NodeCommandTransportSelector;
+    $envelope = NodeCommandEnvelope::nodeExecuting(
+        'internal:executor:verify',
+        supportsAgentPushTransport: true,
+    );
+
+    expect($selector->select($node, $envelope))->toBe(NodeTransport::GatewayOnly);
+    expect($selector->select($node, $envelope, NodeTransportPreference::TransitionalSshFallback))
+        ->toBe(NodeTransport::GatewayOnly);
+    expect($selector->select($node, $envelope, NodeTransportPreference::AgentPush))
+        ->toBe(NodeTransport::GatewayOnly);
 });
 
 it('defaults to auto selection semantics when transport arg omitted', function (): void {
@@ -78,7 +124,7 @@ it('selects transitional ssh fallback only when explicitly requested for node-ex
         ->toBe(NodeTransport::TransitionalSshFallback);
 });
 
-it('selects agent-push under auto when node is active, orbit_agent_capable, and envelope supports agent push', function (): void {
+it('selects agent-push under auto when node is active, managed, and envelope supports agent push', function (): void {
     $node = activeCapableNode();
     $selector = new NodeCommandTransportSelector;
     $envelope = NodeCommandEnvelope::nodeExecuting('internal:executor:verify', supportsAgentPushTransport: true);

@@ -32,7 +32,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Deletes the selected database connection record stored by the gateway.
 - Deletes its target mappings in the same operation.
-- Does not rewrite app or workspace `.env` files as part of removal.
+- Does not rewrite app-instance or workspace `.env` files as part of removal.
 
 ## Input Mode Contracts
 

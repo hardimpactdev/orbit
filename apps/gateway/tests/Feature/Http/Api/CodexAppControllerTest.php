@@ -61,7 +61,7 @@ describe('CodexAppController', function (): void {
         $target = Node::factory()
             ->operator()
             ->agent()
-            ->orbitAgentCapable()
+            ->managed()
             ->create([
                 'name' => 'mini',
                 'platform' => 'macos_15-5',
@@ -198,7 +198,7 @@ describe('CodexAppController', function (): void {
         $target = Node::factory()
             ->operator()
             ->agent()
-            ->orbitAgentCapable()
+            ->managed()
             ->create([
                 'name' => 'mini',
                 'platform' => 'macos_15-5',
@@ -249,7 +249,7 @@ describe('CodexAppController', function (): void {
         $target = Node::factory()
             ->operator()
             ->agent()
-            ->orbitAgentCapable()
+            ->managed()
             ->create([
                 'name' => 'mini',
                 'platform' => 'macos_15-5',

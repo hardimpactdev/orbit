@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:remove [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--force] [--json]
+orbit process:remove [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owner scope. |
 | `node` | `--node` | Required when removing a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:remove`. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:remove`. |
 | `workspace` | `--workspace` or workspace context | Required when removing a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:remove`; pass `--app` when the workspace name is ambiguous. |
 | `force` | `--force` | Required in non-interactive input mode. | Never. | `false`. | Boolean flag. Bypasses the interactive confirmation prompt when true. |

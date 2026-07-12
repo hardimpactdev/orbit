@@ -53,6 +53,10 @@ These rules govern every command contract in this directory.
 - Tool and capability command families are explicitly admitted product
   surfaces, not generated from the tool catalog. Generic lifecycle, inventory,
   logs, credentials, update, reload, and reconfiguration stay under `tool:*`.
+  A tool may expose `start`, `stop`, `restart`, `reload`, or `logs` only when
+  its definition declares that verb and resolves one unambiguous tool-owned
+  runtime or exactly one owning process row. Missing or ambiguous runtime
+  ownership fails explicitly; there is no generic related-process adapter.
   A tool-specific or capability-specific family is valid only when it owns a
   distinct Orbit workflow whose natural operator vocabulary is the tool or
   capability name. `php:*` owns PHP image selection across apps and
@@ -74,11 +78,11 @@ These rules govern every command contract in this directory.
   durable Orbit state. The CLI gathers input, calls the gateway, and renders the
   response.
 - Authorization is the gateway's responsibility. The CLI does not gate or scope
-  commands by caller role locally. The gateway authorizes every request through
-  the grant edge from the authenticated WireGuard peer to the command's resource
-  and the scoped permission set stored on that grant. There is no built-in
-  caller role; denials are surfaced as `error.code=authorization_failed` with
-  `error.meta.missing_permission` identifying the required permission.
+  commands by caller role locally. Stored grants are the default gate; the
+  architecture's named gateway-implicit-authority, pre-grants-bootstrap,
+  local-only, and identity-gated-self-management classes cover their narrow
+  surfaces. There is no built-in caller role. Grant denials use
+  `error.code=authorization_failed` with `error.meta.missing_permission`.
 - `Effects` describe command behavior, not authorization scopes. Authorization
   is node-grant based and belongs in `Prerequisites` and failure semantics.
 - Commands must state how they interact with `orbit doctor`.
@@ -205,10 +209,10 @@ When converting a command, state both the documentation domain that owns the use
 
 ### Authorization
 
-Authorization is gateway-owned. The gateway authenticates the caller's
-WireGuard peer identity and applies the scoped permission set stored on the
-grant that connects the caller to the command's resource. The CLI does not
-detect or branch on a caller role; there is no built-in role projection.
+Authorization is gateway-owned. Remote actions authenticate the caller's
+WireGuard peer identity and use the default grants gate or one of the named
+authorization classes defined by the architecture. The CLI does not detect or
+branch on a caller role; there is no built-in role projection.
 See [Architecture: Authentication and
 authorization](../architecture.md#authentication-and-authorization).
 
@@ -227,9 +231,10 @@ the required permission and the serving-node resolution mode:
 
 This metadata is an implementation hook for gateway middleware. It does not
 change command documentation structure and does not turn deployment-context
-companion files into authorization gates. Routes without the attribute are
-handled as bootstrap, deployment-context, authenticated-ungated, or not yet
-migrated routes according to the authorization matrix.
+companion files into authorization gates. Routes without the attribute must
+belong to a named pre-grants-bootstrap, local-only, or identity-gated
+self-management class in the authorization matrix; an unspecified ungated
+route is invalid.
 
 ### Technical Slot Map
 
@@ -240,7 +245,7 @@ behavior or rendering depending on where the CLI is running locally.
 "Client" in slot names is shorthand for a machine carrying an operator
 identity with no role assignments — operator is an identity and permission
 preset, not a node kind. The slots are not authorization gates —
-authorization is grants-only — but they capture real context-specific
+authorization is gateway-owned — but they capture real context-specific
 behavior that varies with deployment context.
 
 | Slot | Meaning |

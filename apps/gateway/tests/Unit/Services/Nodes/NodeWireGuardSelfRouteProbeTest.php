@@ -9,6 +9,7 @@ use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process as ProcessFacade;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -65,17 +66,25 @@ it('recognizes an equivalent Linux local WireGuard self route', function (): voi
 
 it('inspects unknown node platforms instead of treating retained Linux topologies as unsupported', function (): void {
     Http::preventStrayRequests();
-    Http::fake([
-        'http://10.6.0.2:9477/v1/commands' => Http::response(wireguard_self_route_response(
-            exitCode: 0,
-            output: "local 10.6.0.2 dev lo src 10.6.0.2 uid 1000\n",
-        )),
+    ProcessFacade::preventStrayProcesses();
+    ProcessFacade::fake([
+        '*' => ProcessFacade::result(output: json_encode([
+            'success' => [
+                'data' => [
+                    'exit_code' => 0,
+                    'output' => "local 10.6.0.2 dev lo src 10.6.0.2 uid 1000\n",
+                ],
+                'meta' => [],
+            ],
+        ], JSON_THROW_ON_ERROR)),
     ]);
-    $node = wireguard_self_route_node([
-        'name' => 'gateway',
-        'platform' => 'unknown',
-        'wireguard_address' => '10.6.0.2',
-    ]);
+    $node = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway',
+            'platform' => 'unknown',
+            'wireguard_address' => '10.6.0.2',
+        ]);
 
     $result = app(NodeWireGuardSelfRouteProbe::class)->probe($node);
 
@@ -87,6 +96,8 @@ it('inspects unknown node platforms instead of treating retained Linux topologie
         ])
         ->and($result['command'])
         ->toBe("ip route get '10.6.0.2'");
+
+    Http::assertNothingSent();
 });
 
 it('reports Linux WireGuard self route misses without mutating routes', function (): void {
@@ -146,7 +157,7 @@ function wireguard_self_route_node(array $attributes): Node
 {
     return Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create(array_merge($attributes, [
             'status' => 'active',
             'wireguard_address' => $attributes['wireguard_address'] ?? '10.6.0.4',

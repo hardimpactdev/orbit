@@ -2,10 +2,11 @@
 
 Generic surface for installable, role-baseline, and observational node
 capabilities. A tool is not itself the lifecycle-managed runnable unit;
-processes own lifecycle for runnable services. Explicit lifecycle-capable tools
-can declare `tool:start`, `tool:stop`, and `tool:restart`; the first supported
-tool is macOS-only `orbstack`. `tool:logs` and `tool:reload` are not part of the
-tool command surface. The catalog is fixed and lives in
+processes normally own lifecycle for runnable services. Tool definitions may
+declare explicit `start`, `stop`, `restart`, `reload`, and `logs` capabilities.
+Orbit exposes only the declared verbs: `orbstack` owns start/stop/restart,
+while catalog entries such as `caddy` and `dns` can own reload or logs. The
+catalog is fixed and lives in
 [`apps/docs/content/domains/3_tool/catalog/`](../../../apps/docs/content/domains/3_tool/catalog/).
 
 ## Catalog
@@ -90,15 +91,28 @@ Update a managed tool to the catalog target version.
 orbit tool:update [<tool>] [--app=<name>] [--node=<name>] [--expected-version=<v>] [--json|--stream-json]
 ```
 
-## `orbit tool:start|stop|restart <tool>`
+## `orbit tool:start|stop|restart|reload <tool>`
 
-Control lifecycle-capable tools. Initial support is macOS-only `orbstack`.
-Unsupported tools and unsupported node platforms fail before host commands run.
+Control lifecycle-capable tools. The selected tool must declare the requested
+verb. Unsupported verbs and unsupported node platforms fail before host
+commands run.
 
 ```bash
 orbit tool:start orbstack --node=<mac-node> [--json|--stream-json]
 orbit tool:stop orbstack --node=<mac-node> [--json|--stream-json]
 orbit tool:restart orbstack --node=<mac-node> [--json|--stream-json]
+orbit tool:reload caddy --node=<node> [--json|--stream-json]
+```
+
+## `orbit tool:logs <tool>`
+
+Read bounded historical output from a tool that declares the `logs`
+capability. The gateway resolves the tool's one declared runtime; process-backed
+tools do not use a second parallel lifecycle implementation.
+
+```bash
+orbit tool:logs dns --node=<node> [--lines=100] [--json]
+orbit tool:logs opencode-cli --app=<app> [--lines=200] [--json]
 ```
 
 ## `orbit tool:remove <tool>`

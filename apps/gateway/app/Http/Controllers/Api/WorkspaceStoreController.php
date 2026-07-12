@@ -14,12 +14,14 @@ use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
+use App\Models\AppInstance;
 use App\Models\Workspace;
 use App\Services\Apps\AppSelectorResolver;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use LogicException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 #[RequiresPermission('workspace:new', servingNode: ServingNode::AppOwning)]
@@ -78,6 +80,11 @@ final class WorkspaceStoreController implements Loggable
         }
 
         $app = $selection->app;
+        $instance = $selection->instance;
+
+        if (! $instance instanceof AppInstance) {
+            throw new LogicException('Resolved workspace app selection is missing its required app instance.');
+        }
 
         if ($phpVersion !== null && ! in_array($phpVersion, CreateWorkspace::SUPPORTED_PHP_VERSIONS, true)) {
             return $this->error(
@@ -103,14 +110,14 @@ final class WorkspaceStoreController implements Loggable
                 [
                     'name' => $name,
                     'app' => $app->name,
-                    'app_instance' => $selection->instance?->name,
+                    'app_instance' => $instance->name,
                 ],
                 422,
             );
         }
 
         try {
-            $result = $this->createWorkspace->handle($app, $name, $base, $phpVersion, $selection->instance);
+            $result = $this->createWorkspace->handle($app, $name, $instance, $base, $phpVersion);
         } catch (WorkspaceCreateFailed $exception) {
             $status = $exception->errorCode === 'workspace.node_unreachable' ? 503 : 422;
 
@@ -176,6 +183,11 @@ final class WorkspaceStoreController implements Loggable
         }
 
         $app = $selection->app;
+        $instance = $selection->instance;
+
+        if (! $instance instanceof AppInstance) {
+            throw new LogicException('Resolved workspace app selection is missing its required app instance.');
+        }
 
         if ($phpVersion !== null && ! in_array($phpVersion, CreateWorkspace::SUPPORTED_PHP_VERSIONS, true)) {
             return $this->error(
@@ -201,14 +213,14 @@ final class WorkspaceStoreController implements Loggable
                 [
                     'name' => $name,
                     'app' => $app->name,
-                    'app_instance' => $selection->instance?->name,
+                    'app_instance' => $instance->name,
                 ],
                 422,
             );
         }
 
         try {
-            $node = $this->createWorkspace->resolveAppNode($app, $selection->instance);
+            $node = $this->createWorkspace->resolveAppNode($app, $instance);
         } catch (WorkspaceCreateFailed $exception) {
             $status = $exception->errorCode === 'workspace.node_unreachable' ? 503 : 422;
 
@@ -218,13 +230,13 @@ final class WorkspaceStoreController implements Loggable
         return $streams->make(function ($emitter) use (
             $createProgress,
             $app,
-            $selection,
+            $instance,
             $node,
             $name,
             $base,
             $phpVersion,
         ): void {
-            $plan = $createProgress->for($app, $node, $name, $base, $phpVersion, $selection->instance);
+            $plan = $createProgress->for($app, $node, $name, $base, $phpVersion, $instance);
             $exitCode = $plan->runForReporter(app(ProgressReporter::class));
 
             if ($exitCode !== 0) {
@@ -278,7 +290,11 @@ final class WorkspaceStoreController implements Loggable
             return $this->error('app.not_found', "App '{$appName}' not found.", ['app' => $appName], 404);
         }
 
-        return $selection;
+        try {
+            return $this->appSelectorResolver->requireInstance($selection);
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->error($exception->errorCode, $exception->getMessage(), $exception->meta);
+        }
     }
 
     private function error(string $code, string $message, array $meta = [], int $status = 422): JsonResponse

@@ -2,7 +2,7 @@
 
 [Back to Deploy commands.](../README.md)
 
-List deployment pipeline steps for a production app.
+List deployment pipeline steps for a concrete production app instance.
 
 Use `deploy:step-list` to inspect the ordered deployment policy stored on the
 gateway, including multiline step scripts.
@@ -16,18 +16,22 @@ orbit deploy:step-list [app] [--json]
 ## Examples
 
 ```bash
-orbit deploy:step-list docs
-orbit deploy:step-list docs --json
+orbit deploy:step-list docs.production
+orbit deploy:step-list docs.production --json
 ```
 
 ## Arguments and options
 
-- `app`: production app name or domain.
+- `app`: dotted production app-instance selector. A bare app name or domain is
+  valid only when the app has exactly one instance.
 - `--json`: Output JSON.
 
 ## What Happens
 
-Run `deploy:step-list` when you need to inspect the ordered deployment policy for an app. `deploy:step-list` reads deployment step definitions from gateway app configuration. It does not inspect node state, execute steps, or read deployment run history.
+Run `deploy:step-list` when you need to inspect the ordered deployment policy
+for one app instance. It reads deployment step definitions owned by that
+instance from gateway state. It does not inspect node state, execute steps, or
+read deployment run history.
 
 ## Output
 
@@ -39,9 +43,9 @@ JSON output returns deploy step entities with app and count metadata.
 
 ## Requirements
 
-- The CLI caller can reach the Orbit gateway, or the command runs on the
-  gateway.
-- The caller has `deploy:read` on the production app's owning node.
+- The CLI caller can reach the Orbit gateway.
+- The caller has `deploy:read` on the instance's owning Orbit node, or on the
+  gateway when the instance is external.
 
 ## Related
 

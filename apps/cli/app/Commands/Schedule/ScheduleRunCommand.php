@@ -11,6 +11,7 @@ use RuntimeException;
 
 final class ScheduleRunCommand extends ScheduleGatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use ResolvesScheduleSelection;
     use WithStepTree;
 

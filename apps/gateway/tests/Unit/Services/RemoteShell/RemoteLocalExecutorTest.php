@@ -20,8 +20,10 @@ use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process as ProcessFacade;
 use Orbit\Core\Security\OperationToken;
 use Orbit\Core\Security\OperationTokenCommandContext;
 use Orbit\Core\Security\OperationTokenSigner;
@@ -33,6 +35,52 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 describe(RemoteLocalExecutor::class, function (): void {
+    it('runs gateway-targeted node execution through the local gateway runtime even when ssh is requested', function (): void {
+        Http::preventStrayRequests();
+        ProcessFacade::preventStrayProcesses();
+        ProcessFacade::fake([
+            '*' => ProcessFacade::result(output: "gateway-ok\n"),
+        ]);
+        $sshTransport = new RemoteLocalExecutorRecordingTransport(
+            static fn (): RemoteShellResult => throw new RuntimeException(
+                'SSH transport must never be called for a gateway target.',
+            ),
+        );
+        $executor = remoteLocalExecutor(
+            transport: $sshTransport,
+            defaultTransportPreference: NodeTransportPreference::Auto,
+        );
+        $node = remoteLocalExecutorNode(['gateway']);
+
+        $result = $executor->runInternal(
+            node: $node,
+            commandName: 'internal:executor:verify',
+            transportOptions: [
+                'transport' => NodeTransportPreference::TransitionalSshFallback,
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000428',
+                ],
+            ],
+        );
+
+        expect($result->stdout)
+            ->toBe("gateway-ok\n")
+            ->and($sshTransport->calls)
+            ->toBeEmpty();
+
+        Http::assertNothingSent();
+        ProcessFacade::assertRan(function (PendingProcess $process): bool {
+            $command = (string) $process->command;
+
+            return (
+                str_contains($command, 'docker exec -i')
+                && str_contains($command, 'orbit-gateway')
+                && str_contains($command, 'internal:executor:verify')
+                && ! str_contains($command, ' ssh ')
+            );
+        });
+    });
+
     it('defaults node-local internal command execution to agent-push without calling ssh transport', function (): void {
         Http::preventStrayRequests();
         Http::fake([
@@ -66,7 +114,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         $node = remoteLocalExecutorNode();
         $node->forceFill([
             'status' => 'active',
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ])->save();
 
         $result = $executor->runInternal(
@@ -132,7 +180,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         $node = remoteLocalExecutorNode();
         $node->forceFill([
             'status' => 'active',
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ])->save();
 
         $result = $executor->runInternal(
@@ -206,7 +254,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         $node = remoteLocalExecutorNode();
         $node->forceFill([
             'status' => 'active',
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ])->save();
         $chunks = [];
 
@@ -256,7 +304,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         $node = remoteLocalExecutorNode();
         $node->forceFill([
             'status' => 'active',
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ])->save();
         $operationId = '00000000-0000-4000-8000-000000000408';
 
@@ -308,7 +356,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         $node = remoteLocalExecutorNode();
         $node->forceFill([
             'status' => 'active',
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ])->save();
         $operationId = '00000000-0000-4000-8000-000000000409';
         $chunks = [];
@@ -358,7 +406,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         $node = remoteLocalExecutorNode();
         $node->forceFill([
             'status' => 'active',
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ])->save();
         $operationId = '00000000-0000-4000-8000-000000000411';
 
@@ -402,7 +450,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         $node = remoteLocalExecutorNode();
         $node->forceFill([
             'status' => 'active',
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ])->save();
         $operationId = '00000000-0000-4000-8000-000000000410';
         $chunks = [];
@@ -467,7 +515,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         $node = remoteLocalExecutorNode();
         $node->forceFill([
             'status' => 'active',
-            'orbit_agent_capable' => false,
+            'managed' => false,
         ])->save();
 
         try {
@@ -499,7 +547,8 @@ describe(RemoteLocalExecutor::class, function (): void {
         $node = remoteLocalExecutorNode();
         $node->forceFill([
             'status' => 'active',
-            'orbit_agent_capable' => false,
+            'managed' => false,
+            'wireguard_address' => null,
         ])->save();
 
         expect(fn (): RemoteShellResult => $executor->runInternal(
@@ -734,7 +783,7 @@ describe(RemoteLocalExecutor::class, function (): void {
             new RemoteShellResult(exitCode: 0, stdout: "installed\n", stderr: '', durationMs: 3),
         );
         $executor = remoteLocalExecutor($transport);
-        $node = remoteLocalExecutorNode(['gateway']);
+        $node = remoteLocalExecutorNode(['app-dev']);
 
         $executor->runInternal(
             node: $node,
@@ -858,7 +907,7 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         try {
             $result = $executor->runInternal(
-                node: remoteLocalExecutorNode(['gateway']),
+                node: remoteLocalExecutorNode(['app-dev']),
                 commandName: 'internal:fleet-update:install-cli',
                 commandOptions: [
                     'payload-file' => $payloadPath,

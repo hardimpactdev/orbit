@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Librarian\CommandCatalogBuilder;
 use App\Librarian\MonorepoUnitMapBuilder;
+use App\Librarian\TransitionalSshInventoryBuilder;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 
@@ -93,3 +94,42 @@ Artisan::command(
         return self::SUCCESS;
     },
 )->purpose('Generate the agent-readable Orbit monorepo unit map');
+
+Artisan::command(
+    'orbit:transitional-ssh-inventory {--check : Fail when the committed SSH inventory is stale or has unmarked consumers}',
+    function (TransitionalSshInventoryBuilder $builder): int {
+        $inventory = $builder->build();
+
+        if ($inventory['unmarked_consumers'] !== []) {
+            $this->error('Unmarked SSH consumers: '.implode(', ', $inventory['unmarked_consumers']));
+
+            return self::FAILURE;
+        }
+
+        if ($this->option('check')) {
+            if ($builder->isFresh()) {
+                $this->info('Orbit transitional SSH inventory is up to date.');
+
+                return self::SUCCESS;
+            }
+
+            $this->error(
+                'Orbit transitional SSH inventory is stale. Run `php artisan orbit:transitional-ssh-inventory` from apps/docs.',
+            );
+
+            return self::FAILURE;
+        }
+
+        try {
+            $path = $builder->write();
+        } catch (RuntimeException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $this->info("Wrote {$path}.");
+
+        return self::SUCCESS;
+    },
+)->purpose('Generate the machine-readable Orbit SSH migration inventory');

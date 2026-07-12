@@ -14,6 +14,8 @@ use App\Services\Node\NodeNewPayloadBuilder;
 use App\Services\OrbitConfigStore;
 use Orbit\Core\Progress\ProgressEventType;
 
+use function Laravel\Prompts\text;
+
 final class NodeNewCommand extends BootstrapGatewayCommand
 {
     use StreamsGatewayProgress;
@@ -26,7 +28,8 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         {--roles= : Comma-separated canonical node roles}
         {--host= : SSH/bootstrap endpoint for gateway or workload nodes}
         {--operator-name= : Initiating operator node name for first-gateway bootstrap}
-        {--tld= : Development app-node TLD}
+        {--operator-tld= : Initiating operator node TLD for first-gateway bootstrap}
+        {--tld= : Explicit unique node TLD}
         {--user=root : Bootstrap SSH user for provisioning}
         {--gateway-endpoint= : WireGuard endpoint host this node should use to reach the gateway}
         {--ingress= : Existing ingress node for private app-prod placement}
@@ -55,15 +58,28 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         NodeGatewayBootstrapper $bootstrapper,
         OrbitConfigStore $configStore,
     ): int {
+        $template = $this->stringOption('template');
+        $firstGatewayBootstrap = $template === 'gateway' && ! $this->hasConfiguredGateway($configStore);
+        $tld = $this->requiredOption('tld', 'Node TLD');
+        $operatorName = $this->stringOption('operator-name');
+        $operatorTld = $this->stringOption('operator-tld');
+
+        if ($firstGatewayBootstrap && $this->allowsInteractiveInput()) {
+            $operatorName ??= trim(text(label: 'Initiating operator node name', required: true));
+            $operatorTld ??= trim(text(label: 'Initiating operator node TLD', required: true));
+        }
+
         try {
             $payload = $payloadBuilder->build(
                 name: $this->stringArgument('name'),
-                template: $this->stringOption('template'),
+                template: $template,
                 operator: (bool) $this->option('operator'),
                 roles: $this->stringOption('roles'),
                 host: $this->stringOption('host'),
-                operatorName: $this->stringOption('operator-name'),
-                tld: $this->stringOption('tld'),
+                operatorName: $operatorName,
+                operatorTld: $operatorTld,
+                firstGatewayBootstrap: $firstGatewayBootstrap,
+                tld: $tld,
                 user: $this->stringOption('user'),
                 gatewayEndpoint: $this->stringOption('gateway-endpoint'),
                 ingressNode: $this->stringOption('ingress'),
@@ -104,11 +120,10 @@ final class NodeNewCommand extends BootstrapGatewayCommand
             return $result['exit_code'] === self::SUCCESS ? self::SUCCESS : self::FAILURE;
         }
 
-        return $this->streamProgress(
-            '/api/nodes',
-            $payload,
-            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
-        );
+        return $this->streamProgress('/api/nodes', $payload, fn (
+            ProgressEventType $type,
+            array $payload,
+        ): int => $this->renderProgressTerminalFrame($type, $payload));
     }
 
     private function renderGatewayFailure(GatewayApiException $exception): int
@@ -155,6 +170,19 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         $value = $this->option($key);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function requiredOption(string $key, string $label): ?string
+    {
+        $value = $this->stringOption($key);
+
+        if ($value !== null || ! $this->allowsInteractiveInput()) {
+            return $value;
+        }
+
+        $resolved = trim(text(label: $label, required: true));
+
+        return $resolved !== '' ? $resolved : null;
     }
 
     /**

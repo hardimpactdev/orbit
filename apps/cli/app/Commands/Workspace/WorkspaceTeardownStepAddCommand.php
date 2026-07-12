@@ -9,14 +9,14 @@ final class WorkspaceTeardownStepAddCommand extends AbstractWorkspaceStepAddComm
     #[\Override]
     protected $signature = 'workspace-teardown-step:add
         {--command= : Shell command to run during workspace teardown}
-        {--app= : Parent app or app.instance selector}
+        {--app= : App instance selector (app.instance)}
         {--before= : Insert before this teardown step id}
         {--after= : Insert after this teardown step id}
         {--timeout=600 : Timeout in seconds}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Add a workspace teardown step for an app.';
+    protected $description = 'Add a workspace teardown step for an app instance.';
 
     protected function phase(): string
     {

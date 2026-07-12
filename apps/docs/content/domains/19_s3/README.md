@@ -21,8 +21,8 @@ These rules govern what the S3 command family owns and what it may not touch.
   to s3 role nodes.
 - Router owns `s3.orbit`, S3 backend pools, S3 upload-compatible proxy
   settings, and private router-to-SeaweedFS routing.
-- SeaweedFS runtime uses Orbit's role runtime container rendering. The s3 role
-  does not own role-local Docker Compose.
+- SeaweedFS runtime uses one canonical node-owned Docker process row. The s3
+  role does not own role-local Docker Compose.
 - S3 service credentials are service-level SeaweedFS credentials stored on the
   `seaweedfs` tool row. They are visible through `tool:credentials seaweedfs` and
   `s3:credentials`.
@@ -52,9 +52,10 @@ The S3 command domain coordinates state owned by other families:
 - [`tool`](../3_tool/README.md) owns the `seaweedfs` tool row, service
   credentials, and capability updates. SeaweedFS tool-row drift is verified and
   repaired through `doctor --family=tool`.
-- [`process`](../7_process/README.md) owns the SeaweedFS runtime container:
-  start, stop, restart, logs, and runtime drift. SeaweedFS container and runtime
-  drift is verified and repaired through `doctor --family=process`.
+- [`process`](../7_process/README.md) owns the canonical `seaweedfs` process
+  row and its container: start, stop, restart, logs, WireGuard-only bind
+  posture, unit-spec drift, and stale-unit cleanup. SeaweedFS runtime drift is
+  verified and repaired through `doctor --family=process`.
 - [`proxy`](../8_proxy/README.md) owns the proxy route rows, route artifacts,
   TLS material, router private service route, and S3 backend pool. S3 route
   drift is verified and repaired through `doctor --family=proxy`.

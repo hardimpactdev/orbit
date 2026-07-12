@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Models\App;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\RemoteShell\RemoteEnvFile;
+use App\Services\Workspaces\WorkspacePlacement;
 use RuntimeException;
 
 final readonly class DatabaseConnectionRestorer
@@ -18,6 +20,7 @@ final readonly class DatabaseConnectionRestorer
         private DatabaseConnectionEnvMapper $envMapper,
         private RemoteEnvFile $remoteEnvFile,
         private DatabaseConnectionTargetEndpointResolver $endpointResolver,
+        private WorkspacePlacement $workspacePlacement,
     ) {}
 
     public function restore(DatabaseConnectionTarget $target): void
@@ -73,8 +76,12 @@ final readonly class DatabaseConnectionRestorer
 
     private function envPath(DatabaseConnectionTarget $target): ?string
     {
-        if ($target->app instanceof App) {
-            return rtrim($target->app->path, '/').'/.env';
+        if ($target->appInstance instanceof AppInstance) {
+            $config = $target->appInstance->driver_config;
+
+            return $config instanceof OrbitAppInstanceDriverConfigData && is_string($config->path)
+                ? rtrim($config->path, '/').'/.env'
+                : null;
         }
 
         if ($target->workspace instanceof Workspace) {
@@ -93,16 +100,20 @@ final readonly class DatabaseConnectionRestorer
 
     private function targetNode(DatabaseConnectionTarget $target): Node
     {
-        if ($target->app instanceof App && $target->app->node instanceof Node) {
-            return $target->app->node;
+        if ($target->appInstance instanceof AppInstance) {
+            $node = $this->workspacePlacement->nodeForInstance($target->appInstance);
+
+            if ($node instanceof Node) {
+                return $node;
+            }
         }
 
-        if (
-            $target->workspace instanceof Workspace
-            && $target->workspace->app instanceof App
-            && $target->workspace->app->node instanceof Node
-        ) {
-            return $target->workspace->app->node;
+        if ($target->workspace instanceof Workspace) {
+            $node = $this->workspacePlacement->nodeForWorkspace($target->workspace);
+
+            if ($node instanceof Node) {
+                return $node;
+            }
         }
 
         throw new RuntimeException('Database connection target has no owning node.');

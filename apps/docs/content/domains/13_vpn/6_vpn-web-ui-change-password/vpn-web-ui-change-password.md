@@ -32,11 +32,11 @@ Run this command to rotate the admin password for the active `vpn` role runtime
 backend web UI.
 
 `vpn-web-ui:change-password` resolves the active `vpn` role and rotates the
-password used to administer that runtime backend. In this version the active
-`vpn` role is gateway-coupled, so Orbit still executes on the gateway host. It
-verifies backend authentication, updates the backend credential, invalidates
-existing backend admin sessions when the backend supports it, and updates the
-Orbit-managed credential storage on the active `vpn` role host.
+password used to administer that runtime backend. Every caller uses the typed
+gateway HTTPS API over WireGuard. The gateway executes the gateway-coupled
+backend operation locally, verifies backend authentication, updates the backend
+credential, invalidates existing backend admin sessions when supported, and
+updates Orbit-managed credential storage.
 
 The command does not rotate WireGuard client keys, node identities, gateway CA
 material, or Orbit node access grants.
@@ -54,7 +54,7 @@ All of the following must be true before the command runs.
 
 - The caller is the gateway node, has `vpn:write` on the active gateway node,
   or has gateway-admin authority.
-- Non-gateway callers can SSH to the active `vpn` role host over Orbit/WireGuard.
+- Every caller can reach the typed gateway HTTPS API over WireGuard.
 - The active `vpn` role is resolvable and its runtime backend is installed and reachable.
 - The operator can authenticate to the VPN backend when TOTP is required.
 - The new password satisfies the active `vpn` role runtime backend password policy.

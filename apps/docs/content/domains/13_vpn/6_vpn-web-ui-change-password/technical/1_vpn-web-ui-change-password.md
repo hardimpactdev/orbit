@@ -9,8 +9,8 @@
 **Prerequisites:**
 - The caller is the gateway node, has `vpn:write` on the active gateway node,
   or has `gateway-admin` (`*`) on the active gateway node.
-- Non-gateway callers can reach the active `vpn` role node over
-  Orbit/WireGuard SSH. In v1 that node is gateway-coupled.
+- Every public CLI caller reaches the gateway through the typed HTTPS API over
+  WireGuard. Caller identity changes authorization, not transport.
 - The active `vpn` role is resolvable.
 - The VPN runtime backend is installed and reachable on the active `vpn` role host.
 - The operator can authenticate to the VPN runtime backend when TOTP is
@@ -77,7 +77,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | VPN runtime unavailable | No active `vpn` role node exists for VPN administration. | `error.code=vpn_runtime_unavailable` |
-| VPN runtime SSH unavailable | A non-gateway caller cannot execute the VPN-role runtime operation over Orbit/WireGuard SSH on the active `vpn` role node. | `error.code=vpn_runtime_ssh_unavailable` |
 | VPN backend unavailable | The VPN runtime backend is missing, stopped, or unreachable on the active `vpn` role host. | `error.code=vpn_backend_unavailable` |
 | VPN backend authentication failed | Stored backend credentials or supplied TOTP code are rejected. | `error.code=vpn_backend_auth_failed` |
 | Credential rotation failed | The backend credential, session secret, or Orbit-managed credential store cannot be updated. | `error.code=vpn_credential_rotation_failed` |

@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\ResolvesVisibleToolNodes;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolPayloadMapper;
 use App\Services\Tools\ToolShowLiveInspectionFailed;
@@ -186,6 +187,18 @@ final class ToolShowController implements Loggable
 
         if (! filter_var($request->query('live'), FILTER_VALIDATE_BOOL)) {
             return $payload;
+        }
+
+        $fallback = app(ExplicitRemoteShellFallback::class);
+
+        if (! $fallback->allowed()) {
+            return response()->json([
+                'error' => [
+                    'code' => 'node_transport_required',
+                    'message' => $fallback->message('tool:show --live inspection'),
+                    'meta' => $fallback->meta(),
+                ],
+            ], 422);
         }
 
         try {

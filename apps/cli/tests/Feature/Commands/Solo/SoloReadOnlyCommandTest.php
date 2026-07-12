@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Services\GatewayApiClient;
 use App\Services\OrbitConfigStore;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -58,8 +59,11 @@ describe('Solo read-only commands', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(
-            fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains($request->url(), '/api/solo/tools'),
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && str_contains($request->url(), '/api/solo/tools')
+                && ($request->data()['self'] ?? null) === true
+            ),
         );
 
         expect($exitCode)
@@ -70,6 +74,23 @@ describe('Solo read-only commands', function (): void {
             ->toBe('spawn_agent')
             ->and($decoded['success']['meta']['source'])
             ->toBe('solo');
+    });
+
+    it('uses the configured default node when no explicit Solo target is supplied', function (): void {
+        enable_solo_read_extension();
+        app(OrbitConfigStore::class)->setDefaultNode('NMBP');
+        fakeGateway(fakeSuccessEnvelope(['projects' => []]));
+
+        [$exitCode] = runCommand($this, command: 'solo:project:list', params: [
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => ($request->data()['node'] ?? null) === 'NMBP'
+            && ! array_key_exists('self', $request->data()),
+        );
+
+        expect($exitCode)->toBe(0);
     });
 
     it('passes the target node to gateway-backed read-only commands', function (): void {
@@ -227,6 +248,18 @@ describe('Solo read-only commands', function (): void {
             ->toBe(1)
             ->and($decoded['error']['code'])
             ->toBe('solo_command_deferred');
+    });
+
+    it('does not expose a Solo node transport selector', function (): void {
+        enable_solo_read_extension();
+        Artisan::all();
+
+        $command = Artisan::all()['solo:tools'];
+
+        expect($command->getDefinition()->hasOption('node'))
+            ->toBeTrue()
+            ->and($command->getDefinition()->hasOption('node-transport'))
+            ->toBeFalse();
     });
 });
 

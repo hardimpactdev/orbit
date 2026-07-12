@@ -12,9 +12,7 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\Convergence\ConvergenceStatus;
 use App\Enums\DriftKind;
-use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
-use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Convergence\ManagedFile;
@@ -31,6 +29,7 @@ use Throwable;
 
 final readonly class ToolsProbe
 {
+    // @orbit-ssh-lane transitional-ssh
     private const array ExpectedStates = ['installed', 'absent'];
 
     public function __construct(
@@ -1301,7 +1300,7 @@ final readonly class ToolsProbe
                     family: $this->key(),
                     key: 'tool.agent_route_missing',
                     kind: DriftKind::Missing,
-                    summary: "Tool {$tool->name} cannot verify proxy route because the node has no active agent role TLD.",
+                    summary: "Tool {$tool->name} cannot verify proxy route because the node has no active node TLD.",
                     detail: [
                         'tool' => $tool->name,
                         'node' => $tool->node?->name,
@@ -1323,7 +1322,7 @@ final readonly class ToolsProbe
                     family: $this->key(),
                     key: 'tool.agent_route_missing',
                     kind: DriftKind::Missing,
-                    summary: "Tool {$tool->name} is missing the internal proxy route under the agent role TLD.",
+                    summary: "Tool {$tool->name} is missing the internal proxy route under the node TLD.",
                     detail: [
                         'tool' => $tool->name,
                         'node' => $tool->node?->name,
@@ -1561,17 +1560,6 @@ final readonly class ToolsProbe
 
     private function agentTldForNode(Node $node): ?string
     {
-        $assignment = app(NodeRoleAssignments::class)->activeAssignment($node, NodeRoleName::Agent->value);
-
-        if ($assignment instanceof NodeRoleAssignment) {
-            $settings = $assignment->settings ?? [];
-            $tld = is_array($settings) ? $settings['tld'] ?? null : null;
-
-            if (is_string($tld) && trim($tld) !== '') {
-                return trim($tld);
-            }
-        }
-
         if (is_string($node->tld) && trim($node->tld) !== '') {
             return trim($node->tld);
         }

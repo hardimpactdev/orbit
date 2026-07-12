@@ -8,14 +8,14 @@
 
 **Prerequisites:**
 - Caller is authenticated through the gateway WireGuard identity path.
-- Gateway callers execute locally.
-- Non-gateway callers have `role:add` on the target node, or an equivalent
-  gateway-admin grant.
+- Every public CLI caller uses the typed gateway HTTPS API.
+- Normal callers have `role:add` on the target node, or an equivalent
+  gateway-admin grant; gateway-role callers use implicit authority.
 
 ## Signature
 
 ```bash
-orbit node role:add [node] [role] [--tld=] [--redis-node=] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
+orbit node role:add [node] [role] [--redis-node=] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
 ```
 
 ## Input Contract
@@ -26,7 +26,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `node` | `[node]` | Always. | Never. | None. | Must match an active node record. |
 | `role` | `[role]` | Always. | Never. | None. | `gateway`, `vpn`, `router`, and `agent` are rejected. |
-| `tld` | `--tld` | Required for `app-dev`. | Forbidden for roles that do not support it. | None. | Must be a single lowercase DNS label without a leading dot. |
 | `redis_node` | `--redis-node` | Required for `websocket`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and Redis expected or installed. |
 | `postgres_node` | `--postgres-node` | Required for `analytics`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and PostgreSQL expected or installed. |
 | `clickhouse_node` | `--clickhouse-node` | Required for `analytics`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and ClickHouse expected or installed. |
@@ -45,7 +44,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - `agent` role is rejected before side effects with `validation_failed`. The
   failure message points the caller to `node:new --template=agent`, the preferred
   path that may create an agent role assignment.
-- `app-dev` requires `--tld`.
+- `app-dev` accepts no role-local settings and consumes the target node's
+  mandatory node-owned TLD.
 - `websocket` requires `--redis-node`. The resolved node must have an active
   `database` role and Redis expected or installed.
 - `analytics` requires `--postgres-node` and `--clickhouse-node`. The resolved
@@ -66,12 +66,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Adding a role triggers convergence through `NodeRoleAssignmentService`.
 - Success returns the stored assignment payload after convergence completes with
   `status=active`.
-- `node role:add` does not create an Orbit Agent work queue. App-dev convergence
-  over Orbit Agent remains deferred until it can run as a direct gateway-pushed
-  command envelope.
-- `orbit_agent_capable=true` marks a node eligible for explicit agent-push
-  operations. The `agent` workload role and platform alone do not imply Orbit
-  Agent capability.
+- App-development convergence runs as direct gateway-pushed command envelopes.
+- Active workload roles supply Agent intent. A roleless non-gateway operator
+  may instead opt in through `managed`; platform and WireGuard eligibility
+  still apply, and gateway nodes are never Agent targets.
 - If synchronous convergence leaves the assignment in `error`, return a failure
   envelope and leave the errored assignment for `doctor --family=node --restore`.
 

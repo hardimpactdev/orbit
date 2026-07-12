@@ -115,7 +115,7 @@ it('reports invalid role settings when assignment settings do not hydrate', func
         'node_id' => $node->id,
         'role' => 'app-dev',
         'status' => NodeRoleStatus::Active->value,
-        'settings' => [],
+        'settings' => ['unexpected' => true],
     ]);
 
     $roleDrift = roleDriftEntries($node);
@@ -131,7 +131,7 @@ it('reports invalid role settings when assignment settings do not hydrate', func
 it('reports conflicting unresolved role assignments', function (NodeRoleStatus $conflictingStatus): void {
     $node = Node::factory()->create([
         'name' => 'test',
-
+        'tld' => 'test',
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.0.0.1',
@@ -142,7 +142,7 @@ it('reports conflicting unresolved role assignments', function (NodeRoleStatus $
         'node_id' => $node->id,
         'role' => 'app-dev',
         'status' => NodeRoleStatus::Active->value,
-        'settings' => ['tld' => 'test'],
+        'settings' => [],
     ]);
 
     NodeRoleAssignment::factory()->create([
@@ -175,7 +175,7 @@ it('reports conflicting unresolved role assignments', function (NodeRoleStatus $
     'error' => [NodeRoleStatus::Error],
 ]);
 
-it('reports invalid role settings when an active app-dev assignment has no tld', function (): void {
+it('reports invalid role settings when an active app-dev assignment carries a retired tld key', function (): void {
     $node = Node::factory()->create([
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
@@ -187,7 +187,7 @@ it('reports invalid role settings when an active app-dev assignment has no tld',
         'node_id' => $node->id,
         'role' => 'app-dev',
         'status' => NodeRoleStatus::Active->value,
-        'settings' => ['tld' => ''],
+        'settings' => ['tld' => 'test'],
     ]);
 
     $roleDrift = roleDriftEntries($node);
@@ -230,7 +230,7 @@ it('reports convergence failures for error assignments', function (): void {
 it('reports baseline mismatches for active role-owned artifacts', function (): void {
     $node = Node::factory()->create([
         'name' => 'test',
-
+        'tld' => 'test',
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.0.0.1',
@@ -241,7 +241,7 @@ it('reports baseline mismatches for active role-owned artifacts', function (): v
         'node_id' => $node->id,
         'role' => 'app-dev',
         'status' => NodeRoleStatus::Active->value,
-        'settings' => ['tld' => 'test'],
+        'settings' => [],
     ]);
 
     $roleDrift = roleDriftEntries($node);
@@ -271,7 +271,7 @@ it('reports baseline mismatches for active role-owned artifacts', function (): v
 it('does not require node environment when active role assignments provide the required facts', function (): void {
     $node = Node::factory()->create([
         'name' => 'test',
-
+        'tld' => 'test',
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.0.0.1',
@@ -282,7 +282,7 @@ it('does not require node environment when active role assignments provide the r
         'node_id' => $node->id,
         'role' => 'app-dev',
         'status' => NodeRoleStatus::Active->value,
-        'settings' => ['tld' => 'test'],
+        'settings' => [],
     ]);
 
     $configDir = app(DevelopmentDnsMappingEnactor::class)->configDir();
@@ -334,7 +334,7 @@ it('does not require host for database-only nodes', function (): void {
 it('retries baseline convergence for error assignments during reconcile', function (): void {
     $node = Node::factory()->create([
         'name' => 'test',
-
+        'tld' => 'test',
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.0.0.1',
@@ -345,7 +345,7 @@ it('retries baseline convergence for error assignments during reconcile', functi
         'node_id' => $node->id,
         'role' => 'app-dev',
         'status' => NodeRoleStatus::Error->value,
-        'settings' => ['tld' => 'test'],
+        'settings' => [],
         'last_error' => 'baseline failed',
         'converged_at' => null,
     ]);
@@ -387,7 +387,7 @@ it('retries baseline convergence for error assignments during reconcile', functi
 it('keeps role assignments errored when convergence retry fails during reconcile', function (): void {
     $node = Node::factory()->create([
         'name' => 'test',
-
+        'tld' => 'test',
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.0.0.1',
@@ -398,7 +398,7 @@ it('keeps role assignments errored when convergence retry fails during reconcile
         'node_id' => $node->id,
         'role' => 'app-dev',
         'status' => NodeRoleStatus::Error->value,
-        'settings' => ['tld' => 'test'],
+        'settings' => [],
         'last_error' => 'baseline failed',
         'converged_at' => null,
     ]);
@@ -439,7 +439,7 @@ it('keeps role assignments errored when convergence retry fails during reconcile
 it('restores role-owned settings-derived artifacts during reconcile', function (): void {
     $node = Node::factory()->create([
         'name' => 'test',
-
+        'tld' => 'test',
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.0.0.1',
@@ -450,7 +450,7 @@ it('restores role-owned settings-derived artifacts during reconcile', function (
         'node_id' => $node->id,
         'role' => 'app-dev',
         'status' => NodeRoleStatus::Active->value,
-        'settings' => ['tld' => 'test'],
+        'settings' => [],
     ]);
 
     $this->probe->reconcile($node, new DriftEntry(
@@ -471,7 +471,7 @@ it('restores role-owned settings-derived artifacts during reconcile', function (
 it('only re-converges the role assignment that owns a baseline mismatch', function (): void {
     $node = Node::factory()->create([
         'name' => 'test',
-
+        'tld' => 'test',
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.0.0.1',
@@ -482,7 +482,7 @@ it('only re-converges the role assignment that owns a baseline mismatch', functi
         'node_id' => $node->id,
         'role' => 'app-dev',
         'status' => NodeRoleStatus::Active->value,
-        'settings' => ['tld' => 'test'],
+        'settings' => [],
     ]);
 
     NodeRoleAssignment::factory()->create([

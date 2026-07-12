@@ -8,7 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity has `deploy:read` on the production app's owning node.
+- The current node identity has `deploy:read` at the selected instance's grant
+  boundary: its owning Orbit node, or the gateway for an external instance.
 
 ## Signature
 
@@ -22,8 +23,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `argument` | `Required.` | `Never.` | `None.` | Visible production app the caller may inspect. |
-| `run` | `argument` | `Required.` | `Never.` | `None.` | Positive integer deployment run id owned by the selected app. |
+| `app` | `argument` | `Required.` | `Never.` | `None.` | Visible production app-instance selector. A bare app is valid only when it has exactly one instance. |
+| `run` | `argument` | `Required.` | `Never.` | `None.` | Positive integer deployment run id owned by the selected app instance. |
 | `step` | `--step` | `Optional.` | `Never.` | `None.` | Existing step id inside the selected run. |
 | `lines` | `--lines` | `Optional.` | `Never.` | `500`. | Positive integer output line limit per stream. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
@@ -32,9 +33,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Deployment Log Visibility Rules
 
-- Resolves the selected app through gateway app configuration.
-- Fails before reading logs unless the selected app is production.
-- Resolves the run id against deployment history for the selected app.
+- Resolves one concrete production app instance through gateway configuration.
+- Fails before reading logs unless the selected instance belongs to a production app.
+- Resolves the run id against deployment history for the selected app instance.
 - Reads stored per-step stdout, stderr, process status, and timing from gateway
   deployment history.
 - Applies `--step` after the run is resolved.
@@ -59,7 +60,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | App not found | No visible app matches the selector. | `error.code=app.not_found` |
 | Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
-| Run not found | No visible deployment run matches the run id for the selected app. | `error.code=deploy.run_not_found` |
+| App instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
+| Run not found | No visible deployment run matches the run id for the selected app instance. | `error.code=deploy.run_not_found` |
 | Step not found | `--step` does not match a step in the selected run. | `error.code=deploy.step_not_found` |
 | Log read failed | The gateway cannot read stored deployment output. | `error.code=deploy.log_read_failed` |
 

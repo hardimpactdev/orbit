@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Workspaces;
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
@@ -12,6 +13,7 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
@@ -263,7 +265,7 @@ describe('PHP runtime reality', function (): void {
         WorkspaceLifecycleStatus::SettingUp,
     ]);
 
-    it('detects missing PHP workspace runtime containers', function (): void {
+    it('hands missing PHP workspace runtime units to process doctor without duplicate workspace issues', function (): void {
         $app = workspaceableApp();
         $workspace = workspaceFor($app, [
             'name' => 'feature',
@@ -281,10 +283,10 @@ describe('PHP runtime reality', function (): void {
             ]),
         ]));
 
-        expect(issue($drift, 'workspace.runtime_container_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(issue($drift, 'workspace.runtime_container_missing'))->toBeNull();
     });
 
-    it('detects stopped PHP workspace runtime containers', function (): void {
+    it('hands stopped PHP workspace runtime units to process doctor without duplicate workspace issues', function (): void {
         $app = workspaceableApp();
         $workspace = workspaceFor($app, [
             'name' => 'feature',
@@ -302,10 +304,10 @@ describe('PHP runtime reality', function (): void {
             ]),
         ]));
 
-        expect(issue($drift, 'workspace.runtime_container_stopped')?->kind)->toBe(DriftKind::Divergent);
+        expect(issue($drift, 'workspace.runtime_container_stopped'))->toBeNull();
     });
 
-    it('detects mismatched PHP workspace runtime containers', function (): void {
+    it('hands mismatched PHP workspace runtime units to process doctor without duplicate workspace issues', function (): void {
         $app = workspaceableApp();
         $workspace = workspaceFor($app, [
             'name' => 'feature',
@@ -326,7 +328,7 @@ describe('PHP runtime reality', function (): void {
             ]),
         ]));
 
-        expect(issue($drift, 'workspace.runtime_container_mismatch')?->kind)->toBe(DriftKind::Divergent);
+        expect(issue($drift, 'workspace.runtime_container_mismatch'))->toBeNull();
     });
 
     it('does not report PHP workspace runtime container drift before the image is available', function (): void {
@@ -471,6 +473,7 @@ describe('registry intent', function (): void {
 
         $id = DB::table('workspaces')->insertGetId([
             'app_id' => $app->id,
+            'app_instance_id' => $app->instances()->value('id'),
             'name' => 'feature',
             'path' => '',
             'lifecycle_status' => WorkspaceLifecycleStatus::Expected->value,
@@ -554,9 +557,20 @@ function workspaceableApp(array $overrides = [], string $role = 'app-dev'): App
 {
     $node = createTestAppHostNode(role: $role);
 
-    return App::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->create($overrides);
+
+    AppInstance::factory()->for($app)->create([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+
+    return $app;
 }
 
 function workspaceFor(App $app, array $overrides = []): Workspace

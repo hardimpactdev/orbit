@@ -13,7 +13,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 uses(TestCase::class);
-it('resolves canonical hosted-role forwarding to POST /api/nodes', function (): void {
+it('resolves canonical workload-role forwarding to POST /api/nodes', function (): void {
     $request = new CreateNodeRequest(
         name: 'app-1',
         roles: ['app-dev'],
@@ -38,7 +38,7 @@ it('serializes explicit operator identity requests without a role value', functi
         name: 'operator-1',
         roles: [],
         host: null,
-        tld: null,
+        tld: 'operator',
         user: null,
         operator: true,
     );
@@ -47,7 +47,7 @@ it('serializes explicit operator identity requests without a role value', functi
         'name' => 'operator-1',
         'roles' => [],
         'host' => null,
-        'tld' => null,
+        'tld' => 'operator',
         'user' => null,
         'operator' => true,
     ]);
@@ -58,7 +58,7 @@ it('includes an expected host key fingerprint when supplied', function (): void 
         name: 'app-1',
         roles: ['app-prod'],
         host: '192.0.2.20',
-        tld: null,
+        tld: 'production',
         user: 'ubuntu',
         hostKeyFingerprint: 'SHA256:expected',
     );
@@ -67,7 +67,7 @@ it('includes an expected host key fingerprint when supplied', function (): void 
         'name' => 'app-1',
         'roles' => ['app-prod'],
         'host' => '192.0.2.20',
-        'tld' => null,
+        'tld' => 'production',
         'user' => 'ubuntu',
         'host_key_fingerprint' => 'SHA256:expected',
     ]);

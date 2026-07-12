@@ -32,6 +32,7 @@ beforeEach(function (): void {
 
     DB::table('nodes')->insert([
         'name' => 'app-1',
+        'tld' => 'app-1',
         'host' => 'app-1',
         'orbit_path' => '/home/orbit/orbit',
         'status' => 'active',
@@ -191,6 +192,7 @@ it('routes workspace lifecycle commands through the selected node home when app 
 
     $canonicalNode = new Node([
         'name' => 'beast',
+        'tld' => 'beast',
         'host' => 'beast.test',
         'platform' => 'ubuntu_24-04',
         'user' => 'nckrtl',
@@ -201,6 +203,7 @@ it('routes workspace lifecycle commands through the selected node home when app 
 
     $selectedNode = new Node([
         'name' => 'NMBP',
+        'tld' => 'nmbp',
         'host' => 'nmbp.test',
         'platform' => 'macos_26-5-1',
         'user' => 'nckrtl',
@@ -380,7 +383,7 @@ it('runs setup steps through the local executor by default for agent capable nod
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'agent-node',
             'host' => 'agent-node',
@@ -435,7 +438,7 @@ it('routes php setup commands before dispatching through the local executor', fu
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'agent-node',
             'host' => 'agent-node',
@@ -501,7 +504,7 @@ it('routes managed host tools before dispatching through the local executor', fu
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'agent-node',
             'host' => 'agent-node',

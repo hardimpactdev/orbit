@@ -22,7 +22,7 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
         public readonly string $name,
         public readonly array $roles,
         public readonly ?string $host,
-        public readonly ?string $tld,
+        public readonly string $tld,
         public readonly ?string $user,
         public readonly ?string $hostKeyFingerprint = null,
         public readonly bool $operator = false,
@@ -38,6 +38,7 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
         public readonly ?string $ingressNode = null,
         public readonly ?string $template = null,
         public readonly ?string $operatorName = null,
+        public readonly ?string $operatorTld = null,
         public readonly ?string $redisNode = null,
         public readonly ?string $s3DataPath = null,
     ) {}
@@ -114,6 +115,10 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
 
         if ($this->operatorName !== null) {
             $body['operator_name'] = $this->operatorName;
+        }
+
+        if ($this->operatorTld !== null) {
+            $body['operator_tld'] = $this->operatorTld;
         }
 
         if ($this->redisNode !== null) {

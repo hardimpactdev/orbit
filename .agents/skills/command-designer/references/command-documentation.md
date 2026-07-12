@@ -16,9 +16,9 @@ docs/domains/N_family-singular/
 │   ├── command-name.md
 │   └── technical/
 │       ├── 1_command-name.md
-│       ├── 2_command-name_on-control-node.md
+│       ├── 2_command-name_on-client.md
 │       ├── 3_command-name_on-gateway-node.md
-│       ├── 4_command-name_on-app-node.md
+│       ├── 4_command-name_<topology-or-capability>.md
 │       ├── 5.1_command-name_input-mode_interactive.md
 │       ├── 5.2_command-name_input-mode_non-interactive.md
 │       ├── 6.1_command-name_output-render_human.md
@@ -29,8 +29,10 @@ docs/domains/N_family-singular/
 Converted command families do not use flat numbered command files. Every public
 command lives in a numbered command directory with at least a public command
 page, canonical technical contract, and renderer contracts. Add input-mode,
-caller-role, topology, destructive-consent, cross-node, or E2E companion files
-when those contracts need separate ownership.
+execution-location, topology, capability, destructive-consent, cross-node, or
+E2E companion files when those contracts need separate ownership. Location
+files describe transport or locality differences; they do not grant or deny
+authorization by node role.
 
 Command names use the longest command prefix before the colon. For compound
 command groups, keep the compound prefix intact and put only the action after
@@ -55,14 +57,13 @@ Examples:
 
 - `node:new` is the authoritative shape for node command structure until a newer
   node command contract explicitly supersedes it.
-- If `node:new` says app-node callers are not control-plane callers and must be
-  rejected before prompts or side effects, later node commands inherit that rule
-  unless their contract explicitly documents a narrower exception.
-- If an app-domain contract says app-node callers may read but may not initiate
-  app-level writes, later app commands inherit that rule. App-node workflow
-  exceptions, such as a workspace command registering local workspace context,
-  must be owned by that specific command contract and must not be inferred for
-  neighboring app commands.
+- If `node:new` says a gateway-known peer needs `node:new` on its gateway grant,
+  later node commands inherit the identity-and-grants model unless their
+  contract names one of the architecture's authorization exception classes.
+- If an app-domain contract says an app-node self-grant contains `app:read` but
+  not `app:write`, later app commands inherit those scoped permissions. Local
+  path context can resolve a default target, but it must not be described as
+  authorization for neighboring commands.
 - If an established family doctor file owns concrete issue codes and action
   maps, command files link to it instead of redefining that behavior.
 
@@ -75,9 +76,9 @@ product behavior is not hidden in sidecar notes.
 | Slot | Meaning |
 | --- | --- |
 | `1_command-name.md` | Canonical technical contract. |
-| `2_command-name_on-control-node.md` | Control caller behavior, when caller role changes command semantics. |
-| `3_command-name_on-gateway-node.md` | Gateway caller behavior, when caller role changes command semantics. |
-| `4_command-name_on-app-node.md` | App caller behavior, when caller role changes command semantics. |
+| `2_command-name_on-client.md` | Typed gateway-client behavior when a separate location contract is useful. |
+| `3_command-name_on-gateway-node.md` | Gateway-location transport and gateway implicit-authority behavior when it differs. |
+| `4_command-name_<topology-or-capability>.md` | Optional target topology or capability behavior. This slot never defines authorization. |
 | `5.1_command-name_input-mode_interactive.md` | Interactive input-mode contract. |
 | `5.2_command-name_input-mode_non-interactive.md` | Non-interactive input-mode contract. |
 | `6.1_command-name_output-render_human.md` | Human output renderer contract. |
@@ -100,10 +101,10 @@ reuse a reserved slot for a different concern.
   or forbidden, defaults, and value validation.
 - Input-mode files own how those rules are collected, prompted, retried, or
   failed for a concrete invocation mode.
-- Role/topology files such as `2_command-name_on-control-node.md`,
-  `3_command-name_on-gateway-node.md`, and `4_command-name_on-app-node.md` own
-  behavior changes caused by caller role, requested role, platform, or
-  topology.
+- Location/topology files such as `2_command-name_on-client.md`,
+  `3_command-name_on-gateway-node.md`, and command-specific slot-4 companions
+  own transport, requested target role, platform, or topology differences. The
+  canonical contract still owns peer identity and authorization.
 - Companion technical files inherit `Owner` and `Effects` from
   `technical/1_command-name.md` unless they explicitly override them. Do not
   repeat identical `Owner` or `Effects` stanzas.
@@ -162,34 +163,31 @@ When converting a command, state both:
 If the distinction is already established by an authoritative command in the
 same domain, copy that wording instead of creating a fresh local formulation.
 
-## Caller Role Matrix
+## Peer Identity And Authorization
 
-Commands with node-topology behavior should use the shared node caller-role
-vocabulary from `docs/domains/1_node/README.md`: `control`, `gateway`, `app`,
-and `unknown`.
+Every gateway-backed command authenticates the caller through its WireGuard
+peer identity. The canonical contract names the target and required permission;
+the gateway decides access from its stored authorization state.
 
-The canonical contract may summarize the caller-role matrix, but role-specific
-files own detailed behavior. Do not repeat the local caller-role detection
-mechanics in every command. Link to the node family README for the shared
-contract and document only the command-specific consequence for each role.
+The default authorization class is a grant edge from the consuming peer to the
+serving node plus the scoped permission required by the command. The only
+alternatives are the architecture's four named exception classes:
 
-If an authoritative node command already decides a caller-role rule, later node
-commands inherit it unless they document a narrower exception. For example,
-app-node callers are not control-plane callers merely because they have the CLI
-installed.
+- gateway implicit authority;
+- pre-grants bootstrap;
+- local-only;
+- identity-gated self-management.
 
-For app-domain commands, default to the stricter app-domain rule:
+Node roles may determine target capability, placement, or execution transport,
+but they are not generic caller eligibility. A workload node calling a command
+against itself uses its explicit self-grant. Local path or project context may
+resolve a target default, but it never authorizes that target.
 
-- app-node callers may run app read commands when authorized for the resolved
-  app;
-- app-node callers may not initiate app-level writes, cross-node app creation,
-  registration/adoption, destructive cleanup, source-of-truth pruning, or
-  preference changes unless the command explicitly documents a narrow exception;
-- app-node local context may help read or workspace commands resolve defaults,
-  but context inference is not authorization to mutate app intent.
-
-Document caller-role denial in the canonical contract and renderer contracts.
-Use `caller_role_not_allowed` with `error.meta.caller_role`.
+Document authorization denial in the canonical and renderer contracts with
+`authorization_failed`. When the required permission is known, include
+`error.meta.reason=missing_permission`,
+`error.meta.missing_permission=<permission>`, and the stable serving-node or
+target identifier.
 
 ## Effects
 
@@ -204,7 +202,7 @@ Use `**Effects:**` for observable command behavior, not permission scopes.
 | `internal` | Internal command surface, not a primary user-facing command. |
 | `local-only` | Mutates or reads only local caller-machine state. |
 | `gateway-admin` | Administers gateway-local infrastructure or gateway-owned administrative policy. |
-| `none` | Companion-contract path is denied before prompts and side effects. Use only when that file describes a rejected invocation path. |
+| `none` | Companion-contract path has no effects because authorization or target eligibility rejects it before side effects. |
 
 `write` is intentionally an umbrella effect for high-level scanning. Do not rely
 on it alone to infer authorization or persistence behavior. The command's
@@ -217,18 +215,18 @@ If a caller is not granted to a node, it cannot read that node or operate on it.
 
 Command contract files must include `**Prerequisites:**` between `**Effects:**`
 and behavior sections. Prerequisites describe state that must already exist
-before command input resolution or side effects begin: caller role, network
-reachability, node identity, authorization, platform support, local trust, or
+before command input resolution or side effects begin: network reachability,
+WireGuard peer identity, authorization class, platform support, local trust, or
 target availability.
 
 When prerequisites depend on resolved command input, split them:
 
-- `**Prerequisites:**` for pre-input caller eligibility, such as caller role,
-  app-node denial, local execution context, and access to prompt or argument
-  resolution.
+- `**Prerequisites:**` for facts known before target resolution, such as gateway
+  reachability, peer identity, local-only execution context, and access to
+  prompt or argument resolution.
 - `**Post-input path eligibility:**` for checks that require resolved fields,
-  such as requested role, selected node, host, environment, destructive consent,
-  or path-specific authorization.
+  such as required grant permission, requested target role, selected node, host,
+  environment, destructive consent, or other target-specific eligibility.
 
 Apply post-input path eligibility as soon as the needed fields are known and
 always before side effects. In interactive input mode, show the validation
@@ -317,7 +315,7 @@ concrete issue codes, fix/adopt action maps, and family test mapping.
 
 When one command has multiple technical contract files, keep them in numbered
 order inside the command's `technical/` directory. Technical file prefixes are
-slot numbers that are unique within that directory: `1_`, `2_`, `3_`, `4_`,
-`5.1_`, `5.2_`, `6.1_`, `6.2_`, and so on. Do not reuse the parent command
-directory ordinal for technical files. Update every internal link when adding
-or renaming numbered technical files.
+slot numbers that are unique within that directory: `1_`, optional `2_` through
+`4_` location/topology companions, `5.1_`, `5.2_`, `6.1_`, `6.2_`, and so on.
+Do not reuse the parent command directory ordinal for technical files. Update
+every internal link when adding or renaming numbered technical files.

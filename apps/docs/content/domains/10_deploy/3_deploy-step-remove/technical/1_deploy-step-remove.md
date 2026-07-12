@@ -8,7 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity has `deploy:step` on the production app's owning node.
+- The current node identity has `deploy:step` at the selected instance's grant
+  boundary: its owning Orbit node, or the gateway for an external instance.
 
 ## Signature
 
@@ -22,8 +23,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production app the caller may manage. |
-| `step` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Existing step id or exact title for the selected app. |
+| `app` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production app-instance selector. A bare app is valid only when it has exactly one instance. |
+| `step` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Existing step id or exact title for the selected app instance. |
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -36,11 +37,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Deployment Policy Removal Rules
 
-- Resolves the selected app through gateway app configuration.
-- Fails before side effects unless the selected app is production.
+- Resolves one concrete production app instance through gateway configuration.
+- Fails before side effects unless the selected instance belongs to a production app.
 - Resolves one deployment step by id or exact title.
 - Requires destructive consent before removing gateway policy.
-- Removes the step definition from the app deployment pipeline.
+- Removes the step definition from the app instance's deployment pipeline.
 - Reorders remaining steps to keep a stable ascending order.
 
 ### History Boundary Rules
@@ -61,12 +62,13 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | App not found | No visible app matches the selector. | `error.code=app.not_found` |
 | Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
+| App instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
 | Step not found | No step matches the supplied id or title. | `error.code=deploy.step_not_found` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=destructive_consent_required` |
 
 ## Doctor Relationship
 
-Deployment policy is app-owned gateway state. `deploy:step-remove` does not own
+Deployment policy is app-instance-owned gateway state. `deploy:step-remove` does not own
 a doctor family. [`app-doctor.md`](../../../5_app/app-doctor.md) may use
 deployment policy when reporting `app.deployment_pipeline_invalid`.
 

@@ -252,7 +252,7 @@ final readonly class WorkspaceListController implements Loggable
                 ->map(fn (Workspace $workspace): array => [
                     'name' => $workspace->name,
                     'app' => $workspace->app?->name,
-                    'app_instance' => $workspace->appInstance?->name,
+                    'app_instance' => $workspace->appInstance->name,
                     'node' => $this->placement->nodeForWorkspace($workspace)?->name,
                     'url' => $workspace->url(),
                     'lifecycle_status' => $workspace->lifecycle_status->value,

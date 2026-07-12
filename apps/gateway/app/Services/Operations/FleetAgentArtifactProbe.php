@@ -16,7 +16,7 @@ final readonly class FleetAgentArtifactProbe
 
     public function nodeNeedsUpdate(Node $node, OperationUpdatePlan $plan): bool
     {
-        if (! $node->orbit_agent_capable) {
+        if (! $node->isAgentEligible()) {
             return false;
         }
 

@@ -112,7 +112,7 @@ describe('security installers', function (): void {
             ->toContain('sudo sshd -t');
     });
 
-    it('renders hardened sshd configuration for a custom managed SSH user', function (): void {
+    it('renders hardened sshd configuration for a custom provisioning runtime user', function (): void {
         $node = Node::factory()->create([
             'wireguard_address' => '10.6.0.44',
             'user' => 'nckrtl',

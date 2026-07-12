@@ -182,7 +182,7 @@ describe('NodeRoleAddController', function (): void {
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
             'role' => 'app-dev',
-            'settings' => ['tld' => 'test'],
+            'settings' => [],
         ]);
 
         $response
@@ -202,7 +202,7 @@ describe('NodeRoleAddController', function (): void {
                 ],
             ])
             ->assertJsonPath('success.data.node', 'target-1')
-            ->assertJsonPath('success.data.assignment.settings.tld', 'test');
+            ->assertJsonPath('success.data.assignment.settings', []);
 
         $selfGrant = NodeAccess::query()
             ->where('consumer_node_id', $target->id)
@@ -244,22 +244,22 @@ describe('NodeRoleAddController', function (): void {
             ->assertJsonPath('success.data.assignment.role', $role)
             ->assertJsonPath('success.data.assignment.status', 'active');
     })->with([
-        'macos app-dev' => ['macos_14', 'app-dev', ['tld' => 'test']],
-        'darwin app-dev' => ['darwin', 'app-dev', ['tld' => 'test']],
+        'macos app-dev' => ['macos_14', 'app-dev', []],
+        'darwin app-dev' => ['darwin', 'app-dev', []],
         'macos database' => ['macos_14', 'database', []],
     ]);
 
-    it('does not create agent work queue rows for opted-in macos agent-capable nodes', function (): void {
+    it('does not create Agent work queue rows for macos workload nodes', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
         $target->forceFill([
             'platform' => 'darwin',
-            'orbit_agent_capable' => true,
+            'managed' => false,
             'wireguard_address' => '10.6.0.45',
         ])->save();
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
             'role' => 'app-dev',
-            'settings' => ['tld' => 'test'],
+            'settings' => [],
         ]);
 
         $response
@@ -270,17 +270,17 @@ describe('NodeRoleAddController', function (): void {
         expect(Schema::hasTable('orbit_agent_jobs'))->toBeFalse();
     });
 
-    it('does not create agent work queue rows for opted-in linux agent-capable nodes', function (): void {
+    it('does not create Agent work queue rows for Linux workload nodes', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
         $target->forceFill([
             'platform' => 'ubuntu',
-            'orbit_agent_capable' => true,
+            'managed' => false,
             'wireguard_address' => '10.6.0.45',
         ])->save();
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
             'role' => 'app-dev',
-            'settings' => ['tld' => 'test'],
+            'settings' => [],
         ]);
 
         $response
@@ -291,17 +291,17 @@ describe('NodeRoleAddController', function (): void {
         expect(Schema::hasTable('orbit_agent_jobs'))->toBeFalse();
     });
 
-    it('does not return app-dev convergence jobs for macos nodes without agent capability', function (): void {
+    it('does not return app-dev convergence jobs for macos workload nodes', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
         $target->forceFill([
             'platform' => 'macos_14',
-            'orbit_agent_capable' => false,
+            'managed' => false,
             'wireguard_address' => '10.6.0.45',
         ])->save();
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
             'role' => 'app-dev',
-            'settings' => ['tld' => 'test'],
+            'settings' => [],
         ]);
 
         $response

@@ -29,6 +29,7 @@ use Throwable;
 
 final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternalCommands
 {
+    // @orbit-ssh-lane transitional-ssh
     private const string OPERATION_ID_METADATA_KEY = 'ORBIT_OPERATION_ID';
 
     private const int OUTPUT_SUMMARY_BYTES = 4_096;
@@ -154,8 +155,26 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             );
 
             $preference = $this->transportPreference($transportOptions);
-            $result = $preference === NodeTransportPreference::TransitionalSshFallback
-                ? $this->transport->run(
+            $envelope = NodeCommandEnvelope::agentPushBinary(
+                operationId: $operationId,
+                binary: 'orbit',
+                argv: $dispatch['argv'],
+                input: $this->input($transportOptions),
+                cwd: $this->cwd($transportOptions),
+                environment: $this->localExecutorEnvironment($node, $transportOptions),
+                timeoutSeconds: $this->timeoutSeconds($transportOptions),
+            );
+            $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope, $preference);
+            $result = match ($transport) {
+                NodeTransport::GatewayOnly => $this->runGatewayLocal(
+                    node: $node,
+                    commandName: $commandName,
+                    arguments: $arguments,
+                    commandOptions: $commandOptions,
+                    dispatch: $dispatch,
+                    transportOptions: $transportOptions,
+                ),
+                NodeTransport::TransitionalSshFallback => $this->transport->run(
                     node: $node,
                     script: $this->sshDispatchScript(
                         node: $node,
@@ -166,14 +185,13 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                         transportOptions: $transportOptions,
                     ),
                     options: $this->transportDispatchOptions($node, $transportOptions),
-                )
-                : $this->runAgentPush(
+                ),
+                NodeTransport::AgentPush => $this->runAgentPush(
                     node: $node,
                     dispatch: $dispatch,
-                    operationId: $operationId,
-                    preference: $preference,
-                    transportOptions: $transportOptions,
-                );
+                    envelope: $envelope,
+                ),
+            };
         } catch (RemoteShellFailed $exception) {
             $sanitizedResult = $this->sanitizedResult($exception->result, $dispatch['operationToken']);
 
@@ -1565,33 +1583,61 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
 
     /**
      * @param  array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}  $dispatch
-     * @param  array<string, mixed>  $transportOptions
      */
     private function runAgentPush(
         Node $node,
         array $dispatch,
-        string $operationId,
-        NodeTransportPreference $preference,
-        array $transportOptions,
+        NodeCommandEnvelope $envelope,
     ): RemoteShellResult {
-        $envelope = NodeCommandEnvelope::agentPushBinary(
-            operationId: $operationId,
-            binary: 'orbit',
-            argv: $dispatch['argv'],
-            input: $this->input($transportOptions),
-            cwd: $this->cwd($transportOptions),
-            environment: $this->localExecutorEnvironment($node, $transportOptions),
-            timeoutSeconds: $this->timeoutSeconds($transportOptions),
-        );
-        $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope, $preference);
-
-        if ($transport !== NodeTransport::AgentPush) {
-            throw new RuntimeException('agent-push transport is unavailable');
-        }
-
         $result = app(NodeAgentPushClient::class)->execute($node, $envelope, $dispatch['operationToken']);
 
         return $this->agentPushResult($result);
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $arguments
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}  $dispatch
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     environment?: array<string, string>,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
+     *     bind_application_key?: bool,
+     *     bind_input?: bool,
+     *     force_remote_host?: bool,
+     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
+     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
+     * }  $transportOptions
+     *
+     * @mago-expect lint:excessive-parameter-list
+     */
+    private function runGatewayLocal(
+        Node $node,
+        string $commandName,
+        array $arguments,
+        array $commandOptions,
+        array $dispatch,
+        array $transportOptions,
+    ): RemoteShellResult {
+        return app(RemoteOrbitGatewayExecutor::class)->run(
+            node: $node,
+            script: $this->commands->build(
+                targetNode: $node,
+                commandName: $commandName,
+                arguments: $arguments,
+                options: $commandOptions,
+                operationToken: $dispatch['operationToken'],
+            ),
+            options: $this->transportDispatchOptions($node, $transportOptions),
+        );
     }
 
     /**

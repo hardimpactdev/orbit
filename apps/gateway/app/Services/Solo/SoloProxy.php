@@ -15,17 +15,17 @@ final readonly class SoloProxy
 
     public function tools(Node $node): SoloUpstreamResponse
     {
-        return $this->client->get($this->targets->gatewayTarget($node), '/discovery');
+        return $this->client->get($this->targets->forNode($node), '/discovery');
     }
 
     public function projects(Node $node): SoloUpstreamResponse
     {
-        return $this->client->get($this->targets->gatewayTarget($node), '/projects');
+        return $this->client->get($this->targets->forNode($node), '/projects');
     }
 
     public function read(Node $node, string $upstreamPath): SoloUpstreamResponse
     {
-        return $this->client->get($this->targets->gatewayTarget($node), $upstreamPath);
+        return $this->client->get($this->targets->forNode($node), $upstreamPath);
     }
 
     /**
@@ -37,7 +37,7 @@ final readonly class SoloProxy
         string $upstreamPath,
         array $payload,
     ): SoloUpstreamResponse {
-        $target = $this->targets->gatewayTarget($node);
+        $target = $this->targets->forNode($node);
 
         return match ($operation->method) {
             'DELETE' => $this->client->delete($target, $upstreamPath, $payload),

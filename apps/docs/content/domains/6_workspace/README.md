@@ -9,9 +9,17 @@ app, has a canonical name, and owns one workspace route lifecycle.
 These rules govern all workspace family commands.
 
 - The gateway owns workspace configuration.
-- Workspace artifacts are applied by the gateway over SSH on the effective
-  workspace node. Instance-bound workspaces use their selected app instance
-  node; app-only legacy workspaces use the parent app's canonical node.
+- Workspace artifacts are applied through Agent push on the selected app
+  instance node. Every workspace belongs to exactly one app instance.
+- Every workspace write resolves one concrete app instance before side effects.
+  A bare parent-app selector, parent app path, or parent-app marker is shorthand
+  only when the gateway can resolve it to exactly one registered app instance.
+  Zero or multiple matches fail with `error.code=validation_failed`,
+  `error.meta.field=app`, and
+  `error.meta.reason=app_instance_required`.
+- The gateway always persists a non-null `app_instance_id` column on the
+  workspace row. Workspace JSON renders the selected instance as the non-null
+  `workspace.app_instance` field; there is no parent-app-only workspace row.
 - Workspace name is the canonical Orbit workspace identity. Source-control
   branch/ref metadata is optional and may be absent; when recorded, it is
   descriptive metadata rather than a separate workspace identity.
@@ -40,10 +48,9 @@ These rules govern all workspace family commands.
   artifact convergence belong to the `proxy` family.
 - A workspace hostname is the workspace slug prepended to the selected app
   instance's primary hostname. For a development app this yields
-  `{workspace}.{app}.{instance-tld}`. App-only legacy workspaces keep the
-  canonical app hostname behavior.
-- Workspaces inherit app process definitions as runtime units during the
-  app-scoped process compatibility phase. Each inherited runtime unit is owned
+  `{workspace}.{app}.{instance-tld}`.
+- Workspaces inherit app process definitions as app-instance runtime units.
+  Each inherited runtime unit is owned
   by the process family and uses the selected process runtime backend. It has
   its own unit name, working directory, environment block, and log stream
   distinct from the main app instance and from sibling workspaces.
@@ -55,10 +62,8 @@ These rules govern all workspace family commands.
 - Workspace setup and teardown step definitions are gateway-owned workspace
   policy scoped to app instances. `workspace-setup-step:add` and
   `workspace-teardown-step:add` require dotted selectors such as `hauser.nmbp`;
-  list/remove and lifecycle execution resolve instance-scoped rows first and
-  fall back to legacy app-level rows only when no instance rows exist for list
-  and lifecycle execution. Legacy app-level rows are not mutable. Adding,
-  listing, removing, and ordering instance-owned definitions are explicit
+  list/remove and lifecycle execution use only rows owned by the selected app
+  instance. Adding, listing, removing, and ordering those definitions are explicit
   workspace commands, not doctor repair actions.
 - Workspace setup and teardown step runs are durable workspace history.
   `workspace:history` and `workspace:log` read that history; doctor verifies
@@ -126,7 +131,7 @@ entity does not define.
 {
   "name": "feature-docs",
   "app": "docs",
-  "app_instance": null,
+  "app_instance": "development",
   "node": "app-1",
   "path": "/home/orbit/apps/docs/.worktrees/feature-docs",
   "url": "https://feature-docs.docs.test",
@@ -145,8 +150,8 @@ entity does not define.
 | --- | --- | --- |
 | `name` | string | Workspace identity slug. Unique within the parent app. |
 | `app` | string | Parent app slug. |
-| `app_instance` | string/null | Selected app instance name when the workspace is bound to a concrete app instance; `null` for app-only legacy workspaces. |
-| `node` | string | Effective workspace node slug. Instance-bound workspaces use the selected app instance node; app-only legacy workspaces use the parent app's canonical node. |
+| `app_instance` | string | Required selected app instance name. |
+| `node` | string | Effective workspace node slug resolved from the selected app instance. |
 | `path` | string | Absolute workspace path on the owning node. |
 | `url` | string | Primary intended workspace URL. |
 | `php_version` | string | Effective PHP version for the workspace. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
@@ -157,7 +162,8 @@ entity does not define.
 
 Structural fields are always present. Use `null` only for structural fields
 whose value is inapplicable, such as generic worktrees without an adapter-side
-workspace id.
+workspace id. `app_instance` is applicable to every workspace and is never
+`null`.
 
 ## Terminology
 

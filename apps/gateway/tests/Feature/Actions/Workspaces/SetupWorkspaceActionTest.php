@@ -33,6 +33,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process as ProcessFacade;
 
 uses(RefreshDatabase::class);
 
@@ -44,6 +45,7 @@ beforeEach(function (): void {
             'user' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
+            'tld' => 'gateway',
             'created_at' => now(),
             'updated_at' => now(),
         ],
@@ -74,6 +76,18 @@ beforeEach(function (): void {
         ],
     ]);
 
+    AppInstance::factory()->create([
+        'app_id' => 1,
+        'name' => 'development',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: 1,
+            path: '/home/nckrtl/apps/demo',
+            document_root: 'public',
+            domain: 'demo.beast',
+        ),
+    ]);
+
     app()->instance(RemoteShell::class, new SetupWorkspaceActionTestShell);
     app()->instance(SiteCertificateInstaller::class, new SetupWorkspaceActionTestCertificateInstaller);
     app()->instance(OrbitCaService::class, new SetupWorkspaceActionTestCa);
@@ -88,11 +102,13 @@ afterEach(function (): void {
 function setup_workspace_use_agent_push(): void
 {
     request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
+    Node::query()->whereNull('platform')->update(['platform' => 'ubuntu_24-04']);
 }
 
 it('sets up a workspace and marks it active', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -115,6 +131,7 @@ it('sets up a workspace and marks it active', function (): void {
 it('does not render PHP-FPM pool config for PHP workspaces in the steady-state path', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -145,6 +162,7 @@ it('does not render PHP-FPM pool config for PHP workspaces in the steady-state p
 it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -194,6 +212,7 @@ it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', fun
 it('reconciles an existing FrankenPHP workspace runtime process row', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -231,12 +250,12 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
     Node::query()
         ->whereKey(1)
         ->update([
-            'orbit_agent_capable' => true,
             'wireguard_address' => '10.47.0.41',
         ]);
 
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -255,7 +274,7 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
                 'content' => new CaddyGlobalConfig()->fresh(),
             ]))
             ->push(setup_workspace_agent_response('caddy-config.write-site', [
-                'path' => '/etc/caddy/sites/feature-a.demo.caddy',
+                'path' => '/etc/caddy/sites/feature-a.demo.beast.caddy',
             ]))
             ->push(setup_workspace_agent_response('caddy-config.reload', [
                 'container' => 'orbit-caddy',
@@ -265,31 +284,35 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
     app(EnsureWorkspaceProxyRoute::class)->handle($workspace);
 
     $requests = setup_workspace_agent_requests('10.47.0.41');
-    $sitePayload = json_decode((string) ($requests[1]['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+    $sitePayload = setup_workspace_agent_input_payload(
+        '10.47.0.41',
+        'internal:caddy-config',
+        'write-site',
+    );
     $caddySite = (string) ($sitePayload['content'] ?? '');
     $route = $workspace->proxyRoutes()->first();
 
     expect($caddySite)
         ->toContain(
-            'tls /home/gateway/.config/orbit/certs/feature-a.demo.crt /home/gateway/.config/orbit/certs/feature-a.demo.key',
+            'tls /home/gateway/.config/orbit/certs/feature-a.demo.beast.crt /home/gateway/.config/orbit/certs/feature-a.demo.beast.key',
         )
         ->and($caddySite)
         ->toContain('reverse_proxy http://orbit-ws-demo-feature-a')
         ->and($caddySite)
         ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')->and($caddySite)
-        ->not->toContain('tls_server_name feature-a.demo')->and($caddySite)
+        ->not->toContain('tls_server_name feature-a.demo.beast')->and($caddySite)
         ->not->toContain('php_fastcgi')->and($route?->config['runtime_upstream'])->toBe(
             'http://orbit-ws-demo-feature-a',
         )->and($requests)->toHaveCount(3)->and($requests[0]['argv'][1] ?? null)->toBe('read-global')->and(
             $requests[1]['argv'][1] ?? null,
-        )->toBe('write-site')->and($sitePayload)->toMatchArray(['domain' => 'feature-a.demo'])->and(
+        )->toBe('write-site')->and($sitePayload)->toMatchArray(['domain' => 'feature-a.demo.beast'])->and(
             $requests[2]['argv'][1] ?? null,
         )->toBe('reload')->and($route?->config['runtime_upstream_tls'] ?? null)->toBeNull()->and(
             $route?->config['php_socket'],
         )->toBeNull()->and($route?->config['tls'])->toBe([
-            'cert_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.crt',
-            'key_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.key',
-        ])->and($certificates->hosts)->toBe(['feature-a.demo'])->and($route?->source_hash)->toBe(hash(
+            'cert_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.beast.crt',
+            'key_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.beast.key',
+        ])->and($certificates->hosts)->toBe(['feature-a.demo.beast'])->and($route?->source_hash)->toBe(hash(
             'sha256',
             $caddySite,
         ));
@@ -462,7 +485,6 @@ it('installs workspace app-dev runtime trust pool through the managed file agent
     Node::query()
         ->whereKey(1)
         ->update([
-            'orbit_agent_capable' => true,
             'wireguard_address' => '10.47.0.42',
         ]);
     App::query()
@@ -473,6 +495,7 @@ it('installs workspace app-dev runtime trust pool through the managed file agent
 
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -497,7 +520,7 @@ it('installs workspace app-dev runtime trust pool through the managed file agent
                 'content' => new CaddyGlobalConfig()->fresh(),
             ]))
             ->push(setup_workspace_agent_response('caddy-config.write-site', [
-                'path' => '/etc/caddy/sites/feature-a.demo.caddy',
+                'path' => '/etc/caddy/sites/feature-a.demo.beast.caddy',
             ]))
             ->push(setup_workspace_agent_response('caddy-config.reload', [
                 'container' => 'orbit-caddy',
@@ -507,12 +530,12 @@ it('installs workspace app-dev runtime trust pool through the managed file agent
     app(EnsureWorkspaceProxyRoute::class)->handle($workspace);
 
     $requests = setup_workspace_agent_requests('10.47.0.42');
-    $managedFilePayload = json_decode(
-        (string) ($requests[1]['input'] ?? ''),
-        associative: true,
-        flags: JSON_THROW_ON_ERROR,
+    $managedFilePayload = setup_workspace_agent_input_payload(
+        '10.47.0.42',
+        'internal:managed-file',
+        'write',
     );
-    $sitePayload = json_decode((string) ($requests[3]['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+    $sitePayload = setup_workspace_agent_site_payload('10.47.0.42');
 
     expect($requests)
         ->toHaveCount(5)
@@ -531,7 +554,7 @@ it('installs workspace app-dev runtime trust pool through the managed file agent
         ->toBe(['internal:caddy-config', 'write-site'])
         ->and((string) ($sitePayload['content'] ?? ''))
         ->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
-        ->toContain('tls_server_name feature-a.demo');
+        ->toContain('tls_server_name feature-a.demo.beast');
 });
 
 it('registers production workspace routes on ingress with a private backend site', function (): void {
@@ -549,11 +572,13 @@ it('registers production workspace routes on ingress with a private backend site
         'user' => 'orbit',
     ]);
 
-    $router = Node::factory()->create([
-        'name' => 'gateway-1',
-        'status' => 'active',
-        'wireguard_address' => '10.6.0.2',
-    ]);
+    $router = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.2',
+        ]);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $edge->id,
@@ -580,28 +605,32 @@ it('registers production workspace routes on ingress with a private backend site
             'domain' => 'demo.example.com',
             'environment' => 'production',
         ]);
+    AppInstance::query()
+        ->findOrFail(1)
+        ->update([
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: 1,
+                path: '/home/nckrtl/apps/demo',
+                document_root: 'public',
+                domain: 'demo.example.com',
+            ),
+        ]);
 
     Node::query()
         ->whereKey($appHost->id)
         ->update([
             'wireguard_address' => '10.6.0.21',
             'user' => 'orbit',
-            'orbit_agent_capable' => true,
         ]);
     Node::query()
         ->whereKey($edge->id)
         ->update([
-            'orbit_agent_capable' => true,
             'wireguard_address' => '10.6.0.31',
-        ]);
-    Node::query()
-        ->whereKey($router->id)
-        ->update([
-            'orbit_agent_capable' => true,
         ]);
 
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -613,12 +642,20 @@ it('registers production workspace routes on ingress with a private backend site
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
     app()->instance(SiteCertificateInstaller::class, $certificates);
+    ProcessFacade::preventStrayProcesses();
+    ProcessFacade::fake([
+        '*' => ProcessFacade::result(output: json_encode([
+            'success' => [
+                'data' => [
+                    'content' => new CaddyGlobalConfig()->fresh(),
+                ],
+                'meta' => [],
+            ],
+        ], JSON_THROW_ON_ERROR)),
+    ]);
     Http::preventStrayRequests();
     Http::fake([
         'http://10.6.0.31:9477/v1/commands' => setup_workspace_caddy_sequence(
-            '/etc/caddy/sites/feature-a.demo.example.com.caddy',
-        ),
-        'http://10.6.0.2:9477/v1/commands' => setup_workspace_caddy_sequence(
             '/etc/caddy/sites/feature-a.demo.example.com.caddy',
         ),
         'http://10.6.0.21:9477/v1/commands' => setup_workspace_caddy_sequence(
@@ -659,7 +696,7 @@ it('registers production workspace routes on ingress with a private backend site
         ->and(setup_workspace_agent_requests('10.6.0.31'))
         ->toHaveCount(3)
         ->and(setup_workspace_agent_requests('10.6.0.2'))
-        ->toHaveCount(3)
+        ->toHaveCount(0)
         ->and(setup_workspace_agent_requests('10.6.0.21'))
         ->toHaveCount(3)
         ->and(setup_workspace_agent_site_payload('10.6.0.31')['domain'] ?? null)
@@ -675,15 +712,19 @@ it('registers production workspace routes on ingress with a private backend site
 it('starts configured app processes for the workspace after rendering runtime units', function (): void {
     setup_workspace_use_agent_push();
 
+    NodeRoleAssignment::query()
+        ->where('node_id', 1)
+        ->where('role', 'gateway')
+        ->update(['role' => 'app-dev']);
     Node::query()
         ->whereKey(1)
         ->update([
-            'orbit_agent_capable' => true,
             'wireguard_address' => '10.47.0.45',
         ]);
 
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -713,10 +754,13 @@ it('starts configured app processes for the workspace after rendering runtime un
                 'content' => new CaddyGlobalConfig()->fresh(),
             ]))
             ->push(setup_workspace_agent_response('caddy-config.write-site', [
-                'path' => '/etc/caddy/sites/feature-a.demo.caddy',
+                'path' => '/etc/caddy/sites/feature-a.demo.beast.caddy',
             ]))
             ->push(setup_workspace_agent_response('caddy-config.reload', [
                 'container' => 'orbit-caddy',
+            ]))
+            ->push(setup_workspace_agent_response('workspace-runtime-container-apply', [
+                'outcome' => 'created',
             ]))
             ->push(setup_workspace_agent_response('process.systemd.apply', [
                 'status' => 'changed',
@@ -737,21 +781,22 @@ it('starts configured app processes for the workspace after rendering runtime un
             'names' => ['vite'],
         ])
         ->and($requests)
-        ->toHaveCount(5)
-        ->and(array_slice($requests[3]['argv'] ?? [], offset: 0, length: 3))
-        ->toBe(['internal:process-systemd-service', 'apply', 'orbit_demo_feature-a_vite.service'])
+        ->toHaveCount(6)
         ->and(array_slice($requests[4]['argv'] ?? [], offset: 0, length: 3))
+        ->toBe(['internal:process-systemd-service', 'apply', 'orbit_demo_feature-a_vite.service'])
+        ->and(array_slice($requests[5]['argv'] ?? [], offset: 0, length: 3))
         ->toBe(['internal:process-systemd-service', 'start', 'orbit_demo_feature-a_vite.service'])
         ->and($shell->scripts)
         ->not
         ->toContain("sudo systemctl start 'orbit_demo_feature-a_vite.service'")
         ->and(array_values(array_unique($certificates->hosts)))
-        ->toBe(['feature-a.demo']);
+        ->toBe(['feature-a.demo.beast']);
 });
 
 it('reports converged for already-active workspace', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
@@ -769,6 +814,7 @@ it('reports converged for already-active workspace', function (): void {
 it('reports adopted for new workspace with adoption flag', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -786,6 +832,7 @@ it('reports adopted for new workspace with adoption flag', function (): void {
 it('skips setup steps when none are configured', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -804,6 +851,7 @@ it('skips setup steps when none are configured', function (): void {
 it('runs setup steps when configured', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -811,6 +859,7 @@ it('runs setup steps when configured', function (): void {
 
     WorkspaceStep::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'echo "hello"',
@@ -856,9 +905,10 @@ it('runs instance-specific setup steps for workspaces bound to an app instance',
 
     WorkspaceStep::create([
         'app_id' => $app->id,
+        'app_instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
-        'command' => 'legacy step',
+        'command' => 'other instance step',
         'timeout_seconds' => 60,
     ]);
     WorkspaceStep::create([
@@ -878,6 +928,7 @@ it('runs instance-specific setup steps for workspaces bound to an app instance',
 it('reports progress while setup steps are running', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -885,6 +936,7 @@ it('reports progress while setup steps are running', function (): void {
 
     WorkspaceStep::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'composer install --no-interaction',
@@ -893,6 +945,7 @@ it('reports progress while setup steps are running', function (): void {
 
     WorkspaceStep::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 2,
         'command' => 'npm ci',
@@ -923,6 +976,7 @@ it('reports progress while setup steps are running', function (): void {
 it('routes php and composer setup steps through the selected workspace host php toolchain', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -930,6 +984,7 @@ it('routes php and composer setup steps through the selected workspace host php 
 
     WorkspaceStep::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'composer install --no-interaction',
@@ -938,6 +993,7 @@ it('routes php and composer setup steps through the selected workspace host php 
 
     WorkspaceStep::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 2,
         'command' => 'php artisan migrate --force',
@@ -980,6 +1036,7 @@ it('routes php and composer setup steps through the selected workspace host php 
 it('keeps non-php setup steps on the host', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -987,6 +1044,7 @@ it('keeps non-php setup steps on the host', function (): void {
 
     WorkspaceStep::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'npm ci',
@@ -1014,6 +1072,7 @@ it('keeps non-php setup steps on the host', function (): void {
 it('passes lifecycle environment into host-routed setup steps', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -1021,6 +1080,7 @@ it('passes lifecycle environment into host-routed setup steps', function (): voi
 
     WorkspaceStep::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'composer install',
@@ -1037,7 +1097,7 @@ it('passes lifecycle environment into host-routed setup steps', function (): voi
     $composerRun = collect($shell->runs)
         ->first(fn (array $run): bool => str_contains($run['script'], 'composer install'));
 
-    $workspaceHost = 'feature-a.demo';
+    $workspaceHost = 'feature-a.demo.beast';
     $workspaceUrl = "https://{$workspaceHost}";
 
     expect($composerRun['script'])->toContain('ORBIT_APP=');
@@ -1054,7 +1114,6 @@ it('passes lifecycle environment into host-routed setup steps', function (): voi
     expect($composerRun['script'])
         ->toContain('VITE_DEV_SERVER_CERT=')
         ->toContain("/home/gateway/.config/orbit/certs/{$workspaceHost}.crt");
-    expect($composerRun['script'])->not->toContain('feature-a.demo.beast');
     expect($composerRun['options']['metadata'])->toMatchArray([
         'APP_URL' => $workspaceUrl,
         'VITE_APP_URL' => $workspaceUrl,
@@ -1067,6 +1126,7 @@ it('passes lifecycle environment into host-routed setup steps', function (): voi
 it('skips setup steps when hash matches previous successful run', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -1074,6 +1134,7 @@ it('skips setup steps when hash matches previous successful run', function (): v
 
     WorkspaceStep::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'echo "hello"',
@@ -1102,6 +1163,7 @@ it('skips setup steps when hash matches previous successful run', function (): v
 it('throws when setup step fails', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
@@ -1109,6 +1171,7 @@ it('throws when setup step fails', function (): void {
 
     WorkspaceStep::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'phase' => WorkspaceLifecyclePhase::Setup,
         'sort_order' => 1,
         'command' => 'exit 1',
@@ -1303,8 +1366,19 @@ function setup_workspace_agent_requests(string $wireguardAddress): array
  */
 function setup_workspace_agent_site_payload(string $wireguardAddress): array
 {
+    return setup_workspace_agent_input_payload($wireguardAddress, 'internal:caddy-config', 'write-site');
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function setup_workspace_agent_input_payload(
+    string $wireguardAddress,
+    string $command,
+    string $action,
+): array {
     foreach (setup_workspace_agent_requests($wireguardAddress) as $request) {
-        if (($request['argv'][1] ?? null) !== 'write-site') {
+        if (($request['argv'][0] ?? null) !== $command || ($request['argv'][1] ?? null) !== $action) {
             continue;
         }
 

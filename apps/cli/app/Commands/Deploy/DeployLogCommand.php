@@ -10,14 +10,14 @@ final class DeployLogCommand extends DeployGatewayCommand
 {
     #[\Override]
     protected $signature = 'deploy:log
-        {app? : Production app name or domain}
+        {app? : Production app-instance selector}
         {run? : Deployment run id}
         {--step= : Deployment run step id}
         {--lines=500 : Lines per captured stream}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Show stored deployment output for a production app run.';
+    protected $description = 'Show stored deployment output for a production app instance run.';
 
     public function handle(): int
     {

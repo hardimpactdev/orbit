@@ -8,17 +8,18 @@
 - The CLI caller can reach the Orbit gateway.
 - The target app exists in the gateway app registry.
 - The current node identity is authorized to remove the resolved app.
-- The gateway uses SSH to the owning node for artifact cleanup when
-  available. SSH reachability is not a pre-configuration prerequisite; if cleanup
-  cannot finish after app configuration removal, the command succeeds with structured
-  warnings.
+- Typed runtime cleanup uses Agent push to the concrete app-instance node.
+  Residual shell-based cleanup is an exact-marked transitional SSH seam and
+  runs only with `--node-transport=transitional-ssh-fallback`. Neither lane is
+  a pre-configuration prerequisite; cleanup failures after removal become
+  structured warnings.
 - The caller has `app:remove` on the app's owning node.
 
 This is the canonical technical contract for the `app:remove` command. It owns the signature, input resolution, behavior, and failure semantics.
 
 ## Signature
 
-`orbit app:remove [app] [--force] [--json]`
+`orbit app:remove [app] [--force] [--node-transport=<transport>] [--json]`
 
 ## Input Contract
 
@@ -29,6 +30,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `app` | `[app]` | Always. | Never. | None. | App name or hostname. Must resolve to exactly one gateway app record. |
 | `force` | `--force` | Optional. | Never. | `false`. | Explicit destructive consent. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | `agent-push` is the normal typed runtime lane. The exact `transitional-ssh-fallback` value opts into the marked residual cleanup seam; no other SSH value is accepted. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
@@ -63,10 +65,12 @@ This command follows the shared
     - Delete app-owned `workspace` rows.
     - Stop and delete app-owned `process`.
 - **Step 3: Node Artifact Cleanup:**
-    - Connect to the node over SSH.
-    - Remove app runtime container configuration.
-    - Remove managed runtime configuration.
-    - Remove the app path if it is eligible for deletion (see below).
+    - Remove app runtime container and managed runtime configuration through
+      Agent push.
+    - With the exact transitional marker only, remove residual route/process
+      artifacts and the eligible app path through the tracked SSH seam.
+    - Without that marker, leave residual cleanup to drift reporting rather
+      than selecting SSH implicitly.
 
 #### App path deletion eligibility
 

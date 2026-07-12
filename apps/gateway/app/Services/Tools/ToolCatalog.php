@@ -8,6 +8,7 @@ use App\Contracts\ToolDefinition;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 
+/** @mago-expect lint:kan-defect */
 final readonly class ToolCatalog
 {
     public function __construct(
@@ -58,6 +59,10 @@ final readonly class ToolCatalog
 
     public function logCommand(string $tool, int $lines, bool $follow = false): ?string
     {
+        if (! $this->hasCapability($tool, 'logs')) {
+            return null;
+        }
+
         $metadata = $this->probeMetadata($tool);
         $container = is_string($metadata['container'] ?? null)
             ? $metadata['container']
@@ -125,9 +130,9 @@ final readonly class ToolCatalog
         return in_array($capability, $this->capabilities($tool), true);
     }
 
-    public function requiredNodeRole(string $tool): ?string
+    public function bootstrapRole(string $tool): ?string
     {
-        return $this->definition($tool)?->requiredNodeRole();
+        return $this->definition($tool)?->bootstrapRole();
     }
 
     public function category(string $tool): ?string
@@ -143,13 +148,44 @@ final readonly class ToolCatalog
         return $this->definition($tool)?->supportedOperatingSystems() ?? [];
     }
 
+    public function requiredContainerProvider(string $tool): ?string
+    {
+        return $this->definition($tool)?->requiredContainerProvider();
+    }
+
+    public function runtimeUser(string $tool): ?string
+    {
+        return $this->definition($tool)?->runtimeUser();
+    }
+
+    public function requiresRouteTld(string $tool): bool
+    {
+        return $this->definition($tool)?->requiresRouteTld() ?? false;
+    }
+
+    public function isolation(string $tool): ?string
+    {
+        return $this->definition($tool)?->isolation();
+    }
+
+    public function gatewayLocal(string $tool): bool
+    {
+        return $this->definition($tool)?->gatewayLocal() ?? false;
+    }
+
     public function supportsNode(string $tool, Node $node): bool
     {
         if (! $node->isActive()) {
             return false;
         }
 
-        if (app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
+        $isGateway = app(NodeRoleAssignments::class)->nodeIsGateway($node);
+
+        if ($this->gatewayLocal($tool) !== $isGateway) {
+            return false;
+        }
+
+        if ($this->requiresRouteTld($tool) && trim((string) $node->tld) === '') {
             return false;
         }
 
@@ -170,7 +206,7 @@ final readonly class ToolCatalog
     public function operatingSystemForPlatform(?string $platform): ?string
     {
         if (! is_string($platform) || trim($platform) === '') {
-            return 'linux';
+            return null;
         }
 
         $family = strtolower(explode('_', trim($platform), 2)[0]);
@@ -219,7 +255,7 @@ final readonly class ToolCatalog
 
     public function lifecycleScript(string $tool, string $action, array $config = []): ?string
     {
-        if (! in_array($action, ['start', 'stop', 'restart'], true)) {
+        if (! in_array($action, ['start', 'stop', 'restart', 'reload'], true)) {
             return null;
         }
 
@@ -231,6 +267,7 @@ final readonly class ToolCatalog
             'start' => $this->definition($tool)?->startScript($config),
             'stop' => $this->definition($tool)?->stopScript($config),
             'restart' => $this->definition($tool)?->restartScript($config),
+            'reload' => $this->definition($tool)?->reloadScript($config),
         };
     }
 

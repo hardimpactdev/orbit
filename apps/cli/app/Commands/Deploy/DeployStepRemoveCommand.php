@@ -10,13 +10,13 @@ final class DeployStepRemoveCommand extends DeployGatewayCommand
 {
     #[\Override]
     protected $signature = 'deploy:step-remove
-        {app? : Production app name or domain}
+        {app? : Production app-instance selector}
         {step? : Deployment step id or exact title}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Remove a deployment pipeline step from a production app.';
+    protected $description = 'Remove a deployment pipeline step from a production app instance.';
 
     public function handle(): int
     {
@@ -64,9 +64,11 @@ final class DeployStepRemoveCommand extends DeployGatewayCommand
         $id = $this->stepString($stepData, 'id') ?? $step;
         $title = $this->stepString($stepData, 'title') ?? $step;
         $appName = $this->stepString($stepData, 'app') ?? $app;
+        $appInstance = $this->stepString($stepData, 'app_instance');
+        $target = $appInstance === null ? $appName : "{$appName}.{$appInstance}";
         $order = $this->stepString($stepData, 'order');
 
-        $summary = "Removed deployment step #{$id} '{$title}' from app '{$appName}'.";
+        $summary = "Removed deployment step #{$id} '{$title}' from app instance '{$target}'.";
 
         if ($order !== null) {
             $summary .= " Previous order {$order}.";

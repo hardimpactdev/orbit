@@ -16,11 +16,11 @@ final class DeployStepListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'deploy:step-list
-        {app : Production app name or domain}
+        {app : Production app-instance selector}
         {--json}';
 
     #[\Override]
-    protected $description = 'List deployment pipeline steps for a production app.';
+    protected $description = 'List deployment pipeline steps for a production app instance.';
 
     public function handle(): int
     {

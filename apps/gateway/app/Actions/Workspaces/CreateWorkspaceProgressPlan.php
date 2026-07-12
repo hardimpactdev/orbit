@@ -39,7 +39,7 @@ final class CreateWorkspaceProgressPlan
         private readonly string $name,
         private readonly string $base,
         private readonly ?string $phpVersion,
-        private readonly ?AppInstance $instance = null,
+        private readonly AppInstance $instance,
     ) {}
 
     public function title(): string
@@ -71,9 +71,9 @@ final class CreateWorkspaceProgressPlan
                         );
                         $this->workspace = $this->createWorkspace->createIntent(
                             $this->app,
+                            $this->instance,
                             $this->phpVersion,
                             $provisionResult,
-                            $this->instance,
                         );
                     } catch (WorkspaceCreateFailed $exception) {
                         $this->failure = [

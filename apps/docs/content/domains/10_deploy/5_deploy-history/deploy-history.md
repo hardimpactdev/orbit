@@ -2,7 +2,7 @@
 
 [Back to Deploy commands.](../README.md)
 
-List deployment runs for a production app.
+List deployment runs for a concrete production app instance.
 
 Use `deploy:history` to inspect durable deployment attempts recorded on the
 gateway. The command reads stored deployment history; it does not probe the
@@ -17,21 +17,25 @@ orbit deploy:history [app] [--limit=<count>] [--json]
 ## Examples
 
 ```bash
-orbit deploy:history docs
-orbit deploy:history docs --limit=10
-orbit deploy:history docs --json
+orbit deploy:history docs.production
+orbit deploy:history docs.production --limit=10
+orbit deploy:history docs.production --json
 ```
 
 ## Arguments and options
 
-- `app`: production app name or domain.
+- `app`: dotted production app-instance selector. A bare app name or domain is
+  valid only when the app has exactly one instance.
 - `--limit`: Maximum number of runs to return. Defaults to `50`; hard cap
   `500`.
 - `--json`: Output JSON.
 
 ## What Happens
 
-Run `deploy:history` when you want to see past deployment attempts for a production app. `deploy:history` resolves the production app, reads deployment run history from gateway app state, sorts newest runs first, and renders the selected output.
+Run `deploy:history` when you want to see past deployment attempts for one
+production app instance. It resolves the concrete instance, reads that
+instance's run history from gateway state, sorts newest runs first, and renders
+the selected output.
 
 ## Output
 
@@ -41,9 +45,9 @@ Use `--json` for machine-readable output.
 
 ## Requirements
 
-- The CLI caller can reach the Orbit gateway, or the command runs on the
-  gateway.
-- The caller has `deploy:read` on the production app's owning node.
+- The CLI caller can reach the Orbit gateway.
+- The caller has `deploy:read` on the instance's owning Orbit node, or on the
+  gateway when the instance is external.
 
 ## Related
 

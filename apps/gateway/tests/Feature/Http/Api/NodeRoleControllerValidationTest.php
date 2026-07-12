@@ -16,7 +16,7 @@ const NODE_ROLE_API_CALLER_WG_IP = '10.6.0.90';
  */
 function apiNodeRoleRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'app-1',
         'host' => '10.6.0.7',
         'user' => 'nckrtl',
@@ -27,6 +27,10 @@ function apiNodeRoleRow(array $overrides = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    $row['tld'] ??= $row['name'];
+
+    return $row;
 }
 
 function createNodeRoleApiCaller(string $role = 'control'): int
@@ -42,7 +46,7 @@ function createNodeRoleApiCaller(string $role = 'control'): int
     }
 
     if ($role === 'app') {
-        assignNodeRoleApiRole($nodeId, 'app-dev', ['tld' => 'caller.test']);
+        assignNodeRoleApiRole($nodeId, 'app-dev');
     }
 
     return $nodeId;
@@ -239,7 +243,7 @@ describe('node role api validation envelopes', function (): void {
             ->assertJsonMissingPath('success');
     });
 
-    it('rejects path-like app-dev tld settings on add', function (): void {
+    it('rejects role-owned app-dev tld settings on add', function (): void {
         $response = postNodeRoleApiJson(
             '/api/nodes/target-1/roles',
             [
@@ -252,7 +256,7 @@ describe('node role api validation envelopes', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.message', 'The app-dev role requires a valid tld setting.')
+            ->assertJsonPath('error.message', 'The app-dev role does not accept settings.')
             ->assertJsonMissingPath('success');
     });
 

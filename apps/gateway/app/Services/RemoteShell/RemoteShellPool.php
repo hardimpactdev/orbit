@@ -16,6 +16,7 @@ use Throwable;
 
 final readonly class RemoteShellPool
 {
+    // @orbit-ssh-lane transitional-ssh
     private const int DefaultConcurrency = 4;
 
     private const int PollIntervalMicroseconds = 50_000;

@@ -20,28 +20,14 @@ final readonly class WorkspaceStepPolicyService
     public function stepsFor(
         App $app,
         WorkspaceLifecyclePhase $phase,
-        ?AppInstance $instance = null,
+        AppInstance $instance,
     ): EloquentCollection {
-        if ($instance instanceof AppInstance) {
-            $instanceSteps = $this->orderedSteps($app, $phase, $instance->id);
-
-            if ($instanceSteps->isNotEmpty()) {
-                return $instanceSteps;
-            }
-        }
-
-        return $this->orderedSteps($app, $phase, null);
+        return $this->orderedSteps($app, $phase, $instance->id);
     }
 
-    public function hasStepsFor(App $app, WorkspaceLifecyclePhase $phase, ?AppInstance $instance = null): bool
+    public function hasStepsFor(App $app, WorkspaceLifecyclePhase $phase, AppInstance $instance): bool
     {
-        if ($instance instanceof AppInstance) {
-            if ($this->hasScopedStep($app, $phase, $instance->id)) {
-                return true;
-            }
-        }
-
-        return $this->hasScopedStep($app, $phase, null);
+        return $this->hasScopedStep($app, $phase, $instance->id);
     }
 
     public function findInstanceStep(
@@ -85,7 +71,7 @@ final readonly class WorkspaceStepPolicyService
     private function orderedSteps(
         App $app,
         WorkspaceLifecyclePhase $phase,
-        ?int $appInstanceId,
+        int $appInstanceId,
     ): EloquentCollection {
         /** @var list<int|string> $ids */
         $ids = $this
@@ -118,21 +104,16 @@ final readonly class WorkspaceStepPolicyService
         return $collection;
     }
 
-    private function hasScopedStep(App $app, WorkspaceLifecyclePhase $phase, ?int $appInstanceId): bool
+    private function hasScopedStep(App $app, WorkspaceLifecyclePhase $phase, int $appInstanceId): bool
     {
         return $this->scopedTableQuery($app, $phase, $appInstanceId)->exists();
     }
 
-    private function scopedTableQuery(App $app, WorkspaceLifecyclePhase $phase, ?int $appInstanceId): QueryBuilder
+    private function scopedTableQuery(App $app, WorkspaceLifecyclePhase $phase, int $appInstanceId): QueryBuilder
     {
-        $query = DB::table('workspace_steps')
+        return DB::table('workspace_steps')
             ->where('app_id', $app->id)
-            ->where('phase', $phase->value);
-
-        if ($appInstanceId === null) {
-            return $query->whereNull('app_instance_id');
-        }
-
-        return $query->where('app_instance_id', $appInstanceId);
+            ->where('phase', $phase->value)
+            ->where('app_instance_id', $appInstanceId);
     }
 }

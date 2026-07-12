@@ -1,20 +1,19 @@
 # Deploy Commands
 
-Deploy commands manage production app deployment policy and history. The command
-family owns the `deploy:*` command prefix.
+Deploy commands manage deployment policy and history for concrete production
+app instances. The command family owns the `deploy:*` command prefix.
 
 Deployments are an operator workflow, not a standalone state family. Deployment
-step definitions, deployment runs, run logs, and latest deployment status are
-app-owned gateway state in the current compatibility surface. The app-instance
-direction is for this state to move to the production app instance so deployment
-can become driver-aware without changing the logical app identity. App doctor may
-use deployment policy and latest run state when evaluating production app health.
+step definitions, warmup paths, deployment runs, run logs, and latest deployment
+status are app-instance-owned gateway state. App doctor may use the selected
+instance's deployment policy and latest run state when evaluating production app
+health.
 
 ## State Ownership
 
 The deploy command domain does not own a state family. Deployment policy,
-deployment history, run logs, and latest deployment status are app-owned
-gateway state.
+deployment history, run logs, and latest deployment status are owned by one
+concrete production app instance in gateway state.
 
 [`doctor --family=app`](../5_app/app-doctor.md) owns deployment pipeline
 validation and latest deployment health. A failed or stale latest deployment is
@@ -26,15 +25,20 @@ adoptable by doctor.
 These rules define what the deploy command family owns and how it behaves.
 
 - The deploy command family owns the `deploy:*` command prefix.
-- Deployment policy and history currently belong to production apps for
-  compatibility. Future driver-aware deployment policy belongs to app instances.
+- Deployment policy and history belong to one concrete production app instance.
+- A dotted selector such as `docs.production` selects that instance. A bare app
+  selector is shorthand only when the app has exactly one instance; otherwise
+  the command fails with `error.meta.reason=app_instance_required`.
 - The gateway is the source of truth for deployment step definitions, step
   metadata, run history, and latest deployment status.
-- Deployment commands apply only to production apps.
+- Deployment commands apply only to concrete instances of production apps.
+- Grant authorization targets the instance's owning Orbit node. For an external
+  instance without an Orbit node, gateway-owned policy and history reads target
+  the gateway grant boundary; execution still fails until its driver is supported.
 - Deployment steps are arbitrary shell commands. Orbit does not assume every
   deployment is a zero-downtime release flow.
-- Deployment steps execute from the app source path tracked by the gateway on
-  the app's owning node. PHP, Composer, and Artisan deployment commands run on
+- Deployment steps execute from the instance source path tracked by its driver
+  configuration on the instance's owning node. PHP, Composer, and Artisan deployment commands run on
   the host PHP toolchain (matched to the app's PHP version); the app's
   FrankenPHP container serves the deployed source.
 - Release-aware deployment steps may create versioned release directories and
@@ -45,14 +49,14 @@ These rules define what the deploy command family owns and how it behaves.
 - Retention is optional deploy-step metadata for steps that create or prune
   versioned releases. It is not global app policy and not a standalone state
   family.
-- Deployment runs execute configured steps on the app's owning node through the
-  gateway.
+- Deployment runs execute configured steps on the selected instance's owning
+  node through the gateway.
 - Deployment reads use gateway policy and durable history. They do not inspect
   live node state.
 - Deployment health is part of production app health and belongs to
   `doctor --family=app`.
-- App instances already reserve latest deployment fields, but `deploy:*`
-  commands do not accept `--instance` yet.
+- Orbit Agent execution currently supports Orbit-driver instances with a
+  concrete node and source path. Unsupported instance drivers fail explicitly.
 
 ## Deploy Step JSON Entity
 
@@ -63,6 +67,7 @@ Deploy JSON renderers that return one step entity embed this shape under
 {
   "id": 12,
   "app": "docs",
+  "app_instance": "production",
   "title": "Pull latest",
   "command": "git pull origin main",
   "order": 1,
@@ -75,6 +80,7 @@ Deploy JSON renderers that return one step entity embed this shape under
 | --- | --- | --- |
 | `id` | integer | Gateway-assigned deployment step identifier. |
 | `app` | string | Production app that owns the step. |
+| `app_instance` | string | Concrete production app instance that owns the step. |
 | `title` | string | Human label for the step. |
 | `command` | string | Shell command executed during deployment. |
 | `order` | integer | Step order within the app deployment pipeline. |
@@ -91,6 +97,7 @@ Deploy JSON renderers that return one run entity embed this shape under
 {
   "id": 42,
   "app": "docs",
+  "app_instance": "production",
   "status": "completed",
   "exit_code": 0,
   "started_at": "2026-05-02T09:00:00Z",
@@ -110,6 +117,7 @@ Deploy JSON renderers that return one run entity embed this shape under
 | --- | --- | --- |
 | `id` | integer | Gateway-assigned deployment run identifier. |
 | `app` | string | Production app that owns the run. |
+| `app_instance` | string | Concrete production app instance that owns the run. |
 | `status` | string | `running`, `completed`, `failed`, or `cancelled`. |
 | `exit_code` | integer \| null | Final process exit code when the run has finished. |
 | `started_at` | string | ISO-8601 run start timestamp. |

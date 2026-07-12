@@ -6,6 +6,7 @@ return [
     'required' => [
         'name' => 'string',
         'app' => 'string',
+        'app_instance' => 'string',
         'node' => 'string|object',
         'url' => 'string',
     ],

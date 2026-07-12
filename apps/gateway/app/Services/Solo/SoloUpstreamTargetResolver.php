@@ -17,20 +17,16 @@ final readonly class SoloUpstreamTargetResolver
         private NodeRoleAssignments $roles,
     ) {}
 
-    public function gatewayTarget(?Node $node = null): SoloUpstreamTarget
+    public function forNode(Node $node): SoloUpstreamTarget
     {
-        if (! $node instanceof Node) {
-            /** @var Node|null $node */
-            $node = $this->roles
-                ->activeGatewayNodeQuery()
-                ->first();
-        }
-
-        if (! $node instanceof Node) {
+        if (! $this->roles->nodeIsGateway($node) && ! $node->isAgentEligible()) {
             throw new SoloProxyException(
                 errorCode: 'validation_failed',
-                message: 'A gateway node is required before Solo can be proxied.',
-                meta: ['reason' => 'gateway_node_missing'],
+                message: "Solo on {$node->name} requires an active Agent-eligible target node.",
+                meta: [
+                    'reason' => 'solo_target_agent_required',
+                    'node' => $node->name,
+                ],
                 status: 422,
             );
         }

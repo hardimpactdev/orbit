@@ -21,7 +21,7 @@ final readonly class AppSetupStepLocalExecutor
      */
     public function run(Node $node, string $command, ?string $cwd, int $timeout, array $environment): RemoteShellResult
     {
-        if (! $this->localExecutor instanceof RemoteLocalExecutor || ! $node->orbit_agent_capable) {
+        if (! $this->localExecutor instanceof RemoteLocalExecutor || ! $node->isAgentEligible()) {
             return $this->failure(
                 'app:setup-step requires an Orbit Agent capable node or explicit --node-transport=transitional-ssh-fallback.',
             );

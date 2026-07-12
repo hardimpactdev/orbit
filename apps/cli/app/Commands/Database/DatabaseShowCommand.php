@@ -79,7 +79,7 @@ final class DatabaseShowCommand extends GatewayCommand
             $properties['Path'] = $this->scalarOrNull($connection, 'path');
         }
 
-        $properties['Apps'] = $this->targetLabels($connection['targets'] ?? null);
+        $properties['Targets'] = $this->targetLabels($connection['targets'] ?? null);
         $properties['Node'] = $this->scalarOrNull($connection, 'node');
 
         $this->renderShowDetails("Database connection: {$slug}", $properties);
@@ -119,7 +119,11 @@ final class DatabaseShowCommand extends GatewayCommand
                 continue;
             }
 
-            if (is_string($target['name'] ?? null) && $target['name'] !== '') {
+            if (
+                ($target['type'] ?? null) === 'workspace'
+                && is_string($target['name'] ?? null)
+                && $target['name'] !== ''
+            ) {
                 $labels[] = $target['name'];
 
                 continue;
@@ -130,8 +134,8 @@ final class DatabaseShowCommand extends GatewayCommand
                 ? $target['instance']
                 : null;
 
-            if ($app !== null) {
-                $labels[] = $instance === null ? $app : "{$app} ({$instance})";
+            if ($app !== null && $instance !== null) {
+                $labels[] = "{$app}.{$instance}";
             }
         }
 

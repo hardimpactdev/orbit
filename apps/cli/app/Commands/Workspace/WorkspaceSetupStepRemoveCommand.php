@@ -9,12 +9,12 @@ final class WorkspaceSetupStepRemoveCommand extends AbstractWorkspaceStepRemoveC
     #[\Override]
     protected $signature = 'workspace-setup-step:remove
         {--step= : Step ID to remove}
-        {--app= : Parent app or app.instance selector}
+        {--app= : App instance selector (app.instance)}
         {--force : Skip interactive confirmation}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Remove a workspace setup step.';
+    protected $description = 'Remove a workspace setup step from an app instance.';
 
     protected function phase(): string
     {

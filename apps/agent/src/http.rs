@@ -1,7 +1,4 @@
-use crate::{
-    build_service_status_snapshot, default_http_bind_addr, AgentConfig, HttpAgentGateway,
-    ServiceStatusSnapshot,
-};
+use crate::{build_service_status_snapshot, AgentConfig, HttpAgentGateway, ServiceStatusSnapshot};
 use axum::{
     body::Body,
     extract::State,
@@ -17,6 +14,7 @@ use std::{
     collections::HashMap,
     convert::Infallible,
     io::{Read, Write},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     pin::Pin,
     process::{Child, Command, ExitStatus, Stdio},
@@ -36,22 +34,39 @@ const FRAME_TYPE_AGENT_ERROR: u8 = 3;
 const FRAME_TYPE_EXIT: u8 = 4;
 const CHILD_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(5);
 const CHILD_KILL_GRACE: Duration = Duration::from_secs(2);
+const AGENT_HTTP_PORT: u16 = 9477;
 
 pub async fn run_agent_service() {
-    let app = app();
+    let config = AgentConfig::load_default()
+        .unwrap_or_else(|error| panic!("refusing to start Orbit Agent command listener: {error}"));
+    let command_bind_addr = command_bind_addr(&config)
+        .unwrap_or_else(|error| panic!("refusing to start Orbit Agent command listener: {error}"));
+    let local_status_bind_addr = local_status_bind_addr();
 
-    let bind_addr = default_http_bind_addr();
-    let listener = tokio::net::TcpListener::bind(&bind_addr)
+    let command_listener = tokio::net::TcpListener::bind(command_bind_addr)
         .await
         .unwrap_or_else(|error| {
-            panic!("failed to bind Orbit Agent HTTP service on {bind_addr}: {error}")
+            panic!("failed to bind Orbit Agent command listener on {command_bind_addr}: {error}")
+        });
+    let local_status_listener = tokio::net::TcpListener::bind(local_status_bind_addr)
+        .await
+        .unwrap_or_else(|error| {
+            panic!(
+                "failed to bind Orbit Agent local status listener on {local_status_bind_addr}: {error}"
+            )
         });
 
-    eprintln!("Orbit Agent service listening on http://{bind_addr}");
+    eprintln!("Orbit Agent command listener on http://{command_bind_addr}");
+    eprintln!("Orbit Agent local status listener on http://{local_status_bind_addr}");
 
-    axum::serve(listener, app)
-        .await
-        .expect("failed to run Orbit Agent HTTP service");
+    let command_service = axum::serve(
+        command_listener,
+        command_app_with_authorizer(Arc::new(GatewayCommandAuthorizer::new(config))),
+    );
+    let local_status_service = axum::serve(local_status_listener, local_status_app());
+
+    tokio::try_join!(command_service, local_status_service)
+        .expect("failed to run Orbit Agent HTTP listeners");
 }
 
 pub fn run_agent_service_blocking() {
@@ -72,17 +87,63 @@ async fn status() -> Json<ServiceStatusSnapshot> {
     Json(build_service_status_snapshot())
 }
 
-fn app() -> Router {
-    app_with_authorizer(Arc::new(GatewayCommandAuthorizer::new()))
-}
-
-fn app_with_authorizer(authorizer: Arc<dyn CommandAuthorizer>) -> Router {
+fn local_status_app() -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/status", get(status))
+}
+
+fn command_app_with_authorizer(authorizer: Arc<dyn CommandAuthorizer>) -> Router {
+    Router::new()
         .route("/v1/commands", post(command_push))
         .route("/v1/commands/stream", post(command_push_stream))
         .with_state(AgentHttpState { authorizer })
+}
+
+fn command_bind_addr(config: &AgentConfig) -> Result<SocketAddr, String> {
+    let requested_bind = match std::env::var("ORBIT_AGENT_HTTP_BIND") {
+        Ok(bind) => Some(bind),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            return Err("ORBIT_AGENT_HTTP_BIND must be valid Unicode".to_string());
+        }
+    };
+
+    command_bind_addr_for(config, requested_bind.as_deref())
+}
+
+fn command_bind_addr_for(
+    config: &AgentConfig,
+    requested_bind: Option<&str>,
+) -> Result<SocketAddr, String> {
+    if !config.managed {
+        return Err("managed Agent intent is required".to_string());
+    }
+
+    let expected_bind = SocketAddr::new(config.wireguard_address, AGENT_HTTP_PORT);
+    let Some(requested_bind) = requested_bind else {
+        return Ok(expected_bind);
+    };
+    let requested_bind = requested_bind
+        .trim()
+        .parse::<SocketAddr>()
+        .map_err(|error| format!("ORBIT_AGENT_HTTP_BIND must be a socket address: {error}"))?;
+
+    if requested_bind.ip().is_unspecified() {
+        return Err("ORBIT_AGENT_HTTP_BIND must not use a wildcard address".to_string());
+    }
+
+    if requested_bind != expected_bind {
+        return Err(format!(
+            "ORBIT_AGENT_HTTP_BIND must match configured WireGuard listener {expected_bind}"
+        ));
+    }
+
+    Ok(expected_bind)
+}
+
+fn local_status_bind_addr() -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), AGENT_HTTP_PORT)
 }
 
 #[derive(Clone)]
@@ -135,16 +196,12 @@ struct GatewayCommandAuthorizer {
 }
 
 impl GatewayCommandAuthorizer {
-    fn new() -> Self {
-        Self::with_factory(Arc::new(|| {
-            AgentConfig::load_default()
-                .and_then(|config| {
-                    let g = HttpAgentGateway::new(config)
-                        .map_err(|error| crate::ConfigError::InvalidConfig(format!("{error:?}")))?;
+    fn new(config: AgentConfig) -> Self {
+        Self::with_factory(Arc::new(move || {
+            let gateway =
+                HttpAgentGateway::new(config.clone()).map_err(|error| format!("{error:?}"))?;
 
-                    Ok(Arc::new(g) as Arc<dyn TokenVerifier>)
-                })
-                .map_err(|error| error.to_string())
+            Ok(Arc::new(gateway) as Arc<dyn TokenVerifier>)
         }))
     }
 
@@ -307,22 +364,7 @@ fn execute_binary(request: &CommandPushRequest) -> CommandExecution {
     let timeout_seconds = request.timeout_seconds.clamp(1, 300);
     let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
 
-    let execution = execute_binary_once(request, &request.argv, timeout_seconds, deadline);
-
-    if should_retry_stale_fleet_update_without_legacy_flags(request, &execution) {
-        let argv = request
-            .argv
-            .iter()
-            .filter(|argument| {
-                !argument.starts_with("--operation-token=") && argument.as_str() != "--json"
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-
-        return execute_binary_once(request, &argv, timeout_seconds, deadline);
-    }
-
-    execution
+    execute_binary_once(request, &request.argv, timeout_seconds, deadline)
 }
 
 fn execute_binary_stream(
@@ -999,37 +1041,6 @@ fn existing_absolute_path(key: &str, path: &str) -> Result<String, String> {
     Ok(path.to_string())
 }
 
-fn should_retry_stale_fleet_update_without_legacy_flags(
-    request: &CommandPushRequest,
-    execution: &CommandExecution,
-) -> bool {
-    // Binary gate is enforced at the authorizer; only "orbit" reaches here.
-    if execution.exit_code == Some(0) {
-        return false;
-    }
-
-    if request.argv.first().map(String::as_str) != Some("internal:fleet-update:install-cli") {
-        return false;
-    }
-
-    if !request
-        .argv
-        .iter()
-        .any(|argument| argument.starts_with("--operation-token=") || argument == "--json")
-    {
-        return false;
-    }
-
-    execution.frames.iter().any(|frame| {
-        frame
-            .message
-            .contains("The \"--operation-token\" option does not exist.")
-            || frame
-                .message
-                .contains("The \"--json\" option does not exist.")
-    })
-}
-
 fn command_output_to_execution(
     status: ExitStatus,
     stdout: Vec<u8>,
@@ -1256,7 +1267,20 @@ mod tests {
     }
 
     fn app_with_static_authorizer(allowed: bool) -> Router {
-        app_with_authorizer(Arc::new(StaticCommandAuthorizer { allowed }))
+        command_app_with_authorizer(Arc::new(StaticCommandAuthorizer { allowed }))
+    }
+
+    fn listener_security_config() -> AgentConfig {
+        AgentConfig {
+            gateway_url: "https://gateway.test".to_string(),
+            node_id: "node_123".to_string(),
+            node_name: "NMBP".to_string(),
+            gateway_name: "dev-gateway".to_string(),
+            ca_pem_path: None,
+            platform: "macos_26-5-1".to_string(),
+            managed: true,
+            wireguard_address: "10.6.0.3".parse().expect("wireguard IP"),
+        }
     }
 
     #[test]
@@ -1268,19 +1292,73 @@ mod tests {
         assert_eq!(response.status, "ok");
     }
 
+    #[tokio::test]
+    async fn listener_security_command_router_does_not_expose_local_status_endpoints() {
+        let response = app_with_static_authorizer(true)
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/health")
+                    .body(axum::body::Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn listener_security_local_router_does_not_expose_command_endpoints() {
+        let response = local_status_app()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/v1/commands")
+                    .body(axum::body::Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
     #[test]
-    fn default_bind_addr_defaults_to_loopback_and_honors_override() {
-        let original_bind = std::env::var_os("ORBIT_AGENT_HTTP_BIND");
+    fn listener_security_derives_command_bind_from_configured_wireguard_address() {
+        let bind = command_bind_addr_for(&listener_security_config(), None)
+            .expect("configured WireGuard bind");
 
-        std::env::set_var("ORBIT_AGENT_HTTP_BIND", "10.6.0.2:9477");
-        assert_eq!(default_http_bind_addr(), "10.6.0.2:9477");
+        assert_eq!(bind, "10.6.0.3:9477".parse().expect("socket address"));
+    }
 
-        std::env::remove_var("ORBIT_AGENT_HTTP_BIND");
-        assert_eq!(default_http_bind_addr(), "127.0.0.1:9477");
+    #[test]
+    fn listener_security_accepts_only_an_exact_wireguard_bind_override() {
+        let config = listener_security_config();
 
-        if let Some(bind) = original_bind {
-            std::env::set_var("ORBIT_AGENT_HTTP_BIND", bind);
-        }
+        assert_eq!(
+            command_bind_addr_for(&config, Some("10.6.0.3:9477")).expect("exact WireGuard bind"),
+            "10.6.0.3:9477".parse().expect("socket address")
+        );
+        assert_eq!(
+            command_bind_addr_for(&config, Some("0.0.0.0:9477"))
+                .expect_err("wildcard bind must fail closed"),
+            "ORBIT_AGENT_HTTP_BIND must not use a wildcard address"
+        );
+        assert!(command_bind_addr_for(&config, Some("192.168.1.9:9477"))
+            .expect_err("non-WireGuard bind must fail closed")
+            .contains("must match configured WireGuard listener"));
+        assert!(command_bind_addr_for(&config, Some("10.6.0.3:9000"))
+            .expect_err("non-Agent port must fail closed")
+            .contains("must match configured WireGuard listener"));
+    }
+
+    #[test]
+    fn listener_security_status_listener_is_loopback_only() {
+        let bind = local_status_bind_addr();
+
+        assert!(bind.ip().is_loopback());
+        assert_eq!(bind.port(), 9477);
     }
 
     #[test]
@@ -1437,134 +1515,6 @@ mod tests {
             elapsed.as_millis()
         );
         assert!(execution.timings.process_wait_ms < 3000);
-    }
-
-    #[test]
-    fn retry_without_legacy_flags_is_used_for_stale_fleet_update_cli() {
-        let request = CommandPushRequest {
-            operation_id: "op_agent_test_123".to_string(),
-            binary: "orbit".to_string(),
-            argv: vec![
-                "internal:fleet-update:install-cli".to_string(),
-                "--operation-token=op_test_123".to_string(),
-                "--json".to_string(),
-            ],
-            input: None,
-            cwd: None,
-            environment: None,
-            operation_token: "op_test_123".to_string(),
-            timeout_seconds: 30,
-            stream: true,
-        };
-        let execution = CommandExecution {
-            status: "failed".to_string(),
-            exit_code: Some(1),
-            frames: vec![CommandPushFrame {
-                frame_type: "stderr".to_string(),
-                message: "The \"--operation-token\" option does not exist.".to_string(),
-            }],
-            timings: zero_execution_timings(),
-        };
-
-        assert!(should_retry_stale_fleet_update_without_legacy_flags(
-            &request, &execution
-        ));
-    }
-
-    #[test]
-    fn retry_without_legacy_flags_is_not_used_for_successful_execution() {
-        let request = CommandPushRequest {
-            operation_id: "op_agent_test_123".to_string(),
-            binary: "orbit".to_string(),
-            argv: vec![
-                "internal:fleet-update:install-cli".to_string(),
-                "--operation-token=op_test_123".to_string(),
-                "--json".to_string(),
-            ],
-            input: None,
-            cwd: None,
-            environment: None,
-            operation_token: "op_test_123".to_string(),
-            timeout_seconds: 30,
-            stream: true,
-        };
-        let execution = CommandExecution {
-            status: "succeeded".to_string(),
-            exit_code: Some(0),
-            frames: vec![CommandPushFrame {
-                frame_type: "stdout".to_string(),
-                message: "updated".to_string(),
-            }],
-            timings: zero_execution_timings(),
-        };
-
-        assert!(!should_retry_stale_fleet_update_without_legacy_flags(
-            &request, &execution
-        ));
-    }
-
-    #[test]
-    fn retry_without_legacy_flags_requires_fleet_update_command() {
-        let request = CommandPushRequest {
-            operation_id: "op_agent_test_123".to_string(),
-            binary: "orbit".to_string(),
-            argv: vec![
-                "version".to_string(),
-                "--operation-token=op_test_123".to_string(),
-                "--json".to_string(),
-            ],
-            input: None,
-            cwd: None,
-            environment: None,
-            operation_token: "op_test_123".to_string(),
-            timeout_seconds: 30,
-            stream: true,
-        };
-        let execution = CommandExecution {
-            status: "failed".to_string(),
-            exit_code: Some(1),
-            frames: vec![CommandPushFrame {
-                frame_type: "stderr".to_string(),
-                message: "The \"--operation-token\" option does not exist.".to_string(),
-            }],
-            timings: zero_execution_timings(),
-        };
-
-        assert!(!should_retry_stale_fleet_update_without_legacy_flags(
-            &request, &execution
-        ));
-    }
-
-    #[test]
-    fn retry_without_legacy_flags_handles_json_option_failures() {
-        let request = CommandPushRequest {
-            operation_id: "op_agent_test_123".to_string(),
-            binary: "orbit".to_string(),
-            argv: vec![
-                "internal:fleet-update:install-cli".to_string(),
-                "--operation-token=op_test_123".to_string(),
-                "--json".to_string(),
-            ],
-            input: None,
-            cwd: None,
-            environment: None,
-            operation_token: "op_test_123".to_string(),
-            timeout_seconds: 30,
-            stream: true,
-        };
-        let execution = CommandExecution {
-            status: "failed".to_string(),
-            exit_code: Some(1),
-            frames: vec![CommandPushFrame {
-                frame_type: "stderr".to_string(),
-                message: "The \"--json\" option does not exist.".to_string(),
-            }],
-            timings: zero_execution_timings(),
-        };
-
-        assert!(should_retry_stale_fleet_update_without_legacy_flags(
-            &request, &execution
-        ));
     }
 
     #[test]
@@ -2006,7 +1956,7 @@ mod tests {
         };
 
         let authorizer = Arc::new(GatewayCommandAuthorizer::with_factory(factory));
-        let app = app_with_authorizer(authorizer);
+        let app = command_app_with_authorizer(authorizer);
 
         for i in 0..2 {
             let response = app
@@ -2100,7 +2050,8 @@ mod tests {
     #[tokio::test]
     async fn command_authorizer_rejects_non_orbit_binary() {
         // The binary gate is now inside authorize; non-"orbit" must be rejected at the boundary.
-        let authorizer: Arc<dyn CommandAuthorizer> = Arc::new(GatewayCommandAuthorizer::new());
+        let authorizer: Arc<dyn CommandAuthorizer> =
+            Arc::new(GatewayCommandAuthorizer::new(listener_security_config()));
         let request = CommandPushRequest {
             operation_id: "op_bin_test".to_string(),
             binary: "not-orbit".to_string(),
@@ -2120,13 +2071,5 @@ mod tests {
             err.contains("unsupported Orbit Agent binary"),
             "expected binary rejection message, got: {err}"
         );
-    }
-
-    fn zero_execution_timings() -> CommandExecutionTimings {
-        CommandExecutionTimings {
-            process_spawn_ms: 0,
-            process_wait_ms: 0,
-            result_serialization_ms: 0,
-        }
     }
 }

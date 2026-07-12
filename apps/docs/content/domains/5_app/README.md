@@ -11,10 +11,12 @@ Laravel Cloud environment.
 These rules govern all app family commands.
 
 - The gateway owns app registry, app-instance registry, runtime policy,
-  deployment policy, and app health configuration.
+  app-instance deployment policy, and app health configuration.
 - App names are identity slugs: lowercase letters, digits, and hyphens only.
   They cannot start or end with a hyphen and are limited to 40 characters.
-- App-role artifacts are applied by the gateway over SSH.
+- App-role artifacts on non-gateway nodes are applied through Agent push.
+  Gateway-owned work executes locally. Provisioning is the sole permanent
+  Orbit SSH lane.
 - Apps may have one or more app instances. Instance names are unique within the
   app.
 - An app instance has exactly one driver. Current drivers are `orbit` and
@@ -29,9 +31,9 @@ These rules govern all app family commands.
   named `main`, then the sole existing environment. If multiple environments
   remain possible, Orbit fails and returns the candidates instead of creating
   another environment.
-- The app `node`, `path`, `root`, URL, and environment fields remain the current
-  compatibility/default development placement used by app-level commands until
-  those command families are fully instance-aware.
+- The app `node`, `path`, `root`, URL, and environment fields define logical
+  defaults used when creating an Orbit instance. Runtime placement always
+  resolves through a concrete app instance, as do resources owned by one.
 - App instance env values and database targets belong to the instance, not the
   logical app. Rendering an instance env merges explicit app env values with
   database attachments for that instance.
@@ -72,7 +74,7 @@ These rules govern all app family commands.
   configuration.
 - App runtime mounts are extra bind mounts stored on app instances for PHP
   runtimes on `app-dev` nodes. Workspaces inherit the selected app instance's
-  configured mounts; app-level mounts remain compatibility fallback only.
+  configured mounts; mount intent is exclusively app-instance-owned.
 - App instances record required PHP extensions. For Orbit-driven PHP instances,
   `doctor --family=app` reports missing or unverifiable extensions against the
   concrete FrankenPHP runtime container.
@@ -94,10 +96,10 @@ These rules govern all app family commands.
   command. The command edits only Codex App's config file on the target node
   and applies Codex App's URL callback; it does not configure the app's agent
   IDE adapter.
-- Production deployment pipeline definitions currently remain app-owned for
-  compatibility. The product direction is for deployment steps, runs, logs, and
-  latest deployment status to move to app instances so `app:deploy` can be
-  driver-aware.
+- Production deployment policy, ordered steps, warmup paths, runs, history,
+  logs, and latest status belong to one concrete app instance. `app:deploy`
+  accepts the canonical dotted instance selector, while a bare app name is
+  shorthand only when that app has exactly one instance.
 - `app:prune` is source-of-truth cleanup, not doctor drift repair. It checks
   configured agent IDE adapters for the app, uses workspace removal semantics
   for stale workspaces, and can be scheduled through normal schedules.
@@ -226,6 +228,7 @@ App-instance renderers return this shape under `success.data.instance`, or under
     "configured_mounts": [],
     "required_php_extensions": ["intl", "redis"]
   },
+  "deploy_warmup_paths": [],
   "latest_deployment_status": null,
   "latest_deployment_run_id": null
 }
@@ -244,8 +247,9 @@ App-instance renderers return this shape under `success.data.instance`, or under
 | `runtime.mode` | string | `classic` or `worker` for PHP apps. |
 | `runtime.configured_mounts` | array | Instance-scoped runtime mounts rendered into Orbit PHP runtimes for the selected instance. |
 | `runtime.required_php_extensions` | array | Required PHP extensions tracked for the instance. |
-| `latest_deployment_status` | string \| null | Reserved for instance-scoped deployment history. |
-| `latest_deployment_run_id` | integer \| null | Reserved for instance-scoped deployment history. |
+| `deploy_warmup_paths` | array | HTTP paths warmed after this instance deploys successfully. |
+| `latest_deployment_status` | string \| null | Latest deployment status owned by this instance. |
+| `latest_deployment_run_id` | integer \| null | Latest deployment run owned by this instance. |
 
 In the current converted app command surface, `app:new` is the only command that
 records repository metadata. `app:register` preserves an existing app's stored

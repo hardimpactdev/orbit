@@ -1,4 +1,4 @@
-# Technical Contract: `orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--inherit] [--cli] [--json]`
+# Technical Contract: `orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]`
 
 [Back to public `php:use` documentation.](../php-use.md)
 
@@ -8,12 +8,14 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized to manage the resolved app or workspace.
+- The current node identity has `php:write` granted on the resolved target,
+  app-instance serving node, or workspace-instance serving node. Gateway
+  identity remains implicit.
 
 ## Signature
 
 ```bash
-orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--inherit] [--cli] [--json]
+orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
 ```
 
 ## Input Contract
@@ -27,8 +29,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `workspace` | `--workspace` | `inherit=true`, unless cwd resolves a workspace. | Never. | Cwd-inferred workspace when present. | Visible workspace selector belonging to the resolved app. |
 | `inherit` | `--inherit` | Optional. | `version` present. | `false`. | Clears a workspace override only. |
 | `cli` | `--cli` | Optional. | `app`, `workspace`, or `inherit` present. | `false`. | Selects the node CLI PHP default; only PHP 8.5 is supported. |
-| `node` | `--node` | Optional. | Never. | App/workspace owning node for runtime scope; default node for CLI scope. | Visible node slug. For app and workspace targets, may only confirm the owning node; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
+| `node` | `--node` | Optional. | Never. | Concrete app/workspace serving node for runtime scope; default node for CLI scope. | Visible node slug. For app and workspace targets, may only confirm the instance placement; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
 ## Input Resolution
@@ -45,9 +46,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    available images on the target node. CLI scope accepts only PHP 8.5.
 5. Apply post-input authorization before side effects.
 
-For app and workspace runtime targets, the target node is always the owning app
-node. An explicit `--node` may only confirm that owner; it must not supply image
-facts from another node.
+For app and workspace runtime targets, the target node comes from the concrete
+app instance or workspace placement. An explicit `--node` may only confirm
+that serving node; it must not supply image facts from another node.
 
 ## Input Mode Contracts
 
@@ -59,8 +60,7 @@ facts from another node.
 ### App Runtime Selection
 
 - Writes the app PHP version in gateway app configuration.
-- Re-renders and applies app runtime container artifacts through the gateway-to-node SSH
-  path.
+- Re-renders and applies app runtime container artifacts through Agent push.
 - Re-renders the proxy backend artifacts owned by the app when the route target
   depends on the selected PHP runtime.
 - Reports app-family drift warnings when configuration was written but app artifact
@@ -72,8 +72,8 @@ facts from another node.
 
 - Writes a workspace PHP override when `version` targets a workspace.
 - Clears the workspace PHP override when `--inherit` is supplied.
-- Re-renders and applies workspace runtime container artifacts through the
-  gateway-to-node SSH path.
+- Re-renders and applies workspace runtime container artifacts through Agent
+  push.
 - Re-renders the proxy backend artifacts owned by the workspace when the route
   target depends on the selected PHP runtime.
 - Reports workspace-family drift warnings when configuration was written but workspace
@@ -126,5 +126,5 @@ verified and repaired by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Php/PhpUseCommandTest.php` | CLI posts version selections for app/workspace targets, inherit semantics, mutual exclusion validation, and gateway error pass-through. |
-| `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Gateway authorization for resolved app or workspace targets, including hidden-node denial. |
+| `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Permission-specific authorization for resolved app/workspace targets, concrete placement, wrong-permission denial, and gateway implicit authority. |
 | `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Runtime selection and `view()` selection/inheritance behavior. |

@@ -5,17 +5,16 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Enums\Nodes\NodeStatus;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
 final readonly class ToolRegistry
 {
     public function __construct(
-        private NodeRoleAssignments $nodeRoleAssignments,
+        private ToolTargetSelectionResolver $targets,
+        private ToolCatalog $catalog,
     ) {}
 
     /**
@@ -23,33 +22,52 @@ final readonly class ToolRegistry
      */
     public function list(?string $node = null, ?string $app = null): Collection
     {
-        $targetNode = $this->resolveNodeFilter($node, $app);
+        $targetNode = $this->targets->resolveFilter($node, $app);
 
-        return NodeTool::query()
+        $tools = NodeTool::query()
             ->with('node')
             ->when(
                 ! $targetNode instanceof Node,
-                fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $this->visibleManagedToolNodeQuery(
-                    $query,
-                )),
+                fn (Builder $query): Builder => $query->whereHas(
+                    'node',
+                    fn (Builder $query): Builder => $query->where('status', NodeStatus::Active->value),
+                ),
             )
             ->when($targetNode instanceof Node, fn (Builder $query): Builder => $query->where(
                 'node_id',
                 $targetNode?->id,
             ))
-            ->get()
-            ->sort(
-                fn (NodeTool $first, NodeTool $second): int => (
-                    [
-                        mb_strtolower((string) $first->node?->name),
-                        mb_strtolower($first->name),
-                    ] <=> [
-                        mb_strtolower((string) $second->node?->name),
-                        mb_strtolower($second->name),
-                    ]
-                ),
-            )
-            ->values();
+            ->get();
+        /** @var list<NodeTool> $visibleTools */
+        $visibleTools = [];
+
+        foreach ($tools as $tool) {
+            if (! $tool instanceof NodeTool) {
+                continue;
+            }
+
+            if ($tool->node instanceof Node && $this->catalog->supportsNode($tool->name, $tool->node)) {
+                $visibleTools[] = $tool;
+            }
+        }
+
+        usort(
+            $visibleTools,
+            static fn (NodeTool $first, NodeTool $second): int => (
+                [
+                    mb_strtolower((string) $first->node?->name),
+                    mb_strtolower($first->name),
+                ] <=> [
+                    mb_strtolower((string) $second->node?->name),
+                    mb_strtolower($second->name),
+                ]
+            ),
+        );
+
+        $collection = new Collection($visibleTools);
+
+        /** @var Collection<int, NodeTool> $collection */
+        return $collection;
     }
 
     public function show(
@@ -59,7 +77,7 @@ final readonly class ToolRegistry
         ?string $instance = null,
         ?string $version = null,
     ): NodeTool|ToolRegistryFailure {
-        $targetNode = $this->resolveTargetNode($node, $app);
+        $targetNode = $this->targets->resolveTarget($tool, $node, $app);
 
         if ($targetNode instanceof ToolRegistryFailure) {
             return $targetNode;
@@ -89,155 +107,26 @@ final readonly class ToolRegistry
         return $models->first();
     }
 
-    public function validateFilters(?string $node = null, ?string $app = null): ?ToolRegistryFailure
+    public function findStored(string $tool, ?string $node = null, ?string $app = null): ?NodeTool
     {
-        $nodeFilter = null;
+        $targetNode = $this->targets->resolveStored($node, $app);
 
-        if ($node !== null) {
-            $nodeFilter = $this->resolveNode($node);
-
-            if (! $nodeFilter instanceof Node) {
-                return ToolRegistryFailure::validation(
-                    'node',
-                    $node,
-                    "Invalid value for --node: '{$node}'. Expected a visible tool node name.",
-                );
-            }
-        }
-
-        if ($app !== null) {
-            $appNode = $this->resolveAppNode($app);
-
-            if (! $appNode instanceof Node) {
-                return ToolRegistryFailure::validation(
-                    'app',
-                    $app,
-                    "Invalid value for --app: '{$app}'. Expected a visible app name, domain, or app.node-tld selector.",
-                );
-            }
-
-            if ($nodeFilter instanceof Node && $nodeFilter->id !== $appNode->id) {
-                return ToolRegistryFailure::validation(
-                    'app',
-                    $app,
-                    "Invalid value for --app: '{$app}'. App is not owned by the selected node.",
-                    [
-                        'node' => $nodeFilter->name,
-                        'resolved_node' => $appNode->name,
-                        'reason' => 'target_mismatch',
-                    ],
-                );
-            }
-        }
-
-        return null;
-    }
-
-    private function resolveTargetNode(?string $node, ?string $app): Node|ToolRegistryFailure
-    {
-        $validation = $this->validateFilters($node, $app);
-
-        if ($validation instanceof ToolRegistryFailure) {
-            return $validation;
-        }
-
-        $targetNode = $this->resolveNodeFilter($node, $app);
-
-        if ($targetNode instanceof Node) {
-            return $targetNode;
-        }
-
-        return ToolRegistryFailure::validation(
-            'target',
-            '',
-            'A node or app target is required. Provide --node or --app.',
-        );
-    }
-
-    private function resolveNodeFilter(?string $node, ?string $app): ?Node
-    {
-        if ($node !== null) {
-            return $this->resolveNode($node);
-        }
-
-        if ($app !== null) {
-            return $this->resolveAppNode($app);
-        }
-
-        return null;
-    }
-
-    private function resolveNode(?string $node): ?Node
-    {
-        if ($node === null) {
+        if (! $targetNode instanceof Node) {
             return null;
         }
 
-        return Node::query()
-            ->where('name', $node)
-            ->whereNotIn('id', $this->gatewayNodeIds())
-            ->where('status', NodeStatus::Active->value)
-            ->first();
-    }
-
-    private function resolveAppNode(?string $app): ?Node
-    {
-        if ($app === null) {
-            return null;
-        }
-
-        $model = App::query()
+        return NodeTool::query()
             ->with('node')
-            ->where(function (Builder $query) use ($app): void {
-                $query->where('name', $app)
-                    ->orWhere('domain', $app);
-            })
+            ->where('node_id', $targetNode->id)
+            ->where('name', $tool)
             ->first();
-
-        if (! $model instanceof App && str_contains($app, '.')) {
-            [$appName, $nodeTld] = explode('.', $app, 2);
-
-            if ($appName !== '' && $nodeTld !== '') {
-                $model = App::query()
-                    ->with('node')
-                    ->where('name', $appName)
-                    ->whereHas('node', function (Builder $query) use ($nodeTld): void {
-                        $query
-                            ->whereIn('id', $this->nodeRoleAssignments->activeAppHostNodeIds())
-                            ->where('status', NodeStatus::Active->value)
-                            ->where('tld', $nodeTld);
-                    })
-                    ->first();
-            }
-        }
-
-        if (! $model instanceof App || ! $model->node instanceof Node) {
-            return null;
-        }
-
-        if (! $model->node->isActive() || ! $this->nodeRoleAssignments->nodeHasActiveAppHostRole($model->node)) {
-            return null;
-        }
-
-        return $model->node;
     }
 
-    private function visibleManagedToolNodeQuery(Builder $query): Builder
-    {
-        return $query
-            ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
-            ->where('status', NodeStatus::Active->value);
-    }
-
-    /**
-     * @return list<int>
-     */
-    private function gatewayNodeIds(): array
-    {
-        return $this->nodeRoleAssignments
-            ->activeGatewayNodeQuery()
-            ->pluck('id')
-            ->map(fn (mixed $nodeId): int => (int) $nodeId)
-            ->all();
+    public function validateFilters(
+        ?string $node = null,
+        ?string $app = null,
+        ?string $tool = null,
+    ): ?ToolRegistryFailure {
+        return $this->targets->validateFilters($node, $app, $tool);
     }
 }

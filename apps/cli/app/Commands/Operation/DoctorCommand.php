@@ -21,6 +21,7 @@ use Throwable;
 
 final class DoctorCommand extends GatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
     use StreamsGatewayProgress;
 

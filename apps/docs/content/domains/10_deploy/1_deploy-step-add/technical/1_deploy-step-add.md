@@ -8,7 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity has `deploy:step` on the production app's owning node.
+- The current node identity has `deploy:step` at the selected instance's grant
+  boundary: its owning Orbit node, or the gateway for an external instance.
 
 ## Signature
 
@@ -22,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production app the caller may manage. |
+| `app` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production app-instance selector. A bare app is valid only when it has exactly one instance. |
 | `deploy_command` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Non-empty shell command or multiline shell script string. |
 | `title` | `--title` | `Optional.` | `Never.` | Command-derived title. | Non-empty display label. |
 | `order` | `--order` | `Optional.` | `Never.` | Next pipeline position. | Positive integer insertion order. |
@@ -39,9 +40,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Deployment Policy Rules
 
-- Resolves the selected app through gateway app configuration.
-- Fails before side effects unless the selected app is production.
-- Writes one deploy-step definition owned by the production app.
+- Resolves one concrete production app instance through gateway configuration.
+- Fails before side effects unless the selected instance belongs to a production app.
+- Writes one deploy-step definition owned by the selected app instance.
 - Stores the step command exactly as provided. Context placeholders are not
   resolved during policy writes.
 - Inserts the step at the selected order. When another step already has that
@@ -73,10 +74,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | App not found | No visible app matches the selector. | `error.code=app.not_found` |
 | Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
+| App instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
 
 ## Doctor Relationship
 
-Deployment policy is app-owned gateway state. `deploy:step-add` does not own a
+Deployment policy is app-instance-owned gateway state. `deploy:step-add` does not own a
 doctor family. [`app-doctor.md`](../../../5_app/app-doctor.md) may use deployment
 policy when reporting `app.deployment_pipeline_invalid`.
 

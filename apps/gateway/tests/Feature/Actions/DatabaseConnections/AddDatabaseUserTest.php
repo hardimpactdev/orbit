@@ -46,7 +46,7 @@ it('adds database users through the agent-push local executor by default', funct
 
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'beast',
             'wireguard_address' => '10.44.0.71',

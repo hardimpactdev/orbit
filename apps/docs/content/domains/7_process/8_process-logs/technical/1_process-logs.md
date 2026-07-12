@@ -9,14 +9,13 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the authenticated peer for `process:logs` on the process owning node.
-- Log access requires gateway reachability to the owning node's Agent listener
-  for the normal agent-push lane, or explicit transitional SSH fallback for
-  migration/recovery.
+- The owning node is active, Agent eligible, and reachable through its Agent
+  listener.
 
 ## Signature
 
 ```bash
-orbit process:logs [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--follow] [--lines=<count>] [--json]
+orbit process:logs [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--follow] [--lines=<count>] [--json]
 ```
 
 ## Input Contract
@@ -27,7 +26,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owning scope. |
 | `node` | `--node` | Required when reading logs for a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:logs`. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:logs`. |
 | `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:logs`; pass `--app` when the workspace name is ambiguous. |
 | `follow` | `--follow` | Optional. | Never. | `false`. | Boolean flag. Keeps the human log stream open when true. |
@@ -50,9 +48,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    gateway on the owning node.
 5. Read up to `lines` prior log lines.
 6. For bounded service process log reads, include process-owned connection metadata: definition name, version, service name, endpoint, and credential field names. Credential values are excluded.
-7. If `--follow` is present, keep streaming appended log lines over the Agent
-   stream endpoint until the operator interrupts the command.
-8. Render the selected output.
+7. Keep `GET /api/processes/{name}/log` bounded. It never opens a follow
+   stream, including when a stale `follow` query field is supplied.
+8. If `--follow` is present, start a durable operation through
+   `POST /api/processes/{name}/log-stream`, publish target-side log frames over
+   the private operations WebSocket channel, and replay journal gaps by cursor
+   until the operator interrupts the command.
+9. Render the selected output.
 
 `process:logs` does not mutate process configuration, runtime state, or durable lifecycle events.
 
@@ -83,7 +85,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 
 | Field | Value |
 | --- | --- |
-| Type | `api:GET /processes/{name}/log` |
+| Type | `api:GET /processes/{name}/log` for bounded reads; `api:POST /processes/{name}/log-stream` for follow operation creation |
 | Effect | `read` |
 | Subject | Resolved `Node` for node-owned processes or `App` for app/workspace contexts; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
 | Properties | `node` (string or null), `app` (string or null), and `workspace` (string or null). No captured stdout, stderr, log payload, backend command text, or secrets. |
@@ -95,9 +97,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/ProcessLogControllerTest.php` | Gateway bounded process log reads for app, workspace, and node contexts, managed-service metadata, unsupported-runtime validation, authorization failures, and log read failures. |
-| `apps/gateway/tests/Feature/Http/Api/ProcessLogStreamControllerTest.php` | Gateway follow-stream log output for authorized process log reads. |
-| `apps/cli/tests/Feature/Commands/Process/ProcessLogsCommandTest.php` | CLI `process:logs` bounded and follow-mode requests, node context forwarding, human output, JSON bounded output, and gateway/WireGuard failure passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/ProcessLogControllerTest.php` | Gateway bounded process log reads for app, workspace, and node contexts, stale follow-query bounded behavior, managed-service metadata, unsupported-runtime validation, authorization failures, and log read failures. |
+| `apps/gateway/tests/Feature/Http/Api/ProcessLogStreamControllerTest.php` | Durable follow operation creation and target-side operations WebSocket publisher metadata. |
+| `apps/cli/tests/Feature/Commands/Process/ProcessLogsCommandTest.php` | CLI bounded reads, operations WebSocket follow mode, node context, human/JSON output, and gateway/WireGuard failure passthrough. |
 | `apps/cli/tests/Feature/Commands/Process/ProcessLogsCommandTest.php` | CLI `process:logs` missing-name validation, invalid line-count validation, and `--json` plus `--follow` rejection before opening gateway requests. |
 
 `ProcessLogControllerTest.php`, `ProcessLogStreamControllerTest.php`, and `ProcessLogsCommandTest.php` cover context resolution, grant authorization,

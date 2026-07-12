@@ -54,7 +54,7 @@ it('stores default mappings under the persistent Orbit config root', function ()
 
 it('does not create mappings for production app nodes', function (): void {
     $node = developmentDnsMappingNode([
-        'tld' => null,
+        'tld' => 'production',
     ]);
     assignDevelopmentDnsMappingRole($node, 'app-prod');
     $enactor = new DevelopmentDnsMappingEnactor($this->configDir);
@@ -85,9 +85,9 @@ it('removes the derived mapping for a development app node', function (): void {
     expect(File::exists("{$this->configDir}/test.conf"))->toBeFalse();
 });
 
-it('uses the app-dev role settings as the development dns tld', function (): void {
-    $node = developmentDnsMappingNode(['tld' => 'legacy']);
-    assignDevelopmentDnsMappingRole($node, settings: ['tld' => 'assigned']);
+it('uses the node tld as the development dns tld', function (): void {
+    $node = developmentDnsMappingNode(['tld' => 'assigned']);
+    assignDevelopmentDnsMappingRole($node);
     $enactor = new DevelopmentDnsMappingEnactor($this->configDir);
 
     $result = $enactor->converge($node);
@@ -97,7 +97,6 @@ it('uses the app-dev role settings as the development dns tld', function (): voi
         'domain' => '*.assigned',
     ]);
     expect(File::exists("{$this->configDir}/assigned.conf"))->toBeTrue();
-    expect(File::exists("{$this->configDir}/legacy.conf"))->toBeFalse();
 });
 
 it('does not materialize path-like development tlds', function (): void {
@@ -136,7 +135,7 @@ function developmentDnsMappingNode(array $overrides = []): Node
 function assignDevelopmentDnsMappingRole(
     Node $node,
     string $role = 'app-dev',
-    array $settings = ['tld' => 'test'],
+    array $settings = [],
 ): void {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,

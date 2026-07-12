@@ -17,14 +17,15 @@ orbit deploy:log [app] [run] [--step=<id>] [--lines=<count>] [--json]
 ## Examples
 
 ```bash
-orbit deploy:log docs 42
-orbit deploy:log docs 42 --step=13
-orbit deploy:log docs 42 --lines=200 --json
+orbit deploy:log docs.production 42
+orbit deploy:log docs.production 42 --step=13
+orbit deploy:log docs.production 42 --lines=200 --json
 ```
 
 ## Arguments and options
 
-- `app`: production app name or domain.
+- `app`: dotted production app-instance selector. A bare app name or domain is
+  valid only when the app has exactly one instance.
 - `run`: deployment run id from [`deploy:history`](../5_deploy-history/deploy-history.md).
 - `--step`: limit output to one step id.
 - `--lines`: maximum number of captured output lines per stream. Defaults to
@@ -33,7 +34,10 @@ orbit deploy:log docs 42 --lines=200 --json
 
 ## What Happens
 
-Run `deploy:log` when you need to inspect the captured output from a specific deployment run. `deploy:log` resolves the production app and run id, verifies the run belongs to that app, reads captured per-step output from gateway deployment history, applies optional step and line filters, and renders the selected output.
+Run `deploy:log` when you need to inspect the captured output from a specific
+deployment run. It resolves the production app instance and run id, verifies
+the run belongs to that instance, reads captured per-step output from gateway
+history, applies optional step and line filters, and renders the selected output.
 
 ## Output
 
@@ -43,9 +47,9 @@ JSON output returns the run entity and per-step captured output.
 
 ## Requirements
 
-- The CLI caller can reach the Orbit gateway, or the command runs on the
-  gateway.
-- The caller has `deploy:read` on the production app's owning node.
+- The CLI caller can reach the Orbit gateway.
+- The caller has `deploy:read` on the instance's owning Orbit node, or on the
+  gateway when the instance is external.
 
 ## Related
 

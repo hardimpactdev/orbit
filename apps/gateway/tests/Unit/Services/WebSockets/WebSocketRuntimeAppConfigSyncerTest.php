@@ -39,7 +39,7 @@ it('syncs enabled binding credentials to each active websocket node runtime conf
         ->create([
             'name' => 'app-dev-1',
             'host' => 'app-dev-1.example.com',
-            'orbit_agent_capable' => true,
+            'managed' => true,
             'wireguard_address' => '10.6.0.44',
         ]);
 
@@ -118,7 +118,7 @@ it('writes an empty runtime app list when no bindings are enabled', function ():
         ->withActiveRole('websocket')
         ->create([
             'name' => 'app-dev-1',
-            'orbit_agent_capable' => true,
+            'managed' => true,
             'wireguard_address' => '10.6.0.44',
         ]);
 

@@ -44,7 +44,7 @@ it('runs an agent-push binary argv proof against a named node and returns struct
         'host' => 'mini.local',
         'wireguard_address' => '10.6.0.23',
         'status' => NodeStatus::Active,
-        'orbit_agent_capable' => true,
+        'managed' => true,
     ]);
 
     $exitCode = Artisan::call('orbit:internal:agent-push-proof', [
@@ -105,7 +105,7 @@ it('fails before transport when agent-push selection is unavailable', function (
         'host' => 'mini.local',
         'wireguard_address' => '10.6.0.23',
         'status' => NodeStatus::Active,
-        'orbit_agent_capable' => false,
+        'managed' => false,
     ]);
 
     $exitCode = Artisan::call('orbit:internal:agent-push-proof', [

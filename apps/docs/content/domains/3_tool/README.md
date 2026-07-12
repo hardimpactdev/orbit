@@ -1,8 +1,10 @@
 # Tool Commands
 
 Tool commands manage node capabilities Orbit installs, updates, adopts,
-removes, configures, observes, and keeps available for runtime units. A tool is
-not itself the lifecycle-managed runnable unit; processes own lifecycle.
+removes, configures, observes, and keeps available for runtime units. Processes
+remain the canonical lifecycle owner for process rows. A tool may expose an
+explicit lifecycle, reload, or logs verb only when its catalog definition
+declares that capability and runtime resolution produces exactly one target.
 
 ## Domain Rules
 
@@ -43,19 +45,21 @@ These rules govern what the tool command family owns and what it may not touch.
 - Tools supply capabilities that other domains depend on, but they do not own
   apps, workspaces, processes, schedules, custom proxy routes, or non-tool
   firewall policy.
-- Tools do not own log streaming or generic service reload directly. Processes
-  are the lifecycle-managed long-running units. A process may reference a tool
-  with a tool dependency when it needs that node-level capability. A tool
-  definition may declare a related singleton process; `tool:install` configures
-  that process by default (idempotently) so installing the capability yields a
-  running service, while that process row owns runtime lifecycle. `--no-process`
-  installs the capability only.
-- `tool:start`, `tool:stop`, and `tool:restart` are admitted only for tools that
-  explicitly declare a tool-owned lifecycle capability. The initial lifecycle
-  tool is `orbstack` on macOS, where Orbit controls the external runtime
-  provider through OrbStack's own CLI. These commands must not route through
-  related-process compatibility adapters, create process rows, or infer generic
-  lifecycle support for other tools.
+- Processes are the lifecycle-managed long-running units. A process may
+  reference a tool with a canonical `tool` dependency when it needs that
+  capability. A tool definition may declare a related singleton process;
+  `tool:install` configures that process by default (idempotently), while that
+  process row remains the runtime owner. `--no-process` installs the capability
+  only.
+- `tool:start`, `tool:stop`, `tool:restart`, `tool:reload`, and `tool:logs` are
+  admitted independently and only when the tool definition declares the exact
+  verb. Each action must resolve to exactly one direct tool-owned runtime or
+  exactly one process row whose canonical `tool` value matches the selected
+  tool. A missing or ambiguous runtime fails explicitly. Orbit does not infer
+  support from similar names.
+- Direct tool-owned runtime commands use Agent push for remote nodes. The
+  gateway-local DNS runtime is the deliberate local-execution exception.
+  Process-backed commands dispatch through the owning `process:*` action.
 - Tool-specific and capability-specific command families are opt-in product
   surfaces. The tool catalog does not automatically create `redis:*`,
   `mysql:*`, `postgres:*`, or other top-level command families. Generic tool
@@ -78,9 +82,9 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 
 | Slug | Label | Backend | Support model | Category | Primary capability surface |
 | --- | --- | --- | --- | --- | --- |
-| [`caddy`](catalog/caddy.md) | Caddy | `orbit-caddy` Docker container | Role baseline where HTTP routing is needed, adopted and kept converged | `always` | reconfigure, update, fix, adopt; lifecycle and logs through `process:*` |
+| [`caddy`](catalog/caddy.md) | Caddy | `orbit-caddy` Docker container | Role baseline where HTTP routing is needed, adopted and kept converged | `always` | reconfigure, update, fix, adopt, reload, logs |
 | [`docker`](catalog/docker.md) | Docker | system service on Linux; Docker-compatible provider on macOS | Required baseline, adopted and kept converged | `always` | probe, fix, adopt, prerequisite for Docker-backed processes |
-| [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Role baseline tool for the `app-dev` and `app-prod` roles | `runtime` | probe, adopt |
+| [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Optional observational runtime inventory; no role baseline requirement | `runtime` | probe, explicit adopt |
 | [`php-cli`](catalog/php-cli.md) | PHP CLI | prebuilt static host binaries (dl.static-php.dev bulk preset) | Installable/updatable host toolchain on `app-dev` and `app-prod` | `runtime` | install, update, probe, adopt |
 | [`git`](catalog/git.md) | Git | system binary | Role baseline tool for the `app-dev`, `app-prod`, and `agent` roles (repository clone and checkout workflows) | `runtime` | install, update, adopt |
 | [`gh`](catalog/gh.md) | GitHub CLI | system binary | Role baseline tool for the `app-dev` and `app-prod` roles (repository cloning and deployment) | `runtime` | update, adopt |
@@ -91,14 +95,14 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`grok-cli`](catalog/grok-cli.md) | Grok CLI | xAI Grok Build installer (`https://x.ai/cli/install.sh`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
 | [`antigravity-cli`](catalog/antigravity-cli.md) | Antigravity CLI | Google Antigravity installer (`https://antigravity.google/cli/install.sh`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes; supersedes outdated Gemini CLI support | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
 | [`cursor-cli`](catalog/cursor-cli.md) | Cursor CLI | Cursor Agent installer (`https://cursor.com/install`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
-| [`dns`](catalog/dns.md) | DNS | Docker service | Required infrastructure tool, adopted and kept converged | `infrastructure` | update, fix, adopt; lifecycle and logs through `process:*` |
+| [`dns`](catalog/dns.md) | DNS | Gateway-local Docker service | Required infrastructure tool, kept converged on the gateway | `infrastructure` | update, restore, restart, logs; no adopt/start/stop/reload |
 | [`php`](catalog/php.md) | PHP images | FrankenPHP Docker image capability | Selected by app/workspace runtime configuration | `runtime` | image inventory, update, fix, adopt |
 | [`mailpit`](catalog/mailpit.md) | Mailpit | Docker service | Installable and removable by Orbit | `development` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`reverb`](catalog/reverb.md) | Reverb | Docker service | Compatibility tool; the `websocket` role is the current choice for fleet realtime | `communication` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`seaweedfs`](catalog/seaweedfs.md) | SeaweedFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`node-exporter`](catalog/node-exporter.md) | node-exporter | host binary (`/usr/local/bin/node_exporter`) | Role baseline tool for the `metrics` role and active workload nodes scraped by metrics | `observability` | install, remove, update, fix, adopt; lifecycle and logs through `process:*` |
-| [`polyscope-server`](catalog/polyscope-server.md) | PolyScope Server | Node-owned `systemd` process with `tool=polyscope` | Installable and removable by Orbit | `development` | install, remove, reconfigure, update, fix, adopt; lifecycle and logs through `process:*` |
-| [`opencode-cli`](catalog/opencode-cli.md) | OpenCode CLI | Installed OpenCode CLI with related `opencode-server` `systemd` process (`tool=opencode-cli`) | Installable and removable by Orbit | `development` | install, remove, reconfigure, password reset, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
+| [`polyscope-server`](catalog/polyscope-server.md) | PolyScope Server | Node-owned `systemd` process with `tool=polyscope-server` | Installable and removable by Orbit | `development` | install, remove, reconfigure, update, fix, adopt, start, stop, restart, logs through its exact process row |
+| [`opencode-cli`](catalog/opencode-cli.md) | OpenCode CLI | Installed OpenCode CLI with related `opencode-server` `systemd` process (`tool=opencode-cli`) | Installable and removable by Orbit | `development` | install, remove, reconfigure, password reset, update, credentials, service endpoint, fix, start, stop, restart, logs through its exact process row |
 | [`openclaw`](catalog/openclaw.md) | OpenClaw | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`hermes`](catalog/hermes.md) | Hermes | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`codex-app`](catalog/codex-app.md) | Codex App | macOS Codex App configuration file and URL callback | App-facing project-registration bridge for Codex App on macOS | `operator` | `codex:app` add, remove, list; config presence probe |
@@ -115,8 +119,9 @@ eligibility gate.
 Installable tools are provisioned by `tool:install`, removed by `tool:remove`,
 and verified by `doctor --family=tool`.
 
-The `dns` tool is the runtime capability behind the VPN-facing DNS substrate;
-its container, port, and config lifecycle are verified by `doctor --family=tool`.
+The `dns` tool is the gateway-local runtime capability behind the VPN-facing
+DNS substrate; its container, port, and config lifecycle are verified by
+`doctor --family=tool` and are restore-only.
 Development/agent DNS mapping records — which TLD points at which WireGuard
 IP — are owned by the node family. Stable private `.orbit` service names and
 private route selection are router-owned service contracts. The `dns:*` command
@@ -155,10 +160,10 @@ the entity in the command result.
 
 ## Commands
 
-The `tool:*` family covers inventory, capability state, configuration, and
-credential operations. Lifecycle is process-owned: `process:*` commands
-start, stop, restart, and stream logs for tool-backed services through the
-related process record.
+The `tool:*` family covers inventory, capability state, configuration,
+credentials, and catalog-declared runtime actions. Process rows remain
+process-owned even when a declared `tool:*` verb addresses the one exact
+matching process.
 
 ### Inventory and inspection
 
@@ -174,24 +179,25 @@ These commands create or remove an installable tool on a node.
 3. [`orbit tool:install <tool>`](3_tool-install/tool-install.md)
 4. [`orbit tool:remove <tool>`](4_tool-remove/tool-remove.md)
 
-### Tool-owned lifecycle
+### Declared runtime actions
 
-These commands are available only for lifecycle-capable tools. The first
-supported tool is macOS-only `orbstack`.
+These commands are available only when the selected tool declares the exact
+verb and runtime resolution is unambiguous.
 
 5. [`orbit tool:start <tool>`](5_tool-start/tool-start.md)
 6. [`orbit tool:stop <tool>`](6_tool-stop/tool-stop.md)
 7. [`orbit tool:restart <tool>`](7_tool-restart/tool-restart.md)
+8. [`orbit tool:logs <tool>`](8_tool-logs/tool-logs.md)
 
 ### Configuration and credentials
 
-Log streaming and reload belong to the `process:*` family or to future
-tool-specific contracts. These commands change tool versions or configuration
-and expose generated credentials.
+These commands change tool versions or configuration, expose generated
+credentials, or invoke a declared reload capability.
 
-8. [`orbit tool:update [tool]`](9_tool-update/tool-update.md)
-9. [`orbit tool:credentials [tool]`](10_tool-credentials/tool-credentials.md)
-10. [`orbit tool:reconfigure [tool]`](12_tool-reconfigure/tool-reconfigure.md)
+9. [`orbit tool:update [tool]`](9_tool-update/tool-update.md)
+10. [`orbit tool:credentials [tool]`](10_tool-credentials/tool-credentials.md)
+11. [`orbit tool:reload <tool>`](11_tool-reload/tool-reload.md)
+12. [`orbit tool:reconfigure [tool]`](12_tool-reconfigure/tool-reconfigure.md)
 
 ## Related
 

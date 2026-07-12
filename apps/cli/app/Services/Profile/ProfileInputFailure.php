@@ -15,12 +15,12 @@ final readonly class ProfileInputFailure
         public array $meta,
     ) {}
 
-    public function isMissingTarget(): bool
+    public function isUrlResolutionFailure(): bool
     {
         return (
             $this->code === 'validation_failed'
-            && ($this->meta['field'] ?? null) === 'target'
-            && ($this->meta['reason'] ?? null) === 'missing_required_input'
+            && ($this->meta['field'] ?? null) === 'url'
+            && in_array($this->meta['reason'] ?? null, ['missing_required_input', 'invalid_url'], true)
         );
     }
 }

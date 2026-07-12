@@ -6,6 +6,7 @@ namespace App\Commands\Firewall;
 
 final class FirewallAllowCommand extends FirewallStoreCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     #[\Override]
     protected $signature = 'firewall:allow
         {name? : Firewall rule name}

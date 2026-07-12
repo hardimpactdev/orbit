@@ -91,16 +91,16 @@ final readonly class EnactAppRuntime
     private function runtimeContainerWarning(App $app, bool $hadExistingContainer, Throwable $exception): array
     {
         $code = $hadExistingContainer
-            ? 'app.runtime_container_mismatch'
-            : 'app.runtime_container_missing';
+            ? 'process.runtime_unit_mismatch'
+            : 'process.runtime_unit_missing';
 
         $action = $hadExistingContainer ? 'recreated' : 'installed';
 
         return [
             'code' => $code,
-            'family' => 'app',
+            'family' => 'process',
             'message' => "FrankenPHP runtime container for '{$app->name}' could not be {$action} on '{$app->node?->name}': {$exception->getMessage()}",
-            'next_command' => 'doctor --family=app --restore',
+            'next_command' => 'doctor --family=process --restore',
         ];
     }
 

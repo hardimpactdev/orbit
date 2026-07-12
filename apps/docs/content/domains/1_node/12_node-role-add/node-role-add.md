@@ -10,7 +10,7 @@ You can run this command to add an additional role assignment to an
 existing node.
 
 ```bash
-orbit node role:add [node] [role] [--tld=] [--redis-node=] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
+orbit node role:add [node] [role] [--redis-node=] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
 ```
 
 ## Behavior
@@ -25,11 +25,10 @@ This command validates the role assignment, applies role-local options, and repo
   exclusive and is only selectable during `node:new`. `node role:add ...
   agent` fails with `validation_failed` and the explanation that
   `node:new --template=agent` is the preferred path that may create it.
-- `app-dev` requires `--tld`.
-- `node role:add` does not create an Orbit Agent work queue. Future app-dev
-  convergence over Orbit Agent must use a direct gateway-pushed command
-  envelope after the node has explicitly been marked capable with
-  `node:update <node> --orbit-agent-capable`.
+- Role assignment never changes or duplicates the node-owned TLD.
+- App-development convergence uses direct gateway-pushed command envelopes.
+  An active workload role supplies Agent intent; no duplicated capability flag
+  is required.
 - `websocket` requires `--redis-node`; the selected node must have an active
   `database` role and Redis expected or installed.
 - `analytics` requires `--postgres-node` and `--clickhouse-node`; the selected

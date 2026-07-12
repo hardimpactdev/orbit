@@ -13,6 +13,9 @@ These fields describe the PHP image tool's identity, backend, and support model 
 | Backend | FrankenPHP Docker image capability |
 | Support model | Selected by app/workspace runtime configuration |
 | Category | `runtime` |
+| Supported operating systems | Linux |
+| Required container provider | Docker-compatible |
+| Isolation | Docker container |
 
 ## Capabilities
 

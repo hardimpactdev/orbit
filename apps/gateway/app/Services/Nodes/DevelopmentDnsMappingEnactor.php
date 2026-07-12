@@ -210,14 +210,11 @@ class DevelopmentDnsMappingEnactor
             return null;
         }
 
-        $settings = $assignment->settings ?? [];
-        $tld = is_array($settings) ? $settings['tld'] ?? null : null;
-
-        if (! is_string($tld)) {
+        if (! is_string($node->tld)) {
             return null;
         }
 
-        return $this->mappingForDevelopmentRole($node, $tld);
+        return $this->mappingForDevelopmentRole($node, $node->tld);
     }
 
     /**

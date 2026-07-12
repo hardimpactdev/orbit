@@ -156,7 +156,7 @@ function managed_file_node(string $wireguardAddress): Node
     /** @var Node $node */
     $node = Node::factory()->create([
         'wireguard_address' => $wireguardAddress,
-        'orbit_agent_capable' => true,
+        'managed' => true,
     ]);
 
     NodeRoleAssignment::factory()->create([

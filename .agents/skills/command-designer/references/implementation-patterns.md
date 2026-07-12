@@ -29,8 +29,8 @@ and input-mode helpers.
 | `LocalOnlyCommand` | Commands that mutate only caller-local config or environment. No gateway accessor. |
 | `BootstrapGatewayCommand` | Commands that must run before a gateway API exists. |
 
-`OrbitCommand` still exists as a deprecated backward-compatible alias of
-`GatewayCommand`; new commands must extend one of the three bases directly.
+Commands extend one of these three bases directly. There is no generic or
+deprecated command-base alias.
 
 ## JSON Envelopes
 
@@ -103,9 +103,12 @@ final class WorkspaceSetupStepAddCommand extends AbstractWorkspaceStepAddCommand
 
 Use traits in `apps/cli/app/Commands/Concerns/` for cross-cutting behavior
 needed independently across unrelated commands: `EmitsCanonicalEnvelopes`,
-`WithStepTree`, `StreamsGatewayProgress`, `RendersShowDetails`,
+`WithStepTree`, `RendersShowDetails`,
 `ResolvesHostContext`, `ResolvesDefaultNode`,
 `PromptsForGatewayRegistryEntities`.
+
+`StreamsGatewayProgress` exists only for exact transitional SSE command
+surfaces. Do not add new consumers.
 
 ## App And Node Resolution
 
@@ -140,15 +143,15 @@ call in a local spinner.
 The CLI command contract remains the product surface. Prompting and
 non-interactive validation stay caller-side. The typed gateway API is
 transport: `GatewayCommand::gatewayGet()`/`gatewayPost()`/… wrap
-`GatewayApiClient`, and long-running mutations stream progress through
-`StreamsGatewayProgress` (see
-[`terminal-output.md`](terminal-output.md#pattern-3-gateway-streamed-progress-sse)).
+`GatewayApiClient`. Durable long-running mutations create an operation, persist
+events before publication, and subscribe through
+`GatewayOperationStreamSubscriber` over the operations WebSocket with journal
+replay (see
+[`terminal-output.md`](terminal-output.md#pattern-3-durable-operation-progress-websocket)).
 
-SSH to the gateway is reserved for gateway infrastructure administration that
-explicitly requires SSH, such as VPN administration exceptions documented in the
-architecture. Gateway-owned command mutations that can be authenticated and
-authorized through the typed API, such as `node:remove`, use HTTPS through
-WireGuard from control nodes instead of requiring gateway SSH access.
+Gateway-owned work executes gateway-locally after the typed HTTPS request.
+Provisioning/bootstrap is Orbit's sole permanent SSH lane; exact-marked
+transitional SSH consumers must not be copied into new commands.
 
 ## Implementation Checklist
 

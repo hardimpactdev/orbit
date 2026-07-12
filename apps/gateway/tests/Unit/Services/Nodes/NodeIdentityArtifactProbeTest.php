@@ -103,7 +103,7 @@ it('reads non-secret node identity facts from the selected host', function (): v
         ]);
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-1',
             'orbit_path' => '/home/orbit/orbit',
@@ -150,7 +150,7 @@ it('throws when host identity artifact reading fails', function (): void {
     ]);
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-1',
             'wireguard_address' => '10.44.0.89',
@@ -164,7 +164,7 @@ it('throws when host identity artifact reading fails', function (): void {
 it('returns the target public key when no active registry peer matches', function (): void {
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-1',
             'wireguard_address' => '10.44.0.90',

@@ -21,6 +21,7 @@ use Throwable;
 
 final readonly class RemoveApp
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private RemoteShell $remoteShell,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,

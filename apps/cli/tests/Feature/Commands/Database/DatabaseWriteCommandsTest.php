@@ -173,33 +173,27 @@ describe('database write commands', function (): void {
             ->toBe('payload');
     });
 
-    it('attaches database connections to app targets', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'connection' => [
-                'slug' => 'primary-db',
-                'targets' => [['type' => 'app', 'name' => 'docs', 'env_prefix' => 'DB']],
-            ],
-        ]));
+    it('rejects logical app targets before contacting the gateway', function (): void {
+        Http::fake();
 
-        [$exitCode] = runCommand($this, 'database:attach', [
+        [$exitCode, $output] = runCommand($this, 'database:attach', [
             'connection' => 'primary-db',
             '--app' => 'docs',
-            '--env-prefix' => 'DB',
             '--json' => true,
         ]);
 
-        Http::assertSent(function (Request $request): bool {
-            return (
-                $request->method() === 'POST'
-                && str_contains($request->url(), '/api/database-connections/primary-db/targets')
-                && $request->data() === [
-                    'app' => 'docs',
-                    'env_prefix' => 'DB',
-                ]
-            );
-        });
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0);
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('instance')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('app_instance_required');
     });
 
     it('attaches database connections to app instance targets', function (): void {
@@ -276,6 +270,7 @@ describe('database write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'database:attach', [
             'connection' => 'primary-db',
             '--app' => 'docs',
+            '--instance' => 'production',
             '--workspace' => 'feature-docs',
             '--json' => true,
         ]);
@@ -595,20 +590,26 @@ describe('database write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'connection' => [
                 'slug' => 'primary-db',
-                'targets' => [['type' => 'app', 'name' => 'docs', 'env_prefix' => 'DB']],
+                'targets' => [[
+                    'type' => 'app_instance',
+                    'app' => 'docs',
+                    'instance' => 'development',
+                    'env_prefix' => 'DB',
+                ]],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'database:attach', [
             'connection' => 'primary-db',
             '--app' => 'docs',
+            '--instance' => 'development',
             '--env-prefix' => 'DB',
         ]);
 
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toBe("Attached database connection 'primary-db' to app 'docs' with prefix 'DB'.")
+            ->toBe("Attached database connection 'primary-db' to app_instance 'docs.development' with prefix 'DB'.")
             ->and($output)
             ->not->toContain('{')->and($output)
             ->not->toContain('connection:')->and($output)
@@ -638,7 +639,7 @@ describe('database write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toBe("Attached database connection 'primary-db' to app_instance 'docs:production' with prefix 'DB'.")
+            ->toBe("Attached database connection 'primary-db' to app_instance 'docs.production' with prefix 'DB'.")
             ->and($output)
             ->not->toContain('{');
     });

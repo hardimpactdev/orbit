@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Models\App;
 use App\Models\AppInstance;
-use App\Models\AppInstanceDatabaseConnectionTarget;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
@@ -23,7 +23,7 @@ describe('DatabaseConnectionRegistry', function (): void {
         $instance = AppInstance::factory()->for($app)->create(['name' => 'production']);
         $first = DatabaseConnection::factory()->create(['slug' => 'zebra']);
         $second = DatabaseConnection::factory()->create(['slug' => 'alpha']);
-        AppInstanceDatabaseConnectionTarget::query()->create([
+        DatabaseConnectionTarget::query()->create([
             'database_connection_id' => $second->id,
             'app_instance_id' => $instance->id,
             'env_prefix' => 'DB',
@@ -37,6 +37,43 @@ describe('DatabaseConnectionRegistry', function (): void {
             ->toBe([$second->id])
             ->and($registry->show('alpha')?->is($second))
             ->toBeTrue();
+    });
+
+    it('filters node listings by concrete app instance and workspace placement', function (): void {
+        $logicalAppNode = Node::factory()->create(['name' => 'logical-app-node']);
+        $instanceNode = Node::factory()->create(['name' => 'instance-node']);
+        $unrelatedNode = Node::factory()->create(['name' => 'unrelated-node']);
+        $app = App::factory()->for($logicalAppNode, 'node')->create();
+        $instance = AppInstance::factory()->for($app)->create([
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $instanceNode->id,
+                path: '/srv/apps/docs',
+            ),
+        ]);
+        $workspace = Workspace::factory()->for($app, 'app')->create([
+            'app_instance_id' => $instance->id,
+        ]);
+        $instanceConnection = DatabaseConnection::factory()->create(['slug' => 'instance-db']);
+        $workspaceConnection = DatabaseConnection::factory()->create(['slug' => 'workspace-db']);
+        $directConnection = DatabaseConnection::factory()->for($logicalAppNode, 'node')->create([
+            'slug' => 'logical-node-db',
+        ]);
+        DatabaseConnection::factory()->for($unrelatedNode, 'node')->create(['slug' => 'unrelated-db']);
+        DatabaseConnectionTarget::factory()
+            ->for($instanceConnection, 'connection')
+            ->forAppInstance($instance)
+            ->create();
+        DatabaseConnectionTarget::factory()
+            ->for($workspaceConnection, 'connection')
+            ->forWorkspace($workspace)
+            ->create();
+
+        $registry = app(DatabaseConnectionRegistry::class);
+
+        expect($registry->list(node: $instanceNode)->modelKeys())
+            ->toBe([$instanceConnection->id, $workspaceConnection->id])
+            ->and($registry->list(node: $logicalAppNode)->modelKeys())
+            ->toBe([$directConnection->id]);
     });
 
     it('creates and updates tcp and sqlite connections with validation', function (): void {
@@ -248,38 +285,33 @@ describe('DatabaseConnectionRegistry', function (): void {
             ->toBe('slug');
     });
 
-    it('attaches and detaches app workspace and app instance targets with conflict handling', function (): void {
+    it('attaches and detaches workspace and app instance targets with conflict handling', function (): void {
         $app = App::factory()->create();
         $instance = AppInstance::factory()->for($app)->create(['name' => 'production']);
         $workspace = Workspace::factory()->create();
         $primary = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
         $analytics = DatabaseConnection::factory()->create(['slug' => 'analytics-db']);
-        $reporting = DatabaseConnection::factory()->create(['slug' => 'reporting-db']);
         $registry = app(DatabaseConnectionRegistry::class);
 
-        $appTarget = $registry->attachToApp('primary-db', $app, 'DB');
-        $idempotentAppTarget = $registry->attachToApp('primary-db', $app, 'DB');
-        $appConflict = $registry->attachToApp('analytics-db', $app, 'DB');
+        $instanceTarget = $registry->attachToAppInstance('primary-db', $instance, 'DB');
+        $idempotentInstanceTarget = $registry->attachToAppInstance('primary-db', $instance, 'DB');
+        $instanceConflict = $registry->attachToAppInstance('analytics-db', $instance, 'DB');
 
         $workspaceTarget = $registry->attachToWorkspace('analytics-db', $workspace, 'ANALYTICS_DB');
         $idempotentWorkspaceTarget = $registry->attachToWorkspace('analytics-db', $workspace, 'ANALYTICS_DB');
         $workspaceConflict = $registry->attachToWorkspace('primary-db', $workspace, 'ANALYTICS_DB');
 
-        $instanceTarget = $registry->attachToAppInstance('reporting-db', $instance, 'REPORTING_DB');
-        $idempotentInstanceTarget = $registry->attachToAppInstance('reporting-db', $instance, 'REPORTING_DB');
-        $instanceConflict = $registry->attachToAppInstance('primary-db', $instance, 'REPORTING_DB');
-
-        expect($appTarget)
+        expect($instanceTarget)
             ->toBeInstanceOf(DatabaseConnectionTarget::class)
-            ->and($appTarget->database_connection_id)
+            ->and($instanceTarget->database_connection_id)
             ->toBe($primary->id)
-            ->and($idempotentAppTarget)
+            ->and($idempotentInstanceTarget)
             ->toBeInstanceOf(DatabaseConnectionTarget::class)
-            ->and($idempotentAppTarget->id)
-            ->toBe($appTarget->id)
-            ->and($appConflict)
+            ->and($idempotentInstanceTarget->id)
+            ->toBe($instanceTarget->id)
+            ->and($instanceConflict)
             ->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
-            ->and($appConflict->code)
+            ->and($instanceConflict->code)
             ->toBe('database_connection.target_conflict')
             ->and($workspaceTarget)
             ->toBeInstanceOf(DatabaseConnectionTarget::class)
@@ -293,35 +325,20 @@ describe('DatabaseConnectionRegistry', function (): void {
             ->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
             ->and($workspaceConflict->code)
             ->toBe('database_connection.target_conflict')
-            ->and($instanceTarget)
-            ->toBeInstanceOf(AppInstanceDatabaseConnectionTarget::class)
-            ->and($instanceTarget->database_connection_id)
-            ->toBe($reporting->id)
-            ->and($idempotentInstanceTarget)
-            ->toBeInstanceOf(AppInstanceDatabaseConnectionTarget::class)
-            ->and($idempotentInstanceTarget->id)
-            ->toBe($instanceTarget->id)
-            ->and($instanceConflict)
-            ->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
-            ->and($instanceConflict->code)
-            ->toBe('database_connection.target_conflict')
             ->and(DatabaseConnectionTarget::query()->count())
             ->toBe(2);
 
-        $detachedAppTarget = $registry->detachFromApp('primary-db', $app, 'DB');
-        $missingAppDetach = $registry->detachFromApp('primary-db', $app, 'DB');
+        $detachedInstanceTarget = $registry->detachFromAppInstance('primary-db', $instance, 'DB');
+        $missingInstanceDetach = $registry->detachFromAppInstance('primary-db', $instance, 'DB');
         $detachedWorkspaceTarget = $registry->detachFromWorkspace('analytics-db', $workspace, 'ANALYTICS_DB');
         $missingWorkspaceDetach = $registry->detachFromWorkspace('analytics-db', $workspace, 'ANALYTICS_DB');
-        $detachedInstanceTarget = $registry->detachFromAppInstance('reporting-db', $instance, 'REPORTING_DB');
-        $missingInstanceDetach = $registry->detachFromAppInstance('reporting-db', $instance, 'REPORTING_DB');
-
-        expect($detachedAppTarget)
+        expect($detachedInstanceTarget)
             ->toBeInstanceOf(DatabaseConnectionTarget::class)
-            ->and($detachedAppTarget->exists)
+            ->and($detachedInstanceTarget->exists)
             ->toBeFalse()
-            ->and($missingAppDetach)
+            ->and($missingInstanceDetach)
             ->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
-            ->and($missingAppDetach->code)
+            ->and($missingInstanceDetach->code)
             ->toBe('database_connection.target_not_found')
             ->and($detachedWorkspaceTarget)
             ->toBeInstanceOf(DatabaseConnectionTarget::class)
@@ -331,17 +348,7 @@ describe('DatabaseConnectionRegistry', function (): void {
             ->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
             ->and($missingWorkspaceDetach->code)
             ->toBe('database_connection.target_not_found')
-            ->and($detachedInstanceTarget)
-            ->toBeInstanceOf(AppInstanceDatabaseConnectionTarget::class)
-            ->and($detachedInstanceTarget->exists)
-            ->toBeFalse()
-            ->and($missingInstanceDetach)
-            ->toBeInstanceOf(DatabaseConnectionRegistryFailure::class)
-            ->and($missingInstanceDetach->code)
-            ->toBe('database_connection.target_not_found')
             ->and(DatabaseConnectionTarget::query()->count())
-            ->toBe(0)
-            ->and(AppInstanceDatabaseConnectionTarget::query()->count())
             ->toBe(0);
     });
 
@@ -349,7 +356,7 @@ describe('DatabaseConnectionRegistry', function (): void {
         $app = App::factory()->create();
         $instance = AppInstance::factory()->for($app)->create(['name' => 'production']);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
-        AppInstanceDatabaseConnectionTarget::query()->create([
+        DatabaseConnectionTarget::query()->create([
             'database_connection_id' => $connection->id,
             'app_instance_id' => $instance->id,
             'env_prefix' => 'DB',
@@ -365,7 +372,7 @@ describe('DatabaseConnectionRegistry', function (): void {
             ->and(DatabaseConnection::query()->whereKey($connection->id)->exists())
             ->toBeTrue()
             ->and(
-                AppInstanceDatabaseConnectionTarget::query()
+                DatabaseConnectionTarget::query()
                     ->where('database_connection_id', $connection->id)
                     ->exists(),
             )
@@ -378,7 +385,7 @@ describe('DatabaseConnectionRegistry', function (): void {
             ->and(DatabaseConnection::query()->whereKey($connection->id)->exists())
             ->toBeFalse()
             ->and(
-                AppInstanceDatabaseConnectionTarget::query()
+                DatabaseConnectionTarget::query()
                     ->where('database_connection_id', $connection->id)
                     ->exists(),
             )

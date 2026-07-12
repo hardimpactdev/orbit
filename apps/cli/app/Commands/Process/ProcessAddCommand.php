@@ -15,7 +15,6 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {name? : Process name}
         {process_command? : Command to run}
         {--node= : Owning node name}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--tool= : Tool capability this process uses}
@@ -27,7 +26,6 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {--runtime= : Process runtime (docker|docker-swarm|systemd|launchd); defaults to docker for managed services, systemd for Linux host commands, and launchd for macOS host commands}
         {--replace-container=* : Remove an explicitly named Docker container on the target node before adding a Docker managed service}
         {--force : Confirm destructive replacement-container cleanup without prompting}
-        {--start : Redundant backward-compatible flag; processes start by default}
         {--no-start : Skip starting rendered runtime units after creation}
         {--json : Output JSON}';
 
@@ -50,7 +48,6 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         $image = $this->stringOption('image');
         $replaceContainers = $this->replaceContainers();
         $noStart = $this->option('no-start') === true;
-        $startExplicit = $this->option('start') === true;
 
         if ($node !== null && ($app !== null || $workspace !== null)) {
             return $this->failValidation(
@@ -118,13 +115,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
                 $node,
                 $service,
                 $runtime,
-            ) ?? $this->confirmReplaceContainers($replaceContainers, (string) $name)
-                ?? (
-                    $noStart && $startExplicit
-                        ? $this->failValidation('start', 'The start and no-start flags cannot be used together.', [
-                            'reason' => 'start_and_no_start_conflict',
-                        ]) : null
-                );
+            ) ?? $this->confirmReplaceContainers($replaceContainers, (string) $name);
 
         if ($validation !== null) {
             return $validation;

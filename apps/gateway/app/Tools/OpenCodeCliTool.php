@@ -6,6 +6,11 @@ namespace App\Tools;
 
 final class OpenCodeCliTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux'];
+
     public function slug(): string
     {
         return 'opencode-cli';
@@ -20,7 +25,18 @@ final class OpenCodeCliTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['install', 'remove', 'update', 'reconfigure', 'credentials', 'safe-fix'];
+        return [
+            'install',
+            'remove',
+            'update',
+            'reconfigure',
+            'credentials',
+            'safe-fix',
+            'start',
+            'stop',
+            'restart',
+            'logs',
+        ];
     }
 
     /**

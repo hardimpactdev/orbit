@@ -19,7 +19,7 @@ const REMOVE_CALLER_WG_IP = '10.6.0.99';
  */
 function apiRemoveNodeRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'app-1',
         'host' => '10.6.0.7',
         'user' => 'nckrtl',
@@ -30,6 +30,10 @@ function apiRemoveNodeRow(array $overrides = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    $row['tld'] ??= $row['name'];
+
+    return $row;
 }
 
 function createRemoveCallerNode(?string $role = null): int

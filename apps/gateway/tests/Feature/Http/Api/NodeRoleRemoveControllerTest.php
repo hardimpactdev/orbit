@@ -28,7 +28,7 @@ const NODE_ROLE_REMOVE_CALLER_WG_IP = '10.6.0.91';
  */
 function apiNodeRoleRemoveRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'app-1',
         'host' => '10.6.0.7',
         'user' => 'nckrtl',
@@ -39,6 +39,10 @@ function apiNodeRoleRemoveRow(array $overrides = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    $row['tld'] ??= $row['name'];
+
+    return $row;
 }
 
 function createNodeRoleRemoveCaller(string $role = 'control'): int
@@ -62,7 +66,7 @@ function createNodeRoleRemoveCaller(string $role = 'control'): int
             'node_id' => $nodeId,
             'role' => 'app-dev',
             'status' => 'active',
-            'settings' => ['tld' => 'caller.test'],
+            'settings' => [],
         ]);
     }
 
@@ -159,7 +163,7 @@ describe('NodeRoleRemoveController', function (): void {
             'node_id' => $node->id,
             'role' => 'app-dev',
             'status' => 'active',
-            'settings' => ['tld' => 'test'],
+            'settings' => [],
             'last_error' => null,
             'converged_at' => now(),
         ]);
@@ -250,7 +254,7 @@ describe('NodeRoleRemoveController', function (): void {
             'node_id' => $node->id,
             'role' => 'app-dev',
             'status' => 'active',
-            'settings' => ['tld' => 'test'],
+            'settings' => [],
         ]);
         NodeAccess::query()->create([
             'consumer_node_id' => $node->id,
@@ -431,7 +435,7 @@ describe('NodeRoleRemoveController', function (): void {
             'node_id' => $node->id,
             'role' => 'app-dev',
             'status' => 'active',
-            'settings' => ['tld' => 'test'],
+            'settings' => [],
             'last_error' => null,
             'converged_at' => now(),
         ]);

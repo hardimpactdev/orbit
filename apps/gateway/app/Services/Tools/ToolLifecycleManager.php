@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Models\Node;
+use App\Models\Process as ProcessModel;
+use Illuminate\Support\Facades\Process;
 
 final readonly class ToolLifecycleManager
 {
     public function __construct(
         private ToolCatalog $catalog,
-        private ToolRegistry $registry,
+        private ToolRuntimeResolver $runtimes,
         private ToolScriptDispatcher $toolScriptDispatcher,
+        private ProcessToolLifecycleRunner $processLifecycle,
     ) {}
 
     /**
@@ -23,45 +26,61 @@ final readonly class ToolLifecycleManager
         ?string $node = null,
         ?string $app = null,
     ): array|ToolRegistryFailure {
-        if (! $this->catalog->supports($tool)) {
-            return ToolRegistryFailure::unsupportedAction($tool, $action);
+        $target = $this->runtimes->resolve($tool, $action, $node, $app);
+
+        if ($target instanceof ToolRegistryFailure) {
+            return $target;
         }
 
-        if ($this->catalog->lifecycleScript($tool, $action) === null) {
-            return ToolRegistryFailure::unsupportedAction($tool, $action);
+        if ($target->process instanceof ProcessModel) {
+            return $this->processLifecycle->run($target, $action);
         }
 
-        $model = $this->registry->show(tool: $tool, node: $node, app: $app);
-
-        if ($model instanceof ToolRegistryFailure) {
-            return $model;
-        }
-
-        $model->loadMissing('node');
-        $targetNode = $model->node;
-
-        if (! $targetNode instanceof Node) {
-            return ToolRegistryFailure::remoteActionFailed($tool, '', $action, 1, 'Target node is missing.');
-        }
-
-        if (! $this->catalog->supportsNode($tool, $targetNode)) {
-            return ToolRegistryFailure::unsupportedOnNode(
-                tool: $tool,
-                node: $targetNode->name,
-                platform: $targetNode->platform,
-                supportedOperatingSystems: $this->catalog->supportedOperatingSystems($tool),
-            );
-        }
-
-        $config = is_array($model->config) ? $model->config : [];
+        $config = is_array($target->tool->config) ? $target->tool->config : [];
         $script = $this->catalog->lifecycleScript($tool, $action, $config);
 
         if ($script === null) {
             return ToolRegistryFailure::unsupportedAction($tool, $action);
         }
 
+        $result = $this->runToolOwnedScript($target->node, $tool, $action, $script);
+
+        if ($result instanceof ToolRegistryFailure) {
+            return $result;
+        }
+
+        return [
+            'name' => $tool,
+            'node' => $target->node->name,
+            'action' => $action,
+            'runtime' => 'tool',
+        ];
+    }
+
+    private function runToolOwnedScript(
+        Node $node,
+        string $tool,
+        string $action,
+        string $script,
+    ): true|ToolRegistryFailure {
+        if ($this->catalog->gatewayLocal($tool)) {
+            $result = Process::timeout(900)->run($script);
+
+            if (! $result->successful()) {
+                return ToolRegistryFailure::remoteActionFailed(
+                    $tool,
+                    $node->name,
+                    $action,
+                    $result->exitCode() ?? 1,
+                    trim($result->errorOutput()),
+                );
+            }
+
+            return true;
+        }
+
         $result = $this->toolScriptDispatcher->runForRegistry(
-            node: $targetNode,
+            node: $node,
             tool: $tool,
             action: $action,
             script: $script,
@@ -74,17 +93,13 @@ final readonly class ToolLifecycleManager
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(
                 tool: $tool,
-                node: $targetNode->name,
+                node: $node->name,
                 action: $action,
                 exitCode: $result->exitCode,
                 stderr: trim($result->stderr),
             );
         }
 
-        return [
-            'name' => $tool,
-            'node' => $targetNode->name,
-            'action' => $action,
-        ];
+        return true;
     }
 }

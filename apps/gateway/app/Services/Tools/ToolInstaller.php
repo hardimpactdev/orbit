@@ -27,6 +27,7 @@ final readonly class ToolInstaller
     public function __construct(
         private ToolCatalog $catalog,
         private ToolRegistry $registry,
+        private ToolInstallPreflight $preflight,
         private ToolScriptDispatcher $toolScriptDispatcher,
         private NodeRoleAssignments $nodeRoleAssignments,
         private RemoteSecretFile $remoteSecretFile,
@@ -71,15 +72,6 @@ final readonly class ToolInstaller
 
         if ($targetNode instanceof ToolRegistryFailure) {
             return $targetNode;
-        }
-
-        if (! $this->catalog->supportsNode($tool, $targetNode)) {
-            return ToolRegistryFailure::unsupportedOnNode(
-                tool: $tool,
-                node: $targetNode->name,
-                platform: $targetNode->platform,
-                supportedOperatingSystems: $this->catalog->supportedOperatingSystems($tool),
-            );
         }
 
         if ($runtime !== null) {
@@ -149,6 +141,12 @@ final readonly class ToolInstaller
 
         if ($script === null) {
             return ToolRegistryFailure::unsupportedAction($tool, 'install');
+        }
+
+        $preflightFailure = $this->preflight->check($tool, $targetNode);
+
+        if ($preflightFailure instanceof ToolRegistryFailure) {
+            return $preflightFailure;
         }
 
         if ($this->catalog->category($tool) === 'agent') {

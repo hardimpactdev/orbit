@@ -19,7 +19,6 @@ final class DatabaseListCommand extends GatewayCommand
         {--app= : Filter by app selector}
         {--workspace= : Filter by workspace selector}
         {--node= : Filter by node selector}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json}';
 
     #[\Override]

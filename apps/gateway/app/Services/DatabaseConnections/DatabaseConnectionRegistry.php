@@ -6,69 +6,106 @@ namespace App\Services\DatabaseConnections;
 
 use App\Models\App;
 use App\Models\AppInstance;
-use App\Models\AppInstanceDatabaseConnectionTarget;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
-use Illuminate\Database\Eloquent\Builder;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Collection;
 use InvalidArgumentException;
 
-final class DatabaseConnectionRegistry
+final readonly class DatabaseConnectionRegistry
 {
     private const string SLUG_PATTERN = '/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/';
 
     private const int SLUG_MAX_LENGTH = 40;
+
+    public function __construct(
+        private WorkspacePlacement $workspacePlacement,
+    ) {}
 
     /**
      * @return Collection<int, DatabaseConnection>
      */
     public function list(?App $app = null, ?Workspace $workspace = null, ?Node $node = null): Collection
     {
-        return DatabaseConnection::query()
-            ->with(['node', 'targets.app', 'targets.workspace', 'instanceTargets.instance.app'])
-            ->when(
-                $app instanceof App,
-                fn (Builder $query): Builder => $query->where(function (Builder $nested) use ($app): void {
-                    $nested->whereHas(
-                        'targets',
-                        fn (Builder $targetQuery): Builder => $targetQuery->where('app_id', $app?->id),
-                    )
-                        ->orWhereHas(
-                            'instanceTargets.instance',
-                            fn (Builder $targetQuery): Builder => $targetQuery->where('app_id', $app?->id),
-                        );
-                }),
+        /** @var Collection<int, DatabaseConnection> $connections */
+        $connections = DatabaseConnection::all();
+        $connections->load([
+            'node',
+            'targets.appInstance.app',
+            'targets.workspace.app',
+            'targets.workspace.appInstance',
+        ]);
+        /** @var list<DatabaseConnection> $matchingConnections */
+        $matchingConnections = [];
+
+        foreach ($connections as $connection) {
+            if (! $this->connectionMatchesFilters($connection, $app, $workspace, $node)) {
+                continue;
+            }
+
+            $matchingConnections[] = $connection;
+        }
+
+        usort(
+            $matchingConnections,
+            static fn (DatabaseConnection $first, DatabaseConnection $second): int => $first->slug <=> $second->slug,
+        );
+
+        $connections->splice(0);
+
+        foreach ($matchingConnections as $connection) {
+            $connections->push($connection);
+        }
+
+        return $connections;
+    }
+
+    private function connectionMatchesFilters(
+        DatabaseConnection $connection,
+        ?App $app,
+        ?Workspace $workspace,
+        ?Node $node,
+    ): bool {
+        if (
+            $app instanceof App
+            && ! $connection->targets->contains(
+                fn (DatabaseConnectionTarget $target): bool => $target->appInstance?->app_id === $app->id,
             )
-            ->when(
-                $workspace instanceof Workspace,
-                fn (Builder $query): Builder => $query->whereHas(
-                    'targets',
-                    fn (Builder $targetQuery): Builder => $targetQuery->where('workspace_id', $workspace?->id),
-                ),
+        ) {
+            return false;
+        }
+
+        if (
+            $workspace instanceof Workspace
+            && ! $connection->targets->contains(
+                fn (DatabaseConnectionTarget $target): bool => $target->workspace_id === $workspace->id,
             )
-            ->when(
-                $node instanceof Node,
-                fn (Builder $query): Builder => $query->where(function (Builder $nested) use ($node): void {
-                    $nested
-                        ->where('node_id', $node?->id)
-                        ->orWhereHas('targets.app', fn (Builder $appQuery): Builder => $appQuery->where(
-                            'node_id',
-                            $node?->id,
-                        ))
-                        ->orWhereHas('targets.workspace.app', fn (Builder $workspaceQuery): Builder => $workspaceQuery->where(
-                            'node_id',
-                            $node?->id,
-                        ))
-                        ->orWhereHas('instanceTargets.instance.app', fn (Builder $appQuery): Builder => $appQuery->where(
-                            'node_id',
-                            $node?->id,
-                        ));
-                }),
-            )
-            ->orderBy('slug')
-            ->get();
+        ) {
+            return false;
+        }
+
+        return ! $node instanceof Node || $this->connectionIsPlacedOnNode($connection, $node);
+    }
+
+    private function connectionIsPlacedOnNode(DatabaseConnection $connection, Node $node): bool
+    {
+        if ($connection->node?->is($node) === true) {
+            return true;
+        }
+
+        return $connection->targets->contains(function (DatabaseConnectionTarget $target) use ($node): bool {
+            if ($target->appInstance instanceof AppInstance) {
+                return $this->workspacePlacement->nodeForInstance($target->appInstance)?->is($node) === true;
+            }
+
+            if ($target->workspace instanceof Workspace) {
+                return $this->workspacePlacement->nodeForWorkspace($target->workspace)?->is($node) === true;
+            }
+
+            return false;
+        });
     }
 
     public function show(string $slug): DatabaseConnection|DatabaseConnectionRegistryFailure
@@ -163,7 +200,7 @@ final class DatabaseConnectionRegistry
             return $connection;
         }
 
-        $targetCount = $connection->targets()->count() + $connection->instanceTargets()->count();
+        $targetCount = $connection->targets()->count();
 
         if ($targetCount > 0 && ! $force) {
             return DatabaseConnectionRegistryFailure::hasTargets($slug, $targetCount);
@@ -172,20 +209,9 @@ final class DatabaseConnectionRegistry
         DatabaseConnectionTarget::query()
             ->where('database_connection_id', $connection->id)
             ->delete();
-        AppInstanceDatabaseConnectionTarget::query()
-            ->where('database_connection_id', $connection->id)
-            ->delete();
         $connection->delete();
 
         return true;
-    }
-
-    public function attachToApp(
-        string $slug,
-        App $app,
-        string $envPrefix,
-    ): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
-        return $this->attach($slug, 'app', $app->id, $envPrefix);
     }
 
     public function attachToWorkspace(
@@ -200,16 +226,8 @@ final class DatabaseConnectionRegistry
         string $slug,
         AppInstance $instance,
         string $envPrefix,
-    ): AppInstanceDatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
-        return $this->attachInstance($slug, $instance, $envPrefix);
-    }
-
-    public function detachFromApp(
-        string $slug,
-        App $app,
-        string $envPrefix,
     ): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
-        return $this->detach($slug, 'app', $app->id, $envPrefix);
+        return $this->attach($slug, 'app_instance', $instance->id, $envPrefix);
     }
 
     public function detachFromWorkspace(
@@ -224,8 +242,8 @@ final class DatabaseConnectionRegistry
         string $slug,
         AppInstance $instance,
         string $envPrefix,
-    ): AppInstanceDatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
-        return $this->detachInstance($slug, $instance, $envPrefix);
+    ): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
+        return $this->detach($slug, 'app_instance', $instance->id, $envPrefix);
     }
 
     private function findConnection(
@@ -235,7 +253,7 @@ final class DatabaseConnectionRegistry
         $query = DatabaseConnection::query();
 
         if ($withRelations) {
-            $query->with(['node', 'targets.app', 'targets.workspace', 'instanceTargets.instance.app']);
+            $query->with(['node', 'targets.appInstance.app', 'targets.workspace.app']);
         }
 
         $connection = $query->where('slug', $slug)->first();
@@ -440,7 +458,7 @@ final class DatabaseConnectionRegistry
 
         return DatabaseConnectionTarget::query()->create([
             'database_connection_id' => $connection->id,
-            'app_id' => $ownerType === 'app' ? $ownerId : null,
+            'app_instance_id' => $ownerType === 'app_instance' ? $ownerId : null,
             'workspace_id' => $ownerType === 'workspace' ? $ownerId : null,
             'env_prefix' => $envPrefix,
         ]);
@@ -465,63 +483,6 @@ final class DatabaseConnectionRegistry
 
         if (! $target instanceof DatabaseConnectionTarget) {
             return DatabaseConnectionRegistryFailure::targetNotFound($ownerType, $ownerId, $envPrefix, $slug);
-        }
-
-        $target->delete();
-
-        return $target;
-    }
-
-    private function attachInstance(
-        string $slug,
-        AppInstance $instance,
-        string $envPrefix,
-    ): AppInstanceDatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
-        $connection = $this->findConnection($slug);
-
-        if ($connection instanceof DatabaseConnectionRegistryFailure) {
-            return $connection;
-        }
-
-        $target = AppInstanceDatabaseConnectionTarget::query()
-            ->where('app_instance_id', $instance->id)
-            ->where('env_prefix', $envPrefix)
-            ->first();
-
-        if ($target instanceof AppInstanceDatabaseConnectionTarget) {
-            if ($target->database_connection_id === $connection->id) {
-                return $target;
-            }
-
-            return DatabaseConnectionRegistryFailure::targetConflict('app_instance', $instance->id, $envPrefix, $slug);
-        }
-
-        return AppInstanceDatabaseConnectionTarget::query()->create([
-            'database_connection_id' => $connection->id,
-            'app_instance_id' => $instance->id,
-            'env_prefix' => $envPrefix,
-        ]);
-    }
-
-    private function detachInstance(
-        string $slug,
-        AppInstance $instance,
-        string $envPrefix,
-    ): AppInstanceDatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
-        $connection = $this->findConnection($slug);
-
-        if ($connection instanceof DatabaseConnectionRegistryFailure) {
-            return $connection;
-        }
-
-        $target = AppInstanceDatabaseConnectionTarget::query()
-            ->where('app_instance_id', $instance->id)
-            ->where('env_prefix', $envPrefix)
-            ->where('database_connection_id', $connection->id)
-            ->first();
-
-        if (! $target instanceof AppInstanceDatabaseConnectionTarget) {
-            return DatabaseConnectionRegistryFailure::targetNotFound('app_instance', $instance->id, $envPrefix, $slug);
         }
 
         $target->delete();

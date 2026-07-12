@@ -196,7 +196,12 @@ final class SoloProxyController implements Loggable
     private function captureActivitySubject(Request $request): void
     {
         $resolver = app(ServingNodeResolver::class);
-        $node = $resolver->resolve($request, ServingNode::Target) ?? $resolver->resolve($request, ServingNode::Gateway);
+        $node = $resolver->resolve($request, ServingNode::Target);
+
+        if (! $node instanceof Node) {
+            $caller = $request->user();
+            $node = $caller instanceof Node ? $caller : null;
+        }
 
         $this->activitySubject = $node instanceof Node ? $node : null;
     }

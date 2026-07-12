@@ -18,6 +18,7 @@ use RuntimeException;
  */
 final readonly class FirewallRuleFixer
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private RemoteShell $_remoteShell,
         private RemoteFirewallRule $remoteFirewallRule,

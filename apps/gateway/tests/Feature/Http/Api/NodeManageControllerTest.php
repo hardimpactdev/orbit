@@ -42,6 +42,7 @@ describe('node self management API', function (): void {
             [],
             [
                 'REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP,
+                'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
             ],
         );
 
@@ -50,6 +51,32 @@ describe('node self management API', function (): void {
                 'success.data.management_ssh_key.public_key',
                 'ssh-ed25519 AAAAC3NzaGatewayKey orbit-gateway',
             );
+    });
+
+    it('requires the exact transitional SSH marker before returning the management key', function (): void {
+        Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'mini',
+                'host' => NODE_MANAGE_CALLER_WG_IP,
+                'wireguard_address' => NODE_MANAGE_CALLER_WG_IP,
+                'status' => 'active',
+            ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/nodes/self/manage-key',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node_transport_required')
+            ->assertJsonPath('error.meta.field', 'node-transport')
+            ->assertJsonPath('error.meta.required', ExplicitRemoteShellFallback::REQUIRED);
     });
 
     it('persists user and platform, pins by WireGuard address, and verifies SSH reachability', function (): void {
@@ -86,6 +113,7 @@ describe('node self management API', function (): void {
             ->assertJsonPath('success.data.management.node', 'mini')
             ->assertJsonPath('success.data.management.user', 'nicky')
             ->assertJsonPath('success.data.management.platform', 'macos_15-5')
+            ->assertJsonPath('success.data.management.managed', true)
             ->assertJsonPath('success.data.management.ssh_host', NODE_MANAGE_CALLER_WG_IP)
             ->assertJsonPath('success.data.management.host_key_pinned', true)
             ->assertJsonPath('success.data.management.ssh_verified', true);
@@ -93,6 +121,7 @@ describe('node self management API', function (): void {
         expect($node->fresh())
             ->user->toBe('nicky')
             ->platform->toBe('macos_15-5')
+            ->managed->toBeTrue()
             ->host_key_fingerprint->toBe('SHA256:test')->and($pinner->hosts)->toBe([
                 NODE_MANAGE_CALLER_WG_IP,
             ])->and($shell->nodes)->toBe(['mini'])->and($shell->scripts[0] ?? '')->toContain('true');

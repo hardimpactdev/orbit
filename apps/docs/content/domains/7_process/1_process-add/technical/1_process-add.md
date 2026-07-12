@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--replace-container=<name>] [--force] [--start] [--no-start] [--json]
+orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--replace-container=<name>] [--force] [--no-start] [--json]
 ```
 
 ## Input Contract
@@ -26,7 +26,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `name` | `[name]` | Always. | Never. | None. | Process slug: lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the resolved owner scope. |
 | `process_command` | `[process_command]` | When `service` is absent. | Never. | Managed service command when `service` is present. | Non-empty command string. Stored as process configuration without shell rewriting by the input adapter. |
 | `node` | `--node` | Required when adding a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:add`. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:add`. |
 | `workspace` | `--workspace` or workspace context | Required when adding a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:add`; pass `--app` when the workspace name is ambiguous. |
 | `tool` | `--tool` | Optional. | Never. | `null`. | Tool slug for the installed node capability this process uses. Tools do not own lifecycle. |
@@ -38,7 +37,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `runtime` | `--runtime` | Optional. | Never. | `docker` for managed services; `systemd` for Linux node-, app-, and workspace-owned host command processes; `launchd` for macOS node-, app-, and workspace-owned host command processes. | One of `docker`, `docker-swarm`, `systemd`, `launchd`. Host-command processes use `systemd` on Linux and `launchd` on macOS. Managed services accept `docker`, and accept `docker-swarm` only when their catalog entry and Linux node platform admit it. |
 | `replace_containers` | repeated `--replace-container` | Optional migration cleanup for node-owned Docker managed services. | When `service` is absent, `node` is absent, or runtime is not `docker`. | Empty list. | Each value must be an explicit Docker container name. Non-interactive mode requires `--force`. The gateway removes only these named containers before writing new process configuration. |
 | `force` | `--force` | Non-interactive `replace_containers`. | Never. | `false`. | Confirms destructive replacement-container cleanup without prompting. Ignored when no replacement containers are supplied. |
-| `start` | `--start` | Optional redundant flag. | When `no_start` is present. | `true`. | Backward-compatible alias for default start behavior. Cannot be combined with `no_start`. |
 | `no_start` | `--no-start` | Optional. | When `start` is present. | `false`. | Boolean flag. Skips starting rendered runtime units after apply. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 

@@ -17,7 +17,6 @@ final class ProxyListCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'proxy:list
         {--node= : Filter by serving node}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--filter=all : Filter routes by all, app, workspace, gateway, tool, custom, or redirect}
         {--json}';
 

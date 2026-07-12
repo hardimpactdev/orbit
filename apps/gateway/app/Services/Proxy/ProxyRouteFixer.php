@@ -20,6 +20,7 @@ use App\Services\Runtime\OrbitContainerNames;
 
 final readonly class ProxyRouteFixer
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private RemoteShell $remoteShell,
         private ProxyRouteRenderer $renderer,

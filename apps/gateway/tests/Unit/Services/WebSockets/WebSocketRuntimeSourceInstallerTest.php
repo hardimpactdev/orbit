@@ -60,7 +60,7 @@ it('installs the WebSocket Reverb runtime source through the agent-push local ex
     ]);
     $node = Node::factory()
         ->withActiveRole('websocket')
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
             'wireguard_address' => '10.6.0.44',

@@ -19,7 +19,7 @@ final class NodeRoleRemoveCommand extends GatewayCommand
     protected $name = 'node role:remove';
 
     #[\Override]
-    protected $description = 'Remove a hosted role from a node.';
+    protected $description = 'Remove a workload role from a node.';
 
     protected function configure(): void
     {

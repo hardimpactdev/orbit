@@ -313,11 +313,14 @@ function fakeGatewayCaRootThroughLaravelHttp(): void
 function createTestAppHostNode(
     array $attributes = [],
     string $role = 'app-dev',
-    array $settings = ['tld' => 'test'],
+    array $settings = [],
 ): Node {
+    $tld = $settings['tld'] ?? null;
+    unset($settings['tld']);
+
     $node = Node::factory()->create([
         'status' => 'active',
-        'tld' => $settings['tld'] ?? null,
+        ...(is_string($tld) && $tld !== '' ? ['tld' => $tld] : []),
         ...$attributes,
     ]);
 

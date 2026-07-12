@@ -6,21 +6,24 @@
 
 ## Behavior
 
-When run from a gateway node, `workspace:new` skips the HTTPS API hop and
-executes the workspace creation flow locally:
+When run from a gateway node, `workspace:new` uses the same typed gateway HTTPS
+API as every other public CLI caller:
 
-- **Bypasses API:** The CLI calls the underlying PHP action/service classes
-  directly.
-- **Identity Write:** Writes the gateway workspace row to local SQLite.
-- **Apply:** Same as the client path: the gateway orchestrates
-  remote work through the classified host execution lane and runs the
-  workspace setup pipeline there.
-- **Identity:** Uses the gateway's own node identity for authorization.
+- **API boundary:** The CLI submits the workspace request through the typed
+  HTTPS endpoint; caller location does not bypass the public contract.
+- **Identity write:** The gateway writes the canonical app-instance-owned
+  workspace row after authorization succeeds.
+- **Apply:** The gateway dispatches runtime work to the app instance's owning
+  node through Agent push and runs the workspace setup pipeline there.
+- **Identity:** The request carries the gateway node's WireGuard identity for
+  gateway implicit-authority policy and audit evaluation.
 
 ## Constraints
 
-- Only valid if the local node role is `gateway`.
-- The parent app's owning node is the apply target; the gateway is
+- Caller location does not create a second command path; this file describes
+  the gateway-located invocation and its named gateway implicit-authority
+  authorization class.
+- The parent app instance's owning node is the apply target; the gateway is
   never a workspace host.
 
 ## Test Mapping

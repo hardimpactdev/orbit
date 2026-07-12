@@ -27,6 +27,7 @@ enum InternalCommand: string
     case CodexAppConfig = 'internal:codex-app-config';
     case DatabaseAddUser = 'internal:database-add-user';
     case DatabaseQueryLocal = 'internal:database-query-local';
+    case DeployRunStep = 'internal:deploy:run-step';
     case DoctorSelf = 'internal:doctor-self';
     case EnvFile = 'internal:env-file';
     case ExecutorVerify = 'internal:executor:verify';

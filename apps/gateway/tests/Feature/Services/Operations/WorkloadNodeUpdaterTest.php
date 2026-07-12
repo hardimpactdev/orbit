@@ -39,6 +39,14 @@ beforeEach(function (): void {
     request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
     app()->instance(GatewayCliArtifactRelay::class, new WorkloadUpdaterFakeArtifactRelay);
     app()->instance(RemoteNodeDoctor::class, new WorkloadUpdaterFakeNodeDoctor);
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-identity',
+            'tld' => 'gateway',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.2',
+        ]);
 });
 
 afterEach(function (): void {
@@ -187,7 +195,6 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
             'install_root' => '/home/orbit/orbit',
             'bin_path' => '/home/orbit/.local/bin/orbit',
             'shared_binary_path' => null,
-            'legacy_bin_paths' => ['/usr/local/bin/orbit'],
             'role_images' => ['caddy:2.9-alpine'],
         ])
         ->and(workload_updater_install_payload($shell, node: 'app-dev-1'))
@@ -220,17 +227,17 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->toBe('https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64');
 });
 
-it('installs and records agent artifacts for agent-capable workload nodes', function (): void {
+it('installs and records agent artifacts for Agent-eligible workload nodes', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
 
     $run = workloadUpdaterRun();
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.50',
             'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
         ]);
     $plan = app(OperationUpdatePlanStore::class)->create(
@@ -271,7 +278,6 @@ it('installs macos agent artifacts into the user local agent binary path', funct
     $run = workloadUpdaterRun();
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
         ->create([
             'name' => 'mini',
             'platform' => 'darwin',
@@ -324,7 +330,7 @@ it('installs macos agent artifacts into the user local agent binary path', funct
         ->toBe('https://artifacts.orbit/candidates/build/orbit-agent-macos-arm64');
 });
 
-it('retries agent artifact installs without refreshing legacy macos system launchers', function (): void {
+it('retries Agent artifact installs through the canonical macos launcher', function (): void {
     $oldInstallerResult = new RemoteShellResult(
         exitCode: 0,
         stdout: json_encode([
@@ -347,7 +353,6 @@ it('retries agent artifact installs without refreshing legacy macos system launc
     $run = workloadUpdaterRun();
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
         ->create([
             'name' => 'mini',
             'platform' => 'darwin',
@@ -379,9 +384,6 @@ it('retries agent artifact installs without refreshing legacy macos system launc
         ->toBe('completed')
         ->and($shell->updateScriptCallsFor('mini'))
         ->toBe(2)
-        ->and(workloadUpdaterStepMessages($run))
-        ->not
-        ->toContain(['workload.mini', 'running', 'Refreshing legacy macOS Orbit CLI path'])
         ->and(workloadUpdaterStepMessages($run))
         ->toContain(['workload.mini', 'running', 'Installing Orbit Agent artifact'])
         ->and(workload_updater_install_payload($shell, node: 'mini')['agent_artifact'])
@@ -422,7 +424,6 @@ it('records agent artifact installs when the retry disconnects during agent rest
     $run = workloadUpdaterRun();
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
         ->create([
             'name' => 'mini',
             'platform' => 'darwin',
@@ -454,87 +455,11 @@ it('records agent artifact installs when the retry disconnects during agent rest
         ->toBe('completed')
         ->and($shell->updateScriptCallsFor('mini'))
         ->toBe(2)
-        ->and(workloadUpdaterStepMessages($run))
-        ->not
-        ->toContain(['workload.mini', 'running', 'Refreshing legacy macOS Orbit CLI path'])
         ->and($node->fresh()->installed_agent?->sha256)
         ->toBe(str_repeat('7', times: 64));
 });
 
-it('does not bridge stale macos agents by mutating legacy system orbit launchers', function (): void {
-    $oldInstallerResult = new RemoteShellResult(
-        exitCode: 0,
-        stdout: json_encode([
-            'success' => [
-                'data' => [
-                    'installed' => true,
-                    'bin_path' => '/Users/nckrtl/.local/bin/orbit',
-                    'stdout' => "download_cli\ninstall_cli\nverify_cli\nverify",
-                ],
-                'meta' => [],
-            ],
-        ], JSON_THROW_ON_ERROR),
-        stderr: '',
-        durationMs: 15,
-    );
-    $shell = new WorkloadUpdaterFakeShell(failures: [
-        'mini' => [
-            $oldInstallerResult,
-            $oldInstallerResult,
-        ],
-    ]);
-    app()->instance(RunsInternalCommands::class, $shell);
-
-    $run = workloadUpdaterRun();
-    $node = Node::factory()
-        ->appDev()
-        ->orbitAgentCapable()
-        ->create([
-            'name' => 'mini',
-            'platform' => 'darwin',
-            'user' => 'nckrtl',
-            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
-        ]);
-    $plan = app(OperationUpdatePlanStore::class)->create(
-        $run,
-        workloadUpdaterSnapshot(
-            targetVersion: '2.0.0',
-            cliArtifacts: [
-                'darwin-arm64' => [
-                    'url' => 'https://artifacts.orbit/candidates/build/orbit-macos-arm64',
-                    'sha256' => str_repeat('8', times: 64),
-                ],
-            ],
-            agentArtifacts: [
-                'darwin-arm64' => [
-                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-macos-arm64',
-                    'sha256' => str_repeat('7', times: 64),
-                ],
-            ],
-        ),
-    );
-
-    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
-    $payloads = workload_updater_install_payloads($shell, node: 'mini');
-
-    expect($results[0]['status'])
-        ->toBe('failed')
-        ->and($results[0]['output'] ?? null)
-        ->toBe('Orbit Agent artifact install was not confirmed.')
-        ->and($shell->updateScriptCallsFor('mini'))
-        ->toBe(2)
-        ->and($payloads[0]['bin_path'])
-        ->toBe('/Users/nckrtl/.local/bin/orbit')
-        ->and($payloads[1]['bin_path'])
-        ->toBe('/Users/nckrtl/.local/bin/orbit')
-        ->and(workloadUpdaterStepMessages($run))
-        ->not
-        ->toContain(['workload.mini', 'running', 'Refreshing legacy macOS Orbit CLI path'])
-        ->and($node->fresh()->installed_agent)
-        ->toBeNull();
-});
-
-it('skips agent artifacts for nodes that are not agent capable', function (): void {
+it('skips Agent artifacts for nodes on unsupported platforms', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
 
@@ -690,7 +615,7 @@ it('retries workload CLI installs when the previous launcher exits during self u
         ->toBe('2.0.0');
 });
 
-it('records workload CLI installs when the agent transport disconnects during self update', function (): void {
+it('records workload CLI installs when the Agent transport disconnects during self update', function (): void {
     $shell = new WorkloadUpdaterFakeShell(failures: [
         'app-dev-1' => new RemoteLocalExecutorTransportFailed(
             'Remote local executor transport failed: cURL error 52: Empty reply from server',
@@ -701,10 +626,9 @@ it('records workload CLI installs when the agent transport disconnects during se
     $run = workloadUpdaterRun();
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
         ]);
     $plan = app(OperationUpdatePlanStore::class)->create(
@@ -824,7 +748,6 @@ it('does not send role images to macos workload cli installers', function (): vo
             'install_root' => '/Users/nckrtl/orbit',
             'bin_path' => '/Users/nckrtl/.local/bin/orbit',
             'shared_binary_path' => null,
-            'legacy_bin_paths' => [],
             'role_images' => [],
         ]);
 });
@@ -934,8 +857,6 @@ it('updates macos workload nodes with darwin arm64 CLI artifacts and portable ch
         ->toBe("http://gateway.test/api/update/artifacts/{$run->id}/cli/darwin-arm64?token=fake")
         ->and(workload_updater_install_payload($shell, node: 'NMBP')['bin_path'])
         ->toBe('/Users/nckrtl/.local/bin/orbit')
-        ->and(workload_updater_install_payload($shell, node: 'NMBP')['legacy_bin_paths'])
-        ->toBe([])
         ->and($shell->calls[0]['options']['metadata'])
         ->toBe([
             'ORBIT_OPERATION_ID' => $run->id,

@@ -56,7 +56,7 @@ describe(DatabaseConnectionExecutor::class, function (): void {
         ]);
         $node = Node::factory()
             ->appDev()
-            ->orbitAgentCapable()
+            ->managed()
             ->create([
                 'name' => 'app-node',
                 'wireguard_address' => '10.44.0.77',

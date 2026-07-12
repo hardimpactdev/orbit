@@ -19,7 +19,7 @@ describe('ClaudeCodeTool', function (): void {
             ->toBeInstanceOf(ClaudeCodeTool::class)
             ->and($catalog->category('claude-code'))
             ->toBe('runtime')
-            ->and($catalog->requiredNodeRole('claude-code'))
+            ->and($catalog->bootstrapRole('claude-code'))
             ->toBeNull()
             ->and($catalog->supportedOperatingSystems('claude-code'))
             ->toBe(['linux', 'macos'])

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit proxy:add [domain] [--node=<node>] [--node-transport=<transport>] [--upstream=<url>] [--redirect=<url>] [--code=<code>] [--force] [--json]`
+# Technical Contract: `orbit proxy:add [domain] [--node=<node>] [--upstream=<url>] [--redirect=<url>] [--code=<code>] [--force] [--json]`
 
 [Back to public `proxy:add` documentation.](../proxy-add.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit proxy:add [domain] [--node=<node>] [--node-transport=<transport>] [--upstream=<url>] [--redirect=<url>] [--code=<code>] [--force] [--json]
+orbit proxy:add [domain] [--node=<node>] [--upstream=<url>] [--redirect=<url>] [--code=<code>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -24,7 +24,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `domain` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Hostname or documented host/path route identity not owned by an app, app WebSocket binding, workspace, gateway, websocket service, S3 service, or tool route. |
 | `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | Visible active Ubuntu node with proxy capability. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `upstream` | `--upstream` | `Required when `redirect` is absent.` | `Forbidden with `redirect` or `code`.` | `None.` | HTTP or HTTPS upstream URL reachable from the serving node. |
 | `redirect` | `--redirect` | `Required when `upstream` is absent.` | `Forbidden with `upstream`.` | `None.` | Absolute HTTP or HTTPS redirect URL. |
 | `code` | `--code` | `Optional with `redirect`.` | `Forbidden with `upstream`.` | `302` | `301`, `302`, `307`, or `308`. |
@@ -45,13 +44,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Creates or updates a custom gateway proxy route row.
 - Stores upstream routes with owner `custom`, kind `proxy`, and target type `upstream`.
 - Stores redirect routes with owner `custom`, kind `redirect`, target type `redirect`, and a redirect code.
-- Reports `proxy.enactment_deferred`; proxy backend route and Orbit-managed
-  TLS material are restored by `doctor --family=proxy --restore --node=<node>`.
+- Reports the registered `proxy.enactment_deferred` command handoff in the
+  `proxy` family. Its allowed next-command prefix is
+  `doctor --family=proxy --restore`; proxy backend route and Orbit-managed TLS
+  material are restored through that command.
 - When an upstream route targets a host-local service through `127.0.0.1`,
   `localhost`, or `host.docker.internal`, reports
-  `firewall_rule.host_upstream_may_block` with the upstream port and a scoped
-  `firewall:allow` command shape. This warning is informational; the `proxy`
-  family does not create firewall-rule intent.
+  the registered `firewall_rule.host_upstream_may_block` command handoff in the
+  `firewall_rule` family. Its allowed next-command prefix is `firewall:allow`,
+  with the upstream port and a scoped command shape. This warning is
+  informational; the `proxy` family does not create firewall-rule intent.
 
 ### Ownership Boundary Rules
 

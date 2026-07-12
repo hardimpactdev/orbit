@@ -27,7 +27,7 @@ function makeReadinessApp(array $overrides = []): App
 {
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'user' => 'orbit',
             'wireguard_address' => '10.6.0.61',

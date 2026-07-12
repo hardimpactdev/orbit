@@ -5,10 +5,10 @@ declare(strict_types=1);
 use App\Services\Profile\ProfileRequestProfiler;
 
 describe(ProfileRequestProfiler::class, function (): void {
-    it('uses the active gateway timeout for slow caller-side profiles', function (): void {
+    it('uses its local timeout instead of the active gateway timeout', function (): void {
         $server = startSlowCurlProfileHttpTestServer();
 
-        config()->set('orbit.gateway.timeout', 4);
+        config()->set('orbit.gateway.timeout', 1);
         app()->forgetInstance(ProfileRequestProfiler::class);
 
         try {
@@ -25,10 +25,51 @@ describe(ProfileRequestProfiler::class, function (): void {
             ->and($profile['error'])
             ->toBeNull()
             ->and($profile['timings']['total_ms'])
-            ->toBeGreaterThan(50.0);
+            ->toBeGreaterThan(1000.0);
     });
 
-    it('trusts the active gateway CA PEM for caller-side HTTPS profiles', function (): void {
+    it('performs one GET without following redirects and preserves response headers', function (): void {
+        $server = startSlowCurlProfileHttpTestServer();
+        $toolbar = base64_encode(json_encode(['queries' => ['count' => 1]], JSON_THROW_ON_ERROR));
+
+        app()->forgetInstance(ProfileRequestProfiler::class);
+
+        try {
+            $profile = app(ProfileRequestProfiler::class)->profile(
+                "http://127.0.0.1:{$server['port']}/index.php?redirect=1",
+                ['X-TOOLBAR-AUTH' => 'guest'],
+            );
+            $requests = array_map(
+                static fn (string $line): array => json_decode(
+                    $line,
+                    associative: true,
+                    flags: JSON_THROW_ON_ERROR,
+                ),
+                file($server['capture'], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [],
+            );
+        } finally {
+            stopSlowCurlProfileHttpTestServer($server);
+        }
+
+        expect($profile['request']['completed'])
+            ->toBeTrue()
+            ->and($profile['request']['status'])
+            ->toBe(302)
+            ->and($profile['response_headers']['location'])
+            ->toBe('/index.php?final=1')
+            ->and($profile['response_headers']['x-toolbar-summary'])
+            ->toBe($toolbar)
+            ->and($requests)
+            ->toHaveCount(1)
+            ->and($requests[0])
+            ->toBe([
+                'method' => 'GET',
+                'uri' => '/index.php?redirect=1',
+                'auth' => 'guest',
+            ]);
+    });
+
+    it('uses system TLS trust instead of the active gateway CA PEM', function (): void {
         if (! curlProfileOpenSslAvailable()) {
             $this->markTestSkipped('The openssl CLI is required for this TLS profile test.');
         }
@@ -46,20 +87,21 @@ describe(ProfileRequestProfiler::class, function (): void {
         }
 
         expect($profile['error'])
-            ->toBeNull()
+            ->toBeArray()
             ->and($profile['request']['completed'])
-            ->toBeTrue()
+            ->toBeFalse()
             ->and($profile['request']['status'])
-            ->toBe(200);
+            ->toBeNull();
     });
 })->group('slow');
 
 /**
- * @return array{process: resource, directory: string, port: int}
+ * @return array{process: resource, directory: string, capture: string, port: int}
  */
 function startSlowCurlProfileHttpTestServer(): array
 {
     $directory = sys_get_temp_dir().'/orbit-curl-profile-slow-'.bin2hex(random_bytes(4));
+    $capture = "{$directory}/requests.jsonl";
 
     if (! mkdir($directory, 0777, true) && ! is_dir($directory)) {
         throw new RuntimeException("Unable to create test directory: {$directory}");
@@ -68,7 +110,25 @@ function startSlowCurlProfileHttpTestServer(): array
     file_put_contents("{$directory}/index.php", <<<'PHP'
         <?php
 
-        usleep(75_000);
+        if (isset($_GET['redirect'])) {
+            $capture = getenv('ORBIT_PROFILE_CAPTURE');
+
+            if (is_string($capture) && $capture !== '') {
+                file_put_contents($capture, json_encode([
+                    'method' => $_SERVER['REQUEST_METHOD'] ?? null,
+                    'uri' => $_SERVER['REQUEST_URI'] ?? null,
+                    'auth' => $_SERVER['HTTP_X_TOOLBAR_AUTH'] ?? null,
+                ], JSON_THROW_ON_ERROR).PHP_EOL, FILE_APPEND);
+            }
+
+            header('Location: /index.php?final=1', true, 302);
+            header('X-Toolbar-Summary: eyJxdWVyaWVzIjp7ImNvdW50IjoxfX0=');
+            echo 'redirect';
+
+            return;
+        }
+
+        usleep(1_100_000);
 
         header('Content-Type: text/plain');
 
@@ -91,6 +151,7 @@ function startSlowCurlProfileHttpTestServer(): array
         ],
         $pipes,
         $directory,
+        ['ORBIT_PROFILE_CAPTURE' => $capture],
     );
 
     if (! is_resource($process)) {
@@ -110,6 +171,7 @@ function startSlowCurlProfileHttpTestServer(): array
             return [
                 'process' => $process,
                 'directory' => $directory,
+                'capture' => $capture,
                 'port' => $port,
             ];
         }
@@ -120,6 +182,7 @@ function startSlowCurlProfileHttpTestServer(): array
     stopSlowCurlProfileHttpTestServer([
         'process' => $process,
         'directory' => $directory,
+        'capture' => $capture,
         'port' => $port,
     ]);
 
@@ -127,7 +190,7 @@ function startSlowCurlProfileHttpTestServer(): array
 }
 
 /**
- * @param  array{process: resource, directory: string, port: int}  $server
+ * @param  array{process: resource, directory: string, capture: string, port: int}  $server
  */
 function stopSlowCurlProfileHttpTestServer(array $server): void
 {
@@ -466,7 +529,13 @@ function stopCurlProfileHttpsTestServer(array $server): void
 
 function removeCurlProfileTestDirectory(string $directory): void
 {
-    foreach (glob($directory.'/*') ?: [] as $path) {
+    $paths = glob($directory.'/*');
+
+    if ($paths === false) {
+        $paths = [];
+    }
+
+    foreach ($paths as $path) {
         @unlink($path);
     }
 

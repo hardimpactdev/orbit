@@ -23,6 +23,7 @@ use Throwable;
 
 final readonly class RemoveWorkspace
 {
+    // @orbit-ssh-lane transitional-ssh
     /**
      * @mago-expect lint:excessive-parameter-list
      */
@@ -39,7 +40,7 @@ final readonly class RemoveWorkspace
      * @return array{
      *     name: string,
      *     app: string,
-     *     app_instance: string|null,
+     *     app_instance: string,
      *     action: string,
      *     proxy_routes_removed: int,
      *     processes_removed: int,
@@ -56,7 +57,7 @@ final readonly class RemoveWorkspace
         $app = $workspace->app;
         $name = $workspace->name;
         $appName = (string) $app?->name;
-        $appInstanceName = $workspace->appInstance?->name;
+        $appInstanceName = $workspace->appInstance->name;
         $isPhpWorkspace = $app?->runtime === AppRuntimeKind::Php;
         $proxyRouteIds = ProxyRoute::query()
             ->where('workspace_id', $workspace->id)

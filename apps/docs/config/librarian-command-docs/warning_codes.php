@@ -17,11 +17,25 @@ return [
             'orbit workspace:setup',
         ],
     ],
+    'firewall_rule.host_upstream_may_block' => [
+        'family' => 'firewall_rule',
+        'kind' => 'command_handoff',
+        'allowed_next_commands' => [
+            'firewall:allow',
+        ],
+    ],
     'proxy.domain_inactive' => [
         'family' => 'proxy',
         'kind' => 'command_handoff',
         'allowed_next_commands' => [
             'app:register',
+        ],
+    ],
+    'proxy.enactment_deferred' => [
+        'family' => 'proxy',
+        'kind' => 'command_handoff',
+        'allowed_next_commands' => [
+            'doctor --family=proxy --restore',
         ],
     ],
     'proxy.docker_runtime_unavailable' => [

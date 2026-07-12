@@ -18,7 +18,7 @@ class WorkspaceStepListPayload
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function forApp(App $app, WorkspaceLifecyclePhase $phase, ?AppInstance $instance = null): array
+    public function forApp(App $app, WorkspaceLifecyclePhase $phase, AppInstance $instance): array
     {
         return $this->stepPolicy
             ->stepsFor($app, $phase, $instance)
@@ -35,19 +35,14 @@ class WorkspaceStepListPayload
         $step->loadMissing(['app', 'appInstance']);
         $app ??= $step->app;
 
-        $payload = [
+        return [
             'id' => $step->id,
             'app' => $app?->name,
+            'app_instance' => $step->appInstance->name,
             'phase' => $step->phase->value,
             'order' => $step->sort_order,
             'command' => $step->command,
             'timeout_seconds' => $step->timeoutSeconds(),
         ];
-
-        if ($step->app_instance_id !== null) {
-            $payload['app_instance'] = $step->appInstance?->name;
-        }
-
-        return $payload;
     }
 }

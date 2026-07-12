@@ -127,13 +127,17 @@ Activity logging and history reads live in the activity family. See [`docs/domai
 
 These terms describe the `profile` command and its components.
 
-- **Profile target:** Orbit-managed app or workspace route resolved from a target argument, app option, URL, hostname, absolute path, or local app/workspace context.
-- **Profile request origin:** Location that performs the timed HTTP request — currently the caller machine or the gateway.
+- **Profile URL:** Absolute HTTP(S) URL supplied explicitly or read from the
+  nearest ancestor `.env` `APP_URL`; interactive input is the final local
+  fallback.
+- **Profile request origin:** Always the machine running the CLI.
 - **Baseline profile result:** One timed HTTP `GET` result with timing, status, byte count, URL, headers, completion state, and failure diagnostics.
 - **Toolbar enrichment:** Optional profile data decoded from an app response's Toolbar summary header.
 - **Toolbar auth mode:** Explicit profile authentication mode carried by request headers: guest, first user, or a specific user id.
 
-Arbitrary internet URLs are outside the profile command contract. The gateway identifies the calling peer role and route reachability to select the origin. Toolbar enrichment augments the baseline result without changing baseline timing measurements.
+Any absolute HTTP(S) URL is valid input. Profile never contacts the gateway,
+resolves Orbit registry state, checks grants, or emits activity. Toolbar
+enrichment augments the baseline result without changing baseline timing.
 
 ## Boundaries
 

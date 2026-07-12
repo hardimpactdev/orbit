@@ -221,7 +221,7 @@ function app_runtime_manager_node(): Node
     $node = Node::factory()->create([
         'name' => 'app-dev-1',
         'wireguard_address' => '10.44.0.80',
-        'orbit_agent_capable' => true,
+        'managed' => true,
     ]);
 
     if (! $node instanceof Node) {
@@ -245,7 +245,7 @@ function app_runtime_manager_macos_node(): Node
         'user' => 'nckrtl',
         'orbit_path' => '/Users/nckrtl/orbit',
         'wireguard_address' => '10.44.0.80',
-        'orbit_agent_capable' => true,
+        'managed' => true,
     ]);
 
     if (! $node instanceof Node) {

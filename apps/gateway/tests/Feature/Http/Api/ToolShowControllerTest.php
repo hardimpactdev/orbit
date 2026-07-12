@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -61,6 +64,47 @@ describe('ToolShowController', function (): void {
             ->assertJsonPath('success.data.tool.observed_state', null)
             ->assertJsonPath('success.data.tool.version', '2.8')
             ->assertJsonPath('success.data.tool.managed', true);
+    });
+
+    it('requires the exact transitional SSH selector before live inspection', function (): void {
+        $caller = createToolShowCallerNode();
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        grantToolShowAccess($caller, $node);
+
+        NodeTool::factory()->create([
+            'name' => 'composer',
+            'node_id' => $node->id,
+        ]);
+
+        $remoteShell = new class implements RemoteShell {
+            public bool $wasCalled = false;
+
+            public function run(Node $node, string $script, array $options = []): RemoteShellResult
+            {
+                $this->wasCalled = true;
+
+                return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 0);
+            }
+        };
+
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'GET',
+            '/api/tools/composer?node=app-1&live=1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node_transport_required')
+            ->assertJsonPath('error.meta.field', 'node-transport')
+            ->assertJsonPath('error.meta.required', ExplicitRemoteShellFallback::REQUIRED);
+
+        expect($remoteShell->wasCalled)->toBeFalse();
     });
 
     it('resolves the target node from an app selector', function (): void {

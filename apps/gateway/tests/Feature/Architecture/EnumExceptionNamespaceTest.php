@@ -7,7 +7,6 @@ it('keeps gateway runtime enums under App\\Enums and exceptions under App\\Excep
         'App\\Enums\\Apps\\AppRuntimeArtifactRemovalOutcome',
         'App\\Enums\\Apps\\AppRuntimeContainerApplyOutcome',
         'App\\Enums\\Apps\\NodeRuntimeConfigsProbeStatus',
-        'App\\Enums\\Apps\\NodeRuntimeContainersProbeStatus',
         'App\\Enums\\Processes\\ProcessDockerContainerApplyOutcome',
         'App\\Enums\\Trust\\TrustStoreInstallReason',
         'App\\Enums\\Workspaces\\WorkspaceRuntimeArtifactRemovalOutcome',

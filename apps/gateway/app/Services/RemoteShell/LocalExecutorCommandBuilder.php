@@ -39,8 +39,18 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
         InternalCommand::AppRuntimeConfigsProbe->value => [NodeRoleName::AppDevelopment, NodeRoleName::AppProduction],
         InternalCommand::AppRuntimeContainer->value => [NodeRoleName::AppDevelopment, NodeRoleName::AppProduction],
         InternalCommand::AppRuntimeContainersProbe->value => [
+            NodeRoleName::Gateway,
+            NodeRoleName::Vpn,
+            NodeRoleName::Router,
             NodeRoleName::AppDevelopment,
             NodeRoleName::AppProduction,
+            NodeRoleName::Database,
+            NodeRoleName::Agent,
+            NodeRoleName::Ingress,
+            NodeRoleName::WebSocket,
+            NodeRoleName::S3,
+            NodeRoleName::Metrics,
+            NodeRoleName::Analytics,
         ],
         InternalCommand::AppRuntimeExtensionsProbe->value => [
             NodeRoleName::AppDevelopment,
@@ -173,6 +183,7 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
             NodeRoleName::AppProduction,
             NodeRoleName::Database,
         ],
+        InternalCommand::DeployRunStep->value => [NodeRoleName::AppProduction],
         InternalCommand::ProcessDockerContainer->value => [
             NodeRoleName::AppDevelopment,
             NodeRoleName::AppProduction,

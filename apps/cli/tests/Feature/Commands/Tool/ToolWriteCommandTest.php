@@ -373,6 +373,7 @@ describe('tool write commands', function (): void {
         'start' => ['tool:start', 'start'],
         'stop' => ['tool:stop', 'stop'],
         'restart' => ['tool:restart', 'restart'],
+        'reload' => ['tool:reload', 'reload'],
     ]);
 
     it('streams lifecycle tool commands when requested', function (string $command, string $action): void {
@@ -414,7 +415,44 @@ describe('tool write commands', function (): void {
         'start' => ['tool:start', 'start'],
         'stop' => ['tool:stop', 'stop'],
         'restart' => ['tool:restart', 'restart'],
+        'reload' => ['tool:reload', 'reload'],
     ]);
+
+    it('reads tool logs through the capability-gated gateway endpoint', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'logs' => [
+                'tool' => 'dns',
+                'node' => 'gateway',
+                'runtime' => 'tool',
+                'lines' => [
+                    ['message' => 'dns ready'],
+                ],
+            ],
+        ], ['line_count' => 1]));
+
+        [$exitCode, $output] = runCommand($this, 'tool:logs', [
+            'tool' => 'dns',
+            '--node' => 'gateway',
+            '--lines' => '25',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/tools/dns/logs?node=gateway&lines=25'
+            ),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['logs']['lines'][0]['message'])
+            ->toBe('dns ready')
+            ->and($decoded['success']['meta']['line_count'])
+            ->toBe(1);
+    });
 
     it('preserves lifecycle gateway error envelopes', function (): void {
         fakeGateway(fakeErrorEnvelope(

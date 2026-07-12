@@ -69,7 +69,7 @@ fields and does not prompt.
   `ORBIT_INSTALL_PATH` when set or `$HOME/orbit` by default.
 - Relink only the configured host launcher path. `update` must not rewrite
   unrelated `orbit` executables or symlinks discovered elsewhere in `PATH`.
-  Operators who have stale duplicate or protected legacy launchers such as
+  Operators who have duplicate or protected unmanaged launchers such as
   `/usr/local/bin/orbit` must remove, relink, or adopt them explicitly through a
   deployment/doctor path; normal `update` does not mutate them implicitly.
 - Verify the resolved local Orbit entry point responds to `--version`.

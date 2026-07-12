@@ -6,9 +6,9 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is authorized to manage the parent app or selected
-  app instance node.
-- The gateway can reach the effective workspace node over SSH.
+- The current node identity is authorized to run `workspace:new` on the selected
+  app instance's owning node.
+- The gateway can reach the effective workspace node through Agent push.
 
 [Back to the public command page.](../workspace-new.md)
 
@@ -26,11 +26,15 @@ This command follows the shared
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `name` | `text` | Always (can be prompted). | n/a | Workspace identity slug; `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`; maximum 63 characters. Reserved name `main` is rejected. Must not collide with an existing workspace under the same parent app. |
-| `--app` | `text` | No local context or default. | CWD-inferred parent app or app instance. | Valid parent app slug or app-instance selector. Dot notation such as `happie.nmbp` selects one concrete app instance. |
+| `--app` | `text` | No explicit selector or usable local context. | CWD-inferred concrete app instance. | Dotted selectors choose one instance directly. Bare app or path context must resolve uniquely. |
 | `--base` | `text` | Optional. | `main` | Source git ref/branch used by the selected workspace source driver. Generic and OpenCode worktrees create branch `<workspace>` from this ref; PolyScope passes it as `base_branch` to the PolyScope API. |
 | `--php-version` | `text` | Optional. | (parent app PHP version) | Supported PHP version. When omitted, the workspace row stores `null` and inherits the parent app's PHP version. |
 | `--json` | `flag` | Optional. | `false` | Forces non-interactive mode and JSON output. |
 | `--stream-json` | `flag` | Optional. | `false` | Forces non-interactive mode and emits newline-delimited progress JSON. Mutually exclusive with `--json`. |
+
+A bare parent app slug, marker, or parent path is shorthand only when exactly
+one registered app instance matches. Zero or multiple matches fail with
+`error.meta.reason=app_instance_required`.
 
 When `--base` is omitted, the default source ref is hard-coded to `main`.
 Operators may supply another explicit ref with `--base=<ref>`. Inheriting an
@@ -42,27 +46,35 @@ for this default.
 
 ### Input Resolution
 
-1. **Resolve Parent App (`--app`):**
-   - Explicit `--app=<app>`, where `<app>` may be a parent app slug or
-     app-instance selector such as `happie.nmbp`.
+1. **Resolve Concrete App Instance (`--app`):**
+   - An explicit dotted selector such as `happie.nmbp` resolves that concrete
+     app instance directly.
+   - An explicit bare parent app slug is shorthand only when the gateway finds
+     exactly one registered app instance for that app.
    - **CWD inference (gateway-authoritative):** if `--app` is missing, Orbit
-     resolves the parent app from gateway-tracked metadata, not from project
-     file inspection:
+     resolves a concrete app instance from gateway-tracked metadata, not from
+     project file inspection:
      - **`.orbit/config` marker** installed on the caller filesystem by
        `app:new`/`app:register` (and any workspace-installed marker),
-       identifying the owning app slug;
+       identifying an app or concrete app instance;
      - **gateway path lookup** keyed on (caller node identity, absolute
-       cwd): the gateway returns the app slug whose registered app path or
-       any registered app instance or workspace path contains the caller's
-       cwd. An app's main path resolves to the parent app identity; an app
-       instance path or instance-bound workspace path resolves to the concrete
-       app instance.
+       cwd): a path owned by an app instance resolves that instance directly.
+       The same applies to a workspace path owned by an instance. An app main
+       path or parent-app-only marker is shorthand and must resolve to exactly
+       one registered instance.
+   - If a bare selector or inferred parent app has zero or multiple concrete
+     instances, fail before side effects with `error.code=validation_failed`,
+     `error.meta.field=app`, and
+     `error.meta.reason=app_instance_required`. Do not fall back to a canonical
+     app node.
    - Orbit must not read `composer.json`, `package.json`, `.php-version`,
      or any other project file content during `workspace:new` to infer the
      parent app. Project-file inspection is reserved for
      `doctor --family=workspace --adopt` (`composer.json` only, and only
      for PHP-version hints during workspace adoption).
-   - Interactive prompt or non-interactive failure if still unresolved.
+   - When no selector or usable context exists, interactive mode prompts from
+     concrete app instances; non-interactive mode fails. The selected result is
+     always one concrete instance.
 2. **Resolve Workspace Name:** Use the positional `name` argument. If
    missing, prompt in interactive mode; fail in non-interactive mode.
 3. **Validate Workspace Identity (gateway-side, static):**
@@ -79,8 +91,8 @@ for this default.
      before writing them.
    - Per-app uniqueness: the workspace name must not already exist for the
      resolved parent app. Workspace identity is unique within an app, not
-     globally - unlike the `app` slug, which is globally unique. App-instance
-     selectors choose placement and URL context; they do not create a separate
+     globally - unlike the `app` slug, which is globally unique. An instance
+     selector chooses placement and URL context. It does not create a separate
      namespace for duplicate workspace names under the same parent app.
 4. **Resolve PHP Version (`--php-version`):** If supplied, validate against
    Orbit's supported PHP version set with
@@ -122,9 +134,9 @@ register an existing path use
    - Any effective adapter without a dedicated workspace source driver fails
      before side effects with `error.code=workspace.agent_ide_driver_missing`.
 2. **Identity Write (Gateway):** Create the `Workspace` row on the gateway with
-   the source-driver-returned `name` and physical `path`, `app_id`,
-   `app_instance_id` when one was selected, derived hostname, `php_version` (or
-   `null` for inheritance), adapter metadata, and lifecycle fields. For
+   the source-driver-returned `name` and physical `path`, `app_id`, a mandatory
+   non-null `app_instance_id`, derived hostname, `php_version` (or `null` for
+   inheritance), adapter metadata, and lifecycle fields. For
    OpenCode, store `agent_ide=opencode` and the
    best-effort session id in `agent_ide_workspace_id` when OpenCode returns
    one. For PolyScope, store `agent_ide=polyscope` and the PolyScope workspace
@@ -176,7 +188,12 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Parent app ineligible** — the resolved parent app is missing,
   unauthorized, or unable to own workspaces
   (`error.code=workspace.parent_app_invalid`).
-- **SSH failure (pre-configuration)** — gateway cannot reach the node
+- **Concrete app instance required** — a bare app selector, parent-app marker,
+  or parent app path does not resolve to exactly one concrete instance
+  (`error.code=validation_failed`, `error.meta.field=app`,
+  `error.meta.reason=app_instance_required`). No workspace row or node artifact
+  is created.
+- **Agent-push failure (pre-configuration)** — gateway cannot reach the node
   *before* the gateway workspace row is written
   (`error.code=workspace.node_unreachable`).
 - **Workspace source failure (pre-configuration)** — the selected workspace
@@ -211,11 +228,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php` | Gateway workspace creation, validation, authorization, duplicate-name failures, supported PHP-version handling, and documented error.code values. |
-| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Client-side workspace:new validation and gateway stream request payload. |
+| `apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php` | Gateway workspace creation, mandatory app-instance ownership, validation, authorization, duplicate-name failures, supported PHP-version handling, and documented error.code values. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Client-side concrete app-instance resolution, `app_instance_required` validation, and gateway stream request payload. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Workspace stream consumption, terminal JSON frame handling, human progress rendering, and malformed stream failures. |
 
-Role-specific behavior and test mapping live in:
+Execution-location behavior and test mapping live in:
 
 - [`2_workspace-new_on-client.md`](2_workspace-new_on-client.md)
 - [`3_workspace-new_on-gateway-node.md`](3_workspace-new_on-gateway-node.md)

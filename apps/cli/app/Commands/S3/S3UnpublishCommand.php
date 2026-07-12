@@ -16,6 +16,7 @@ use function Laravel\Prompts\text;
 
 final class S3UnpublishCommand extends GatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
     use StreamsGatewayProgress;
 

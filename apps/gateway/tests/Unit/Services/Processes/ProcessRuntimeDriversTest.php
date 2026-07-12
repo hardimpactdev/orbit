@@ -32,7 +32,7 @@ it('runs docker process lifecycle through the docker runtime driver', function (
 
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
             'wireguard_address' => '10.44.0.71',
@@ -70,7 +70,7 @@ it('applies, removes, and cleans up docker process runtime units through the doc
 
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
             'user' => 'orbit',
@@ -123,7 +123,7 @@ it('applies node owned docker service processes from runtime config', function (
 
     $node = Node::factory()
         ->database()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'database-1',
             'wireguard_address' => '10.44.0.72',
@@ -191,7 +191,7 @@ it('publishes managed service ports when applying node owned docker processes', 
 
     $node = Node::factory()
         ->database()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'beast',
             'wireguard_address' => '10.6.0.7',
@@ -220,7 +220,7 @@ it('publishes managed service ports when applying node owned docker processes', 
         ->toBeTrue()
         ->and($apply['spec']['ports'])
         ->toBe([
-            ['published' => 1025, 'target' => 1025, 'protocol' => 'tcp'],
+            ['host' => null, 'published' => 1025, 'target' => 1025, 'protocol' => 'tcp'],
         ])
         ->and($apply['spec']['command_mode'])
         ->toBe('image_entrypoint');
@@ -231,7 +231,7 @@ it('renders managed service data paths as docker named volumes for node owned do
 
     $node = Node::factory()
         ->database()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'database-1',
             'wireguard_address' => '10.44.0.72',
@@ -276,7 +276,7 @@ it('renders managed service data paths as docker named volumes for node owned do
         ->toBeTrue()
         ->and($apply['spec']['ports'])
         ->toBe([
-            ['published' => 3308, 'target' => 3306, 'protocol' => 'tcp'],
+            ['host' => null, 'published' => 3308, 'target' => 3306, 'protocol' => 'tcp'],
         ])
         ->and($apply['spec']['volumes'])
         ->toBe([
@@ -295,7 +295,7 @@ it('runs docker swarm process lifecycle through the docker swarm runtime driver'
 
     $node = Node::factory()
         ->database()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'database-1',
             'wireguard_address' => '10.44.0.72',
@@ -337,7 +337,7 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
 
     $node = Node::factory()
         ->database()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'database-1',
             'wireguard_address' => '10.44.0.72',
@@ -438,7 +438,7 @@ it('does not exit early from docker swarm apply scripts when the service spec al
 
     $node = Node::factory()
         ->database()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'metrics-1',
             'wireguard_address' => '10.44.0.72',
@@ -473,7 +473,7 @@ it('uses the image entrypoint for docker swarm service processes configured for 
 
     $node = Node::factory()
         ->database()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'metrics-1',
             'wireguard_address' => '10.44.0.72',
@@ -509,7 +509,7 @@ it('runs systemd process lifecycle through the systemd runtime driver', function
 
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
             'user' => 'orbit',
@@ -551,7 +551,7 @@ it('applies, removes, and cleans up systemd process runtime units through the sy
 
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
             'user' => 'orbit',

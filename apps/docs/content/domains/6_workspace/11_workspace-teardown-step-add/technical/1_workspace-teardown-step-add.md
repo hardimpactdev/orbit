@@ -12,7 +12,7 @@
 
 [Back to the public command page.](../workspace-teardown-step-add.md)
 
-This command registers a gateway-owned teardown step for an app's workspace
+This command registers a gateway-owned teardown step for an app instance's workspace
 lifecycle. It mirrors `workspace-setup-step:add` exactly except for the
 lifecycle phase (`teardown` vs `setup`) and the read sites
 (`workspace:remove` and `app:prune` instead of `workspace:new` and
@@ -32,8 +32,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- |
 | `--command` | `text` | Always. | n/a | Non-empty shell command. |
 | `--app` | `text` | Unless the shared workspace selector chain resolves to a concrete app instance. | Resolved through the shared workspace selector chain when omitted. | Dotted app-instance selectors such as `happie.nmbp` are the explicit safe write path. Bare parent app slugs are rejected with `error.meta.reason=app_instance_required`. |
-| `--before` | `integer` | Optional. Mutually exclusive with `--after`. | n/a | Positive integer. Must reference an existing teardown step belonging to the same app and `phase=teardown`. |
-| `--after` | `integer` | Optional. Mutually exclusive with `--before`. | n/a | Positive integer. Must reference an existing teardown step belonging to the same app and `phase=teardown`. |
+| `--before` | `integer` | Optional. Mutually exclusive with `--after`. | n/a | Positive integer. Must reference an existing teardown step belonging to the same app instance and `phase=teardown`. |
+| `--after` | `integer` | Optional. Mutually exclusive with `--before`. | n/a | Positive integer. Must reference an existing teardown step belonging to the same app instance and `phase=teardown`. |
 | `--timeout` | `integer` | Optional. | `600` | Strict positive integer (`>= 1`). `0` is rejected before side effects with `error.code=validation_failed`, `error.meta.field=timeout`. |
 | `--json` | `flag` | Optional. | `false` | n/a |
 
@@ -61,7 +61,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    - `--before` and `--after` are mutually exclusive. Supplying both fails
      with `error.code=workspace.invalid_position`.
    - When supplied, the referenced ID must be a positive integer.
-   - The referenced step must exist, belong to the resolved app, and have
+   - The referenced step must exist, belong to the resolved app instance, and have
      `phase=teardown`.
 4. **Validate Timeout**: `--timeout` must be a strict positive integer. `0`
    is rejected.
@@ -76,28 +76,28 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Teardown Step Addition Rules
 
 `workspace-teardown-step:add` writes a single teardown step record owned by
-the gateway for an app's workspace lifecycle. The step is *not* executed during
+the gateway for an app instance's workspace lifecycle. The step is *not* executed during
 this command; it is applied by `workspace:remove` and `app:prune` at the
 teardown phase, before destructive workspace cleanup.
 
 1. **Registry Write**: Creates one new record in the gateway workspace
    teardown step policy with the resolved
-   `(app, phase=teardown, command, timeout_seconds)` tuple. The new record
+   `(app_instance, phase=teardown, command, timeout_seconds)` tuple. The new record
    receives a freshly assigned numeric `id`.
 2. **Phase Assignment**: Phase is automatically `teardown`. There is no
    per-record override; setup steps are owned by
    [`workspace-setup-step:add`](../../8_workspace-setup-step-add/workspace-setup-step-add.md).
 3. **Order Calculation**:
    - `--before=<id>`: New step receives the referenced step's `order`. The
-     referenced step and all subsequent steps in `(app, phase=teardown)`
+     referenced step and all subsequent steps in `(app_instance, phase=teardown)`
      are incremented by one.
    - `--after=<id>`: New step receives `order + 1` of the referenced step.
      All subsequent steps are incremented by one.
    - Both omitted: New step is appended at the end of the existing list
-     with `order = max(existing_order_for_app_and_phase) + 1` (or `1` if no
+     with `order = max(existing_order_for_instance_and_phase) + 1` (or `1` if no
      teardown steps exist yet).
 4. **Step-Record Shape**: The persisted record exposes
-   `{ id, app, phase, order, command, timeout_seconds }`. Steps have no
+   `{ id, app, app_instance, phase, order, command, timeout_seconds }`. Steps have no
    `name`, no per-step `working_directory`, no `env_overrides`, and no
    per-step `on_failure` knob. Working directory is pinned to the workspace
    path on the owning node and exposed through `ORBIT_WORKSPACE_PATH`

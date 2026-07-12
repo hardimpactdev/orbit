@@ -91,6 +91,37 @@ final readonly class AppSelectorResolver
         );
     }
 
+    public function requireInstance(AppSelection $selection, string $field = 'app'): AppSelection
+    {
+        if ($selection->instance instanceof AppInstance) {
+            return $selection;
+        }
+
+        $selection->app->loadMissing('instances');
+        $instances = $selection->app->instances->values();
+        $instance = $instances->first();
+
+        if ($instances->count() === 1 && $instance instanceof AppInstance) {
+            return new AppSelection(
+                app: $selection->app,
+                instance: $instance,
+                selector: $selection->selector,
+                instanceSelector: $instance->name,
+            );
+        }
+
+        throw new AppSelectionResolutionFailed(
+            'validation_failed',
+            "App '{$selection->app->name}' requires a concrete app instance selector.",
+            [
+                'field' => $field,
+                'reason' => 'app_instance_required',
+                'app' => $selection->app->name,
+                'instances' => $instances->pluck('name')->values()->all(),
+            ],
+        );
+    }
+
     public function resolveByPath(?string $path): ?AppSelection
     {
         $normalizedPath = $this->normalizeSelector($path);

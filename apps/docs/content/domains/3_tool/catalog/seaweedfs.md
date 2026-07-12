@@ -11,28 +11,32 @@ Orbit.
 | --- | --- |
 | Slug | `seaweedfs` |
 | Label | SeaweedFS |
-| Backend | Docker runtime container |
+| Backend | Canonical node-owned Docker process runtime |
 | Support model | Role baseline tool for the `s3` role |
 | Category | `storage` |
+| Supported operating systems | Linux |
+| Required container provider | Docker-compatible |
+| Isolation | Docker container |
 
 ## Capabilities
 
-`seaweedfs` supports `tool:update`, `tool:credentials`, service endpoint
-metadata, safe doctor fix, and safe doctor adopt as the role baseline tool
-materialized by the `s3` role. Runtime lifecycle and logs belong to the
-related SeaweedFS process row (`process:*`).
+`seaweedfs` supports `tool:credentials`, service endpoint metadata, safe doctor
+fix, and safe doctor adopt for tool-row and credential facts. The `s3` role
+materializes the tool row and exactly one node-owned process row with
+`tool=seaweedfs`. Runtime lifecycle and logs belong to that process row.
 
-`tool:install seaweedfs` is allowed only for a node with an active `s3` role and
-must converge the role baseline rather than creating an ad hoc standalone
-object-storage service. `tool:remove seaweedfs` is not the role-removal path; use
-`node role:remove` for the `s3` role lifecycle.
+`tool:install seaweedfs`, `tool:update seaweedfs`, and
+`tool:remove seaweedfs` are not user-directed surfaces. Add, reconverge, or
+remove the `s3` role baseline instead. The catalog's `s3` bootstrap metadata is
+for role provisioning; it is not a role gate reused by generic tool targeting.
 
 ## Runtime
 
-SeaweedFS uses Orbit's role runtime container rendering. The `s3` role does not
-own Docker Compose for the role and does not install a host package fallback.
+SeaweedFS uses Orbit's canonical Docker process rendering. The `s3` role does
+not own Docker Compose for the role and does not install a host package fallback.
 
-Orbit renders one `chrislusf/seaweedfs:4.33` runtime container for each active `s3` role
+Orbit persists one `seaweedfs` process row and renders one
+`chrislusf/seaweedfs:4.33` runtime container for each active `s3` role
 assignment. The role assignment's `data_path` setting, defaulting to
 `/srv/orbit/s3/data`, is mounted into the container as `/data`. Orbit preserves
 that data path during normal role removal and deletes it only when a command
@@ -89,15 +93,18 @@ The SeaweedFS console is not publicly exposed in v1.
 
 SeaweedFS is the backend technology for the `s3` role. The product surface is the
 S3 role, router-owned S3 service routing, public S3 publication, and
-service-level credentials. Capability update and inventory remain under
-`tool:*`; lifecycle and logs belong to the related runtime process. S3
+service-level credentials. Tool-row inventory and credentials remain under
+`tool:*`; lifecycle and logs belong to the canonical runtime process. S3
 publication and credential UX lives under `s3:*`.
 
 ## Doctor Relationship
 
-`doctor --family=tool` verifies the `seaweedfs` tool row, credential material, and
-safe repair or adoption boundaries. Runtime process lifecycle and logs belong
-to the process family. S3 route placement, `s3.orbit`, backend pools, and
+`doctor --family=tool` verifies only the `seaweedfs` tool row, credential
+material, and their safe repair or adoption boundaries.
+`doctor --family=process` owns `process.runtime_unit_missing`,
+`process.runtime_unit_mismatch`, and stale-unit cleanup for the canonical
+SeaweedFS process, including its WireGuard-only port binding. S3 route placement,
+`s3.orbit`, backend pools, and
 public host forwarding are proxy-family and S3 command-domain contracts. S3
 role assignment settings and the role-owned data path are node-family
 contracts.

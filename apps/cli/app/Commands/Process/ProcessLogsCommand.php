@@ -7,7 +7,6 @@ namespace App\Commands\Process;
 use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
-use App\Services\GatewayLogStreamClient;
 use App\Services\GatewayOperationStreamSubscriber;
 use RuntimeException;
 
@@ -19,7 +18,6 @@ final class ProcessLogsCommand extends GatewayCommand
     protected $signature = 'process:logs
         {name? : Process name}
         {--node= : Owning node name}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--follow : Follow log output}
@@ -109,19 +107,6 @@ final class ProcessLogsCommand extends GatewayCommand
             $write = function (string $chunk): void {
                 $this->output->write($chunk);
             };
-
-            if ($this->nodeTransportPreference() === 'transitional-ssh-fallback') {
-                return app(GatewayLogStreamClient::class)
-                    ->withNodeTransportPreference($this->nodeTransportPreference())
-                    ->streamText(
-                        '/api/processes/'.rawurlencode($name).'/log',
-                        [
-                            ...$query,
-                            'follow' => 1,
-                        ],
-                        $write,
-                    );
-            }
 
             $response = $this->gatewayPost('/api/processes/'.rawurlencode($name).'/log-stream', $query);
             $operationRunId = data_get(target: $response, key: 'success.data.operation.uuid');

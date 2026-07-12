@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Process;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\S3\S3CredentialGenerator;
 use App\Services\S3\S3RuntimeContainer;
@@ -87,6 +88,39 @@ it('persists generated credentials to the seaweedfs NodeTool row on first config
         ->not->toBeEmpty()->and($fields['region'])->toBe('orbit')->and($fields['endpoint'])->toBe(
             'https://s3.orbit',
         )->and($fields['bucket_style'])->toBe('path');
+});
+
+it('persists one canonical process row for the SeaweedFS runtime', function (): void {
+    $node = configuratorNode();
+    $assignment = configuratorAssignment($node, ['data_path' => '/srv/orbit/s3/data']);
+
+    makeConfigurator()->configure($node, $assignment);
+    makeConfigurator()->configure($node, $assignment);
+
+    $processes = Process::query()
+        ->where('node_id', $node->id)
+        ->where('tool', 'seaweedfs')
+        ->get();
+
+    expect($processes)
+        ->toHaveCount(1)
+        ->and($processes->first()?->name)
+        ->toBe('seaweedfs')
+        ->and($processes->first()?->runtime->value)
+        ->toBe('docker')
+        ->and($processes->first()?->runtime_config)
+        ->toMatchArray([
+            'container_name' => S3RuntimeContainer::ContainerName,
+            'image' => S3RuntimeContainer::Image,
+            'ports' => [
+                [
+                    'host' => '10.6.0.44',
+                    'published' => 8333,
+                    'target' => 8333,
+                    'protocol' => 'tcp',
+                ],
+            ],
+        ]);
 });
 
 // ---------------------------------------------------------------------------
@@ -242,7 +276,7 @@ it('renders a SeaweedFS S3 identity config from service credentials', function (
 // (d) Role-owned data path preserved in tool config
 // ---------------------------------------------------------------------------
 
-it('persists the role data path in seaweedfs tool config', function (): void {
+it('keeps the role data path on the process runtime instead of the tool row', function (): void {
     $node = configuratorNode();
     $assignment = configuratorAssignment($node, ['data_path' => '/mnt/fast-disk/s3']);
 
@@ -253,10 +287,23 @@ it('persists the role data path in seaweedfs tool config', function (): void {
         ->where('name', 'seaweedfs')
         ->firstOrFail();
 
-    expect($seaweedfsTool->config['data_path'])->toBe('/mnt/fast-disk/s3');
+    $process = Process::query()
+        ->where('node_id', $node->id)
+        ->where('tool', 'seaweedfs')
+        ->firstOrFail();
+
+    expect($seaweedfsTool->config)
+        ->not
+        ->toHaveKey('data_path')
+        ->and($process->runtime_config['mounts'])
+        ->toContain([
+            'source' => '/mnt/fast-disk/s3',
+            'target' => '/data',
+            'read_only' => false,
+        ]);
 });
 
-it('does not overwrite the data path when the role setting changes during re-configure', function (): void {
+it('updates the process runtime data path when the role setting changes during re-configure', function (): void {
     $node = configuratorNode();
     $assignment = configuratorAssignment($node, ['data_path' => '/srv/orbit/s3/data']);
 
@@ -268,20 +315,24 @@ it('does not overwrite the data path when the role setting changes during re-con
 
     makeConfigurator()->configure($node, $assignment);
 
-    $seaweedfsTool = NodeTool::query()
+    $process = Process::query()
         ->where('node_id', $node->id)
-        ->where('name', 'seaweedfs')
+        ->where('tool', 'seaweedfs')
         ->firstOrFail();
 
-    // The tool config data_path always reflects the current role settings.
-    expect($seaweedfsTool->config['data_path'])->toBe('/mnt/fast-disk/s3');
+    expect($process->runtime_config['mounts'])
+        ->toContain([
+            'source' => '/mnt/fast-disk/s3',
+            'target' => '/data',
+            'read_only' => false,
+        ]);
 });
 
 // ---------------------------------------------------------------------------
 // Tool metadata written to NodeTool config
 // ---------------------------------------------------------------------------
 
-it('persists full metadata to the seaweedfs NodeTool config', function (): void {
+it('persists only service capability metadata to the seaweedfs NodeTool config', function (): void {
     $node = configuratorNode(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
     $assignment = configuratorAssignment($node, ['data_path' => '/srv/orbit/s3/data']);
 
@@ -294,18 +345,13 @@ it('persists full metadata to the seaweedfs NodeTool config', function (): void 
 
     expect($seaweedfsTool->config)
         ->toMatchArray([
-            'data_path' => '/srv/orbit/s3/data',
             'service_host' => 's3.orbit',
             'backend_host' => 'storage-1.s3.orbit',
-            'container_name' => S3RuntimeContainer::ContainerName,
-            'image' => 'chrislusf/seaweedfs:4.33',
-            'command' => 'weed server -filer -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json',
-            'api_port' => 8333,
             'mode' => 'head',
-            'runtime' => 'docker-container',
-            's3_config_path' => '/srv/orbit/s3/data/s3.json',
             'public_hosts' => [],
         ])
+        ->not
+        ->toHaveKeys(['data_path', 'container_name', 'image', 'command', 'api_port', 'runtime', 's3_config_path'])
         ->and($seaweedfsTool->expected_state)
         ->toBe('installed');
 });

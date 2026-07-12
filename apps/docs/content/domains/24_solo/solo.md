@@ -19,8 +19,9 @@ Solo commands do not create a new doctor state family. They read and mutate
 Solo state through the gateway proxy and hand drift checks to node, process, and
 tool families.
 
-Solo may be installed on specific Orbit nodes. Commands target the gateway node
-by default and accept `--node=<node>` when the Solo API lives on another active
-node. The gateway resolves and authorizes the target node, then reaches that
-node's configured node-local Solo API through Orbit execution; Solo loopback
-ports are not exposed directly to WireGuard.
+Solo may be installed on specific Orbit nodes. Commands accept
+`--node=<node>`; when omitted, the CLI sends local `node:default`, then falls
+back to the authenticated caller node. The gateway resolves and authorizes that
+target. Gateway targets use direct loopback. Non-gateway targets must be active
+and Agent eligible, and receive a typed Agent-push request to their node-local
+Solo loopback API. Solo ports and SSH transport are never exposed.

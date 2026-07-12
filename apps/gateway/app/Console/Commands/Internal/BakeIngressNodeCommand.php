@@ -17,6 +17,7 @@ use RuntimeException;
 
 #[Signature('orbit:internal:bake-ingress-node
     {name : Ingress node name}
+    {--tld= : Explicit unique TLD assigned to the ingress node}
     {--host= : Ingress node host address}
     {--host-key-host= : Host/IP to scan for the SSH host key when different from --host}
     {--wireguard-address= : Ingress node WireGuard address}
@@ -31,21 +32,28 @@ class BakeIngressNodeCommand extends Command
     public function handle(NodeRegistryWriter $registryWriter): int
     {
         $name = $this->stringArgument('name');
+        $tld = $this->stringOption('tld');
         $host = $this->stringOption('host');
         $hostKeyHost = $this->stringOption('host-key-host');
         $wireguardAddress = $this->stringOption('wireguard-address');
         $gatewayEndpoint = $this->stringOption('gateway-endpoint');
         $user = $this->stringOption('user') ?? 'orbit';
 
-        if ($name === null || $host === null || $wireguardAddress === null) {
-            throw new RuntimeException('Name, host, and wireguard-address are required.');
+        if (
+            $name === null
+            || $tld === null
+            || ! $this->validTld($tld)
+            || $host === null
+            || $wireguardAddress === null
+        ) {
+            throw new RuntimeException('Name, valid tld, host, and wireguard-address are required.');
         }
 
         $hostKey = app(SshHostKeyPinner::class)->pin($hostKeyHost ?? $host);
 
         $node = $registryWriter->writeNodeIdentity(
             name: $name,
-            tld: null,
+            tld: $tld,
             platform: 'ubuntu',
             host: $host,
             wireguardAddress: $wireguardAddress,
@@ -84,5 +92,10 @@ class BakeIngressNodeCommand extends Command
         $value = $this->option($name);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function validTld(string $tld): bool
+    {
+        return strlen($tld) <= 63 && preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld) === 1;
     }
 }

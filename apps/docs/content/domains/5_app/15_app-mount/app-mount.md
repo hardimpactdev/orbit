@@ -12,14 +12,12 @@ paths — for example, `hauser.development` on Linux may mount
 `/home/nckrtl/projects` while `hauser.nmbp` on macOS mounts
 `/Users/nckrtl/projects` at the same container target.
 
-Bare-app selectors (`hauser` without an instance suffix) can list existing
-app-level mounts for compatibility, but they cannot add or remove mounts. New
-mount intent must use dotted instance selectors such as `hauser.nmbp`.
+Every action requires a dotted instance selector such as `hauser.nmbp`.
 
 ## Usage
 
 ```bash
-orbit app:mount list <app>[.<instance>] [--json]
+orbit app:mount list <app>.<instance> [--json]
 orbit app:mount add <app>.<instance> <source> <target> [--read-only|--read-write] [--json]
 orbit app:mount remove <app>.<instance> <target> [--json]
 ```
@@ -36,10 +34,8 @@ orbit app:mount remove hauser.nmbp /projects --json
 ## Arguments and options
 
 - `action`: one of `list`, `add`, `remove`. Required.
-- `app`: app name, hostname, or dotted instance selector such as `hauser.nmbp`.
-  Required. Bare app names are valid only for compatibility `list` reads.
-  `add` and `remove` require a dotted selector that resolves the named instance
-  under the app.
+- `app`: dotted instance selector such as `hauser.nmbp`. Required for every
+  action and must resolve the named instance under the app.
 - `source`: host source path. Required for `add`. Must live under the resolved
   instance node's home directory.
 - `target`: container target path. Required for `add` and `remove`.
@@ -63,9 +59,7 @@ Adding the same target again updates the stored source or read/write mode.
 mount for the target path on the resolved instance.
 
 Configured mounts are rendered after Orbit's built-in runtime mounts. App and
-workspace runtime containers prefer selected-instance mounts when present and
-fall back to app-level mounts only when the selected instance has no
-instance mounts configured. The runtime spec hash changes when mount
+workspace runtime containers use the selected instance's mount rows. The runtime spec hash changes when mount
 configuration changes, so the runtime manager can recreate the affected app or
 workspace container during normal runtime convergence. The command does not
 restart containers directly.
@@ -102,7 +96,7 @@ boundary.
 
 ## Output
 
-You see the app, mount target (`app` or `app_instance`), configured mounts, and
+You see the app, `app_instance` mount target, configured mounts, and
 whether they are inherited by workspaces that use the selected instance.
 
 Use `--json` when another tool needs the machine-readable envelope. The exact
@@ -114,7 +108,7 @@ payload shape is documented in the
 - The CLI caller can reach the Orbit gateway.
 - The caller has `app:read` on the app's owning node for `list`.
 - The caller has `app:mount` on the app's owning node for `add` and `remove`.
-- `add` and `remove` use a dotted app instance selector such as `hauser.nmbp`.
+- Every action uses a dotted app instance selector such as `hauser.nmbp`.
 
 ## Related Commands
 

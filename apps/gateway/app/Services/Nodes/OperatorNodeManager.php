@@ -12,6 +12,7 @@ use App\Services\Security\SshHostKeyPinner;
 
 final readonly class OperatorNodeManager
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private RemoteShell $remoteShell,
         private ExplicitRemoteShellFallback $explicitFallback,
@@ -62,10 +63,13 @@ final readonly class OperatorNodeManager
             throw new OperatorNodeManagementException('node.ssh_unreachable', 'Gateway SSH reachability check failed.');
         }
 
+        $node->forceFill(['managed' => true])->save();
+
         return [
             'node' => $node->name,
             'user' => $node->user,
             'platform' => $node->platform,
+            'managed' => true,
             'ssh_host' => $wireguardAddress,
             'host_key_pinned' => true,
             'ssh_verified' => true,

@@ -85,7 +85,7 @@ it('writes the initial dnsmasq.conf before starting the container', function ():
     ]);
     Node::factory()->create([
         'name' => 'app-1',
-        'tld' => 'app-1.test',
+        'tld' => 'app-1',
         'wireguard_address' => '10.6.0.3',
     ]);
 
@@ -96,7 +96,10 @@ it('writes the initial dnsmasq.conf before starting the container', function ():
 
     $conf = File::get($this->workdir.'/dnsmasq.conf');
 
-    expect($conf)->toContain('address=/gateway/10.6.0.2')->and($conf)->toContain('address=/app-1.test/10.6.0.3');
+    expect($conf)
+        ->toContain('address=/orbit.gateway/10.6.0.2')
+        ->and($conf)
+        ->toContain('address=/orbit.app-1/10.6.0.3');
 });
 
 it('errors when wg-easy is not running', function (): void {

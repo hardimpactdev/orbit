@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 
 final class DatabaseAddUserCommand extends DatabaseGatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     #[\Override]
     protected $signature = 'database:add-user
         {connection? : Database connection slug to create or update}

@@ -17,6 +17,7 @@ use JsonException;
 
 final readonly class SystemdService
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         public string $unitName,
         public string $content,

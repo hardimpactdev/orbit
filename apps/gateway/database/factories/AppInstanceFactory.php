@@ -24,6 +24,7 @@ class AppInstanceFactory extends Factory
             'driver' => AppInstanceDriver::Orbit,
             'driver_config' => new OrbitAppInstanceDriverConfigData,
             'runtime_requirements' => new AppInstanceRuntimeRequirementsData,
+            'deploy_warmup_paths' => null,
         ];
     }
 }

@@ -19,7 +19,7 @@ Authoritative source: [`apps/docs/content/architecture.md`](../../../apps/docs/c
 | `metrics` | Ubuntu/Debian | Private Prometheus/Grafana host-resource metrics backend, reached through `metrics.orbit` |
 
 The gateway-owned operations Reverb service is not the app-facing `websocket`
-role. It is a single gateway Swarm service for future operation streams, uses
+role. It is a single gateway Swarm service for durable operation progress, uses
 its own operations app config path, and does not require Redis or a
 database-role node in v1.
 
@@ -29,21 +29,23 @@ runs the CLI.
 
 ## Orbit Agent lane
 
-Orbit Agent capability is explicit gateway registry state for supported nodes,
-including explicitly agent-capable Linux/Ubuntu and macOS `app-dev` or
-self-managed workload nodes. The local runtime is split between `apps/agent`,
+Orbit Agent intent derives from an active workload role or the explicit
+`managed` opt-in on a roleless node. Eligibility additionally requires a
+supported platform, a valid WireGuard identity, and a non-gateway target. The
+local runtime is split between `apps/agent`,
 the headless Rust/Axum service that listens for gateway-pushed typed command
 envelopes and reports lifecycle events back to the gateway, and `apps/macos`,
 the Tauri tray UI that runs only on macOS.
 
-The `agent` workload role is separate from Orbit Agent capability. The role owns
-autonomous agent tools and internal agent-tool routes on Ubuntu nodes. It does
-not imply that a node can receive Orbit Agent jobs, and Orbit Agent capability
-does not assign the `agent` role.
+The `agent` workload role owns autonomous agent tools and internal agent-tool
+routes on Ubuntu nodes. Like any workload role it supplies managed intent, but
+it does not by itself guarantee platform support or listener reachability.
+Managed Agent intent never assigns the `agent` role.
 
-`orbit node:update --orbit-agent-capable` toggles only the capability flag. It
-does not install, start, update, restart, uninstall, or prove reachability of
-the macOS app or headless service. For source changes under `apps/agent` or
+`orbit node:update --managed` records explicit managed intent for a roleless
+node; `--no-managed` clears it. Active workload roles provide the same intent.
+Neither option installs, starts, updates, restarts, uninstalls, or proves
+reachability of the macOS app or headless service. For source changes under `apps/agent` or
 `apps/macos`, use the `tauri-agent-development` skill and verify native
 tray/menu behavior on the implementing Mac host when `apps/macos` changes.
 
@@ -91,9 +93,10 @@ Scope flags: `--node`, `--self`, `--all`, `--app`, `--workspace`, `--family=<key
 
 Every CLI call lands on the gateway (HTTPS over WireGuard). For supported
 node-local command execution, the gateway pushes an allowlisted typed command
-envelope to the node's Orbit Agent listener. SSH-backed `RemoteShell` remains
-available for explicit `transitional-ssh-fallback`, migration, recovery,
-uploads/downloads, and host utility seams that are not yet agent-push native.
+envelope to the node's Orbit Agent listener. SSH is permanent only for
+provisioning/bootstrap. Every remaining non-provisioning consumer carries the
+exact `transitional-ssh` marker until it is ported to Agent push or
+gateway-local execution.
 
 `node:new --user` is a bootstrap credential only; the steady-state user is
 created during provisioning and stored on the node record.
@@ -142,12 +145,10 @@ Pass `--json` to force JSON. Non-interactive mode (`-n`) auto-enables JSON. Same
 
 ## Streaming (long-running) commands
 
-Commands like `workspace:setup`, `deploy:run`, `tool:install`, and `node:new` stream Server-Sent Events from the gateway. The CLI renders a step tree (`tree` -> `step` events -> `complete`/`error`). If the stream closes without `complete` or `error`, the command failed.
-
-The gateway operations Reverb surface is scaffolded for future
-operation-scoped stream payloads only. Non-stream commands stay on gateway API
-plus agent-push, and existing command progress streams remain on their current
-contracts until a specific stream is migrated.
+Long-running operations persist journal events before publishing progress over
+the gateway operations WebSocket/Reverb plane. The CLI replays journal gaps by
+cursor and renders the resulting progress frames. Direct SSE remains a clearly
+transitional transport only for commands that have not yet migrated.
 
 For LLM agents, prefer `--stream-json` when the command offers it so progress
 arrives as newline-delimited JSON frames during slow gateway work. Current
@@ -176,4 +177,6 @@ This avoids passing `--node` on every dev-flavored command. App nodes don't need
 - It doesn't keep a separate "sync" command per family  -  adoption is `doctor --adopt --family=<key>`.
 - It doesn't expose a separate web UI today. Future UI builds on the typed API.
 - It doesn't use PHP-FPM or Supervisor for app/workspace web runtimes.
-- It doesn't proxy git credentials. `app:new --repo=...` clones non-interactively as the SSH user already configured on the owning node.
+- It doesn't proxy git credentials. `app:new --repo=...` clones through Agent
+  push as the target node's Orbit runtime user, using credentials already
+  available on that node.

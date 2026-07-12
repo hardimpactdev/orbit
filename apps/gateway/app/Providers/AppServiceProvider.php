@@ -7,10 +7,9 @@ namespace App\Providers;
 use App\Contracts\AgentIdeMessageAdapter;
 use App\Contracts\AgentIdeWorkspacePathResolver;
 use App\Contracts\OpenCodeClientFactory;
+use App\Contracts\PhpRuntimeArtifactConverger;
 use App\Contracts\ProgressReporter;
 use App\Contracts\RemoteShell;
-use App\Contracts\RemoteShellStream;
-use App\Contracts\RequestProfiler;
 use App\Contracts\SiteCertificateInstaller;
 use App\Contracts\StartsRemoteShellProcesses;
 use App\Contracts\ToolDefinition;
@@ -28,7 +27,6 @@ use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Ca\OrbitSiteCertificateInstaller;
-use App\Services\CurlRequestProfiler;
 use App\Services\Dns\DnsmasqConfigBuilder;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Dns\LocalResolver;
@@ -40,13 +38,13 @@ use App\Services\Operations\OperationResultRegistry;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Operations\OperationTokenIntrospector;
+use App\Services\Php\AgentPushPhpRuntimeArtifactConverger;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteHostExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
-use App\Services\RemoteShell\SshRemoteShellStream;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Solo\HttpSoloUpstreamClient;
 use App\Services\Solo\SoloUpstreamClient;
@@ -154,12 +152,12 @@ class AppServiceProvider extends ServiceProvider
         });
         $this->app->singleton(LocalResolver::class);
         $this->app->bind(ProgressReporter::class, NullProgressReporter::class);
+        $this->app->bind(PhpRuntimeArtifactConverger::class, AgentPushPhpRuntimeArtifactConverger::class);
         $this->app->bind(AgentIdeMessageAdapter::class, CoreAgentIdeMessageAdapter::class);
         $this->app->bind(OpenCodeClientFactory::class, SdkOpenCodeClientFactory::class);
         $this->app->bind(AgentIdeWorkspacePathResolver::class, fn ($app): CoreAgentIdeWorkspacePathResolver => new CoreAgentIdeWorkspacePathResolver(
             localExecutor: $app->make(RemoteLocalExecutor::class),
         ));
-        $this->app->bind(RequestProfiler::class, CurlRequestProfiler::class);
         $this->app->bind(RemoteExecutor::class, RemoteHostExecutor::class);
         $this->app->bind(RemoteShell::class, RemoteHostExecutor::class);
         $this->app->bind(StartsRemoteShellProcesses::class, RemoteHostExecutor::class);
@@ -210,7 +208,6 @@ class AppServiceProvider extends ServiceProvider
                 localExecutor: $localExecutor,
             );
         });
-        $this->app->bind(RemoteShellStream::class, SshRemoteShellStream::class);
         $this->app->bind(PolyscopeWorkspaceDriver::class, fn ($app): PolyscopeWorkspaceDriver => new PolyscopeWorkspaceDriver(
             branchAligner: $app->make(PolyscopeWorkspaceBranchAligner::class),
             localExecutor: $app->make(RemoteLocalExecutor::class),

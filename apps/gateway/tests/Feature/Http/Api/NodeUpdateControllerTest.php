@@ -21,7 +21,7 @@ const UPDATE_CALLER_WG_IP = '10.6.0.99';
  */
 function apiUpdateNodeRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'app-1',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
@@ -33,6 +33,12 @@ function apiUpdateNodeRow(array $overrides = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    if (! array_key_exists('tld', $overrides)) {
+        $row['tld'] = strtolower((string) $row['name']);
+    }
+
+    return $row;
 }
 
 function createUpdateCallerNode(string $name = 'operator-caller', ?string $role = null): int
@@ -167,62 +173,89 @@ describe('NodeUpdateController', function (): void {
         expect($node->host)->toBe('10.6.0.8')->and($node->public_ipv4)->toBe('203.0.113.10');
     });
 
-    it('enables Orbit Agent capability when explicitly requested', function (): void {
+    it('enables managed Agent intent for an eligible roleless operator when explicitly requested', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        createApiUpdateNode();
+        DB::table('nodes')->insert(apiUpdateNodeRow([
+            'name' => 'operator-1',
+            'host' => '10.6.0.8',
+            'wireguard_address' => '10.6.0.8',
+        ]));
 
         $response = putUpdateNodeJson(
-            '/api/nodes/app-1',
-            ['orbit_agent_capable' => true],
+            '/api/nodes/operator-1',
+            ['managed' => true],
             ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
         );
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.changed', ['orbit_agent_capable']);
+            ->assertJsonPath('success.data.changed', ['managed']);
 
-        expect((bool) DB::table('nodes')->where('name', 'app-1')->value('orbit_agent_capable'))->toBeTrue();
+        expect((bool) DB::table('nodes')->where('name', 'operator-1')->value('managed'))->toBeTrue();
     });
 
-    it('disables Orbit Agent capability when explicitly requested', function (): void {
+    it('clears managed Agent intent on a workload node when explicitly requested', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        createApiUpdateNode(['orbit_agent_capable' => true]);
+        createApiUpdateNode(['managed' => true]);
 
         $response = putUpdateNodeJson(
             '/api/nodes/app-1',
-            ['orbit_agent_capable' => false],
+            ['managed' => false],
             ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
         );
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.changed', ['orbit_agent_capable']);
+            ->assertJsonPath('success.data.changed', ['managed']);
 
-        expect((bool) DB::table('nodes')->where('name', 'app-1')->value('orbit_agent_capable'))->toBeFalse();
+        expect((bool) DB::table('nodes')->where('name', 'app-1')->value('managed'))->toBeFalse();
     });
 
-    it('does not change Orbit Agent capability when omitted', function (): void {
+    it('does not change managed Agent intent when omitted', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        createApiUpdateNode(['orbit_agent_capable' => true]);
+        DB::table('nodes')->insert(apiUpdateNodeRow([
+            'name' => 'operator-1',
+            'host' => '10.6.0.8',
+            'wireguard_address' => '10.6.0.8',
+            'managed' => true,
+        ]));
 
         $response = putUpdateNodeJson(
-            '/api/nodes/app-1',
-            ['host' => '10.6.0.8'],
+            '/api/nodes/operator-1',
+            ['tld' => 'operator-1'],
             ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
         );
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.changed', ['host']);
+            ->assertJsonPath('success.data.changed', []);
 
-        expect((bool) DB::table('nodes')->where('name', 'app-1')->value('orbit_agent_capable'))->toBeTrue();
+        expect((bool) DB::table('nodes')->where('name', 'operator-1')->value('managed'))->toBeTrue();
     });
+
+    it('rejects managed Agent opt-in for workload and gateway nodes', function (string $role): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        createApiUpdateNode(role: $role);
+
+        putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['managed' => true],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        )
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.field_role_incompatible')
+            ->assertJsonPath('error.meta.field', 'managed');
+
+        expect((bool) DB::table('nodes')->where('name', 'app-1')->value('managed'))->toBeFalse();
+    })->with(['app-dev', 'gateway']);
 
     it('updates gateway endpoint metadata and re-enacts node artifacts', function (): void {
         $reenactor = new class extends ReenactNodeArtifacts {
@@ -266,7 +299,7 @@ describe('NodeUpdateController', function (): void {
             ->toBe(['gateway_endpoint']);
     });
 
-    it('updates the ssh user for a workload node', function (): void {
+    it('updates the Orbit runtime user for a workload node', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
@@ -286,7 +319,7 @@ describe('NodeUpdateController', function (): void {
         expect(DB::table('nodes')->where('name', 'app-1')->value('user'))->toBe('nckrtl');
     });
 
-    it('refreshes role-owned caddy config when the ssh user is provided unchanged', function (): void {
+    it('refreshes role-owned caddy config when the runtime user is provided unchanged', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
@@ -339,7 +372,7 @@ describe('NodeUpdateController', function (): void {
             ]);
     });
 
-    it('updates the ssh user for a roleless operator node', function (): void {
+    it('updates the Orbit runtime user for a roleless operator node', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
@@ -695,7 +728,7 @@ describe('NodeUpdateController', function (): void {
         expect(DB::table('nodes')->where('name', 'gateway-1')->value('tld'))->toBe('orbital');
     });
 
-    it('rejects ssh user updates for gateway nodes', function (): void {
+    it('rejects runtime user updates for gateway nodes', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
@@ -738,7 +771,7 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        createApiUpdateNode(['tld' => null], 'app-dev');
+        createApiUpdateNode(['tld' => 'app-old'], 'app-dev');
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -752,7 +785,7 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        createApiUpdateNode(['tld' => null], 'agent');
+        createApiUpdateNode(['tld' => 'agent-old'], 'agent');
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'demo'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -789,7 +822,7 @@ describe('NodeUpdateController', function (): void {
             'name' => 'mini',
             'host' => '10.6.0.8',
             'wireguard_address' => '10.6.0.8',
-            'tld' => null,
+            'tld' => 'mini-old',
         ]));
 
         $response = putUpdateNodeJson('/api/nodes/mini', ['tld' => 'mini'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
@@ -804,7 +837,7 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        createApiUpdateNode(['tld' => null], 'app-prod');
+        createApiUpdateNode(['tld' => 'prod-old'], 'app-prod');
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'prod'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
@@ -818,7 +851,7 @@ describe('NodeUpdateController', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        createApiUpdateNode(['tld' => null], 'app-dev');
+        createApiUpdateNode(['tld' => 'app-one'], 'app-dev');
         createApiUpdateNode(['name' => 'app-2', 'tld' => 'test'], 'app-dev');
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);

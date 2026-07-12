@@ -10,10 +10,11 @@
 - The CLI caller can reach the Orbit gateway.
 - The target workspace exists in the gateway workspaces registry.
 - The current node identity is authorized to manage the resolved workspace or its parent app.
-- The gateway uses SSH to the owning node for artifact cleanup when
-  available. SSH reachability is not a pre-configuration prerequisite; if
-  cleanup cannot finish after workspace configuration removal, the command
-  succeeds with structured warnings.
+- Typed runtime cleanup uses Agent push to the concrete app-instance node.
+  Process, teardown-step, and worktree cleanup still form an exact-marked
+  transitional SSH seam and run only with
+  `--node-transport=transitional-ssh-fallback`. Cleanup reachability is not a
+  pre-configuration prerequisite; failures become structured warnings.
 
 This is the canonical technical contract for the `workspace:remove` command. It
 owns the signature, input resolution, behavior, and failure semantics for the
@@ -93,10 +94,9 @@ residue afterwards is non-fatal drift.
 
 ### 3. Execution Sequence
 
-The execution sequence has two phases. Instance-bound workspaces execute Phase B
-on the selected app instance node; app-only legacy workspaces use the parent
-app's canonical node. Phase A is the atomic gateway-configuration removal (the
-point of no return). Phase B is node-side application over SSH and its sub-order
+The execution sequence has two phases. Every workspace executes Phase B on its
+selected app instance node. Phase A is the atomic gateway-configuration removal
+(the point of no return). Phase B is node-side application through Agent push and its sub-order
 is dictated by traffic, dependency, and lifecycle safety.
 
 #### Phase A — Gateway configuration (atomic, point of no return)
@@ -109,7 +109,12 @@ Phase A commits as one atomic database transaction. After Phase A succeeds,
 the workspace record is gone from gateway workspace registry scope by
 definition.
 
-#### Phase B — Node-side application (over `RemoteShell` SSH)
+#### Phase B — Node-side application
+
+Runtime container/config cleanup uses Agent push. Steps that still require a
+shell—process-unit cleanup, teardown commands, and worktree deletion—run only
+when the exact `transitional-ssh-fallback` marker is supplied. Orbit never
+selects that transitional seam implicitly.
 
 - **Step 3: Stop traffic.** Re-render the proxy backend so the workspace
   hostname stops serving requests.

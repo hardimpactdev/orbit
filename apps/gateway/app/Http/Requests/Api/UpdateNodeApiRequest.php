@@ -28,7 +28,7 @@ class UpdateNodeApiRequest extends FormRequest
             'gateway_endpoint' => ['sometimes', 'string', 'filled', 'max:253', $this->validGatewayEndpoint(...)],
             'public_ipv4' => ['sometimes', 'string', 'filled', 'ipv4'],
             'public_ipv6' => ['sometimes', 'string', 'filled', 'ipv6'],
-            'orbit_agent_capable' => ['sometimes', 'boolean'],
+            'managed' => ['sometimes', 'boolean'],
             'role' => ['prohibited'],
             'environment' => ['prohibited'],
         ];
@@ -44,7 +44,7 @@ class UpdateNodeApiRequest extends FormRequest
                 'gateway_endpoint',
                 'public_ipv4',
                 'public_ipv6',
-                'orbit_agent_capable',
+                'managed',
                 'role',
                 'environment',
             ])) {
@@ -63,8 +63,8 @@ class UpdateNodeApiRequest extends FormRequest
         /** @var array<string, bool|string> $fields */
         $fields = $this->safe()->only(['host', 'user', 'tld', 'gateway_endpoint', 'public_ipv4', 'public_ipv6']);
 
-        if ($this->has('orbit_agent_capable')) {
-            $fields['orbit_agent_capable'] = $this->boolean('orbit_agent_capable');
+        if ($this->has('managed')) {
+            $fields['managed'] = $this->boolean('managed');
         }
 
         return $fields;
@@ -95,7 +95,7 @@ class UpdateNodeApiRequest extends FormRequest
                 => "Invalid value for --gateway-endpoint: '{$value}'. Gateway endpoint must be a valid IP address or dotted DNS name.",
             'public_ipv4' => "Invalid IPv4 address: '{$value}'.",
             'public_ipv6' => "Invalid IPv6 address: '{$value}'.",
-            'orbit_agent_capable' => "Field '{$field}' must be a boolean.",
+            'managed' => "Field '{$field}' must be a boolean.",
             default => "Field '{$field}' cannot be empty.",
         };
     }

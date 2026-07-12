@@ -2,7 +2,11 @@
 
 The Solo command domain documents the Orbit CLI commands exposed by the optional Solo extension. Local extension state controls whether `orbit solo:*` commands appear and run on the node where the CLI is invoked. Gateway extension state controls whether `/api/solo/**` routes execute.
 
-Solo traffic is proxied through Orbit gateway routes and targets a loopback URL on the gateway node. Orbit does not expose Solo ports directly to WireGuard.
+Solo traffic enters through typed gateway HTTPS. An explicit `--node` selects
+that node; otherwise the CLI uses local `node:default`, then the authenticated
+caller node. The gateway authorizes the resolved target. It calls gateway
+loopback directly or uses Agent push to a non-gateway target's local loopback.
+Orbit exposes neither Solo ports nor an SSH transport choice.
 
 ## State Ownership
 

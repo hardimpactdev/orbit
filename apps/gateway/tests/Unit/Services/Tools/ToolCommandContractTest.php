@@ -17,7 +17,7 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
-function assignToolContractAppHostRole(Node $node, string $role = 'app-dev', array $settings = ['tld' => 'test']): void
+function assignToolContractAppHostRole(Node $node, string $role = 'app-dev', array $settings = []): void
 {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
@@ -128,8 +128,8 @@ describe('tool command shared contract', function (): void {
             'node_id' => $secondNode->id,
         ]);
 
-        NodeTool::factory()->create(['name' => 'z-php', 'node_id' => $firstNode->id]);
-        NodeTool::factory()->create(['name' => 'a-caddy', 'node_id' => $firstNode->id]);
+        NodeTool::factory()->create(['name' => 'php', 'node_id' => $firstNode->id]);
+        NodeTool::factory()->create(['name' => 'caddy', 'node_id' => $firstNode->id]);
         NodeTool::factory()->create(['name' => 'composer', 'node_id' => $secondNode->id]);
         NodeTool::factory()->create(['name' => 'hidden', 'node_id' => $inactiveNode->id]);
         NodeTool::factory()->create(['name' => 'unassigned', 'node_id' => $unassignedNode->id]);
@@ -144,12 +144,12 @@ describe('tool command shared contract', function (): void {
                 ->all(),
         )
             ->toBe([
-                'app-contract-a:a-caddy',
-                'app-contract-a:z-php',
+                'app-contract-a:caddy',
+                'app-contract-a:php',
                 'app-contract-b:composer',
             ])
             ->and($registry->list(node: 'app-contract-a')->pluck('name')->all())
-            ->toBe(['a-caddy', 'z-php'])
+            ->toBe(['caddy', 'php'])
             ->and($registry->list(app: 'docs-contract')->pluck('name')->all())
             ->toBe(['composer'])
             ->and($registry->list(app: 'docs-contract.test')->pluck('name')->all())

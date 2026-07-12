@@ -20,8 +20,8 @@ This contract defines behavior when `workspace:setup` is invoked from a
   the gateway to the local TTY.
 - **Local config update**: If successful and the workspace is absent from local
   tracking, updates local workspace tracking.
-- **Apply**: The gateway performs the actual SSH application to the owning
-  node.
+- **Apply**: The gateway performs the actual application to the owning node
+  through Agent push.
 
 ## Authorization
 

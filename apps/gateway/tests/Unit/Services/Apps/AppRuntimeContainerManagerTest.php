@@ -3,11 +3,14 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainer;
@@ -189,7 +192,7 @@ it('creates the orbit network, writes php.ini, and runs the app runtime containe
 });
 
 it('creates the app-dev packages bind mount source before running the app runtime container', function (): void {
-    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
@@ -225,11 +228,26 @@ it('creates configured runtime mount sources before running the app runtime cont
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $app->runtimeMounts()->create([
-        'source' => '/home/nckrtl/packages',
-        'target' => '/home/nckrtl/packages',
-        'read_only' => true,
+    assert($app instanceof App);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: 'nckrtl.test',
+        ),
     ]);
+    assert($instance instanceof AppInstance);
+    $instance
+        ->runtimeMounts()
+        ->create([
+            'source' => '/home/nckrtl/packages',
+            'target' => '/home/nckrtl/packages',
+            'read_only' => true,
+        ]);
     $container = renderTestAppContainer($app);
 
     $shell = new AppRuntimeRecordingShell(
@@ -291,7 +309,7 @@ it('installs the Orbit runtime trust pool on the node and mounts it into app-dev
 });
 
 it('treats app-dev runtime TLS certificate mounts as Orbit-managed built-ins', function (): void {
-    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',

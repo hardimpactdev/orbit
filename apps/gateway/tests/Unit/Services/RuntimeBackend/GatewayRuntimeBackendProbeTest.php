@@ -8,8 +8,8 @@ use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RuntimeBackend\GatewayRuntimeBackendProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Process\PendingProcess;
+use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -23,15 +23,12 @@ beforeEach(function (): void {
 });
 
 it('reports available when the orbit-gateway container exists and is running', function (): void {
-    Http::preventStrayRequests();
-    Http::fake([
-        'http://10.44.0.61:9477/v1/commands' => gateway_runtime_backend_agent_response([
-            'runtime_status' => 'available',
-            'container_exists' => true,
-            'container_running' => true,
-            'exit_code' => 0,
-            'output' => "available\ttrue\ttrue",
-        ]),
+    gateway_runtime_backend_fake([
+        'runtime_status' => 'available',
+        'container_exists' => true,
+        'container_running' => true,
+        'exit_code' => 0,
+        'output' => "available\ttrue\ttrue",
     ]);
     $node = gateway_runtime_backend_node('10.44.0.61');
 
@@ -46,22 +43,16 @@ it('reports available when the orbit-gateway container exists and is running', f
         ->and($result->exitCode)
         ->toBe(0);
 
-    Http::assertSent(fn (Request $request): bool => gateway_runtime_backend_request_matches(
-        request: $request,
-        url: 'http://10.44.0.61:9477/v1/commands',
-    ));
+    Process::assertRan(fn (PendingProcess $process): bool => gateway_runtime_backend_process_matches($process));
 });
 
 it('reports no_docker when Docker CLI is missing', function (): void {
-    Http::preventStrayRequests();
-    Http::fake([
-        'http://10.44.0.62:9477/v1/commands' => gateway_runtime_backend_agent_response([
-            'runtime_status' => 'no_docker',
-            'container_exists' => false,
-            'container_running' => false,
-            'exit_code' => 127,
-            'output' => 'docker missing',
-        ]),
+    gateway_runtime_backend_fake([
+        'runtime_status' => 'no_docker',
+        'container_exists' => false,
+        'container_running' => false,
+        'exit_code' => 127,
+        'output' => 'docker missing',
     ]);
 
     $result = new GatewayRuntimeBackendProbe()->check(gateway_runtime_backend_node('10.44.0.62'));
@@ -75,15 +66,12 @@ it('reports no_docker when Docker CLI is missing', function (): void {
 });
 
 it('reports daemon_unavailable when Docker daemon is unreachable', function (): void {
-    Http::preventStrayRequests();
-    Http::fake([
-        'http://10.44.0.63:9477/v1/commands' => gateway_runtime_backend_agent_response([
-            'runtime_status' => 'daemon_unavailable',
-            'container_exists' => false,
-            'container_running' => false,
-            'exit_code' => 1,
-            'output' => 'daemon unavailable',
-        ]),
+    gateway_runtime_backend_fake([
+        'runtime_status' => 'daemon_unavailable',
+        'container_exists' => false,
+        'container_running' => false,
+        'exit_code' => 1,
+        'output' => 'daemon unavailable',
     ]);
 
     $result = new GatewayRuntimeBackendProbe()->check(gateway_runtime_backend_node('10.44.0.63'));
@@ -97,15 +85,12 @@ it('reports daemon_unavailable when Docker daemon is unreachable', function (): 
 });
 
 it('reports available with exists=false when the container is missing', function (): void {
-    Http::preventStrayRequests();
-    Http::fake([
-        'http://10.44.0.64:9477/v1/commands' => gateway_runtime_backend_agent_response([
-            'runtime_status' => 'available',
-            'container_exists' => false,
-            'container_running' => false,
-            'exit_code' => 1,
-            'output' => "available\tfalse\tfalse",
-        ]),
+    gateway_runtime_backend_fake([
+        'runtime_status' => 'available',
+        'container_exists' => false,
+        'container_running' => false,
+        'exit_code' => 1,
+        'output' => "available\tfalse\tfalse",
     ]);
 
     $result = new GatewayRuntimeBackendProbe()->check(gateway_runtime_backend_node('10.44.0.64'));
@@ -119,15 +104,12 @@ it('reports available with exists=false when the container is missing', function
 });
 
 it('reports available with running=false when the container is stopped', function (): void {
-    Http::preventStrayRequests();
-    Http::fake([
-        'http://10.44.0.65:9477/v1/commands' => gateway_runtime_backend_agent_response([
-            'runtime_status' => 'available',
-            'container_exists' => true,
-            'container_running' => false,
-            'exit_code' => 0,
-            'output' => "available\ttrue\tfalse",
-        ]),
+    gateway_runtime_backend_fake([
+        'runtime_status' => 'available',
+        'container_exists' => true,
+        'container_running' => false,
+        'exit_code' => 0,
+        'output' => "available\ttrue\tfalse",
     ]);
 
     $result = new GatewayRuntimeBackendProbe()->check(gateway_runtime_backend_node('10.44.0.65'));
@@ -182,7 +164,7 @@ function gateway_runtime_backend_node(string $wireguardAddress): Node
 {
     return createTestGatewayNode([
         'name' => 'gateway-1',
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => $wireguardAddress,
     ]);
 }
@@ -190,46 +172,29 @@ function gateway_runtime_backend_node(string $wireguardAddress): Node
 /**
  * @param  array<string, mixed>  $data
  */
-function gateway_runtime_backend_agent_response(array $data): mixed
+function gateway_runtime_backend_fake(array $data): void
 {
-    return Http::response([
-        'transport' => 'agent-push',
-        'operation_id' => 'gateway-runtime-backend.probe',
-        'binary' => 'orbit',
-        'status' => 'succeeded',
-        'exit_code' => 0,
-        'frames' => [
-            [
-                'type' => 'stdout',
-                'message' => json_encode([
-                    'success' => [
-                        'data' => $data,
-                        'meta' => [],
-                    ],
-                ], JSON_THROW_ON_ERROR),
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: json_encode([
+            'success' => [
+                'data' => $data,
+                'meta' => [],
             ],
-            [
-                'type' => 'exit',
-                'message' => '0',
-            ],
-        ],
+        ], JSON_THROW_ON_ERROR)),
     ]);
 }
 
-function gateway_runtime_backend_request_matches(Request $request, string $url): bool
+function gateway_runtime_backend_process_matches(PendingProcess $process): bool
 {
-    /** @var mixed $argv */
-    $argv = $request['argv'];
+    $command = (string) $process->command;
 
     return (
-        is_array($argv)
-        && $request->url() === $url
-        && $request['binary'] === 'orbit'
-        && ($argv[0] ?? null) === 'internal:gateway-runtime-backend:probe'
-        && ($argv[1] ?? null) === 'orbit-gateway'
-        && is_string($argv[2] ?? null)
-        && str_starts_with($argv[2], '--operation-token=')
-        && ($argv[3] ?? null) === '--json'
-        && $request['operation_id'] === 'gateway-runtime-backend.probe'
+        str_contains($command, 'docker exec -i')
+        && str_contains($command, 'orbit-gateway')
+        && str_contains($command, 'internal:gateway-runtime-backend:probe')
+        && str_contains($command, '--operation-token=')
+        && str_contains($command, '--json')
+        && ! str_contains($command, ' ssh ')
     );
 }

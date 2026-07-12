@@ -25,13 +25,13 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `--app` | When no parent app can be inferred from the caller filesystem. | Never. | Cwd-inferred parent app. | Parent app slug or app-instance selector present in the gateway registry and authorized for this caller. Dot notation such as `happie.nmbp` lists instance-scoped setup steps for that app instance, falling back to legacy app-level rows only when no instance rows exist. Single value only. |
+| `app` | `--app` | When no app instance can be inferred from the caller filesystem. | Never. | Cwd-inferred app instance. | Dotted app-instance selector such as `happie.nmbp`, present in the gateway registry and authorized for this caller. Single value only. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 ## Visibility Behavior
 
-The command returns the full ordered set of setup steps for the resolved
-app's `phase=setup` policy, scoped to what the caller is authorized to read.
+The command returns the full ordered set of setup steps for the resolved app
+instance's `phase=setup` policy, scoped to what the caller is authorized to read.
 
 - An authorized caller for an app with no configured setup steps receives
   an empty list (`success.data.steps=[]` in JSON,
@@ -44,8 +44,8 @@ app's `phase=setup` policy, scoped to what the caller is authorized to read.
 ## Input Resolution
 
 1. **Resolve parent app.** Apply the precedence chain in order:
-   1. `--app=<app>` flag, where `<app>` may be a parent app slug or
-      app-instance selector such as `happie.nmbp`.
+   1. `--app=<app.instance>` flag, using a dotted app-instance selector such
+      as `happie.nmbp`.
    2. `.orbit/config` marker on the caller filesystem (installed by
       `app:new` / `app:register` and any workspace-installed marker) that
       names the owning app slug.
@@ -65,14 +65,14 @@ app's `phase=setup` policy, scoped to what the caller is authorized to read.
 3. **Select renderer.** Use the shared invocation model to select the output
    renderer.
 4. **Issue the registry read.** Query gateway-owned setup-step policy for
-   the resolved `(app, phase=setup)` and pass the result to the renderer.
+   the resolved `(app_instance, phase=setup)` and pass the result to the renderer.
 
 ## Behavior Contract
 
 ### Setup Step Listing Rules
 
 1. **Query gateway registry.** Read the gateway-owned setup-step policy for
-   the resolved `(app, phase=setup)` tuple. No host probing is performed.
+   the resolved `(app_instance, phase=setup)` tuple. No host probing is performed.
 2. **Sort results.** Steps are sorted by `order` ascending. Setup steps
    already encode an authoritative ordering field; insertions performed by
    [`workspace-setup-step:add`](../../8_workspace-setup-step-add/workspace-setup-step-add.md)
@@ -80,7 +80,7 @@ app's `phase=setup` policy, scoped to what the caller is authorized to read.
    so callers reading any output form see the same steps in the same relative
    order.
 3. **Project step record shape.** Every returned record uses the shared
-   step shape `{ id, app, phase, order, command, timeout_seconds }` already
+   step shape `{ id, app, app_instance, phase, order, command, timeout_seconds }` already
    published by `workspace-setup-step:add`. `phase` is always `"setup"`.
    There is no `name`, no per-step `working_directory`, no `env_overrides`,
    and no per-step `on_failure` field.
@@ -109,6 +109,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | App not found | The resolved app slug does not exist in gateway configuration (`error.code=workspace.app_not_found`, `error.meta.app`). | Failure |
+| App instance required | The selector does not resolve a concrete app instance. | Failure (`error.code=validation_failed`, `error.meta.reason=app_instance_required`) |
 | Unauthorized app | The caller is not authorized to read the resolved app's setup-step policy (`error.code=authorization_failed`). | Failure |
 
 ### Exit Status

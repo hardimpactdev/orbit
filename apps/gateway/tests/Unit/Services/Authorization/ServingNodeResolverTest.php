@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\Workspace;
@@ -91,6 +93,30 @@ describe('ServingNodeResolver', function (): void {
         );
 
         expect($resolved?->is($node))->toBeTrue();
+    });
+
+    it('uses the gateway grant boundary for an external app instance', function (): void {
+        $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1']);
+        $app = OrbitApp::factory()->create([
+            'name' => 'billing',
+            'environment' => 'production',
+        ]);
+        AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'cloud',
+            'driver' => 'laravel-cloud',
+            'driver_config' => new LaravelCloudAppInstanceDriverConfigData(
+                application_id: 'app_123',
+                environment_id: 'env_123',
+            ),
+        ]);
+
+        $resolved = new ServingNodeResolver()->resolve(
+            servingNodeRequest(['app' => 'billing.cloud']),
+            ServingNode::AppInstanceOwning,
+        );
+
+        expect($resolved?->is($gateway))->toBeTrue();
     });
 
     it('resolves app-owning nodes from process identity', function (): void {

@@ -18,7 +18,7 @@ uses(RefreshDatabase::class);
  */
 function meNodeRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'peer-1',
         'host' => '10.6.0.8',
         'wireguard_address' => '10.6.0.8',
@@ -28,6 +28,10 @@ function meNodeRow(array $overrides = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    $row['tld'] ??= $row['name'];
+
+    return $row;
 }
 
 /**
@@ -187,7 +191,7 @@ describe('GET /api/me', function (): void {
             'wireguard_address' => '10.6.0.2',
         ]));
         assignMeGatewayRole($gatewayId);
-        assignMeNodeRole($appId, 'app-dev', ['tld' => 'test']);
+        assignMeNodeRole($appId, 'app-dev');
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.9']);
 
@@ -322,7 +326,7 @@ describe('GET /api/me', function (): void {
             'name' => 'app-1',
             'wireguard_address' => '10.6.0.9',
         ]));
-        assignMeNodeRole($appId, 'app-dev', ['tld' => 'test']);
+        assignMeNodeRole($appId, 'app-dev');
         $gatewayId = (int) DB::table('nodes')->insertGetId(meNodeRow([
             'name' => 'gateway-1',
             'wireguard_address' => '10.6.0.2',

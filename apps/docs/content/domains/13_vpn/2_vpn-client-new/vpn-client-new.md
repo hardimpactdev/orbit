@@ -30,10 +30,9 @@ Run this command to provision a new admin VPN peer on the active `vpn` role
 runtime backend.
 
 `vpn-client:new` resolves the active `vpn` role and creates a runtime backend
-peer for the requested client name. In this version the active `vpn` role is
-gateway-coupled, so Orbit still executes on the gateway host. From a client,
-Orbit connects to the active `vpn` role host over the Orbit/WireGuard SSH path
-and runs the operation against that runtime.
+peer for the requested client name. Every caller uses the typed gateway HTTPS
+API over WireGuard. The gateway executes the gateway-coupled backend operation
+locally.
 
 The created peer is an admin VPN client. It is not an Orbit node identity, does
 not create a node record, and does not grant Orbit node access. Active Orbit
@@ -57,7 +56,7 @@ machine-readable output.
 
 - The caller is the gateway node, has `vpn:write` on the active gateway node,
   or has gateway-admin authority.
-- Non-gateway callers can SSH to the active `vpn` role host over Orbit/WireGuard.
+- Every caller can reach the typed gateway HTTPS API over WireGuard.
 - The active `vpn` role is resolvable and its runtime backend is installed and reachable.
 - The operator can authenticate to the VPN backend when TOTP is required.
 

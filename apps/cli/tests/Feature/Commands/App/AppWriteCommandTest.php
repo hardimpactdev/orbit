@@ -294,6 +294,7 @@ describe('app write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'app:remove', [
             'app' => 'docs',
             '--force' => true,
+            '--node-transport' => 'transitional-ssh-fallback',
             '--json' => true,
         ]);
 
@@ -307,6 +308,7 @@ describe('app write commands', function (): void {
                     'destructive_consent' => true,
                     'destructive_consent_source' => 'force',
                 ]
+                && $request->header('X-Orbit-Node-Transport-Preference') === ['transitional-ssh-fallback']
             ),
         );
 
@@ -348,6 +350,7 @@ describe('app write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'app:prune', [
             'app' => 'docs',
             '--dry-run' => true,
+            '--node-transport' => 'transitional-ssh-fallback',
             '--json' => true,
         ]);
 
@@ -361,6 +364,7 @@ describe('app write commands', function (): void {
                     'app' => 'docs',
                     'dry_run' => true,
                 ]
+                && $request->header('X-Orbit-Node-Transport-Preference') === ['transitional-ssh-fallback']
             ),
         );
 

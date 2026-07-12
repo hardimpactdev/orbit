@@ -24,7 +24,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property array<string, mixed>|null $credentials
  * @property-read Node|null $node
  * @property-read Collection<int, DatabaseConnectionTarget> $targets
- * @property-read Collection<int, AppInstanceDatabaseConnectionTarget> $instanceTargets
  */
 class DatabaseConnection extends Model
 {
@@ -66,13 +65,5 @@ class DatabaseConnection extends Model
     public function targets(): HasMany
     {
         return $this->hasMany(DatabaseConnectionTarget::class);
-    }
-
-    /**
-     * @return HasMany<AppInstanceDatabaseConnectionTarget, $this>
-     */
-    public function instanceTargets(): HasMany
-    {
-        return $this->hasMany(AppInstanceDatabaseConnectionTarget::class);
     }
 }

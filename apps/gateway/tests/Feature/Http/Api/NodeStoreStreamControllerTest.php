@@ -42,9 +42,8 @@ afterEach(function (): void {
 
 function nodeStoreStreamRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'gateway-1',
-        'tld' => null,
         'platform' => 'unknown',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
@@ -55,6 +54,12 @@ function nodeStoreStreamRow(array $overrides = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    if (! array_key_exists('tld', $overrides)) {
+        $row['tld'] = strtolower((string) $row['name']);
+    }
+
+    return $row;
 }
 
 function assignNodeStoreStreamRole(int $nodeId, string $role): void

@@ -14,7 +14,7 @@ uses(RefreshDatabase::class);
  */
 function nodeAccessCommandRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'app-1',
         'host' => '10.6.0.7',
         'wireguard_address' => '10.6.0.7',
@@ -25,6 +25,10 @@ function nodeAccessCommandRow(array $overrides = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    $row['tld'] ??= $row['name'];
+
+    return $row;
 }
 
 function assignNodeAccessCommandRole(int $nodeId, string $role, string $status = 'active'): void

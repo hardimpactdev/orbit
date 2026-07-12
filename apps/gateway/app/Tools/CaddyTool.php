@@ -8,12 +8,17 @@ use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitCaddyContainer;
 
+/** @mago-expect lint:too-many-methods */
 final class CaddyTool extends BaseTool
 {
     /**
      * @var list<string>
      */
     protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux', 'macos'];
+
+    protected const ?string REQUIRED_CONTAINER_PROVIDER = 'docker-compatible';
+
+    protected const ?string ISOLATION = 'docker';
 
     public function slug(): string
     {
@@ -29,7 +34,7 @@ final class CaddyTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['reconfigure', 'update', 'safe-fix', 'safe-adopt'];
+        return ['reconfigure', 'update', 'safe-fix', 'safe-adopt', 'reload', 'logs'];
     }
 
     public function reconfigureScript(array $config = []): string
@@ -37,6 +42,12 @@ final class CaddyTool extends BaseTool
         $container = $this->container($config);
 
         return self::reloadCommand($container->name());
+    }
+
+    #[\Override]
+    public function reloadScript(array $config = []): string
+    {
+        return $this->reconfigureScript($config);
     }
 
     public static function reloadCommand(string $container = 'orbit-caddy'): string

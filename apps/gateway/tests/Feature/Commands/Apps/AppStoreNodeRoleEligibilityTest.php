@@ -29,7 +29,7 @@ function createEligibleAppStoreTargetNode(string $name = 'app-1', array $overrid
 {
     return Node::factory()->create(array_merge([
         'name' => $name,
-        'tld' => 'test',
+        'tld' => $name,
         'status' => 'active',
     ], $overrides));
 }
@@ -68,7 +68,7 @@ describe('AppStore node role eligibility', function (): void {
     it('accepts a node with active app-dev for development app creation', function (): void {
         $caller = createAppStoreRoleCallerNode();
         $target = createEligibleAppStoreTargetNode();
-        assignRole($target, 'app-dev', settings: ['tld' => 'test']);
+        assignRole($target, 'app-dev');
         grantAppStoreRoleAccess($caller, $target);
 
         $response = $this->call(
@@ -98,17 +98,14 @@ describe('AppStore node role eligibility', function (): void {
     it('accepts a node with active app-prod for production app creation', function (): void {
         $caller = createAppStoreRoleCallerNode();
         $router = createEligibleAppStoreTargetNode('router-1', [
-            'tld' => null,
             'wireguard_address' => '10.6.0.2',
             'host' => '10.6.0.2',
         ]);
         $ingress = createEligibleAppStoreTargetNode('edge-1', [
-            'tld' => null,
             'wireguard_address' => '10.6.0.7',
             'host' => '10.6.0.7',
         ]);
         $target = createEligibleAppStoreTargetNode(overrides: [
-            'tld' => null,
             'wireguard_address' => '10.6.0.5',
             'host' => '10.6.0.5',
         ]);

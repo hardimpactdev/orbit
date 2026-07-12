@@ -159,10 +159,7 @@ it('reports Orbit command family and command directory structure issues', functi
     expect($exitCode)
         ->toBe(1)
         ->and(array_column($payload['findings'], 'rule'))
-        ->toContain(
-            'command_docs.converted_family_structure',
-            'command_docs.command_directory_structure',
-        )
+        ->toContain('command_docs.converted_family_structure', 'command_docs.command_directory_structure')
         ->and(array_column($payload['findings'], 'message'))
         ->toContain(
             'Converted family directories must contain README.md.',
@@ -952,6 +949,44 @@ it('reports json examples that mix success and error envelopes', function (): vo
         ]);
 });
 
+it('requires a non-null app instance on canonical workspace json entities', function (): void {
+    writeOrbitCommandDocsFamily($this->docsRoot, jsonRendererContract: <<<'MARKDOWN'
+        # JSON Renderer
+
+        ## Primitive
+
+        None. JSON renderer.
+
+        ## Envelope
+
+        Uses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.
+
+        ```json
+        {"success":{"data":{"workspace":{"name":"feature","app":"docs","node":"beast","url":"https://feature.docs.beast"}}}}
+        ```
+
+        ```json
+        {"success":{"data":{"workspace":{"name":"feature","app":"docs","app_instance":null,"node":"beast","url":"https://feature.docs.beast"}}}}
+        ```
+        MARKDOWN);
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    $findings = findingsForRule($payload, 'command_docs.json_renderer_examples');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and(array_column($findings, 'message'))
+        ->toContain(
+            'JSON example 1 success.data.workspace is missing required canonical workspace field `app_instance`.',
+            'JSON example 2 success.data.workspace.app_instance must be string, got null.',
+        );
+});
+
 it('reports json warning entries that omit required warning fields', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
@@ -978,10 +1013,7 @@ it('reports json warning entries that omit required warning fields', function ()
 });
 
 it('reports renderer files without primitive references', function (): void {
-    writeOrbitCommandDocsFamily(
-        $this->docsRoot,
-        humanRendererContract: "# Human Renderer\n\nRenders a table.\n",
-    );
+    writeOrbitCommandDocsFamily($this->docsRoot, humanRendererContract: "# Human Renderer\n\nRenders a table.\n");
 
     $exitCode = Artisan::call('librarian:lint', [
         '--format' => 'agent',
@@ -1020,10 +1052,7 @@ it('accepts the show detail renderer primitive reference', function (): void {
 });
 
 it('reports canonical technical contracts without activity logging declarations', function (): void {
-    writeOrbitCommandDocsFamily(
-        $this->docsRoot,
-        canonicalContract: validOrbitCanonicalContract(activityLogging: ''),
-    );
+    writeOrbitCommandDocsFamily($this->docsRoot, canonicalContract: validOrbitCanonicalContract(activityLogging: ''));
 
     $exitCode = Artisan::call('librarian:lint', [
         '--format' => 'agent',
@@ -1106,6 +1135,55 @@ it('reports warning codes that do not match the declared doctor family', functio
         ]);
 });
 
+it('accepts registered command handoffs while still reporting unregistered doctor warnings', function (): void {
+    writeOrbitCommandDocsFamily($this->docsRoot, jsonRendererContract: <<<'MARKDOWN'
+        # JSON Renderer
+
+        ## Primitive
+
+        None. JSON renderer.
+
+        ## Envelope
+
+        Uses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.
+
+        ```json
+        {"success":{"meta":{"warnings":[{"code":"proxy.enactment_deferred","family":"proxy","message":"Proxy enactment is deferred.","next_command":"doctor --family=proxy --restore --node=app-1"},{"code":"firewall_rule.host_upstream_may_block","family":"firewall_rule","message":"The host firewall may block the upstream.","next_command":"firewall:allow caddy-to-host-5173 --node=app-1"},{"code":"proxy.unregistered_handoff","family":"proxy","message":"An unregistered handoff remains strict.","next_command":"doctor --family=proxy --restore --node=app-1"}]}}}
+        ```
+        MARKDOWN);
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/8_proxy/proxy-doctor.md',
+        "# Proxy Doctor\n\n## Proxy Issue Codes\n\n| Code | Detected when |\n| --- | --- |\n| `proxy.route_missing` | A proxy route is missing. |\n",
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/4_firewall/firewall-doctor.md',
+        "# Firewall Doctor\n\n## Firewall Rule Issue Codes\n\n| Code | Detected when |\n| --- | --- |\n| `firewall_rule.rule_missing` | A firewall rule is missing. |\n",
+    );
+
+    config()->set('librarian.rules', [DoctorWarningCoherenceRule::class]);
+    app()->forgetInstance(DocsConfig::class);
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    $matchingFindings = findingsForRule($payload, 'command_docs.doctor_warning_coherence');
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and($matchingFindings)
+        ->toHaveCount(1)
+        ->and($matchingFindings[0])
+        ->toMatchArray([
+            'severity' => 'warning',
+            'message' => 'Warning code `proxy.unregistered_handoff` is not listed in the proxy doctor issue codes. If this is a command-level handoff warning, document it as such; otherwise use a doctor issue code.',
+        ]);
+});
+
 it('reports stale shared failure vocabulary', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
@@ -1132,6 +1210,13 @@ it('reports stale shared failure vocabulary', function (): void {
             'rule' => 'command_docs.shared_failure_vocabulary',
             'message' => 'Stale failure code `missing_input` is documented. Use validation_failed with error.meta.field for missing input.',
         ]);
+});
+
+it('keeps caller role denial out of the shared error code registry', function (): void {
+    /** @var array{shared: list<string>} $registry */
+    $registry = require base_path('config/librarian-command-docs/error_codes.php');
+
+    expect($registry['shared'])->toContain('authorization_failed')->not->toContain('caller_role_not_allowed');
 });
 
 it('reports json next command fields outside recovery metadata', function (): void {
@@ -1418,10 +1503,7 @@ it('opts into package prose hygiene rules through Librarian config', function ()
     expect($exitCode)
         ->toBe(0)
         ->and(array_column($payload['findings'], 'rule'))
-        ->toContain(
-            'librarian.requirement_smell',
-            'librarian.section_opener_prose',
-        );
+        ->toContain('librarian.requirement_smell', 'librarian.section_opener_prose');
 });
 
 it('flags legacy-narrative terms in docs as warnings', function (): void {

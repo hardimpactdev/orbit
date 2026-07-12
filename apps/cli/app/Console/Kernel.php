@@ -34,6 +34,7 @@ final class Kernel extends LaravelZeroKernel
                         $readOperation instanceof SoloReadOperationDefinition => new SoloReadOnlyCommand(
                             $readOperation,
                             app(SoloCommandSignature::class),
+                            app(SoloCommandTargetPayload::class),
                         ),
                         $mutatingOperation instanceof SoloMutatingOperationDefinition => new SoloMutatingCommand(
                             $mutatingOperation,

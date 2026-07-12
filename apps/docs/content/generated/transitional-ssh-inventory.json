@@ -1,0 +1,340 @@
+{
+    "schema_version": 1,
+    "generated_from": {
+        "source_roots": [
+            "apps/gateway/app",
+            "apps/cli/app"
+        ],
+        "consumer_patterns": [
+            "use App\\Contracts\\RemoteShell;",
+            "use App\\Contracts\\StartsRemoteShellProcesses;",
+            "use App\\Services\\RemoteShell\\RemoteExecutor;",
+            "use App\\Services\\RemoteShell\\SshCommandBuilder;",
+            "NodeTransportPreference::TransitionalSshFallback",
+            "ssh_bootstrap_binary"
+        ],
+        "cli_selector_patterns": [
+            "--node-transport",
+            "transitional-ssh-fallback"
+        ],
+        "explicit_executor_paths": [
+            "apps/gateway/app/Services/NodeCommandTransport/NodeCommandTransportSelector.php",
+            "apps/gateway/app/Services/RemoteShell/ExplicitRemoteShellFallback.php",
+            "apps/gateway/app/Services/RemoteShell/RemoteHostExecutor.php",
+            "apps/gateway/app/Services/RemoteShell/RemoteLocalExecutor.php",
+            "apps/gateway/app/Services/RemoteShell/RemoteOrbitGatewayExecutor.php",
+            "apps/gateway/app/Services/RemoteShell/SshRemoteShell.php"
+        ]
+    },
+    "policy": {
+        "permanent_lane": "provisioning/bootstrap only",
+        "provisioning_marker": "@orbit-ssh-lane provisioning-ssh",
+        "transitional_marker": "@orbit-ssh-lane transitional-ssh",
+        "steady_state_lane": "Agent push or gateway-local execution"
+    },
+    "provisioning_ssh": [
+        {
+            "path": "apps/gateway/app/Services/Nodes/GatewayNodeCreator.php",
+            "marker_line": 57
+        },
+        {
+            "path": "apps/gateway/app/Services/OrbitHostInstaller.php",
+            "marker_line": 21
+        },
+        {
+            "path": "apps/gateway/app/Services/RemoteShell/RemoteHostExecutor.php",
+            "marker_line": 17
+        },
+        {
+            "path": "apps/gateway/app/Services/RemoteShell/SshRemoteShell.php",
+            "marker_line": 13
+        }
+    ],
+    "transitional_ssh": [
+        {
+            "path": "apps/cli/app/Commands/Analytics/AnalyticsUpdateCommand.php",
+            "marker_line": 13
+        },
+        {
+            "path": "apps/cli/app/Commands/App/AppInstanceCommand.php",
+            "marker_line": 14
+        },
+        {
+            "path": "apps/cli/app/Commands/App/AppNewCommand.php",
+            "marker_line": 19
+        },
+        {
+            "path": "apps/cli/app/Commands/App/AppPruneCommand.php",
+            "marker_line": 14
+        },
+        {
+            "path": "apps/cli/app/Commands/App/AppRegisterCommand.php",
+            "marker_line": 13
+        },
+        {
+            "path": "apps/cli/app/Commands/App/AppRemoveCommand.php",
+            "marker_line": 15
+        },
+        {
+            "path": "apps/cli/app/Commands/Database/DatabaseAddCommand.php",
+            "marker_line": 11
+        },
+        {
+            "path": "apps/cli/app/Commands/Database/DatabaseAddUserCommand.php",
+            "marker_line": 11
+        },
+        {
+            "path": "apps/cli/app/Commands/Database/DatabaseUpdateCommand.php",
+            "marker_line": 11
+        },
+        {
+            "path": "apps/cli/app/Commands/Extension/ExtensionDisableCommand.php",
+            "marker_line": 15
+        },
+        {
+            "path": "apps/cli/app/Commands/Extension/ExtensionEnableCommand.php",
+            "marker_line": 19
+        },
+        {
+            "path": "apps/cli/app/Commands/Firewall/FirewallAllowCommand.php",
+            "marker_line": 9
+        },
+        {
+            "path": "apps/cli/app/Commands/Firewall/FirewallDenyCommand.php",
+            "marker_line": 9
+        },
+        {
+            "path": "apps/cli/app/Commands/Firewall/FirewallRemoveCommand.php",
+            "marker_line": 13
+        },
+        {
+            "path": "apps/cli/app/Commands/Metrics/MetricsCredentialsCommand.php",
+            "marker_line": 15
+        },
+        {
+            "path": "apps/cli/app/Commands/Metrics/MetricsDisableCommand.php",
+            "marker_line": 15
+        },
+        {
+            "path": "apps/cli/app/Commands/Metrics/MetricsEnableCommand.php",
+            "marker_line": 13
+        },
+        {
+            "path": "apps/cli/app/Commands/Metrics/MetricsStatusCommand.php",
+            "marker_line": 15
+        },
+        {
+            "path": "apps/cli/app/Commands/Node/NodeManageCommand.php",
+            "marker_line": 15
+        },
+        {
+            "path": "apps/cli/app/Commands/Operation/DoctorCommand.php",
+            "marker_line": 24
+        },
+        {
+            "path": "apps/cli/app/Commands/S3/S3CredentialsCommand.php",
+            "marker_line": 15
+        },
+        {
+            "path": "apps/cli/app/Commands/S3/S3PublishCommand.php",
+            "marker_line": 18
+        },
+        {
+            "path": "apps/cli/app/Commands/S3/S3UnpublishCommand.php",
+            "marker_line": 19
+        },
+        {
+            "path": "apps/cli/app/Commands/Schedule/ScheduleAddCommand.php",
+            "marker_line": 18
+        },
+        {
+            "path": "apps/cli/app/Commands/Schedule/ScheduleLogsCommand.php",
+            "marker_line": 15
+        },
+        {
+            "path": "apps/cli/app/Commands/Schedule/ScheduleRunCommand.php",
+            "marker_line": 14
+        },
+        {
+            "path": "apps/cli/app/Commands/Schedule/ScheduleShowCommand.php",
+            "marker_line": 16
+        },
+        {
+            "path": "apps/cli/app/Commands/Tool/ToolShowCommand.php",
+            "marker_line": 15
+        },
+        {
+            "path": "apps/cli/app/Commands/Workspace/WorkspaceRemoveCommand.php",
+            "marker_line": 16
+        },
+        {
+            "path": "apps/cli/app/Commands/Workspace/WorkspaceSetupCommand.php",
+            "marker_line": 13
+        },
+        {
+            "path": "apps/gateway/app/Actions/Apps/EnsureAppProxyRoute.php",
+            "marker_line": 27
+        },
+        {
+            "path": "apps/gateway/app/Actions/Apps/RemoveApp.php",
+            "marker_line": 24
+        },
+        {
+            "path": "apps/gateway/app/Actions/Workspaces/RemoveWorkspace.php",
+            "marker_line": 26
+        },
+        {
+            "path": "apps/gateway/app/Http/Controllers/Api/UpdateAllController.php",
+            "marker_line": 33
+        },
+        {
+            "path": "apps/gateway/app/Services/Apps/AppRuntimeContainerManager.php",
+            "marker_line": 24
+        },
+        {
+            "path": "apps/gateway/app/Services/Apps/AppSetupStepRunner.php",
+            "marker_line": 18
+        },
+        {
+            "path": "apps/gateway/app/Services/Convergence/ManagedFile.php",
+            "marker_line": 20
+        },
+        {
+            "path": "apps/gateway/app/Services/Convergence/ProcessDockerContainerResource.php",
+            "marker_line": 22
+        },
+        {
+            "path": "apps/gateway/app/Services/Convergence/SystemdService.php",
+            "marker_line": 20
+        },
+        {
+            "path": "apps/gateway/app/Services/Convergence/UfwFirewallRule.php",
+            "marker_line": 20
+        },
+        {
+            "path": "apps/gateway/app/Services/Doctor/DoctorReportRunner.php",
+            "marker_line": 88
+        },
+        {
+            "path": "apps/gateway/app/Services/Firewall/FirewallRuleFixer.php",
+            "marker_line": 21
+        },
+        {
+            "path": "apps/gateway/app/Services/NodeCommandTransport/NodeCommandTransportSelector.php",
+            "marker_line": 13
+        },
+        {
+            "path": "apps/gateway/app/Services/Nodes/NodeSecurityPostureProbe.php",
+            "marker_line": 29
+        },
+        {
+            "path": "apps/gateway/app/Services/Nodes/NodesProbe.php",
+            "marker_line": 43
+        },
+        {
+            "path": "apps/gateway/app/Services/Nodes/OperatorNodeManager.php",
+            "marker_line": 15
+        },
+        {
+            "path": "apps/gateway/app/Services/Nodes/Roles/RoleBaselines/MetricsRoleBaseline.php",
+            "marker_line": 42
+        },
+        {
+            "path": "apps/gateway/app/Services/Operations/FleetUpdateNodeInstaller.php",
+            "marker_line": 17
+        },
+        {
+            "path": "apps/gateway/app/Services/Operations/GatewayServiceUpdater.php",
+            "marker_line": 29
+        },
+        {
+            "path": "apps/gateway/app/Services/Operations/WorkloadNodeUpdater.php",
+            "marker_line": 23
+        },
+        {
+            "path": "apps/gateway/app/Services/OrbitUpdater.php",
+            "marker_line": 15
+        },
+        {
+            "path": "apps/gateway/app/Services/Proxy/ProxyRouteFixer.php",
+            "marker_line": 23
+        },
+        {
+            "path": "apps/gateway/app/Services/Proxy/ProxyRouteProbe.php",
+            "marker_line": 23
+        },
+        {
+            "path": "apps/gateway/app/Services/RemoteShell/ExplicitRemoteShellFallback.php",
+            "marker_line": 9
+        },
+        {
+            "path": "apps/gateway/app/Services/RemoteShell/RemoteLocalExecutor.php",
+            "marker_line": 32
+        },
+        {
+            "path": "apps/gateway/app/Services/RemoteShell/RemoteOrbitGatewayExecutor.php",
+            "marker_line": 18
+        },
+        {
+            "path": "apps/gateway/app/Services/RemoteShell/RemoteShellPool.php",
+            "marker_line": 19
+        },
+        {
+            "path": "apps/gateway/app/Services/RuntimeBackend/RuntimeBackendProbe.php",
+            "marker_line": 19
+        },
+        {
+            "path": "apps/gateway/app/Services/Security/HomeDirectoryLockdownInstaller.php",
+            "marker_line": 12
+        },
+        {
+            "path": "apps/gateway/app/Services/Security/PublicSshDenyInstaller.php",
+            "marker_line": 13
+        },
+        {
+            "path": "apps/gateway/app/Services/Security/SecurityInstaller.php",
+            "marker_line": 12
+        },
+        {
+            "path": "apps/gateway/app/Services/Security/SshdHardenedInstaller.php",
+            "marker_line": 12
+        },
+        {
+            "path": "apps/gateway/app/Services/Security/SysctlBaselineInstaller.php",
+            "marker_line": 12
+        },
+        {
+            "path": "apps/gateway/app/Services/Security/UnattendedUpgradesInstaller.php",
+            "marker_line": 14
+        },
+        {
+            "path": "apps/gateway/app/Services/Tools/ToolsFixer.php",
+            "marker_line": 25
+        },
+        {
+            "path": "apps/gateway/app/Services/Tools/ToolsProbe.php",
+            "marker_line": 32
+        },
+        {
+            "path": "apps/gateway/app/Services/Updates/UnattendedUpgradesDriver.php",
+            "marker_line": 17
+        },
+        {
+            "path": "apps/gateway/app/Services/Workspaces/EnsureWorkspaceProxyRoute.php",
+            "marker_line": 26
+        },
+        {
+            "path": "apps/gateway/app/Services/Workspaces/WorkspaceRuntimeContainerManager.php",
+            "marker_line": 26
+        },
+        {
+            "path": "apps/gateway/app/Services/Workspaces/WorkspaceSetupStepRunner.php",
+            "marker_line": 19
+        },
+        {
+            "path": "apps/gateway/app/Services/Workspaces/WorkspacesProbe.php",
+            "marker_line": 21
+        }
+    ],
+    "unmarked_consumers": []
+}

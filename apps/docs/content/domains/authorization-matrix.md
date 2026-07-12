@@ -94,8 +94,8 @@ authority](../architecture.md#gateway-implicit-authority).
 | `node role:list` | `role:read` | target node | `role:read` implies `role:list` | `authorization_failed` | Standard missing-permission meta plus target node |
 | `node role:remove` | `role:remove` | target node | Triggers self-grant reconciliation | `authorization_failed` | Standard missing-permission meta plus target node and role |
 | `node role:update` | n/a | n/a | No command surface; use `node:update` for node metadata | n/a | n/a |
-| `php:list` | `php:read` | target node, app owning node, or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
-| `php:use` | `php:write` | target node, app owning node, or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
+| `php:list` | `php:read` | target node, app-instance serving node, or workspace-instance serving node | Missing or ambiguous app-instance placement is denied before runtime reads | `authorization_failed` | Standard missing-permission meta plus resolved serving node |
+| `php:use` | `php:write` | target node, app-instance serving node, or workspace-instance serving node | Missing or ambiguous app-instance placement is denied before runtime writes | `authorization_failed` | Standard missing-permission meta plus resolved serving node |
 | `process:add` | `process:add` | process owning node | `app-dev` self-grants include same-node app-owned process definition creation; `app-prod` self-grants do not | `authorization_failed` | Standard missing-permission meta plus resolved process scope |
 | `process:list` | `process:read` | process owning node | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible node |
 | `process:logs` | `process:read` | process owning node | None | `authorization_failed` | Standard missing-permission meta plus process |
@@ -104,7 +104,7 @@ authority](../architecture.md#gateway-implicit-authority).
 | `process:start` | `process:start` | process owning node | Transitive calls inside `workspace:setup` do not re-authorize | `authorization_failed` | Standard missing-permission meta plus process |
 | `process:stop` | `process:stop` | process owning node | Transitive calls inside `workspace:setup` do not re-authorize | `authorization_failed` | Standard missing-permission meta plus process |
 | `process:update` | `process:update` | process owning node | Public mutation surface for command, policy, runtime, and supported identity renames; `app-dev` self-grants include same-node app-owned process definition updates | `authorization_failed` | Standard missing-permission meta plus resolved process scope |
-| `profile` | n/a - authenticated but ungated | resolved subject owning node | Requires authenticated WireGuard identity, no permission check | n/a | n/a |
+| `profile` | n/a - local-only | n/a | No gateway call, identity lookup, grant check, or activity entry | n/a | n/a |
 | `proxy:add` | `proxy:add` | target node, app owning node, or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
 | `proxy:list` | `proxy:read` | target node or each visible route owner | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible node |
 | `proxy:remove` | `proxy:remove` | route owning node | None | `authorization_failed` | Standard missing-permission meta plus route |
@@ -120,12 +120,14 @@ authority](../architecture.md#gateway-implicit-authority).
 | `tool:credentials` | `tool:credentials` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `tool:install` | `tool:install` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `tool:list` | `tool:read` | target node or each visible tool owner | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible node |
+| `tool:logs` | `tool:logs` (`tool:read` implies it) | target node; active serving gateway for gateway-local tools | Tool must declare an explicit logs capability and resolve exactly one runtime | `authorization_failed` | Standard missing-permission meta plus tool and serving node |
 | `tool:reconfigure` | `tool:reconfigure` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
+| `tool:reload` | `tool:reload` | target node; active serving gateway for gateway-local tools | Tool must declare an explicit reload capability and resolve exactly one direct runtime | `authorization_failed` | Standard missing-permission meta plus tool and serving node |
 | `tool:remove` | `tool:remove` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
-| `tool:restart` | `tool:restart` | target node | Tool must declare an explicit lifecycle capability; initial support is macOS-only `orbstack` | `authorization_failed` | Standard missing-permission meta plus tool |
+| `tool:restart` | `tool:restart` | target node; active serving gateway for gateway-local tools | Tool must declare an explicit lifecycle capability | `authorization_failed` | Standard missing-permission meta plus tool and serving node |
 | `tool:show` | `tool:read` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
-| `tool:start` | `tool:start` | target node | Tool must declare an explicit lifecycle capability; initial support is macOS-only `orbstack` | `authorization_failed` | Standard missing-permission meta plus tool |
-| `tool:stop` | `tool:stop` | target node | Tool must declare an explicit lifecycle capability; initial support is macOS-only `orbstack` | `authorization_failed` | Standard missing-permission meta plus tool |
+| `tool:start` | `tool:start` | target node; active serving gateway for gateway-local tools | Tool must declare an explicit lifecycle capability | `authorization_failed` | Standard missing-permission meta plus tool and serving node |
+| `tool:stop` | `tool:stop` | target node; active serving gateway for gateway-local tools | Tool must declare an explicit lifecycle capability | `authorization_failed` | Standard missing-permission meta plus tool and serving node |
 | `tool:update` | `tool:update` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `update` | n/a - local-only | n/a | Updates caller's own checkout | n/a | n/a |
 | `update:all` | gateway-admin only | gateway | No narrow permission | `authorization_failed` | `reason=missing_gateway_admin`, `serving_node=<gateway>` |
@@ -153,10 +155,13 @@ Internal `orbit:internal:*` commands are not public grant surfaces. They are
 invoked by controlled bootstrap/install flows and must not be exposed as remote
 API commands.
 
-## Commands outside the standard grants flow
+## Authorization classes outside the default grants gate
 
-Most commands require a WireGuard identity, a serving node, and a stored grant
-with the required permission. The commands below are deliberate exceptions.
+Remote actions normally require a WireGuard identity, a serving node, and a
+stored grant with the required permission. The architecture names the narrow
+classes below so an exception is never described as an unspecified ungated
+route. Gateway implicit authority is the fourth class and is enforced by the
+shared authorizer for callers carrying the gateway role.
 
 ### Pre-Grants Bootstrap
 
@@ -165,7 +170,7 @@ These paths exist before useful grants can exist:
 - `node:new --template=gateway` for first-gateway bootstrap.
 - `gateway:add` for registering a local node connection to an existing gateway.
 
-### Local-Only Deployment Context
+### Local-Only
 
 These commands mutate or inspect only the caller's local machine and do not need
 a gateway permission check:
@@ -175,15 +180,17 @@ a gateway permission check:
 - `dns:list`
 - `gateway:trust`
 - `update`
-
-### Authenticated But Ungated
-
-These commands require a gateway call and a known WireGuard peer identity, but
-do not require a permission check:
-
 - `profile`
+
+### Identity-Gated Self-Management
+
+These commands require a gateway call and a known WireGuard peer identity and
+may change only the caller identity's approved self-management fields:
+
 - `node:manage` when the authenticated identity is an active roleless operator
   node managing itself.
+- `node:update --managed|--no-managed` when that same roleless operator identity
+  manages itself; gateway targets cannot opt in.
 
 ### Gateway-Host Rejection
 

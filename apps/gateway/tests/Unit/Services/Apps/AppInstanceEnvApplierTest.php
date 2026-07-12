@@ -110,7 +110,7 @@ function appAndNodeForEnvApplierTest(): array
 {
     $node = Node::factory()
         ->appProd()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'status' => 'active',
             'user' => 'orbit',

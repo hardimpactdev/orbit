@@ -52,6 +52,10 @@ Target context is required when neither `--node`, `--app`, nor local
 6. Preserves the expected tool version.
 7. Reports the reconfiguration result.
 
+Gateway-owned configuration changes stay gateway-local. Target-node
+setup/configuration uses Agent push; `tool:reconfigure` exposes no node
+transport selector and never falls back to SSH.
+
 The command does not create a tool row for an unmanaged observed tool. Use
 explicit `doctor --family=tool --adopt` semantics for supported adoption.
 

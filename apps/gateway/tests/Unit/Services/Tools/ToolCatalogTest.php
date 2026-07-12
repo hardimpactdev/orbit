@@ -17,6 +17,7 @@ use App\Tools\OpenCodeCliTool;
 use App\Tools\OrbStackTool;
 use App\Tools\PolyscopeServerTool;
 use App\Tools\SeaweedfsTool;
+use App\Tools\VitePlusTool;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -61,7 +62,7 @@ describe('tool catalog definitions', function (): void {
             ->toBeInstanceOf(CodexAppTool::class)
             ->and($catalog->category('codex-app'))
             ->toBe('operator')
-            ->and($catalog->requiredNodeRole('codex-app'))
+            ->and($catalog->bootstrapRole('codex-app'))
             ->toBeNull()
             ->and($catalog->supportedOperatingSystems('codex-app'))
             ->toBe(['macos'])
@@ -69,6 +70,17 @@ describe('tool catalog definitions', function (): void {
             ->toBeFalse()
             ->and($catalog->hasCapability('codex-app', 'remove'))
             ->toBeFalse();
+    });
+
+    it('catalogs VitePlus as optional runtime inventory without a required node role', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->definition('viteplus'))
+            ->toBeInstanceOf(VitePlusTool::class)
+            ->and($catalog->category('viteplus'))
+            ->toBe('runtime')
+            ->and($catalog->bootstrapRole('viteplus'))
+            ->toBeNull();
     });
 
     it('catalogs agent coding CLIs as user-scoped runtime tools', function (
@@ -83,7 +95,7 @@ describe('tool catalog definitions', function (): void {
             ->toBeTrue()
             ->and($catalog->category($tool))
             ->toBe('runtime')
-            ->and($catalog->requiredNodeRole($tool))
+            ->and($catalog->bootstrapRole($tool))
             ->toBeNull()
             ->and($catalog->supportedOperatingSystems($tool))
             ->toBe($operatingSystems)
@@ -361,7 +373,7 @@ describe('tool catalog definitions', function (): void {
                 'provider_command' => 'docker info',
             ])
             ->and($catalog->logCommand('docker', 50))
-            ->toContain('journalctl');
+            ->toBeNull();
     });
 
     it('catalogs OrbStack as a macOS-only lifecycle-capable provider tool', function (): void {
@@ -589,21 +601,22 @@ describe('tool catalog definitions', function (): void {
             );
     });
 
-    it('catalogs seaweedfs as the s3 role storage tool with credentials capability and Docker-first runtime metadata', function (): void {
+    it('keeps seaweedfs capability facts tool-owned while its runtime stays process-owned', function (): void {
         $catalog = app(ToolCatalog::class);
         $metadata = $catalog->probeMetadata('seaweedfs');
-        $repairCommands = is_array($metadata['repair_commands'] ?? null)
-            ? $metadata['repair_commands']
-            : [];
 
         expect($catalog->definition('seaweedfs'))
             ->toBeInstanceOf(SeaweedfsTool::class)
-            ->and($catalog->requiredNodeRole('seaweedfs'))
+            ->and($catalog->bootstrapRole('seaweedfs'))
             ->toBe('s3')
             ->and($catalog->category('seaweedfs'))
             ->toBe('storage')
             ->and($catalog->hasCapability('seaweedfs', 'credentials'))
             ->toBeTrue()
+            ->and($catalog->hasCapability('seaweedfs', 'install'))
+            ->toBeFalse()
+            ->and($catalog->hasCapability('seaweedfs', 'update'))
+            ->toBeFalse()
             ->and($catalog->hasCapability('seaweedfs', 'safe-fix'))
             ->toBeTrue()
             ->and($catalog->hasCapability('seaweedfs', 'safe-adopt'))
@@ -611,25 +624,39 @@ describe('tool catalog definitions', function (): void {
             ->and($metadata)
             ->toMatchArray([
                 'binary' => 'docker',
-                'container' => 'orbit-seaweedfs',
-                'image' => 'chrislusf/seaweedfs:4.33',
             ])
-            ->and($repairCommands['lifecycle_running'] ?? null)
-            ->toContain('docker start')
-            ->and($repairCommands['lifecycle_running'] ?? null)
-            ->toContain('orbit-seaweedfs')
-            ->and($repairCommands['lifecycle_stopped'] ?? null)
-            ->toContain('docker stop')
-            ->and($repairCommands['lifecycle_stopped'] ?? null)
-            ->toContain('orbit-seaweedfs')
-            ->and($repairCommands['lifecycle_restarted'] ?? null)
+            ->not
+            ->toHaveKeys(['container', 'image', 'repair_commands'])
+            ->and($catalog->logCommand('seaweedfs', 50))
+            ->toBeNull();
+    });
+
+    it('declares only the approved direct DNS runtime verbs and keeps adoption disabled', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->capabilities('dns'))
+            ->toContain('restart', 'logs')
+            ->not
+            ->toContain('start', 'stop', 'reload', 'safe-adopt')
+            ->and($catalog->lifecycleScript('dns', 'restart'))
             ->toContain('docker restart')
-            ->and($repairCommands['lifecycle_restarted'] ?? null)
-            ->toContain('orbit-seaweedfs')
-            ->and($catalog->logCommand('seaweedfs', 50))
-            ->toContain('docker logs')
-            ->and($catalog->logCommand('seaweedfs', 50))
-            ->toContain('orbit-seaweedfs');
+            ->and($catalog->logCommand('dns', 50))
+            ->toContain('docker logs', 'orbit-dns');
+    });
+
+    it('declares capability-gated lifecycle verbs only for direct single runtimes', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->capabilities('caddy'))
+            ->toContain('reload', 'logs')
+            ->not
+            ->toContain('start', 'stop', 'restart')
+            ->and($catalog->lifecycleScript('caddy', 'reload'))
+            ->toContain('caddy reload')
+            ->and($catalog->capabilities('opencode-cli'))
+            ->toContain('start', 'stop', 'restart', 'logs')
+            ->and($catalog->capabilities('polyscope-server'))
+            ->toContain('start', 'stop', 'restart', 'logs');
     });
 
     it('probes Hermes through the system wrapper that delegates to the agent user', function (): void {

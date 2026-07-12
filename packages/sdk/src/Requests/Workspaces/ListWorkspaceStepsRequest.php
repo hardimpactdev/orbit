@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Laravel\Requests\Workspaces;
 
-use Orbit\Sdk\Laravel\GatewayRequest;
 use Orbit\Sdk\Laravel\Responses\Workspaces\WorkspaceStepListResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
-final class ListWorkspaceStepsRequest extends GatewayRequest
+final class ListWorkspaceStepsRequest extends WorkspaceStepRequest
 {
     #[\Override]
     protected Method $method = Method::GET;
@@ -45,7 +44,7 @@ final class ListWorkspaceStepsRequest extends GatewayRequest
         $steps = $data['steps'] ?? [];
 
         return new WorkspaceStepListResponse(
-            steps: $this->listOfStringKeyedArrays($steps),
+            steps: $this->workspaceSteps($steps),
         );
     }
 }

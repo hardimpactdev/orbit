@@ -1,14 +1,16 @@
 # Deploy Commands
 
-Run the deployment pipeline for production apps. Pipeline steps are stored on
-the gateway and executed in order on the app's owning `app-prod` node. Spec:
+Run the deployment pipeline for concrete production app instances. Policy,
+ordered steps, runs, history, logs, and latest status are stored against one
+instance on the gateway. Steps execute in order on that instance's `app-prod`
+node through Agent push. Spec:
 [`apps/docs/content/domains/10_deploy/`](../../../apps/docs/content/domains/10_deploy/).
 
 Production-only  -  development apps use `workspace:setup` instead.
 
 ## `orbit deploy:run [app]`
 
-Run the configured pipeline for one app.
+Run the configured pipeline for one production app instance.
 
 ```bash
 orbit deploy:run [<app>] [--detach] [--json|--stream-json]
@@ -16,7 +18,7 @@ orbit deploy:run [<app>] [--detach] [--json|--stream-json]
 
 | Option | Notes |
 |---|---|
-| `app` | Production app slug or domain. |
+| `app` | Production app-instance selector or domain. A bare app slug is shorthand only when exactly one instance exists. |
 | `--detach` | Start the run, return as soon as it's durable. Default streams progress until complete. |
 | `--stream-json` | JSONL deployment progress for agents; mutually exclusive with `--json`. |
 
@@ -37,7 +39,8 @@ List deployment runs (most recent first).
 orbit deploy:history [<app>] [--limit=50] [--json]
 ```
 
-Each entry has run id, started/finished timestamps, status, and which step failed if any.
+Selection follows the same exact-instance rule as `deploy:run`. Each entry has
+run id, started/finished timestamps, status, and which step failed if any.
 
 ## `orbit deploy:log [app] [run]`
 
@@ -48,6 +51,7 @@ orbit deploy:log [<app>] [<run>] [--step=<id>] [--lines=500] [--json]
 ```
 
 `--step` scopes to one pipeline step. `--lines` per captured stream (stdout, stderr).
+The run must belong to the selected app instance.
 
 ## `orbit deploy:step-add [app] [command]`
 
@@ -60,8 +64,8 @@ orbit deploy:step-add [<app>] [<command>] [--title='<text>']
 
 | Option | Default | Notes |
 |---|---|---|
-| `app` |  -  | Production app slug or domain. |
-| `command` |  -  | Shell command run on the owning app-prod node, in the app's release path. |
+| `app` |  -  | Production app-instance selector or domain; bare app requires exactly one instance. |
+| `command` |  -  | Command run through Agent push on the owning app-prod node, in the instance's release path. |
 | `--title` | command | Display title in step lists / output. |
 | `--order` | append | Positive integer insertion order. |
 | `--timeout` | 600 | Seconds. |
@@ -89,3 +93,7 @@ orbit deploy:step-remove [<app>] [<step>] [--force] [--json]
 ```
 
 `<step>` accepts either the step id or the exact title.
+
+Attached runs stream durable journal progress over the gateway operations
+WebSocket; `--detach` returns after the operation and initial journal record are
+durable.

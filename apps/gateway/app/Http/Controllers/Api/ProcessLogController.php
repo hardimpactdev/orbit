@@ -11,33 +11,27 @@ use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
-use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessOwnerContextResolver;
-use App\Support\Streaming\StreamFlusher;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Sdk\Laravel\GatewayApiException;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 #[RequiresPermission('process:logs', servingNode: ServingNode::AppOwning)]
 final class ProcessLogController implements Loggable
 {
-    private const string NODE_TRANSPORT_HEADER = 'X-Orbit-Node-Transport-Preference';
-
     private ?Model $activitySubject = null;
 
     public function __construct(
         private readonly NodeAccessAuthorizer $authorizer,
         private readonly ProcessOwnerContextResolver $contexts,
-        private readonly StreamFlusher $streamFlusher,
     ) {}
 
     public function __invoke(
         string $name,
         Request $request,
         ShowProcessLogs $showProcessLogs,
-    ): JsonResponse|StreamedResponse {
+    ): JsonResponse {
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -64,10 +58,6 @@ final class ProcessLogController implements Loggable
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
-        }
-
-        if ($request->boolean('follow')) {
-            return $this->followResponse($request, $showProcessLogs, $context, $name);
         }
 
         try {
@@ -109,50 +99,6 @@ final class ProcessLogController implements Loggable
             ],
             403,
         );
-    }
-
-    private function followResponse(
-        Request $request,
-        ShowProcessLogs $showProcessLogs,
-        ProcessOwnerContext $context,
-        string $name,
-    ): JsonResponse|StreamedResponse {
-        try {
-            $target = $showProcessLogs->streamTarget($context, $name, $this->lines($request));
-        } catch (GatewayApiException $e) {
-            return $this->error(
-                $e->errorCode() ?? 'validation_failed',
-                $e->getMessage(),
-                $e->errorMeta(),
-                $this->statusFor($e),
-            );
-        }
-
-        $this->activitySubject = $context->subject();
-        $useRemoteShellFallback = $request->header(self::NODE_TRANSPORT_HEADER) === 'transitional-ssh-fallback';
-
-        return response()->stream(
-            function () use ($showProcessLogs, $target, $useRemoteShellFallback): void {
-                $follow = $useRemoteShellFallback
-                    ? $showProcessLogs->followTargetViaRemoteShell(...)
-                    : $showProcessLogs->followTarget(...);
-
-                $this->streamFlusher->flush();
-                $follow($target, $this->writeStreamChunk(...));
-            },
-            200,
-            [
-                'Cache-Control' => 'no-cache',
-                'Content-Type' => 'text/plain; charset=UTF-8',
-                'X-Accel-Buffering' => 'no',
-            ],
-        );
-    }
-
-    private function writeStreamChunk(string $output): void
-    {
-        echo $output;
-        $this->streamFlusher->flush();
     }
 
     private function lines(Request $request): int

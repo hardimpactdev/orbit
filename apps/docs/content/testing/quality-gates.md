@@ -248,8 +248,8 @@ Baseline file shape:
 ```
 
 `duration_seconds` is required. `warning_threshold_percent` is optional. When it
-is missing or invalid, the analyzer keeps the backward-compatible default of
-25 percent above the baseline duration. When it is present and valid, the
+is missing or invalid, the analyzer uses 25 percent above the baseline duration.
+When it is present and valid, the
 analyzer uses that percentage to decide whether a recent run is a timing
 regression. `source_artifact` records which artifact was promoted into the
 baseline.

@@ -59,6 +59,22 @@ final class DatabaseConnectionTargetResolver
             ->first();
     }
 
+    public function resolveAppInstanceSelector(?string $selector): ?AppInstance
+    {
+        if ($selector === null || ! str_contains(trim($selector), '.')) {
+            return null;
+        }
+
+        [$appName, $instanceName] = explode('.', trim($selector), 2);
+        $app = App::query()->where('name', $appName)->first();
+
+        if (! $app instanceof App) {
+            return null;
+        }
+
+        return $this->resolveAppInstance($app, $instanceName);
+    }
+
     public function validEnvPrefix(?string $value): bool
     {
         if (! is_string($value) || $value === '') {

@@ -51,7 +51,7 @@ final readonly class SetupWorkspace
     /**
      * @return array{
      *     app: string,
-     *     app_instance: string|null,
+     *     app_instance: string,
      *     workspace: string,
      *     node: string,
      *     url: string,
@@ -128,7 +128,7 @@ final readonly class SetupWorkspace
 
         return [
             'app' => $app->name,
-            'app_instance' => $workspace->appInstance?->name,
+            'app_instance' => $workspace->appInstance->name,
             'workspace' => $workspace->name,
             'node' => $node->name,
             'url' => $workspace->url(),
@@ -192,22 +192,22 @@ final readonly class SetupWorkspace
             ];
         } catch (WorkspaceRuntimeContainerApplyException $exception) {
             $code = $exception->hadExistingContainer
-                ? 'workspace.runtime_container_mismatch'
-                : 'workspace.runtime_container_missing';
+                ? 'process.runtime_unit_mismatch'
+                : 'process.runtime_unit_missing';
             $action = $exception->hadExistingContainer ? 'recreated' : 'installed';
 
             return [
                 'code' => $code,
-                'family' => 'workspace',
+                'family' => 'process',
                 'message' => "FrankenPHP runtime container for workspace '{$workspace->name}' could not be {$action} on '{$node->name}': {$exception->getMessage()}",
-                'next_command' => 'doctor --family=workspace --restore',
+                'next_command' => 'doctor --family=process --restore',
             ];
         } catch (Throwable $exception) {
             return [
-                'code' => 'workspace.runtime_container_missing',
-                'family' => 'workspace',
+                'code' => 'process.runtime_unit_missing',
+                'family' => 'process',
                 'message' => "FrankenPHP runtime container for workspace '{$workspace->name}' could not be installed on '{$node->name}': {$exception->getMessage()}",
-                'next_command' => 'doctor --family=workspace --restore',
+                'next_command' => 'doctor --family=process --restore',
             ];
         }
 

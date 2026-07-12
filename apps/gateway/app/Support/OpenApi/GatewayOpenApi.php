@@ -24,6 +24,8 @@ final class GatewayOpenApi
         'post tools/{tool}/start' => 'toolStart',
         'post tools/{tool}/stop' => 'toolStop',
         'post tools/{tool}/restart' => 'toolRestart',
+        'post tools/{tool}/reload' => 'toolReload',
+        'get tools/{tool}/logs' => 'toolLogs',
     ];
 
     public static function register(): void

@@ -61,7 +61,7 @@ HTTP surface must target `127.0.0.1` or runtime container directly.
 
 Use `--before` or `--after` to place the step at a specific position in the
 execution order. If both are omitted, the step is appended at the end of the
-list with `order = max(order) + 1` for `(app, phase=teardown)`. Providing
+list with `order = max(order) + 1` for `(app_instance, phase=teardown)`. Providing
 both `--before` and `--after` is a validation error.
 
 ### Lifecycle Environment

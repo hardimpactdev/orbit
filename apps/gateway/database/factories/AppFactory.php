@@ -29,7 +29,6 @@ class AppFactory extends Factory
             'runtime_config' => null,
             'worker_enabled' => false,
             'worker_config' => null,
-            'deploy_warmup_paths' => null,
             'adopted' => false,
             'agent_ide_config' => null,
         ];

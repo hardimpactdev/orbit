@@ -9,6 +9,7 @@ use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use RuntimeException;
 
 /**
  * @extends Factory<Node>
@@ -23,17 +24,16 @@ class NodeFactory extends Factory
             'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => NodeStatus::Active,
+            'tld' => fake()->unique()->bothify('node-####'),
             'platform' => 'ubuntu_24-04',
-            'wireguard_address' => fake()->unique()->ipv4(),
-            'orbit_agent_capable' => false,
+            'wireguard_address' => $this->wireguardAddress(),
+            'managed' => false,
         ];
     }
 
     public function operator(): static
     {
-        return $this->state(fn (): array => [
-            'tld' => null,
-        ]);
+        return $this;
     }
 
     /**
@@ -54,13 +54,16 @@ class NodeFactory extends Factory
     /**
      * @param  array<string, mixed>  $settings
      */
-    public function appDev(array $settings = ['tld' => 'test']): static
+    public function appDev(array $settings = []): static
     {
-        return $this
-            ->state(fn (): array => [
-                'tld' => $settings['tld'] ?? null,
-            ])
-            ->withActiveRole('app-dev', $settings);
+        $tld = $settings['tld'] ?? null;
+        unset($settings['tld']);
+
+        $factory = is_string($tld) && $tld !== ''
+            ? $this->state(['tld' => $tld])
+            : $this;
+
+        return $factory->withActiveRole('app-dev', $settings);
     }
 
     public function appProd(): static
@@ -93,15 +96,31 @@ class NodeFactory extends Factory
         return $this->withActiveRole('agent');
     }
 
-    public function orbitAgentCapable(): static
+    public function managed(): static
     {
         return $this->state([
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ]);
     }
 
     public function ingress(): static
     {
         return $this->withActiveRole('ingress');
+    }
+
+    private function wireguardAddress(): string
+    {
+        $address = long2ip(fake()
+            ->unique()
+            ->numberBetween(
+                (int) ip2long('10.250.0.1'),
+                (int) ip2long('10.250.255.254'),
+            ));
+
+        if (! is_string($address)) {
+            throw new RuntimeException('Unable to create a private WireGuard test address.');
+        }
+
+        return $address;
     }
 }

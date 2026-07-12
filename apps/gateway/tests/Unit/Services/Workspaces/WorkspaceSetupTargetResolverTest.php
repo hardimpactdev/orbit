@@ -128,9 +128,22 @@ function workspaceSetupResolverApp(array $overrides = []): App
 {
     $node = createTestAppHostNode(role: 'app-dev');
 
-    return App::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->create($overrides);
+
+    AppInstance::factory()
+        ->for($app)
+        ->create([
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                path: $app->path,
+                document_root: $app->document_root,
+                domain: $app->domain,
+            ),
+        ]);
+
+    return $app;
 }
 
 final readonly class WorkspaceSetupTargetResolverFakePathResolver implements AgentIdeWorkspacePathResolver

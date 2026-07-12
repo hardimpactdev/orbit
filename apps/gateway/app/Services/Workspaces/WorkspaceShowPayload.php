@@ -31,7 +31,7 @@ class WorkspaceShowPayload
         $workspacePayload = [
             'name' => $workspace->name,
             'app' => $app?->name,
-            'app_instance' => $workspace->appInstance?->name,
+            'app_instance' => $workspace->appInstance->name,
             'node' => $node?->name,
             'path' => $workspace->path,
             'url' => $workspace->url(),

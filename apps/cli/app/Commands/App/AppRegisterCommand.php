@@ -10,6 +10,7 @@ use RuntimeException;
 
 final class AppRegisterCommand extends AppGatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use WithStepTree;
 
     #[\Override]

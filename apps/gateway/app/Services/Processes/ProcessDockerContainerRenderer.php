@@ -121,7 +121,7 @@ final readonly class ProcessDockerContainerRenderer
 
     private function renderNodeProcess(Node $node, Process $process): ProcessDockerContainer
     {
-        $name = $this->assertIdentitySlug($process->name);
+        $name = $this->configuredContainerName($process) ?? $this->assertIdentitySlug($process->name);
         $config = is_array($process->runtime_config) ? $process->runtime_config : [];
         $command = trim($process->command);
         $volumes = $this->volumes($config['volumes'] ?? []);
@@ -335,7 +335,7 @@ final readonly class ProcessDockerContainerRenderer
     }
 
     /**
-     * @return list<array{published: int, target: int, protocol?: string}>
+     * @return list<array{host?: string, published: int, target: int, protocol?: string}>
      */
     private function ports(mixed $value): array
     {
@@ -357,12 +357,19 @@ final readonly class ProcessDockerContainerRenderer
                 }
 
                 $protocol = $port['protocol'] ?? 'tcp';
+                $host = $port['host'] ?? null;
 
-                return [
+                $normalized = [
                     'published' => $published,
                     'target' => $target,
                     'protocol' => is_string($protocol) ? $protocol : 'tcp',
                 ];
+
+                if (is_string($host) && trim($host) !== '') {
+                    $normalized['host'] = trim($host);
+                }
+
+                return $normalized;
             }, $value),
         ));
     }

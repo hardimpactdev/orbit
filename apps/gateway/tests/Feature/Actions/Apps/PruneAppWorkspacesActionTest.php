@@ -7,6 +7,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
@@ -19,6 +20,7 @@ beforeEach(function (): void {
     DB::table('nodes')->insert([
         [
             'name' => 'gateway',
+            'tld' => 'gateway',
             'host' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
@@ -46,6 +48,7 @@ beforeEach(function (): void {
             'updated_at' => now(),
         ],
     ]);
+    AppInstance::factory()->create(['app_id' => 1]);
 
     app()->instance(AgentIdeMessageAdapter::class, new PruneAppActionTestAdapter);
     app()->instance(RemoteShell::class, new PruneAppWorkspacesActionRemoteShell);
@@ -54,6 +57,7 @@ beforeEach(function (): void {
 it('identifies stale workspaces', function (): void {
     Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'stale-ws',
         'path' => '/home/nckrtl/apps/demo/stale-ws',
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
@@ -61,6 +65,7 @@ it('identifies stale workspaces', function (): void {
 
     Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'active-ws',
         'path' => '/home/nckrtl/apps/demo/active-ws',
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
@@ -81,6 +86,7 @@ it('identifies stale workspaces', function (): void {
 it('dry-run does not remove workspaces', function (): void {
     Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'stale-ws',
         'path' => '/home/nckrtl/apps/demo/stale-ws',
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
@@ -98,6 +104,7 @@ it('dry-run does not remove workspaces', function (): void {
 it('returns empty when no stale workspaces', function (): void {
     Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'active-ws',
         'path' => '/home/nckrtl/apps/demo/active-ws',
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
@@ -124,6 +131,7 @@ it('throws when no adapter configured', function (): void {
 it('prunes using explicit adapter name', function (): void {
     Workspace::create([
         'app_id' => 1,
+        'app_instance_id' => 1,
         'name' => 'stale-ws',
         'path' => '/home/nckrtl/apps/demo/stale-ws',
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,

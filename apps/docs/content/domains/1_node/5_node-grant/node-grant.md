@@ -55,8 +55,8 @@ Run `node:grant` to create a new access edge from one node to another with
 a normalized initial permission set.
 
 `node:grant` writes gateway-owned grant configuration in `node_access` from
-`consuming_node` to `serving_node`. Gateway callers execute locally;
-configured clients forward the request to the gateway over HTTPS through
+`consuming_node` to `serving_node`. Every public CLI caller, including one on
+the gateway host, sends the request to the gateway over typed HTTPS through
 WireGuard.
 
 The command:

@@ -69,7 +69,7 @@ orbit app:new [<name>] [--node=<name>] [--repo=<git>] [--root=public]
 |---|---|---|
 | `name` |  -  | App slug (<=40 chars, globally unique). |
 | `--node` | local default | Target app-role node. Required when no `node:default`. |
-| `--repo` |  -  | Git URL or `owner/repo` GitHub shorthand (expands to `git@github.com:owner/repo.git`). Cloning runs as the SSH user already configured on the node  -  Orbit doesn't proxy git credentials. Omitted = empty directory. |
+| `--repo` |  -  | Git URL or `owner/repo` GitHub shorthand (expands to `git@github.com:owner/repo.git`). Cloning runs through Agent push as the target node's Orbit runtime user; Git credentials remain node-local. Omitted = empty directory. |
 | `--root` | `public` | Document root relative to app path. |
 | `--php-version` | `8.5` | Initial PHP version (one of 8.3, 8.4, 8.5). |
 | `--domain` |  -  | Production: triggers production setup. If DNS/TLS isn't ready yet, the app installs but the domain stays inactive  -  re-run `app:register --domain=...` to retry. |
@@ -157,6 +157,7 @@ owned app path.
 
 ```bash
 orbit app:remove [<app>] [--force] [--json]
+                 [--node-transport=transitional-ssh-fallback]
 ```
 
 Orbit removes the app runtime artifact and route intent through the gateway;
@@ -168,6 +169,7 @@ Remove stale workspaces for an app. Stale = workspaces present on disk but unkno
 
 ```bash
 orbit app:prune [<app>] [--dry-run] [--force] [--json]
+                [--node-transport=transitional-ssh-fallback]
 ```
 
 `--dry-run` shows what would be removed. `--force` skips confirmation. Removal goes through workspace-removal semantics, not a raw `rm`.

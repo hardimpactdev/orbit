@@ -21,7 +21,6 @@ final class ProxyAddCommand extends ProxyGatewayCommand
     protected $signature = 'proxy:add
         {domain? : Proxy route domain}
         {--node= : Serving node}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--upstream= : HTTP or HTTPS upstream URL}
         {--redirect= : HTTP or HTTPS redirect URL}
         {--code= : Redirect status code}

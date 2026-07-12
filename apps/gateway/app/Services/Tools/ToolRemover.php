@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Tools;
 
+use App\Models\Node;
+use App\Models\NodeTool;
+
 final readonly class ToolRemover
 {
     public function __construct(
@@ -18,6 +21,17 @@ final readonly class ToolRemover
      */
     public function remove(string $tool, ?string $node = null, ?string $app = null): array|ToolRegistryFailure
     {
+        $stored = $this->registry->findStored(tool: $tool, node: $node, app: $app);
+
+        if (
+            $stored instanceof NodeTool
+            && $stored->node instanceof Node
+            && (! $this->catalog->supports($tool)
+            || ! $this->catalog->supportsNode($tool, $stored->node))
+        ) {
+            return $this->staleIntentRemover->withRecord($tool, $stored);
+        }
+
         $model = $this->registry->show(tool: $tool, node: $node, app: $app);
 
         if ($model instanceof ToolRegistryFailure) {

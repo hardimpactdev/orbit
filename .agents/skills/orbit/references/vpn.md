@@ -3,8 +3,9 @@
 Manage **non-node** gateway VPN clients (e.g. a phone, a personal device) and the gateway VPN web UI. Orbit nodes get their own WireGuard identities through `node:new`  -  those don't go through `vpn-client:*`. Spec: [`apps/docs/content/domains/13_vpn/`](../../../apps/docs/content/domains/13_vpn/).
 
 VPN administration is the gateway-local exception: when invoked from a client,
-Orbit reaches the active gateway-coupled VPN role over the Orbit/WireGuard SSH
-path and runs the gateway-local command there.
+the CLI calls the gateway API over WireGuard HTTPS and the gateway runs the
+coupled VPN backend operation locally. It never dispatches through Agent or
+SSH.
 
 All `vpn-client:*` and `vpn-web-ui:*` commands accept `--totp=<code>` because they touch the underlying VPN backend's admin surface.
 

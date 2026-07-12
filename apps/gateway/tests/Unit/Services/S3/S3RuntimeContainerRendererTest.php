@@ -100,7 +100,7 @@ it('renders a deterministic S3 runtime container', function (): void {
         ->and($container->network())
         ->toBe('orbit-network')
         ->and($container->restartPolicy())
-        ->toBe('unless-stopped')
+        ->toBe('always')
         ->and($container->wireGuardAddress())
         ->toBe('10.6.0.10')
         ->and($container->mounts())

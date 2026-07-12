@@ -10,9 +10,9 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\Doctor\DriftEntry;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
-use App\Enums\Apps\NodeRuntimeContainersProbeStatus;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
@@ -44,11 +44,13 @@ use App\Services\DatabaseConnections\DatabaseConnectionProbe;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
+use App\Services\Processes\ProcessDockerRuntimeManager;
 use App\Services\Processes\ProcessesProbe;
 use App\Services\Processes\ProcessEventNotifierRenderer;
 use App\Services\Processes\ProcessOwnerContext;
@@ -78,10 +80,12 @@ use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Process as ProcessFacade;
+use Orbit\Core\Enums\InternalCommand;
 use Throwable;
 
 final readonly class DoctorReportRunner
 {
+    // @orbit-ssh-lane transitional-ssh
     public const int FLEET_PROBE_BATCH_SIZE = 5;
 
     private const int FLEET_PROBE_POLL_INTERVAL_MICROSECONDS = 50_000;
@@ -1171,7 +1175,7 @@ final readonly class DoctorReportRunner
             $familyIssueOffset = count($issues);
             $apps = App::query()->with(['node', 'instances'])->where('node_id', $node->id)->get();
             $appInstances = $this->appInstancesForNode($node);
-            $appCheckTotal = $apps->count() + $appInstances->count() + 2;
+            $appCheckTotal = $apps->count() + $appInstances->count() + 1;
 
             $this->runFamilyCheckPlan($onFamilyProgress, 'app', $appCheckTotal, function (callable $advance) use (
                 $apps,
@@ -1224,7 +1228,7 @@ final readonly class DoctorReportRunner
             $this->runFamilyCheckPlan(
                 $onFamilyProgress,
                 'process',
-                Process::query()->with('owner')->where('node_id', $node->id)->count(),
+                Process::query()->with('owner')->where('node_id', $node->id)->count() + 1,
                 function (callable $advance) use ($node, &$issues): void {
                     foreach (Process::query()->with('owner')->where('node_id', $node->id)->get() as $process) {
                         $snapshot = $this->processesProbe->introspect($process);
@@ -1235,6 +1239,18 @@ final readonly class DoctorReportRunner
 
                         $advance();
                     }
+
+                    $runtimeContainers = $this->processesProbe->introspectNodeRuntimeContainers($node);
+
+                    foreach ($this->processesProbe->diffNodeRuntimeContainers(
+                        $node,
+                        $runtimeContainers,
+                        $this->activePhpRuntimeSlugsForNode($node),
+                    ) as $entry) {
+                        $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                    }
+
+                    $advance();
                 },
             );
 
@@ -1604,8 +1620,6 @@ final readonly class DoctorReportRunner
             $advance();
         }
 
-        $containerProbe = $this->appsProbe->introspectNode($node);
-        $containerSnapshot = $containerProbe->containers;
         $activePhpAppSlugs = App::query()
             ->where('node_id', $node->id)
             ->where('runtime', AppRuntimeKind::Php->value)
@@ -1620,39 +1634,6 @@ final readonly class DoctorReportRunner
                 ))
                 ->all(),
         ];
-
-        if ($containerProbe->status === NodeRuntimeContainersProbeStatus::Error) {
-            $issues[] = $this->annotateIssue([
-                'family' => 'app',
-                'node' => $node->name,
-                'key' => 'app.runtime_container_probe_failed',
-                'kind' => DriftKind::Unverifiable->value,
-                'summary' => "App runtime container scan failed on node '{$node->name}'; stale orphan runtime containers cannot be detected.",
-                'detail' => [
-                    'error' => $containerProbe->error,
-                ],
-            ]);
-        } elseif ($containerProbe->status === NodeRuntimeContainersProbeStatus::Present) {
-            foreach ($containerSnapshot->keys() as $appSlug) {
-                if (in_array($appSlug, $activePhpAppSlugs, true)) {
-                    continue;
-                }
-
-                $issues[] = $this->annotateIssue([
-                    'family' => 'app',
-                    'node' => $node->name,
-                    'key' => 'app.runtime_container_extra',
-                    'kind' => DriftKind::Extra->value,
-                    'summary' => "App runtime container for '{$appSlug}' exists on node but no matching active PHP app record.",
-                    'detail' => [
-                        'app' => $appSlug,
-                        'container' => "orbit-app-{$appSlug}",
-                    ],
-                ]);
-            }
-        }
-
-        $advance();
 
         $configProbe = $this->appsProbe->introspectNodeRuntimeConfigs($node);
         $configSnapshot = $configProbe->configs;
@@ -1715,6 +1696,25 @@ final readonly class DoctorReportRunner
             ->values();
 
         return $instances;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function activePhpRuntimeSlugsForNode(Node $node): array
+    {
+        $slugs = App::query()
+            ->where('node_id', $node->id)
+            ->where('runtime', AppRuntimeKind::Php->value)
+            ->get(['name'])
+            ->map(static fn (App $app): string => $app->name)
+            ->all();
+
+        foreach ($this->appInstancesForNode($node) as $instance) {
+            $slugs[] = app(AppRuntimeContainerRenderer::class)->instanceSlug($instance->app, $instance);
+        }
+
+        return array_values(array_unique($slugs));
     }
 
     /**
@@ -1907,7 +1907,7 @@ final readonly class DoctorReportRunner
                 $mode === 'restore'
                 && ($issue['family'] ?? null) === 'tool'
                 && is_string($issue['key'] ?? null)
-                && str_starts_with($issue['key'], 'dns.')
+                && $this->dnsRuntimeProbe->isRestorable($issue['key'])
             ) {
                 $action = $this->applyDnsRuntimeIssue(
                     $node,
@@ -2311,10 +2311,14 @@ final readonly class DoctorReportRunner
             return null;
         }
 
+        if (! in_array($targetType, ['app_instance', 'workspace'], true)) {
+            return null;
+        }
+
         $target = DatabaseConnectionTarget::query()
-            ->with(['app.node', 'workspace.app.node'])
+            ->with(['appInstance.app', 'workspace.appInstance.app'])
             ->where('env_prefix', $prefix)
-            ->when($targetType === 'app', fn ($query) => $query->where('app_id', $targetId))
+            ->when($targetType === 'app_instance', fn ($query) => $query->where('app_instance_id', $targetId))
             ->when($targetType === 'workspace', fn ($query) => $query->where('workspace_id', $targetId))
             ->first();
 
@@ -2326,13 +2330,7 @@ final readonly class DoctorReportRunner
             return $this->restoreMissingDatabaseConnectionTarget($key, $detail, $targetType, $targetId, $prefix);
         }
 
-        $nodeName = null;
-
-        if ($target->app instanceof App) {
-            $nodeName = $target->app->node?->name;
-        } elseif ($target->workspace instanceof Workspace) {
-            $nodeName = $target->workspace->app?->node?->name;
-        }
+        $nodeName = $this->databaseConnectionTargetNode($target)?->name;
 
         try {
             $this->databaseConnectionRestorer->restore($target);
@@ -2391,7 +2389,7 @@ final readonly class DoctorReportRunner
         DatabaseConnectionTarget::query()->create([
             'database_connection_id' => $connection->id,
             'env_prefix' => $prefix,
-            'app_id' => $targetType === 'app' ? $targetId : null,
+            'app_instance_id' => $targetType === 'app_instance' ? $targetId : null,
             'workspace_id' => $targetType === 'workspace' ? $targetId : null,
         ]);
 
@@ -2411,19 +2409,38 @@ final readonly class DoctorReportRunner
 
     private function databaseConnectionTargetNodeName(string $targetType, int $targetId): ?string
     {
-        if ($targetType === 'app') {
-            $app = App::query()->with('node')->find($targetId);
+        if ($targetType === 'app_instance') {
+            $instance = AppInstance::query()->with('app')->find($targetId);
 
-            return $app instanceof App ? $app->node?->name : null;
+            return $instance instanceof AppInstance
+                ? $this->workspacePlacement->nodeForInstance($instance)?->name
+                : null;
+        }
+
+        if ($targetType !== 'workspace') {
+            return null;
         }
 
         $workspace = Workspace::query()
-            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->with(['appInstance.app'])
             ->find($targetId);
 
         return $workspace instanceof Workspace
             ? $this->workspacePlacement->nodeForWorkspace($workspace)?->name
             : null;
+    }
+
+    private function databaseConnectionTargetNode(DatabaseConnectionTarget $target): ?Node
+    {
+        if ($target->appInstance instanceof AppInstance) {
+            return $this->workspacePlacement->nodeForInstance($target->appInstance);
+        }
+
+        if ($target->workspace instanceof Workspace) {
+            return $this->workspacePlacement->nodeForWorkspace($target->workspace);
+        }
+
+        return null;
     }
 
     /**
@@ -2507,6 +2524,10 @@ final readonly class DoctorReportRunner
      */
     private function applyProcessIssue(Node $node, string $key, array $detail): ?array
     {
+        if ($key === 'process.runtime_unit_extra') {
+            return $this->removeExtraManagedProcessRuntime($node, $key, $detail);
+        }
+
         if ($key === 'process.runtime_unit_unrenderable') {
             return $this->restoreUnrenderableProcessIssue($node, $key, $detail);
         }
@@ -2581,6 +2602,45 @@ final readonly class DoctorReportRunner
             'details' => [
                 'app' => $app->name,
                 'process' => $process->name,
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>|null
+     */
+    private function removeExtraManagedProcessRuntime(Node $node, string $key, array $detail): ?array
+    {
+        $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? trim($detail['runtime_unit']) : '';
+
+        if (
+            ($detail['reason'] ?? null) !== 'orphaned_managed_app_runtime'
+            || ! str_starts_with($runtimeUnit, 'orbit-app-')
+        ) {
+            return null;
+        }
+
+        try {
+            $removed = app(ProcessDockerRuntimeManager::class)->remove($node, $runtimeUnit);
+        } catch (Throwable $exception) {
+            $removed = false;
+            $detail['error'] = $exception->getMessage();
+        }
+
+        return [
+            'family' => 'process',
+            'node' => $node->name,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => $removed ? 'completed' : 'failed',
+            'summary' => $removed
+                ? "Removed orphaned managed process runtime {$runtimeUnit}."
+                : "Failed to remove orphaned managed process runtime {$runtimeUnit}.",
+            'details' => [
+                ...$detail,
+                'runtime_unit' => $runtimeUnit,
             ],
         ];
     }
@@ -2793,27 +2853,22 @@ final readonly class DoctorReportRunner
             ];
         }
 
-        $script = implode(PHP_EOL, [
-            'set -eu',
-            'tmp="$(mktemp)"',
-            'base64 -d > "$tmp" <<\'ORBIT_EVENT_NOTIFIER\'',
-            base64_encode($renderer->content()),
-            'ORBIT_EVENT_NOTIFIER',
-            'sudo install -D -m 0755 "$tmp" '.escapeshellarg($renderer->installPath()),
-            'rm -f "$tmp"',
-            'sudo install -d -m 0755 '.escapeshellarg(dirname($renderer->gatewayEndpointPath())),
-            'printf \'%s\n\' '
-                .escapeshellarg($gatewayEndpoint)
-                .' | sudo tee '
-                .escapeshellarg($renderer->gatewayEndpointPath())
-                .' >/dev/null',
-            'sudo chmod 0644 '.escapeshellarg($renderer->gatewayEndpointPath()),
-            '',
-        ]);
-
-        $result = app(RemoteShell::class)->run($node, $script, ['throw' => false]);
-
-        if (! $result->successful()) {
+        try {
+            $results = [
+                $renderer->installPath() => $this->writeProcessEventNotifierFile(
+                    node: $node,
+                    path: $renderer->installPath(),
+                    content: $renderer->content(),
+                    mode: '0755',
+                ),
+                $renderer->gatewayEndpointPath() => $this->writeProcessEventNotifierFile(
+                    node: $node,
+                    path: $renderer->gatewayEndpointPath(),
+                    content: "{$gatewayEndpoint}\n",
+                    mode: '0644',
+                ),
+            ];
+        } catch (Throwable $exception) {
             return [
                 'family' => 'process',
                 'node' => $node->name,
@@ -2825,6 +2880,28 @@ final readonly class DoctorReportRunner
                 'details' => [
                     'script' => $renderer->installPath(),
                     'gateway_endpoint' => $renderer->gatewayEndpointPath(),
+                    'error' => $exception->getMessage(),
+                ],
+            ];
+        }
+
+        foreach ($results as $path => $result) {
+            if ($result->successful()) {
+                continue;
+            }
+
+            return [
+                'family' => 'process',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore {$key}.",
+                'details' => [
+                    'script' => $renderer->installPath(),
+                    'gateway_endpoint' => $renderer->gatewayEndpointPath(),
+                    'failed_path' => $path,
                     'exit_code' => $result->exitCode,
                     'stderr' => trim($result->stderr),
                 ],
@@ -2844,6 +2921,33 @@ final readonly class DoctorReportRunner
                 'gateway_endpoint' => $renderer->gatewayEndpointPath(),
             ],
         ];
+    }
+
+    private function writeProcessEventNotifierFile(
+        Node $node,
+        string $path,
+        string $content,
+        string $mode,
+    ): RemoteShellResult {
+        return app(RemoteLocalExecutor::class)->runInternal(
+            node: $node,
+            commandName: InternalCommand::ManagedFile->value,
+            arguments: ['write'],
+            transportOptions: [
+                'input' => json_encode([
+                    'path' => $path,
+                    'content' => $content,
+                    'mode' => $mode,
+                    'directory_mode' => '0755',
+                ], JSON_THROW_ON_ERROR),
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'process-event-notifier.restore',
+                ],
+                'timeout' => 30,
+                'transport' => NodeTransportPreference::AgentPush,
+                'throw' => false,
+            ],
+        );
     }
 
     private function refreshManagedFrankenPhpProcessIntent(Process $process): void
@@ -3124,18 +3228,10 @@ final readonly class DoctorReportRunner
             return $this->handleAppRuntimeConfigProbeFailed($node);
         }
 
-        if ($key === 'app.runtime_container_probe_failed') {
-            return $this->handleAppRuntimeContainerProbeFailed($node);
-        }
-
         $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
 
         if ($appName === null) {
             return null;
-        }
-
-        if ($key === 'app.runtime_container_extra') {
-            return $this->handleAppExtraAction($node, $appName);
         }
 
         if ($key === 'app.runtime_config_extra') {
@@ -3209,34 +3305,7 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @return array<string, mixed>
-     */
-    private function handleAppExtraAction(Node $node, string $appSlug): array
-    {
-        try {
-            return $this->appsFixer->removeExtra($node, $appSlug);
-        } catch (\Throwable $e) {
-            return [
-                'family' => 'app',
-                'node' => $node->name,
-                'code' => 'app.runtime_container_extra',
-                'key' => 'app.runtime_container_extra',
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to remove extra app runtime container for {$appSlug}.",
-                'details' => [
-                    'app' => $appSlug,
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    /**
-     * Re-probe the managed runtime config directory after a sudo/SSH/probe
+     * Re-probe the managed runtime config directory after a permission/probe
      * failure. If the probe now succeeds the drift clears; if it still fails
      * the doctor run emits the probe-failed drift again so the operator can
      * investigate the underlying daemon/permission issue.
@@ -3288,62 +3357,6 @@ final readonly class DoctorReportRunner
             'summary' => "Re-probed managed runtime config directory on {$node->name}.",
             'details' => [
                 'path' => "{$this->nodeHostPaths->userConfigRoot($node)}/apps",
-                'status' => $probe->status->value,
-            ],
-        ];
-    }
-
-    /**
-     * Re-probe the node-wide app runtime container scan after a docker /
-     * SSH / permission failure. If the probe now succeeds the drift clears;
-     * if it still fails the doctor run emits the probe-failed drift again so
-     * the operator can investigate the underlying daemon/transport issue.
-     *
-     * @return array<string, mixed>
-     */
-    private function handleAppRuntimeContainerProbeFailed(Node $node): array
-    {
-        try {
-            $probe = $this->appsProbe->introspectNode($node);
-        } catch (\Throwable $e) {
-            return [
-                'family' => 'app',
-                'node' => $node->name,
-                'code' => 'app.runtime_container_probe_failed',
-                'key' => 'app.runtime_container_probe_failed',
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to re-probe app runtime container scan on {$node->name}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-
-        if ($probe->status === NodeRuntimeContainersProbeStatus::Error) {
-            return [
-                'family' => 'app',
-                'node' => $node->name,
-                'code' => 'app.runtime_container_probe_failed',
-                'key' => 'app.runtime_container_probe_failed',
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "App runtime container scan still failing on {$node->name}.",
-                'details' => [
-                    'error' => $probe->error,
-                ],
-            ];
-        }
-
-        return [
-            'family' => 'app',
-            'node' => $node->name,
-            'code' => 'app.runtime_container_probe_failed',
-            'key' => 'app.runtime_container_probe_failed',
-            'mode' => 'restore',
-            'status' => 'completed',
-            'summary' => "Re-probed app runtime container scan on {$node->name}.",
-            'details' => [
                 'status' => $probe->status->value,
             ],
         ];
@@ -3806,26 +3819,19 @@ final readonly class DoctorReportRunner
             S3ProxyDoctorProbe::RouterRouteKey,
             S3ProxyDoctorProbe::RouterBackendKey,
             S3ProxyDoctorProbe::PublicRouteKey,
-            'workspace.runtime_container_missing',
-            'workspace.runtime_container_stopped',
-            'workspace.runtime_container_mismatch',
             'workspace.security.system_user',
             'workspace.security.fs_permissions',
-            'app.runtime_container_missing',
-            'app.runtime_container_mismatch',
-            'app.runtime_container_extra',
             'app.runtime_config_missing',
             'app.runtime_config_mismatch',
             'app.runtime_config_extra',
             'app.runtime_config_probe_failed',
-            'app.runtime_container_probe_failed',
             'app.security.system_user',
             'app.security.fs_permissions',
-            'app.security.runtime_container_isolation',
             'firewall_rule.rule_missing',
             'firewall_rule.rule_mismatch',
             'process.runtime_unit_missing',
             'process.runtime_unit_mismatch',
+            'process.runtime_unit_extra',
             'process.runtime_unit_unrenderable',
             'process.event_notifier_missing',
             'process.event_notifier_mismatch',
@@ -3839,10 +3845,11 @@ final readonly class DoctorReportRunner
             'tool.config_mismatch',
             'tool.credentials_missing',
             'tool.credentials_mismatch',
-            'dns.container_missing',
-            'dns.port_not_listening',
-            'dns.config_drift',
-            'dns.client_dns_drift',
+            'tool.dns_container_missing',
+            'tool.dns_port_not_listening',
+            'tool.dns_config_drift',
+            'tool.dns_client_dns_drift',
+            'tool.dns_forwarding_missing',
             'schedule.scheduler_missing',
             'schedule.scheduler_stopped',
             'schedule.scheduler_image_mismatch',
@@ -4142,18 +4149,6 @@ final readonly class DoctorReportRunner
     {
         $workspace->loadMissing('app.node');
 
-        if (in_array(
-            $entry->key,
-            [
-                'workspace.runtime_container_missing',
-                'workspace.runtime_container_stopped',
-                'workspace.runtime_container_mismatch',
-            ],
-            true,
-        )) {
-            return $this->restoreWorkspaceRuntimeContainer($workspace, $entry);
-        }
-
         return [
             'family' => $entry->family,
             'node' => $this->workspacePlacement->nodeForWorkspace($workspace)?->name,
@@ -4162,71 +4157,6 @@ final readonly class DoctorReportRunner
             'mode' => 'restore',
             'status' => 'skipped',
             'summary' => "Skipped fix for {$entry->key}: workspace auto-fix is not supported in the Docker-first runtime.",
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function restoreWorkspaceRuntimeContainer(Workspace $workspace, DriftEntry $entry): array
-    {
-        $workspace->loadMissing(['app.node', 'appInstance']);
-        $app = $workspace->app;
-        $node = $this->workspacePlacement->nodeForWorkspace($workspace);
-
-        if (! $app instanceof App || ! $node instanceof Node) {
-            return [
-                'family' => $entry->family,
-                'node' => $node?->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to restore {$entry->key}.",
-                'details' => [
-                    'workspace' => $workspace->name,
-                    'error' => 'Workspace has no active parent app node.',
-                ],
-            ];
-        }
-
-        try {
-            app(EnsureFrankenPhpRuntimeProcess::class)->forWorkspace($workspace);
-            $this->ensureWorkspaceRuntimeTlsMaterial($workspace, $node);
-
-            $container = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace);
-            $outcome = $this->workspaceRuntimeContainerManagerForAgentPush()->apply($node, $container);
-        } catch (\Throwable $e) {
-            return [
-                'family' => $entry->family,
-                'node' => $node->name,
-                'code' => $entry->key,
-                'key' => $entry->key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to restore {$entry->key}.",
-                'details' => [
-                    'app' => $app->name,
-                    'workspace' => $workspace->name,
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-
-        return [
-            'family' => $entry->family,
-            'node' => $node->name,
-            'code' => $entry->key,
-            'key' => $entry->key,
-            'mode' => 'restore',
-            'status' => 'completed',
-            'summary' => "Restored FrankenPHP runtime container for workspace {$workspace->name}.",
-            'details' => [
-                'app' => $app->name,
-                'workspace' => $workspace->name,
-                'container' => $container->name(),
-                'outcome' => $outcome->value,
-            ],
         ];
     }
 

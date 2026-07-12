@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit app:list [--node=<name>] [--node-transport=<transport>] [--json]
+orbit app:list [--node=<name>] [--json]
 ```
 
 ## Input Contract
@@ -27,7 +27,6 @@ options are optional.
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node`, configured default node, or gateway-reported caller node | Optional. | Never. | Effective node. | App-role name in the gateway registry. Single value only. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 `--node` is a scalar filter and overrides the configured default node and

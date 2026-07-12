@@ -17,6 +17,7 @@ use App\Services\Firewall\RemoteFirewallRule;
 
 final readonly class UfwFirewallRule
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         public string $name,
         public string $direction,

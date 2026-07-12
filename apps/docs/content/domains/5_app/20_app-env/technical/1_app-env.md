@@ -39,9 +39,9 @@ This command follows the shared
 Gateway-owned `app_instance_env_variables` rows belong to one app instance and
 store non-secret key/value pairs. The unique key is `(app_instance_id, key)`.
 
-Gateway-owned `app_instance_database_connection_targets` rows connect one
-database connection to one app instance and env prefix. They are rendered by
-`app:env render`.
+Gateway-owned `database_connection_targets` rows connect one database
+connection to either one app instance or one workspace and one env prefix.
+App-instance rows are rendered by `app:env render`.
 
 Orbit-derived runtime defaults are rendered from the selected instance's app and
 owning node. These defaults are not stored as explicit instance env rows.

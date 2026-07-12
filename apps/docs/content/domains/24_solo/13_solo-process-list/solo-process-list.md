@@ -10,9 +10,9 @@ orbit solo:process:list [--node=<node>] [--json]
 
 ## Contract
 
-`solo:process:list` is available only when the local Solo extension is enabled with `orbit extension:enable solo`. The command calls the gateway Solo proxy route `GET /api/solo/process/list`; the gateway must also have the Solo extension enabled. Use `--node=<node>` to target that node's configured node-local Solo API; when omitted, Orbit targets the gateway node.
+`solo:process:list` is available only when the local Solo extension is enabled with `orbit extension:enable solo`. The command calls the gateway Solo proxy route `GET /api/solo/process/list`; the gateway must also have the Solo extension enabled. Use `--node=<node>` to target that node's configured node-local Solo API; when omitted, Orbit uses local `node:default`, then the caller node.
 
-The gateway authorizes the caller with `solo:*` on the target node and records Orbit activity for the operation. Solo upstream traffic targets the requested node's configured loopback Solo API URL, or the gateway node when `--node` is omitted; Orbit does not expose Solo localhost ports directly to WireGuard.
+The gateway authorizes the caller with `solo:*` on the target node and records Orbit activity for the operation. Gateway targets use direct loopback; non-gateway targets use Agent push to target-local loopback. Solo ports and SSH transport are never exposed.
 
 ## Output
 

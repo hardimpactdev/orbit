@@ -8,9 +8,9 @@
 
 **Prerequisites:**
 - Caller is authenticated through the gateway WireGuard identity path.
-- Gateway callers execute locally.
-- Non-gateway callers have `role:remove` on the target node, or an equivalent
-  gateway-admin grant.
+- Every public CLI caller uses the typed gateway HTTPS API.
+- Normal callers have `role:remove` on the target node, or an equivalent
+  gateway-admin grant; gateway-role callers use implicit authority.
 
 ## Signature
 
@@ -51,8 +51,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Caller Path Rules
 
-- Gateway callers execute locally.
-- Non-gateway callers forward to the gateway through typed HTTPS.
+- Every public CLI caller forwards through typed gateway HTTPS, including a CLI
+  running on the gateway host.
 - The gateway authorizes the request with `role:remove` on the target node.
 
 ## Renderer Contracts

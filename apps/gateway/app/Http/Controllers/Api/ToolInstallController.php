@@ -59,7 +59,7 @@ final class ToolInstallController implements Loggable
             $caller,
             $visibleNodeIds,
             allowAnyActiveNode: $allowAnyActiveNode,
-            tool: $tool,
+            tool: null,
         );
 
         if ($target instanceof JsonResponse) {
@@ -205,7 +205,11 @@ final class ToolInstallController implements Loggable
         $status = match ($failure->code) {
             'tool.not_found' => 404,
             'authorization_failed' => 403,
-            'node_transport_required', 'validation_failed', 'tool.unsupported_on_node' => 422,
+            'node_transport_required',
+            'validation_failed',
+            'tool.constraint_unsatisfied',
+            'tool.unsupported_on_node',
+                => 422,
             default => 400,
         };
 

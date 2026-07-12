@@ -10,7 +10,6 @@ final class ProcessRestartCommand extends ProcessRuntimeActionCommand
     protected $signature = 'process:restart
         {name? : Existing process name}
         {--node= : Owning node name}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--json : Output JSON}';

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\AppInstance;
@@ -80,7 +81,15 @@ it('sets lists and renders non-secret app instance env values with database atta
         'name' => 'billing',
         'domain' => 'craft-starterkit-react.test',
     ]);
-    $instance = AppInstance::factory()->for($app)->create(['name' => 'development']);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
     $connection = DatabaseConnection::factory()->for($node)->create([
         'slug' => 'billing-db',
         'driver' => 'pgsql',
@@ -149,7 +158,7 @@ it('sets lists and renders non-secret app instance env values with database atta
     expect($render->getContent())
         ->not
         ->toContain('secret-password')
-        ->and($connection->fresh()->instanceTargets()->where('app_instance_id', $instance->id)->exists())
+        ->and($connection->fresh()->targets()->where('app_instance_id', $instance->id)->exists())
         ->toBeTrue();
 });
 
@@ -163,7 +172,15 @@ it('applies set env values to the remote app runtime when apply is requested', f
         'runtime' => 'php',
         'php_version' => '8.5',
     ]);
-    AppInstance::factory()->for($app)->create(['name' => 'development']);
+    AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
 
     app()->instance(RemoteShell::class, new AppInstanceEnvControllerRecordingRemoteShell);
     app()->instance(\App\Services\Ca\OrbitCaService::class, new readonly class extends \App\Services\Ca\OrbitCaService {

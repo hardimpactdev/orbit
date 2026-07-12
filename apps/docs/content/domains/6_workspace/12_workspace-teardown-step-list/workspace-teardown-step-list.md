@@ -40,7 +40,7 @@ for the resolved app:
 
 1. Resolves the parent app from `--app` or the shared cwd-inference chain.
 2. Validates that the resolved app exists in gateway configuration.
-3. Reads the ordered teardown-step policy for `(app, phase=teardown)` from
+3. Reads the ordered teardown-step policy for `(app_instance, phase=teardown)` from
    the gateway database.
 4. Returns the steps in execution order with their durable IDs, commands,
    and timeouts.
@@ -65,7 +65,7 @@ and `workspace:list`.
 JSON output returns a flat machine-readable step list. Each step record uses the
 shared step shape published by
 [`workspace-teardown-step:add`](../11_workspace-teardown-step-add/workspace-teardown-step-add.md):
-`{ id, app, phase, order, command, timeout_seconds }`. See the
+`{ id, app, app_instance, phase, order, command, timeout_seconds }`. See the
 [JSON renderer contract](technical/6.2_workspace-teardown-step-list_output-render_json.md)
 for the exact payload shape.
 

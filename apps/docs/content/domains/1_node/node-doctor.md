@@ -19,14 +19,18 @@ The node family owns these facts:
 - node bootstrap artifacts: gateway service readiness, node minimum Orbit
   runtime, gateway-client endpoint and trust artifacts on the node, node identity
   artifacts, role bootstrap network policy, and WireGuard peers managed by the gateway;
-- node-owned security baseline: host-key pinning metadata, canonical
-  steady-state SSH user, SSH management exposure policy, sysctl baseline, and
+- node-owned security baseline: provisioning host-key metadata, canonical Orbit
+  owner/runtime user, provisioning SSH exposure policy, sysctl baseline, and
   permissions for home directories set during bake;
 - node update posture: managed Ubuntu server update readiness through a
   supported update driver, starting with Ubuntu `unattended-upgrades`;
-- future Orbit Agent readiness on agent-capable nodes: agent-push delivery
+- Orbit Agent readiness on Agent-eligible nodes: agent-push delivery
   posture, local process reachability, and privilege prompt capability when
   that lane exists;
+- Agent intent integrity: `managed=true` is valid only as explicit intent for a
+  roleless non-gateway operator; workload intent is derived from active roles,
+  and installed-Agent expectation must not remain after the last workload role
+  is removed unless the roleless node is explicitly managed;
 - node-related defaults: `app-dev` and `agent` assignment TLD
   settings, development and agent DNS mappings for those TLDs, DNS resolver
   safety, `vpn` role settings and runtime, local `node:default` preferences for `--self`,
@@ -67,32 +71,33 @@ The node probe reads gateway node records and checks these layers:
 5. **WireGuard identity:** each active node record has matching
    WireGuard peer material that the gateway manages, and the peer address equals the
    recorded WireGuard address.
-6. **Platform reality:** gateway and nodes report supported Ubuntu platform
-   identifiers through SSH. The local client reports a supported macOS or
-   Ubuntu platform identifier when `--self` can inspect it. Remote client
-   machines are verified through identity and gateway API reachability, not SSH.
-7. **Node transport reachability:** the gateway can reach nodes through the
-   node command transport. Clients are not node-transport targets for node
-   doctor checks.
+6. **Platform reality:** the gateway reports its platform locally, Agent-eligible
+   non-gateway nodes report it through Agent push, and the local client reports
+   a supported macOS or Ubuntu identifier when `--self` can inspect it. Remote
+   unmanaged client machines are verified through identity and gateway API
+   reachability, not a node command transport.
+7. **Node transport reachability:** gateway work executes gateway-locally and
+   the gateway reaches Agent-eligible non-gateway nodes through Agent push.
+   Unmanaged client identities are not node-transport targets for node doctor.
 8. **Gateway service readiness:** the gateway node exposes the Orbit API and
    the gateway service required by CLI callers.
-9. **Node-side bootstrap readiness:** nodes have the minimum Orbit runtime
-   and node identity artifacts needed for the gateway to apply other state
-   families over SSH.
+9. **Node-side bootstrap readiness:** nodes have the minimum Orbit runtime,
+   Agent listener, and identity artifacts needed for the gateway to apply other
+   state families through Agent push. Gateway-owned state is applied locally.
 10. **Role bootstrap network policy:** gateway and nodes have the
     baseline network policy that the node owns for its role and environment. This
-    verifies bootstrap reachability policy only, including that SSH management
-    traffic is not publicly exposed after bootstrap and instead uses the
-    Orbit/WireGuard path. Editable operator firewall rules belong to
+    verifies bootstrap reachability policy only, including that provisioning
+    SSH is not publicly exposed after bootstrap and the Agent listener is
+    reachable only over Orbit/WireGuard. Editable operator firewall rules belong to
     `firewall_rule`.
 11. **Node security posture:** provisioned Linux nodes satisfy node-owned
    security checks. These issue keys use the `node.security.*` prefix and remain
    inside the `node` family; `security` is not a doctor family. The persisted
-   `nodes.user` value is the managed steady-state SSH and maintenance user.
+   `nodes.user` value is the Orbit owner/runtime user for node-local Agent work.
    Provisioned nodes default to `orbit`, but compatible existing nodes may
-   intentionally use another managed user. Empty managed-user records are
-   drift. The `node:new --user` option remains valid as a bootstrap-only SSH
-   user and is not itself drift.
+   intentionally use another owner user. Empty owner-user records are drift.
+   The `node:new --user` option remains valid as a bootstrap-only SSH user and
+   is not itself drift.
 12. **Node update posture:** managed Ubuntu server nodes may expose
    `node.updates` posture when the operator selects the exact
    `--key=node.updates` filter. The update layer runs only when a registered
@@ -153,16 +158,16 @@ The node probe reads gateway node records and checks these layers:
 Public IPv4/IPv6 metadata is not a probe fact. Node doctor does not detect,
 compare, repair, or adopt public address metadata until a detection contract specific to the provider exists.
 
-Later privileged Orbit Agent slices may surface OS privilege prompts when the
-gateway submits protected local work through direct agent-push. The current
-runtime bootstrap does not implement privileged doctor, node, or update work,
-and V1 has no separate Orbit approval UI or pending/approve queue. Agent-push
-results belong in gateway operation/activity history.
+Protected Orbit Agent envelopes may surface OS privilege prompts when the
+gateway submits protected local work through direct Agent push. Unsupported
+privileged work fails explicitly; V1 has no separate Orbit approval UI or
+pending/approve queue. Agent-push results belong in gateway
+operation/activity history.
 
 The SSH/bootstrap endpoint and gateway endpoint are operator-supplied
-connectivity facts. Node doctor may verify that an endpoint works for the node
-path that uses it, but it does not infer public IPv4/IPv6 metadata from that
-endpoint.
+connectivity facts. Node doctor may validate retained provisioning metadata,
+but it must not open an SSH session as a steady-state probe. It does not infer
+public IPv4/IPv6 metadata from either endpoint.
 
 ## Role Assignment Status
 
@@ -203,9 +208,11 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.role_assignment_missing` | A selected active node has no compatible active role assignment for the role implied by its registry record. |
 | `node.role_assignment_invalid` | A persisted role assignment names an unknown role or otherwise cannot be validated as a real role row. |
 | `node.role_conflict` | Active, pending, or error role assignments violate the compatibility matrix. Assignments already in `removing` are ignored. |
-| `node.role_settings_invalid` | A role assignment's typed settings cannot be hydrated or are missing required values such as the `app-dev` `tld`. |
+| `node.role_settings_invalid` | A role assignment's typed settings cannot be hydrated or contain unsupported role-local values. Node TLD is node-owned and never role-local. |
 | `node.role_convergence_failed` | A role assignment is left in `error` after synchronous convergence failed. |
 | `node.role_baseline_mismatch` | Active role-owned baseline artifacts do not match the role assignment's desired state. |
+| `node.managed_agent_intent_invalid` | `managed=true` is stored on a gateway or another role-bearing node even though managed intent is reserved for roleless operators. |
+| `node.agent_expectation_stale` | Installed Agent expectation remains after the node has neither an active workload role nor explicit roleless managed intent. |
 | `node.access_grant_invalid` | A node access grant references a missing or non-active consuming or serving node. |
 | `node.access_permission_invalid` | A node access grant stores an unknown permission string or a permission set that does not normalize cleanly against the permission registry. |
 | `node.identity_unresolved` | The caller presents no WireGuard identity or an identity that does not resolve to exactly one active node record. |
@@ -216,7 +223,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.wireguard_address_mismatch` | A gateway-managed WireGuard peer address differs from the node record's WireGuard address. |
 | `node.platform_unsupported` | A gateway or node reports an unsupported platform-version identifier. |
 | `node.platform_record_mismatch` | Live platform detection differs from the node record's platform-version identifier. |
-| `node.transport_unreachable` | The gateway cannot reach a node through node command transport. |
+| `node.transport_unreachable` | Gateway-local execution is unavailable for the gateway target, or the gateway cannot reach an Agent-eligible non-gateway node through Agent push. |
 | `node.gateway_runtime_unready` | The gateway node does not expose the Orbit API or required gateway service. |
 | `node.runtime_missing` | A node lacks the minimum Orbit runtime required for gateway applying. |
 | `node.vpn_runtime_missing` | The active gateway-coupled `vpn` assignment is missing WireGuard server or VPN-facing DNS runtime artifacts. |
@@ -225,8 +232,8 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.s3.wireguard_missing` | An active `s3` role node has a missing or empty WireGuard address. SeaweedFS requires a WireGuard address to bind its API endpoint. |
 | `node.node_identity_artifact_missing` | A node is missing bootstrap identity material required to prove its node record. |
 | `node.bootstrap_network_policy_mismatch` | A gateway or node's role bootstrap network policy is missing, unsafe, or inconsistent with its role assignments. |
-| `node.security.host_key.<node>` | A managed Linux node has no pinned host key, a mismatched host key, or host-key metadata that cannot be verified. First pin is adoptable only with explicit operator consent. |
-| `node.security.runtime_user` | A persisted managed node record has no steady-state SSH and maintenance user, or the managed user is absent on the host. |
+| `node.security.host_key.<node>` | A provisioned Linux node has missing or mismatched host-key metadata, or local/Agent inspection cannot verify it. First pin requires explicit operator consent. |
+| `node.security.runtime_user` | A persisted managed node record has no Orbit owner/runtime user, or that user is absent on the host. |
 | `node.security.public_ssh_deny` | A provisioned Linux node does not deny public SSH exposure according to node-owned bootstrap policy. |
 | `node.security.sysctl` | A provisioned Linux node is missing or diverges from the node-owned sysctl baseline. |
 | `node.security.home_perms` | The managed user's home directory permissions are weaker than the bake-time baseline. Report-only; restore requires operator re-bake. |
@@ -254,13 +261,15 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.access_permission_invalid` | Re-normalize the stored permission set on the grant when it can be reduced to a valid set without changing intent; otherwise leave the drift visible for explicit operator action through `node:permissions`. |
 | `node.role_convergence_failed` | Retry synchronous convergence for error role assignments on the selected node and leave an assignment in `error` again if the retry fails. |
 | `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments through the shared convergence path, including role-owned derived artifacts such as development DNS mappings. |
+| `node.managed_agent_intent_invalid` | Clear the invalid `managed` flag; workload role intent remains derived from active roles. |
+| `node.agent_expectation_stale` | Clear stale installed-Agent expectation metadata after Agent intent is absent. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway service artifacts required by Orbit API readiness. |
 | `node.runtime_missing` | Rerun the node bootstrap step that installs the minimum Orbit runtime. |
 | `node.vpn_runtime_missing` | Re-apply the active `vpn` role baseline for WireGuard server and VPN-facing DNS runtime artifacts. |
 | `node.vpn_dns_mapping_mismatch` | Rewrite the DNS runtime served through the active `vpn` role so it matches gateway-owned desired DNS mappings. |
 | `node.node_identity_artifact_missing` | Reinstall node identity material from the active node record. |
 | `node.bootstrap_network_policy_mismatch` | Reapply the node-owned bootstrap network policy for the node's role assignments with rollback and reachability checks, preserving gateway-owned `firewall_rule` extras. |
-| `node.security.public_ssh_deny` | Reapply the node-owned public SSH deny policy through the node family while preserving user-owned firewall rules. |
+| `node.security.public_ssh_deny` | Reapply the node-owned public provisioning-SSH deny policy gateway-locally or through Agent push while preserving user-owned firewall rules. |
 | `node.security.sysctl` | Restore the managed sysctl baseline and reload sysctl. |
 | `node.updates` | For exact `--key=node.updates`, repair apt auto-upgrade config through `UnattendedUpgradesInstaller`, run `sudo unattended-upgrade`, re-probe, and report any remaining drift. Orbit never reboots automatically. |
 `doctor --family=node --restore` does not handle `node.record_incomplete`,
@@ -303,7 +312,7 @@ This table describes what `doctor --family=node --adopt` does for each adoptable
 | `node.wireguard_address_mismatch` | Update the node record's WireGuard address only when the peer proves the same node identity. |
 | `node.runtime_missing` | Verify compatible app runtime readiness; report conflict when runtime readiness cannot be verified. |
 | `node.platform_record_mismatch` | Update the node record's platform-version identifier only when live detection is supported and unambiguous. |
-| `node.security.host_key.<node>` | Pin the currently observed host key only when the operator selected this exact key and explicitly chose adopt. |
+| `node.security.host_key.<node>` | Pin provisioning host-key metadata observed through local or Agent inspection only when the operator selected this exact key and explicitly chose adopt. |
 
 Conditions for `node.wireguard_peer_missing` adoption: the selected active
 node has a non-secret identity artifact that matches gateway
@@ -351,7 +360,7 @@ Family-specific notes on the shared method surface:
 | --- | --- |
 | `key()` | Returns the singular state family key: `node`. |
 | `label()` | Returns the human-readable family label: `Node`. |
-| `introspect(Node $node)` | Reads physical node state for ordinary drift checks. The current implementation returns an empty snapshot for layers that do not need preloaded external state. |
+| `introspect(Node $node)` | Reads physical node state gateway-locally or through Agent push for ordinary drift checks. The current implementation returns an empty snapshot for layers that do not need preloaded external state. |
 | `diff(Node $node, ProbeSnapshot $snapshot)` | Compares registry state, local/gateway context, WireGuard state, platform state, runtime readiness, role baselines, and node defaults into `DriftEntry` results. |
 | `canReconcile()` | Returns whether `doctor --family=node --restore` is supported. |
 | `reconcile(Node $node, DriftEntry $entry)` | Applies restore behavior for supported keys and throws for unsupported keys. |

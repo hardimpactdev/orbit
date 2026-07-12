@@ -11,17 +11,21 @@ model in Orbit.
 | --- | --- |
 | Slug | `hermes` |
 | Label | Hermes |
-| Backend | Docker-managed runtime as `agent` |
+| Backend | Host-managed runtime as the unprivileged `agent` user |
 | Support model | Installable and removable by Orbit |
 | Category | `agent` |
-| Required node role | `agent` |
+| Supported operating systems | Linux |
+| Required container provider | None; host-managed runtime |
+| Runtime user | `agent` |
+| Route requirement | The target node has its mandatory TLD |
+| Isolation | Shared unprivileged `agent` user; no privileged `orbit` runtime |
 
 ## Capabilities
 
 `hermes` supports `tool:install`, `tool:remove`, `tool:update`,
 `tool:credentials`, proxy route metadata, safe doctor fix, and safe doctor
-adopt. Compatibility lifecycle and log commands may route to the related
-Hermes runtime process; lifecycle ownership belongs to the process row.
+adopt. It does not declare generic lifecycle or logs verbs; any future runtime
+verb must name one exact runtime under the capability gate.
 
 ## Credentials
 
@@ -38,7 +42,7 @@ Example JSON shape:
         "tool": "hermes",
         "node": "agent-1",
         "fields": {
-          "url": "https://hermes.agent",
+          "url": "https://hermes.agent-1",
           "username": "orbit",
           "password": "<generated-password>"
         }
@@ -56,7 +60,7 @@ include `tool:credentials`. The default agent self-grant does not include
 ## Service Endpoint
 
 `hermes` exposes an internal HTTPS proxy route owned by the tool at
-`https://hermes.<agent-tld>` (default `https://hermes.agent`). The route
+`https://hermes.<node-tld>` (for example `https://hermes.agent-1`). The route
 is internal: it is reachable only over the Orbit/WireGuard network and
 has no ingress baseline.
 
@@ -92,6 +96,11 @@ identity. Orbit does not claim per-tool sub-identities.
 sudo -u agent -H bash -lc 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup'
 ```
 
+Before the tool row, proxy route, or installer is applied, Orbit verifies the
+explicit Linux platform, mandatory node TLD, existence of the `agent` user, and
+that the user is unprivileged. A failed check returns
+`tool.constraint_unsatisfied` with stable constraint metadata.
+
 ## Update Command
 
 `tool:update hermes` runs Hermes's native self-update path:
@@ -115,5 +124,5 @@ sudo -u agent -H bash -lc 'hermes doctor'
 that managed credential metadata is present. It also checks that the Hermes
 binary version matches the gateway expected version when version tracking is
 enabled, and that the tool's internal proxy route metadata resolves to the
-active agent role TLD. Runtime process lifecycle drift belongs to the process
+target node's configured TLD. Runtime process lifecycle drift belongs to the process
 family.

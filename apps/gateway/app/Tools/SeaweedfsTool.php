@@ -6,13 +6,22 @@ namespace App\Tools;
 
 final class SeaweedfsTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux'];
+
+    protected const ?string REQUIRED_CONTAINER_PROVIDER = 'docker-compatible';
+
+    protected const ?string ISOLATION = 'docker';
+
     public function slug(): string
     {
         return 'seaweedfs';
     }
 
     #[\Override]
-    public function requiredNodeRole(): string
+    public function bootstrapRole(): string
     {
         return 's3';
     }
@@ -26,7 +35,7 @@ final class SeaweedfsTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['install', 'remove', 'update', 'credentials', 'safe-fix', 'safe-adopt'];
+        return ['credentials', 'safe-fix', 'safe-adopt'];
     }
 
     #[\Override]
@@ -35,13 +44,6 @@ final class SeaweedfsTool extends BaseTool
         return [
             'binary' => 'docker',
             'version_command' => 'docker --version',
-            'container' => 'orbit-seaweedfs',
-            'image' => 'chrislusf/seaweedfs:4.33',
-            'repair_commands' => [
-                'lifecycle_running' => 'docker start '.escapeshellarg('orbit-seaweedfs'),
-                'lifecycle_stopped' => 'docker stop '.escapeshellarg('orbit-seaweedfs'),
-                'lifecycle_restarted' => 'docker restart '.escapeshellarg('orbit-seaweedfs'),
-            ],
         ];
     }
 }

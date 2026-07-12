@@ -25,7 +25,6 @@ final class AppListCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'app:list
         {--node= : Filter by owning node}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json}';
 
     #[\Override]

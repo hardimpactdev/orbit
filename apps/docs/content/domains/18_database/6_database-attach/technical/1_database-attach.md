@@ -8,8 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is authorized to manage the selected app,
-  app instance, or workspace.
+- The current node identity is authorized to manage the selected app instance
+  or workspace.
 
 ## Signature
 
@@ -25,14 +25,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- |
 | `connection` | `argument` | Always. | n/a | Visible database connection slug. |
 | `app` | `--app` | Required when `workspace` is absent. | None. | Visible active app the caller may manage. |
-| `instance` | `--instance` | Optional with `app`. | None. | App instance belonging to the selected app. |
+| `instance` | `--instance` | Required with `app`. | None. | App instance belonging to the selected app. |
 | `workspace` | `--workspace` | Required when `app` is absent. | None. | Visible workspace the caller may manage. |
 | `env_prefix` | `--env-prefix` | Optional. | `DB`. | Stored on the target mapping, not on the connection record. |
 | `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |
 
-Exactly one of `--app` or `--workspace` is required. `--instance` may be used
-only with `--app` and maps the connection to that app instance instead of the
-app target. `--env-prefix` defaults to `DB` and is stored on the target mapping,
+Exactly one of `--app` or `--workspace` is required. `--instance` is required
+with `--app`; a bare app is never a database target. `--env-prefix` defaults to
+`DB` and is stored on the target mapping,
 not on the connection record.
 
 ## Behavior Contract
@@ -40,7 +40,7 @@ not on the connection record.
 ### Mapping Rules
 
 - Creates or updates one target mapping from the selected connection to the
-  selected app, app instance, or workspace.
+  selected app instance or workspace.
 - Enforces one mapping per target and env prefix.
 - Does not rewrite the target `.env` file immediately. Materialization is owned
   by `doctor --family=database_connection --restore`.

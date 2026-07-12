@@ -31,7 +31,7 @@ it('rotates wireguard endpoints when gateway endpoint changes', function (): voi
         'name' => 'app-1',
         'host' => '192.0.2.10',
         'wireguard_address' => '10.6.0.10',
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'gateway_endpoint' => '10.3.0.2',
         'host_key_type' => 'ssh-ed25519',
         'host_key_public' => 'AAAATEST',
@@ -62,7 +62,7 @@ it('returns a warning when wireguard endpoint rotation fails', function (): void
     $node = Node::factory()->create([
         'name' => 'app-1',
         'wireguard_address' => '10.6.0.10',
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'gateway_endpoint' => '10.3.0.2',
         'host_key_type' => 'ssh-ed25519',
         'host_key_public' => 'AAAATEST',

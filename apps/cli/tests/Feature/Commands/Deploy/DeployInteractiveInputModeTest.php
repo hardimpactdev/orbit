@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\GatewayOperationStreamSubscriber;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -34,13 +35,39 @@ describe('deploy interactive input mode', function (): void {
     });
 
     it('prompts for app before running a deployment', function (): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
-            'exit_code' => 0,
-            'data' => [
-                'footer' => 'Deployment completed',
-                'run' => ['id' => 43, 'app' => 'docs', 'status' => 'completed'],
+        fakeGateway(fakeSuccessEnvelope([
+            'operation' => [
+                'uuid' => 'deploy-operation-interactive',
+                'stream_descriptor_url' => '/api/operations/deploy-operation-interactive/stream',
+                'events_url' => '/api/operations/deploy-operation-interactive/events',
             ],
-        ]));
+        ]), 202);
+        app()->instance(
+            GatewayOperationStreamSubscriber::class,
+            new class extends GatewayOperationStreamSubscriber {
+                public function __construct() {}
+
+                #[\Override]
+                public function subscribe(string $operationRunId, ?int $lastReplayCursor, callable $onFrame): void
+                {
+                    expect($operationRunId)
+                        ->toBe('deploy-operation-interactive')
+                        ->and($lastReplayCursor)
+                        ->toBeNull();
+
+                    $onFrame([
+                        'type' => 'complete',
+                        'payload' => [
+                            'exit_code' => 0,
+                            'data' => [
+                                'footer' => 'Deployment completed',
+                                'run' => ['id' => 43, 'app' => 'docs', 'status' => 'completed'],
+                            ],
+                        ],
+                    ]);
+                }
+            },
+        );
 
         $this
             ->artisan('deploy:run')
@@ -48,14 +75,15 @@ describe('deploy interactive input mode', function (): void {
             ->expectsOutputToContain('Deployment completed')
             ->assertSuccessful();
 
-        assertGatewayStreamSent(
-            fn (FakeGatewayStreamRequest $request): bool => (
+        Http::assertSent(
+            fn (Request $request): bool => (
                 $request->method() === 'POST'
                 && str_contains($request->url(), '/api/deploy/run')
                 && $request->data() === [
                     'app' => 'docs',
                     'detach' => false,
                 ]
+                && ! $request->hasHeader('Accept', 'text/event-stream')
             ),
         );
     });

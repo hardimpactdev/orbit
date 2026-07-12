@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Tools;
 
+/** @mago-expect lint:too-many-methods */
 final readonly class ToolRegistryFailure
 {
     /**
@@ -55,15 +56,38 @@ final readonly class ToolRegistryFailure
         );
     }
 
-    public static function nodeRoleRequired(string $tool, string $node, string $requiredRole): self
+    public static function runtimeMissing(string $tool, string $node, string $action): self
     {
         return new self(
-            code: 'node.role_required',
-            message: "Tool '{$tool}' requires node '{$node}' to have active role '{$requiredRole}'.",
+            code: 'tool.runtime_missing',
+            message: "Tool '{$tool}' declares {$action}, but no direct runtime is configured on node '{$node}'.",
             meta: [
-                'node' => $node,
-                'required_role' => $requiredRole,
                 'tool' => $tool,
+                'node' => $node,
+                'action' => $action,
+            ],
+        );
+    }
+
+    /**
+     * @param  list<string>  $processes
+     */
+    public static function runtimeAmbiguous(
+        string $tool,
+        string $node,
+        string $action,
+        array $processes,
+        bool $toolOwnedRuntime,
+    ): self {
+        return new self(
+            code: 'tool.runtime_ambiguous',
+            message: "Tool '{$tool}' maps to more than one runtime on node '{$node}'.",
+            meta: [
+                'tool' => $tool,
+                'node' => $node,
+                'action' => $action,
+                'processes' => $processes,
+                'tool_owned_runtime' => $toolOwnedRuntime,
             ],
         );
     }
@@ -85,6 +109,26 @@ final readonly class ToolRegistryFailure
                 'node' => $node,
                 'platform' => $platform,
                 'supported_operating_systems' => $supportedOperatingSystems,
+            ],
+        );
+    }
+
+    /** @param array<string, mixed> $context */
+    public static function constraintUnsatisfied(
+        string $tool,
+        string $node,
+        string $constraint,
+        array $context,
+    ): self {
+        return new self(
+            code: 'tool.constraint_unsatisfied',
+            message: "Tool '{$tool}' install preflight failed on node '{$node}': {$constraint} constraint is not satisfied.",
+            meta: [
+                'tool' => $tool,
+                'node' => $node,
+                'action' => 'install',
+                'constraint' => $constraint,
+                ...$context,
             ],
         );
     }

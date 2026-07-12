@@ -1601,7 +1601,7 @@ describe('ToolsProbe', function (): void {
         ]);
         $node = createToolsProbeAgentNode();
         $node->forceFill([
-            'orbit_agent_capable' => true,
+            'managed' => true,
             'wireguard_address' => '10.44.0.83',
         ])->save();
         $tool = NodeTool::factory()->create([
@@ -1632,7 +1632,7 @@ describe('ToolsProbe', function (): void {
         ]);
         $node = createToolsProbeAgentNode();
         $node->forceFill([
-            'orbit_agent_capable' => true,
+            'managed' => true,
             'wireguard_address' => '10.44.0.84',
         ])->save();
         $tool = NodeTool::factory()->create([

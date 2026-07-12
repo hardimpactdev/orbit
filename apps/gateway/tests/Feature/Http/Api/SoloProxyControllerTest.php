@@ -26,7 +26,7 @@ uses(RefreshDatabase::class);
 
 const SOLO_PROXY_CALLER_WG_IP = '10.6.0.86';
 
-function create_solo_proxy_caller_node(): Node
+function create_solo_proxy_caller_node(bool $withSolo = false): Node
 {
     $node = Node::factory()->create([
         'name' => 'solo-proxy-control',
@@ -34,10 +34,23 @@ function create_solo_proxy_caller_node(): Node
         'wireguard_address' => SOLO_PROXY_CALLER_WG_IP,
         'platform' => 'ubuntu',
         'status' => 'active',
+        'managed' => $withSolo,
     ]);
 
     if (! $node instanceof Node) {
         throw new RuntimeException('Expected Solo proxy caller node.');
+    }
+
+    if ($withSolo) {
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'solo',
+            'expected_state' => 'installed',
+            'config' => [
+                'api_url' => 'http://127.0.0.1:24678',
+                'node_identity' => $node->name,
+            ],
+        ]);
     }
 
     return $node;
@@ -95,7 +108,6 @@ function create_solo_operator_node(array $toolConfig = [], string $name = 'NMBP'
         'wireguard_address' => '10.6.0.3',
         'platform' => 'macos',
         'status' => 'active',
-        'orbit_agent_capable' => true,
     ]);
 
     if (! $node instanceof Node) {
@@ -167,7 +179,7 @@ describe('Solo proxy API', function (): void {
         grant_solo_proxy_gateway_access($caller, Node::query()->where('name', 'gateway-1')->firstOrFail(), ['solo:*']);
         bind_solo_proxy_upstream(new FakeSoloUpstreamClient);
 
-        solo_proxy_request(method: 'GET', uri: '/api/solo/tools')
+        solo_proxy_request(method: 'GET', uri: '/api/solo/tools?node=gateway-1')
             ->assertConflict()
             ->assertJsonPath('error.code', 'extension_disabled')
             ->assertJsonPath('error.meta.extension', 'solo')
@@ -180,7 +192,7 @@ describe('Solo proxy API', function (): void {
         enable_solo_gateway_extension();
         bind_solo_proxy_upstream(new FakeSoloUpstreamClient);
 
-        solo_proxy_request(method: 'GET', uri: '/api/solo/tools')
+        solo_proxy_request(method: 'GET', uri: '/api/solo/tools?node=gateway-1')
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
@@ -200,7 +212,7 @@ describe('Solo proxy API', function (): void {
             ),
         ]));
 
-        solo_proxy_request(method: 'GET', uri: '/api/solo/tools')
+        solo_proxy_request(method: 'GET', uri: '/api/solo/tools?node=gateway-1')
             ->assertOk()
             ->assertJsonPath('success.data.tools.0.name', 'codex')
             ->assertJsonPath('success.meta.source', 'solo');
@@ -259,6 +271,54 @@ describe('Solo proxy API', function (): void {
         $properties = solo_proxy_activity_properties(solo_proxy_activity_entry());
 
         expect($properties['target_node'] ?? null)->toBe('NMBP');
+    });
+
+    it('targets the authenticated caller when Solo scope resolves to self', function (): void {
+        create_solo_target_node();
+        $caller = create_solo_proxy_caller_node(withSolo: true);
+        grant_solo_proxy_gateway_access($caller, $caller, ['solo:*']);
+        enable_solo_gateway_extension();
+        $upstream = bind_solo_proxy_upstream(new FakeSoloUpstreamClient([
+            '/projects' => SoloUpstreamResponse::success(data: ['projects' => []]),
+        ]));
+
+        solo_proxy_request(method: 'GET', uri: '/api/solo/projects?self=1')
+            ->assertOk();
+
+        expect($upstream->calls)
+            ->toHaveCount(1)
+            ->and($upstream->calls[0]['target']->node->is($caller))
+            ->toBeTrue();
+    });
+
+    it('rejects a non-gateway Solo target that is not Agent eligible', function (): void {
+        create_solo_target_node();
+        $target = Node::factory()->create([
+            'name' => 'unmanaged-operator',
+            'host' => '10.6.0.44',
+            'wireguard_address' => '10.6.0.44',
+            'platform' => 'macos',
+            'status' => 'active',
+            'managed' => false,
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $target->id,
+            'name' => 'solo',
+            'expected_state' => 'installed',
+            'config' => [
+                'api_url' => 'http://127.0.0.1:24678',
+                'node_identity' => $target->name,
+            ],
+        ]);
+        $caller = create_solo_proxy_caller_node();
+        grant_solo_proxy_gateway_access($caller, $target, ['solo:*']);
+        enable_solo_gateway_extension();
+        bind_solo_proxy_upstream(new FakeSoloUpstreamClient);
+
+        solo_proxy_request(method: 'GET', uri: '/api/solo/projects?node=unmanaged-operator')
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.reason', 'solo_target_agent_required');
     });
 
     it('executes non-gateway Solo upstream requests on the target node loopback', function (): void {
@@ -343,7 +403,7 @@ describe('Solo proxy API', function (): void {
             ),
         ]));
 
-        solo_proxy_request(method: 'GET', uri: '/api/solo/projects')
+        solo_proxy_request(method: 'GET', uri: '/api/solo/projects?node=gateway-1')
             ->assertServiceUnavailable()
             ->assertJsonPath('error.code', 'solo_upstream_unavailable')
             ->assertJsonPath('error.meta.node', 'gateway-1');
@@ -360,7 +420,7 @@ describe('Solo proxy API', function (): void {
             '/discovery' => SoloUpstreamResponse::success(data: ['unexpected' => true]),
         ]));
 
-        solo_proxy_request(method: 'GET', uri: '/api/solo/tools')
+        solo_proxy_request(method: 'GET', uri: '/api/solo/tools?node=gateway-1')
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'tools');
@@ -373,7 +433,7 @@ describe('Solo proxy API', function (): void {
         enable_solo_gateway_extension();
         bind_solo_proxy_upstream(new FakeSoloUpstreamClient);
 
-        solo_proxy_request(method: 'GET', uri: '/api/solo/tools')
+        solo_proxy_request(method: 'GET', uri: '/api/solo/tools?node=gateway-1')
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', 'solo_api_not_configured');
@@ -386,7 +446,7 @@ describe('Solo proxy API', function (): void {
         enable_solo_gateway_extension();
         $upstream = bind_solo_proxy_upstream(new FakeSoloUpstreamClient);
 
-        solo_proxy_request(method: 'GET', uri: '/api/solo/tools')
+        solo_proxy_request(method: 'GET', uri: '/api/solo/tools?node=gateway-1')
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', 'solo_api_url_not_loopback');
@@ -408,7 +468,7 @@ describe('Solo proxy API', function (): void {
             ]),
         ]));
 
-        solo_proxy_request(method: 'GET', uri: '/api/solo/project/status?project=orbit')
+        solo_proxy_request(method: 'GET', uri: '/api/solo/project/status?project=orbit&node=gateway-1')
             ->assertOk()
             ->assertJsonPath('success.data.status.project', 'orbit')
             ->assertJsonPath('success.data.status.state', 'active');
@@ -428,7 +488,7 @@ describe('Solo proxy API', function (): void {
         enable_solo_gateway_extension();
         bind_solo_proxy_upstream(new FakeSoloUpstreamClient);
 
-        solo_proxy_request(method: 'GET', uri: '/api/solo/project/show')
+        solo_proxy_request(method: 'GET', uri: '/api/solo/project/show?node=gateway-1')
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'project');
@@ -441,7 +501,7 @@ describe('Solo proxy API', function (): void {
         enable_solo_gateway_extension();
         bind_solo_proxy_upstream(new FakeSoloUpstreamClient);
 
-        solo_proxy_request(method: 'GET', uri: '/api/solo/unknown/read')
+        solo_proxy_request(method: 'GET', uri: '/api/solo/unknown/read?node=gateway-1')
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', 'solo_operation_unknown');
@@ -455,6 +515,7 @@ describe('Solo proxy API', function (): void {
         bind_solo_proxy_upstream(new FakeSoloUpstreamClient);
 
         solo_proxy_json_request(method: 'PUT', uri: '/api/solo/scratchpad/write', payload: [
+            'node' => 'gateway-1',
             'scratchpad' => 'plan',
             'content' => 'updated',
             'expected_revision' => 7,
@@ -502,6 +563,7 @@ describe('Solo proxy API', function (): void {
         ]));
 
         solo_proxy_json_request(method: 'PUT', uri: '/api/solo/scratchpad/write', payload: [
+            'node' => 'gateway-1',
             'scratchpad' => 'plan',
             'content' => 'updated',
             'expected_revision' => 7,
@@ -534,7 +596,7 @@ describe('Solo proxy API', function (): void {
             ->toBe('gateway-1');
     });
 
-    it('authorizes, proxies, and records activity against the resolved Solo gateway node', function (): void {
+    it('authorizes, proxies, and records activity against an explicit Solo gateway node', function (): void {
         $gateway = create_solo_target_node(name: 'z-gateway');
         create_solo_target_node(name: 'a-gateway');
         $caller = create_solo_proxy_caller_node();
@@ -550,6 +612,7 @@ describe('Solo proxy API', function (): void {
         ]));
 
         solo_proxy_json_request(method: 'PUT', uri: '/api/solo/scratchpad/write', payload: [
+            'node' => 'z-gateway',
             'scratchpad' => 'plan',
             'content' => 'updated',
         ])
@@ -574,6 +637,7 @@ describe('Solo proxy API', function (): void {
         $upstream = bind_solo_proxy_upstream(new FakeSoloUpstreamClient);
 
         solo_proxy_json_request(method: 'PUT', uri: '/api/solo/scratchpad/write', payload: [
+            'node' => 'gateway-1',
             'scratchpad' => 'plan',
         ])
             ->assertUnprocessable()
@@ -598,6 +662,7 @@ describe('Solo proxy API', function (): void {
         ]));
 
         solo_proxy_json_request(method: 'PUT', uri: '/api/solo/scratchpad/write', payload: [
+            'node' => 'gateway-1',
             'scratchpad' => 'plan',
             'content' => 'updated',
             'expected_revision' => 7,
@@ -622,6 +687,7 @@ describe('Solo proxy API', function (): void {
         ]));
 
         solo_proxy_json_request(method: 'POST', uri: '/api/solo/todo/create', payload: [
+            'node' => 'gateway-1',
             'project' => '4',
             'title' => 'Check live Solo',
         ])
@@ -629,6 +695,7 @@ describe('Solo proxy API', function (): void {
             ->assertJsonPath('success.data.todo.id', 42);
 
         solo_proxy_json_request(method: 'DELETE', uri: '/api/solo/todo/delete', payload: [
+            'node' => 'gateway-1',
             'project' => '4',
             'todo' => '42',
         ])

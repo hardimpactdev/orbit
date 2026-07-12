@@ -15,6 +15,7 @@ use function Laravel\Prompts\text;
 
 final class ScheduleAddCommand extends ScheduleGatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use WithStepTree;
 
     #[\Override]

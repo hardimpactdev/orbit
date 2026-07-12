@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
@@ -33,7 +35,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n",
         );
 
-        App::factory()->create([
+        databaseConnectionAdopterApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -41,7 +43,7 @@ describe('DatabaseConnectionAdopter', function (): void {
 
         $results = app(DatabaseConnectionAdopter::class)->adopt($node);
 
-        $connection = DatabaseConnection::query()->where('slug', 'docs')->first();
+        $connection = DatabaseConnection::query()->where('slug', 'docs-development')->first();
 
         expect($results)
             ->toHaveCount(1)
@@ -73,12 +75,11 @@ describe('DatabaseConnectionAdopter', function (): void {
         ]);
         $node = Node::factory()
             ->appDev()
-            ->orbitAgentCapable()
             ->create([
                 'status' => 'active',
                 'wireguard_address' => '10.44.0.76',
             ]);
-        $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
+        $app = databaseConnectionAdopterApp(['node_id' => $node->id, 'name' => 'docs']);
         Workspace::factory()->create([
             'app_id' => $app->id,
             'name' => 'feature',
@@ -102,7 +103,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\nANALYTICS_DB_CONNECTION=mysql\nANALYTICS_DB_HOST=analytics.internal\nANALYTICS_DB_PORT=3306\nANALYTICS_DB_DATABASE=analytics\nANALYTICS_DB_USERNAME=analytics\nANALYTICS_DB_PASSWORD=top-secret\n",
         );
 
-        $app = App::factory()->create([
+        $app = databaseConnectionAdopterApp([
             'node_id' => $node->id,
             'name' => 'Docs API!',
             'path' => $appPath,
@@ -120,9 +121,9 @@ describe('DatabaseConnectionAdopter', function (): void {
 
         app(DatabaseConnectionAdopter::class)->adopt($node);
 
-        expect(DatabaseConnection::query()->where('slug', 'docs-api')->exists())
+        expect(DatabaseConnection::query()->where('slug', 'docs-api-development')->exists())
             ->toBeTrue()
-            ->and(DatabaseConnection::query()->where('slug', 'docs-api-analytics-db')->exists())
+            ->and(DatabaseConnection::query()->where('slug', 'docs-api-development-analytics-db')->exists())
             ->toBeTrue()
             ->and(DatabaseConnection::query()->where('slug', 'feature-branch-1-docs-api')->exists())
             ->toBeTrue();
@@ -137,7 +138,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             "DB_CONNECTION=mysql\nDB_HOST=new-host\nDB_PORT=3306\nDB_DATABASE=docs_v2\nDB_USERNAME=new-user\nDB_PASSWORD=new-secret\n",
         );
 
-        $app = App::factory()->create([
+        $app = databaseConnectionAdopterApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -152,7 +153,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             'credentials' => ['password' => 'old-secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionAdopterAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -195,7 +196,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             "DB_CONNECTION=mysql\nDB_HOST=dlf-leden-mysql\nDB_PORT=3306\nDB_DATABASE=dlf_leden\nDB_USERNAME=dlf_leden\nDB_PASSWORD=secret\n",
         );
 
-        $app = App::factory()->create([
+        $app = databaseConnectionAdopterApp([
             'node_id' => $node->id,
             'name' => 'dlf-leden',
             'path' => $path,
@@ -231,7 +232,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             'credentials' => ['password' => 'secret'],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionAdopterAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -269,7 +270,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             "DB_CONNECTION=mysql\nDB_HOST=dlf-leden-mysql\nDB_PORT=3306\nDB_DATABASE=dlf_leden\nDB_USERNAME=dlf_leden\nDB_PASSWORD=secret\n",
         );
 
-        $app = App::factory()->create([
+        $app = databaseConnectionAdopterApp([
             'node_id' => $node->id,
             'name' => 'dlf-leden',
             'path' => $path,
@@ -311,7 +312,12 @@ describe('DatabaseConnectionAdopter', function (): void {
             ->toHaveCount(1)
             ->and(DatabaseConnection::query()->count())
             ->toBe(1)
-            ->and($app->databaseConnectionTargets()->first()?->database_connection_id)
+            ->and(
+                databaseConnectionAdopterAppInstance($app)
+                    ->databaseConnectionTargets()
+                    ->first()
+                    ?->database_connection_id,
+            )
             ->toBe($connection->id);
     });
 
@@ -334,7 +340,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             ANALYTICS_DB_PASSWORD=top-secret
             ENV);
 
-        $app = App::factory()->create([
+        $app = databaseConnectionAdopterApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -344,11 +350,18 @@ describe('DatabaseConnectionAdopter', function (): void {
 
         expect($results)
             ->toHaveCount(2)
-            ->and($app->databaseConnectionTargets()->pluck('env_prefix')->sort()->values()->all())
+            ->and(
+                databaseConnectionAdopterAppInstance($app)
+                    ->databaseConnectionTargets()
+                    ->pluck('env_prefix')
+                    ->sort()
+                    ->values()
+                    ->all(),
+            )
             ->toBe(['ANALYTICS_DB', 'DB'])
-            ->and(DatabaseConnection::query()->where('slug', 'docs')->exists())
+            ->and(DatabaseConnection::query()->where('slug', 'docs-development')->exists())
             ->toBeTrue()
-            ->and(DatabaseConnection::query()->where('slug', 'docs-analytics-db')->exists())
+            ->and(DatabaseConnection::query()->where('slug', 'docs-development-analytics-db')->exists())
             ->toBeTrue();
     });
 
@@ -361,7 +374,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             "REPORTING_DB_CONNECTION=pgsql\nREPORTING_DB_HOST=reporting.internal\nREPORTING_DB_PORT=5432\nREPORTING_DB_DATABASE=reporting\nREPORTING_DB_USERNAME=reporting\n",
         );
 
-        $app = App::factory()->create([
+        $app = databaseConnectionAdopterApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -371,9 +384,9 @@ describe('DatabaseConnectionAdopter', function (): void {
 
         expect($results)
             ->toHaveCount(1)
-            ->and($app->databaseConnectionTargets()->pluck('env_prefix')->all())
+            ->and(databaseConnectionAdopterAppInstance($app)->databaseConnectionTargets()->pluck('env_prefix')->all())
             ->toBe(['REPORTING_DB'])
-            ->and(DatabaseConnection::query()->where('slug', 'docs-reporting-db')->exists())
+            ->and(DatabaseConnection::query()->where('slug', 'docs-development-reporting-db')->exists())
             ->toBeTrue();
     });
 
@@ -383,7 +396,7 @@ describe('DatabaseConnectionAdopter', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_PORT=6432\nDB_USERNAME=partial-user\n");
 
-        $app = App::factory()->create([
+        $app = databaseConnectionAdopterApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -399,7 +412,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             'credentials' => ['password' => $storedCredential],
         ]);
         DatabaseConnectionTarget::factory()
-            ->forApp($app)
+            ->forAppInstance(databaseConnectionAdopterAppInstance($app))
             ->create([
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
@@ -429,7 +442,7 @@ describe('DatabaseConnectionAdopter', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=pgsql\n");
 
-        App::factory()->create([
+        databaseConnectionAdopterApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -451,14 +464,14 @@ describe('DatabaseConnectionAdopter', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=sqlite\nDB_DATABASE=/srv/docs/database/database.sqlite\n");
 
-        App::factory()->create([
+        databaseConnectionAdopterApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
         ]);
 
         $results = app(DatabaseConnectionAdopter::class)->adopt($node);
-        $connection = DatabaseConnection::query()->where('slug', 'docs')->first();
+        $connection = DatabaseConnection::query()->where('slug', 'docs-development')->first();
 
         expect($results)
             ->toHaveCount(1)
@@ -482,7 +495,7 @@ describe('DatabaseConnectionAdopter', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=sqlite\nDB_DATABASE=/srv/docs/database/database.sqlite\n");
 
-        App::factory()->create([
+        databaseConnectionAdopterApp([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -500,7 +513,7 @@ describe('DatabaseConnectionAdopter', function (): void {
 
         app(DatabaseConnectionAdopter::class)->adopt($node);
 
-        $connection = DatabaseConnection::query()->where('slug', 'docs')->first();
+        $connection = DatabaseConnection::query()->where('slug', 'docs-development')->first();
 
         expect($connection)
             ->not
@@ -511,6 +524,30 @@ describe('DatabaseConnectionAdopter', function (): void {
             ->toBe(2);
     });
 });
+
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function databaseConnectionAdopterApp(array $attributes): App
+{
+    $app = App::factory()->create($attributes);
+
+    AppInstance::factory()->for($app)->create([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $app->node_id,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+
+    return $app;
+}
+
+function databaseConnectionAdopterAppInstance(App $app): AppInstance
+{
+    return $app->instances()->firstOrFail();
+}
 
 final class DatabaseConnectionAdopterRemoteShell implements RemoteShell
 {

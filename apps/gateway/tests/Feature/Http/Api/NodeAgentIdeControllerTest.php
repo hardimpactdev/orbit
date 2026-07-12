@@ -19,7 +19,7 @@ const AGENT_IDE_CALLER_WG_IP = '10.6.0.99';
  */
 function apiNodeAgentIdeRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'app-1',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
@@ -32,6 +32,10 @@ function apiNodeAgentIdeRow(array $overrides = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    $row['tld'] ??= $row['name'];
+
+    return $row;
 }
 
 function createAgentIdeCallerNode(?string $role = null): int

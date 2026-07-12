@@ -18,7 +18,6 @@ final class ScheduleListCommand extends GatewayCommand
     protected $signature = 'schedule:list
         {--app= : Filter by app scope}
         {--node= : Filter by node scope}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json}';
 
     #[\Override]

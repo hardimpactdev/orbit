@@ -4,17 +4,22 @@ declare(strict_types=1);
 
 namespace App\Services\NodeCommandTransport;
 
+use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
 use RuntimeException;
 
 final readonly class NodeCommandTransportSelector
 {
+    // @orbit-ssh-lane transitional-ssh
     public function select(
         Node $node,
         NodeCommandEnvelope $envelope,
         NodeTransportPreference $preference = NodeTransportPreference::Auto,
     ): NodeTransport {
-        if (! $envelope->requiresNodeExecution) {
+        if (
+            $node->hasActiveRole(NodeRoleName::Gateway->value)
+            || ! $envelope->requiresNodeExecution
+        ) {
             return NodeTransport::GatewayOnly;
         }
 
@@ -31,6 +36,6 @@ final readonly class NodeCommandTransportSelector
 
     private function canUseAgentPush(Node $node, NodeCommandEnvelope $envelope): bool
     {
-        return $node->isActive() && $node->orbit_agent_capable && $envelope->supportsAgentPushTransport;
+        return $node->isAgentEligible() && $envelope->supportsAgentPushTransport;
     }
 }

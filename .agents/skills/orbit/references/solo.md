@@ -27,11 +27,13 @@ Disabled local state hides `solo:*` from normal command discovery and direct
 invocation returns `extension_disabled` with `meta.scope=local`. Disabled
 gateway state blocks `/api/solo/**` after identity and grant checks.
 
-## Boundary
+## Target and transport boundary
 
-Orbit proxies Solo through gateway API routes. Solo upstream traffic targets the
-gateway node's configured loopback Solo API URL; Orbit does not expose Solo
-localhost ports directly to WireGuard.
+Orbit resolves an explicit `--node` first, then the caller's configured default
+node, then the caller node itself. A gateway target calls the configured Solo
+loopback locally on the gateway. A non-gateway target uses Agent push to invoke
+that node's own Solo loopback. Orbit never exposes Solo ports or an SSH
+transport.
 
 Solo does not own a doctor state family. Drift belongs to existing families:
 `node` for identity/config reachability, `process` for process state, and

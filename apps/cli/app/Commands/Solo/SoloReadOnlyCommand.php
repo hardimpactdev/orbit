@@ -7,6 +7,7 @@ namespace App\Commands\Solo;
 use App\Commands\Concerns\RequiresLocalExtension;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
+use App\Exceptions\OrbitConfigStoreException;
 
 final class SoloReadOnlyCommand extends GatewayCommand
 {
@@ -21,6 +22,7 @@ final class SoloReadOnlyCommand extends GatewayCommand
     public function __construct(
         private readonly SoloReadOperationDefinition $operation,
         private readonly SoloCommandSignature $soloCommandSignature,
+        private readonly SoloCommandTargetPayload $targetPayload,
     ) {
         $this->signature = $this->soloCommandSignature->withNodeOption($operation->signature);
         $this->description = "Run {$operation->command} through the Solo gateway proxy.";
@@ -34,11 +36,10 @@ final class SoloReadOnlyCommand extends GatewayCommand
             return $failure;
         }
 
-        $query = [];
-        $node = $this->stringOptionValue('node');
-
-        if ($node !== null) {
-            $query['node'] = $node;
+        try {
+            $query = $this->targetPayload->forNode($this->stringOptionValue('node'));
+        } catch (OrbitConfigStoreException $exception) {
+            return $this->renderFailure($exception->orbitCode, $exception->getMessage());
         }
 
         foreach ($this->operation->requiredArguments as $argument) {

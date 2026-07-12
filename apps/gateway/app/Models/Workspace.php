@@ -18,7 +18,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int $app_id
- * @property int|null $app_instance_id
+ * @property int $app_instance_id
  * @property string $name
  * @property string $path
  * @property string|null $php_version
@@ -28,7 +28,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read App|null $app
- * @property-read AppInstance|null $appInstance
+ * @property-read AppInstance $appInstance
  * @property-read Collection<int, DatabaseConnection> $databaseConnections
  * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
  * @property-read Collection<int, Process> $processes

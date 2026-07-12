@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Commands\Solo;
 
+use App\Services\OrbitConfigStore;
+
 final class SoloCommandTargetPayload
 {
     /**
@@ -11,6 +13,12 @@ final class SoloCommandTargetPayload
      */
     public function forNode(?string $node): array
     {
-        return $node === null ? [] : ['node' => $node];
+        if ($node !== null) {
+            return ['node' => $node];
+        }
+
+        $defaultNode = app(OrbitConfigStore::class)->defaultNode();
+
+        return $defaultNode === null ? ['self' => true] : ['node' => $defaultNode];
     }
 }

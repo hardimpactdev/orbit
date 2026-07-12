@@ -10,7 +10,8 @@ Register or provision a node.
 
 ```bash
 orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
-               [--host=<host>] [--operator-name=<name>] [--tld=<tld>]
+               [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>]
+               [--tld=<tld>]
                [--user=<user>] [--gateway-endpoint=<endpoint>]
                [--ingress=<node>] [--redis-node=<node>]
                [--postgres-node=<node>] [--clickhouse-node=<node>]
@@ -31,7 +32,8 @@ orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
 | `--roles` |  -  | Comma-separated canonical public roles: `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `metrics`. |
 | `--host` |  -  | SSH/bootstrap endpoint. Required for gateway bootstrap and host-capable workload roles. Forbidden for client identities with no roles. |
 | `--operator-name` | local short hostname | First-gateway bootstrap only  -  the initiating client identity's name. |
-| `--tld` | node name | Mandatory node TLD (no leading dot). Defaults from `name` when omitted. Wildcard development DNS mappings apply when `app-dev` or `agent` consumes the TLD. |
+| `--operator-tld` |  -  | Required first-gateway-bootstrap TLD for the separate initiating operator identity. |
+| `--tld` |  -  | Required explicit unique node TLD (no leading dot) for every node identity. Wildcard development DNS mappings apply when a workload derives development routes from it. |
 | `--user` | `root` | Bootstrap-only SSH user; the managed steady-state user is created during provisioning. |
 | `--gateway-endpoint` | gateway public endpoint | WireGuard endpoint this node should use to reach the gateway. Useful for nodes in the same private provider network. |
 | `--ingress` |  -  | Active ingress node for private `app-prod` placement. |
@@ -73,11 +75,11 @@ By role:
 Examples:
 
 ```bash
-orbit node:new my-mac --operator
+orbit node:new my-mac --operator --tld=my-mac
 orbit node:new beast --template=app-development --host=beast.lan --tld=beast
-orbit node:new prod-1 --template=app-production --host=203.0.113.20 --ingress=edge-1
-orbit node:new storage-1 --template=s3 --host=10.0.0.20 --s3-data-path=/srv/orbit/s3/data
-orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --operator-name=my-mac
+orbit node:new prod-1 --template=app-production --host=203.0.113.20 --tld=prod-1 --ingress=edge-1
+orbit node:new storage-1 --template=s3 --host=10.0.0.20 --tld=storage-1 --s3-data-path=/srv/orbit/s3/data
+orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --tld=gateway --operator-name=my-mac --operator-tld=my-mac
 ```
 
 ## `orbit node:list`
@@ -101,10 +103,11 @@ orbit node:show [<name>] [--json]
 
 ## `orbit node:update [name]`
 
-Update node registry metadata and role-owned settings.
+Update node registry metadata and explicit managed intent.
 
 ```bash
-orbit node:update [<name>] [--host=<host>] [--tld=<tld>]
+orbit node:update [<name>] [--host=<host>] [--user=<runtime-user>] [--tld=<tld>]
+                  [--managed|--no-managed]
                   [--gateway-endpoint=<endpoint>]
                   [--public-ipv4=<ip>] [--public-ipv6=<ip>] [--json]
 ```
@@ -119,6 +122,10 @@ not restart the node's WireGuard interface.
 gateway and operator targets. Setting it to a TLD already in use by another
 active node fails with `node.tld_in_use`. Gateway VPN DNS publishes
 `orbit.<node-tld>` to the node's WireGuard address.
+
+`--managed` opts a roleless supported node into Agent execution intent;
+`--no-managed` clears that explicit opt-in. Workload-role nodes derive intent
+from their active role assignments. Gateway nodes remain ineligible.
 
 ## `orbit node:remove [name]`
 
@@ -178,7 +185,7 @@ Manage assignable hosted roles on existing nodes.
 
 ```bash
 orbit node role:list [<node>] [--json]
-orbit node role:add <node> <role> [--tld=<tld>] [--redis-node=<node>]
+orbit node role:add <node> <role> [--redis-node=<node>]
                     [--s3-data-path=<path>] [--json]
 orbit node role:remove <node> <role> [--force] [--purge-data] [--json]
 ```

@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Operation;
 
-use App\Commands\Concerns\ResolvesHostContext;
-use App\Commands\GatewayCommand;
-use App\Exceptions\GatewayApiException;
-use App\Services\Profile\ProfileAppSelector;
+use App\Commands\LocalOnlyCommand;
 use App\Services\Profile\ProfileHumanRenderer;
 use App\Services\Profile\ProfileInput;
 use App\Services\Profile\ProfileInputFailure;
@@ -15,111 +12,67 @@ use App\Services\Profile\ProfileInputResolver;
 use App\Services\Profile\ProfileRequestProfiler;
 use Illuminate\Support\Str;
 
-final class ProfileCommand extends GatewayCommand
-{
-    use ResolvesHostContext;
+use function Laravel\Prompts\text;
 
+final class ProfileCommand extends LocalOnlyCommand
+{
     #[\Override]
     protected $signature = 'profile
-        {target? : Domain, app hostname, full URL, or absolute app path}
-        {--app= : App name or hostname to profile}
-        {--node= : Constrain app resolution to a node}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
-        {--uri= : Request URI to profile}
+        {url? : Absolute HTTP or HTTPS URL to profile}
         {--as-first-user : Authenticate the profiled request as the first user}
         {--user= : Authenticate the profiled request as the given primary key}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Profile one Orbit-managed app HTTP request.';
+    protected $description = 'Profile one HTTP request from this machine.';
 
     public function handle(
         ProfileInputResolver $inputResolver,
-        ProfileAppSelector $selector,
         ProfileHumanRenderer $renderer,
         ProfileRequestProfiler $profiler,
     ): int {
-        $input = $this->resolveInput($inputResolver, $selector);
+        $explicitUrl = $this->urlArgument();
+        $input = $inputResolver->resolve(
+            url: $explicitUrl,
+            asFirstUser: (bool) $this->option('as-first-user'),
+            user: $this->stringOption('user'),
+        );
+
+        if (
+            $explicitUrl === null
+            && $input instanceof ProfileInputFailure
+            && $input->isUrlResolutionFailure()
+            && $this->allowsInteractiveInput()
+        ) {
+            $input = $inputResolver->resolve(
+                url: text(
+                    label: 'URL to profile',
+                    required: true,
+                    transform: trim(...),
+                    validate: $inputResolver->urlValidationMessage(...),
+                ),
+                asFirstUser: (bool) $this->option('as-first-user'),
+                user: $this->stringOption('user'),
+            );
+        }
 
         if ($input instanceof ProfileInputFailure) {
             return $this->renderProfileFailure($input->code, $input->message, $input->meta);
         }
 
-        return $this->runProfile($input, $selector, $renderer, $profiler);
+        return $this->runProfile($input, $renderer, $profiler);
     }
 
     private function runProfile(
         ProfileInput $input,
-        ProfileAppSelector $selector,
         ProfileHumanRenderer $renderer,
         ProfileRequestProfiler $profiler,
     ): int {
-        try {
-            $response = $this->resolveThroughGateway($input);
-        } catch (GatewayApiException $exception) {
-            if (
-                $input->targetWasOmitted
-                && $this->canPromptForApp()
-                && $exception->gatewayErrorCode() === 'app.not_found'
-            ) {
-                return $this->runPromptedProfile($input, $selector, $renderer, $profiler);
-            }
-
-            return $this->renderProfileGatewayFailure($exception);
-        }
-
-        $resolution = $this->profileData($response);
-
-        if ($resolution === []) {
-            return $this->renderProfileFailure('profile_request_failed', 'Failed to complete profile request.');
-        }
-
-        return $this->runCallerProfile($input, $resolution, $renderer, $profiler);
-    }
-
-    private function runPromptedProfile(
-        ProfileInput $input,
-        ProfileAppSelector $selector,
-        ProfileHumanRenderer $renderer,
-        ProfileRequestProfiler $profiler,
-    ): int {
-        try {
-            $selected = $this->promptForApp($selector, $input->node);
-        } catch (GatewayApiException $exception) {
-            return $this->renderProfileGatewayFailure($exception);
-        }
-
-        if ($selected === null) {
-            return $this->renderProfileFailure(
-                'target_not_found',
-                'No linked app found for the requested profile target.',
-                [
-                    'target' => $input->target,
-                ],
-            );
-        }
-
-        return $this->runProfile($input->withTarget($selected), $selector, $renderer, $profiler);
-    }
-
-    /**
-     * @param  array<string, mixed>  $resolution
-     */
-    private function runCallerProfile(
-        ProfileInput $input,
-        array $resolution,
-        ProfileHumanRenderer $renderer,
-        ProfileRequestProfiler $profiler,
-    ): int {
-        $url = $this->resolvedProfileUrl($resolution);
-
-        if ($url === null) {
-            return $this->renderProfileFailure('profile_request_failed', 'Failed to complete profile request.');
-        }
-
         $requestId = (string) Str::uuid();
-        $authMode = $this->resolvedAuthMode($resolution, $input);
-        $probe = $profiler->profile($url, $this->profileHeaders($authMode, $requestId, $input->user));
+        $probe = $profiler->profile(
+            $input->url,
+            $this->profileHeaders($input->authMode, $requestId, $input->user),
+        );
         $request = is_array($probe['request'] ?? null) ? $probe['request'] : [];
 
         if (($request['completed'] ?? false) !== true) {
@@ -128,7 +81,7 @@ final class ProfileCommand extends GatewayCommand
                 'Failed to complete profile request.',
                 [
                     'origin' => 'caller',
-                    'url' => $url,
+                    'url' => $input->url,
                 ],
                 [
                     'request' => $request,
@@ -144,10 +97,9 @@ final class ProfileCommand extends GatewayCommand
             ...$probe,
             'source' => 'baseline',
             'instrumented' => false,
-            'auth_mode' => $authMode,
+            'auth_mode' => $input->authMode,
             'request_id' => $requestId,
             'origin' => 'caller',
-            'target' => is_array($resolution['target'] ?? null) ? $resolution['target'] : [],
         ];
 
         $headers = is_array($probe['response_headers'] ?? null) ? $probe['response_headers'] : [];
@@ -178,102 +130,18 @@ final class ProfileCommand extends GatewayCommand
         return self::SUCCESS;
     }
 
-    private function resolveInput(
-        ProfileInputResolver $resolver,
-        ProfileAppSelector $selector,
-    ): ProfileInput|ProfileInputFailure {
-        $input = $resolver->resolve(
-            target: $this->stringArgument('target'),
-            app: $this->stringOption('app'),
-            uriOption: $this->option('uri'),
-            asFirstUser: (bool) $this->option('as-first-user'),
-            user: $this->stringOption('user'),
-            node: $this->stringOption('node'),
-            appMarker: $this->appFromOrbitMarker(),
-            hostCwd: $this->hostCwd(),
-        );
-
-        if (! $input instanceof ProfileInputFailure || ! $input->isMissingTarget() || ! $this->canPromptForApp()) {
-            return $input;
-        }
-
-        try {
-            $selected = $this->promptForApp($selector, $this->stringOption('node'));
-        } catch (GatewayApiException $exception) {
-            return new ProfileInputFailure(
-                code: $exception->cliFailureCode(),
-                message: $exception->getMessage(),
-                meta: [],
-            );
-        }
-
-        if ($selected === null) {
-            return $input;
-        }
-
-        return $resolver->resolve(
-            target: $selected,
-            app: null,
-            uriOption: $this->option('uri'),
-            asFirstUser: (bool) $this->option('as-first-user'),
-            user: $this->stringOption('user'),
-            node: $this->stringOption('node'),
-            appMarker: null,
-            hostCwd: null,
-        );
-    }
-
-    private function promptForApp(ProfileAppSelector $selector, ?string $node): ?string
+    private function urlArgument(): ?string
     {
-        return $selector->selectFromResponse(
-            $this->gatewayGet('/api/apps', $this->filledQuery(['node' => $node])),
-        );
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function resolveThroughGateway(ProfileInput $input): array
-    {
-        return $this->gatewayGet('/api/profile/resolve', $input->query());
-    }
-
-    /**
-     * @param  array<string, mixed>  $response
-     * @return array<string, mixed>
-     */
-    private function profileData(array $response): array
-    {
-        $success = is_array($response['success'] ?? null) ? $response['success'] : [];
-        $data = is_array($success['data'] ?? null) ? $success['data'] : [];
-
-        return $data;
-    }
-
-    private function canPromptForApp(): bool
-    {
-        return ! $this->wantsJson() && $this->input->isInteractive();
-    }
-
-    /**
-     * @param  array<string, mixed>  $resolution
-     */
-    private function resolvedProfileUrl(array $resolution): ?string
-    {
-        $request = is_array($resolution['request'] ?? null) ? $resolution['request'] : [];
-        $url = $request['url'] ?? null;
+        $url = $this->argument('url');
 
         return is_string($url) && $url !== '' ? $url : null;
     }
 
-    /**
-     * @param  array<string, mixed>  $resolution
-     */
-    private function resolvedAuthMode(array $resolution, ProfileInput $input): string
+    private function stringOption(string $name): ?string
     {
-        $authMode = $resolution['auth_mode'] ?? null;
+        $value = $this->option($name);
 
-        return is_string($authMode) && $authMode !== '' ? $authMode : $input->authMode;
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     /**
@@ -286,7 +154,7 @@ final class ProfileCommand extends GatewayCommand
             'X-TOOLBAR-AUTH' => $authMode,
         ];
 
-        if (is_string($user) && $user !== '') {
+        if ($user !== null) {
             $headers['X-TOOLBAR-USER'] = $user;
         }
 
@@ -316,28 +184,6 @@ final class ProfileCommand extends GatewayCommand
         return is_array($summary) ? $summary : null;
     }
 
-    private function renderProfileGatewayFailure(GatewayApiException $exception): int
-    {
-        if ($exception->hasGatewayError()) {
-            $code = $exception->gatewayErrorCode() ?? $exception->cliFailureCode();
-            $message = $exception->gatewayErrorMessage() ?? $exception->getMessage();
-
-            if ($code === 'app.not_found') {
-                $code = 'target_not_found';
-                $message = 'No linked app found for the requested profile target.';
-            }
-
-            return $this->renderProfileFailure(
-                $code,
-                $message,
-                $exception->gatewayErrorMeta(),
-                $exception->gatewayErrorData(),
-            );
-        }
-
-        return $this->renderProfileFailure($exception->cliFailureCode(), $exception->getMessage());
-    }
-
     /**
      * @param  array<string, mixed>  $meta
      * @param  array<string, mixed>  $data
@@ -348,14 +194,7 @@ final class ProfileCommand extends GatewayCommand
             return $this->renderFailure($code, $message, $meta, $data);
         }
 
-        $this->line(match ($code) {
-            'gateway_unavailable',
-            'gateway_unreachable_wireguard',
-                => 'Gateway connection is required to resolve this profile target.',
-            'target_not_found' => 'No linked app found for the requested profile target.',
-            'profile_request_failed' => 'Failed to complete profile request.',
-            default => $message,
-        });
+        $this->line($message);
 
         if ($code === 'profile_request_failed') {
             foreach ($this->profileFailureDiagnosticLines($meta, $data) as $line) {
@@ -373,18 +212,14 @@ final class ProfileCommand extends GatewayCommand
      */
     private function profileFailureDiagnosticLines(array $meta, array $data): array
     {
-        $origin = $meta['origin'] ?? null;
-        $origin = is_string($origin) ? trim($origin) : null;
-
-        if ($origin !== 'caller') {
+        if (($meta['origin'] ?? null) !== 'caller') {
             return [];
         }
 
         $lines = ['Origin: caller'];
-
         $url = $meta['url'] ?? null;
 
-        if (is_string($url) && trim($url) !== '') {
+        if (is_string($url) && $url !== '') {
             $lines[] = "URL: {$url}";
         }
 

@@ -10,6 +10,7 @@ use App\Exceptions\GatewayApiException;
 
 final class AnalyticsUpdateCommand extends GatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
 
     #[\Override]

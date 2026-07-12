@@ -233,7 +233,6 @@ describe('schedule write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'schedule' => ['name' => 'nightly', 'status' => 'removed'],
         ], [
-            'scheduler_pickup' => 'confirmed',
             'history_retained' => true,
         ]));
 
@@ -260,14 +259,18 @@ describe('schedule write commands', function (): void {
             );
         });
 
-        expect($exitCode)->toBe(0)->and($decoded['success']['data']['schedule']['status'])->toBe('removed');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['schedule']['status'])
+            ->toBe('removed')
+            ->and($decoded['success']['meta'])
+            ->toBe(['history_retained' => true]);
     });
 
     it('prompts before removing a schedule without force in interactive mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'schedule' => ['name' => 'nightly', 'status' => 'removed'],
         ], [
-            'scheduler_pickup' => 'confirmed',
             'history_retained' => true,
         ]));
 
@@ -417,10 +420,7 @@ describe('schedule write commands', function (): void {
                 'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'app-1'],
                 'status' => 'removed',
             ],
-        ], [
-            'scheduler_pickup' => 'confirmed',
-            'history_retained' => true,
-        ]));
+        ], ['history_retained' => true]));
 
         [$exitCode, $output] = runCommand($this, 'schedule:remove', [
             'name' => 'nightly',
@@ -433,7 +433,7 @@ describe('schedule write commands', function (): void {
             ->and($output)
             ->toContain('Removing Schedule')
             ->and($output)
-            ->toContain('Apply and verify removal')
+            ->toContain('Delete gateway schedule row')
             ->and($output)
             ->toContain("Schedule 'nightly' removed")
             ->and($output)
@@ -443,18 +443,17 @@ describe('schedule write commands', function (): void {
             ->and($output)
             ->toContain('Target: app docs on app-1')
             ->and($output)
-            ->toContain('Scheduler pickup: confirmed')
-            ->and($output)
+            ->not->toContain('Orbit Scheduler')->and($output)
             ->not->toContain('{');
     });
 
     it('renders schedule:remove gateway failures as prose in human mode', function (): void {
         fakeGateway(
             fakeErrorEnvelope(
-                'schedule.target_unreachable',
-                "Schedule 'nightly' was removed, but dispatch could not be confirmed.",
+                'schedule.not_found',
+                "Schedule 'nightly' was not found.",
             ),
-            502,
+            404,
         );
 
         [$exitCode, $output] = runCommand($this, 'schedule:remove', [
@@ -466,7 +465,7 @@ describe('schedule write commands', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and($output)
-            ->toContain('could not be confirmed')
+            ->toContain('was not found')
             ->and($output)
             ->not->toContain('"error"');
     });

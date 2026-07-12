@@ -39,6 +39,7 @@ use RuntimeException;
 
 class MetricsRoleBaseline implements RoleBaseline
 {
+    // @orbit-ssh-lane transitional-ssh
     use ManagesNodeToolBaseline;
 
     private const string ServiceDomain = MetricsServiceRoute::Domain;

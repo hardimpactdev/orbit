@@ -4,7 +4,7 @@
 
 `codex:app` is a gateway-mediated command. The CLI sends the selected action,
 app selector, and target node to the gateway. The gateway authorizes the caller
-and applies the config file on the target node over SSH.
+and applies the config file through an authenticated Agent-push command.
 
 The CLI never writes the target node's Codex App config file directly.
 
@@ -14,7 +14,7 @@ The CLI never writes the target node's Codex App config file directly.
 | --- | --- |
 | Configured CLI with `codex:app` on the app node and target node | Forward the selected action to the gateway and render the gateway result. |
 | Configured CLI without `codex:app` on either required node | Gateway rejects before reading or writing Codex App config. |
-| Target node is inactive, hidden, gateway, or not macOS | Gateway rejects before remote shell work. |
+| Target node is inactive, hidden, gateway, unmanaged, or not macOS | Gateway rejects before Agent dispatch. |
 | No configured gateway | CLI fails before prompts and side effects. |
 
 ## Test Mapping

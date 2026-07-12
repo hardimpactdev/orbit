@@ -15,10 +15,10 @@ whenever Orbit creates or sets up a workspace for one app instance. These
 steps are used for instance-specific preparation such as installing
 dependencies, copying environment files, or running project setup commands.
 
-Steps are stored as gateway-owned app-instance workspace policy and are
-executed in the workspace path on the owning node. Writes require a dotted
-app-instance selector such as `hauser.nmbp`; legacy app-level rows remain
-read-only compatibility fallback for list and setup execution only.
+The gateway owns step policy for each app instance. Steps execute in the
+workspace path on the owning node. Writes require a dotted app-instance
+selector such as `hauser.nmbp`; every step row is owned by the selected
+instance.
 
 ## Arguments
 
@@ -44,7 +44,7 @@ The following rules govern how a step is added and when it runs.
 - **Positional Insertion**: Use `--before` or `--after` to place the step at
   a specific position in the execution order. If both are omitted, the step
   is appended at the end of the list with `order = max(order) + 1` for
-  `(app, phase=setup)`. Providing both `--before` and `--after` is a
+  `(app_instance, phase=setup)`. Providing both `--before` and `--after` is a
   validation error.
 - **Lifecycle Environment**: Setup steps receive a standard lifecycle
   environment (e.g., `ORBIT_APP_PATH`, `ORBIT_WORKSPACE_PATH`). See the

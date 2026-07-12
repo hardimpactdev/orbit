@@ -13,6 +13,9 @@ These fields describe the Reverb tool's identity, backend, and support model in 
 | Backend | Docker service |
 | Support model | Compatibility tool; the `websocket` role is the current choice for fleet realtime |
 | Category | `communication` |
+| Supported operating systems | Linux |
+| Required container provider | Docker-compatible |
+| Isolation | Docker container |
 
 ## Capabilities
 

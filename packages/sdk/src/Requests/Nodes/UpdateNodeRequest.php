@@ -19,7 +19,7 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::PUT;
 
     /**
-     * @param  array<string, string|null>  $fields
+     * @param  array<string, bool|string|null>  $fields
      */
     public function __construct(
         public readonly string $name,
@@ -38,7 +38,7 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
     {
         return array_filter(
             $this->fields,
-            static fn (?string $value): bool => $value !== null,
+            static fn (mixed $value): bool => $value !== null,
         );
     }
 

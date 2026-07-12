@@ -54,16 +54,18 @@ These rules constrain all extension commands.
   `solo:project list` are not part of the Solo catalog.
 - Gateway Solo proxy routes live under `/api/solo/**` and run only when gateway
   extension state has enabled `solo`.
-- Gateway Solo read routes require the caller to hold `solo:*` on the gateway.
+- Gateway Solo read routes require the caller to hold `solo:*` on the resolved
+  target node.
   Gateway Solo mutation routes require operation-specific Solo permissions such
   as `solo:scratchpad:write`, `solo:todo:delete`, or `solo:timer:*`. Calls that
   lack the required grant fail with `authorization_failed`.
 - Disabled gateway Solo proxy calls fail with `extension_disabled` and
   `meta.scope=gateway` after identity and grant checks pass.
 - Gateway Solo proxy routes record Orbit API activity for Solo operations.
-- The gateway talks to the Solo API URL configured for the active gateway node.
-  That URL must resolve through loopback on that node; Orbit must not expose
-  Solo localhost ports directly to WireGuard.
+- Each `solo:*` command resolves an explicit target, local `node:default`, or
+  the caller node, in that order. The gateway calls its own Solo loopback
+  directly and uses Agent push for an eligible non-gateway target. Orbit
+  exposes neither Solo localhost ports nor an SSH transport choice.
 - Read-only and implemented mutating Solo CLI commands call the gateway Solo
   proxy when local `solo` is enabled. Live topology acceptance is deferred to a
   later implementation slice.
@@ -94,8 +96,9 @@ set. The first representative read routes are:
 
 All `/api/solo/**` routes are gateway API routes, not WireGuard-exposed Solo
 ports. They use the gateway extension enablement gate for `solo`, log Orbit
-activity, and forward to the active gateway node's configured Solo API URL over
-loopback. Read routes require `solo:*`; mutation routes require the narrow
+activity, and forward to the resolved target's configured loopback Solo API.
+Gateway targets are local calls; eligible non-gateway targets use Agent push.
+Read routes require `solo:*`; mutation routes require the narrow
 permission declared for the operation. Upstream unavailability is reported as
 `solo_upstream_unavailable`; malformed upstream payloads or missing loopback
 configuration are reported as `validation_failed`.

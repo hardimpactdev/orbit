@@ -40,9 +40,9 @@ same blocker. All path eligibility must complete before side effects begin.
 | omitted `--template`, `--operator`, and `--roles` | Forward a client identity request with no roles to the configured gateway over HTTPS. |
 | `--operator` or `--template=operator` | Forward a client identity request with the operator permission preset and no workload roles. |
 | `--template=app-development` or `--roles=app-dev` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['app-dev', 'database']` for the template or `roles: ['app-dev']` for the explicit `--roles` path. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
-| `--template=app-production` or `--roles=app-prod[...]` | Resolve canonical role inputs and production placement, then forward to the gateway over HTTPS as either colocated `roles: ['app-prod', 'ingress']` or private `roles: ['app-prod']` plus `ingress_node=<node>`. Requires `node_new.host` and `node_new.user`; private placement also requires selecting an active `ingress` node. |
-| `--template=database` or `--roles=database` | Resolve canonical hosted-node inputs, then forward to the gateway over HTTPS as `roles: ['database']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`; forwards `node_new.gateway_endpoint` when supplied. |
-| `--template=agent` or `--roles=agent` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['agent']`. Requires `node_new.host`, `node_new.user`, and optional `node_new.tld`; forwards any selected agent tools. |
+| `--template=app-production` or `--roles=app-prod[...]` | Resolve canonical role inputs and production placement, then forward to the gateway over HTTPS as either colocated `roles: ['app-prod', 'ingress']` or private `roles: ['app-prod']` plus `ingress_node=<node>`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`; private placement also requires selecting an active `ingress` node. |
+| `--template=database` or `--roles=database` | Resolve canonical workload-node inputs, then forward to the gateway over HTTPS as `roles: ['database']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`; forwards `node_new.gateway_endpoint` when supplied. |
+| `--template=agent` or `--roles=agent` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['agent']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`; forwards any selected agent tools. |
 | `--template=websocket` or `--roles=websocket` | Reserved stable input surface. Current behavior fails before forwarding with `template_not_implemented` for the template path or `role_not_implemented` for explicit `--roles` until the WebSocket todo lands. |
 | `--template=s3` or `--roles=s3` | Reserved stable input surface. Current behavior fails before forwarding with `template_not_implemented` for the template path or `role_not_implemented` for explicit `--roles` until the S3 todo lands. |
 | `--template=metrics` or `--roles=metrics` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['metrics']`. Requires `node_new.host` and `node_new.user`. |
@@ -50,7 +50,7 @@ same blocker. All path eligibility must complete before side effects begin.
 
 Explicit live-role examples include `roles: ['app-prod', 'ingress']` and
 `roles: ['app-dev', 'database']`. Development app roles also forward
-`node_new.tld`. Metrics forwards host/user inputs like other live hosted-role
+the mandatory `node_new.tld`. Metrics forwards host/user inputs like other live workload-role
 paths. WebSocket and S3 role inputs are reserved but fail before forwarding
 until their implementation todos land.
 
@@ -58,8 +58,8 @@ until their implementation todos land.
 
 When no gateway is configured and `--template=gateway` is requested:
 
-1. Resolve `node_new.name`, `node_new.template` or `node_new.roles`, `node_new.host`, and
-   `node_new.operator_name`.
+1. Resolve `node_new.name`, `node_new.template`, `node_new.host`,
+   `node_new.tld`, `node_new.operator_name`, and `node_new.operator_tld`.
 2. Resolve `node_new.user` with the documented default or supplied value.
 3. Connect to the target host over SSH.
 4. Install the gateway service.

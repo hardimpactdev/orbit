@@ -51,7 +51,7 @@ orbit update --json
 4. Keep the configured owner-user `orbit` launcher pointed at the correct local
    entry point (updated binary artifact in production, mounted source entry
    point in source-mounted lanes). Production self-update does not discover or
-   rewrite protected legacy launchers such as `/usr/local/bin/orbit`.
+   rewrite protected unmanaged launchers such as `/usr/local/bin/orbit`.
 5. Run `orbit doctor` in verify mode for the local node and report the issue
    count without failing an otherwise completed binary update.
 6. Report the local update result.

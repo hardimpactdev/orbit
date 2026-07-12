@@ -8,14 +8,18 @@ use App\Models\Node;
 use App\Services\Nodes\GatewayManagementSshKey;
 use App\Services\Nodes\OperatorNodeManagementException;
 use App\Services\Nodes\OperatorNodeManager;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Throwable;
 
 final readonly class NodeManageController
 {
-    public function key(Request $request, GatewayManagementSshKey $key): JsonResponse
-    {
+    public function key(
+        Request $request,
+        GatewayManagementSshKey $key,
+        ExplicitRemoteShellFallback $explicitFallback,
+    ): JsonResponse {
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -25,6 +29,15 @@ final readonly class NodeManageController
 
         if (! $caller->isActive() || ! $caller->isOperator()) {
             return $this->error('node.not_operator', 'Only active roleless nodes can manage themselves.', [], 422);
+        }
+
+        if (! $explicitFallback->allowed()) {
+            return $this->error(
+                'node_transport_required',
+                $explicitFallback->message('node self-management SSH verification'),
+                $explicitFallback->meta(),
+                422,
+            );
         }
 
         try {

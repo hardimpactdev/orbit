@@ -6,6 +6,15 @@ namespace App\Tools;
 
 abstract class DockerComposeTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux'];
+
+    protected const ?string REQUIRED_CONTAINER_PROVIDER = 'docker-compatible';
+
+    protected const ?string ISOLATION = 'docker';
+
     #[\Override]
     public function capabilities(): array
     {

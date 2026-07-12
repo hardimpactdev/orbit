@@ -21,7 +21,7 @@ final class NodeRoleAddCommand extends GatewayCommand
     protected $name = 'node role:add';
 
     #[\Override]
-    protected $description = 'Add a hosted role to a node.';
+    protected $description = 'Add a workload role to a node.';
 
     protected function configure(): void
     {
@@ -29,7 +29,6 @@ final class NodeRoleAddCommand extends GatewayCommand
 
         $this->addArgument('node', InputArgument::REQUIRED, 'Name of the node');
         $this->addArgument('role', InputArgument::REQUIRED, 'Role to add');
-        $this->addOption('tld', null, InputOption::VALUE_REQUIRED, 'Development TLD for app-dev');
         $this->addOption('redis-node', null, InputOption::VALUE_REQUIRED, 'Existing database node for websocket Redis');
         $this->addOption(
             'postgres-node',
@@ -55,7 +54,6 @@ final class NodeRoleAddCommand extends GatewayCommand
         try {
             $payload = $payloadBuilder->build(
                 role: $role,
-                tld: $this->stringOption('tld'),
                 redisNode: $this->stringOption('redis-node'),
                 postgresNode: $this->stringOption('postgres-node'),
                 clickhouseNode: $this->stringOption('clickhouse-node'),

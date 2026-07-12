@@ -8,7 +8,7 @@ interface ToolDefinition
 {
     public function slug(): string;
 
-    public function requiredNodeRole(): ?string;
+    public function bootstrapRole(): ?string;
 
     public function category(): string;
 
@@ -16,6 +16,16 @@ interface ToolDefinition
      * @return list<string>
      */
     public function supportedOperatingSystems(): array;
+
+    public function requiredContainerProvider(): ?string;
+
+    public function runtimeUser(): ?string;
+
+    public function requiresRouteTld(): bool;
+
+    public function isolation(): ?string;
+
+    public function gatewayLocal(): bool;
 
     /**
      * @return list<string>
@@ -33,6 +43,8 @@ interface ToolDefinition
     public function stopScript(array $config = []): ?string;
 
     public function restartScript(array $config = []): ?string;
+
+    public function reloadScript(array $config = []): ?string;
 
     public function credentialsScript(array $config = []): ?string;
 

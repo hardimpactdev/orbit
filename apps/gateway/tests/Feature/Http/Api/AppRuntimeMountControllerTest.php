@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
@@ -95,21 +96,15 @@ function create_app_runtime_mount_instance(App $app, Node $node, string $name = 
 }
 
 describe('AppRuntimeMountController', function (): void {
-    it('lists legacy app-level runtime mounts but rejects app-level mount mutations', function (): void {
+    it('rejects app-level runtime mount reads and mutations', function (): void {
         $caller = createAppRuntimeMountCaller();
         $appNode = Node::factory()->appDev()->create(['name' => 'beast', 'user' => 'nckrtl']);
         grantAppRuntimeMountAccess($caller, $appNode, ['app:read', 'app:mount']);
-        $app = App::factory()->for($appNode, 'node')->create([
+        App::factory()->for($appNode, 'node')->create([
             'name' => 'nckrtl',
             'path' => '/home/nckrtl/apps/nckrtl',
             'runtime' => AppRuntimeKind::Php,
         ]);
-        $app->runtimeMounts()->create([
-            'source' => '/home/nckrtl/packages',
-            'target' => '/home/nckrtl/packages',
-            'read_only' => true,
-        ]);
-
         $list = $this->call(
             'GET',
             '/api/apps/nckrtl/mounts',
@@ -123,13 +118,9 @@ describe('AppRuntimeMountController', function (): void {
         );
 
         $list
-            ->assertOk()
-            ->assertJsonPath('success.data.target.type', 'app')
-            ->assertJsonPath('success.data.app.name', 'nckrtl')
-            ->assertJsonPath('success.data.mounts.0.source', '/home/nckrtl/packages')
-            ->assertJsonPath('success.data.mounts.0.target', '/home/nckrtl/packages')
-            ->assertJsonPath('success.data.mounts.0.read_only', true)
-            ->assertJsonPath('success.data.inherited_by_workspaces', true);
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.reason', 'app_instance_required');
 
         postAppRuntimeMountJson('/api/apps/nckrtl/mounts', [
             'source' => '/home/nckrtl/packages',
@@ -146,7 +137,7 @@ describe('AppRuntimeMountController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', 'app_instance_required');
 
-        expect($app->runtimeMounts()->count())->toBe(1);
+        expect(Schema::hasTable('app_runtime_mounts'))->toBeFalse();
     });
 
     it('rejects mount mutations without app mount permission', function (): void {
@@ -184,7 +175,7 @@ describe('AppRuntimeMountController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', $reason);
 
-        expect(DB::table('app_runtime_mounts')->count())->toBe(0);
+        expect(DB::table('app_instance_runtime_mounts')->count())->toBe(0);
     })->with([
         'relative source' => [
             [
@@ -230,7 +221,7 @@ describe('AppRuntimeMountController', function (): void {
         ],
     ]);
 
-    it('stores runtime mounts on an app instance independently from legacy app mounts', function (): void {
+    it('stores runtime mounts on an app instance', function (): void {
         $caller = createAppRuntimeMountCaller();
         $appNode = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
         grantAppRuntimeMountAccess($caller, $appNode, ['app:read', 'app:mount']);
@@ -259,9 +250,7 @@ describe('AppRuntimeMountController', function (): void {
             'read_only' => true,
         ])->assertOk();
 
-        expect($app->runtimeMounts()->count())
-            ->toBe(0)
-            ->and($instance->runtimeMounts()->count())
+        expect($instance->runtimeMounts()->count())
             ->toBe(1)
             ->and($instance->runtimeMounts()->first()?->source)
             ->toBe('/Users/nckrtl/projects');
@@ -309,7 +298,7 @@ describe('AppRuntimeMountController', function (): void {
             ->assertJsonPath('error.meta.home', '/Users/nckrtl');
     });
 
-    it('keeps an exact app domain as a read-only app-level mount target before dotted instance selectors', function (): void {
+    it('does not reinterpret an exact app domain as an instance selector', function (): void {
         $caller = createAppRuntimeMountCaller();
         $domainAppNode = createTestAppHostNode([
             'name' => 'domain-node',
@@ -320,7 +309,7 @@ describe('AppRuntimeMountController', function (): void {
         grantAppRuntimeMountAccess($caller, $domainAppNode, ['app:read', 'app:mount']);
         grantAppRuntimeMountAccess($caller, $instanceNode, ['app:read', 'app:mount']);
 
-        $domainApp = App::factory()->for($domainAppNode, 'node')->create([
+        App::factory()->for($domainAppNode, 'node')->create([
             'name' => 'domain-app',
             'domain' => 'hauser.nmbp',
             'path' => '/home/nckrtl/apps/domain-app',
@@ -354,9 +343,7 @@ describe('AppRuntimeMountController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', 'app_instance_required');
 
-        expect($domainApp->runtimeMounts()->count())
-            ->toBe(0)
-            ->and($hauser->instances()->first()?->runtimeMounts()->count())
+        expect($hauser->instances()->first()?->runtimeMounts()->count())
             ->toBe(0);
     });
 

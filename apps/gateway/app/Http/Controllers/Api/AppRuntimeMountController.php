@@ -13,7 +13,6 @@ use App\Http\Authorization\ServingNode;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRuntimeMount;
-use App\Models\AppRuntimeMount;
 use App\Services\Apps\AppRuntimeMountService;
 use App\Services\Apps\AppRuntimeMountValidationException;
 use App\Services\Apps\AppSelectorResolver;
@@ -57,16 +56,16 @@ final class AppRuntimeMountController implements Loggable
 
         $targetInstance = $resolved['instance'];
 
-        if ($targetInstance instanceof AppInstance) {
-            return $this->success($this->instanceMountsPayload(
-                $targetApp,
-                $targetInstance,
-                $mounts->listForInstance($targetInstance),
-                $mounts,
-            ));
+        if (! $targetInstance instanceof AppInstance) {
+            return $this->appInstanceRequired();
         }
 
-        return $this->success($this->appMountsPayload($targetApp, $mounts->list($targetApp), $mounts));
+        return $this->success($this->instanceMountsPayload(
+            $targetApp,
+            $targetInstance,
+            $mounts->listForInstance($targetInstance),
+            $mounts,
+        ));
     }
 
     #[RequiresPermission('app:mount', servingNode: ServingNode::AppOwning)]
@@ -220,34 +219,6 @@ final class AppRuntimeMountController implements Loggable
         return [
             'app' => $selection->app,
             'instance' => $selection->instance,
-        ];
-    }
-
-    /**
-     * @param  Collection<int, AppRuntimeMount>  $mounts
-     * @return array{
-     *     app: array<string, mixed>,
-     *     target: array{type: string, app: string},
-     *     mounts: list<array{source: string, target: string, read_only: bool}>,
-     *     inherited_by_workspaces: bool
-     * }
-     */
-    private function appMountsPayload(App $app, Collection $mounts, AppRuntimeMountService $service): array
-    {
-        $mountPayloads = $mounts
-            ->map($service->mountPayload(...))
-            ->values()
-            ->all();
-
-        /** @var list<array{source: string, target: string, read_only: bool}> $mountPayloads */
-        return [
-            'app' => $this->appPayload($app),
-            'target' => [
-                'type' => 'app',
-                'app' => $app->name,
-            ],
-            'mounts' => $mountPayloads,
-            'inherited_by_workspaces' => true,
         ];
     }
 

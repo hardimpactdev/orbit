@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace App\Services\S3;
 
 use App\Data\Nodes\RoleSettings\S3RoleSettings;
+use App\Enums\ProcessCrashNotification;
+use App\Enums\Processes\ProcessRuntime;
+use App\Enums\ProcessRestartPolicy;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Process;
 
 /**
  * Applies SeaweedFS runtime config and tool metadata for an S3-role node.
@@ -48,7 +52,8 @@ final readonly class S3ServiceConfigurator
 
         $runtimeContainer = $this->containerRenderer->render($node, $settings, serviceConfig: $serviceConfig);
 
-        $seaweedfsTool = $this->persistSeaweedfsTool($node, $serviceConfig, $runtimeContainer);
+        $seaweedfsTool = $this->persistSeaweedfsTool($node, $serviceConfig);
+        $this->persistSeaweedfsProcess($node, $runtimeContainer);
 
         if (! $credentialsAlreadyStored) {
             $this->writeCredentials($seaweedfsTool, $serviceConfig);
@@ -71,6 +76,11 @@ final readonly class S3ServiceConfigurator
         NodeTool::query()
             ->where('node_id', $node->id)
             ->where('name', 'seaweedfs')
+            ->delete();
+
+        Process::query()
+            ->where('node_id', $node->id)
+            ->where('tool', 'seaweedfs')
             ->delete();
     }
 
@@ -115,19 +125,11 @@ final readonly class S3ServiceConfigurator
     private function persistSeaweedfsTool(
         Node $node,
         S3ServiceConfig $serviceConfig,
-        S3RuntimeContainer $runtimeContainer,
     ): NodeTool {
         $toolConfig = [
-            'data_path' => $serviceConfig->dataPath,
             'service_host' => S3ServiceConfig::ServiceHost,
             'backend_host' => "{$serviceConfig->nodeName}.s3.orbit",
-            'container_name' => $runtimeContainer->name(),
-            'image' => $runtimeContainer->image(),
-            'command' => $runtimeContainer->command(),
-            'api_port' => S3RuntimeContainer::ApiPort,
             'mode' => 'head',
-            'runtime' => 'docker-container',
-            's3_config_path' => "{$serviceConfig->dataPath}/s3.json",
             'public_hosts' => $serviceConfig->publicHosts,
         ];
 
@@ -141,6 +143,41 @@ final readonly class S3ServiceConfigurator
                 'expected_state' => 'installed',
                 'expected_version' => null,
                 'config' => $toolConfig,
+            ],
+        );
+    }
+
+    private function persistSeaweedfsProcess(Node $node, S3RuntimeContainer $runtimeContainer): Process
+    {
+        /** @var Process */
+        return $node->processes()->updateOrCreate(
+            ['name' => 'seaweedfs'],
+            [
+                'node_id' => $node->id,
+                'command' => $runtimeContainer->command(),
+                'restart_policy' => ProcessRestartPolicy::Always,
+                'crash_notification' => ProcessCrashNotification::None,
+                'runtime' => ProcessRuntime::Docker,
+                'tool' => 'seaweedfs',
+                'runtime_config' => [
+                    'container_name' => $runtimeContainer->name(),
+                    'image' => $runtimeContainer->image(),
+                    'network' => $runtimeContainer->network(),
+                    'working_directory' => '/',
+                    'environment' => $runtimeContainer->environment(),
+                    'mounts' => $runtimeContainer->mounts(),
+                    'network_aliases' => [$runtimeContainer->name()],
+                    'ports' => [
+                        [
+                            'host' => $runtimeContainer->wireGuardAddress(),
+                            'published' => S3RuntimeContainer::ApiPort,
+                            'target' => S3RuntimeContainer::ApiPort,
+                            'protocol' => 'tcp',
+                        ],
+                    ],
+                    'command_mode' => 'shell',
+                ],
+                'sort_order' => 0,
             ],
         );
     }

@@ -51,7 +51,7 @@ it('installs Orbit CA leaf certificates into the node Orbit cert directory', fun
     $appNode = createTestAppHostNode([
         'name' => 'app-1',
         'user' => 'deploy',
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => '10.44.0.94',
     ]);
 
@@ -86,7 +86,7 @@ it('grants the node service user ownership of site TLS material for Vite dev ser
     $appNode = createTestAppHostNode([
         'name' => 'booster-node',
         'user' => 'nckrtl',
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => '10.44.0.95',
     ]);
 
@@ -125,7 +125,7 @@ it('installs site TLS material under the macOS user home on Darwin nodes', funct
         'name' => 'nmbp',
         'platform' => 'macos_15-4',
         'user' => 'nckrtl',
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => '10.44.0.96',
     ]);
 
@@ -164,7 +164,7 @@ it('uses the macOS user home for plain Darwin platform records', function (): vo
         'name' => 'mini',
         'platform' => 'darwin',
         'user' => 'nckrtl',
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => '10.44.0.97',
     ]);
 

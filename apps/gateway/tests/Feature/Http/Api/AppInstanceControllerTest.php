@@ -63,7 +63,7 @@ function get_app_instance_json(string $uri): TestResponse
 }
 
 describe('AppInstanceController', function (): void {
-    it('reports configured mounts from each app instance instead of legacy app-level mounts', function (): void {
+    it('reports configured mounts from each app instance', function (): void {
         $caller = create_app_instance_caller();
         $appNode = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
         grant_app_instance_read_access($caller, $appNode);
@@ -74,11 +74,6 @@ describe('AppInstanceController', function (): void {
             'path' => '/Users/nckrtl/apps/hauser',
             'document_root' => 'public',
             'runtime' => AppRuntimeKind::Php,
-        ]);
-        $app->runtimeMounts()->create([
-            'source' => '/home/nckrtl/projects',
-            'target' => '/projects',
-            'read_only' => true,
         ]);
         $nmbp = $app->instances()->create([
             'name' => 'nmbp',

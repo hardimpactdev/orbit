@@ -400,7 +400,7 @@ it('keeps loop improvement trigger-only and bounded', function (): void {
         );
 });
 
-it('keeps the general Orbit skill aligned with the macOS Orbit Agent app boundary', function (): void {
+it('keeps the general Orbit skill aligned with the macOS app boundary and managed Agent intent', function (): void {
     $skill = file_get_contents(repo_path('.agents/skills/orbit/SKILL.md')) ?: '';
     $concepts = file_get_contents(repo_path('.agents/skills/orbit/references/concepts.md')) ?: '';
 
@@ -409,14 +409,18 @@ it('keeps the general Orbit skill aligned with the macOS Orbit Agent app boundar
         ->toContain('apps/agent')
         ->toContain('apps/macos')
         ->toContain('.agents/skills/tauri-agent-development/SKILL.md')
-        ->toContain('does not install, start, update, restart, or uninstall the macOS app')
-        ->toContain('The `agent` workload role does not imply Orbit Agent capability')
+        ->toContain('product surface does not install')
+        ->toContain('restart, or uninstall the')
+        ->toContain('the `agent` role creates managed Agent intent')
+        ->not
+        ->toContain('--orbit-agent-capable')
         ->and($concepts)
         ->toContain('Orbit Agent lane')
         ->toContain('apps/agent')
         ->toContain('apps/macos')
         ->toContain('Tauri tray UI')
-        ->toContain('The `agent` workload role is separate from Orbit Agent capability.');
+        ->toContain('The `agent` workload role owns autonomous agent tools')
+        ->toContain('Active workload roles provide the same intent.');
 });
 
 it('provides first-party boost skill sources in orbit packages', function (): void {
@@ -526,11 +530,16 @@ it('keeps the project-owned orbit skill aligned with current CLI stream-json gui
         ->toContain('--postgres-node')
         ->toContain('--clickhouse-node')
         ->toContain('--host-key-fingerprint')
-        ->toContain('--agent-tool');
+        ->toContain('--agent-tool')
+        ->toContain('--operator-tld')
+        ->toContain('--managed|--no-managed')
+        ->not->toContain('node role:add <node> <role> [--tld');
 
     expect($tool)
         ->toContain('[--with-process] [--no-process]')
-        ->toContain('--json|--stream-json');
+        ->toContain('--json|--stream-json')
+        ->toContain('orbit tool:reload caddy')
+        ->toContain('orbit tool:logs dns');
 
     expect($skill)
         ->toContain('`orbit skill:install [provider] [path]`')
@@ -554,5 +563,9 @@ it('keeps the project-owned orbit skill aligned with current CLI stream-json gui
 
     expect($operation)
         ->toContain('--key=<key>')
-        ->toContain('--dry-run');
+        ->toContain('--dry-run')
+        ->toContain('orbit profile [<url>]')
+        ->toContain('never calls the gateway')
+        ->not->toContain('orbit profile [<target>]')
+        ->not->toContain('profile [<url>] [--app=');
 });

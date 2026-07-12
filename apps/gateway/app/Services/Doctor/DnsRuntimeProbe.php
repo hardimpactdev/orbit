@@ -41,7 +41,7 @@ final readonly class DnsRuntimeProbe
         if ($containerId === null) {
             $drift[] = new DriftEntry(
                 family: $this->family(),
-                key: 'dns.container_missing',
+                key: 'tool.dns_container_missing',
                 kind: DriftKind::Missing,
                 summary: 'orbit-dns container is not present.',
             );
@@ -52,7 +52,7 @@ final readonly class DnsRuntimeProbe
         if (! $this->portListening($containerId)) {
             $drift[] = new DriftEntry(
                 family: $this->family(),
-                key: 'dns.port_not_listening',
+                key: 'tool.dns_port_not_listening',
                 kind: DriftKind::Divergent,
                 summary: 'orbit-dns is not listening on port 53 inside the wg-easy network namespace.',
             );
@@ -61,7 +61,7 @@ final readonly class DnsRuntimeProbe
         if ($this->configDrifted()) {
             $drift[] = new DriftEntry(
                 family: $this->family(),
-                key: 'dns.config_drift',
+                key: 'tool.dns_config_drift',
                 kind: DriftKind::Divergent,
                 summary: 'orbit-dns dnsmasq.conf differs from the gateway intent.',
                 detail: ['path' => $this->confPath()],
@@ -88,11 +88,11 @@ final readonly class DnsRuntimeProbe
         return in_array(
             $driftKey,
             [
-                'dns.container_missing',
-                'dns.port_not_listening',
-                'dns.config_drift',
-                'dns.client_dns_drift',
-                'dns.forwarding_missing',
+                'tool.dns_container_missing',
+                'tool.dns_port_not_listening',
+                'tool.dns_config_drift',
+                'tool.dns_client_dns_drift',
+                'tool.dns_forwarding_missing',
             ],
             true,
         );
@@ -106,11 +106,11 @@ final readonly class DnsRuntimeProbe
     public function restore(string $driftKey): bool
     {
         return match ($driftKey) {
-            'dns.container_missing' => $this->restoreContainer(),
-            'dns.port_not_listening' => $this->restartContainer(),
-            'dns.config_drift' => $this->restoreConfig(),
-            'dns.client_dns_drift' => $this->restoreClientDns(),
-            'dns.forwarding_missing' => $this->restoreDnsForwarding(),
+            'tool.dns_container_missing' => $this->restoreContainer(),
+            'tool.dns_port_not_listening' => $this->restartContainer(),
+            'tool.dns_config_drift' => $this->restoreConfig(),
+            'tool.dns_client_dns_drift' => $this->restoreClientDns(),
+            'tool.dns_forwarding_missing' => $this->restoreDnsForwarding(),
             default => false,
         };
     }
@@ -204,7 +204,7 @@ final readonly class DnsRuntimeProbe
 
         return new DriftEntry(
             family: $this->family(),
-            key: 'dns.client_dns_drift',
+            key: 'tool.dns_client_dns_drift',
             kind: DriftKind::Divergent,
             summary: 'wg-easy client DNS is not pinned to the VPN DNS endpoint.',
             detail: [
@@ -305,7 +305,7 @@ final readonly class DnsRuntimeProbe
 
         return new DriftEntry(
             family: $this->family(),
-            key: 'dns.forwarding_missing',
+            key: 'tool.dns_forwarding_missing',
             kind: DriftKind::Divergent,
             summary: 'VPN DNS forwarding from WireGuard peers to orbit-dns is missing.',
             detail: [

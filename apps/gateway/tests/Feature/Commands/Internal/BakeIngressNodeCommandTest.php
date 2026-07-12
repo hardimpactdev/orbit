@@ -39,6 +39,7 @@ describe('orbit:internal:bake-ingress-node', function (): void {
     it('writes an ingress node row with an active role assignment', function (): void {
         $this->artisan('orbit:internal:bake-ingress-node', [
             'name' => 'edge-1',
+            '--tld' => 'edge',
             '--host' => 'ingress',
             '--host-key-host' => '10.6.0.7',
             '--wireguard-address' => '10.6.0.7',
@@ -54,6 +55,8 @@ describe('orbit:internal:bake-ingress-node', function (): void {
 
         expect($node->host)
             ->toBe('ingress')
+            ->and($node->tld)
+            ->toBe('edge')
             ->and($node->wireguard_address)
             ->toBe('10.6.0.7')
             ->and($node->gateway_endpoint)

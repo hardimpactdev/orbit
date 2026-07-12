@@ -187,7 +187,7 @@ describe('source path and document root reality', function (): void {
         expect(issue($drift, 'app.root_missing'))->toBeNull();
     });
 
-    it('detects mismatched app instance runtime containers with instance-scoped detail', function (): void {
+    it('hands app instance runtime mismatches to process doctor without duplicate app issues', function (): void {
         $node = appNode(['name' => 'nmbp', 'platform' => 'darwin', 'user' => 'nckrtl', 'tld' => 'nmbp']);
         $app = App::factory()->create([
             'name' => 'hauser',
@@ -211,18 +211,7 @@ describe('source path and document root reality', function (): void {
             'hauser.nmbp' => convergedRuntimeSnapshot(['container_spec_matches' => false]),
         ]));
 
-        $issue = issue($drift, 'app.runtime_container_mismatch');
-
-        expect($issue)
-            ->not
-            ->toBeNull()
-            ->and($issue?->detail)
-            ->toMatchArray([
-                'app' => 'hauser',
-                'app_instance' => 'nmbp',
-                'target' => 'hauser.nmbp',
-                'expected' => 'orbit-app-hauser-nmbp',
-            ]);
+        expect(issue($drift, 'app.runtime_container_mismatch'))->toBeNull();
     });
 
     it('detects missing document roots after the source path exists', function (): void {
@@ -324,7 +313,7 @@ describe('PHP runtime reality', function (): void {
     });
 
     it(
-        'maps unknown image-probe failure with no existing container to documented app.runtime_container_missing (NOT app.php_version_unavailable, NOT a new probe-failed key)',
+        'hands unknown image-probe failure with no runtime unit to process doctor',
         function (): void {
             $node = appNode();
             $app = App::factory()
@@ -352,10 +341,8 @@ describe('PHP runtime reality', function (): void {
             ]);
 
             $drift = new AppsProbe()->diff($app, $snapshot);
-            $entry = issue($drift, 'app.runtime_container_missing');
-
-            expect($entry?->kind)
-                ->toBe(DriftKind::Missing)
+            expect(issue($drift, 'app.runtime_container_missing'))
+                ->toBeNull()
                 ->and(issue($drift, 'app.php_version_unavailable'))
                 ->toBeNull()
                 ->and(issue($drift, 'app.runtime_image_probe_failed'))
@@ -365,7 +352,7 @@ describe('PHP runtime reality', function (): void {
         },
     );
 
-    it('maps unknown image-probe failure with an existing-but-mismatched container to documented app.runtime_container_mismatch', function (): void {
+    it('hands unknown image-probe failure with a mismatched runtime unit to process doctor', function (): void {
         $node = appNode();
         $app = App::factory()
             ->for($node, 'node')
@@ -387,8 +374,8 @@ describe('PHP runtime reality', function (): void {
 
         $drift = new AppsProbe()->diff($app, $snapshot);
 
-        expect(issue($drift, 'app.runtime_container_mismatch')?->kind)
-            ->toBe(DriftKind::Divergent)
+        expect(issue($drift, 'app.runtime_container_mismatch'))
+            ->toBeNull()
             ->and(issue($drift, 'app.php_version_unavailable'))
             ->toBeNull()
             ->and(issue($drift, 'app.runtime_image_probe_failed'))
@@ -412,7 +399,7 @@ describe('PHP runtime reality', function (): void {
 });
 
 describe('runtime container reality', function (): void {
-    it('detects missing FrankenPHP runtime containers for PHP apps', function (): void {
+    it('hands missing FrankenPHP runtime units to process doctor without duplicate app issues', function (): void {
         $node = appNode();
         $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
 
@@ -426,11 +413,11 @@ describe('runtime container reality', function (): void {
 
         $drift = new AppsProbe()->diff($app, $snapshot);
 
-        expect(issue($drift, 'app.runtime_container_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(issue($drift, 'app.runtime_container_missing'))->toBeNull();
         expect(issue($drift, 'app.runtime_container_mismatch'))->toBeNull();
     });
 
-    it('detects FrankenPHP runtime container spec mismatches', function (): void {
+    it('hands FrankenPHP runtime unit mismatches to process doctor without duplicate app issues', function (): void {
         $node = appNode();
         $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
 
@@ -440,7 +427,7 @@ describe('runtime container reality', function (): void {
 
         $drift = new AppsProbe()->diff($app, $snapshot);
 
-        expect(issue($drift, 'app.runtime_container_mismatch')?->kind)->toBe(DriftKind::Divergent);
+        expect(issue($drift, 'app.runtime_container_mismatch'))->toBeNull();
     });
 
     it('does not report runtime container drift before Docker is available', function (): void {
@@ -479,7 +466,7 @@ describe('runtime container reality', function (): void {
     });
 
     it(
-        'reports a stopped but otherwise matching FrankenPHP runtime container as app.runtime_container_missing because the endpoint is absent',
+        'hands a stopped FrankenPHP runtime unit to process doctor without duplicate app issues',
         function (): void {
             $node = appNode();
             $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
@@ -493,12 +480,8 @@ describe('runtime container reality', function (): void {
             ]);
 
             $drift = new AppsProbe()->diff($app, $snapshot);
-            $entry = issue($drift, 'app.runtime_container_missing');
-
-            expect($entry?->kind)
-                ->toBe(DriftKind::Missing)
-                ->and($entry?->detail['reason'] ?? null)
-                ->toBe('container_stopped')
+            expect(issue($drift, 'app.runtime_container_missing'))
+                ->toBeNull()
                 ->and(issue($drift, 'app.runtime_container_mismatch'))
                 ->toBeNull();
         },
@@ -867,111 +850,6 @@ function issue(array $drift, string $key): ?DriftEntry
     return collect($drift)->first(fn (DriftEntry $entry): bool => $entry->key === $key);
 }
 
-describe('extra runtime container scan', function (): void {
-    it('lists every orbit-owned app runtime container on the node by label when the scan succeeds (Present status)', function (): void {
-        $node = appsProbeAgentNode();
-        fakeAppsRuntimeContainersProbe(
-            "orbit-container-scan:present\norbit-app-docs\tdocs\norbit-app-marketing\tmarketing\n",
-        );
-
-        $probe = new AppsProbe()->introspectNode($node);
-
-        expect($probe->status->value)
-            ->toBe('present')
-            ->and($probe->error)
-            ->toBe('')
-            ->and($probe->containers->keys())
-            ->toContain('docs')
-            ->and($probe->containers->keys())
-            ->toContain('marketing')
-            ->and($probe->containers->get('docs'))
-            ->toMatchArray([
-                'container_name' => 'orbit-app-docs',
-                'app_slug' => 'docs',
-            ])
-            ->and(appsRuntimeContainersProbeWasSent())
-            ->toBeTrue();
-    });
-
-    it('reports Absent status when docker is not installed on the node (no Orbit-managed runtime containers can exist)', function (): void {
-        $node = appsProbeAgentNode();
-        fakeAppsRuntimeContainersProbe("orbit-container-scan:absent\n");
-
-        $probe = new AppsProbe()->introspectNode($node);
-
-        expect($probe->status->value)
-            ->toBe('absent')
-            ->and($probe->error)
-            ->toBe('')
-            ->and($probe->containers->isEmpty())
-            ->toBeTrue();
-    });
-
-    it(
-        'reports Error status with the docker stderr when docker container ls fails for an unknown reason (does NOT silently hide stale runtime_container_extra artifacts)',
-        function (): void {
-            $node = appsProbeAgentNode();
-            // Even if container entries appear after an error sentinel, they
-            // must not be surfaced — the status carries forward as Error and
-            // the snapshot is intentionally empty.
-            fakeAppsRuntimeContainersProbe(
-                "orbit-container-scan:error Cannot connect to the Docker daemon at unix:///var/run/docker.sock\norbit-app-stale\tstale\n",
-            );
-
-            $probe = new AppsProbe()->introspectNode($node);
-
-            expect($probe->status->value)
-                ->toBe('error')
-                ->and($probe->error)
-                ->toContain('Cannot connect to the Docker daemon')
-                ->and($probe->containers->isEmpty())
-                ->toBeTrue();
-        },
-    );
-
-    it('reports Error status when the remote shell call itself throws (SSH/transport failure must not abort doctor)', function (): void {
-        $node = appsProbeAgentNode();
-        Http::preventStrayRequests();
-        Http::fake([
-            'http://10.6.0.63:9477/v1/commands' => Http::response(['error' => 'agent unavailable'], 503),
-        ]);
-
-        $probe = new AppsProbe()->introspectNode($node);
-
-        expect($probe->status->value)
-            ->toBe('error')
-            ->and($probe->error)
-            ->toContain('HTTP 503')
-            ->and($probe->containers->isEmpty())
-            ->toBeTrue();
-    });
-
-    it('reports Error status when the agent response has no sentinel', function (): void {
-        $node = appsProbeAgentNode();
-        fakeAppsRuntimeContainersProbe('agent command failed before sentinel');
-
-        $probe = new AppsProbe()->introspectNode($node);
-
-        expect($probe->status->value)
-            ->toBe('error')
-            ->and($probe->error)
-            ->toContain('no status sentinel')
-            ->and($probe->containers->isEmpty())
-            ->toBeTrue();
-    });
-
-    it('skips lines without an orbit.app label inside a Present scan', function (): void {
-        $node = appsProbeAgentNode();
-        fakeAppsRuntimeContainersProbe(
-            "orbit-container-scan:present\norbit-app-docs\tdocs\nbroken-line\t\n",
-        );
-
-        $probe = new AppsProbe()->introspectNode($node);
-
-        expect($probe->status->value)->toBe('present')->and($probe->containers->keys())->toBe(['docs']);
-    });
-});
-
 function convergedRuntimeSnapshot(array $overrides = []): array
 {
     return [
@@ -1006,7 +884,7 @@ function appsProbeAgentNode(array $overrides = []): Node
 {
     return appNode([
         'wireguard_address' => '10.6.0.63',
-        'orbit_agent_capable' => true,
+        'managed' => true,
         ...$overrides,
     ]);
 }
@@ -1111,46 +989,6 @@ function apps_introspect_probe_was_sent(): bool
             $request->url() === 'http://10.6.0.63:9477/v1/commands'
             && $request['binary'] === 'orbit'
             && $request['argv'][0] === 'internal:app-introspect:probe'
-        ),
-    );
-
-    return true;
-}
-
-function fakeAppsRuntimeContainersProbe(string $stdout): void
-{
-    Http::preventStrayRequests();
-    Http::fake([
-        'http://10.6.0.63:9477/v1/commands' => Http::response([
-            'transport' => 'agent-push',
-            'operation_id' => 'app-runtime-containers.probe',
-            'binary' => 'orbit',
-            'status' => 'succeeded',
-            'exit_code' => 0,
-            'frames' => [
-                [
-                    'type' => 'stdout',
-                    'message' => json_encode([
-                        'success' => [
-                            'data' => [
-                                'stdout' => $stdout,
-                            ],
-                            'meta' => [],
-                        ],
-                    ], JSON_THROW_ON_ERROR),
-                ],
-            ],
-        ]),
-    ]);
-}
-
-function appsRuntimeContainersProbeWasSent(): bool
-{
-    Http::assertSent(
-        fn (Request $request): bool => (
-            $request->url() === 'http://10.6.0.63:9477/v1/commands'
-            && $request['binary'] === 'orbit'
-            && $request['argv'][0] === 'internal:app-runtime-containers:probe'
         ),
     );
 

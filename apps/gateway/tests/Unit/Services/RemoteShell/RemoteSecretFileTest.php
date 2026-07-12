@@ -106,7 +106,7 @@ function remote_secret_file_node(): Node
 {
     return Node::factory()
         ->withActiveRole('app-dev')
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
             'wireguard_address' => '10.6.0.40',

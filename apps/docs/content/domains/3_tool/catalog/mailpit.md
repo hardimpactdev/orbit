@@ -13,6 +13,9 @@ These fields describe the Mailpit tool's identity, backend, and support model in
 | Backend | Docker service |
 | Support model | Installable and removable by Orbit |
 | Category | `development` |
+| Supported operating systems | Linux |
+| Required container provider | Docker-compatible |
+| Isolation | Docker container |
 
 ## Capabilities
 

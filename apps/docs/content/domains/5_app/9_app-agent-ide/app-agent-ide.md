@@ -74,7 +74,8 @@ does not prune workspaces for those apps.
   and sandbox registration are owned by `workspace:new` when the effective
   workspace source driver is `opencode`.
 - Grant node access or alter node transport.
-- SSH into the target node (except as part of workspace removal side effects).
+- Open a direct node shell. Any workspace-removal side effects use the normal
+  Agent-push lane.
 - Notify running agent-IDE sessions, restart processes on the node, invalidate
   cached workspace-level overrides, or emit warnings for "downstream consumers
   still using the prior adapter". Current workspaces

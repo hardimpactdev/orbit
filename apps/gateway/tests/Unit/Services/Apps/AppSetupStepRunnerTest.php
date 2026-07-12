@@ -228,7 +228,7 @@ it('runs setup steps through the local executor by default for agent capable nod
     $app = createAppSetupRunnerTestApp();
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'agent-node',
             'host' => 'agent-node',
@@ -282,7 +282,7 @@ it('routes php setup commands before dispatching through the local executor', fu
     $app = createAppSetupRunnerTestApp();
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'agent-node',
             'host' => 'agent-node',
@@ -337,7 +337,7 @@ it('fails fast on a non-zero local executor setup step and records output', func
     $app = createAppSetupRunnerTestApp();
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'agent-node',
             'host' => 'agent-node',
@@ -407,7 +407,7 @@ it('does not place setup environment values in transport metadata for agent-push
     $app = createAppSetupRunnerTestApp();
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'agent-node',
             'host' => 'agent-node',

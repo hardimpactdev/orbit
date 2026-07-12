@@ -24,7 +24,7 @@
 ## Signature
 
 ```bash
-orbit node:update [name] [--host=<host>] [--user=<user>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--orbit-agent-capable|--no-orbit-agent-capable] [--json]
+orbit node:update [name] [--host=<host>] [--user=<user>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--managed|--no-managed] [--json]
 ```
 
 ## Input Contract
@@ -36,12 +36,12 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Must match an existing active node record. |
 | `host` | `--host` | Optional. | Target is an operator-identity node with no host metadata. | None. | SSH/bootstrap endpoint, never the canonical node address. Updating this does not change the gateway endpoint used in WireGuard peer configs; use `--gateway-endpoint` for that. |
-| `user` | `--user` | Optional. | Target is the gateway node. | None. | SSH user the gateway should use for node operations. Orbit stores this value as node metadata; it does not create the OS user. |
+| `user` | `--user` | Optional. | Target is the gateway node. | None. | Orbit owner/runtime user for node-local Agent work. Orbit stores this value as node metadata; it does not create the OS user. |
 | `tld` | `--tld` | Optional. | Never. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. |
 | `gateway_endpoint` | `--gateway-endpoint` | Optional. | Target is an operator-identity node. | None. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `public_ipv4` | `--public-ipv4` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv4 metadata. |
 | `public_ipv6` | `--public-ipv6` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv6 metadata. |
-| `orbit_agent_capable` | `--orbit-agent-capable` or `--no-orbit-agent-capable` | Optional. | Never. | Omitted/unchanged; stored default is `false`. | Explicit boolean opt-in/out for Orbit Agent agent-push delivery. Both flags in one invocation fail validation. |
+| `managed` | `--managed` or `--no-managed` | Optional. | `--managed` is forbidden for gateway or role-bearing nodes; `--no-managed` is never forbidden. | Omitted/unchanged; stored default is `false`. | Explicit roleless-operator Agent intent. `--managed` requires an active supported platform and valid WireGuard identity. Both flags in one invocation fail validation. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 Each field flag may be supplied at most once per invocation. Supplying the same
@@ -62,7 +62,8 @@ metadata is valid only for gateway and nodes. Concretely:
 | `--gateway-endpoint` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
 | `--public-ipv4` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
 | `--public-ipv6` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
-| `--orbit-agent-capable`, `--no-orbit-agent-capable` | every active node | Never. |
+| `--managed` | eligible roleless non-gateway operator nodes | Gateway, role-bearing, inactive, unsupported-platform, or invalid-WireGuard targets. |
+| `--no-managed` | every node | Never. |
 
 Clients are CLI callers reached through WireGuard. They have no SSH bootstrap
 endpoint and no ingress, so `--host`, `--gateway-endpoint`, `--public-ipv4`,
@@ -71,13 +72,13 @@ IPv6 metadata is supported on `gateway` and workload-role-bearing nodes; the
 gateway endpoint used in WireGuard peer configs lives on a separate field and is
 not updated by `--public-ipv4` or `--public-ipv6`.
 
-`node:update --user` updates the SSH user stored for the target node. The
-gateway uses this field when it opens node SSH sessions for remote shell,
-tooling, doctor restore/adopt, updates, and role-owned artifact convergence.
-Changing it does not create, rename, or validate an operating-system account on
-the target node. If the supplied user cannot SSH, the configuration write may
-succeed while node drift remains. Repair belongs to `doctor --family=node
---restore` after the operator fixes access.
+`node:update --user` updates the Orbit owner/runtime user stored for the target
+node. Non-gateway node-local tooling, doctor restore/adopt, updates, and
+role-owned artifact convergence use Agent push and the stored user context;
+gateway work remains local. Changing the field does not create, rename, or
+validate an operating-system account. If the account is absent, the
+configuration write may succeed while node drift remains. Repair belongs to
+`doctor --family=node --restore` after the operator fixes the account.
 
 `node:update --tld` updates the mandatory node-level `tld` for any active node.
 The `tld` is a shared node-level field (at most one per node); changing it
@@ -94,10 +95,11 @@ writes a timestamped backup before editing, and applies the live peer endpoint
 with `wg set` without restarting the interface. For gateway nodes, the field is
 advertised endpoint metadata used by future peer configs.
 
-`node:update --orbit-agent-capable` and
-`node:update --no-orbit-agent-capable` toggle the node registry's
-`orbit_agent_capable` flag. The flag is explicit opt-in state for agent-push
-operations on supported nodes. It does not install the agent, start a menu-bar
+`node:update --managed` and
+`node:update --no-managed` toggle the node registry's
+`managed` flag. The flag is explicit Agent intent only for eligible roleless
+non-gateway operators. Active workload roles derive Agent intent without this
+field, and gateway nodes are never Agent targets. It does not install the Agent, start a menu-bar
 process, grant a role, create credentials, or prove that the node-local agent
 is currently reachable.
 
@@ -120,18 +122,21 @@ gateway-owned side effects.
      present.
    - Resolve `node_update.public_ipv4` from `--public-ipv4` when present.
    - Resolve `node_update.public_ipv6` from `--public-ipv6` when present.
-   - Resolve `node_update.orbit_agent_capable=true` from
-     `--orbit-agent-capable` when present.
-   - Resolve `node_update.orbit_agent_capable=false` from
-     `--no-orbit-agent-capable` when present.
+   - Resolve `node_update.managed=true` from
+     `--managed` when present.
+   - Resolve `node_update.managed=false` from
+     `--no-managed` when present.
 4. Validate role-conditional field eligibility.
    - If `--host`, `--gateway-endpoint`, `--public-ipv4`, or `--public-ipv6` is
      present and the target is an operator-identity node, fail before side
      effects with `node.field_role_incompatible`.
    - If `--user` is present and the target is the gateway node, fail before
      side effects with `node.field_role_incompatible`.
-   - If both Orbit Agent capability flags are present, fail before side effects
-     with `validation_failed` and `meta.field=orbit_agent_capable`.
+   - If both managed Agent intent flags are present, fail before side effects
+     with `validation_failed` and `meta.field=managed`.
+   - If `--managed` targets anything other than an eligible active roleless
+     non-gateway operator, fail before side effects with
+     `node.field_role_incompatible`. `--no-managed` remains valid everywhere.
    - If the same field flag is supplied more than once in a single invocation,
      fail before side effects with `validation_failed` and `meta.field` set to
      the duplicated field name. Symfony last-wins is not accepted.
@@ -178,15 +183,15 @@ Input mode behavior is split out of the canonical command contract:
 - Changing `gateway_endpoint` updates the endpoint stored at node level. The
   changed field triggers node-owned artifact re-applying for workload-role
   targets.
-- Changing `user` updates the SSH user stored at node level. The changed field
-  affects subsequent gateway-to-node SSH operations and may trigger node-owned
-  artifact re-applying where those artifacts depend on the SSH account.
+- Changing `user` updates the Orbit owner/runtime user stored at node level.
+  The changed field affects subsequent Agent-push execution context and may
+  trigger node-owned artifact re-applying where artifacts depend on that user.
 - Changing `public_ipv4` on an `app-dev` node may change the managed
   `orbit-caddy` HTTP/HTTPS bindings when the value is an RFC1918 caller-facing
   LAN address. The private backend port remains WireGuard-only.
-- Changing `orbit_agent_capable` records whether the gateway may send explicit
-  agent-push operations to the node. The changed field appears in `changed`
-  when the supplied boolean differs from the stored value.
+- Changing `managed` records explicit roleless-operator Agent intent. Workload
+  role intent remains derived. The changed field appears in `changed` when the
+  supplied boolean differs from the stored value.
 
 ### Artifact Re-applying Rules
 
@@ -219,12 +224,14 @@ Input mode behavior is split out of the canonical command contract:
   services beyond the artifacts that the node owns and that are directly affected by the changed field.
 - Update app runtime policy, tool state, firewall policy, proxy routes,
   processes, schedules, or deployment pipelines.
-- SSH into the target node unless re-applying a changed field requires it.
+- Use SSH for steady-state artifact re-applying. Gateway work must remain local;
+  non-gateway node-local work uses Agent push.
 - Mint identity, write peer material, or grant access.
 - Treat an unchanged-value update as a failure.
 - Install, start, update, restart, or uninstall the Orbit Agent process.
-- Infer Orbit Agent capability from platform, SSH reachability, the `agent`
-  workload role, or a successful ping.
+- Persist inferred role-derived intent in the `managed` column of the `nodes`
+  table; workload roles are evaluated dynamically, while only roleless
+  `--managed` opt-in is stored.
 - Re-apply node-owned artifacts when configuration did not change. Re-applying
   unchanged gateway-tracked configuration is owned by
   `doctor --family=node --restore`, not `node:update`.

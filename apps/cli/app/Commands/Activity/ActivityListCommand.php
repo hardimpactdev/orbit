@@ -19,7 +19,6 @@ final class ActivityListCommand extends GatewayCommand
     protected $signature = 'activity:list
         {--app= : Filter by app}
         {--node= : Filter by node}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--effect= : Filter by effect (read|write|destructive)}
         {--correlation= : Filter by correlation UUID}
         {--include-internal : Include internal backend transport activity}

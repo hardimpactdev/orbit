@@ -21,7 +21,7 @@ class ProcessDockerContainer
     /** @var list<array{source: string, target: string, read_only: bool}> */
     private readonly array $volumes;
 
-    /** @var list<array{published: int, target: int, protocol: string}> */
+    /** @var list<array{host: string|null, published: int, target: int, protocol: string}> */
     private readonly array $ports;
 
     /** @var list<string> */
@@ -32,7 +32,7 @@ class ProcessDockerContainer
      * @param  list<array{source: string, target: string, read_only?: bool}>  $mounts
      * @param  list<string>  $networkAliases
      * @param  list<array{source?: string, name?: string, target: string, read_only?: bool}>  $volumes
-     * @param  list<array{published: int, target: int, protocol?: string}>  $ports
+     * @param  list<array{host?: string, published: int, target: int, protocol?: string}>  $ports
      */
     public function __construct(
         private readonly string $name,
@@ -127,7 +127,7 @@ class ProcessDockerContainer
         return $this->volumes;
     }
 
-    /** @return list<array{published: int, target: int, protocol: string}> */
+    /** @return list<array{host: string|null, published: int, target: int, protocol: string}> */
     public function ports(): array
     {
         return $this->ports;
@@ -144,7 +144,9 @@ class ProcessDockerContainer
     {
         return array_map(
             static fn (array $port): string => (
-                "{$port['published']}:{$port['target']}".($port['protocol'] === 'tcp' ? '' : "/{$port['protocol']}")
+                self::publishedHost($port['host'])
+                ."{$port['published']}:{$port['target']}"
+                .($port['protocol'] === 'tcp' ? '' : "/{$port['protocol']}")
             ),
             $this->ports,
         );
@@ -190,7 +192,7 @@ class ProcessDockerContainer
      *     environment: array<string, string>,
      *     mounts: list<array{source: string, target: string, read_only: bool}>,
      *     volumes: list<array{source: string, target: string, read_only: bool}>,
-     *     ports: list<array{published: int, target: int, protocol: string}>,
+     *     ports: list<array{host: string|null, published: int, target: int, protocol: string}>,
      *     network_aliases: list<string>
      * }
      */
@@ -289,8 +291,8 @@ class ProcessDockerContainer
     }
 
     /**
-     * @param  list<array{published: int, target: int, protocol?: string}>  $ports
-     * @return list<array{published: int, target: int, protocol: string}>
+     * @param  list<array{host?: string, published: int, target: int, protocol?: string}>  $ports
+     * @return list<array{host: string|null, published: int, target: int, protocol: string}>
      */
     private function normalizePorts(array $ports): array
     {
@@ -298,6 +300,7 @@ class ProcessDockerContainer
             $published = $port['published'];
             $target = $port['target'];
             $protocol = trim($port['protocol'] ?? 'tcp');
+            $host = isset($port['host']) ? trim($port['host']) : null;
 
             if ($published < 1 || $published > 65535 || $target < 1 || $target > 65535) {
                 throw new InvalidArgumentException(
@@ -309,12 +312,30 @@ class ProcessDockerContainer
                 throw new InvalidArgumentException('Process docker container ports support tcp or udp only.');
             }
 
+            if ($host === '') {
+                $host = null;
+            }
+
+            if ($host !== null && filter_var($host, FILTER_VALIDATE_IP) === false) {
+                throw new InvalidArgumentException('Process docker container port hosts must be valid IP addresses.');
+            }
+
             return [
+                'host' => $host,
                 'published' => $published,
                 'target' => $target,
                 'protocol' => $protocol,
             ];
         }, $ports);
+    }
+
+    private static function publishedHost(?string $host): string
+    {
+        if ($host === null) {
+            return '';
+        }
+
+        return str_contains($host, ':') ? "[{$host}]:" : "{$host}:";
     }
 
     private function assertCommandMode(string $commandMode): void

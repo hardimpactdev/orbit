@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::io::BufReader;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,6 +22,9 @@ pub struct AgentConfig {
     pub node_name: String,
     pub gateway_name: String,
     pub ca_pem_path: Option<PathBuf>,
+    pub platform: String,
+    pub managed: bool,
+    pub wireguard_address: IpAddr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,12 +107,16 @@ impl AgentConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AgentConfigFile {
     gateway_url: String,
     node_id: String,
     node_name: String,
     gateway_name: String,
     ca_pem_path: Option<String>,
+    platform: Option<String>,
+    managed: Option<bool>,
+    wireguard_address: Option<String>,
 }
 
 impl TryFrom<AgentConfigFile> for AgentConfig {
@@ -119,6 +127,42 @@ impl TryFrom<AgentConfigFile> for AgentConfig {
         require_present("node_id", &value.node_id)?;
         require_present("node_name", &value.node_name)?;
         require_present("gateway_name", &value.gateway_name)?;
+
+        let platform = value
+            .platform
+            .as_deref()
+            .ok_or_else(|| ConfigError::InvalidConfig("platform is required".to_string()))?
+            .trim();
+
+        if !is_supported_agent_platform(platform) {
+            return Err(ConfigError::InvalidConfig(
+                "platform must be macOS or Ubuntu".to_string(),
+            ));
+        }
+
+        if value.managed != Some(true) {
+            return Err(ConfigError::InvalidConfig(
+                "managed must be true for the Orbit Agent command listener".to_string(),
+            ));
+        }
+
+        let wireguard_address = value
+            .wireguard_address
+            .as_deref()
+            .ok_or_else(|| ConfigError::InvalidConfig("wireguard_address is required".to_string()))?
+            .trim()
+            .parse::<IpAddr>()
+            .map_err(|error| {
+                ConfigError::InvalidConfig(format!(
+                    "wireguard_address must be a valid IP address: {error}"
+                ))
+            })?;
+
+        if !is_unicast_wireguard_address(wireguard_address) {
+            return Err(ConfigError::InvalidConfig(
+                "wireguard_address must be a unicast IP address".to_string(),
+            ));
+        }
 
         Url::parse(&value.gateway_url).map_err(|error| {
             ConfigError::InvalidConfig(format!("gateway_url must be an absolute URL: {error}"))
@@ -138,8 +182,25 @@ impl TryFrom<AgentConfigFile> for AgentConfig {
 
                 Some(PathBuf::from(path))
             }),
+            platform: platform.to_string(),
+            managed: true,
+            wireguard_address,
         })
     }
+}
+
+fn is_supported_agent_platform(platform: &str) -> bool {
+    matches!(
+        platform.to_ascii_lowercase().split('_').next(),
+        Some("macos" | "darwin" | "ubuntu")
+    )
+}
+
+fn is_unicast_wireguard_address(address: IpAddr) -> bool {
+    !address.is_unspecified()
+        && !address.is_loopback()
+        && !address.is_multicast()
+        && !matches!(address, IpAddr::V4(address) if address.is_broadcast())
 }
 
 fn require_present(field: &str, value: &str) -> Result<(), ConfigError> {
@@ -350,7 +411,7 @@ pub fn build_service_status_snapshot() -> ServiceStatusSnapshot {
             ServiceStatusSnapshot {
                 connection: status.label(),
                 gateway_ip,
-                node_ip: None,
+                node_ip: Some(config.wireguard_address.to_string()),
                 node_name: Some(config.node_name.clone()),
                 config_loaded: true,
             }
@@ -370,16 +431,6 @@ pub fn build_service_status_snapshot() -> ServiceStatusSnapshot {
             config_loaded: false,
         },
     }
-}
-
-pub fn default_http_bind_addr() -> String {
-    if let Ok(addr) = std::env::var("ORBIT_AGENT_HTTP_BIND") {
-        if !addr.trim().is_empty() {
-            return addr;
-        }
-    }
-
-    "127.0.0.1:9477".to_string()
 }
 
 pub struct HttpAgentGateway {
@@ -515,7 +566,10 @@ fn ureq_agent(config: &AgentConfig) -> Result<ureq::Agent, GatewayError> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static NEXT_TEMP_CONFIG_ID: AtomicU64 = AtomicU64::new(0);
 
     fn config_fixture() -> AgentConfig {
         AgentConfig {
@@ -524,6 +578,9 @@ mod tests {
             node_name: "NMBP".to_string(),
             gateway_name: "dev-gateway".to_string(),
             ca_pem_path: Some(PathBuf::from("/home/orbit/.config/orbit/ca/root.crt")),
+            platform: "macos_26-5-1".to_string(),
+            managed: true,
+            wireguard_address: "10.6.0.3".parse().expect("wireguard IP"),
         }
     }
 
@@ -533,7 +590,20 @@ mod tests {
             .expect("clock should be after unix epoch")
             .as_nanos();
 
-        std::env::temp_dir().join(format!("orbit-agent-config-{suffix}.toml"))
+        let sequence = NEXT_TEMP_CONFIG_ID.fetch_add(1, Ordering::Relaxed);
+
+        std::env::temp_dir().join(format!(
+            "orbit-agent-config-{}-{suffix}-{sequence}.toml",
+            std::process::id()
+        ))
+    }
+
+    fn write_config_fixture(contents: &str) -> PathBuf {
+        let path = temp_config_path();
+
+        fs::write(&path, contents).expect("fixture config should be writable");
+
+        path
     }
 
     #[test]
@@ -548,7 +618,9 @@ node_id = "node_123"
 node_name = "NMBP"
 gateway_name = "dev-gateway"
 ca_pem_path = "/home/orbit/.config/orbit/ca/root.crt"
-bearer_token = "legacy-token-that-should-be-ignored"
+platform = "macos_26-5-1"
+managed = true
+wireguard_address = "10.6.0.3"
 "#,
         )
         .expect("fixture config should be writable");
@@ -558,6 +630,119 @@ bearer_token = "legacy-token-that-should-be-ignored"
         assert_eq!(config, config_fixture());
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn rejects_unknown_agent_config_fields() {
+        let path = write_config_fixture(
+            r#"
+gateway_url = "https://gateway.test"
+node_id = "node_123"
+node_name = "NMBP"
+gateway_name = "dev-gateway"
+platform = "macos_26-5-1"
+managed = true
+wireguard_address = "10.6.0.3"
+retired_setting = "unsupported"
+"#,
+        );
+
+        let error = AgentConfig::load_from_path(&path).expect_err("config should fail closed");
+
+        assert!(error
+            .to_string()
+            .contains("unknown field `retired_setting`"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn listener_security_rejects_config_without_managed_agent_intent() {
+        let path = write_config_fixture(
+            r#"
+gateway_url = "https://gateway.test"
+node_id = "node_123"
+node_name = "NMBP"
+gateway_name = "dev-gateway"
+platform = "macos_26-5-1"
+managed = false
+wireguard_address = "10.6.0.3"
+"#,
+        );
+
+        let error = AgentConfig::load_from_path(&path).expect_err("config should fail closed");
+
+        assert!(error.to_string().contains("managed must be true"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn listener_security_rejects_unsupported_platform() {
+        let path = write_config_fixture(
+            r#"
+gateway_url = "https://gateway.test"
+node_id = "node_123"
+node_name = "NMBP"
+gateway_name = "dev-gateway"
+platform = "windows_11"
+managed = true
+wireguard_address = "10.6.0.3"
+"#,
+        );
+
+        let error = AgentConfig::load_from_path(&path).expect_err("config should fail closed");
+
+        assert!(error
+            .to_string()
+            .contains("platform must be macOS or Ubuntu"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn listener_security_rejects_missing_wireguard_address() {
+        let path = write_config_fixture(
+            r#"
+gateway_url = "https://gateway.test"
+node_id = "node_123"
+node_name = "NMBP"
+gateway_name = "dev-gateway"
+platform = "macos_26-5-1"
+managed = true
+"#,
+        );
+
+        let error = AgentConfig::load_from_path(&path).expect_err("config should fail closed");
+
+        assert!(error.to_string().contains("wireguard_address is required"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn listener_security_rejects_non_unicast_wireguard_address() {
+        for wireguard_address in ["0.0.0.0", "127.0.0.1", "224.0.0.1", "255.255.255.255"] {
+            let path = write_config_fixture(&format!(
+                r#"
+gateway_url = "https://gateway.test"
+node_id = "node_123"
+node_name = "NMBP"
+gateway_name = "dev-gateway"
+platform = "ubuntu_24-04"
+managed = true
+wireguard_address = "{wireguard_address}"
+"#,
+            ));
+
+            let error = AgentConfig::load_from_path(&path).expect_err("config should fail closed");
+
+            assert!(error
+                .to_string()
+                .contains("wireguard_address must be a unicast IP address"));
+
+            let _ = fs::remove_file(path);
+        }
     }
 
     #[test]

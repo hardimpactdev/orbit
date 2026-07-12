@@ -319,7 +319,7 @@ final class SetupWorkspaceProgressPlan
     /**
      * @return array{
      *     app: string,
-     *     app_instance: string|null,
+     *     app_instance: string,
      *     workspace: string,
      *     node: string,
      *     path: string,
@@ -337,7 +337,7 @@ final class SetupWorkspaceProgressPlan
 
         return [
             'app' => $this->app->name,
-            'app_instance' => $this->workspace->appInstance?->name,
+            'app_instance' => $this->workspace->appInstance->name,
             'workspace' => $this->workspace->name,
             'node' => $this->node->name,
             'path' => $this->workspace->path,

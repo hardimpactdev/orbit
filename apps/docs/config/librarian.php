@@ -151,12 +151,6 @@ return [
             'allow_paths' => [],
         ],
         [
-            'terms' => ['tool:logs', 'tool:reload'],
-            'decision' => '2026-06-06 tool logs and reload remain process-owned (solo todo #703)',
-            'replacement' => '`process:logs` or a process-owned reload/restart flow',
-            'allow_paths' => [],
-        ],
-        [
             'terms' => ['app:exec', 'workspace:exec'],
             'decision' => '2026-06-03 Orbit has no command-exec surface',
             'replacement' => 'host `php`/`artisan`/`composer` directly on the app node source path',

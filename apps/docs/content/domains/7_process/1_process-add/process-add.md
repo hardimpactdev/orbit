@@ -63,8 +63,7 @@ Use this command to define a managed process for a node, app, or workspace.
 ### Render and start dispatch
 
 `process:add` starts rendered runtime units by default. Use `--no-start` to
-create configuration and render units without starting them. `--start` remains
-accepted as a backward-compatible redundant flag.
+create configuration and render units without starting them.
 
 ## Related
 

@@ -427,13 +427,6 @@
       "follow_up": "Add a dedicated PHP SDK request class for starting process log operation streams."
     },
     {
-      "operation": "GET /profile/resolve",
-      "operation_id": "profile.resolve",
-      "classification": "deferred_optional",
-      "group": "profile",
-      "reason": "Profile resolution is useful command support but not part of the initial dashboard SDK set."
-    },
-    {
       "operation": "GET /s3/credentials",
       "operation_id": "s3Credentials",
       "classification": "deferred_optional",
@@ -481,30 +474,6 @@
       "classification": "internal_only",
       "group": "solo_proxy",
       "reason": "Solo proxy routes are extension proxy plumbing and must not be emitted as public SDK methods."
-    },
-    {
-      "operation": "POST /tools/{tool}/start",
-      "operation_id": "toolStart",
-      "classification": "public_sdk",
-      "group": "tool_lifecycle",
-      "reason": "Tool lifecycle-capable start is public command surface and useful for local dashboard controls.",
-      "follow_up": "Add a dedicated PHP SDK request class for starting lifecycle-capable tools."
-    },
-    {
-      "operation": "POST /tools/{tool}/stop",
-      "operation_id": "toolStop",
-      "classification": "public_sdk",
-      "group": "tool_lifecycle",
-      "reason": "Tool lifecycle-capable stop is public command surface and useful for local dashboard controls.",
-      "follow_up": "Add a dedicated PHP SDK request class for stopping lifecycle-capable tools."
-    },
-    {
-      "operation": "POST /tools/{tool}/restart",
-      "operation_id": "toolRestart",
-      "classification": "public_sdk",
-      "group": "tool_lifecycle",
-      "reason": "Tool lifecycle-capable restart is public command surface and useful for local dashboard controls.",
-      "follow_up": "Add a dedicated PHP SDK request class for restarting lifecycle-capable tools."
     },
     {
       "operation": "POST /update/all/start",

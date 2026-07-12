@@ -27,6 +27,11 @@ The process family owns these facts:
   services, including service identifier, version family, concrete
   version, runtime unit name, spec hash, endpoint metadata, and credential
   field names;
+- canonical FrankenPHP process rows for every PHP app/workspace runtime and the
+  canonical node-owned `seaweedfs` process row for each active `s3` baseline;
+  these rows own concrete container presence, unit shape, lifecycle, logs, and
+  repair even though app/workspace/tool families retain their desired policy,
+  PHP/image, and credential facts;
 - metrics-role Prometheus, Grafana, and node-exporter runtime artifacts created
   from process definitions; the metrics command domain does not add a separate
   doctor family;
@@ -64,6 +69,9 @@ Launchd-backed process units require `launchctl` access in the owning user's
 GUI domain and readable plist/log paths for LaunchAgents that Orbit owns.
 Docker-backed service process units require Docker container inspection.
 Docker Swarm-backed service process units require Docker service inspection.
+The process family also runs one node-wide Agent-push inventory of
+Orbit-managed app runtime containers so an orphan remains visible even after
+its app and process rows have been removed.
 When this layer fails, the probe stops and reports
 `process.runtime_backend_unavailable` instead of cascading to downstream
 checks.
@@ -76,7 +84,9 @@ For systemd runtime units, the probe reads rendered Orbit-owned service files
 and compares their content hash, restart policy, and environment lines against
 the rendered gateway spec. For Docker and Docker Swarm runtime units, the probe
 compares the Orbit-managed process spec hash on the concrete container or
-service labels.
+service labels. Docker port host bindings are part of that rendered spec, so
+the SeaweedFS WireGuard-only bind posture is verified as process runtime-unit
+shape rather than as tool drift.
 
 For launchd runtime units, the probe reads LaunchAgent plist files that Orbit
 owns and compares content hashes against the gateway-rendered plist. When the
@@ -87,7 +97,10 @@ actions only for launchd labels that Orbit owns.
 
 ### Runtime-unit identity
 
-Each expected runtime context maps to exactly one runtime unit name that Orbit owns, using `orbit_<app>_<workspace|main>_<process>`.
+Each app/workspace runtime context maps to exactly one runtime unit name that
+Orbit owns, using `orbit_<app>_<workspace|main>_<process>`. Node-owned services
+may declare a stable configured unit name, such as `orbit-seaweedfs` for the
+`seaweedfs` process row.
 
 ### WireGuard self-route diagnostics
 
@@ -119,11 +132,14 @@ The crash event hooks that Orbit manages, gateway endpoint material, and gateway
 ### Stale runtime units
 
 Runtime artifacts that Orbit owns are reported as process-family drift when
-their encoded app, workspace, or process identity has no match in active
-gateway configuration. For launchd, the probe only inspects Orbit-owned labels
+their encoded app, workspace, node, tool, or process identity has no match in
+active gateway configuration. For launchd, the probe only inspects Orbit-owned labels
 under `dev.hardimpact.orbit.*` and matching plist paths in
 `~/Library/LaunchAgents`; third-party LaunchAgents are outside process-family
-scope.
+scope. For Docker app runtimes, the node-wide inventory compares
+`orbit.container.kind=app-runtime` and `orbit.app` labels with active logical
+app and concrete app-instance runtime slugs. Inventory failure reports
+`process.runtime_backend_unavailable` instead of silently hiding orphan drift.
 
 ### Lifecycle events as history
 
@@ -172,7 +188,7 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 `doctor --restore` does not handle `process.record_incomplete`,
 `process.owner_app_invalid`, `process.owner_node_invalid`,
 `process.runtime_context_unresolved`,
-`process.wireguard_self_route_unavailable`, or
+`process.wireguard_self_route_unavailable`,
 `process.runtime_backend_unavailable`, or
 `process.runtime_unit_unrenderable`.
 
@@ -211,6 +227,7 @@ Required test files:
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for process family scope and process drift reporting. |
 | `apps/gateway/tests/Unit/Services/Processes/ProcessesProbeTest.php` | In-memory probe diff behavior for the processes family (see breakdown below). |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Node-wide managed runtime inventory dispatch and safe removal of orphaned app containers through the process family. |
 
 No current E2E test is mapped for process-family doctor coverage.
 
@@ -219,7 +236,8 @@ reporting, and the `process.runtime_backend_unavailable` short-circuit.
 
 `ProcessesProbeTest` covers registry configuration, node/app/workspace owner
 validation, app and workspace expansion, and process manager availability.
-It also covers runtime-unit identity and Docker/Docker Swarm managed service metadata.
+It also covers runtime-unit identity, canonical FrankenPHP and SeaweedFS
+process rows, and Docker/Docker Swarm managed service metadata.
 WireGuard self-route diagnostics, missing/extra/drifted runtime artifacts,
 launchd plist and loaded-state drift, restart policy drift, runtime environment
 drift, event notifier drift, and exclusion of non-process drift from issue

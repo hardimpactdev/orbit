@@ -6,7 +6,7 @@ namespace App\Commands;
 
 use App\Exceptions\GatewayApiException;
 
-final class GatewayStatusCommand extends OrbitCommand
+final class GatewayStatusCommand extends GatewayCommand
 {
     private const string ENDPOINT = '/api/status';
 

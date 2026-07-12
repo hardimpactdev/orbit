@@ -276,7 +276,7 @@ describe('WorkspaceListController', function (): void {
             ->assertJsonPath('success.data.workspaces.0', [
                 'name' => 'feature-docs',
                 'app' => 'docs',
-                'app_instance' => null,
+                'app_instance' => 'development',
                 'node' => 'app-1',
                 'url' => 'https://feature-docs.docs.test',
                 'lifecycle_status' => 'setup-pending',

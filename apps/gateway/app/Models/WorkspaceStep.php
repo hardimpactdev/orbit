@@ -13,7 +13,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int $app_id
- * @property int|null $app_instance_id
+ * @property int $app_instance_id
  * @property WorkspaceLifecyclePhase $phase
  * @property int $sort_order
  * @property string $command
@@ -21,7 +21,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read App|null $app
- * @property-read AppInstance|null $appInstance
+ * @property-read AppInstance $appInstance
  *
  * @method static WorkspaceStep|null find(int $id)
  */

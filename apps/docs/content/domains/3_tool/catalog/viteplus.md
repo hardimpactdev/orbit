@@ -11,16 +11,16 @@ These fields describe the VitePlus tool's identity, backend, and support model i
 | Slug | `viteplus` |
 | Label | VitePlus |
 | Backend | system binary |
-| Support model | Role baseline tool for the `app-dev` and `app-prod` roles |
+| Support model | Optional observational runtime inventory; no role baseline requirement |
 | Category | `runtime` |
 
 ## Capabilities
 
-`viteplus` is probed and adopted as the role baseline tool materialized by the
-`app-dev` and `app-prod` roles. It is not required on nodes
-without an app role. It supports probe and adopt only; it has no install,
-update, remove, credentials, or reconfigure surface. Runtime lifecycle and
-logs belong to the process family.
+`viteplus` is not materialized by the `app-dev` or `app-prod` role baseline.
+An existing `vp` binary may be probed and explicitly adopted as observational
+tool inventory. An absent tool row or binary does not create role-baseline
+drift. VitePlus has no install, update, remove, credentials, or reconfigure
+surface. Runtime lifecycle and logs belong to the process family.
 
 ## Credentials
 
@@ -39,5 +39,7 @@ fields.
 
 ## Doctor Relationship
 
-`doctor --family=tool` may adopt an existing `vp` binary and report missing
-baseline drift.
+`doctor --family=tool` may adopt an explicitly selected existing `vp` binary.
+Once a VitePlus tool row exists, tool doctor verifies the capability expected
+by that row. Without a row, an absent binary is unmanaged inventory rather than
+role-baseline drift.

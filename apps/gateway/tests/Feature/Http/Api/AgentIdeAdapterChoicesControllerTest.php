@@ -16,7 +16,7 @@ const AGENT_IDE_CHOICES_CALLER_WG_IP = '10.6.0.99';
  */
 function agentIdeChoicesNodeRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'control-1',
         'host' => AGENT_IDE_CHOICES_CALLER_WG_IP,
         'orbit_path' => '/home/orbit/orbit',
@@ -29,6 +29,10 @@ function agentIdeChoicesNodeRow(array $overrides = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    $row['tld'] ??= $row['name'];
+
+    return $row;
 }
 
 function getAgentIdeChoicesJson(string $scope): TestResponse

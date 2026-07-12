@@ -13,6 +13,7 @@ use App\Models\WireGuardPeer;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
+use App\Services\Vpn\VpnDnsSwarmInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -48,9 +49,8 @@ afterEach(function (): void {
  */
 function apiStoreNodeRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'gateway-1',
-        'tld' => null,
         'platform' => 'unknown',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
@@ -61,6 +61,12 @@ function apiStoreNodeRow(array $overrides = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    if (! array_key_exists('tld', $overrides)) {
+        $row['tld'] = strtolower((string) $row['name']);
+    }
+
+    return $row;
 }
 
 function assignStoreNodeRole(int $nodeId, string $role): void
@@ -165,6 +171,7 @@ describe('NodeStoreController', function (): void {
                 'name' => 'gateway',
                 'roles' => ['app-prod'],
                 'host' => '192.0.2.20',
+                'tld' => 'gateway',
             ]);
 
         $response
@@ -200,6 +207,7 @@ describe('NodeStoreController', function (): void {
                 'name' => 'gateway',
                 'template' => 'gateway',
                 'host' => '192.0.2.20',
+                'tld' => 'gateway',
             ]);
 
         $response
@@ -234,6 +242,7 @@ describe('NodeStoreController', function (): void {
                 'roles' => ['ingress'],
                 'ingress_node' => 'other-edge-1',
                 'host' => '192.0.2.21',
+                'tld' => 'edge',
             ]);
 
         $response
@@ -268,6 +277,7 @@ describe('NodeStoreController', function (): void {
                 'roles' => ['app-prod', 'ingress'],
                 'ingress_node' => 'edge-1',
                 'host' => '192.0.2.21',
+                'tld' => 'web',
             ]);
 
         $response
@@ -343,12 +353,13 @@ describe('NodeStoreController', function (): void {
                 'name' => 'app-dev-1',
                 'roles' => ['app-dev'],
                 'host' => '192.0.2.20',
+                'tld' => 'test',
             ]);
 
         $response
             ->assertOk()
             ->assertJsonPath('success.data.node.name', 'app-dev-1')
-            ->assertJsonPath('success.data.development_tld.gateway_dns.domain', '*.app-dev-1');
+            ->assertJsonPath('success.data.development_tld.gateway_dns.domain', '*.test');
 
         $node = DB::table('nodes')->where('name', 'app-dev-1')->first();
 
@@ -356,7 +367,7 @@ describe('NodeStoreController', function (): void {
             ->not
             ->toBeNull()
             ->and($node->tld)
-            ->toBe('app-dev-1')
+            ->toBe('test')
             ->and($node->wireguard_address)
             ->toBe('10.6.0.4');
 
@@ -400,7 +411,7 @@ describe('NodeStoreController', function (): void {
         expect($entry->subject?->name)->toBe('app-dev-1');
         expect($entry->properties->get('name'))->toBe('app-dev-1');
         expect($entry->properties->get('roles'))->toBe(['app-dev']);
-        expect($entry->properties->get('tld'))->toBe('app-dev-1');
+        expect($entry->properties->get('tld'))->toBe('test');
 
         Process::assertRan(
             fn ($process): bool => (
@@ -761,6 +772,29 @@ describe('NodeStoreController', function (): void {
         ]));
         grantStoreNodeAccess($callerId, $gatewayId, ['node:new']);
 
+        $vpnInstaller = new class extends VpnDnsSwarmInstaller {
+            /** @var list<array<string, string>> */
+            public array $configuredPeers = [];
+
+            public function __construct()
+            {
+                parent::__construct(rootPath: sys_get_temp_dir());
+            }
+
+            #[\Override]
+            public function configurePeers(array $peers): void
+            {
+                $this->configuredPeers = $peers;
+            }
+
+            #[\Override]
+            public function publicKey(): string
+            {
+                return 'wg-easy-public-key';
+            }
+        };
+        app()->instance(VpnDnsSwarmInstaller::class, $vpnInstaller);
+
         app()->instance(RemoteShell::class, new NodeStoreSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
             new RemoteShellResult(
@@ -877,6 +911,7 @@ describe('NodeStoreController', function (): void {
 
         expect($entry)->not->toBeNull();
         expect($entry->subject?->name)->toBe('app-unknown-1');
+        expect($vpnInstaller->configuredPeers)->toHaveCount(1);
 
         Process::assertRan(
             fn ($process): bool => $process->command === "docker exec 'vpn-container-id' wg show wg0 allowed-ips",

@@ -30,6 +30,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 #[RequiresPermission('*', servingNode: ServingNode::Gateway)]
 final class UpdateAllController implements Loggable
 {
+    // @orbit-ssh-lane transitional-ssh
     private const int REMOTE_UPDATE_CONCURRENCY = 4;
 
     private const array REMOTE_UPDATE_STAGES = [

@@ -69,6 +69,14 @@ abstract class DatabaseGatewayCommand extends GatewayCommand
             return $this->failValidation('app', 'The --app option is required when --instance is used.');
         }
 
+        if ($app !== null && $instance === null) {
+            return $this->failValidation(
+                'instance',
+                'The --instance option is required for app database targets.',
+                ['reason' => 'app_instance_required'],
+            );
+        }
+
         if ($app !== null && $workspace !== null) {
             return $this->failValidation('scope', 'Invalid scope: --app and --workspace cannot be combined.');
         }

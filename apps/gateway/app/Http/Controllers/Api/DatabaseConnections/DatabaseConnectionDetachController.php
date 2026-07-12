@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\DatabaseConnections;
 
 use App\Enums\ActivityLogType;
+use App\Models\AppInstance;
+use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,7 +28,7 @@ final class DatabaseConnectionDetachController extends DatabaseConnectionApiCont
             return $scope;
         }
 
-        [$type, $owner] = $scope;
+        [, $owner] = $scope;
         $existing = $this->registry->show($connection);
 
         if ($existing instanceof DatabaseConnectionRegistryFailure) {
@@ -39,20 +41,22 @@ final class DatabaseConnectionDetachController extends DatabaseConnectionApiCont
             return $authorization;
         }
 
+        if ($owner instanceof AppInstance) {
+            $targetType = 'app_instance';
+            $targetName = $owner->app->name.'.'.$owner->name;
+            $result = $this->registry->detachFromAppInstance($connection, $owner, $envPrefix);
+        } elseif ($owner instanceof Workspace) {
+            $targetType = 'workspace';
+            $targetName = $owner->name;
+            $result = $this->registry->detachFromWorkspace($connection, $owner, $envPrefix);
+        }
+
         $this->setActivityProperties($request, [
             'slug' => $connection,
-            'target_type' => $type,
-            'target_name' => $type === 'app_instance' ? $owner->app->name.':'.$owner->name : $owner->name,
+            'target_type' => $targetType,
+            'target_name' => $targetName,
             'env_prefix' => $envPrefix,
         ]);
-
-        $result = $type === 'app'
-            ? $this->registry->detachFromApp($connection, $owner, $envPrefix)
-            : (
-                $type === 'app_instance'
-                    ? $this->registry->detachFromAppInstance($connection, $owner, $envPrefix)
-                    : $this->registry->detachFromWorkspace($connection, $owner, $envPrefix)
-            );
 
         if ($result instanceof DatabaseConnectionRegistryFailure) {
             return $this->failureResponse($result);
@@ -64,8 +68,8 @@ final class DatabaseConnectionDetachController extends DatabaseConnectionApiCont
                     'result' => [
                         'action' => 'detached',
                         'connection' => $connection,
-                        'target_type' => $type,
-                        'target' => $type === 'app_instance' ? $owner->app->name.':'.$owner->name : $owner->name,
+                        'target_type' => $targetType,
+                        'target' => $targetName,
                         'env_prefix' => $envPrefix,
                     ],
                 ],

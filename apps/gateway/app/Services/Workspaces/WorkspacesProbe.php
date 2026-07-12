@@ -18,6 +18,7 @@ use App\Services\Php\PhpRuntimeCatalog;
 
 final readonly class WorkspacesProbe
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private ?RemoteShell $remoteShell = null,
         private ?WorkspaceRuntimeUser $workspaceRuntimeUser = null,
@@ -210,7 +211,6 @@ final readonly class WorkspacesProbe
         $drift = array_merge($drift, $this->checkParentApp($workspace));
         $drift = array_merge($drift, $this->checkSourcePath($workspace, $snapshot));
         $drift = array_merge($drift, $this->checkPhpRuntime($workspace, $snapshot));
-        $drift = array_merge($drift, $this->checkPhpRuntimeContainer($workspace, $snapshot));
         $drift = array_merge($drift, $this->checkDevelopmentSecurity($workspace, $snapshot));
 
         return $drift;
@@ -238,105 +238,6 @@ final readonly class WorkspacesProbe
                     key: 'workspace.record_incomplete',
                     kind: DriftKind::Missing,
                     summary: "Workspace record for {$workspace->name} is missing required fields.",
-                ),
-            ];
-        }
-
-        return [];
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkPhpRuntimeContainer(Workspace $workspace, ProbeSnapshot $snapshot): array
-    {
-        $workspace->loadMissing('app.node');
-
-        if (! $workspace->app instanceof App || $workspace->app->runtime !== AppRuntimeKind::Php) {
-            return [];
-        }
-
-        if ($workspace->lifecycle_status !== WorkspaceLifecycleStatus::Active) {
-            return [];
-        }
-
-        if (! $this->phpRuntimeCatalog()->supports($workspace->effectivePhpVersion())) {
-            return [];
-        }
-
-        $observed = $snapshot->get($workspace->name);
-
-        if ($observed === null || ($observed['path_exists'] ?? null) === false) {
-            return [];
-        }
-
-        if (($observed['docker_available'] ?? null) === false) {
-            return [];
-        }
-
-        if (
-            ($observed['runtime_image_probe_failed'] ?? null) === true
-            || ($observed['runtime_image_available'] ?? null) === false
-        ) {
-            return [];
-        }
-
-        $containerName = is_string($observed['container_name'] ?? null) ? $observed['container_name'] : '';
-
-        if (($observed['container_exists'] ?? null) === false) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'workspace.runtime_container_missing',
-                    kind: DriftKind::Missing,
-                    summary: "Workspace {$workspace->name} is missing its FrankenPHP runtime container.",
-                    detail: [
-                        'workspace' => $workspace->name,
-                        'app' => $workspace->app->name,
-                        'node' => $this->placement()->nodeForWorkspace($workspace)?->name,
-                        'container' => $containerName,
-                    ],
-                ),
-            ];
-        }
-
-        if (($observed['container_running'] ?? null) === false) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'workspace.runtime_container_stopped',
-                    kind: DriftKind::Divergent,
-                    summary: "Workspace {$workspace->name} FrankenPHP runtime container is stopped.",
-                    detail: [
-                        'workspace' => $workspace->name,
-                        'app' => $workspace->app->name,
-                        'node' => $this->placement()->nodeForWorkspace($workspace)?->name,
-                        'container' => $containerName,
-                    ],
-                ),
-            ];
-        }
-
-        $expectedHash = is_string($observed['container_expected_hash'] ?? null)
-            ? $observed['container_expected_hash']
-            : '';
-        $actualHash = is_string($observed['container_spec_hash'] ?? null) ? $observed['container_spec_hash'] : '';
-
-        if ($expectedHash !== '' && $actualHash !== $expectedHash) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'workspace.runtime_container_mismatch',
-                    kind: DriftKind::Divergent,
-                    summary: "Workspace {$workspace->name} FrankenPHP runtime container does not match registry intent.",
-                    detail: [
-                        'workspace' => $workspace->name,
-                        'app' => $workspace->app->name,
-                        'node' => $this->placement()->nodeForWorkspace($workspace)?->name,
-                        'container' => $containerName,
-                        'expected_hash' => $expectedHash,
-                        'actual_hash' => $actualHash,
-                    ],
                 ),
             ];
         }

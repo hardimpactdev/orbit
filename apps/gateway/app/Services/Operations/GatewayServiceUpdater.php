@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
-use App\Data\Nodes\InstalledAgentArtifact;
 use App\Data\Nodes\InstalledCliArtifact;
 use App\Data\Nodes\InstalledGatewayImage;
 use App\Data\RemoteShell\RemoteShellResult;
@@ -12,13 +11,11 @@ use App\Enums\Gateway\GatewayExposureMode;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
-use App\Services\Gateway\GatewayHostAgentConfigWriter;
 use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmInstaller;
 use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Gateway\GatewaySwarmStackRenderer;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Support\Sleep;
 use RuntimeException;
@@ -29,6 +26,7 @@ use Throwable;
  */
 class GatewayServiceUpdater
 {
+    // @orbit-ssh-lane transitional-ssh
     private const string GatewayService = 'orbit_orbit-gateway';
 
     private const string SchedulerService = 'orbit_orbit-scheduler';
@@ -43,8 +41,6 @@ class GatewayServiceUpdater
         private readonly ?GatewaySwarmManager $swarm = null,
         private readonly ?OperationRunRecorder $operationRuns = null,
         private readonly ?FleetUpdateTargetSelector $targets = null,
-        private readonly ?GatewayHostAgentConfigWriter $gatewayHostAgentConfigs = null,
-        private readonly ?GatewayHostAgentServicePayloadBuilder $gatewayHostAgentServices = null,
     ) {}
 
     public function update(OperationRun $operationRun, OperationUpdatePlan $plan): void
@@ -93,26 +89,11 @@ class GatewayServiceUpdater
             );
             $this->runStep(
                 $operationRun,
-                'gateway.agent-config',
-                'Writing gateway host agent config',
-                'Gateway host agent config written',
-                $this->writeGatewayHostAgentConfig(...),
-            );
-            $this->runStep(
-                $operationRun,
                 'gateway.host-cli',
                 'Installing gateway host CLI',
                 'Gateway host CLI installed',
                 fn (): null => $this->installGatewayHostCli($operationRun, $plan),
             );
-            $this->runStep(
-                $operationRun,
-                'gateway.agent-service',
-                'Restarting gateway host Orbit Agent service',
-                'Gateway host Orbit Agent service restarted',
-                fn (): null => $this->restartGatewayHostAgentService($operationRun),
-            );
-
             $this->recordInstalledGatewayImage($operationRun, $plan, $targetImage);
         } catch (Throwable $throwable) {
             if ($schedulerWasStopped) {
@@ -130,25 +111,6 @@ class GatewayServiceUpdater
         return null;
     }
 
-    private function restartGatewayHostAgentService(OperationRun $operationRun): null
-    {
-        $gatewayNode = $this->targets()->gatewayNode();
-
-        if (! $gatewayNode instanceof Node) {
-            return null;
-        }
-
-        $agentService = $this->gatewayHostAgentServices()->forNode($gatewayNode);
-
-        if ($agentService === null) {
-            return null;
-        }
-
-        app(GatewayHostAgentServiceRestarter::class)->restart($operationRun, $gatewayNode, $agentService);
-
-        return null;
-    }
-
     private function installGatewayHostCli(OperationRun $operationRun, OperationUpdatePlan $plan): null
     {
         $gatewayNode = $this->targets()->gatewayNode();
@@ -159,7 +121,7 @@ class GatewayServiceUpdater
 
         $gatewayCliArtifact = $this->gatewayHostCliArtifact($operationRun, $plan, $gatewayNode);
         $installPayload = json_encode(
-            $this->gatewayHostCliInstallPayload($operationRun, $plan, $gatewayNode, $gatewayCliArtifact),
+            $this->gatewayHostCliInstallPayload($gatewayNode, $gatewayCliArtifact),
             JSON_THROW_ON_ERROR,
         );
         $payloadSha256 = hash('sha256', $installPayload);
@@ -196,17 +158,7 @@ class GatewayServiceUpdater
             ],
         ];
 
-        try {
-            $result = $this->runCliInstall($gatewayNode, $commandOptions, $transportOptions);
-        } catch (RemoteLocalExecutorTransportFailed $exception) {
-            if (! $this->isGatewayHostAgentRestartDisconnect($exception)) {
-                throw $exception;
-            }
-
-            $this->recordInstalledGatewayHostCli($operationRun, $plan, $gatewayNode);
-
-            return null;
-        }
+        $result = $this->runCliInstall($gatewayNode, $commandOptions, $transportOptions);
 
         if ($this->shouldRetryCliInstallAfterSelfUpdate($result)) {
             $result = $this->runCliInstall($gatewayNode, $commandOptions, $transportOptions);
@@ -236,11 +188,6 @@ class GatewayServiceUpdater
         );
     }
 
-    private function isGatewayHostAgentRestartDisconnect(RemoteLocalExecutorTransportFailed $exception): bool
-    {
-        return str_contains($exception->getMessage(), 'Empty reply from server');
-    }
-
     private function shouldRetryCliInstallAfterSelfUpdate(RemoteShellResult $result): bool
     {
         return $result->exitCode === 255 && trim($result->stdout) === '' && trim($result->stderr) === '';
@@ -254,14 +201,12 @@ class GatewayServiceUpdater
      *     install_root: string,
      *     bin_path: string,
      *     shared_binary_path: string|null,
-     *     agent_artifact: array{artifact_url: string, sha256: string, bin_path: string}|null,
-     *     agent_service: array{unit_name: string, exec_start: string, config_path: string, http_bind: string, user: string}|null,
+     *     agent_artifact: null,
+     *     agent_service: null,
      *     role_images: list<string>,
      * }
      */
     private function gatewayHostCliInstallPayload(
-        OperationRun $operationRun,
-        OperationUpdatePlan $plan,
         Node $gatewayNode,
         array $artifact,
     ): array {
@@ -273,8 +218,8 @@ class GatewayServiceUpdater
             'install_root' => $installRoot,
             'bin_path' => FleetUpdateNodeCliLauncher::binPath($gatewayNode),
             'shared_binary_path' => null,
-            'agent_artifact' => $this->gatewayHostAgentArtifactPayload($operationRun, $plan, $gatewayNode),
-            'agent_service' => $this->gatewayHostAgentServices()->forNode($gatewayNode),
+            'agent_artifact' => null,
+            'agent_service' => null,
             'role_images' => [],
         ];
     }
@@ -371,41 +316,7 @@ class GatewayServiceUpdater
             ),
         ])->save();
 
-        $this->recordInstalledGatewayHostAgent($operationRun, $plan, $gatewayNode);
-    }
-
-    private function recordInstalledGatewayHostAgent(
-        OperationRun $operationRun,
-        OperationUpdatePlan $plan,
-        Node $gatewayNode,
-    ): void {
-        $platform = CliArtifactPlatform::forNode($gatewayNode);
-        $artifact = $plan->agent_artifacts[$platform] ?? null;
-
-        if ($artifact === null) {
-            return;
-        }
-
-        if (
-            ! is_array($artifact)
-            || ! is_string($artifact['url'] ?? null)
-            || ! is_string($artifact['sha256'] ?? null)
-        ) {
-            throw new RuntimeException("Update plan contains an invalid agent artifact for platform [{$platform}].");
-        }
-
-        $gatewayNode->forceFill([
-            'installed_agent' => InstalledAgentArtifact::record([
-                'version' => $plan->target_version,
-                'platform' => $platform,
-                'sha256' => $artifact['sha256'],
-                'source' => $plan->manifest_source,
-                'build_id' => $this->manifestBuildId($plan),
-                'artifact_url' => $artifact['url'],
-                'installed_path' => FleetUpdateNodeAgentBinary::binPath($gatewayNode),
-                'operation_run_id' => $operationRun->id,
-            ]),
-        ])->save();
+        $gatewayNode->forceFill(['installed_agent' => null])->save();
     }
 
     private function runMigrations(GatewayImageReference $targetImage): null
@@ -413,31 +324,6 @@ class GatewayServiceUpdater
         $this->swarm()->runGatewayMigrations($targetImage);
 
         return null;
-    }
-
-    /**
-     * @return array{artifact_url: string, sha256: string, bin_path: string}|null
-     */
-    private function gatewayHostAgentArtifactPayload(
-        OperationRun $operationRun,
-        OperationUpdatePlan $plan,
-        Node $gatewayNode,
-    ): ?array {
-        $artifact = $this->artifactRelay()->agentArtifactFor(
-            operationRun: $operationRun,
-            plan: $plan,
-            platform: CliArtifactPlatform::forNode($gatewayNode),
-        );
-
-        if ($artifact === null) {
-            return null;
-        }
-
-        return [
-            'artifact_url' => $artifact['url'],
-            'sha256' => $artifact['sha256'],
-            'bin_path' => FleetUpdateNodeAgentBinary::binPath($gatewayNode),
-        ];
     }
 
     private function updateGatewayService(GatewayImageReference $targetImage): null
@@ -675,20 +561,6 @@ class GatewayServiceUpdater
         ])->save();
     }
 
-    private function writeGatewayHostAgentConfig(): null
-    {
-        $gatewayNode = $this->targets()->gatewayNode();
-
-        if ($gatewayNode === null) {
-            return null;
-        }
-
-        $this->gatewayHostAgentConfigs()->write($gatewayNode);
-        $gatewayNode->forceFill(['orbit_agent_capable' => true])->save();
-
-        return null;
-    }
-
     private function manifestBuildId(OperationUpdatePlan $plan): ?string
     {
         $buildId = $plan->manifest_snapshot['build_id'] ?? null;
@@ -733,16 +605,6 @@ class GatewayServiceUpdater
     private function targets(): FleetUpdateTargetSelector
     {
         return $this->targets ?? app(FleetUpdateTargetSelector::class);
-    }
-
-    private function gatewayHostAgentConfigs(): GatewayHostAgentConfigWriter
-    {
-        return $this->gatewayHostAgentConfigs ?? app(GatewayHostAgentConfigWriter::class);
-    }
-
-    private function gatewayHostAgentServices(): GatewayHostAgentServicePayloadBuilder
-    {
-        return $this->gatewayHostAgentServices ?? app(GatewayHostAgentServicePayloadBuilder::class);
     }
 
     private function swarmInstaller(): GatewaySwarmInstaller

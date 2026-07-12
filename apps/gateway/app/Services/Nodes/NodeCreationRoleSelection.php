@@ -7,13 +7,13 @@ namespace App\Services\Nodes;
 final readonly class NodeCreationRoleSelection
 {
     /**
-     * @param  list<string>  $hosted
+     * @param  list<string>  $workloadRoles
      */
     public function __construct(
         public bool $gateway,
         public bool $operator,
         public bool $clientIdentity,
-        public array $hosted,
+        public array $workloadRoles,
         public ?string $template,
         public ?string $requestedRoleMeta,
     ) {}

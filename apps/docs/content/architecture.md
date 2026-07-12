@@ -16,7 +16,7 @@ Client
   -> gateway HTTPS exposure
   -> orbit-gateway
   -> node execution lane
-     (gateway-only for gateway-owned work, agent-push for node-local execution, transitional SSH fallback during migration)
+     (gateway-only for gateway work, Agent push for node work, provisioning SSH for bootstrap)
 
 Public production HTTP:
 
@@ -93,11 +93,11 @@ decisions.
 
 The gateway is the central store of everything Orbit knows: apps, nodes, workspaces, processes, schedules, tools, and firewall rules. It is the source of truth for all of them.
 
-The gateway exposes the typed API that the CLI talks to. The intended managed
-execution model has two normal paths: gateway-owned work stays gateway-only, and
-node-local execution goes through Orbit Agent. Today some command families still
-use SSH through `RemoteShell`; that is transitional migration and recovery
-infrastructure, not the strategic Orbit transport. Long-term break-glass SSH is
+The gateway exposes the typed API that the CLI talks to. The managed execution
+model has two normal paths: gateway-owned work stays gateway-only, and
+node-local execution goes through Orbit Agent. Some command families still use
+SSH through `RemoteShell`; each is exact-marked `transitional-ssh`
+implementation debt. Break-glass SSH is
 operator-owned recovery performed by a super admin whose SSH key is present on
 the nodes, outside normal Orbit command execution. The gateway remains the
 source of truth for intent, authorization, operation history, release manifests,
@@ -131,12 +131,16 @@ happen only on the gateway.
 A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `metrics`, and `analytics`. The `gateway` role is the singleton authority role described above.
 
 The `gateway` role also owns the operations WebSocket/Reverb surface for Orbit
-operation streams. In v1 the gateway Swarm stack renders a single
+operation streams. The gateway persists each progress frame in the operation
+journal before publishing it, and subscribers replay gaps by journal cursor
+before following live frames. The gateway Swarm stack renders a single
 `orbit-operations-reverb` service on the gateway role, using the same
 `orbit-reverb` runtime image as the workload websocket role. This service is
 separate from app WebSocket bindings and `websocket.orbit`: it has its own
 operations app config path, does not depend on Redis or a database-role node,
-and does not move non-stream command APIs off gateway API plus agent-push.
+and does not move non-stream command APIs off gateway API plus Agent push.
+Direct SSE is exact-marked transitional transport and disappears as each
+operation-backed command moves to this durable stream.
 
 The `vpn` role is a gateway-coupled infrastructure role in this version. It
 owns the WireGuard server runtime, public WireGuard endpoint settings, VPN
@@ -277,9 +281,8 @@ Public operator commands are owned by the `apps/cli` application. Gateway
 Artisan is for gateway maintenance and internal automation only — database
 migrations, the scheduler and queue runtime, `orbit:internal:*` provisioning
 helpers, and the E2E/provisioning harness — and is not a public Orbit command
-target. There is no compatibility fallback that keeps a public command
-invokable through gateway Artisan after it moves to `apps/cli`; the gateway
-command class is removed rather than kept as a hidden alias.
+target. When a public command moves to `apps/cli`, its gateway command class is
+removed and no gateway alias remains.
 
 CLI calls reach the gateway over HTTPS via the WireGuard tunnel. Gateway hosts
 calling their own API also use HTTPS over the gateway's own WireGuard address,
@@ -298,20 +301,22 @@ Current Orbit has two implemented network edges.
 | Edge | Transport | Purpose |
 |---|---|---|
 | CLI caller → gateway | HTTPS over the VPN | Commands, reads, streaming progress |
-| Gateway -> node | Strategic: `gateway-only` or `agent-push`; transitional: SSH fallback for migration/recovery only | Gateway-owned work or structured node-local `binary + argv` dispatch |
+| Gateway -> node | `gateway-only` or `agent-push`; SSH only while provisioning or bootstrapping | Gateway-owned work or structured node-local `binary + argv` dispatch |
 
 The gateway owns the first Orbit Agent protocol skeleton and the monorepo now
 contains two local Rust surfaces: `apps/agent` is the headless Axum service
 binary and `apps/macos` is the macOS-only Tauri tray UI. The lane does not add
-a node-side control plane: for reachable agent-capable nodes, the gateway opens
+a node-side control plane: for reachable Agent-eligible nodes, the gateway opens
 an authenticated HTTP connection to the node's Agent listener over the
 Orbit/WireGuard network, sends a typed Orbit command envelope with a scoped
-operation token, receives stdout/stderr/status/exit frames back, and keeps SSH
-as bootstrap, recovery, and explicit transitional fallback during migration.
-The default `auto` selection path does not silently choose SSH when agent-push
-is unavailable. Reachable Agent nodes use gateway push only; the gateway is the
-sole initiator and the Agent runs no background retrieval loop. V1 has no
-WebSocket requirement.
+operation token, and receives stdout/stderr/status/exit frames back. SSH is
+permanent only for provisioning and bootstrap. Current non-provisioning SSH
+consumers are implementation debt carrying the exact `transitional-ssh` marker;
+they are ported or removed rather than treated as a recovery transport.
+Reachable Agent nodes use gateway push only; the gateway is the
+sole initiator and the Agent runs no background retrieval loop. Agent command
+delivery itself does not use WebSockets; durable long-operation progress uses
+the separate gateway Operations WebSocket/Reverb plane.
 
 The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talks to the gateway over a typed API; it does not need shell access to any node. That limits what every caller can do to what Orbit explicitly exposes: no arbitrary shell commands, no SSH key sprawl, no hand-tuning a production host.
 
@@ -325,10 +330,11 @@ managed steady state is an authenticated gateway-pushed command envelope over
 the Orbit/WireGuard network to the node-local Orbit Agent. This is a narrow
 Agent listener endpoint, not general inbound Orbit RPC: the gateway sends
 structured `binary + argv` requests and the Agent executes only allowlisted
-node-local binaries with scoped operation tokens. During migration, some
-existing command families can still use `RemoteShell` over SSH only through an
-explicit `transitional-ssh-fallback` preference. That SSH path is not the
-long-term managed execution model and is not selected by default.
+node-local binaries with scoped operation tokens. A command's stable contract
+fixes its execution lane. A few exact-marked debt surfaces retain a transitional
+selector until their Agent port lands. Every remaining non-provisioning
+`RemoteShell` consumer is marked `transitional-ssh`, admits no new callers, and
+must be ported to Agent push.
 
 Break-glass SSH is outside normal Orbit command execution. It is operator-owned
 recovery performed by a super admin who has an SSH key installed on all nodes;
@@ -339,9 +345,7 @@ Orbit Agent is reserved as a node-local execution lane. It is not a new control
 plane or arbitrary shell transport. The gateway owns structured binary argv
 envelopes, a hidden `orbit version --json` proof envelope, authenticated Agent
 listener delivery, scoped operation tokens, lifecycle reporting, and
-operation/activity recording. Poll/claim semantics are not part of the managed
-Agent transport, and the gateway does not expose Orbit Agent job claim/event
-endpoints in the normal API.
+operation/activity recording.
 
 The local Orbit Agent service lives in `apps/agent` as a headless Rust/Axum
 binary. It loads local config, exposes an authenticated Agent listener reachable
@@ -354,12 +358,19 @@ allowlist, starting with `orbit`, and executes with no-shell process APIs
 rather than shell strings or `sh -c`. The background service loop belongs to
 this service binary.
 
+Agent intent comes from exactly two sources: an active workload role, whose
+convergence installs the Agent, or the explicit `managed` opt-in on a roleless
+operator node. Eligibility is derived from that intent, a supported platform,
+a non-gateway identity, and a configured WireGuard address. The command
+listener binds only to that WireGuard address. `/health` and `/status` use a
+separate loopback-only listener. A gateway is never an Agent-push target, and
+wildcard or non-WireGuard command binds fail closed.
+
 The bootstrap is not production packaged, autostarted, signed, notarized, or
-self-updating. V1 agent-push requests are structured Orbit CLI invocations
-submitted by the gateway, with transitional SSH fallback only when explicitly
-selected for migration or break-glass use. App-dev convergence over Orbit Agent
-remains deferred until it can be sent as a direct gateway-pushed command
-envelope; `node role:add` does not create an Agent work queue.
+self-updating. Agent-push requests are structured Orbit CLI invocations
+submitted by the gateway. App-dev convergence is sent as a direct
+gateway-pushed command envelope; `node role:add` does not create an Agent work
+item because workload-role convergence sends the envelope directly.
 
 The macOS menu-bar surface lives in `apps/macos` and is intentionally minimal:
 it can show service/gateway status, refresh status on menu open or Refresh, and
@@ -367,7 +378,7 @@ offer UI-level Restart and Quit actions. When no local Agent service is
 reachable, the macOS UI starts an embedded `apps/agent` service inside the app
 process and quitting the UI stops that embedded instance. If an external
 service is already reachable, the UI uses it without managing that service's
-lifetime. Job history belongs in gateway operation/activity history.
+lifetime. Execution history belongs in gateway operation/activity history.
 
 `RemoteLocalExecutor` is the gateway-dispatched lane for packaged node-local
 helper logic that needs host file access plus PHP/PDO without relying on ad hoc
@@ -376,10 +387,9 @@ authority path is:
 
 `CLI caller -> gateway API -> gateway authorization -> operation record -> agent-push to node -> token-gated local executor -> result recorded`
 
-During migration, the dispatch step may still be explicit transitional
-`RemoteShell` SSH fallback where no Agent envelope exists. The default
-agent-push path fails clearly instead of falling back silently. The authority
-path still starts and ends at the gateway.
+Where a port is incomplete, the implementation carries `transitional-ssh`.
+Commands without that exact marker fail clearly rather than selecting SSH.
+The authority path still starts and ends at the gateway.
 
 Node-local CLI execution is never an authority bypass. Internal local executor
 commands are hidden from normal CLI help, require a gateway-issued operation
@@ -401,11 +411,15 @@ verifying the token target.
 
 ### Authentication and authorization
 
-Every Orbit command needs two things: an identity and permission.
+Every remote action against another node or gateway-owned state needs a
+WireGuard identity and gateway-owned authorization. Local-only commands do not
+enter that path.
 
 **Identity** comes from the VPN. Every node joins the VPN with its own credentials. The gateway knows which node is on the other end of every API call.
 
-**Permission** is controlled by the gateway. Operation is WireGuard identity plus gateway grants, not a built-in role. For each node, the gateway stores which other nodes are allowed to manage it. A client can only act on the nodes it has been granted access to. The same applies to gateway-owned data: only nodes granted access to the gateway can read gateway policy or activity history.
+**Authorization** is controlled by the gateway. Stored grants are the default
+gate, not a built-in caller role. For each node, the gateway stores which other
+nodes are allowed to manage it. The same applies to gateway-owned data.
 
 Authorization is two gates: a grant edge between a consuming node and a serving node decides whether the consuming node can reach the serving node at all, and the scoped permission set stored on that grant decides what the consuming node may do once it does. A grant with no permissions denies every action. Permissions are normalized permission strings such as `node:read`, `tool:update`, `firewall_rule:read`, or `doctor:verify`; wildcards `node:*` and `*` are dynamic and include future permissions added in that namespace. Self-grants are explicit and required — a node does not implicitly have access to itself. A grant from a node to the gateway with `*` (the `gateway-admin` preset) is the fleet-wide super-admin grant: it covers every current node and every node added in the future. `node:new` itself requires a gateway-admin grant on the calling node, or an explicit `node:new` permission on its grant to the gateway. First-gateway bootstrap materializes that initial gateway-admin grant from the initiating operator node to the new gateway.
 
@@ -415,15 +429,29 @@ they call the gateway. An operator is a node identity with the operator
 permission preset and grants to operate one or more nodes through the gateway.
 `operator` is not a workload role.
 
-#### Gateway implicit authority
+#### Authorization classes
 
-A node carrying the `gateway` role has implicit authority for every permission
-against every other node. This is the one named exception to the grants-only
-model: the gateway is the singleton policy owner and must be able to converge
-the fleet even when no explicit self- or cross-node grant exists for a managed
-node. It is implemented by `NodeAccessAuthorizer::allows()` when the caller has
-an active `gateway` role assignment; it is not a runtime feature flag and does
-not create stored grant rows.
+Orbit names the classes that authorize a command instead of describing every
+surface as grants-only:
+
+- **Default grants gate:** a stored grant edge and its scoped permissions
+  authorize the action. Revocation removes the grant or permission.
+- **Gateway implicit authority:** a node carrying the `gateway` role has
+  implicit authority for every permission against every other node because the
+  singleton policy owner must converge the fleet. It creates no grant row and
+  is revoked by removing the gateway role.
+- **Pre-grants bootstrap:** first-gateway `node:new` and `gateway:add` establish
+  the identity and initial grant material needed by later calls.
+- **Local-only:** commands such as `profile` touch only caller-local state or a
+  caller-reachable URL and make no gateway authorization request.
+- **Identity-gated self-management:** a known roleless operator identity may
+  manage its own approved node fields, including the explicit `managed` Agent
+  opt-in, without inventing an operator workload role. Disabling its peer
+  revokes that identity.
+
+All remote classes remain gateway-audited. `NodeAccessAuthorizer::allows()`
+implements the default grants gate and gateway implicit authority; individual
+bootstrap and self-management controllers enforce their narrower predicates.
 
 This grant model lets you scope access naturally:
 
@@ -431,11 +459,18 @@ This grant model lets you scope access naturally:
 - A CI runner's client might have an `operator` preset only to the apps it deploys.
 - A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own app registry rows through `app:read`. An `app-dev` node can also register apps on itself and manage app-owned process definitions for apps hosted by itself. `app-prod` self-grants remain read-only plus workspace setup. These self-grants do not grant app writes, credentials, deploy, runtime lifecycle process start/stop/restart, workspace reads, or cross-node app/process visibility.
 
-Permissions are revocable from the gateway. Removing a grant immediately revokes access — no key rotation, no node-side config edit, no SSH key removal needed. `node:grant` creates the initial grant edge and its initial permissions; long-term editing of a grant's permission set is owned by `node:permissions`, which is itself a gateway-admin-only surface.
+Authority is revocable through the lever that owns its class: remove a grant or
+permission, remove the gateway role, or disable the peer. `node:grant` creates
+the initial grant edge and permissions; long-term editing belongs to
+`node:permissions`, which is itself a gateway-admin-only surface.
 
 #### Self-grants and self-serving
 
-A self-grant is a grant where the consuming node and the serving node are the same node. It is the only way a node has any access to itself; access is never implicit. Self-grants are created during `node:new` — each role's baseline self-grant is materialized from the role's self preset.
+A self-grant is a grant where the consuming node and the serving node are the
+same node. It is the default way a workload node accesses itself. The named
+identity-gated self-management class is limited to approved roleless operator
+node fields and does not grant general workload permissions. Self-grants are
+created during `node:new` from each workload role's self preset.
 
 Self-targeting commands flow through the gateway like any other command. When a CLI on node `N` calls a command targeting `N`, the path is:
 
@@ -447,10 +482,9 @@ work back to the same node.
 
 This is why commands like `workspace:setup`, `app:list`, and `app:show` work when run from inside an `app-dev` or `app-prod` node for that same owning node, and why `app:register`, `process:add`, `process:update`, and `process:remove` work from inside an `app-dev` node for apps on that same node: the node's self-grant includes the necessary scoped permissions. It is not an exception — it is the self-grant model.
 
-The one shape that cannot self-serve is a bare client (no role assignments).
-The gateway authorizes the call but has nowhere to dispatch node-side work,
-because the gateway does not open SSH connections to client-only machines and a
-client-only identity is not an Orbit Agent execution target.
+A roleless operator node cannot run workload commands by default. It becomes an
+Agent execution target only through its explicit `managed` opt-in on a
+supported platform; otherwise the gateway has no node-local lane to dispatch.
 
 ### Command and API model
 
@@ -499,7 +533,7 @@ The core invariant:
 
 > Gateway configuration must converge with node reality.
 
-When the two diverge, one of these happened: an apply step failed or only partially completed, someone manually changed the node, a migration changed configuration without reconciling artifacts, or a restored gateway database no longer matches the fleet.
+When the two diverge, one of these happened: an apply step failed or only partially completed, someone manually changed the node, a migration changed configuration without reconciling artifacts, or a restored gateway database differs from the fleet.
 
 ### State families
 

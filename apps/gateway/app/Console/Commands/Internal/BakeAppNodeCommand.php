@@ -27,7 +27,7 @@ use RuntimeException;
     {--wireguard-address= : App-node WireGuard address}
     {--gateway-endpoint= : Gateway endpoint address}
     {--user=orbit : Runtime user}
-    {--tld= : Development app-node TLD}
+    {--tld= : Required app-node TLD}
     {--ingress-node= : Existing ingress node name for production placement}')]
 #[Description('Bake an app-node registry row for prepared E2E topology images')]
 class BakeAppNodeCommand extends Command
@@ -47,8 +47,8 @@ class BakeAppNodeCommand extends Command
         $tld = $this->stringOption('tld');
         $ingressNode = $this->stringOption('ingress-node');
 
-        if ($name === null || $host === null || $wireguardAddress === null) {
-            throw new RuntimeException('Name, host, and wireguard-address are required.');
+        if ($name === null || $host === null || $wireguardAddress === null || $tld === null) {
+            throw new RuntimeException('Name, host, wireguard-address, and tld are required.');
         }
 
         if (! in_array($role, [NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value], true)) {
@@ -82,7 +82,7 @@ class BakeAppNodeCommand extends Command
         $this->measureBakeStep(
             $timingRole,
             'role-assignment',
-            fn () => $this->upsertRoleAssignment($node->id, $role, $tld, $ingressNode),
+            fn () => $this->upsertRoleAssignment($node->id, $role, $ingressNode),
         );
 
         $this->measureBakeStep(
@@ -145,9 +145,9 @@ class BakeAppNodeCommand extends Command
         }
     }
 
-    private function upsertRoleAssignment(int $nodeId, string $role, ?string $tld, ?string $ingressNode): void
+    private function upsertRoleAssignment(int $nodeId, string $role, ?string $ingressNode): void
     {
-        $settings = $tld !== null ? ['tld' => $tld] : [];
+        $settings = [];
 
         if ($ingressNode !== null) {
             if ($role !== NodeRoleName::AppProduction->value) {

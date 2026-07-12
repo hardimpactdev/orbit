@@ -259,7 +259,7 @@ describe('WorkspaceStepStoreController', function (): void {
             ->assertJsonPath('error.code', 'workspace.step_not_found');
     });
 
-    it('rejects legacy app-level rows as anchors for instance-specific setup step adds', function (): void {
+    it('rejects rows from another app instance as anchors', function (): void {
         $caller = createWorkspaceStepStoreCallerNode();
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
@@ -270,10 +270,12 @@ describe('WorkspaceStepStoreController', function (): void {
             'path' => '/home/nckrtl/apps/hauser',
         ]);
         createWorkspaceStepStoreInstance($app, $localNode, 'nmbp');
-        $legacy = WorkspaceStep::factory()->create([
+        $other = createWorkspaceStepStoreInstance($app, $canonicalNode, 'development');
+        $foreignStep = WorkspaceStep::factory()->create([
             'app_id' => $app->id,
+            'app_instance_id' => $other->id,
             'phase' => WorkspaceLifecyclePhase::Setup,
-            'command' => 'legacy composer install',
+            'command' => 'development composer install',
         ]);
 
         $response = $this->call(
@@ -289,7 +291,7 @@ describe('WorkspaceStepStoreController', function (): void {
             json_encode([
                 'app' => 'hauser.nmbp',
                 'command' => 'composer install',
-                'before' => $legacy->id,
+                'before' => $foreignStep->id,
             ], JSON_THROW_ON_ERROR),
         );
 
@@ -300,6 +302,6 @@ describe('WorkspaceStepStoreController', function (): void {
         expect(WorkspaceStep::query()->count())
             ->toBe(1)
             ->and(WorkspaceStep::query()->sole()->app_instance_id)
-            ->toBeNull();
+            ->toBe($other->id);
     });
 });

@@ -16,6 +16,7 @@ use JsonException;
  */
 final readonly class RuntimeBackendProbe
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private RemoteShell $_remoteShell,
         private ?RemoteLocalExecutor $localExecutor = null,

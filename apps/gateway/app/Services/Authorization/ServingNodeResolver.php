@@ -29,6 +29,7 @@ final class ServingNodeResolver
             ServingNode::Gateway => $this->resolveGateway(),
             ServingNode::Target => $this->resolveTarget($request),
             ServingNode::AppOwning => $this->resolveAppOwning($request),
+            ServingNode::AppInstanceOwning => $this->resolveAppInstanceOwning($request),
             ServingNode::WorkspaceOwning => $this->resolveWorkspaceOwning($request),
             ServingNode::Caller => $this->resolveCaller($request),
         };
@@ -107,15 +108,6 @@ final class ServingNodeResolver
 
             if ($workspace instanceof Workspace) {
                 if (
-                    $selection instanceof AppSelection
-                    && $selection->instance !== null
-                    && $workspace->app_instance_id === null
-                    && $workspace->app_id === $selection->app->id
-                ) {
-                    return app(WorkspacePlacement::class)->nodeForInstance($selection->instance);
-                }
-
-                if (
                     ! $selection instanceof AppSelection
                     || app(AppSelectorResolver::class)->matchesWorkspace($workspace, $selection)
                 ) {
@@ -133,6 +125,29 @@ final class ServingNodeResolver
         }
 
         return null;
+    }
+
+    private function resolveAppInstanceOwning(Request $request): ?Node
+    {
+        $selection = $this->appSelectionFromValue($this->requestValue($request, 'app'));
+
+        if (! $selection instanceof AppSelection) {
+            return null;
+        }
+
+        try {
+            $selection = app(AppSelectorResolver::class)->requireInstance($selection);
+        } catch (AppSelectionResolutionFailed) {
+            return null;
+        }
+
+        if ($selection->instance === null) {
+            return null;
+        }
+
+        $node = app(WorkspacePlacement::class)->nodeForInstance($selection->instance);
+
+        return $node instanceof Node ? $node : $this->resolveGateway();
     }
 
     private function resolveCaller(Request $request): ?Node

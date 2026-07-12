@@ -30,8 +30,8 @@ orbit php:use 8.5 --app=docs --json
   version. Source-mounted Docker/Incus development and E2E nodes invoke
   `<source>/apps/cli/orbit`.
 - `--node=<node>`: For app and workspace targets, this may only confirm the
-  owning node. A node that does not own the resolved app or workspace fails
-  validation with the stable `target_mismatch` reason before any gateway
+  concrete app-instance or workspace-instance serving node. A mismatched node
+  fails validation with the stable `target_mismatch` reason before any gateway
   configuration is written. It is not a fallback target source and does not
   override which node supplies image-availability facts. See the
   [JSON renderer contract](technical/6.2_php-use_output-render_json.md) for
@@ -66,12 +66,12 @@ machine-readable output.
 
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
-- The current node identity is authorized to manage the selected app or
-  workspace.
+- The current node identity has `php:write` granted on the resolved serving
+  node. Gateway identity remains implicit.
 - The requested app or workspace PHP version is supported by Orbit and available
   as an image on the target node. Node CLI selection requires PHP 8.5.
-- The gateway can reach the target node over SSH when node artifacts must be
-  applied.
+- The concrete instance-serving node is Agent-eligible and reachable when
+  runtime artifacts must be applied.
 
 ## Related Commands
 

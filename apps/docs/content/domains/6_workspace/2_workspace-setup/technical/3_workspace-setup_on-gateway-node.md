@@ -7,24 +7,25 @@ This contract defines behavior when `workspace:setup` is invoked from a
 
 ## Behavior
 
-- **Direct orchestration**: The gateway caller executes the workspace setup
-  flow locally without forwarding through the gateway HTTPS API.
-- **Registry write**: Directly writes or updates workspace configuration in
-  the gateway database.
-- **Local path resolution**: Resolves the workspace path on the owning app
-  node through gateway-owned SSH inspection, not on the gateway filesystem.
-- **Remote apply**: Applies runtime artifacts and setup steps through the
-  classified host execution lane.
+- **Typed API boundary**: The gateway caller submits the setup request through
+  the same typed gateway HTTPS API as every other public CLI caller.
+- **Registry write**: The gateway writes the canonical app-instance-owned
+  workspace configuration after authorization succeeds.
+- **Path resolution**: Resolves the workspace path on the app instance's owning
+  node through Agent push, not on the gateway filesystem.
+- **Remote apply**: Applies runtime artifacts and setup steps through Agent
+  push to the app instance's owning node.
 - **Target eligibility**: The owning node must be an active node;
   the gateway is never a valid app target.
 
 ## Authorization
 
-- Requires gateway-level administrative privileges or an authenticated
-  gateway-side identity authorized to manage the parent app.
+- Uses the gateway caller's WireGuard identity and requires the same gateway
+  policy grant as the client invocation. Caller location changes identity
+  context, not transport or authorization semantics.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Gateway setup orchestration, lifecycle transition, proxy/process side effects, setup-step execution, and mocked remote shell behavior. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Gateway setup orchestration, lifecycle transition, proxy/process side effects, setup-step execution, and Agent-push behavior. |

@@ -41,7 +41,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Creates one database connection record stored by the gateway.
 - Stores secret material such as passwords only in encrypted credentials.
 - Uses slug suggestions as operator convenience only; no family doctor rule enforces slug naming.
-- Does not create app or workspace target mappings. Attachment is a separate command.
+- Does not create app-instance or workspace target mappings. Attachment is a separate command.
 
 ### Driver Shape Rules
 

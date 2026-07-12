@@ -295,7 +295,7 @@ function ufw_firewall_rule_node(string $wireguardAddress, string $name = 'app-1'
         'tld' => 'test',
         'platform' => 'ubuntu',
         'wireguard_address' => $wireguardAddress,
-        'orbit_agent_capable' => true,
+        'managed' => true,
     ]);
 
     if (! $node instanceof Node) {

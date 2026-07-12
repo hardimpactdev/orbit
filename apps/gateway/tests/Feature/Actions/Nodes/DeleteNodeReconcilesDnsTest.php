@@ -28,7 +28,7 @@ it('reconciles dnsmasq after deleting a node', function (): void {
     $node = Node::factory()->create([
         'name' => 'app-1',
 
-        'tld' => 'app-1.test',
+        'tld' => 'app-1',
         'wireguard_address' => '10.6.0.3',
     ]);
 

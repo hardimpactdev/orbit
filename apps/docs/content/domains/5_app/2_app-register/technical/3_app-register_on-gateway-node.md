@@ -13,7 +13,7 @@ a peer the gateway identifies as a **gateway node**.
   gateway is never a valid app target. `--node=<gateway-slug>` is rejected with
   `app.ineligible_node`.
 - **Path resolution:** `--path` is resolved on the target node through
-  gateway-owned SSH inspection and application, not on the gateway filesystem.
+  gateway-owned Agent-push inspection and application, not on the gateway filesystem.
 - **Apply:** The gateway writes app configuration locally and applies app-role
   artifacts to the target node through the classified host execution lane — even when the
   CLI invocation originated on the gateway host. The CLI still calls the

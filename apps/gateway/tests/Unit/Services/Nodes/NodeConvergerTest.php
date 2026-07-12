@@ -34,6 +34,7 @@ describe('NodeConverger', function (): void {
     it('applies app-dev setup role baseline and tools before activation', function (): void {
         $node = createTestAppHostNode([
             'name' => 'app-dev-1',
+            'tld' => 'test',
             'status' => NodeStatus::Provisioning,
             'wireguard_address' => '10.6.0.50',
         ]);
@@ -95,6 +96,7 @@ describe('NodeConverger', function (): void {
     it('keeps setup drift visible when repair fails', function (): void {
         $node = createTestAppHostNode([
             'name' => 'app-dev-1',
+            'tld' => 'test',
             'status' => NodeStatus::Provisioning,
             'wireguard_address' => '10.6.0.50',
         ]);

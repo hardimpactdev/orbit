@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:list [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--all] [--json]`
+# Technical Contract: `orbit tool:list [--app=<app>] [--node=<node>] [--all] [--json]`
 
 [Back to public `tool-list` documentation.](../tool-list.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:list [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--all] [--json]
+orbit tool:list [--app=<app>] [--node=<node>] [--all] [--json]
 ```
 
 ## Input Contract
@@ -23,7 +23,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | `Optional.` | `Never.` | `None.` | Visible active non-gateway node slug. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `all` | `--all` | `Optional.` | `Never.` | `false` | When true, lists all visible tool rows instead of defaulting to a single node. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |

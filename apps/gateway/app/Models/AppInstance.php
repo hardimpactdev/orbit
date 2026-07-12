@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -21,10 +22,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property AppInstanceDriver $driver
  * @property AppInstanceDriverConfigData|null $driver_config
  * @property AppInstanceRuntimeRequirementsData|null $runtime_requirements
+ * @property list<string>|null $deploy_warmup_paths
  * @property string|null $latest_deployment_status
  * @property int|null $latest_deployment_run_id
  * @property-read App $app
  * @property-read Collection<int, AppInstanceRuntimeMount> $runtimeMounts
+ * @property-read Collection<int, DatabaseConnection> $databaseConnections
+ * @property-read Collection<int, DeployStep> $deploySteps
+ * @property-read Collection<int, DeploymentRun> $deploymentRuns
  */
 class AppInstance extends Model
 {
@@ -38,6 +43,7 @@ class AppInstance extends Model
         'driver',
         'driver_config',
         'runtime_requirements',
+        'deploy_warmup_paths',
         'latest_deployment_status',
         'latest_deployment_run_id',
     ];
@@ -54,6 +60,7 @@ class AppInstance extends Model
             'driver' => AppInstanceDriver::class,
             'driver_config' => AppInstanceDriverConfigData::class,
             'runtime_requirements' => AppInstanceRuntimeRequirementsData::class,
+            'deploy_warmup_paths' => 'array',
         ];
     }
 
@@ -74,11 +81,27 @@ class AppInstance extends Model
     }
 
     /**
-     * @return HasMany<AppInstanceDatabaseConnectionTarget, $this>
+     * @return HasMany<DatabaseConnectionTarget, $this>
      */
     public function databaseConnectionTargets(): HasMany
     {
-        return $this->hasMany(AppInstanceDatabaseConnectionTarget::class);
+        return $this->hasMany(DatabaseConnectionTarget::class);
+    }
+
+    /**
+     * @return BelongsToMany<DatabaseConnection, $this>
+     */
+    public function databaseConnections(): BelongsToMany
+    {
+        return $this
+            ->belongsToMany(
+                related: DatabaseConnection::class,
+                table: 'database_connection_targets',
+                foreignPivotKey: 'app_instance_id',
+                relatedPivotKey: 'database_connection_id',
+            )
+            ->withPivot('env_prefix')
+            ->withTimestamps();
     }
 
     /**
@@ -88,6 +111,28 @@ class AppInstance extends Model
     {
         $relation = $this->hasMany(AppInstanceRuntimeMount::class);
         $relation->getQuery()->orderBy('target');
+
+        return $relation;
+    }
+
+    /**
+     * @return HasMany<DeployStep, $this>
+     */
+    public function deploySteps(): HasMany
+    {
+        $relation = $this->hasMany(DeployStep::class);
+        $relation->getQuery()->orderBy('sort_order');
+
+        return $relation;
+    }
+
+    /**
+     * @return HasMany<DeploymentRun, $this>
+     */
+    public function deploymentRuns(): HasMany
+    {
+        $relation = $this->hasMany(DeploymentRun::class);
+        $relation->getQuery()->orderByDesc('started_at');
 
         return $relation;
     }

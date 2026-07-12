@@ -21,10 +21,10 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
     {
-        $tld = $assignment->settings['tld'] ?? null;
+        $tld = $node->tld;
 
         if (! is_string($tld) || ! $this->isValidTld(trim($tld))) {
-            throw new RuntimeException('The app-dev role requires a valid tld setting.');
+            throw new RuntimeException('The app-dev role requires a valid node TLD.');
         }
 
         $result = $this->developmentDnsMappingEnactor->convergeDevelopmentRole($node, $tld);
@@ -49,7 +49,7 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
     {
-        $tld = $assignment->settings['tld'] ?? null;
+        $tld = $node->tld;
 
         if (! is_string($tld) || ! $this->isValidTld(trim($tld))) {
             return;

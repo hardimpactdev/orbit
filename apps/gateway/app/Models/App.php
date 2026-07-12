@@ -11,7 +11,6 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -31,21 +30,13 @@ use Illuminate\Support\Str;
  * @property array<string, mixed>|null $runtime_config
  * @property bool $worker_enabled
  * @property array<string, mixed>|null $worker_config
- * @property list<string>|null $deploy_warmup_paths
  * @property bool $adopted
  * @property array<string, mixed>|null $agent_ide_config
- * @property string|null $latest_deployment_status
- * @property int|null $latest_deployment_run_id
  * @property-read Node|null $node
  * @property-read Collection<int, AppInstance> $instances
  * @property-read Collection<int, AppSetupRun> $setupRuns
  * @property-read Collection<int, AppSetupStep> $setupSteps
- * @property-read Collection<int, DeployStep> $deploySteps
- * @property-read Collection<int, DeploymentRun> $deploymentRuns
- * @property-read Collection<int, DatabaseConnection> $databaseConnections
- * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
  * @property-read Collection<int, Process> $processes
- * @property-read Collection<int, AppRuntimeMount> $runtimeMounts
  * @property-read Collection<int, Schedule> $schedules
  * @property-read AppAnalyticsBinding|null $analyticsBinding
  * @property-read AppWebSocketBinding|null $webSocketBinding
@@ -70,11 +61,8 @@ class App extends Model
         'runtime_config',
         'worker_enabled',
         'worker_config',
-        'deploy_warmup_paths',
         'adopted',
         'agent_ide_config',
-        'latest_deployment_status',
-        'latest_deployment_run_id',
     ];
 
     #[\Override]
@@ -93,7 +81,6 @@ class App extends Model
             'runtime_config' => 'array',
             'worker_enabled' => 'boolean',
             'worker_config' => 'array',
-            'deploy_warmup_paths' => 'array',
         ];
     }
 
@@ -179,46 +166,6 @@ class App extends Model
     }
 
     /**
-     * @return HasMany<DeployStep, $this>
-     */
-    public function deploySteps(): HasMany
-    {
-        return $this->hasMany(DeployStep::class)->orderBy('sort_order');
-    }
-
-    /**
-     * @return HasMany<DeploymentRun, $this>
-     */
-    public function deploymentRuns(): HasMany
-    {
-        return $this->hasMany(DeploymentRun::class)->orderByDesc('started_at');
-    }
-
-    /**
-     * @return HasMany<DatabaseConnectionTarget, $this>
-     */
-    public function databaseConnectionTargets(): HasMany
-    {
-        return $this->hasMany(DatabaseConnectionTarget::class);
-    }
-
-    /**
-     * @return BelongsToMany<DatabaseConnection, $this>
-     */
-    public function databaseConnections(): BelongsToMany
-    {
-        return $this
-            ->belongsToMany(
-                related: DatabaseConnection::class,
-                table: 'database_connection_targets',
-                foreignPivotKey: 'app_id',
-                relatedPivotKey: 'database_connection_id',
-            )
-            ->withPivot('env_prefix')
-            ->withTimestamps();
-    }
-
-    /**
      * @return HasOne<AppWebSocketBinding, $this>
      */
     public function webSocketBinding(): HasOne
@@ -240,14 +187,6 @@ class App extends Model
     public function dependencyAuditSummaries(): HasMany
     {
         return $this->hasMany(AppDependencyAuditSummary::class);
-    }
-
-    /**
-     * @return HasMany<AppRuntimeMount, $this>
-     */
-    public function runtimeMounts(): HasMany
-    {
-        return $this->hasMany(AppRuntimeMount::class)->orderBy('target');
     }
 
     public function url(): string

@@ -32,6 +32,10 @@ describe('node permission registry', function (): void {
 
         expect($registry->isKnown('tool:read'))
             ->toBeTrue()
+            ->and($registry->isKnown('tool:logs'))
+            ->toBeTrue()
+            ->and($registry->isKnown('tool:reload'))
+            ->toBeTrue()
             ->and($registry->isKnown('node:read'))
             ->toBeTrue()
             ->and($registry->isKnown('app:credentials'))
@@ -74,6 +78,8 @@ describe('node permission registry', function (): void {
             ->toContain('tool:list')
             ->and($implied)
             ->toContain('tool:show')
+            ->and($implied)
+            ->toContain('tool:logs')
             ->and($implied)
             ->not->toContain('tool:credentials');
     });
@@ -132,6 +138,8 @@ describe('node permission registry', function (): void {
         $registry = new NodePermissionRegistry;
 
         expect($registry->allows(['tool:read'], 'tool:show'))
+            ->toBeTrue()
+            ->and($registry->allows(['tool:read'], 'tool:logs'))
             ->toBeTrue()
             ->and($registry->allows(['tool:read'], 'tool:credentials'))
             ->toBeFalse()
@@ -220,6 +228,8 @@ describe('node permission registry', function (): void {
         expect($registry->isCoveredBy('tool:list', 'tool:read'))
             ->toBeTrue()
             ->and($registry->isCoveredBy('tool:show', 'tool:read'))
+            ->toBeTrue()
+            ->and($registry->isCoveredBy('tool:logs', 'tool:read'))
             ->toBeTrue()
             ->and($registry->isCoveredBy('tool:credentials', 'tool:read'))
             ->toBeFalse()

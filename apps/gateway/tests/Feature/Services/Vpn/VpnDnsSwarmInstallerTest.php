@@ -73,7 +73,7 @@ it('deploys the colocated vpn and dns Swarm services and converges forwarding', 
     expect("{$this->root}/dnsmasq.conf")
         ->toBeFile()
         ->and(File::get("{$this->root}/dnsmasq.conf"))
-        ->toContain('address=/gateway/10.6.0.2')
+        ->toContain('address=/orbit.gateway/10.6.0.2')
         ->and("{$this->root}/swarm/orbit-vpn-dns-stack.yml")
         ->toBeFile()
         ->and(File::get("{$this->root}/swarm/orbit-vpn-dns-stack.yml"))

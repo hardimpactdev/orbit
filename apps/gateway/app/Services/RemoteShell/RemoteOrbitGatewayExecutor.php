@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Process;
 
 final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
 {
+    // @orbit-ssh-lane transitional-ssh
     private const int DEFAULT_TIMEOUT = 120;
 
     private const string CONTAINER = 'orbit-gateway';

@@ -31,7 +31,7 @@ service or command that owns it.
 | Generating `dnsmasq.conf` from fleet state      | `DnsmasqConfigBuilder` (pure function over `Node` rows)               |
 | Reconciling `dnsmasq.conf` after fleet changes  | `DnsmasqReconciler` invoked from gateway-side `node:new/:update/:remove` actions |
 | Probing runtime drift                           | Doctor `dns` runtime probe under `doctor --family=tool`               |
-| Restoring / adopting `dns` drift                | The same probe's restore script (rewrite + restart) and adopt script  |
+| Restoring `dns` drift                           | The same probe's restore path; DNS runtime drift is never adoptable   |
 
 ## Bootstrap Step Order
 
@@ -175,17 +175,18 @@ second call.
 ## Doctor Contract
 
 `doctor --family=tool` runs DNS runtime checks on active gateway nodes that
-also carry the `vpn` role. The issues use family `tool` and `dns.*` keys:
+also carry the `vpn` role. The issues use family `tool` and canonical
+`tool.dns_*` keys:
 
 | Drift kind                  | Detection                                                          | Restorable | Adoptable |
 | --------------------------- | ------------------------------------------------------------------ | ---------- | --------- |
-| `dns.container_missing`     | Neither the standalone `orbit-dns` container nor the Swarm `orbit_orbit-dns` task is present. | Yes (rerun the persisted stack/compose installer; Swarm restore also reconverges VPN DNS forwarding). | No |
-| `dns.port_not_listening`    | The DNS container exists but no listener is available on `53` inside the container. | Yes (force service update or restart container; Swarm restore also reconverges VPN DNS forwarding). | No |
-| `dns.config_drift`          | `dnsmasq.conf` differs from `DnsmasqConfigBuilder` output for current DB state. | Yes (rewrite + force service update/restart; Swarm restore also reconverges VPN DNS forwarding). | No |
-| `dns.client_dns_drift`      | The persisted wg-easy default DNS or enabled client DNS contains anything other than the active `vpn.dns_ip` value, for example `["10.6.0.1", "1.1.1.1"]`. | Yes (rewrite wg-easy default/client DNS to `[vpn.dns_ip]`). | No |
-| `dns.forwarding_missing`    | The Swarm stack is present, but the `orbit-vpn` task namespace does not contain the UDP/TCP 53 DNAT and MASQUERADE rules that forward peer DNS traffic to `orbit-dns`. | Yes (reapply forwarding inside the running VPN task namespace). | No |
+| `tool.dns_container_missing`     | Neither the standalone `orbit-dns` container nor the Swarm `orbit_orbit-dns` task is present. | Yes (rerun the persisted stack/compose installer; Swarm restore also reconverges VPN DNS forwarding). | No |
+| `tool.dns_port_not_listening`    | The DNS container exists but no listener is available on `53` inside the container. | Yes (force service update or restart container; Swarm restore also reconverges VPN DNS forwarding). | No |
+| `tool.dns_config_drift`          | `dnsmasq.conf` differs from `DnsmasqConfigBuilder` output for current DB state. | Yes (rewrite + force service update/restart; Swarm restore also reconverges VPN DNS forwarding). | No |
+| `tool.dns_client_dns_drift`      | The persisted wg-easy default DNS or enabled client DNS contains anything other than the active `vpn.dns_ip` value, for example `["10.6.0.1", "1.1.1.1"]`. | Yes (rewrite wg-easy default/client DNS to `[vpn.dns_ip]`). | No |
+| `tool.dns_forwarding_missing`    | The Swarm stack is present, but the `orbit-vpn` task namespace does not contain the UDP/TCP 53 DNAT and MASQUERADE rules that forward peer DNS traffic to `orbit-dns`. | Yes (reapply forwarding inside the running VPN task namespace). | No |
 
-`dns.client_dns_drift` is only about WireGuard client DNS configuration stored
+`tool.dns_client_dns_drift` is only about WireGuard client DNS configuration stored
 in wg-easy. It does not alter dnsmasq upstream resolvers; `server=1.1.1.1` and
 `server=8.8.8.8` remain valid upstream forwarding entries inside
 `dnsmasq.conf`.
@@ -196,6 +197,11 @@ the node and proxy families do (see
 Emergency DNS edits should be translated into node or proxy state explicitly,
 then `doctor --family=tool --restore` should re-render `dnsmasq.conf` from the
 canonical gateway state.
+
+The catalog declares `tool:restart dns` and `tool:logs dns` against the single
+direct gateway-local `orbit-dns` runtime. Public start, stop, and reload remain
+unsupported: bootstrap/restore owns availability, and address-rule changes
+require restart rather than reload.
 
 ## Why install/remove are not operator commands
 

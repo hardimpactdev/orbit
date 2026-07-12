@@ -84,93 +84,27 @@ describe('node role assignment service', function (): void {
             ->toThrow(InvalidArgumentException::class, "Role 'database' is already assigned to node '{$node->name}'.");
     });
 
-    it('rejects app-dev assignment when another active node owns the tld', function (): void {
-        $existingNode = Node::factory()->create([
-            'platform' => 'ubuntu',
-
-            'tld' => null,
-            'wireguard_address' => '10.0.0.11',
-        ]);
-        NodeRoleAssignment::factory()->create([
-            'node_id' => $existingNode->id,
-            'role' => 'app-dev',
-            'status' => NodeRoleStatus::Active->value,
-            'settings' => ['tld' => 'test'],
-        ]);
+    it('rejects role-local TLD settings without mutating the node identity', function (string $operation): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-
-            'wireguard_address' => '10.0.0.12',
-        ]);
-
-        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-dev', ['tld' => 'test']))
-            ->toThrow(InvalidArgumentException::class, "Node TLD 'test' is already assigned to another node.");
-
-        expect($node->roleAssignments()->where('role', 'app-dev')->exists())->toBeFalse();
-    });
-
-    it('rejects app-dev updates when another active node owns the tld', function (): void {
-        $existingNode = Node::factory()->create([
-            'platform' => 'ubuntu',
-
-            'tld' => null,
-            'wireguard_address' => '10.0.0.11',
-        ]);
-        NodeRoleAssignment::factory()->create([
-            'node_id' => $existingNode->id,
-            'role' => 'app-dev',
-            'status' => NodeRoleStatus::Active->value,
-            'settings' => ['tld' => 'test'],
-        ]);
-        $node = Node::factory()->create([
-            'platform' => 'ubuntu',
-
-            'wireguard_address' => '10.0.0.12',
-        ]);
-        $assignment = NodeRoleAssignment::factory()->create([
-            'node_id' => $node->id,
-            'role' => 'app-dev',
-            'status' => NodeRoleStatus::Active->value,
-            'settings' => ['tld' => 'old'],
-        ]);
-
-        expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'app-dev', ['tld' => 'test']))
-            ->toThrow(InvalidArgumentException::class, "Node TLD 'test' is already assigned to another node.");
-
-        expect($assignment->fresh()->settings)
-            ->toBe(['tld' => 'old'])
-            ->and($assignment->fresh()->status)
-            ->toBe(NodeRoleStatus::Active)
-            ->and($assignment->fresh()->last_error)
-            ->toBeNull();
-    });
-
-    it('syncs node tld from active app-dev and database roles', function (): void {
-        $node = Node::factory()->create([
-            'platform' => 'ubuntu',
-            'tld' => null,
+            'tld' => 'test',
             'wireguard_address' => '10.0.0.10',
         ]);
 
-        app(NodeRoleAssignmentService::class)->add($node, 'app-dev', ['tld' => 'test']);
+        if ($operation === 'update') {
+            NodeRoleAssignment::factory()->create([
+                'node_id' => $node->id,
+                'role' => 'app-dev',
+                'status' => NodeRoleStatus::Active->value,
+                'settings' => [],
+            ]);
+        }
 
-        $node->refresh();
+        expect(fn () => app(NodeRoleAssignmentService::class)->{$operation}($node, 'app-dev', ['tld' => 'other']))
+            ->toThrow(InvalidArgumentException::class, 'The app-dev role does not accept settings.');
 
-        expect($node->tld)->toBe('test');
-
-        app(NodeRoleAssignmentService::class)->add($node, 'database', []);
-        app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-dev', force: true);
-
-        $node->refresh();
-
-        expect($node->tld)->toBe('test');
-
-        app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true);
-
-        $node->refresh();
-
-        expect($node->tld)->toBe('test');
-    });
+        expect($node->fresh()->tld)->toBe('test');
+    })->with(['add', 'update']);
 
     it('preserves node tld when the last role assignment is removed', function (): void {
         $node = Node::factory()->create([
@@ -179,7 +113,7 @@ describe('node role assignment service', function (): void {
             'wireguard_address' => '10.6.0.8',
         ]);
 
-        app(NodeRoleAssignmentService::class)->add($node, 'app-dev', ['tld' => 'mini']);
+        app(NodeRoleAssignmentService::class)->add($node, 'app-dev', []);
         app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-dev', force: true);
 
         expect($node->fresh()->tld)->toBe('mini');
@@ -188,7 +122,7 @@ describe('node role assignment service', function (): void {
     it('preserves a fresh database node tld when the model instance is stale', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-            'tld' => null,
+            'tld' => 'stale',
             'wireguard_address' => '10.0.0.10',
         ]);
 
@@ -208,7 +142,7 @@ describe('node role assignment service', function (): void {
             'wireguard_address' => '10.6.0.20',
         ]);
 
-        app(NodeRoleAssignmentService::class)->add($node, 'app-dev', ['tld' => 'test']);
+        app(NodeRoleAssignmentService::class)->add($node, 'app-dev', []);
 
         $selfGrant = NodeAccess::query()
             ->where('consumer_node_id', $node->id)
@@ -271,7 +205,7 @@ describe('node role assignment service', function (): void {
             'wireguard_address' => '10.6.0.20',
         ]);
 
-        app(NodeRoleAssignmentService::class)->add($node, 'app-dev', ['tld' => 'test']);
+        app(NodeRoleAssignmentService::class)->add($node, 'app-dev', []);
 
         $tool = NodeTool::query()
             ->where('node_id', $node->id)
@@ -288,7 +222,7 @@ describe('node role assignment service', function (): void {
             'wireguard_address' => '10.6.0.20',
         ]);
 
-        app(NodeRoleAssignmentService::class)->add($node, 'app-dev', ['tld' => 'test']);
+        app(NodeRoleAssignmentService::class)->add($node, 'app-dev', []);
 
         $tools = NodeTool::query()
             ->where('node_id', $node->id)
@@ -346,12 +280,11 @@ describe('node role assignment service', function (): void {
             ->get();
 
         expect($tools->pluck('name')->all())
-            ->toBe(['caddy', 'composer', 'laravel-installer', 'php-cli'])
+            ->toBe(['caddy', 'composer', 'php-cli'])
             ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
             ->toBe([
                 'caddy' => 'installed',
                 'composer' => 'installed',
-                'laravel-installer' => 'installed',
                 'php-cli' => 'installed',
             ]);
     });
@@ -380,7 +313,7 @@ describe('node role assignment service', function (): void {
             'node_id' => $node->id,
             'role' => 'app-dev',
             'status' => NodeRoleStatus::Active->value,
-            'settings' => ['tld' => 'test'],
+            'settings' => [],
         ]);
 
         expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-prod', []))
@@ -697,7 +630,7 @@ describe('node role assignment service', function (): void {
             'node_id' => $node->id,
             'role' => 'app-dev',
             'status' => $status,
-            'settings' => ['tld' => 'test'],
+            'settings' => [],
         ]);
 
         expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-prod', []))
@@ -718,7 +651,7 @@ describe('node role assignment service', function (): void {
             'node_id' => $node->id,
             'role' => 'app-dev',
             'status' => NodeRoleStatus::Active->value,
-            'settings' => ['tld' => 'old'],
+            'settings' => [],
         ]);
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
@@ -726,11 +659,11 @@ describe('node role assignment service', function (): void {
             'status' => $status,
         ]);
 
-        expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'app-dev', ['tld' => 'new']))
+        expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'app-dev', []))
             ->toThrow(InvalidArgumentException::class, "Role 'app-dev' conflicts with {$status} role 'app-prod'.");
 
         expect($assignment->fresh()->settings)
-            ->toBe(['tld' => 'old'])
+            ->toBe([])
             ->and($assignment->fresh()->status)
             ->toBe(NodeRoleStatus::Active)
             ->and($assignment->fresh()->last_error)
@@ -755,7 +688,7 @@ describe('node role assignment service', function (): void {
         expect(fn () => app(NodeRoleAssignmentService::class)->add($node, $role, $settings))
             ->toThrow(InvalidArgumentException::class, "Role '{$role}' conflicts with active role 'gateway'.");
     })->with([
-        'app-dev' => ['app-dev', ['tld' => 'test']],
+        'app-dev' => ['app-dev', []],
         'app-prod' => ['app-prod', ['ingress_node_id' => 9999]],
         'database' => ['database', []],
         'ingress' => ['ingress', []],
@@ -772,7 +705,7 @@ describe('node role assignment service', function (): void {
             'node_id' => $node->id,
             'role' => 'app-dev',
             'status' => NodeRoleStatus::Removing->value,
-            'settings' => ['tld' => 'test'],
+            'settings' => [],
         ]);
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
@@ -828,7 +761,7 @@ describe('node role assignment service', function (): void {
             'wireguard_address' => null,
         ]);
 
-        $assignment = app(NodeRoleAssignmentService::class)->add($node, 'app-dev', ['tld' => 'test']);
+        $assignment = app(NodeRoleAssignmentService::class)->add($node, 'app-dev', []);
 
         expect($assignment->status)
             ->toBe(NodeRoleStatus::Error)
@@ -879,23 +812,24 @@ describe('node role assignment service', function (): void {
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
             'role' => 'app-dev',
-            'status' => NodeRoleStatus::Active->value,
-            'settings' => ['tld' => 'old'],
+            'status' => NodeRoleStatus::Error->value,
+            'settings' => [],
+            'last_error' => 'previous failure',
         ]);
 
-        $assignment = app(NodeRoleAssignmentService::class)->update($node, 'app-dev', ['tld' => 'new']);
+        $assignment = app(NodeRoleAssignmentService::class)->update($node, 'app-dev', []);
 
         expect($assignment->status)
             ->toBe(NodeRoleStatus::Active)
             ->and($assignment->settings)
-            ->toBe(['tld' => 'new'])
+            ->toBe([])
             ->and($assignment->last_error)
             ->toBeNull()
             ->and($assignment->converged_at)
             ->not->toBeNull();
     });
 
-    it('removes the previous development dns mapping after an app-dev tld update', function (): void {
+    it('reconverges the development DNS mapping from the node-owned TLD', function (): void {
         $configDir = app(DevelopmentDnsMappingEnactor::class)->configDir();
 
         File::deleteDirectory($configDir);
@@ -913,20 +847,21 @@ describe('node role assignment service', function (): void {
             'node_id' => $node->id,
             'role' => 'app-dev',
             'status' => NodeRoleStatus::Active->value,
-            'settings' => ['tld' => 'old'],
+            'settings' => [],
         ]);
 
-        $assignment = app(NodeRoleAssignmentService::class)->update($node, 'app-dev', ['tld' => 'new']);
+        $assignment = app(NodeRoleAssignmentService::class)->update($node, 'app-dev', []);
 
         expect($assignment->status)
             ->toBe(NodeRoleStatus::Active)
             ->and($assignment->settings)
-            ->toBe(['tld' => 'new'])
+            ->toBe([])
             ->and("{$configDir}/old.conf")
-            ->not
             ->toBeFile()
+            ->and(File::get("{$configDir}/old.conf"))
+            ->toContain('address=/old/10.0.0.10')
             ->and("{$configDir}/new.conf")
-            ->toBeFile();
+            ->not->toBeFile();
     });
 
     it('rejects updates when a conflicting role is active', function (): void {
@@ -940,7 +875,7 @@ describe('node role assignment service', function (): void {
             'node_id' => $node->id,
             'role' => 'app-dev',
             'status' => NodeRoleStatus::Active->value,
-            'settings' => ['tld' => 'old'],
+            'settings' => [],
         ]);
         NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
@@ -948,11 +883,11 @@ describe('node role assignment service', function (): void {
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'app-dev', ['tld' => 'new']))
+        expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'app-dev', []))
             ->toThrow(InvalidArgumentException::class, "Role 'app-dev' conflicts with active role 'app-prod'.");
 
         expect($assignment->fresh()->settings)
-            ->toBe(['tld' => 'old'])
+            ->toBe([])
             ->and($assignment->fresh()->status)
             ->toBe(NodeRoleStatus::Active)
             ->and($assignment->fresh()->last_error)
@@ -1067,7 +1002,7 @@ describe('node role assignment service', function (): void {
             localExecutor: app(RemoteLocalExecutor::class),
         ));
 
-        $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'agent', ['tld' => 'agent']);
+        $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'agent', []);
 
         expect($assignment->role)->toBe('agent')->and($assignment->status)->toBe(NodeRoleStatus::Active);
     });
@@ -1445,7 +1380,7 @@ describe('node role assignment service', function (): void {
             'node_id' => $node->id,
             'role' => 'app-dev',
             'status' => NodeRoleStatus::Active->value,
-            'settings' => ['tld' => 'test'],
+            'settings' => [],
         ]);
         $app = App::factory()->create([
             'node_id' => $node->id,

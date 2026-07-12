@@ -48,7 +48,7 @@ it('installs backend TLS material into the host Orbit cert directory', function 
 
     $node = createTestAppHostNode([
         'name' => 'app-dev-1',
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => '10.6.0.44',
     ], role: 'websocket');
     $issued = new ArrayObject;

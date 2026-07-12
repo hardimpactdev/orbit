@@ -399,7 +399,7 @@ it('streams node family completed and total for opaque composite checks', functi
     ))->toBeFalse();
 });
 
-it('streams app family totals that include orphan container and runtime-config scans', function (): void {
+it('streams app family totals that include app and runtime-config scans', function (): void {
     createDoctorRunStreamCallerNode();
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
     App::factory()->create([
@@ -439,18 +439,13 @@ it('streams app family totals that include orphan container and runtime-config s
     );
 
     expect($appProgress)
-        ->not->toBeEmpty()->and(collect($appProgress)->pluck('total')->unique()->all())->toBe([3])->and(
+        ->not->toBeEmpty()->and(collect($appProgress)->pluck('total')->unique()->all())->toBe([2])->and(
             $appProgress,
         )->toContain([
             'family' => 'app',
             'status' => 'checking',
             'completed' => 1,
-            'total' => 3,
-        ])->and($appProgress)->toContain([
-            'family' => 'app',
-            'status' => 'checking',
-            'completed' => 2,
-            'total' => 3,
+            'total' => 2,
         ])->and($appProgress)
         ->not->toContain([
             'family' => 'app',

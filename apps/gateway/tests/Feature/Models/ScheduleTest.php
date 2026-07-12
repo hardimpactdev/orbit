@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Schedules\RemoveSchedule;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Schedule;
@@ -77,4 +78,22 @@ it('keeps schedule keys globally unique', function (): void {
 
     expect(fn () => Schedule::factory()->create(['schedule_key' => 'app:docs:laravel-scheduler']))
         ->toThrow(QueryException::class);
+});
+
+it('removes gateway schedule intent without requiring scheduler reachability', function (): void {
+    $schedule = Schedule::factory()->create([
+        'name' => 'nightly',
+        'schedule_key' => 'app:docs:nightly',
+    ]);
+
+    $result = app(RemoveSchedule::class)->handle($schedule);
+
+    expect($schedule->fresh())
+        ->toBeNull()
+        ->and($result['data']['schedule']['name'])
+        ->toBe('nightly')
+        ->and($result['data']['schedule']['status'])
+        ->toBe('removed')
+        ->and($result['meta'])
+        ->toBe(['history_retained' => true]);
 });

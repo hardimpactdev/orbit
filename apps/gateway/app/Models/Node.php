@@ -24,7 +24,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property string $name
- * @property string|null $tld
+ * @property string $tld
  * @property string|null $platform
  * @property string $host
  * @property string|null $wireguard_address
@@ -42,7 +42,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $host_key_pin_mode
  * @property string|null $user
  * @property string $orbit_path
- * @property bool $orbit_agent_capable
+ * @property bool $managed
  * @property NodeStatus $status
  * @property-read Collection<int, NodeTool> $nodeTools
  * @property-read Collection<int, NodeRoleAssignment> $roleAssignments
@@ -54,6 +54,35 @@ use Illuminate\Support\Carbon;
 class Node extends Model
 {
     use HasFactory;
+
+    /** @var list<string> */
+    private const array AGENT_WORKLOAD_ROLES = [
+        'app-dev',
+        'app-prod',
+        'database',
+        'agent',
+        'ingress',
+        'websocket',
+        's3',
+        'metrics',
+        'analytics',
+    ];
+
+    /** @var list<string> */
+    private const array AGENT_PLATFORM_PREFIXES = [
+        'ubuntu',
+        'macos',
+        'darwin',
+    ];
+
+    /** @var list<string> */
+    private const array INVALID_AGENT_ADDRESSES = [
+        '0.0.0.0',
+        '::',
+        '127.0.0.1',
+        '::1',
+        '255.255.255.255',
+    ];
 
     #[\Override]
     protected $fillable = [
@@ -76,7 +105,7 @@ class Node extends Model
         'host_key_pin_mode',
         'user',
         'orbit_path',
-        'orbit_agent_capable',
+        'managed',
         'status',
     ];
 
@@ -89,7 +118,7 @@ class Node extends Model
             'installed_agent' => InstalledAgentArtifactCast::class,
             'installed_gateway_image' => InstalledGatewayImageCast::class,
             'host_key_pinned_at' => 'datetime',
-            'orbit_agent_capable' => 'bool',
+            'managed' => 'bool',
             'status' => NodeStatus::class,
         ];
     }
@@ -171,12 +200,9 @@ class Node extends Model
         }
 
         return $this->roleAssignments
-            ->contains(
-                fn (NodeRoleAssignment $assignment): bool => (
-                    $assignment->role === $role
-                    && $assignment->status === NodeRoleStatus::Active
-                ),
-            );
+            ->whereStrict('role', $role)
+            ->whereStrict('status', NodeRoleStatus::Active)
+            ->isNotEmpty();
     }
 
     public function isActive(): bool
@@ -187,6 +213,79 @@ class Node extends Model
     public function isProvisioning(): bool
     {
         return $this->status === NodeStatus::Provisioning;
+    }
+
+    public function hasAgentIntent(): bool
+    {
+        if ($this->hasActiveRole('gateway')) {
+            return false;
+        }
+
+        return in_array(
+            true,
+            [
+                $this->hasAgentWorkloadRole(),
+                ! in_array(false, [$this->managed, $this->isOperator()], strict: true),
+            ],
+            strict: true,
+        );
+    }
+
+    public function isAgentEligible(): bool
+    {
+        return ! in_array(
+            false,
+            [
+                $this->isActive(),
+                $this->hasAgentIntent(),
+                $this->hasSupportedAgentPlatform(),
+                $this->hasValidWireguardAddress(),
+            ],
+            strict: true,
+        );
+    }
+
+    private function hasAgentWorkloadRole(): bool
+    {
+        if ($this->relationLoaded('roleAssignments')) {
+            return $this->roleAssignments
+                ->whereInStrict('role', self::AGENT_WORKLOAD_ROLES)
+                ->whereStrict('status', NodeRoleStatus::Active)
+                ->isNotEmpty();
+        }
+
+        return $this
+            ->roleAssignments()
+            ->whereIn('role', self::AGENT_WORKLOAD_ROLES)
+            ->where('status', NodeRoleStatus::Active->value)
+            ->exists();
+    }
+
+    private function hasSupportedAgentPlatform(): bool
+    {
+        $platform = strtolower(trim((string) $this->platform));
+
+        return array_any(
+            self::AGENT_PLATFORM_PREFIXES,
+            static fn (string $prefix): bool => str_starts_with($platform, $prefix),
+        );
+    }
+
+    private function hasValidWireguardAddress(): bool
+    {
+        $address = trim((string) $this->wireguard_address);
+
+        return ! in_array(
+            false,
+            [
+                $address !== '',
+                filter_var($address, FILTER_VALIDATE_IP) !== false,
+                ! in_array($address, self::INVALID_AGENT_ADDRESSES, strict: true),
+                preg_match('/^(?:22[4-9]|23\d)(?:\.|$)/', $address) !== 1,
+                ! str_starts_with(strtolower($address), 'ff'),
+            ],
+            strict: true,
+        );
     }
 
     public function isOperator(): bool

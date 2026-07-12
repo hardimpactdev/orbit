@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Process;
 
 class OrbitUpdater
 {
+    // @orbit-ssh-lane transitional-ssh
     public function pullSource(): ProcessResult
     {
         return Process::path(repo_path())

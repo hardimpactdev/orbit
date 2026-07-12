@@ -6,23 +6,14 @@ namespace App\Services\S3;
 
 use App\Data\Doctor\DriftEntry;
 use App\Data\Nodes\RoleSettings\S3RoleSettings;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Services\RemoteShell\RemoteLocalExecutor;
-use App\Services\RemoteShell\RemoteShellSuccessData;
 use InvalidArgumentException;
-use Throwable;
 
 /**
  * Provides node-family and tool-family doctor drift checks for the `s3` role.
- *
- * Execution lane: RemoteHostExecutor (SSH host substrate + Docker inspection).
- * See apps/docs/content/execution-lanes.md — all remote work here targets the
- * host substrate via `docker inspect` / container env probing. No gateway-container
- * exec, no host sqlite3/python3/php artisan forwarding.
  *
  * Node family owns:
  *  - WireGuard address presence (node.s3.wireguard_missing)
@@ -31,20 +22,14 @@ use Throwable;
  * Tool family owns:
  *  - SeaweedFS tool row existence (tool.seaweedfs.row_missing)
  *  - SeaweedFS credential completeness (tool.seaweedfs.credentials_missing)
- *  - SeaweedFS runtime container presence/divergence (tool.seaweedfs.runtime_container_missing)
- *  - SeaweedFS bind address posture (tool.seaweedfs.bind_public_interface)
+ *
+ * Concrete SeaweedFS runtime state and bind posture belong to the canonical
+ * `seaweedfs` process row and are probed by the process doctor family.
  */
 final readonly class S3DoctorProbe
 {
-    public function __construct(
-        private RemoteLocalExecutor $localExecutor,
-    ) {}
-
     /**
      * Node-family drift checks for an active s3 role assignment.
-     *
-     * Lane: RemoteHostExecutor — probes container env via `docker inspect`.
-     * See apps/docs/content/execution-lanes.md.
      *
      * @return list<DriftEntry>
      */
@@ -60,9 +45,6 @@ final readonly class S3DoctorProbe
 
     /**
      * Tool-family drift checks for an active s3 role assignment.
-     *
-     * Lane: RemoteHostExecutor — probes container lifecycle and env via
-     * `docker inspect`. See apps/docs/content/execution-lanes.md.
      *
      * @return list<DriftEntry>
      */
@@ -87,50 +69,7 @@ final readonly class S3DoctorProbe
             return $drift;
         }
 
-        $drift = array_merge($drift, $this->checkCredentials($node, $assignment, $seaweedfsTool));
-
-        $probe = $this->containerProbe($node);
-
-        if (! $probe->successful()) {
-            $drift[] = new DriftEntry(
-                family: 'tool',
-                key: 'tool.seaweedfs.runtime_container_missing',
-                kind: DriftKind::Unverifiable,
-                summary: "SeaweedFS runtime container could not be verified on node {$node->name}.",
-                detail: [
-                    'role' => $assignment->role,
-                    'container' => S3RuntimeContainer::ContainerName,
-                    'reason' => 'probe_failed',
-                    'exit_code' => $probe->exitCode,
-                    'stderr' => trim($probe->stderr),
-                ],
-            );
-
-            return $drift;
-        }
-
-        $state = $this->probeState($probe);
-
-        if (($state['exists'] ?? null) !== '1' || ($state['running'] ?? null) !== 'true') {
-            $exists = ($state['exists'] ?? null) === '1';
-            $drift[] = new DriftEntry(
-                family: 'tool',
-                key: 'tool.seaweedfs.runtime_container_missing',
-                kind: $exists ? DriftKind::Divergent : DriftKind::Missing,
-                summary: 'SeaweedFS runtime container is '.($exists ? 'stopped' : 'absent')." on node {$node->name}.",
-                detail: [
-                    'role' => $assignment->role,
-                    'container' => S3RuntimeContainer::ContainerName,
-                    'reason' => $exists ? 'container_stopped' : 'container_absent',
-                    'exists' => $state['exists'] ?? null,
-                    'running' => $state['running'] ?? null,
-                ],
-            );
-        }
-
-        $drift = array_merge($drift, $this->checkBindPosture($node, $assignment, $state));
-
-        return $drift;
+        return array_merge($drift, $this->checkCredentials($node, $assignment, $seaweedfsTool));
     }
 
     /**
@@ -210,42 +149,6 @@ final readonly class S3DoctorProbe
         ];
     }
 
-    /**
-     * @param  array<string, string>  $state
-     * @return list<DriftEntry>
-     */
-    private function checkBindPosture(Node $node, NodeRoleAssignment $assignment, array $state): array
-    {
-        $expectedBind = trim((string) $node->wireguard_address);
-        $observedAddress = $this->observedBindAddress($state);
-
-        if ($observedAddress === null) {
-            return [];
-        }
-
-        $observedHost = $this->extractBindHost($observedAddress);
-
-        if ($observedHost === $expectedBind) {
-            return [];
-        }
-
-        return [
-            new DriftEntry(
-                family: 'tool',
-                key: 'tool.seaweedfs.bind_public_interface',
-                kind: DriftKind::Divergent,
-                summary: "SeaweedFS on node {$node->name} is bound to '{$observedHost}' instead of its WireGuard address '{$expectedBind}'.",
-                detail: [
-                    'role' => $assignment->role,
-                    'container' => S3RuntimeContainer::ContainerName,
-                    'expected_bind' => $expectedBind,
-                    'observed_address' => $observedAddress,
-                    'observed_host' => $observedHost,
-                ],
-            ),
-        ];
-    }
-
     private function hasCompleteCredentials(NodeTool $seaweedfsTool): bool
     {
         $credentials = $seaweedfsTool->credentials;
@@ -264,97 +167,6 @@ final readonly class S3DoctorProbe
         $secretAccessKey = $fields['secret_access_key'] ?? null;
 
         return is_string($accessKeyId) && $accessKeyId !== '' && is_string($secretAccessKey) && $secretAccessKey !== '';
-    }
-
-    private function containerProbe(Node $node): RemoteShellResult
-    {
-        try {
-            return $this->localExecutor->runInternal(
-                node: $node,
-                commandName: 'internal:s3-runtime:probe',
-                transportOptions: [
-                    'throw' => false,
-                    'metadata' => [
-                        'ORBIT_OPERATION_ID' => 's3-runtime-doctor-probe',
-                    ],
-                    'strict' => false,
-                    'timeout' => 30,
-                ],
-            );
-        } catch (Throwable $exception) {
-            return new RemoteShellResult(
-                exitCode: 1,
-                stdout: '',
-                stderr: $exception->getMessage(),
-                durationMs: 0,
-            );
-        }
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function probeState(RemoteShellResult $probe): array
-    {
-        $data = RemoteShellSuccessData::fromJsonEnvelope($probe);
-
-        if (array_key_exists('stdout', $data) && is_string($data['stdout']) && $data['stdout'] !== '') {
-            return $this->parseKeyValueOutput($data['stdout']);
-        }
-
-        $state = [];
-
-        foreach (['exists', 'running', 'published_address'] as $key) {
-            if (array_key_exists($key, $data) && is_string($data[$key])) {
-                $state[$key] = $data[$key];
-            }
-        }
-
-        if ($state !== []) {
-            return $state;
-        }
-
-        return $this->parseKeyValueOutput($probe->stdout);
-    }
-
-    /**
-     * @param  array<string, string>  $state
-     */
-    private function observedBindAddress(array $state): ?string
-    {
-        $envAddress = trim($state['published_address'] ?? '');
-
-        return $envAddress !== '' ? $envAddress : null;
-    }
-
-    private function extractBindHost(string $address): string
-    {
-        $lastColon = strrpos($address, ':');
-
-        if ($lastColon !== false) {
-            return substr($address, 0, $lastColon);
-        }
-
-        return $address;
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function parseKeyValueOutput(string $output): array
-    {
-        $values = [];
-
-        foreach (preg_split('/\R/', trim($output)) ?: [] as $line) {
-            if (! str_contains($line, '=')) {
-                continue;
-            }
-
-            [$key, $value] = explode('=', $line, 2);
-            $values[$key] = $value;
-        }
-
-        return $values;
     }
 
     private function seaweedfsToolFor(Node $node): ?NodeTool

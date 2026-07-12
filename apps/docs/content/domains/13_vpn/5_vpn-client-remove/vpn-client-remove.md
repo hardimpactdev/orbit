@@ -30,10 +30,9 @@ Run this command to permanently delete an admin VPN client from the active
 `vpn` role runtime backend.
 
 `vpn-client:remove` resolves the active `vpn` role and deletes the named
-runtime backend client after destructive consent. In this version the active
-`vpn` role is gateway-coupled, so Orbit still executes on the gateway host.
-From a client, Orbit connects to the active `vpn` role host over the
-Orbit/WireGuard SSH path and runs the operation against that runtime.
+runtime backend client after destructive consent. Every caller uses the typed
+gateway HTTPS API over WireGuard. The gateway executes the gateway-coupled
+backend operation locally.
 
 The command is limited to non-node VPN clients. Removing Orbit node peers
 belongs to [`node:remove`](../../1_node/8_node-remove/node-remove.md).
@@ -49,7 +48,7 @@ output.
 
 - The caller is the gateway node, has `vpn:write` on the active gateway node,
   or has gateway-admin authority.
-- Non-gateway callers can SSH to the active `vpn` role host over Orbit/WireGuard.
+- Every caller can reach the typed gateway HTTPS API over WireGuard.
 - The active `vpn` role is resolvable and its runtime backend is installed and reachable.
 - The named client exists and is not an active Orbit node peer.
 - Destructive consent is supplied interactively or with `--force`.

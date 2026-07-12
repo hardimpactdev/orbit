@@ -18,6 +18,7 @@ use Illuminate\Support\Str;
 
 class OrbitHostInstaller
 {
+    // @orbit-ssh-lane provisioning-ssh
     private const string PreferredTempDirectory = '/var/tmp';
 
     private ?Node $pinnedNode = null;

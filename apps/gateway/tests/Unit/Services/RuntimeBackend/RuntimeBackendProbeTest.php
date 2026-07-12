@@ -105,7 +105,7 @@ function runtime_backend_probe_node(string $platform): Node
 {
     return Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-1',
             'platform' => $platform,

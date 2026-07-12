@@ -916,6 +916,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/processes/{name}/log-stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["processes.logStream.start"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/processes/restart": {
         parameters: {
             query?: never;
@@ -958,22 +974,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["processStop"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/profile": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["profile"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1156,6 +1156,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tools/{tool}/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["toolReload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tools": {
         parameters: {
             query?: never;
@@ -1164,6 +1180,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["toolList"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tools/{tool}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["toolLogs"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1573,7 +1605,7 @@ export interface components {
             gateway_endpoint?: string;
             public_ipv4?: string;
             public_ipv6?: string;
-            orbit_agent_capable?: boolean;
+            managed?: boolean;
             role?: string;
             environment?: string;
         };
@@ -2602,47 +2634,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                app: {
-                                    name: string;
-                                    node: string;
-                                    url: string;
-                                    path: string;
-                                    root: string;
-                                    repository: string | null;
-                                    runtime: string;
-                                    runtime_config: {
-                                        proxy_transport: string;
-                                    };
-                                    php_version: string;
-                                    worker_enabled: boolean;
-                                    worker_config: unknown[] | null;
-                                    adopted: boolean;
-                                };
-                                mounts: string[];
-                                inherited_by_workspaces: boolean;
-                            };
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "app.not_found";
-                            message: string;
-                            meta: {
-                                app: string;
-                            };
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -2663,91 +2655,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                app: {
-                                    name: string;
-                                    node: string;
-                                    url: string;
-                                    path: string;
-                                    root: string;
-                                    repository: string | null;
-                                    runtime: string;
-                                    runtime_config: {
-                                        proxy_transport: string;
-                                    };
-                                    php_version: string;
-                                    worker_enabled: boolean;
-                                    worker_config: unknown[] | null;
-                                    adopted: boolean;
-                                };
-                                mounts: string[];
-                                inherited_by_workspaces: boolean;
-                                mount: {
-                                    source: string;
-                                    target: string;
-                                    read_only: boolean;
-                                };
-                                /** @enum {string} */
-                                action: "updated" | "unchanged" | "created";
-                            };
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "app.not_found";
-                            message: string;
-                            meta: {
-                                app: string;
-                            };
-                        };
-                    };
-                };
-            };
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            message: string;
-                            meta: string;
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            /** @constant */
-                            message: "Target path is required.";
-                            meta: {
-                                /** @constant */
-                                field: "target";
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            /** @constant */
-                            message: "Source path is required.";
-                            meta: {
-                                /** @constant */
-                                field: "source";
-                            };
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -2768,79 +2676,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                app: {
-                                    name: string;
-                                    node: string;
-                                    url: string;
-                                    path: string;
-                                    root: string;
-                                    repository: string | null;
-                                    runtime: string;
-                                    runtime_config: {
-                                        proxy_transport: string;
-                                    };
-                                    php_version: string;
-                                    worker_enabled: boolean;
-                                    worker_config: unknown[] | null;
-                                    adopted: boolean;
-                                };
-                                mounts: string[];
-                                inherited_by_workspaces: boolean;
-                                action: string;
-                                mount: {
-                                    source: string;
-                                    target: string;
-                                    read_only: boolean;
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "app.not_found";
-                            message: string;
-                            meta: {
-                                app: string;
-                            };
-                        };
-                    };
-                };
-            };
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            message: string;
-                            meta: string;
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            /** @constant */
-                            message: "Target path is required.";
-                            meta: {
-                                /** @constant */
-                                field: "target";
-                            };
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -3536,18 +3372,10 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                nodes: {
-                                    [key: string]: string;
-                                };
-                                apps: {
-                                    [key: string]: string;
-                                };
-                                processes: {
-                                    [key: string]: string;
-                                };
-                                tools: {
-                                    [key: string]: string;
-                                };
+                                nodes: unknown[];
+                                apps: unknown[];
+                                processes: unknown[];
+                                tools: unknown[];
                             };
                         };
                     };
@@ -3833,7 +3661,7 @@ export interface operations {
                     "application/json": string | {
                         success: {
                             data: {
-                                runs: string[];
+                                runs: unknown[];
                             };
                             meta: string | {
                                 pagination: {
@@ -3841,6 +3669,8 @@ export interface operations {
                                     limit: Record<string, never> | null;
                                     limit_capped: boolean;
                                 };
+                                app: string;
+                                app_instance: string;
                             };
                         };
                     };
@@ -3902,6 +3732,7 @@ export interface operations {
                                 run: {
                                     id: number;
                                     app: string;
+                                    app_instance: string;
                                     status: string;
                                     exit_code: number | null;
                                     started_at: string | null;
@@ -3909,11 +3740,22 @@ export interface operations {
                                     context: unknown[];
                                     steps: string[];
                                 };
-                                steps: string[];
+                                steps: {
+                                    id: number;
+                                    title: string;
+                                    status: string;
+                                    exit_code: number | null;
+                                    started_at: string | null;
+                                    finished_at: string | null;
+                                    output: {
+                                        stdout: string;
+                                        stderr: string;
+                                    };
+                                }[];
                             };
                             meta: string | {
                                 lines: number | boolean;
-                                truncated_by_filter: boolean;
+                                truncated_by_filter: string;
                             };
                         };
                     };
@@ -3972,15 +3814,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": string | {
+                    "application/json": string;
+                };
+            };
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
                         success: {
                             data: {
-                                run: string;
-                                output: string;
+                                operation: {
+                                    uuid: string;
+                                    stream_descriptor_url: string;
+                                    events_url: string;
+                                };
                             };
-                            meta: string;
+                            meta: string | {
+                                detached: boolean;
+                            };
                         };
-                    } | Record<string, never>;
+                    };
                 };
             };
             400: {
@@ -3998,6 +3853,23 @@ export interface operations {
                                 /** @constant */
                                 field: "app";
                             };
+                            data: string;
+                        };
+                    };
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "Peer identity unknown.";
+                            meta: string | string[];
                             data: string;
                         };
                     };
@@ -4022,10 +3894,11 @@ export interface operations {
                     "application/json": string | {
                         success: {
                             data: {
-                                steps: string[];
+                                steps: unknown[];
                             };
                             meta: string | {
                                 app: string;
+                                app_instance: string;
                                 count: number;
                             };
                         };
@@ -4074,6 +3947,7 @@ export interface operations {
                                 step: {
                                     id: number;
                                     app: string;
+                                    app_instance: string;
                                     title: string;
                                     command: string;
                                     order: number;
@@ -4143,6 +4017,7 @@ export interface operations {
                                 step: {
                                     id: number;
                                     app: string;
+                                    app_instance: string;
                                     title: string;
                                     command: string;
                                     order: number;
@@ -4725,6 +4600,18 @@ export interface operations {
                     "application/json": {
                         error: {
                             /** @constant */
+                            code: "node_transport_required";
+                            message: string;
+                            meta: string | {
+                                /** @constant */
+                                field: "node-transport";
+                                /** @constant */
+                                required: "transitional-ssh-fallback";
+                            };
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
                             code: "node.not_operator";
                             /** @constant */
                             message: "Only active roleless nodes can manage themselves.";
@@ -4771,6 +4658,7 @@ export interface operations {
                                     node: string;
                                     user: string | null;
                                     platform: string | null;
+                                    managed: boolean;
                                     ssh_host: string;
                                     host_key_pinned: boolean;
                                     ssh_verified: boolean;
@@ -5472,6 +5360,13 @@ export interface operations {
                                 };
                             };
                             meta: {
+                                ""?: {
+                                    warnings: string[];
+                                } | string;
+                                warnings: {
+                                    [key: string]: string;
+                                }[];
+                            } | {
                                 warnings: string[];
                             } | string;
                         };
@@ -5616,6 +5511,75 @@ export interface operations {
             };
         };
     };
+    "processes.logStream.start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success: {
+                            data: {
+                                operation: {
+                                    uuid: string;
+                                    stream_descriptor_url: string;
+                                    events_url: string;
+                                };
+                            };
+                            meta: string;
+                        };
+                    };
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            message: string;
+                            meta: {
+                                /** @enum {string} */
+                                reason: "missing_permission" | "direct_grant" | "gateway_admin_grant" | "gateway_node";
+                                /** @enum {string|null} */
+                                missing_permission: "process:logs" | null;
+                                serving_node: string;
+                            };
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "Peer identity unknown.";
+                            meta: string[];
+                        };
+                    };
+                };
+            };
+        };
+    };
     processRestart: {
         parameters: {
             query?: never;
@@ -5673,25 +5637,6 @@ export interface operations {
             };
         };
     };
-    profile: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-        };
-    };
     proxyRouteDestroy: {
         parameters: {
             query?: never;
@@ -5721,7 +5666,7 @@ export interface operations {
                                     node: string;
                                     target: {
                                         /** @enum {string} */
-                                        type: "app" | "analytics" | "websocket" | "workspace" | "gateway" | "upstream" | "redirect";
+                                        type: "app_instance" | "app" | "analytics" | "websocket" | "workspace" | "gateway" | "upstream" | "redirect";
                                         value: string | null;
                                     };
                                     redirect_code: number | null;
@@ -5973,7 +5918,8 @@ export interface operations {
                                         value: string;
                                     };
                                     enabled: boolean;
-                                    status: string;
+                                    /** @constant */
+                                    status: "removed";
                                     scheduler: {
                                         node: string | null;
                                         heartbeat_at: string | null;
@@ -5989,8 +5935,6 @@ export interface operations {
                                 };
                             };
                             meta: {
-                                /** @constant */
-                                scheduler_pickup: "confirmed";
                                 history_retained: boolean;
                             };
                         };
@@ -6372,6 +6316,27 @@ export interface operations {
             };
         };
     };
+    toolReload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
     toolList: {
         parameters: {
             query?: {
@@ -6453,6 +6418,27 @@ export interface operations {
                             meta: string[];
                         };
                     };
+                };
+            };
+        };
+    };
+    toolLogs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -6585,10 +6571,6 @@ export interface operations {
                                     reason: "null_update_script";
                                 })[];
                                 failed: ({
-                                    tool: string;
-                                    node: string | "";
-                                    error: string;
-                                } | {
                                     tool: string;
                                     node: string;
                                     /** @constant */
@@ -7106,9 +7088,7 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                workspaces: {
-                                    [key: string]: string;
-                                };
+                                workspaces: unknown[];
                             };
                         };
                     };
@@ -7189,116 +7169,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": string | Record<string, never>;
-                };
-            };
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                result: {
-                                    /** @constant */
-                                    action: "created";
-                                };
-                                workspace: {
-                                    name: string;
-                                    app: string;
-                                    node: string;
-                                    path: string;
-                                    url: string;
-                                    php_version: string | null;
-                                    php_inherited: boolean;
-                                    agent_ide: {
-                                        adapter: string | null;
-                                        workspace_id: string | null;
-                                    };
-                                    adopted: boolean;
-                                    lifecycle_status: string;
-                                };
-                            };
-                            meta: {
-                                node: string;
-                                base: string | "main";
-                                http_probe: {
-                                    reachable: boolean;
-                                    status: string;
-                                };
-                                warnings: unknown[];
-                            };
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "app.not_found";
-                            message: string;
-                            meta: {
-                                app: string;
-                            };
-                        };
-                    };
-                };
-            };
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "workspace.already_exists";
-                            message: string;
-                            meta: {
-                                name: string;
-                                app: string;
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            /** @constant */
-                            message: "Unsupported PHP version.";
-                            meta: {
-                                /** @constant */
-                                field: "php_version";
-                                /** @constant */
-                                reason: "unsupported_php_version";
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            /** @constant */
-                            message: "The workspace name 'main' is reserved.";
-                            meta: {
-                                /** @constant */
-                                field: "name";
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            message: string;
-                            meta: {
-                                field: string | "unknown";
-                            };
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -7326,7 +7197,7 @@ export interface operations {
                                     id: number;
                                     workspace: string;
                                     app: string;
-                                    node: string;
+                                    node: string | null;
                                     type: string;
                                     status: string;
                                     started_at: string | null;
@@ -7440,7 +7311,8 @@ export interface operations {
                                 workspace: {
                                     name: string;
                                     app: string;
-                                    node: string;
+                                    app_instance: string;
+                                    node: string | null;
                                     path: string;
                                     url: string;
                                     php_version: string | null;
@@ -7453,10 +7325,10 @@ export interface operations {
                                     lifecycle_status: string;
                                 };
                                 node: {
-                                    name: string;
-                                    host: string;
+                                    name: string | null;
+                                    host: string | null;
                                 };
-                                inherited_processes: string[];
+                                inherited_processes: unknown[];
                             };
                             meta: {
                                 registry_only: boolean;
@@ -7570,6 +7442,7 @@ export interface operations {
                             data: {
                                 name: string;
                                 app: string;
+                                app_instance: string;
                                 /** @constant */
                                 action: "removed";
                                 proxy_routes_removed: number;
@@ -7704,6 +7577,16 @@ export interface operations {
                             message: string;
                             meta: string | unknown[];
                         };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "workspace.not_found";
+                            message: string;
+                            meta: string | {
+                                name: string;
+                                app: string | null;
+                            };
+                        };
                     };
                 };
             };
@@ -7746,6 +7629,7 @@ export interface operations {
                         success: {
                             data: {
                                 app: string;
+                                app_instance: string;
                                 workspace: string;
                                 node: string;
                                 url: string;
@@ -7867,7 +7751,8 @@ export interface operations {
                                 workspace: {
                                     name: string;
                                     app: string;
-                                    node: string;
+                                    app_instance: string;
+                                    node: string | null;
                                     path: string;
                                     url: string;
                                     php_version: string | null;
@@ -7880,10 +7765,10 @@ export interface operations {
                                     lifecycle_status: string;
                                 };
                                 node: {
-                                    name: string;
-                                    host: string;
+                                    name: string | null;
+                                    host: string | null;
                                 };
-                                inherited_processes: string[];
+                                inherited_processes: unknown[];
                             };
                             meta: {
                                 registry_only: boolean;
@@ -8001,6 +7886,7 @@ export interface operations {
                                 step: {
                                     id: number;
                                     app: string;
+                                    app_instance: string;
                                     phase: string;
                                     order: number;
                                     command: string;
@@ -8021,6 +7907,20 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "Workspace steps can only be changed on app instances. Use a dotted selector such as hauser.nmbp.";
+                            meta: unknown[];
+                        };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: unknown[];
+                        };
+                    } | {
                         error: {
                             /** @constant */
                             code: "validation_failed";
@@ -8163,6 +8063,20 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
+                            message: "Workspace steps require a concrete app instance. Use a dotted selector such as hauser.nmbp.";
+                            meta: unknown[];
+                        };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: unknown[];
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
                             message: "Could not resolve parent app.";
                             meta: unknown[];
                         };
@@ -8273,6 +8187,7 @@ export interface operations {
                                 step: {
                                     id: number;
                                     app: string;
+                                    app_instance: string;
                                     phase: string;
                                     order: number;
                                     command: string;
@@ -8290,6 +8205,20 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "Workspace steps can only be changed on app instances. Use a dotted selector such as hauser.nmbp.";
+                            meta: unknown[];
+                        };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: unknown[];
+                        };
+                    } | {
                         error: {
                             /** @constant */
                             code: "validation_failed";

@@ -6,15 +6,20 @@ namespace App\Tools;
 
 final class OpenClawTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux'];
+
+    protected const ?string RUNTIME_USER = 'agent';
+
+    protected const bool REQUIRES_ROUTE_TLD = true;
+
+    protected const ?string ISOLATION = 'unprivileged-user';
+
     public function slug(): string
     {
         return 'openclaw';
-    }
-
-    #[\Override]
-    public function requiredNodeRole(): string
-    {
-        return 'agent';
     }
 
     #[\Override]

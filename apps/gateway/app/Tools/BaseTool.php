@@ -11,9 +11,19 @@ abstract class BaseTool implements ToolDefinition
     /**
      * @var list<string>
      */
-    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux'];
+    protected const array SUPPORTED_OPERATING_SYSTEMS = [];
 
-    public function requiredNodeRole(): ?string
+    protected const ?string REQUIRED_CONTAINER_PROVIDER = null;
+
+    protected const ?string RUNTIME_USER = null;
+
+    protected const bool REQUIRES_ROUTE_TLD = false;
+
+    protected const ?string ISOLATION = null;
+
+    protected const bool GATEWAY_LOCAL = false;
+
+    public function bootstrapRole(): ?string
     {
         return null;
     }
@@ -29,6 +39,31 @@ abstract class BaseTool implements ToolDefinition
     public function supportedOperatingSystems(): array
     {
         return static::SUPPORTED_OPERATING_SYSTEMS;
+    }
+
+    public function requiredContainerProvider(): ?string
+    {
+        return static::REQUIRED_CONTAINER_PROVIDER;
+    }
+
+    public function runtimeUser(): ?string
+    {
+        return static::RUNTIME_USER;
+    }
+
+    public function requiresRouteTld(): bool
+    {
+        return static::REQUIRES_ROUTE_TLD;
+    }
+
+    public function isolation(): ?string
+    {
+        return static::ISOLATION;
+    }
+
+    public function gatewayLocal(): bool
+    {
+        return static::GATEWAY_LOCAL;
     }
 
     /**
@@ -67,6 +102,11 @@ abstract class BaseTool implements ToolDefinition
     public function restartScript(array $config = []): ?string
     {
         return $this->lifecycleScript('restart', $config);
+    }
+
+    public function reloadScript(array $config = []): ?string
+    {
+        return $this->lifecycleScript('reload', $config);
     }
 
     public function credentialsScript(array $config = []): ?string

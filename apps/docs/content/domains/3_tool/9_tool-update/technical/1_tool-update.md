@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:update [tool] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--expected-version=<version>] [--json|--stream-json]`
+# Technical Contract: `orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]`
 
 [Back to public `tool-update` documentation.](../tool-update.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:update [tool] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--expected-version=<version>] [--json|--stream-json]
+orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -25,7 +25,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `tool` | `argument` | `Optional.` | `Never.` | `all update-capable managed tools on the node` | `Registered managed tool name.` |
 | `expected_version` | `--expected-version` | `Optional.` | `when tool is omitted.` | `latest supported version` | Supported version string for the selected tool definition. |
 | `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 | `stream-json` | `--stream-json` | `Optional.` | `Never.` | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
@@ -36,6 +35,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Selects one tool or all update-capable managed tools on the target node.
 - Verifies update support before writing.
+- Keeps expected-version writes gateway-local and dispatches target-node update
+  actions through Agent push. The command exposes no node transport selector
+  and never falls back to SSH.
 - Writes the gateway expected version and applies the update through the gateway.
 - Reports updated, skipped, and failed tools.
 - Bulk mode skips managed tools without update support and reports the skip
@@ -76,6 +78,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI `tool:update` stream request forwarding for single-tool and bulk payloads, and gateway error envelope pass-through. |
 | `apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php` | CLI stream adapter behavior for update: final complete frame in `--json` mode, canonical stream request shape, human progress rendering, and pre-stream gateway error pass-through. |
-| `apps/cli/tests/Feature/Commands/Tool/ToolUpdateStreamTransportTest.php` | CLI stream adapter forwarding of explicit node transport preference headers for streamed `tool:update` requests. |
+| `apps/cli/tests/Feature/Commands/Tool/ToolUpdateStreamTransportTest.php` | CLI stream requests omit node transport preference headers because `tool:update` has no public transport selector. |
 | `apps/gateway/tests/Feature/Http/Api/ToolUpdateControllerTest.php` | Gateway update API expected-version writes, unsupported service-tool rejection, and service-style instance selector rejection. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |

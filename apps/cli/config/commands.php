@@ -88,6 +88,7 @@ use App\Commands\Internal\CaddyConfigCommand;
 use App\Commands\Internal\CodexAppConfigCommand;
 use App\Commands\Internal\DatabaseAddUserCommand as InternalDatabaseAddUserCommand;
 use App\Commands\Internal\DatabaseQueryLocalCommand;
+use App\Commands\Internal\DeployRunStepCommand;
 use App\Commands\Internal\DoctorSelfCommand;
 use App\Commands\Internal\EnvFileCommand;
 use App\Commands\Internal\FirewallRuleCommand as InternalFirewallRuleCommand;
@@ -172,7 +173,9 @@ use App\Commands\Skill\SkillInstallCommand;
 use App\Commands\Tool\ToolCredentialsCommand;
 use App\Commands\Tool\ToolInstallCommand;
 use App\Commands\Tool\ToolListCommand;
+use App\Commands\Tool\ToolLogsCommand;
 use App\Commands\Tool\ToolReconfigureCommand;
+use App\Commands\Tool\ToolReloadCommand;
 use App\Commands\Tool\ToolRemoveCommand;
 use App\Commands\Tool\ToolRestartCommand;
 use App\Commands\Tool\ToolShowCommand;
@@ -338,7 +341,9 @@ return [
         ToolCredentialsCommand::class,
         ToolInstallCommand::class,
         ToolListCommand::class,
+        ToolLogsCommand::class,
         ToolReconfigureCommand::class,
+        ToolReloadCommand::class,
         ToolRemoveCommand::class,
         ToolRestartCommand::class,
         ToolShowCommand::class,
@@ -406,6 +411,7 @@ return [
         CodexAppConfigCommand::class,
         InternalDatabaseAddUserCommand::class,
         DatabaseQueryLocalCommand::class,
+        DeployRunStepCommand::class,
         DoctorSelfCommand::class,
         EnvFileCommand::class,
         InternalFirewallRuleCommand::class,

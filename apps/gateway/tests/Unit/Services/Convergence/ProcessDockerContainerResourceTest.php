@@ -308,7 +308,7 @@ function process_docker_resource_node(): Node
         'name' => 'app-dev-1',
         'tld' => 'test',
         'wireguard_address' => '10.44.0.72',
-        'orbit_agent_capable' => true,
+        'managed' => true,
     ]);
 
     if (! $node instanceof Node) {

@@ -16,7 +16,7 @@ final class DatabaseTablesCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'database:tables
-        {target? : App, workspace, or connection slug}
+        {target? : App instance, workspace, or connection slug}
         {--connection= : Connection slug when the target maps to multiple connections}
         {--json}';
 

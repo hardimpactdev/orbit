@@ -10,13 +10,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property int $id
- * @property int $app_id
+ * @property int $app_instance_id
  * @property string $title
  * @property string $command
  * @property int $sort_order
  * @property int $timeout_seconds
  * @property int|null $retention
- * @property-read App|null $app
+ * @property-read AppInstance $appInstance
  */
 class DeployStep extends Model
 {
@@ -26,7 +26,7 @@ class DeployStep extends Model
 
     #[\Override]
     protected $fillable = [
-        'app_id',
+        'app_instance_id',
         'title',
         'command',
         'sort_order',
@@ -35,10 +35,10 @@ class DeployStep extends Model
     ];
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return BelongsTo<AppInstance, $this>
      */
-    public function app(): BelongsTo
+    public function appInstance(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->belongsTo(AppInstance::class);
     }
 }

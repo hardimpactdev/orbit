@@ -20,6 +20,7 @@ use Throwable;
 
 final readonly class ProxyRouteProbe
 {
+    // @orbit-ssh-lane transitional-ssh
     private const array OwnerTypes = [
         'app',
         'app-analytics',

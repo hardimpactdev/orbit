@@ -47,8 +47,9 @@ Gateway exposure has two modes:
 
 ## Streaming under Docker runtime
 
-The containerized gateway API preserves the existing progress/SSE streaming
-contract with three mechanisms:
+The containerized gateway API preserves four transitional progress/SSE
+mechanics while operation-backed commands move to the operations
+WebSocket/Reverb plane:
 
 1. **Proxy no-buffering in router-colocated mode**: The router-owned gateway
    API Caddy block disables response buffering on the `reverse_proxy` to
@@ -67,6 +68,11 @@ contract with three mechanisms:
 
 The product invariant from the proxy domain applies: streaming traffic cannot
 starve ordinary gateway API execution.
+
+SSE is not the strategic operation-progress contract. The gateway persists
+operation frames before WebSocket publication and subscribers replay missed
+frames from the operation journal by cursor. Remove each SSE-specific mechanic
+as its final operation-backed consumer migrates.
 
 ## Domain Rules
 

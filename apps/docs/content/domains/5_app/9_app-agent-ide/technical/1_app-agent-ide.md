@@ -130,7 +130,7 @@ A change to the app default is naturally picked up at the next consumer-side res
 `app:agent-ide` must not:
 - Create workspaces.
 - Create an agent IDE session.
-- SSH into the target node (except for workspace removal).
+- Open a direct node shell. Workspace removal uses the normal Agent-push lane.
 - Trigger downstream session restart or process invalidation.
 - Notify running agent-IDE sessions, restart processes on the node,
   invalidate cached workspace-level overrides, or emit

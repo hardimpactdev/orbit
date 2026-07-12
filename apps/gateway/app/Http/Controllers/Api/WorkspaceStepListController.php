@@ -12,6 +12,7 @@ use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\AuthorizationResult;
@@ -68,6 +69,17 @@ final readonly class WorkspaceStepListController implements Loggable
         }
 
         $app = $selection->app;
+        $instance = $selection->instance;
+
+        if (! $instance instanceof AppInstance) {
+            return $this->validationFailed(
+                'app',
+                $app->name,
+                'Workspace steps require a concrete app instance. Use a dotted selector such as hauser.nmbp.',
+                'app_instance_required',
+            );
+        }
+
         $servingNode = $this->servingNodeForSelection($selection);
 
         try {
@@ -91,7 +103,7 @@ final readonly class WorkspaceStepListController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'steps' => $payload->forApp($app, $phaseEnum, $selection->instance),
+                    'steps' => $payload->forApp($app, $phaseEnum, $instance),
                 ],
             ],
         ]);
@@ -119,8 +131,12 @@ final readonly class WorkspaceStepListController implements Loggable
         return $selection->app->node;
     }
 
-    private function validationFailed(string $field, ?string $value, string $message): JsonResponse
-    {
+    private function validationFailed(
+        string $field,
+        ?string $value,
+        string $message,
+        ?string $reason = null,
+    ): JsonResponse {
         return response()->json([
             'error' => [
                 'code' => 'validation_failed',
@@ -129,7 +145,7 @@ final readonly class WorkspaceStepListController implements Loggable
                     [
                         'field' => $field,
                         'value' => $value,
-                        'reason' => $field === 'app' ? 'missing_required_input' : null,
+                        'reason' => $reason ?? ($field === 'app' ? 'missing_required_input' : null),
                     ],
                     fn (mixed $item): bool => $item !== null,
                 ),

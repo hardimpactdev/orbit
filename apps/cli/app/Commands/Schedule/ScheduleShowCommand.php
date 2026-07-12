@@ -13,6 +13,7 @@ use App\Exceptions\GatewayApiException;
 
 final class ScheduleShowCommand extends GatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use PromptsForGatewayRegistryEntities;
     use RendersShowDetails;
     use ResolvesHostContext;

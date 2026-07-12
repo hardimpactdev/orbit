@@ -463,12 +463,6 @@ message = "Use of the `isset` construct."
 count = 2
 
 [[issues]]
-file = "src/Requests/Profile/ShowProfileRequest.php"
-code = "prefer-early-continue"
-message = "Consider using early continue pattern to reduce nesting."
-count = 1
-
-[[issues]]
 file = "src/Requests/Proxy/AddProxyRouteRequest.php"
 code = "excessive-parameter-list"
 message = "Parameter list is too long."

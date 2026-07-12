@@ -97,7 +97,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
             $mounts[] = $packagesMount;
         }
 
-        $workspace->loadMissing(['app.instances', 'app.runtimeMounts', 'appInstance.runtimeMounts']);
+        $workspace->loadMissing('appInstance.runtimeMounts');
         $instance = $this->placement->instanceForWorkspace($workspace);
 
         foreach ($this->appRuntimeMounts->mountsForRuntime($app, $instance) as $mount) {

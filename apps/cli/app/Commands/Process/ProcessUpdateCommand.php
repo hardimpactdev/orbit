@@ -13,7 +13,6 @@ class ProcessUpdateCommand extends ProcessGatewayCommand
         {name? : Existing process name}
         {--name= : New process name}
         {--node= : Owning node name}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--command= : New command}

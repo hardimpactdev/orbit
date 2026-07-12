@@ -68,13 +68,21 @@ Run this command to bootstrap a supported tool on the target node and record gat
 
 1. Resolves the target node and tool definition.
 2. Resolves the requested tool version when one is supplied.
-3. Verifies the tool is supported for the target node operating system.
-4. Creates or updates the gateway tool row for the node.
+3. Runs a read-only constraint preflight for the explicit node platform,
+   required container provider, runtime user and isolation, route/TLD, and
+   target locality before any write or installer action. Missing platform
+   metadata is not treated as Linux.
+4. Creates or updates the gateway tool row for the node only after preflight
+   succeeds.
 5. Generates managed credentials when the selected tool declares a credential
    contract.
 6. Creates or updates tool-owned endpoint configuration, when the tool declares one.
 7. Applies the managed install/configuration through the gateway.
 8. Reports the resulting expected state and command-owned apply outcome.
+
+Gateway configuration work stays gateway-local. Target-node preflight and
+apply actions use Agent push; `tool:install` exposes no node transport selector
+and never falls back to SSH.
 
 When the tool declares a related singleton service process and `--no-process`
 is not supplied, `tool:install` also converges that process (runtime, command,
@@ -107,6 +115,9 @@ outcome alongside the tool entity. See the [JSON renderer contract](technical/6.
 - The current node identity is authorized to manage tools for the selected node
   or app.
 - The tool definition supports managed installation on the resolved node.
+- Every declared install constraint is satisfied. Docker-backed tools require a
+  reachable Docker-compatible provider; tools with a runtime user require that
+  user and its declared isolation posture to exist on the target.
 - The gateway can reach the target node through Orbit's node execution
   primitive.
 

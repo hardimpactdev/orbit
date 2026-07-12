@@ -7,7 +7,9 @@ namespace App\Commands\Solo;
 use App\Commands\Concerns\RequiresLocalExtension;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
+use App\Exceptions\OrbitConfigStoreException;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final class SoloMutatingCommand extends GatewayCommand
 {
     use RequiresLocalExtension;
@@ -45,8 +47,12 @@ final class SoloMutatingCommand extends GatewayCommand
             ]);
         }
 
-        /** @var array<string, mixed> $payload */
-        $payload = $this->targetPayload->forNode($this->stringOptionValue('node'));
+        try {
+            /** @var array<string, mixed> $payload */
+            $payload = $this->targetPayload->forNode($this->stringOptionValue('node'));
+        } catch (OrbitConfigStoreException $exception) {
+            return $this->renderFailure($exception->orbitCode, $exception->getMessage());
+        }
 
         foreach ($this->operation->requiredArguments as $argument) {
             $value = $this->stringArgumentValue($argument);

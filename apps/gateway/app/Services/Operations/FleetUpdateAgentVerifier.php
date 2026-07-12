@@ -19,7 +19,7 @@ final readonly class FleetUpdateAgentVerifier
     public function verify(OperationRun $operationRun, OperationUpdatePlan $plan): void
     {
         foreach ($this->nodes() as $node) {
-            if (! $node->orbit_agent_capable) {
+            if (! $node->isAgentEligible()) {
                 continue;
             }
 

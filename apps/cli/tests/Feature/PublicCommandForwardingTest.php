@@ -79,18 +79,19 @@ describe('gateway API-backed public commands', function (): void {
         configureGatewayStatusCommand();
 
         Http::fake([
-            'https://gateway.test/api/apps*' => Http::response([
-                'success' => [
-                    'data' => [
-                        'apps' => [],
-                    ],
-                    'meta' => [],
+            'https://gateway.test/api/tools/composer*' => Http::response(JsonEnvelope::success([
+                'tool' => [
+                    'name' => 'composer',
+                    'node' => 'beast',
+                    'expected_state' => 'installed',
                 ],
-            ], 200),
+            ]), 200),
         ]);
 
-        [$exitCode] = runPublicCommand($this, 'app:list', [
+        [$exitCode] = runPublicCommand($this, 'tool:show', [
+            'tool' => 'composer',
             '--node' => 'beast',
+            '--live' => true,
             '--node-transport' => 'transitional-ssh-fallback',
             '--json' => true,
         ]);
@@ -100,8 +101,9 @@ describe('gateway API-backed public commands', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'GET'
-                && str_starts_with($request->url(), 'https://gateway.test/api/apps')
+                && str_starts_with($request->url(), 'https://gateway.test/api/tools/composer')
                 && str_contains($request->url(), 'node=beast')
+                && str_contains($request->url(), 'live=1')
                 && $request->header('X-Orbit-Node-Transport-Preference')[0] === 'transitional-ssh-fallback'
             ),
         );
@@ -112,8 +114,10 @@ describe('gateway API-backed public commands', function (): void {
 
         Http::fake();
 
-        [$exitCode, $output] = runPublicCommand($this, 'app:list', [
+        [$exitCode, $output] = runPublicCommand($this, 'tool:show', [
+            'tool' => 'composer',
             '--node' => 'beast',
+            '--live' => true,
             '--node-transport' => 'ssh',
             '--json' => true,
         ]);
@@ -130,35 +134,42 @@ describe('gateway API-backed public commands', function (): void {
         Http::assertNothingSent();
     });
 
-    it('keeps node transport preference available on public node-targeted command signatures', function (): void {
-        $commandFiles = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator(app_path('Commands'), FilesystemIterator::SKIP_DOTS),
-        );
-        $missing = [];
+    it('keeps node transport preference off commands already ported to Agent push', function (): void {
+        $agentPushCommands = [
+            'Codex/CodexAppCommand.php',
+            'Deploy/DeployRunCommand.php',
+            'Php/PhpListCommand.php',
+            'Php/PhpUseCommand.php',
+            'Process/ProcessAddCommand.php',
+            'Process/ProcessLogsCommand.php',
+            'Process/ProcessRemoveCommand.php',
+            'Process/ProcessRestartCommand.php',
+            'Process/ProcessStartCommand.php',
+            'Process/ProcessStopCommand.php',
+            'Process/ProcessUpdateCommand.php',
+            'Proxy/ProxyAddCommand.php',
+            'Tool/ToolLogsCommand.php',
+            'Tool/ToolCredentialsCommand.php',
+            'Tool/ToolInstallCommand.php',
+            'Tool/ToolReloadCommand.php',
+            'Tool/ToolReconfigureCommand.php',
+            'Tool/ToolRemoveCommand.php',
+            'Tool/ToolRestartCommand.php',
+            'Tool/ToolStartCommand.php',
+            'Tool/ToolStopCommand.php',
+            'Tool/ToolUpdateCommand.php',
+        ];
+        $unexpected = [];
 
-        foreach ($commandFiles as $file) {
-            if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php') {
-                continue;
+        foreach ($agentPushCommands as $command) {
+            $contents = file_get_contents(app_path("Commands/{$command}"));
+
+            if (is_string($contents) && str_contains($contents, '--node-transport')) {
+                $unexpected[] = $command;
             }
-
-            $contents = file_get_contents($file->getPathname());
-
-            if (! is_string($contents) || ! str_contains($contents, 'protected $signature')) {
-                continue;
-            }
-
-            if (! preg_match('/\{--node(?:=|\s|})/', $contents)) {
-                continue;
-            }
-
-            if (str_contains($contents, '--node-transport')) {
-                continue;
-            }
-
-            $missing[] = str_replace(base_path().'/', '', $file->getPathname());
         }
 
-        expect($missing)->toBe([]);
+        expect($unexpected)->toBe([]);
     });
 
     it('renders only the gateway field for human success output', function (): void {

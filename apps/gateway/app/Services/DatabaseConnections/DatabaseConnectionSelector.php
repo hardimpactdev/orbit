@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Workspace;
@@ -19,10 +19,16 @@ final readonly class DatabaseConnectionSelector
         string $target,
         ?string $connectionSlug = null,
     ): DatabaseConnection|DatabaseConnectionRegistryFailure {
-        $app = $this->resolver->resolveApp($target);
+        $instance = $this->resolver->resolveAppInstanceSelector($target);
 
-        if ($app instanceof App) {
-            return $this->resolveForOwner($target, 'app', 'app_id', $app->id, $connectionSlug);
+        if ($instance instanceof AppInstance) {
+            return $this->resolveForOwner(
+                $target,
+                'app_instance',
+                'app_instance_id',
+                $instance->id,
+                $connectionSlug,
+            );
         }
 
         $workspace = $this->resolver->resolveWorkspace($target);
@@ -35,7 +41,7 @@ final readonly class DatabaseConnectionSelector
             return DatabaseConnectionRegistryFailure::validation(
                 'connection',
                 $connectionSlug,
-                'The --connection option can only select a connection attached to an app or workspace target.',
+                'The --connection option can only select a connection attached to an app instance or workspace target.',
                 ['target' => $target],
             );
         }
@@ -46,7 +52,7 @@ final readonly class DatabaseConnectionSelector
     private function resolveConnection(string $slug): DatabaseConnection|DatabaseConnectionRegistryFailure
     {
         $connection = DatabaseConnection::query()
-            ->with(['node', 'targets.app', 'targets.workspace'])
+            ->with(['node', 'targets.appInstance.app', 'targets.workspace.app'])
             ->where('slug', $slug)
             ->first();
 
@@ -65,7 +71,7 @@ final readonly class DatabaseConnectionSelector
         ?string $connectionSlug,
     ): DatabaseConnection|DatabaseConnectionRegistryFailure {
         $targets = DatabaseConnectionTarget::query()
-            ->with(['connection.node', 'connection.targets.app', 'connection.targets.workspace'])
+            ->with(['connection.node', 'connection.targets.appInstance.app', 'connection.targets.workspace.app'])
             ->where($ownerColumn, $ownerId)
             ->get();
 
@@ -86,7 +92,13 @@ final readonly class DatabaseConnectionSelector
         }
 
         if ($targets->count() === 1) {
-            return $targets->first()?->connection;
+            $selected = $targets->first();
+
+            if ($selected instanceof DatabaseConnectionTarget && $selected->connection instanceof DatabaseConnection) {
+                return $selected->connection;
+            }
+
+            return DatabaseConnectionRegistryFailure::notFound($target);
         }
 
         $default = $targets->first(fn (DatabaseConnectionTarget $target): bool => $target->env_prefix === 'DB');
@@ -98,10 +110,8 @@ final readonly class DatabaseConnectionSelector
         return DatabaseConnectionRegistryFailure::ambiguousTarget(
             $target,
             $targets
-                ->map(fn (DatabaseConnectionTarget $target): string => $target->connection instanceof DatabaseConnection
-                    ? $target->connection->slug
-                    : '')
-                ->filter()
+                ->map(static fn (DatabaseConnectionTarget $target): ?string => $target->connection?->slug)
+                ->filter(static fn (?string $slug): bool => is_string($slug))
                 ->values()
                 ->all(),
         );

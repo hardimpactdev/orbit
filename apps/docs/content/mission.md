@@ -18,7 +18,18 @@ Orbit wraps that model in a single command surface — the same commands from `o
 
 That surface sits on a private VPN. Orbit uses a gateway as the fleet authority; every other actor — workload nodes, developer machines, CI runners, nodes running first-party agent tools like OpenClaw or Hermes — joins the VPN as a peer and acts through the gateway.
 
-There is no SSH path in from outside, and inside the network every action is bound to a revocable grant. Revoke the grant and the actor loses its permissions; disable the peer and it falls off the network entirely. The same mechanism that lets an agent operate the fleet is what lets you shut it down in one command.
+There is no public SSH control-plane path. Orbit uses SSH only while provisioning
+or bootstrapping a node; normal workload execution is gateway-local or an
+authenticated Agent-push command over the private network. Break-glass SSH is
+operator-owned recovery outside Orbit commands.
+
+Every remote action against another node or gateway-owned state is authenticated
+by WireGuard identity, authorized by gateway-owned policy, and audited at the
+gateway. Stored grants are the default authorization gate. The architecture also
+defines the narrow gateway-implicit-authority, pre-grants-bootstrap, local-only,
+and identity-gated-self-management classes. Access is shut down through the
+lever that owns its authority: revoke the grant, remove the gateway role, or
+disable the peer.
 
 Every action flowing through the gateway also makes the fleet auditable by default. Each operation — human, agent, or CI — leaves a trace at a single chokepoint. That record is what you use to debug when something breaks, learn how agents actually use the surface so you can tune it, and catch an agent that drifts off the rails before it does damage.
 

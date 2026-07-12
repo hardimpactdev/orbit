@@ -146,7 +146,7 @@ describe('ToolsFixer', function (): void {
         $node = createTestAppHostNode([
             'name' => 'app-1',
             'status' => 'active',
-            'orbit_agent_capable' => true,
+            'managed' => true,
             'wireguard_address' => '10.47.0.51',
         ]);
         $tool = NodeTool::factory()->create([
@@ -209,7 +209,7 @@ describe('ToolsFixer', function (): void {
         $node = createTestAppHostNode([
             'name' => 'app-1',
             'status' => 'active',
-            'orbit_agent_capable' => true,
+            'managed' => true,
             'wireguard_address' => '10.47.0.52',
         ]);
         $tool = NodeTool::factory()->create([
@@ -293,7 +293,7 @@ describe('ToolsFixer', function (): void {
         $node = createTestAppHostNode([
             'name' => 'app-1',
             'status' => 'active',
-            'orbit_agent_capable' => true,
+            'managed' => true,
             'wireguard_address' => '10.47.0.53',
         ]);
         $tool = NodeTool::factory()->create([
@@ -809,7 +809,7 @@ describe('agent tool fixes', function (): void {
         use_tools_fixer_agent_push();
 
         [$node, $tool] = createAgentToolForFixer([
-            'orbit_agent_capable' => true,
+            'managed' => true,
             'wireguard_address' => '10.47.0.61',
         ]);
         $shell = new ToolsFixerRemoteShell;
@@ -1204,7 +1204,7 @@ final class ToolsFixerAgentToolDefinition implements ToolDefinition
         return null;
     }
 
-    public function requiredNodeRole(): ?string
+    public function bootstrapRole(): ?string
     {
         return null;
     }
@@ -1212,6 +1212,31 @@ final class ToolsFixerAgentToolDefinition implements ToolDefinition
     public function supportedOperatingSystems(): array
     {
         return ['linux'];
+    }
+
+    public function requiredContainerProvider(): ?string
+    {
+        return null;
+    }
+
+    public function runtimeUser(): ?string
+    {
+        return null;
+    }
+
+    public function requiresRouteTld(): bool
+    {
+        return false;
+    }
+
+    public function isolation(): ?string
+    {
+        return null;
+    }
+
+    public function gatewayLocal(): bool
+    {
+        return false;
     }
 
     public function installScript(array $config = []): ?string
@@ -1240,6 +1265,11 @@ final class ToolsFixerAgentToolDefinition implements ToolDefinition
     }
 
     public function restartScript(array $config = []): ?string
+    {
+        return null;
+    }
+
+    public function reloadScript(array $config = []): ?string
     {
         return null;
     }

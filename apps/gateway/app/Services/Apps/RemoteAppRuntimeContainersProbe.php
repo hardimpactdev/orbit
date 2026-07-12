@@ -21,7 +21,7 @@ final readonly class RemoteAppRuntimeContainersProbe
             commandName: 'internal:app-runtime-containers:probe',
             transportOptions: [
                 'metadata' => [
-                    'ORBIT_OPERATION_ID' => 'app-runtime-containers.probe',
+                    'ORBIT_OPERATION_ID' => 'process-runtime-containers.probe',
                 ],
                 'strict' => true,
                 'timeout' => 30,

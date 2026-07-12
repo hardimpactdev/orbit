@@ -9,7 +9,6 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
-use App\Services\Gateway\GatewayHostAgentConverger;
 use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmInstaller;
 use App\Services\Security\SshHostKeyPinner;
@@ -20,6 +19,21 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
+
+/** @param array<string, mixed> $arguments */
+function bootstrap_gateway_local(array $arguments): int
+{
+    $defaults = ['--tld' => 'gateway'];
+
+    if (array_key_exists('--identity-json', $arguments)) {
+        $defaults['--operator-tld'] = 'operator';
+    }
+
+    return Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        ...$defaults,
+        ...$arguments,
+    ]);
+}
 
 describe('orbit:internal:bootstrap-gateway-local', function (): void {
     beforeEach(function (): void {
@@ -43,26 +57,6 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
                 return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
             }
         });
-
-        $this->gatewayHostAgentConverger = new class extends GatewayHostAgentConverger {
-            /** @var list<array{id: int|string|null, name: string, wireguardAddress: string|null}> */
-            public array $nodes = [];
-
-            public function __construct() {}
-
-            public function converge(Node $gatewayNode): string
-            {
-                $this->nodes[] = [
-                    'id' => $gatewayNode->getKey(),
-                    'name' => $gatewayNode->name,
-                    'wireguardAddress' => $gatewayNode->wireguard_address,
-                ];
-
-                $gatewayNode->forceFill(['orbit_agent_capable' => true])->save();
-
-                return '/home/orbit/.config/orbit/agent.toml';
-            }
-        };
 
         $this->gatewaySwarmInstaller = new class extends GatewaySwarmInstaller {
             /**
@@ -168,7 +162,6 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         };
 
         app()->instance(GatewaySwarmInstaller::class, $this->gatewaySwarmInstaller);
-        app()->instance(GatewayHostAgentConverger::class, $this->gatewayHostAgentConverger);
         app()->instance(VpnDnsSwarmInstaller::class, $this->vpnDnsSwarmInstaller);
         app()->instance(SshHostKeyPinner::class, $this->hostKeyPinner);
     });
@@ -184,7 +177,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
     });
 
     it('creates a local gateway node record and generates the root CA', function (): void {
-        $exitCode = Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        $exitCode = bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--public-host' => '203.0.113.10',
@@ -242,21 +235,11 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
                     'wireguardInterface' => 'wg-orbit',
                     'imageArchive' => null,
                 ],
-            ])
-            ->and($this->gatewayHostAgentConverger->nodes)
-            ->toMatchArray([
-                [
-                    'id' => 1,
-                    'name' => 'gateway-1',
-                    'wireguardAddress' => '10.6.0.2',
-                ],
-            ])
-            ->and(Node::query()->where('name', 'gateway-1')->value('orbit_agent_capable'))
-            ->toBeTrue();
+            ]);
     });
 
     it('can skip gateway service installation for container topology preparation', function (): void {
-        $exitCode = Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        $exitCode = bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--skip-gateway-service-install' => true,
@@ -267,8 +250,6 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->and(Node::query()->where('name', 'gateway-1')->exists())
             ->toBeTrue()
             ->and($this->gatewaySwarmInstaller->installs)
-            ->toBe([])
-            ->and($this->gatewayHostAgentConverger->nodes)
             ->toBe([])
             ->and($this->vpnDnsSwarmInstaller->invocations)
             ->toBe([]);
@@ -288,7 +269,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
     });
 
     it('installs wg-easy before orbit-dns after the gateway API service', function (): void {
-        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--public-host' => '203.0.113.10',
@@ -313,7 +294,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         );
         config()->set('orbit.updates.gateway_image_archive', '/var/tmp/orbit-gateway-current.tar');
 
-        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--public-host' => '203.0.113.10',
@@ -333,7 +314,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
     });
 
     it('persists the wg-easy admin password in the gateway env', function (): void {
-        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--public-host' => '203.0.113.10',
@@ -345,7 +326,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
     });
 
     it('uses the configured gateway environment file for bootstrap secrets', function (): void {
-        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--public-host' => '203.0.113.10',
@@ -357,14 +338,14 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
     });
 
     it('reuses an existing wg-easy admin password on re-bootstrap', function (): void {
-        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--public-host' => '203.0.113.10',
         ]);
         $firstPassword = $this->vpnDnsSwarmInstaller->invocations[0]['password'];
 
-        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--public-host' => '203.0.113.10',
@@ -374,7 +355,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
     });
 
     it('skips wg-easy and orbit-dns when public host is not provided', function (): void {
-        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
         ]);
@@ -382,8 +363,8 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         expect($this->vpnDnsSwarmInstaller->invocations)->toBe([]);
     });
 
-    it('sets the gateway tld to "gateway" by default', function (): void {
-        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+    it('persists the explicitly supplied gateway TLD', function (): void {
+        bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
         ]);
@@ -392,7 +373,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
     });
 
     it('honors a custom --tld value for the gateway', function (): void {
-        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--tld' => 'orbital',
@@ -402,14 +383,14 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
     });
 
     it('is idempotent when the gateway node and CA already exist', function (): void {
-        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
         ]);
 
         $firstOutput = Artisan::output();
 
-        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
         ]);
@@ -422,12 +403,13 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
     it('keeps existing operator identities role-free when creating the gateway record', function (): void {
         Node::query()->create([
             'name' => 'operator-1',
+            'tld' => 'operator',
             'host' => '127.0.0.1',
             'orbit_path' => base_path(),
             'status' => 'active',
         ]);
 
-        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
         ]);
@@ -474,7 +456,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ],
         ];
 
-        $exitCode = Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        $exitCode = bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--identity-json' => json_encode($identity, JSON_THROW_ON_ERROR),
@@ -558,7 +540,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ],
         ];
 
-        Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--identity-json' => json_encode($replacementIdentity, JSON_THROW_ON_ERROR),
@@ -610,7 +592,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ],
         ];
 
-        $exitCode = Artisan::call('orbit:internal:bootstrap-gateway-local', [
+        $exitCode = bootstrap_gateway_local([
             'name' => 'gateway-1',
             'wireguard-address' => '10.6.0.2',
             '--identity-json' => json_encode($identity, JSON_THROW_ON_ERROR),

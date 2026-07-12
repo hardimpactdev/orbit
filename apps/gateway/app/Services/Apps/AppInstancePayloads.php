@@ -30,6 +30,7 @@ final readonly class AppInstancePayloads
             'driver' => $instance->driver->value,
             'driver_config' => $instance->driver_config?->toArray() ?? [],
             'runtime' => $this->runtime($instance),
+            'deploy_warmup_paths' => $instance->deploy_warmup_paths ?? [],
             'latest_deployment_status' => $instance->latest_deployment_status,
             'latest_deployment_run_id' => $instance->latest_deployment_run_id,
         ];

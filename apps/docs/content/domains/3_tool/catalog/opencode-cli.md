@@ -19,8 +19,9 @@ These fields describe the OpenCode CLI tool's identity, backend, and support mod
 `opencode-cli` supports `tool:install`, `tool:remove`,
 `tool:reconfigure`, password reconfiguration, `tool:update`,
 `tool:credentials`, proxy route metadata, safe doctor fix, and safe doctor
-adopt. Start, stop, restart, and logs for the long-running server belong to
-the related `opencode-server` process.
+adopt. It also declares `tool:start`, `tool:stop`, `tool:restart`, and
+`tool:logs` against exactly one process row whose canonical `tool` value is
+`opencode-cli`.
 
 `opencode-cli` declares a related singleton process, so `tool:install
 opencode-cli` configures that process by default: a node-owned `systemd`
@@ -73,11 +74,13 @@ OpenCode CLI is the installed agent IDE capability. The related
 Password reset is owned by `tool:reconfigure opencode-cli --password=<password>`.
 
 `tool:update opencode-cli` currently runs OpenCode's native `opencode
-upgrade` command through the Orbit-managed binary. Update remains tool-owned
-while start, stop, restart, and logs belong to the related process.
+upgrade` command through the Orbit-managed binary. Update remains tool-owned.
+Declared runtime verbs dispatch the owning process action for the exact
+`opencode-server` row; missing or duplicate matching rows fail explicitly.
 
 ## Doctor Relationship
 
 `doctor --family=tool` owns capability and expected-state checks, credential
-metadata presence, and safe repair/adoption boundaries. The related
-`systemd` process lifecycle belongs to the process family.
+metadata presence, and safe repair/adoption boundaries. The related `systemd`
+process row and its drift belong to the process family even when a declared
+`tool:*` runtime verb addresses it.

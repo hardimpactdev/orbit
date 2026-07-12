@@ -12,8 +12,6 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final class FleetUpdateNodeCliLauncher
 {
-    private const string LINUX_LEGACY_BIN_PATH = '/usr/local/bin/orbit';
-
     public static function binPath(Node $node): string
     {
         return NodeHostPaths::homeDirectoryFor($node->platform, $node->user).'/.local/bin/orbit';
@@ -22,24 +20,9 @@ final class FleetUpdateNodeCliLauncher
     /**
      * @return list<string>
      */
-    public static function legacyBinPaths(Node $node): array
-    {
-        if (NodeHostPaths::isMacosPlatform($node->platform)) {
-            return [];
-        }
-
-        return [self::LINUX_LEGACY_BIN_PATH];
-    }
-
-    /**
-     * @return list<string>
-     */
     public static function binPathsToVerify(Node $node): array
     {
-        return array_values(array_unique([
-            self::binPath($node),
-            ...self::legacyBinPaths($node),
-        ]));
+        return [self::binPath($node)];
     }
 
     public static function shouldVerifyRoleImages(Node $node): bool

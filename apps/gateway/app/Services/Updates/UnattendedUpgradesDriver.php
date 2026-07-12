@@ -14,6 +14,7 @@ use Throwable;
 
 final readonly class UnattendedUpgradesDriver implements UpdateDriver
 {
+    // @orbit-ssh-lane transitional-ssh
     private UnattendedUpgradesAptConfig $config;
 
     private UnattendedUpgradesInstaller $installer;

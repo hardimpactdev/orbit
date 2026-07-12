@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Php;
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Workspace;
@@ -15,6 +17,19 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
+function place_php_runtime_manager_app(App $app, Node $node): AppInstance
+{
+    return AppInstance::factory()->for($app)->create([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+}
+
 it('maps PHP runtime view with inherited workspace version', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
     NodeTool::factory()->create([
@@ -23,6 +38,7 @@ it('maps PHP runtime view with inherited workspace version', function (): void {
         'config' => ['versions' => ['8.5'], 'cli_version' => '8.5'],
     ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
+    place_php_runtime_manager_app($app, $node);
     Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => null]);
 
     $result = app(PhpRuntimeManager::class)->view(app: 'docs', workspace: 'feature-docs');
@@ -49,6 +65,7 @@ it('frankenphp selects app runtime from approved image facts', function (): void
         ],
     ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
+    place_php_runtime_manager_app($app, $node);
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', app: 'docs');
 
@@ -77,6 +94,7 @@ it('frankenphp exposes available image facts in runtime views', function (): voi
         ],
     ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
+    place_php_runtime_manager_app($app, $node);
 
     $result = app(PhpRuntimeManager::class)->view(app: 'docs');
 
@@ -113,6 +131,7 @@ it('frankenphp rejects app writes when --node does not own the app', function ()
     ]);
 
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'php_version' => '8.4']);
+    place_php_runtime_manager_app($app, $appNode);
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', app: 'docs', node: 'image-node');
 
@@ -260,6 +279,7 @@ it('frankenphp rejects workspace writes when --node does not own the parent app'
     ]);
 
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'php_version' => '8.4']);
+    place_php_runtime_manager_app($app, $appNode);
     $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => '8.4']);
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', workspace: 'feature-docs', node: 'image-node');
@@ -296,6 +316,7 @@ it('frankenphp rejects host PHP and FPM fallback facts even when legacy version 
         ],
     ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
+    place_php_runtime_manager_app($app, $node);
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', app: 'docs');
 
@@ -331,6 +352,7 @@ it('frankenphp rejects legacy versions-only PHP facts without approved image evi
         ],
     ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
+    place_php_runtime_manager_app($app, $node);
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', app: 'docs');
 
@@ -358,6 +380,7 @@ it('frankenphp rejects workspace inheritance when inherited app version lacks ap
         ],
     ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
+    place_php_runtime_manager_app($app, $node);
     $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => '8.4']);
 
     $result = app(PhpRuntimeManager::class)->use(version: null, app: 'docs', workspace: 'feature-docs', inherit: true);

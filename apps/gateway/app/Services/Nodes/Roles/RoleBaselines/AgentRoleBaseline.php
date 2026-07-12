@@ -33,10 +33,10 @@ class AgentRoleBaseline implements RoleBaseline
             throw new RuntimeException('The agent role requires an Ubuntu host.');
         }
 
-        $tld = $assignment->settings['tld'] ?? null;
+        $tld = $node->tld;
 
         if (! is_string($tld) || ! $this->isValidTld(trim($tld))) {
-            throw new RuntimeException('The agent role requires a valid tld setting.');
+            throw new RuntimeException('The agent role requires a valid node TLD.');
         }
 
         $result = $this->developmentDnsMappingEnactor->convergeDevelopmentRole($node, $tld);
@@ -54,7 +54,7 @@ class AgentRoleBaseline implements RoleBaseline
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
     {
-        $tld = $assignment->settings['tld'] ?? null;
+        $tld = $node->tld;
 
         if (is_string($tld) && $this->isValidTld(trim($tld))) {
             $result = $this->developmentDnsMappingEnactor->removeDevelopmentRole($node, $tld);

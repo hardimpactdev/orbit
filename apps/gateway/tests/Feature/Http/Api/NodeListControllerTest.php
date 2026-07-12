@@ -27,23 +27,27 @@ const CALLER_WG_IP = '10.6.0.99';
  */
 function apiNodeRow(array $overrides = []): array
 {
-    return array_merge([
+    $row = array_merge([
         'name' => 'app-1',
         'host' => '10.6.0.7',
         'orbit_path' => '/home/nckrtl/orbit',
         'status' => 'active',
-        'tld' => 'test',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.7',
         'created_at' => now(),
         'updated_at' => now(),
     ], $overrides);
+
+    $row['tld'] ??= $row['name'];
+
+    return $row;
 }
 
 function createCallerNode(): void
 {
     DB::table('nodes')->insert([
         'name' => 'caller',
+        'tld' => 'caller',
         'host' => CALLER_WG_IP,
         'orbit_path' => '/home/test/orbit',
         'status' => 'active',
@@ -131,7 +135,7 @@ describe('NodeListController', function (): void {
             apiNodeRow(['name' => 'control-1']),
             apiNodeRow(['name' => 'metrics-1']),
         ]);
-        assignApiNodeRole('app-1', 'app-dev', ['tld' => 'test']);
+        assignApiNodeRole('app-1', 'app-dev');
         assignApiNodeRole('metrics-1', 'metrics');
 
         $response = getApiNodesJson('/api/nodes?role=app-dev', ['REMOTE_ADDR' => CALLER_WG_IP]);
@@ -292,7 +296,7 @@ describe('NodeListController', function (): void {
                 'status' => 'active',
             ]),
         ]);
-        assignApiNodeRole('app-1', 'app-dev', ['tld' => 'test']);
+        assignApiNodeRole('app-1', 'app-dev');
 
         $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
@@ -311,7 +315,7 @@ describe('NodeListController', function (): void {
                 [
                     'role' => 'app-dev',
                     'status' => 'active',
-                    'settings' => ['tld' => 'test'],
+                    'settings' => [],
                     'last_error' => null,
                     'converged_at' => NodeRoleAssignment::query()
                         ->where('role', 'app-dev')
@@ -391,7 +395,7 @@ describe('NodeListController', function (): void {
                 'name' => 'plain-app',
             ]),
         ]);
-        assignApiNodeRole('control-app', 'app-dev', ['tld' => 'test']);
+        assignApiNodeRole('control-app', 'app-dev');
 
         $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
         $nodes = collect($response->json('success.data.nodes'))->keyBy('name');
@@ -422,7 +426,7 @@ describe('NodeListController', function (): void {
                 'wireguard_address' => null,
             ]),
         ]);
-        assignApiNodeRole('incomplete-app', 'app-dev', ['tld' => 'test']);
+        assignApiNodeRole('incomplete-app', 'app-dev');
         markNodeSecurityBaselineClean(Node::query()->where('name', 'incomplete-app')->firstOrFail());
 
         $response = getApiNodesJson('/api/nodes?doctor=1&role=app-dev', ['REMOTE_ADDR' => CALLER_WG_IP]);

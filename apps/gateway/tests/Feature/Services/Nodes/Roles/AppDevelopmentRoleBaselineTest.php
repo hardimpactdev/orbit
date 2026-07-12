@@ -33,6 +33,7 @@ function appDevBaselineNode(array $attributes = []): Node
     return Node::factory()->create([
         'platform' => 'ubuntu',
         'host' => '10.6.0.20',
+        'tld' => 'test',
         'wireguard_address' => '10.6.0.20',
         'status' => NodeStatus::Active,
         ...$attributes,
@@ -45,7 +46,7 @@ function appDevBaselineAssignment(Node $node): NodeRoleAssignment
         'node_id' => $node->id,
         'role' => NodeRoleName::AppDevelopment->value,
         'status' => NodeRoleStatus::Active->value,
-        'settings' => ['tld' => 'test'],
+        'settings' => [],
     ]);
 }
 

@@ -118,8 +118,6 @@ final readonly class AppRuntimeContainerRenderer
             $mounts[] = $packagesMount;
         }
 
-        $app->loadMissing(['runtimeMounts']);
-
         foreach ($this->appRuntimeMounts->mountsForRuntime($app, $instance) as $mount) {
             $mounts[] = $mount;
         }

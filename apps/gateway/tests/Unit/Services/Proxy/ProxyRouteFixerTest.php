@@ -387,7 +387,7 @@ describe('ProxyRouteFixer', function (): void {
     it('installs the gateway CA trust pool and reloads the managed caddy container for websocket routes', function (): void {
         $router = Node::factory()
             ->router()
-            ->orbitAgentCapable()
+            ->managed()
             ->create([
                 'name' => 'gateway-1',
                 'wireguard_address' => '10.6.0.2',

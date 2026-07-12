@@ -306,7 +306,6 @@ describe('internal fleet update install cli command', function (): void {
         $agentConfigPath = "{$workspace}/agent.toml";
         file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
         chmod(filename: $agentArtifactPath, permissions: 0o755);
-        file_put_contents(filename: $agentConfigPath, data: 'gateway_url = "https://gateway"');
         $sha256 = fleet_update_install_cli_sha256($artifactPath);
         $agentSha256 = fleet_update_install_cli_sha256($agentArtifactPath);
         $path = $agentRuntimeBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
@@ -426,7 +425,6 @@ describe('systemd Orbit Agent adoption during fleet update install', function ()
         $agentConfigPath = "{$workspace}/agent.toml";
         file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
         chmod(filename: $agentArtifactPath, permissions: 0o755);
-        file_put_contents(filename: $agentConfigPath, data: 'gateway_url = "https://gateway"');
         $sha256 = fleet_update_install_cli_sha256($artifactPath);
         $agentSha256 = fleet_update_install_cli_sha256($agentArtifactPath);
         $path = $systemdBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
@@ -455,6 +453,14 @@ describe('systemd Orbit Agent adoption during fleet update install', function ()
                     'unit_name' => 'orbit-agent',
                     'exec_start' => "{$workspace}/bin/orbit-agent",
                     'config_path' => $agentConfigPath,
+                    'config' => implode("\n", [
+                        'gateway_url = "https://10.6.0.1"',
+                        'node_name = "app-1"',
+                        'platform = "ubuntu_24-04"',
+                        'managed = true',
+                        'wireguard_address = "10.6.0.2"',
+                        '',
+                    ]),
                     'http_bind' => '10.6.0.2:9477',
                     'user' => 'orbit',
                 ],
@@ -466,6 +472,7 @@ describe('systemd Orbit Agent adoption during fleet update install', function ()
         $stdout = is_string($data['stdout'] ?? null) ? $data['stdout'] : '';
         $calls = file_get_contents("{$workspace}/missing-systemd-calls.log");
         $unit = file_get_contents("{$workspace}/adopted-orbit-agent.service");
+        $config = file_get_contents($agentConfigPath);
 
         expect($exitCode)->toBe(0);
         expect($stdout)
@@ -487,6 +494,10 @@ describe('systemd Orbit Agent adoption during fleet update install', function ()
             ->toContain("Environment=ORBIT_AGENT_CONFIG={$agentConfigPath}")
             ->toContain('Environment=ORBIT_AGENT_HTTP_BIND=10.6.0.2:9477')
             ->toContain("ExecStart={$workspace}/bin/orbit-agent");
+        expect($config)
+            ->toContain('platform = "ubuntu_24-04"')
+            ->toContain('managed = true')
+            ->toContain('wireguard_address = "10.6.0.2"');
     });
 });
 
@@ -569,54 +580,6 @@ describe('internal fleet update install cli launcher isolation', function (): vo
         putenv('PATH='.$path);
         $_ENV['PATH'] = $path;
         $_SERVER['PATH'] = $path;
-    });
-
-    it('refreshes explicit legacy Orbit launcher paths from the install payload', function (): void {
-        $workspace = make_fleet_update_install_cli_workspace();
-        $artifactPath = "{$workspace}/artifact/orbit";
-        $sha256 = fleet_update_install_cli_sha256($artifactPath);
-        $legacyLauncherPath = "{$workspace}/legacy-bin/orbit";
-
-        mkdir(dirname($legacyLauncherPath), recursive: true);
-        file_put_contents(
-            filename: $legacyLauncherPath,
-            data: "#!/usr/bin/env sh\necho 'Orbit 0.0.1'\n",
-        );
-        chmod(filename: $legacyLauncherPath, permissions: 0o755);
-
-        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
-            [
-                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
-                '--json' => true,
-            ],
-            stdin: json_encode([
-                'artifact_url' => "file://{$artifactPath}",
-                'sha256' => $sha256,
-                'install_root' => "{$workspace}/install-root",
-                'bin_path' => "{$workspace}/bin/orbit",
-                'shared_binary_path' => null,
-                'legacy_bin_paths' => [$legacyLauncherPath],
-                'role_images' => [],
-            ], JSON_THROW_ON_ERROR),
-        );
-        $data = fleet_update_install_cli_success_data($output);
-        $resolvedLegacyLauncherPath = realpath($legacyLauncherPath);
-
-        expect($exitCode)
-            ->toBe(0, $output)
-            ->and($data['legacy_bin_paths'] ?? null)
-            ->toBe([$legacyLauncherPath])
-            ->and($data['stdout'] ?? '')
-            ->toContain('link_legacy_cli')
-            ->toContain('verify_legacy_cli')
-            ->and(is_link($legacyLauncherPath))
-            ->toBeTrue()
-            ->and(fleet_update_install_cli_sha256(
-                $resolvedLegacyLauncherPath !== false ? $resolvedLegacyLauncherPath : $legacyLauncherPath,
-            ))
-            ->toBe($sha256)
-            ->and(shell_exec(escapeshellarg($legacyLauncherPath).' --version --local'))
-            ->toBe("Orbit 9.9.9\n");
     });
 
     it('does not relink a path-resolved orbit launcher outside the payload paths', function (): void {

@@ -51,7 +51,7 @@ describe('FirewallRuleFixer', function (): void {
         ]);
         $node = Node::factory()
             ->appDev()
-            ->orbitAgentCapable()
+            ->managed()
             ->create([
                 'name' => 'app-1',
                 'platform' => 'ubuntu',
@@ -119,7 +119,7 @@ describe('FirewallRuleFixer', function (): void {
         ]);
         $node = Node::factory()
             ->appDev()
-            ->orbitAgentCapable()
+            ->managed()
             ->create([
                 'name' => 'app-1',
                 'platform' => 'ubuntu',

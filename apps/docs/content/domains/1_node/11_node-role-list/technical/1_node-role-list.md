@@ -8,9 +8,9 @@
 
 **Prerequisites:**
 - Caller is authenticated through the gateway WireGuard identity path.
-- Gateway callers read locally.
-- Non-gateway callers have `role:read` on the target node, or an equivalent
-  gateway-admin grant.
+- Every public CLI caller uses the typed gateway HTTPS API.
+- Normal callers have `role:read` on the target node, or an equivalent
+  gateway-admin grant; gateway-role callers use implicit authority.
 
 ## Signature
 
@@ -36,8 +36,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Read Path Rules
 
-- Gateway callers read role assignments locally.
-- Non-gateway callers forward to the gateway through `GatewayConnector`.
+- Every public CLI caller forwards through `GatewayConnector`, including a CLI
+  running on the gateway host.
 - The gateway authorizes the request with `role:read` on the target node.
 
 ### Role Payload Rules

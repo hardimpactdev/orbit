@@ -4,25 +4,25 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Contracts\ProgressReporter;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\DeployStep;
+use App\Models\Node;
 use App\Services\Deploy\DeployManager;
-use App\Support\Streaming\ProgressEventStreamEmitter;
-use App\Support\Streaming\ProgressEventStreamResponseFactory;
+use App\Services\Deploy\DeployOperationRunner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Sdk\Laravel\GatewayApiException;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 final readonly class DeployController
 {
     public function __construct(
         private DeployManager $deploy,
+        private DeployOperationRunner $deployOperations,
     ) {}
 
-    #[RequiresPermission('deploy:step', servingNode: ServingNode::AppOwning)]
+    #[RequiresPermission('deploy:step', servingNode: ServingNode::AppInstanceOwning)]
     public function storeStep(Request $request): JsonResponse
     {
         $app = $this->stringInput($request, 'app');
@@ -68,7 +68,7 @@ final readonly class DeployController
         }
     }
 
-    #[RequiresPermission('deploy:read', servingNode: ServingNode::AppOwning)]
+    #[RequiresPermission('deploy:read', servingNode: ServingNode::AppInstanceOwning)]
     public function listSteps(Request $request): JsonResponse
     {
         $app = $this->stringInput($request, 'app');
@@ -86,7 +86,7 @@ final readonly class DeployController
         }
     }
 
-    #[RequiresPermission('deploy:step', servingNode: ServingNode::AppOwning)]
+    #[RequiresPermission('deploy:step', servingNode: ServingNode::AppInstanceOwning)]
     public function removeStep(string $step, Request $request): JsonResponse
     {
         if ($request->boolean('destructive_consent') !== true) {
@@ -113,8 +113,8 @@ final readonly class DeployController
         }
     }
 
-    #[RequiresPermission('deploy:run', servingNode: ServingNode::AppOwning)]
-    public function run(Request $request, ProgressEventStreamResponseFactory $streams): JsonResponse|StreamedResponse
+    #[RequiresPermission('deploy:run', servingNode: ServingNode::AppInstanceOwning)]
+    public function run(Request $request): JsonResponse
     {
         $app = $this->stringInput($request, 'app');
 
@@ -122,65 +122,34 @@ final readonly class DeployController
             return $this->error('validation_failed', 'App is required.', ['field' => 'app'], 400);
         }
 
-        $detach = $request->boolean('detach');
+        $caller = $request->user();
 
-        if ($this->wantsEventStream($request)) {
-            return $this->streamRun($streams, $app, $detach);
+        if (! $caller instanceof Node) {
+            return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
         }
 
         try {
-            $result = $this->deploy->run($app, $detach);
+            $operation = $this->deployOperations->start($app, $caller);
 
-            return $this->success($this->runData($result), $result['meta']);
+            app()->terminating(function () use ($operation, $app): void {
+                try {
+                    $this->deployOperations->execute($operation['uuid'], $app);
+                } catch (Throwable $throwable) {
+                    report($throwable);
+                }
+            });
+
+            return $this->success(
+                ['operation' => $operation],
+                ['detached' => $request->boolean('detach')],
+                202,
+            );
         } catch (GatewayApiException $exception) {
             return $this->exception($exception);
         }
     }
 
-    private function streamRun(ProgressEventStreamResponseFactory $streams, string $app, bool $detach): StreamedResponse
-    {
-        return $streams->make(function (ProgressEventStreamEmitter $events) use ($app, $detach): void {
-            try {
-                $result = $this->deploy->run($app, $detach, app(ProgressReporter::class));
-                $data = $this->runData($result);
-                $data['footer'] = ($result['run']['status'] ?? null) === 'running'
-                    ? 'Deployment started'
-                    : 'Deployment completed';
-
-                $events->complete(0, $data);
-            } catch (GatewayApiException $exception) {
-                $events->error($exception->getMessage(), 1, [
-                    'code' => $exception->errorCode() ?? 'deploy.execution_failed',
-                    'message' => $exception->getMessage(),
-                    'meta' => $exception->errorMeta(),
-                    'data' => $exception->errorData(),
-                    'footer' => 'Deployment failed',
-                ]);
-            }
-        });
-    }
-
-    private function wantsEventStream(Request $request): bool
-    {
-        return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
-    }
-
-    /**
-     * @param  array{run: array<string, mixed>, output?: array{stdout: string, stderr: string}, meta: array<string, mixed>}  $result
-     * @return array<string, mixed>
-     */
-    private function runData(array $result): array
-    {
-        $data = ['run' => $result['run']];
-
-        if (isset($result['output'])) {
-            $data['output'] = $result['output'];
-        }
-
-        return $data;
-    }
-
-    #[RequiresPermission('deploy:read', servingNode: ServingNode::AppOwning)]
+    #[RequiresPermission('deploy:read', servingNode: ServingNode::AppInstanceOwning)]
     public function history(Request $request): JsonResponse
     {
         $app = $this->stringInput($request, 'app');
@@ -209,7 +178,7 @@ final readonly class DeployController
         }
     }
 
-    #[RequiresPermission('deploy:read', servingNode: ServingNode::AppOwning)]
+    #[RequiresPermission('deploy:read', servingNode: ServingNode::AppInstanceOwning)]
     public function log(string $run, Request $request): JsonResponse
     {
         $app = $this->stringInput($request, 'app');
@@ -311,14 +280,14 @@ final readonly class DeployController
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $meta
      */
-    private function success(array $data, array $meta = []): JsonResponse
+    private function success(array $data, array $meta = [], int $status = 200): JsonResponse
     {
         return response()->json([
             'success' => [
                 'data' => $data,
                 'meta' => empty($meta) ? (object) [] : $meta,
             ],
-        ]);
+        ], $status);
     }
 
     /**

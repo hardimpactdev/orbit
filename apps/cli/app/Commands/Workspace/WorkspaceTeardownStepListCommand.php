@@ -16,11 +16,11 @@ final class WorkspaceTeardownStepListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'workspace-teardown-step:list
-        {--app= : Parent app or app.instance selector}
+        {--app= : App instance selector (app.instance)}
         {--json}';
 
     #[\Override]
-    protected $description = 'List workspace teardown steps for an app.';
+    protected $description = 'List workspace teardown steps for an app instance.';
 
     public function handle(): int
     {
@@ -84,8 +84,14 @@ final class WorkspaceTeardownStepListCommand extends GatewayCommand
     {
         $first = $steps[0] ?? null;
 
-        if (is_array($first) && is_scalar($first['app'] ?? null) && (string) $first['app'] !== '') {
-            return (string) $first['app'];
+        if (
+            is_array($first)
+            && is_scalar($first['app'] ?? null)
+            && (string) $first['app'] !== ''
+            && is_scalar($first['app_instance'] ?? null)
+            && (string) $first['app_instance'] !== ''
+        ) {
+            return (string) $first['app'].'.'.(string) $first['app_instance'];
         }
 
         return $this->stringOption('app') ?? $this->appFromOrbitMarker() ?? '—';

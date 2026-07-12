@@ -7,9 +7,10 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Data\Php\PhpRuntimeFailure;
 use App\Enums\ActivityLogType;
-use App\Models\App;
+use App\Http\Authorization\ServingNode;
 use App\Models\Node;
-use App\Models\Workspace;
+use App\Services\Authorization\ServingNodeResolver;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Php\PhpRuntimeManager;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -19,6 +20,8 @@ final readonly class PhpRuntimeController implements Loggable
 {
     public function __construct(
         private PhpRuntimeManager $php,
+        private ServingNodeResolver $servingNodeResolver,
+        private NodeAccessAuthorizer $authorizer,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -30,14 +33,29 @@ final readonly class PhpRuntimeController implements Loggable
             return $this->failure(new PhpRuntimeFailure('authorization_failed', 'Peer identity unknown.'));
         }
 
-        $node = $this->resolvedNodeName($request);
+        $servingNode = $this->servingNode($request);
 
-        if (! $this->canAccessNode($caller, $node)) {
+        if (! $servingNode instanceof Node) {
             return $this->failure(new PhpRuntimeFailure(
                 'authorization_failed',
-                'This node is not authorized to inspect the PHP runtime target.',
+                'Serving node could not be resolved for the PHP runtime target.',
                 [
-                    'node' => $node,
+                    'reason' => 'serving_node_unresolved',
+                    'missing_permission' => 'php:read',
+                ],
+            ));
+        }
+
+        $authorization = $this->authorizer->authorize($caller, $servingNode, 'php:read');
+
+        if (! $authorization->allowed) {
+            return $this->failure(new PhpRuntimeFailure(
+                'authorization_failed',
+                "This node is not authorized for 'php:read' on '{$servingNode->name}'.",
+                [
+                    'reason' => $authorization->reason,
+                    'missing_permission' => $authorization->missingPermission,
+                    'serving_node' => $servingNode->name,
                 ],
             ));
         }
@@ -63,54 +81,17 @@ final readonly class PhpRuntimeController implements Loggable
         ]);
     }
 
-    private function canAccessNode(Node $caller, ?string $node): bool
+    private function servingNode(Request $request): ?Node
     {
-        if ($caller->hasActiveRole('gateway')) {
-            return true;
+        if ($this->nullableString($request->query('workspace')) !== null) {
+            return $this->servingNodeResolver->resolve($request, ServingNode::WorkspaceOwning);
         }
 
-        if ($node === null) {
-            return true;
+        if ($this->nullableString($request->query('app')) !== null) {
+            return $this->servingNodeResolver->resolve($request, ServingNode::AppInstanceOwning);
         }
 
-        return Node::query()
-            ->where('name', $node)
-            ->whereHas('consumingNodes', fn ($query) => $query->whereKey($caller->id))
-            ->exists();
-    }
-
-    private function resolvedNodeName(Request $request): ?string
-    {
-        $node = $this->nullableString($request->query('node'));
-
-        if ($node !== null) {
-            return $node;
-        }
-
-        $appSelector = $this->nullableString($request->query('app'));
-
-        if ($appSelector !== null) {
-            $app = App::query()
-                ->with('node')
-                ->where('name', $appSelector)
-                ->orWhere('domain', $appSelector)
-                ->first();
-
-            return $app?->node?->name;
-        }
-
-        $workspaceSelector = $this->nullableString($request->query('workspace'));
-
-        if ($workspaceSelector === null) {
-            return null;
-        }
-
-        $workspace = Workspace::query()
-            ->with('app.node')
-            ->where('name', $workspaceSelector)
-            ->first();
-
-        return $workspace?->app?->node?->name;
+        return $this->servingNodeResolver->resolve($request, ServingNode::Target);
     }
 
     private function nullableString(mixed $value): ?string

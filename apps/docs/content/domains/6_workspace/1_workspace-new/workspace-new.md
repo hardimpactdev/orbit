@@ -17,17 +17,17 @@ configurations.
 cd /var/www/my-app
 orbit workspace:new
 
-# Explicit name on the app my-app
+# Bare parent-app shorthand; succeeds only when my-app has one app instance
 orbit workspace:new feature-a --app=my-app
 
 # Explicit name on one concrete app instance
 orbit workspace:new recipes --app=happie.nmbp
 
-# Branched from a non-default source ref
-orbit workspace:new bugfix-1 --app=my-app --base=production
+# Branched from a non-default source ref on one concrete app instance
+orbit workspace:new bugfix-1 --app=my-app.development --base=production
 
 # Stream progress as newline-delimited JSON
-orbit workspace:new feature-a --app=my-app --stream-json
+orbit workspace:new feature-a --app=my-app.development --stream-json
 ```
 
 ## Arguments and options
@@ -35,13 +35,19 @@ orbit workspace:new feature-a --app=my-app --stream-json
 - `name`: workspace slug; lowercase letters, digits, and hyphens only, up to
   63 characters. The reserved name `main` is rejected. Must be unique within
   the parent app. Prompted in interactive mode when omitted.
-- `--app=<app>`: parent app slug or app-instance selector. Use dot notation
-  such as `happie.nmbp` to create the workspace on one concrete app instance.
-  When omitted, Orbit infers the parent app or app instance from
-  gateway-authoritative metadata: an `.orbit/config` marker on the caller
-  filesystem, or a gateway path-ownership lookup that matches the current
-  working directory against registered app, app instance, and workspace paths.
-  Prompted interactively when neither resolves.
+- `--app=<app>`: app-instance selector or bare parent-app shorthand.
+  - Dot notation such as `happie.nmbp` selects one concrete app instance
+    directly.
+  - A bare app slug, parent-app marker, or parent app path succeeds only when it
+    resolves uniquely to one registered app instance.
+  - When omitted, Orbit infers an instance from an `.orbit/config` marker or a
+    gateway path-ownership lookup against registered paths.
+  - Ambiguous or missing concrete ownership fails with the
+    `app_instance_required` validation reason. Interactive mode prompts for an
+    instance only when neither a selector nor usable path context was supplied.
+    See the
+    [JSON renderer contract](technical/6.2_workspace-new_output-render_json.md)
+    for structured failure metadata.
 - `--base=<ref>`: source git ref used to create the worktree. Defaults to
   `main` (not prompted).
 - `--php-version=<version>`: workspace PHP version override. When omitted, the
@@ -52,13 +58,16 @@ orbit workspace:new feature-a --app=my-app --stream-json
 
 ## Path Awareness
 
-`workspace:new` resolves the parent app or app instance from the caller's
-current directory when `--app` is not supplied. The gateway path-ownership
-lookup keyed on (caller node identity, absolute CWD) accepts an app's main
-path, registered app instance paths, and registered workspace paths. From any
-path under a registered app or app instance, running `orbit workspace:new`
-with no arguments is enough to start the create flow; the workspace name is
-the only required field and is prompted in interactive mode.
+`workspace:new` resolves one concrete app instance from the caller's current
+directory when `--app` is not supplied. The gateway path-ownership lookup keyed
+on (caller node identity, absolute CWD) accepts registered app-instance and
+workspace paths directly. An app's main path or parent-app marker is only
+shorthand: it must map to exactly one registered instance. Zero or multiple
+matches fail with `validation_failed` and
+the `app_instance_required` reason. Orbit never falls back to a canonical app
+node or creates a parent-app-only workspace. See the
+[JSON renderer contract](technical/6.2_workspace-new_output-render_json.md)
+for the exact envelope.
 
 Project files (`composer.json`, `package.json`, `.php-version`) are not
 inspected to infer the parent app. Path inference is gateway-authoritative.
@@ -68,10 +77,9 @@ inspected to infer the parent app. Path inference is gateway-authoritative.
 The following steps describe what the command does during a successful run.
 
 - **Gateway Configuration**: Creates initial workspace configuration on the
-  gateway.
-- **Workspace Source**: Creates a new workspace source for the selected app
-  instance on its node, or for the parent app on the canonical app node when no
-  app instance is selected. Generic and OpenCode-backed sources use git
+  gateway with a non-null `app_instance_id`.
+- **Workspace Source**: Creates a new workspace source for the selected concrete
+  app instance on its owning node. Generic and OpenCode-backed sources use Git
   worktrees; PolyScope-backed sources are provisioned through the PolyScope SDK.
 - **Setup Pipeline**: Runs the same setup behavior exposed by
   [`workspace:setup`](../2_workspace-setup/workspace-setup.md). The pipeline
@@ -82,9 +90,9 @@ The following steps describe what the command does during a successful run.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is authorized to manage the target app or selected
-  app instance node.
-- The gateway can reach the effective workspace node over SSH.
+- The current node identity is authorized to run `workspace:new` on the selected
+  app instance's owning node.
+- The gateway can reach the effective workspace node through Agent push.
 
 ## Output Summary
 

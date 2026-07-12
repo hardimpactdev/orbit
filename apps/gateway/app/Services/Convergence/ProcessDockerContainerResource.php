@@ -19,6 +19,7 @@ use RuntimeException;
 
 final readonly class ProcessDockerContainerResource
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private ProcessDockerContainer $container,
         private RemoteLocalExecutor $localExecutor,

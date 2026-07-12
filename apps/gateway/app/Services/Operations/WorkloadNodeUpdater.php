@@ -20,6 +20,7 @@ use Throwable;
 
 final readonly class WorkloadNodeUpdater
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private NodeRoleAssignments $roles,
         private NodeHostPaths $hostPaths,
@@ -30,6 +31,7 @@ final readonly class WorkloadNodeUpdater
         private FleetUpdateNodeInstaller $nodeInstaller,
         private GatewayCliArtifactRelay $artifactRelay,
         private RemoteNodeDoctor $nodeDoctor,
+        private NodeAgentServicePayloadBuilder $agentServices,
     ) {}
 
     /**
@@ -245,8 +247,8 @@ final readonly class WorkloadNodeUpdater
      *     install_root: string,
      *     bin_path: string,
      *     shared_binary_path: string|null,
-     *     legacy_bin_paths: list<string>,
      *     agent_artifact: array{artifact_url: string, sha256: string, bin_path: string}|null,
+     *     agent_service: array{unit_name: string, exec_start: string, config_path: string, config: string, http_bind: string, user: string}|null,
      *     role_images: list<string>,
      * }
      */
@@ -264,8 +266,8 @@ final readonly class WorkloadNodeUpdater
             'install_root' => $installRoot,
             'bin_path' => FleetUpdateNodeCliLauncher::binPath($node),
             'shared_binary_path' => null,
-            'legacy_bin_paths' => FleetUpdateNodeCliLauncher::legacyBinPaths($node),
             'agent_artifact' => $this->agentArtifactPayload($operationRun, $plan, $node),
+            'agent_service' => $this->agentServicePayload($node),
             'role_images' => $this->requiredRoleImages($plan, $node),
         ];
     }
@@ -310,7 +312,7 @@ final readonly class WorkloadNodeUpdater
 
     private function recordInstalledAgent(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): void
     {
-        if (! $node->orbit_agent_capable) {
+        if (! $node->isAgentEligible()) {
             return;
         }
 
@@ -372,7 +374,7 @@ final readonly class WorkloadNodeUpdater
      */
     private function agentArtifactPayload(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): ?array
     {
-        if (! $node->orbit_agent_capable) {
+        if (! $node->isAgentEligible()) {
             return null;
         }
 
@@ -391,6 +393,24 @@ final readonly class WorkloadNodeUpdater
             'sha256' => $artifact['sha256'],
             'bin_path' => FleetUpdateNodeAgentBinary::binPath($node),
         ];
+    }
+
+    /**
+     * @return array{unit_name: string, exec_start: string, config_path: string, config: string, http_bind: string, user: string}|null
+     */
+    private function agentServicePayload(Node $node): ?array
+    {
+        if (! $node->isAgentEligible()) {
+            return null;
+        }
+
+        $gateway = $this->targets->gatewayNode();
+
+        if (! $gateway instanceof Node) {
+            throw new RuntimeException('An active gateway identity is required to configure Orbit Agent.');
+        }
+
+        return $this->agentServices->forNode($node, $gateway);
     }
 
     /**

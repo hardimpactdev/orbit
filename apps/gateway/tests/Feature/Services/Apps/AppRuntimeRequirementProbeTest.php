@@ -33,7 +33,7 @@ it('reports missing required PHP extensions with stable issue codes', function (
     ]);
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
             'wireguard_address' => '10.6.0.51',
@@ -75,7 +75,7 @@ it('reports unverifiable PHP extension state when the runtime cannot be queried'
     ]);
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'name' => 'app-dev-1',
             'wireguard_address' => '10.6.0.52',

@@ -11,7 +11,7 @@
 - The current node identity is authorized to manage workspace policy for the
   target app.
 - The target app exists in gateway configuration.
-- The target step exists for the resolved `(app, phase=teardown)`.
+- The target step exists for the resolved `(app_instance, phase=teardown)`.
 
 This is the canonical technical contract for
 `workspace-teardown-step:remove`. It owns the signature, input resolution,
@@ -30,7 +30,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `step` | `--step` | Always. | Never. | None. | Strict positive integer. Must reference an existing teardown-step record belonging to the resolved app and `phase=teardown`. |
+| `step` | `--step` | Always. | Never. | None. | Strict positive integer. Must reference an existing teardown-step record belonging to the resolved app instance and `phase=teardown`. |
 | `app` | `--app` | Always for writes. | Never. | Cwd-inferred parent app when omitted in docs only; writes fail without a dotted selector. | Must resolve to an existing app-instance selector such as `happie.nmbp`. Bare app slugs are rejected with `error.meta.reason=app_instance_required`. Deletes only instance-owned rows for the selected app instance. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
@@ -58,7 +58,7 @@ This command follows the shared
    - In non-interactive mode, fail before side effects when `--step` is absent
      (`error.code=validation_failed`, `error.meta.field=step`).
    - Must be a strict positive integer.
-   - Must match an existing teardown-step record belonging to the resolved app
+   - Must match an existing teardown-step record belonging to the resolved app instance
      and `phase=teardown`.
 3. **Resolve `force`.** From `--force`. Default `false`.
 4. **Apply Destructive Consent.**
@@ -80,28 +80,28 @@ This command follows the shared
 ### Teardown Step Removal Rules
 
 `workspace-teardown-step:remove` deletes a single gateway-owned teardown-step
-record from an app's workspace lifecycle policy and compacts the surviving
+record from an app instance's workspace lifecycle policy and compacts the surviving
 steps' `order` to a continuous sequence. The command writes only to gateway
 configuration. Nodes are not contacted.
 
 1. **Lookup.** Find the teardown-step record by
-   `(step_id, app, phase=teardown)`. If not found, fail before side effects with
+   `(step_id, app_instance, phase=teardown)`. If not found, fail before side effects with
    `error.code=workspace.step_not_found`. Already-absent removal is not an
    idempotent success.
 2. **Destructive Consent.** Apply the destructive consent rules from the
    selected input mode.
 3. **Atomic Edit.** Within a single gateway transaction, scoped by an
-   app-scoped policy-edit lock that serializes only concurrent policy-table
+   app-instance-scoped policy-edit lock that serializes only concurrent policy-table
    edits:
-   - Capture the removed record's `(id, app, phase, order, command,
+   - Capture the removed record's `(id, app, app_instance, phase, order, command,
      timeout_seconds)` tuple for the response payload.
    - Delete the teardown-step record from the gateway registry.
    - Decrement the `order` of every surviving step in the same
-     `(app, phase=teardown)` whose original `order` was greater than the
+     `(app_instance, phase=teardown)` whose original `order` was greater than the
      removed step's `order` by exactly one. The surviving sequence is
      contiguous from `1` to `N`.
 4. **Report.** Return the removed step record, the action verb (`removed`), and
-   the new total step count for `(app, phase=teardown)`.
+   the new total step count for `(app_instance, phase=teardown)`.
 
 ### Scope Boundaries
 
@@ -135,7 +135,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Missing step ID | `--step` is absent in non-interactive mode. | Failure (`error.code=validation_failed`, `error.meta.field=step`). |
 | Step not a positive integer | `--step` is non-numeric, zero, or negative. | Failure (`error.code=validation_failed`, `error.meta.field=step`, `error.meta.reason=must_be_positive_integer`). |
 | App instance required | Bare app slug or path-only resolution without a concrete app instance. | Failure (`error.code=validation_failed`, `error.meta.field=app`, `error.meta.reason=app_instance_required`). |
-| Step not found | No instance-owned teardown-step record matches `(step_id, app_instance, phase=teardown)`. Legacy app-level rows are not removable. Already-absent removal is not idempotent. | Failure (`error.code=workspace.step_not_found`, `error.meta.{step_id, app}`). |
+| Step not found | No teardown-step record matches `(step_id, app_instance, phase=teardown)`. Already-absent removal is not idempotent. | Failure (`error.code=workspace.step_not_found`, `error.meta.{step_id, app}`). |
 | App not found | Resolved app slug does not exist in gateway configuration. | Failure (`error.code=workspace.app_not_found`, `error.meta.app`). |
 | App unresolved | Parent app cannot be resolved from `--app`, `.orbit/config`, or gateway path-ownership lookup, and prompting is disabled. | Failure (`error.code=validation_failed`, `error.meta.field=app`). |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |

@@ -13,6 +13,7 @@ use function Laravel\Prompts\text;
 
 final class WorkspaceRemoveCommand extends WorkspaceGatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use WithStepTree;
 
     #[\Override]

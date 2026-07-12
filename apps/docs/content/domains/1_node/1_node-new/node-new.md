@@ -17,7 +17,7 @@ initiating client and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json|--stream-json]
+orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json|--stream-json]
 orbit node:new
 ```
 
@@ -31,22 +31,22 @@ operator-identity client to the new gateway.
 ## Examples
 
 ```bash
-orbit node:new client-1
-orbit node:new operator-1 --operator
+orbit node:new client-1 --tld=client
+orbit node:new operator-1 --operator --tld=operator
 orbit node:new dev-1 --template=app-development --host=app-1.ssh.example.com --tld=test
 orbit node:new dev-1 --roles=app-dev --host=app-1.ssh.example.com --tld=test
-orbit node:new edge-1 --template=ingress --host=203.0.113.20
-orbit node:new web-1 --template=app-production --host=203.0.113.21
-orbit node:new web-2 --roles=app-prod --ingress=edge-1 --host=203.0.113.22
-orbit node:new realtime-1 --template=websocket --host=203.0.113.30 --redis-node=db-1
-orbit node:new storage-1 --template=s3 --host=203.0.113.31 --s3-data-path=/srv/orbit/s3/data
-orbit node:new metrics-1 --template=metrics --host=203.0.113.40
+orbit node:new edge-1 --template=ingress --host=203.0.113.20 --tld=edge
+orbit node:new web-1 --template=app-production --host=203.0.113.21 --tld=web
+orbit node:new web-2 --roles=app-prod --ingress=edge-1 --host=203.0.113.22 --tld=web-two
+orbit node:new realtime-1 --template=websocket --host=203.0.113.30 --redis-node=db-1 --tld=realtime
+orbit node:new storage-1 --template=s3 --host=203.0.113.31 --s3-data-path=/srv/orbit/s3/data --tld=storage
+orbit node:new metrics-1 --template=metrics --host=203.0.113.40 --tld=metrics
 orbit node:new app-1 --roles=app-dev,metrics --host=203.0.113.41 --tld=test
-orbit node:new analytics-1 --template=analytics --host=203.0.113.32 --postgres-node=db-1 --clickhouse-node=db-1
-orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --operator-name=operator-1
+orbit node:new analytics-1 --template=analytics --host=203.0.113.32 --postgres-node=db-1 --clickhouse-node=db-1 --tld=analytics
+orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --tld=gateway --operator-name=operator-1 --operator-tld=operator
 orbit node:new agent-1 --template=agent --host=192.0.2.10 --tld=agent --self-grant=default
-orbit node:new agent-1 --roles=agent --host=192.0.2.10 --agent-tool=openclaw --agent-tool=hermes
-orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to-preset=operator
+orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --agent-tool=openclaw --agent-tool=hermes
+orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=all --grant-to-preset=operator
 ```
 
 ## Arguments and options
@@ -78,17 +78,21 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to
   This is the SSH/bootstrap endpoint and never the canonical node address.
 - `--operator-name`: initiating client name for first-gateway bootstrap
   (a client with no configured gateway running gateway bootstrap via
-  `--template=gateway`). Defaults to the normalized local short hostname.
-  Forbidden outside first-gateway bootstrap.
-- `--tld`: optional node TLD. Defaults from the node name when omitted.
-  Agent and development role features consume the node TLD for their DNS
-  mappings. Must be a single lowercase DNS label without a leading dot.
+  `--template=gateway`). Required and forbidden outside first-gateway bootstrap.
+- `--operator-tld`: explicit TLD for the initiating operator identity during
+  first-gateway bootstrap. Required there, forbidden elsewhere, and must differ
+  from the gateway TLD.
+- `--tld`: required unique TLD for every node identity. There is no name-based
+  default. Agent and development role features consume this node-owned field
+  for their DNS mappings. Must be a single lowercase DNS label without a
+  leading dot.
 - `--user`: Bootstrap SSH user for provisioning. Defaults to `root`, but
   users from cloud images, such as `ubuntu`, remain valid. This value is only
   used for the first SSH path that creates or verifies Orbit's managed user.
-  After provisioning, `nodes.user` is `orbit`, and operator SSH access is
-  through that gateway-managed user; root SSH login and password login are
-  disabled.
+  After provisioning, `nodes.user` is normally `orbit`, the owner/runtime user
+  used when the Agent executes work on that node. Root SSH login and password
+  login are disabled. Break-glass access belongs to the operator and remains
+  outside Orbit commands.
 - `--ingress`: existing active `ingress` node to use when
   creating a private `app-prod` backend node that does not serve public
   traffic itself.
@@ -421,8 +425,8 @@ For first-gateway bootstrap:
   identity, trust the gateway CA, and store local gateway configuration. A
   successful first-gateway bootstrap completes local onboarding; do not run
   `gateway:add` on that initiating client afterward.
-- Requires a resolved initiating client name. Defaults to the
-  normalized local short hostname.
+- Requires explicit initiating client name and TLD values distinct from the
+  gateway node identity.
 - Installs Docker Engine and Docker Compose on Ubuntu gateway hosts when they
   are missing, because the gateway-coupled `vpn` role runs the WireGuard
   server runtime and VPN-served DNS runtime as containers.
@@ -430,7 +434,7 @@ For first-gateway bootstrap:
 For app-role creation:
 
 - Requires an existing gateway and a resolved SSH/bootstrap endpoint.
-- Development app-role creation requires a unique development TLD.
+- Every node identity requires an explicit unique node TLD.
 
 For client enrollment:
 

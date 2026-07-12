@@ -89,23 +89,20 @@ gateway phase is reported as a terminal `event=error` frame under
 
 ## `orbit profile`
 
-Profile one HTTP request against an Orbit-managed app. The gateway resolves and
-authorizes the target, then the CLI performs the timed HTTP request from the
-caller machine. Reports DNS, connect, TLS, TTFB, download, and total timing.
+Profile one HTTP request directly from the caller machine. This local-only,
+read-only command never calls the gateway, resolves gateway state, checks
+grants, dispatches remote work, or records gateway activity. It reports DNS,
+connect, TLS, TTFB, download, and total timing.
 When the target app has Laravel Toolbar installed, enriches with route, memory,
 and query data.
 
 ```bash
-orbit profile [<target>] [--app=<name>] [--node=<name>] [--uri=/]
-              [--as-first-user | --user=<id>] [--json]
+orbit profile [<url>] [--as-first-user | --user=<id>] [--json]
 ```
 
 | Argument / option | Notes |
 |---|---|
-| `target` | Domain (`myapp.beast`), app hostname, full URL (`https://myapp.test/login`), or absolute app path. Path becomes `--uri` when a URL is passed. |
-| `--app` | Resolve target by app name/hostname (alternative to positional). |
-| `--node` | Constrain app resolution to a node when names overlap. |
-| `--uri` | Request URI [default `/`]. |
+| `url` | Absolute HTTP or HTTPS URL, including any path and query to profile. |
 | `--as-first-user` | Authenticate as the first user (Toolbar required). |
 | `--user=<id>` | Authenticate as the user with that primary key. |
 | `--json` | JSON output. |
@@ -113,16 +110,15 @@ orbit profile [<target>] [--app=<name>] [--node=<name>] [--uri=/]
 Examples:
 
 ```bash
-orbit profile                                  # cwd app on an app-role node
-orbit profile myapp.beast --uri=/login
+orbit profile                                  # nearest ancestor .env APP_URL, otherwise prompt
+orbit profile https://myapp.beast/login
 orbit profile https://myapp.beast/dashboard --as-first-user
-orbit profile --app=myapp --user=42 --json
+orbit profile https://myapp.beast/profile --user=42 --json
 ```
 
 The CLI does not follow redirects; a 3xx response is a completed profile
-result. The caller-side HTTP request uses the active gateway timeout as its
-total timeout, while connection setup keeps a shorter fast-fail timeout. TLS
-remains verified; when the active gateway has a local CA PEM, Orbit adds that
-CA to the profile request trust material. Caller-side DNS, connection, TLS,
-timeout, or HTTP transport failures return `profile_request_failed` and never
-fall back to a gateway-origin request.
+result. Without `[url]`, Orbit walks from the current directory to the nearest
+ancestor `.env` with a valid absolute `APP_URL`; if none exists, interactive
+mode prompts locally and non-interactive mode fails. TLS remains verified using
+caller-local trust. DNS, connection, TLS, timeout, or HTTP transport failures
+return `profile_request_failed`; there is no gateway-origin fallback.

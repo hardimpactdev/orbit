@@ -93,7 +93,7 @@ it('derives workspace url from a matching orbit app instance placement', functio
         'path' => '/Users/nckrtl/apps/happie/workspaces/recipe',
     ]);
 
-    expect($workspace->url())->toBe('https://recipe.happie.nmbp');
+    expect($workspace->url())->toBe('https://recipe.happie.beast');
 });
 
 it('derives workspace url from explicit workspace proxy route before path placement', function (): void {

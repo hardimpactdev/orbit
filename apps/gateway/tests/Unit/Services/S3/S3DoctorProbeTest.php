@@ -84,9 +84,7 @@ function s3ProbeShell(array $results = []): S3DoctorProbeTestTransport
 
 function s3Probe(S3DoctorProbeTestTransport $shell): S3DoctorProbe
 {
-    return new S3DoctorProbe(
-        localExecutor: s3ProbeExecutor($shell),
-    );
+    return new S3DoctorProbe;
 }
 
 function s3ProbeExecutor(S3DoctorProbeTestTransport $transport): RemoteLocalExecutor
@@ -435,8 +433,8 @@ describe('s3 tool drift — tool.seaweedfs.credentials_missing', function (): vo
 // tool family: tool.seaweedfs.runtime_container_missing
 // ---------------------------------------------------------------------------
 
-describe('s3 tool drift — tool.seaweedfs.runtime_container_missing', function (): void {
-    it('dispatches the runtime probe through the internal local executor command', function (): void {
+describe('s3 tool drift — process-owned SeaweedFS runtime', function (): void {
+    it('does not dispatch a runtime probe from the tool family', function (): void {
         $node = s3ProbeNode();
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node);
@@ -452,11 +450,7 @@ describe('s3 tool drift — tool.seaweedfs.runtime_container_missing', function 
         s3Probe($shell)->toolDrift($node, $assignment);
 
         expect($shell->calls)
-            ->toHaveCount(1)
-            ->and($shell->calls[0]['script'])
-            ->toContain('internal:s3-runtime:probe')
-            ->not->toContain('orbit-s3-doctor:runtime-probe')->and($shell->calls[0]['script'])
-            ->not->toContain('docker container inspect "$container"');
+            ->toHaveCount(0);
     });
 
     it('emits tool.seaweedfs.runtime_container_missing when the orbit-seaweedfs container does not exist', function (): void {
@@ -475,7 +469,7 @@ describe('s3 tool drift — tool.seaweedfs.runtime_container_missing', function 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
 
         $keys = array_column($drift, 'key');
-        expect($keys)->toContain('tool.seaweedfs.runtime_container_missing');
+        expect($keys)->not->toContain('tool.seaweedfs.runtime_container_missing');
     });
 
     it('emits tool.seaweedfs.runtime_container_missing when the orbit-seaweedfs container is stopped', function (): void {
@@ -494,7 +488,7 @@ describe('s3 tool drift — tool.seaweedfs.runtime_container_missing', function 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
 
         $keys = array_column($drift, 'key');
-        expect($keys)->toContain('tool.seaweedfs.runtime_container_missing');
+        expect($keys)->not->toContain('tool.seaweedfs.runtime_container_missing');
     });
 
     it('emits tool.seaweedfs.runtime_container_missing when the probe itself fails', function (): void {
@@ -508,10 +502,10 @@ describe('s3 tool drift — tool.seaweedfs.runtime_container_missing', function 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
 
         $keys = array_column($drift, 'key');
-        expect($keys)->toContain('tool.seaweedfs.runtime_container_missing');
+        expect($keys)->not->toContain('tool.seaweedfs.runtime_container_missing');
     });
 
-    it('emits tool.seaweedfs.runtime_container_missing with Unverifiable kind when probe fails', function (): void {
+    it('does not convert a runtime probe failure into tool-family drift', function (): void {
         $node = s3ProbeNode();
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node);
@@ -521,12 +515,7 @@ describe('s3 tool drift — tool.seaweedfs.runtime_container_missing', function 
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
 
-        $entry = collect($drift)->firstWhere('key', 'tool.seaweedfs.runtime_container_missing');
-        expect($entry)
-            ->not
-            ->toBeNull()
-            ->and($entry->kind)
-            ->toBe(DriftKind::Unverifiable);
+        expect(array_column($drift, 'key'))->not->toContain('tool.seaweedfs.runtime_container_missing');
     });
 
     it('does not emit tool.seaweedfs.runtime_container_missing when the container is running', function (): void {
@@ -553,8 +542,8 @@ describe('s3 tool drift — tool.seaweedfs.runtime_container_missing', function 
 // tool family: tool.seaweedfs.bind_public_interface
 // ---------------------------------------------------------------------------
 
-describe('s3 tool drift — tool.seaweedfs.bind_public_interface', function (): void {
-    it('emits tool.seaweedfs.bind_public_interface when the container published port is bound to 0.0.0.0', function (): void {
+describe('s3 tool drift — process-owned SeaweedFS bind posture', function (): void {
+    it('does not emit tool bind drift when the observed port is bound to 0.0.0.0', function (): void {
         $node = s3ProbeNode(['wireguard_address' => '10.6.0.20']);
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node);
@@ -570,10 +559,10 @@ describe('s3 tool drift — tool.seaweedfs.bind_public_interface', function (): 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
 
         $keys = array_column($drift, 'key');
-        expect($keys)->toContain('tool.seaweedfs.bind_public_interface');
+        expect($keys)->not->toContain('tool.seaweedfs.bind_public_interface');
     });
 
-    it('emits tool.seaweedfs.bind_public_interface when the container published port is bound to a public IP', function (): void {
+    it('does not emit tool bind drift when the observed port is bound to a public IP', function (): void {
         $node = s3ProbeNode(['wireguard_address' => '10.6.0.20']);
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node);
@@ -589,7 +578,7 @@ describe('s3 tool drift — tool.seaweedfs.bind_public_interface', function (): 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
 
         $keys = array_column($drift, 'key');
-        expect($keys)->toContain('tool.seaweedfs.bind_public_interface');
+        expect($keys)->not->toContain('tool.seaweedfs.bind_public_interface');
     });
 
     it('does not emit tool.seaweedfs.bind_public_interface when the container is bound to the WireGuard address', function (): void {
@@ -611,7 +600,7 @@ describe('s3 tool drift — tool.seaweedfs.bind_public_interface', function (): 
         expect($keys)->not->toContain('tool.seaweedfs.bind_public_interface');
     });
 
-    it('sets the tool.seaweedfs.bind_public_interface entry family to tool and kind to Divergent', function (): void {
+    it('never assigns SeaweedFS bind posture to the tool family', function (): void {
         $node = s3ProbeNode(['wireguard_address' => '10.6.0.20']);
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node);
@@ -626,13 +615,6 @@ describe('s3 tool drift — tool.seaweedfs.bind_public_interface', function (): 
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
 
-        $entry = collect($drift)->firstWhere('key', 'tool.seaweedfs.bind_public_interface');
-        expect($entry)
-            ->not
-            ->toBeNull()
-            ->and($entry->family)
-            ->toBe('tool')
-            ->and($entry->kind)
-            ->toBe(DriftKind::Divergent);
+        expect(array_column($drift, 'key'))->not->toContain('tool.seaweedfs.bind_public_interface');
     });
 });

@@ -10,6 +10,7 @@ use Illuminate\Contracts\Process\InvokedProcess;
 
 final readonly class SshRemoteShell implements RemoteExecutor
 {
+    // @orbit-ssh-lane provisioning-ssh
     /**
      * @param  array{
      *     cwd?: string,

@@ -10,6 +10,7 @@ use Orbit\Core\Progress\ProgressEventType;
 
 final class WorkspaceSetupCommand extends WorkspaceGatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use StreamsGatewayProgress;
 
     #[\Override]

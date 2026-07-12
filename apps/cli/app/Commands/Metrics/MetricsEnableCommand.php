@@ -10,6 +10,7 @@ use App\Exceptions\GatewayApiException;
 
 final class MetricsEnableCommand extends GatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
 
     private const int GatewayTimeoutSeconds = 300;

@@ -8,6 +8,11 @@ final class NodeExporterTool extends BaseTool
 {
     public const string Version = '1.11.1';
 
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux'];
+
     public function slug(): string
     {
         return 'node-exporter';

@@ -20,7 +20,7 @@ final readonly class LocalDockerProcessContainerSpec
      * @param  array<string, string>  $environment
      * @param  list<array{source: string, target: string, read_only: bool}>  $mounts
      * @param  list<array{source: string, target: string, read_only: bool}>  $volumes
-     * @param  list<array{published: int, target: int, protocol: string}>  $ports
+     * @param  list<array{host: string|null, published: int, target: int, protocol: string}>  $ports
      * @param  list<string>  $networkAliases
      */
     private function __construct(
@@ -179,7 +179,9 @@ final readonly class LocalDockerProcessContainerSpec
     {
         return array_map(
             static fn (array $port): string => (
-                "{$port['published']}:{$port['target']}".($port['protocol'] === 'tcp' ? '' : "/{$port['protocol']}")
+                self::publishedHost($port['host'])
+                ."{$port['published']}:{$port['target']}"
+                .($port['protocol'] === 'tcp' ? '' : "/{$port['protocol']}")
             ),
             $this->ports,
         );
@@ -412,7 +414,7 @@ final readonly class LocalDockerProcessContainerSpec
     }
 
     /**
-     * @return list<array{published: int, target: int, protocol: string}>
+     * @return list<array{host: string|null, published: int, target: int, protocol: string}>
      */
     private static function ports(mixed $value): array
     {
@@ -424,7 +426,7 @@ final readonly class LocalDockerProcessContainerSpec
     }
 
     /**
-     * @return array{published: int, target: int, protocol: string}
+     * @return array{host: string|null, published: int, target: int, protocol: string}
      */
     private static function port(mixed $value): array
     {
@@ -440,6 +442,8 @@ final readonly class LocalDockerProcessContainerSpec
         $target = $port['target'] ?? null;
         /** @var mixed $protocol */
         $protocol = $port['protocol'] ?? 'tcp';
+        /** @var mixed $host */
+        $host = $port['host'] ?? null;
 
         if (! is_int($published) || ! is_int($target) || $published < 1 || $target < 1) {
             throw self::validationFailure('ports');
@@ -449,11 +453,25 @@ final readonly class LocalDockerProcessContainerSpec
             throw self::validationFailure('ports');
         }
 
+        if ($host !== null && (! is_string($host) || filter_var($host, FILTER_VALIDATE_IP) === false)) {
+            throw self::validationFailure('ports');
+        }
+
         return [
+            'host' => $host,
             'published' => $published,
             'target' => $target,
             'protocol' => $protocol,
         ];
+    }
+
+    private static function publishedHost(?string $host): string
+    {
+        if ($host === null) {
+            return '';
+        }
+
+        return str_contains($host, ':') ? "[{$host}]:" : "{$host}:";
     }
 
     /**

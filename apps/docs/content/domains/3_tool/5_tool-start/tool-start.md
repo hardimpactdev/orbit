@@ -7,14 +7,20 @@ Start a lifecycle-capable tool on a target node.
 ```bash
 orbit tool:start <tool> --node=<node>
 orbit tool:start orbstack --node=<mac-node>
+orbit tool:start opencode-cli --app=<app>
 orbit tool:start orbstack --node=<mac-node> --json
 ```
 
 ## Behavior
 
-`tool:start` is available only for tools whose catalog definition explicitly
-declares a tool-owned start capability. The first supported tool is macOS-only
-`orbstack`. Unsupported tools fail without running host commands.
+`tool:start` is available only when the selected tool declares `start`. Orbit
+must resolve exactly one runtime: either one direct tool-owned runtime, or one
+process row whose canonical `tool` value matches the selected tool. Missing or
+ambiguous runtimes fail without running host commands.
+
+Direct remote runtimes use Agent push. Process-backed tools use their exact
+process row; this is an explicit catalog contract, not a generic compatibility
+fallback.
 
 ## Options
 

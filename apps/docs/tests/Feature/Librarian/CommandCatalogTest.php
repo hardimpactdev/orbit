@@ -449,7 +449,7 @@ it('keeps truthful P4 mappings for php:use, process:add, update:all, and deploy:
             'path' => 'apps/gateway/app/Http/Controllers/Api/PhpUseController.php',
             'action' => '__invoke',
         ],
-        'authorization_permission' => [],
+        'authorization_permission' => ['php:write'],
         'response_dto' => [
             'class' => 'Orbit\\Sdk\\Laravel\\Responses\\Php\\PhpRuntimeUseResponse',
             'path' => 'packages/sdk/src/Responses/Php/PhpRuntimeUseResponse.php',

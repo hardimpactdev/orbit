@@ -14,6 +14,7 @@ use RuntimeException;
 
 final readonly class FleetUpdateNodeInstaller
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private RunsInternalCommands $localExecutor,
         private OperationRunRecorder $operationRuns,

@@ -42,16 +42,16 @@ final readonly class CreateWorkspace
     public function handle(
         App $app,
         string $name,
+        AppInstance $instance,
         string $base = 'main',
         ?string $phpVersion = null,
-        ?AppInstance $instance = null,
     ): array {
         $node = $this->resolveAppNode($app, $instance);
         $this->ensureSupportedPhpVersion($phpVersion);
         $this->ensureNodeReachable($node);
 
         $provisionResult = $this->provisionWorkspaceSource($app, $node, $name, $base, $instance);
-        $workspace = $this->createIntent($app, $phpVersion, $provisionResult, $instance);
+        $workspace = $this->createIntent($app, $instance, $phpVersion, $provisionResult);
 
         $warnings = [];
         $httpProbe = [
@@ -78,13 +78,11 @@ final readonly class CreateWorkspace
         return $this->result($workspace, $app, $node, $base, $httpProbe, $warnings);
     }
 
-    public function resolveAppNode(App $app, ?AppInstance $instance = null): Node
+    public function resolveAppNode(App $app, AppInstance $instance): Node
     {
         $app->loadMissing('node');
 
-        $node = $instance instanceof AppInstance
-            ? $this->placement->nodeForInstance($instance)
-            : $app->node;
+        $node = $this->placement->nodeForInstance($instance);
 
         if (! $node instanceof Node) {
             throw new WorkspaceCreateFailed(
@@ -127,14 +125,14 @@ final readonly class CreateWorkspace
 
     public function createIntent(
         App $app,
+        AppInstance $instance,
         ?string $phpVersion,
         WorkspaceProvisionResult $provisionResult,
-        ?AppInstance $instance = null,
     ): Workspace {
         /** @var Workspace $workspace */
         $workspace = Workspace::create([
             'app_id' => $app->id,
-            'app_instance_id' => $instance?->id,
+            'app_instance_id' => $instance->id,
             'name' => $provisionResult->name,
             'path' => $provisionResult->path,
             'php_version' => $phpVersion,
@@ -159,7 +157,7 @@ final readonly class CreateWorkspace
         Node $node,
         string $name,
         string $base,
-        ?AppInstance $instance = null,
+        AppInstance $instance,
     ): WorkspaceProvisionResult {
         $originalPath = $app->path;
 
@@ -227,7 +225,7 @@ final readonly class CreateWorkspace
         return [
             'name' => $workspace->name,
             'app' => $app->name,
-            'app_instance' => $workspace->appInstance?->name,
+            'app_instance' => $workspace->appInstance->name,
             'node' => $node->name,
             'path' => $workspace->path,
             'url' => $workspace->url(),

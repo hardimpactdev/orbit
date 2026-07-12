@@ -77,15 +77,7 @@ final class NodeUpdateController implements Loggable
             );
         }
 
-        if (
-            isset($providedFields['tld'])
-            && $providedFields['tld'] !== $node->tld
-            && Node::query()
-                ->where('tld', $providedFields['tld'])
-                ->where('status', NodeStatus::Active->value)
-                ->where('id', '!=', $node->id)
-                ->exists()
-        ) {
+        if ($this->tldIsInUse($node, $providedFields)) {
             return $this->error(
                 code: 'node.tld_in_use',
                 message: "Node TLD '{$providedFields['tld']}' is already assigned to another node.",
@@ -104,7 +96,7 @@ final class NodeUpdateController implements Loggable
             $node->update($changes);
         }
 
-        if ($changes !== [] && $this->touchesDnsFields(array_keys($changes))) {
+        if ($this->touchesDnsFields(array_keys($changes))) {
             app(DnsmasqReconciler::class)->reconcile();
         }
 
@@ -165,28 +157,34 @@ final class NodeUpdateController implements Loggable
     private function detectRoleIncompatibleField(Node $node, array $providedFields): ?array
     {
         $role = $node->displayRole();
+        $restrictedFields = [];
 
-        if (isset($providedFields['host']) && $node->isOperator()) {
-            return ['field' => 'host', 'role' => $role];
+        if ($node->isOperator()) {
+            $restrictedFields = ['host', 'gateway_endpoint', 'public_ipv4', 'public_ipv6'];
         }
 
-        if (isset($providedFields['gateway_endpoint']) && $node->isOperator()) {
-            return ['field' => 'gateway_endpoint', 'role' => $role];
+        if ($node->hasActiveRole('gateway')) {
+            $restrictedFields[] = 'user';
         }
 
-        if (isset($providedFields['public_ipv4']) && $node->isOperator()) {
-            return ['field' => 'public_ipv4', 'role' => $role];
+        foreach ($restrictedFields as $field) {
+            if (array_key_exists($field, $providedFields)) {
+                return ['field' => $field, 'role' => $role];
+            }
         }
 
-        if (isset($providedFields['public_ipv6']) && $node->isOperator()) {
-            return ['field' => 'public_ipv6', 'role' => $role];
+        if (($providedFields['managed'] ?? false) !== true) {
+            return null;
         }
 
-        if (isset($providedFields['user']) && $node->hasActiveRole('gateway')) {
-            return ['field' => 'user', 'role' => $role];
-        }
+        $candidate = clone $node;
+        $candidate->managed = true;
 
-        return null;
+        return (
+            $candidate->isOperator() && $candidate->isAgentEligible()
+                ? null
+                : ['field' => 'managed', 'role' => $role]
+        );
     }
 
     /**
@@ -197,40 +195,33 @@ final class NodeUpdateController implements Loggable
     {
         $changes = [];
 
-        if (isset($providedFields['host']) && $providedFields['host'] !== $node->host) {
-            $changes['host'] = $providedFields['host'];
-        }
+        foreach ($providedFields as $field => $value) {
+            if ($node->getAttribute($field) === $value) {
+                continue;
+            }
 
-        if (isset($providedFields['user']) && $providedFields['user'] !== $node->user) {
-            $changes['user'] = $providedFields['user'];
-        }
-
-        if (isset($providedFields['tld']) && $providedFields['tld'] !== $node->tld) {
-            $changes['tld'] = $providedFields['tld'];
-        }
-
-        if (
-            isset($providedFields['gateway_endpoint'])
-            && $providedFields['gateway_endpoint'] !== $node->gateway_endpoint
-        ) {
-            $changes['gateway_endpoint'] = $providedFields['gateway_endpoint'];
-        }
-
-        if (isset($providedFields['public_ipv4']) && $providedFields['public_ipv4'] !== $node->public_ipv4) {
-            $changes['public_ipv4'] = $providedFields['public_ipv4'];
-        }
-
-        if (isset($providedFields['public_ipv6']) && $providedFields['public_ipv6'] !== $node->public_ipv6) {
-            $changes['public_ipv6'] = $providedFields['public_ipv6'];
-        }
-
-        $orbitAgentCapable = $providedFields['orbit_agent_capable'] ?? null;
-
-        if (is_bool($orbitAgentCapable) && $orbitAgentCapable !== $node->orbit_agent_capable) {
-            $changes['orbit_agent_capable'] = $orbitAgentCapable;
+            $changes[$field] = $value;
         }
 
         return $changes;
+    }
+
+    /**
+     * @param  array<string, bool|string>  $providedFields
+     */
+    private function tldIsInUse(Node $node, array $providedFields): bool
+    {
+        $tld = $providedFields['tld'] ?? null;
+
+        if (! is_string($tld) || $tld === $node->tld) {
+            return false;
+        }
+
+        return Node::query()
+            ->where('tld', $tld)
+            ->where('status', NodeStatus::Active->value)
+            ->where('id', '!=', $node->id)
+            ->exists();
     }
 
     /**
@@ -238,7 +229,7 @@ final class NodeUpdateController implements Loggable
      */
     private function touchesDnsFields(array $changedFields): bool
     {
-        return in_array('tld', $changedFields, true) || in_array('wireguard_address', $changedFields, true);
+        return array_intersect(['tld', 'wireguard_address'], $changedFields) !== [];
     }
 
     /**

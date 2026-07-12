@@ -2,17 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\Operations\GatewayHostAgentServiceRestarter;
 use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
-use App\Services\RemoteShell\RemoteHostExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -28,12 +25,6 @@ beforeEach(function (): void {
     Process::preventStrayProcesses();
     $this->configRoot = sys_get_temp_dir().'/orbit-gateway-service-updater-'.Str::random(8);
     config()->set('orbit.paths.config_root', $this->configRoot);
-    $this->remoteShell = gateway_service_updater_fake_remote_shell();
-    app()->instance(RemoteShell::class, $this->remoteShell);
-    app()->instance(
-        GatewayHostAgentServiceRestarter::class,
-        new GatewayHostAgentServiceRestarter(app(RemoteHostExecutor::class), $this->remoteShell),
-    );
 });
 
 afterEach(function (): void {
@@ -56,7 +47,7 @@ it('updates gateway and scheduler services to the plan image after target image 
             'wireguard_address' => '10.6.0.2',
             'platform' => 'debian_12',
             'orbit_path' => '/home/orbit/orbit',
-            'orbit_agent_capable' => false,
+            'managed' => false,
         ]);
 
     Process::fake(function ($process) use (&$operations, $plan, $previousImage) {
@@ -127,14 +118,14 @@ it('updates gateway and scheduler services to the plan image after target image 
         ->toBe('sha256:'.str_repeat('a', times: 64))
         ->and($gateway->fresh()->installed_gateway_image?->operationRunId)
         ->toBe($run->id)
-        ->and($gateway->fresh()->orbit_agent_capable)
-        ->toBeTrue()
+        ->and($gateway->fresh()->managed)
+        ->toBeFalse()
         ->and($gateway->fresh()->installed_cli?->version)
         ->toBe('1.2.3')
         ->and($gateway->fresh()->installed_cli?->sha256)
         ->toBe(str_repeat('c', times: 64))
-        ->and($gateway->fresh()->installed_agent?->sha256)
-        ->toBe(str_repeat('d', times: 64))
+        ->and($gateway->fresh()->installed_agent)
+        ->toBeNull()
         ->and($localExecutor->calls)
         ->toHaveCount(1)
         ->and($localExecutor->calls[0]['node'])
@@ -178,18 +169,8 @@ it('updates gateway and scheduler services to the plan image after target image 
             'install_root' => '/home/orbit/orbit',
             'bin_path' => '/home/orbit/.local/bin/orbit',
             'shared_binary_path' => null,
-            'agent_artifact' => [
-                'artifact_url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-agent-linux-x64',
-                'sha256' => str_repeat('d', times: 64),
-                'bin_path' => '/home/orbit/.local/bin/orbit-agent',
-            ],
-            'agent_service' => [
-                'unit_name' => 'orbit-agent',
-                'exec_start' => '/home/orbit/.local/bin/orbit-agent',
-                'config_path' => "{$this->configRoot}/agent.toml",
-                'http_bind' => '10.6.0.2:9477',
-                'user' => 'orbit',
-            ],
+            'agent_artifact' => null,
+            'agent_service' => null,
             'role_images' => [],
         ]);
 
@@ -211,14 +192,7 @@ it('updates gateway and scheduler services to the plan image after target image 
         )
         ->not->toContain('ORBIT_OPERATIONS_REVERB_APP_SECRET');
 
-    $agentConfig = File::get("{$this->configRoot}/agent.toml");
-
-    expect($agentConfig)
-        ->toContain('gateway_url = "https://gateway"')
-        ->toContain('node_name = "gateway-1"')
-        ->toContain('gateway_name = "gateway-1"')
-        ->toContain('ca_pem_path = "'.$this->configRoot.'/ca/root.crt"')
-        ->not->toContain('bearer_token');
+    expect(File::exists("{$this->configRoot}/agent.toml"))->toBeFalse();
 });
 
 it('runs gateway migrations through the target gateway image before replacing the gateway service', function (): void {
@@ -319,157 +293,7 @@ it('retries gateway host CLI install when the previous launcher exits during sel
         ->toBe('1.2.3');
 });
 
-it('restarts the gateway host agent service after host cli install reports no unit restart', function (): void {
-    $run = gatewayServiceUpdaterRun();
-    $plan = gatewayServiceUpdaterPlan($run);
-    $previousImage = gatewayServiceUpdaterPreviousImage();
-    $localExecutor = gateway_service_updater_fake_local_executor([
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: json_encode([
-                'success' => [
-                    'data' => [
-                        'stdout' => "install_agent\nverify_agent\nskip_agent_restart_no_unit",
-                    ],
-                    'meta' => [],
-                ],
-            ], JSON_THROW_ON_ERROR),
-            stderr: '',
-            durationMs: 20,
-        ),
-    ]);
-    app()->instance(RunsInternalCommands::class, $localExecutor);
-    Node::factory()
-        ->gateway()
-        ->create([
-            'name' => 'gateway-1',
-            'wireguard_address' => '10.6.0.2',
-            'platform' => 'debian_12',
-            'orbit_path' => '/home/orbit/orbit',
-            'user' => 'orbit',
-        ]);
-
-    Process::fake(function ($process) use ($plan, $previousImage) {
-        $command = (string) $process->command;
-
-        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
-
-        if ($result !== null) {
-            return $result;
-        }
-
-        return match ($command) {
-            "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
-                output: "completed\n",
-            ),
-            default => throw new RuntimeException("Unexpected process command [{$command}]."),
-        };
-    });
-
-    app(GatewayServiceUpdater::class)->update($run, $plan);
-
-    expect($this->remoteShell->calls)
-        ->toHaveCount(1)
-        ->and($this->remoteShell->calls[0]['node'])
-        ->toBe('gateway-1')
-        ->and($this->remoteShell->calls[0]['options'])
-        ->toMatchArray([
-            'timeout' => 60,
-            'metadata' => ['ORBIT_OPERATION_ID' => $run->id],
-        ])
-        ->and($this->remoteShell->calls[0]['script'])
-        ->toContain("unit_name='orbit-agent.service'")
-        ->toContain('restart_gateway_agent_unit')
-        ->toContain('"$systemctl_bin" restart "$unit_name"')
-        ->toContain('gateway_agent_unit_active');
-});
-
-it('container-resolved gateway host agent restart still forces host ssh despite the RemoteShell binding', function (): void {
-    app()->forgetInstance(GatewayHostAgentServiceRestarter::class);
-    Process::fake([
-        '*' => Process::result(output: "restart_gateway_agent_unit\ngateway_agent_unit_active\n"),
-    ]);
-
-    $run = gatewayServiceUpdaterRun();
-    $gateway = Node::factory()
-        ->gateway()
-        ->create([
-            'name' => 'gateway-1',
-            'host' => '10.6.0.2',
-            'wireguard_address' => '10.6.0.2',
-            'platform' => 'debian_12',
-            'user' => 'orbit',
-            'orbit_path' => '/home/orbit/orbit',
-        ]);
-    markNodeSecurityBaselineClean($gateway);
-
-    app(GatewayHostAgentServiceRestarter::class)->restart($run, $gateway, [
-        'unit_name' => 'orbit-agent.service',
-        'exec_start' => '/usr/local/bin/orbit-agent',
-        'config_path' => '/etc/orbit-agent/config.env',
-        'http_bind' => '10.6.0.2:9477',
-        'user' => 'orbit',
-    ]);
-
-    Process::assertRan(function ($process): bool {
-        $command = (string) $process->command;
-
-        return (
-            str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
-            && str_contains($command, "'orbit'@'10.6.0.2'")
-            && str_contains($command, 'systemctl')
-            && str_contains($command, 'restart "$unit_name"')
-            && ! str_starts_with($command, 'bash -c ')
-        );
-    });
-});
-
-it('records gateway host CLI install when the gateway agent transport disconnects during self update', function (): void {
-    $run = gatewayServiceUpdaterRun();
-    $plan = gatewayServiceUpdaterPlan($run);
-    $previousImage = gatewayServiceUpdaterPreviousImage();
-    $localExecutor = gateway_service_updater_fake_local_executor([
-        new RemoteLocalExecutorTransportFailed(
-            'Remote local executor transport failed: cURL error 52: Empty reply from server',
-        ),
-    ]);
-    app()->instance(RunsInternalCommands::class, $localExecutor);
-    $gateway = Node::factory()
-        ->gateway()
-        ->create([
-            'name' => 'gateway-1',
-            'platform' => 'debian_12',
-            'orbit_path' => '/home/orbit/orbit',
-        ]);
-
-    Process::fake(function ($process) use ($plan, $previousImage) {
-        $command = (string) $process->command;
-
-        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
-
-        if ($result !== null) {
-            return $result;
-        }
-
-        return match ($command) {
-            "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
-                output: "completed\n",
-            ),
-            default => throw new RuntimeException("Unexpected process command [{$command}]."),
-        };
-    });
-
-    app(GatewayServiceUpdater::class)->update($run, $plan);
-
-    expect($localExecutor->calls)
-        ->toHaveCount(1)
-        ->and($gateway->fresh()->installed_cli?->version)
-        ->toBe('1.2.3')
-        ->and($gateway->fresh()->installed_agent?->sha256)
-        ->toBe(str_repeat('d', times: 64));
-});
-
-it('fails gateway host CLI install when the transport failure is not an agent restart disconnect', function (): void {
+it('fails gateway host CLI install when its transport fails', function (): void {
     $run = gatewayServiceUpdaterRun();
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
@@ -952,45 +776,6 @@ function gateway_service_updater_fake_local_executor(array $responses = []): Run
 
                 return is_array($payload) ? $payload : [];
             }, $this->calls);
-        }
-    };
-}
-
-function gateway_service_updater_fake_remote_shell(array $responses = []): RemoteShell
-{
-    return new class($responses) implements RemoteShell {
-        /**
-         * @var list<array{node: string, script: string, options: array<string, mixed>}>
-         */
-        public array $calls = [];
-
-        /**
-         * @param  list<RemoteShellResult>  $responses
-         */
-        public function __construct(
-            private array $responses,
-        ) {}
-
-        /**
-         * @param  array<string, mixed>  $options
-         */
-        #[Override]
-        public function run(Node $node, string $script, array $options = []): RemoteShellResult
-        {
-            $this->calls[] = [
-                'node' => $node->name,
-                'script' => $script,
-                'options' => $options,
-            ];
-
-            return (
-                array_shift($this->responses) ?? new RemoteShellResult(
-                    exitCode: 0,
-                    stdout: "restart_gateway_agent_unit\ngateway_agent_unit_active\n",
-                    stderr: '',
-                    durationMs: 20,
-                )
-            );
         }
     };
 }

@@ -21,7 +21,6 @@ final class ScheduleRemoveCommand extends ScheduleGatewayCommand
         {name? : Schedule name}
         {--app= : Filter by app scope}
         {--node= : Filter by node scope}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
@@ -69,8 +68,7 @@ final class ScheduleRemoveCommand extends ScheduleGatewayCommand
             'Removing Schedule',
             [
                 ['label' => 'Resolve schedule'],
-                ['label' => 'Apply and verify removal'],
-                ['label' => 'Notify Orbit Scheduler'],
+                ['label' => 'Delete gateway schedule row'],
             ],
             work: function () use ($name, &$response): array {
                 return $response = $this->removeScheduleForHuman($name);
@@ -118,8 +116,7 @@ final class ScheduleRemoveCommand extends ScheduleGatewayCommand
     }
 
     /**
-     * Render the documented removal detail block: schedule name, scope, target,
-     * and the Orbit Scheduler pickup result.
+     * Render the documented removal detail block: schedule name, scope, and target.
      *
      * @param  array<string, mixed>  $response
      */
@@ -133,9 +130,6 @@ final class ScheduleRemoveCommand extends ScheduleGatewayCommand
             $this->line('  Scope: '.$this->stringField($schedule, 'scope'));
             $this->line('  Target: '.$this->targetSummary($schedule));
         }
-
-        $meta = is_array($response['success']['meta'] ?? null) ? $response['success']['meta'] : [];
-        $this->line('  Scheduler pickup: '.$this->stringField($meta, 'scheduler_pickup'));
     }
 
     /**

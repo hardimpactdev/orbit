@@ -10,24 +10,31 @@ These terms define the core vocabulary used across tool command contracts and th
 
 - **Tool:** Orbit product concept for a node capability Orbit installs,
   updates, adopts, removes, observes, or keeps available for other runtime
-  units. A tool is not itself the lifecycle-managed unit.
+  units. A tool row is not itself a runtime unit, but a definition may expose
+  lifecycle or logs capabilities when it maps to exactly one direct runtime.
 - **Tool process dependency:** Optional relationship from a process to the
   tool capability it uses, such as `opencode-cli`, `viteplus`, or `php-cli`.
   The process owns lifecycle; the tool supplies the capability. A tool
   definition may also declare a related singleton process (runtime, command,
   and `--tool` dependency); `tool:install` configures that process by default so
-  installing the capability yields a running service, while lifecycle stays
-  process-owned. `--no-process` installs the capability only.
+  installing the capability yields a running service. The process row remains
+  the runtime owner; declared `tool:start|stop|restart|logs` verbs may address
+  that one process without becoming a generic compatibility adapter.
+  `--no-process` installs the capability only.
 - **Tool catalog:** The set of supported tool slugs documented in
   [`catalog/`](catalog/README.md). Tool slugs outside the catalog are
   unsupported and fail validation.
 - **Tool definition:** Per-tool catalog entry that declares the tool's support
-  model, supported operating systems, managed artifacts, service endpoints,
-  credential behavior, and supported tool actions. Tools installed
-  automatically by roles also declare baseline role metadata.
-- Service process definitions belong to the process family. Service version,
-  runtime, endpoint, credentials, lifecycle, and logs belong to the process row
-  produced from the definition, not to a tool row.
+  model, supported operating systems, runtime user, route/TLD requirement,
+  isolation model, gateway-local constraint, managed artifacts, service
+  endpoints, credential behavior, and supported tool actions. Tools installed
+  automatically by roles may also declare bootstrap-role metadata; bootstrap
+  metadata is not a user-directed role gate.
+- Service process definitions and concrete runtime state belong to the process
+  family. Tool-owned capability metadata, service endpoints, and credentials
+  remain tool facts when declared. A lifecycle/log command may address one
+  exact tool-owned runtime or one exact process row only when the tool declares
+  that verb; zero or multiple runtime matches fail explicitly.
 - **Tool category:** Catalog-declared classification for a tool, such as
   `always`, `runtime`, `database`, `cache`, `development`, `communication`,
   `infrastructure`, `storage`, `observability`, `agent`, or `operator`. Used
@@ -103,9 +110,11 @@ These terms describe the network surfaces a tool may declare.
 
 ## Node Execution
 
-Catalog install, update, remove, reconfigure, lifecycle, and credential scripts
-dispatch from the gateway through the typed `internal:tool:run-script` command
-over agent-push. The gateway builds operation-token-bound JSON stdin that
+Catalog install, update, remove, reconfigure, and direct tool-owned runtime
+scripts dispatch from the gateway through the typed
+`internal:tool:run-script` command over agent-push. Process-backed lifecycle
+and logs use the process action path instead. The gateway builds
+operation-token-bound JSON stdin that
 includes the tool slug, action, and rendered script text; secret values such as
 GitHub tokens stage separately through `internal:secret-file` and reach the
 script only as a staged token-file path in the rendered config.
@@ -116,11 +125,12 @@ These rules define what tool commands may and may not change.
 
 - **Tool-family boundaries:** Tool commands own capability inventory,
   installation, update, adoption, removal, configuration, declared service
-  endpoints, tool catalog membership, and explicit tool-owned lifecycle actions
-  for lifecycle-capable tools. Generic service lifecycle still belongs to
-  `process:*`; `tool:start`, `tool:stop`, and `tool:restart` must be declared by
-  the tool definition and initially apply only to macOS `orbstack`. Tool log
-  streaming and reload commands remain outside the tool command surface.
+  endpoints, tool catalog membership, and explicit capability-declared runtime
+  actions. `tool:start`, `tool:stop`, `tool:restart`, `tool:reload`, and
+  `tool:logs` are available only when the definition declares the verb and the
+  tool maps to exactly one runtime: either one direct tool-owned runtime or one
+  process row whose `tool` equals the canonical slug. Ambiguity fails with
+  `tool.runtime_ambiguous`; no generic related-process fallback is permitted.
 - They do not own apps, workspaces, process lifecycle, schedules, custom proxy
   routes, or non-tool firewall policy. Tool-specific or capability-specific
   command families (such as `php:*`) are admitted only when the workflow is

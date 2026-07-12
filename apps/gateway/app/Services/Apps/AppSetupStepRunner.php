@@ -15,6 +15,7 @@ use App\Services\RemoteShell\RemoteLocalExecutor;
 
 final readonly class AppSetupStepRunner
 {
+    // @orbit-ssh-lane transitional-ssh
     private AppSetupStepLocalExecutor $setupStepLocalExecutor;
 
     public function __construct(

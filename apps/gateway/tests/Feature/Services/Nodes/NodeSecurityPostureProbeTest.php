@@ -49,7 +49,7 @@ it('reports missing host key material and missing runtime users under node secur
         ->toContain('node.security.public_ssh_deny');
 });
 
-it('accepts a custom steady-state SSH runtime user from the node record', function (): void {
+it('accepts a custom Orbit runtime user from the node record', function (): void {
     Http::preventStrayRequests();
     Http::fake([
         'http://10.44.0.84:9477/v1/commands' => node_security_posture_agent_response([
@@ -62,7 +62,7 @@ it('accepts a custom steady-state SSH runtime user from the node record', functi
     ]);
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'platform' => 'ubuntu_24-04',
             'status' => NodeStatus::Active,
@@ -122,7 +122,7 @@ it('reports remote node security drift from the posture script', function (): vo
     ]);
     $node = Node::factory()
         ->appDev()
-        ->orbitAgentCapable()
+        ->managed()
         ->create([
             'platform' => 'ubuntu_24-04',
             'status' => NodeStatus::Active,
@@ -172,7 +172,7 @@ it('reports remote node security drift from the posture script', function (): vo
     ));
 });
 
-it('can adopt the first host key pin for legacy nodes', function (): void {
+it('can adopt the first host key pin for previously unpinned nodes', function (): void {
     $publicKey = 'AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests';
     $node = Node::factory()->create([
         'host' => '203.0.113.44',

@@ -40,6 +40,7 @@ use Throwable;
 
 final readonly class NodesProbe
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private ?PlatformDetector $platformDetector = null,
         private ?RemoteShell $remoteShell = null,
@@ -79,6 +80,7 @@ final readonly class NodesProbe
         $drift = [];
 
         $drift = array_merge($drift, $this->checkRoleAssignments($node));
+        $drift = array_merge($drift, $this->checkAgentIntent($node));
         $drift = array_merge($drift, $this->checkRecordCompleteness($node));
         $drift = array_merge($drift, $this->checkAgentIdeDefault($node));
         $drift = array_merge($drift, $this->checkAccessGrants($node));
@@ -132,6 +134,43 @@ final readonly class NodesProbe
         }
 
         return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkAgentIntent(Node $node): array
+    {
+        $drift = [];
+
+        if ($node->managed && ! $node->isOperator()) {
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'node.managed_agent_intent_invalid',
+                kind: DriftKind::Divergent,
+                summary: "Managed Agent intent on role-bearing node {$node->name} is invalid.",
+                detail: [
+                    'reason' => $node->hasActiveRole(NodeRoleName::Gateway->value)
+                        ? 'gateway_excluded'
+                        : 'role_bearing_node',
+                    'managed' => true,
+                ],
+            );
+        }
+
+        if (! $node->hasAgentIntent() && $node->installed_agent !== null) {
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'node.agent_expectation_stale',
+                kind: DriftKind::Extra,
+                summary: "Node {$node->name} retains installed Agent expectation without Agent intent.",
+                detail: [
+                    'reason' => 'no_agent_intent',
+                ],
+            );
+        }
+
+        return $drift;
     }
 
     private function nodeIsMissingRequiredRecordFields(Node $node): bool
@@ -349,8 +388,7 @@ final readonly class NodesProbe
      */
     private function baselineDriftForAppDevelopment(Node $node, NodeRoleAssignment $assignment): array
     {
-        $settings = $assignment->settings ?? [];
-        $tld = is_array($settings) ? $settings['tld'] ?? null : null;
+        $tld = is_string($node->tld) ? trim($node->tld) : null;
 
         if (! is_string($tld) || trim($tld) === '') {
             return [];
@@ -495,12 +533,7 @@ final readonly class NodesProbe
     {
         $drift = [];
 
-        $settings = $assignment->settings ?? [];
-        $tld = is_array($settings) ? $settings['tld'] ?? null : null;
-
-        if (! is_string($tld) || trim($tld) === '') {
-            $tld = is_string($node->tld) ? trim($node->tld) : null;
-        }
+        $tld = is_string($node->tld) ? trim($node->tld) : null;
 
         if (is_string($tld) && trim($tld) !== '') {
             $mapping = $this->developmentDnsMappingProbe()->inspectForTld(
@@ -547,7 +580,7 @@ final readonly class NodesProbe
             );
         }
 
-        if (($node->orbit_agent_capable ?? false) === true) {
+        if ($node->isAgentEligible()) {
             try {
                 $result = $this->localExecutor()->runInternal(
                     node: $node,
@@ -1081,6 +1114,8 @@ final readonly class NodesProbe
         }
 
         $fixableKeys = [
+            'node.managed_agent_intent_invalid',
+            'node.agent_expectation_stale',
             'node.wireguard_peer_missing',
             'node.wireguard_address_mismatch',
             'node.gateway_runtime_unready',
@@ -1105,6 +1140,8 @@ final readonly class NodesProbe
         }
 
         match ($entry->key) {
+            'node.managed_agent_intent_invalid' => $node->forceFill(['managed' => false])->save(),
+            'node.agent_expectation_stale' => $node->forceFill(['installed_agent' => null])->save(),
             'node.wireguard_peer_missing' => $this->reconcileWireguardPeerMissing($node),
             'node.wireguard_address_mismatch' => $this->reconcileWireguardAddressMismatch($node),
             'node.gateway_runtime_unready' => $this->reconcileGatewayService($node),

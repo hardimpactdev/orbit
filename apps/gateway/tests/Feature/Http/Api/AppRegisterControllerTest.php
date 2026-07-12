@@ -101,7 +101,7 @@ describe('AppRegisterController', function (): void {
             'tld' => 'test',
             'status' => 'active',
             'wireguard_address' => '10.6.0.41',
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ]);
         grantAppRegisterAccess($caller, $targetNode);
         fake_app_register_source_path_probe('10.6.0.41');
@@ -154,12 +154,12 @@ describe('AppRegisterController', function (): void {
             'name' => 'dev-1',
             'host' => APP_REGISTER_CALLER_WG_IP,
             'wireguard_address' => APP_REGISTER_CALLER_WG_IP,
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ]);
         $otherNode = createTestAppHostNode([
             'name' => 'dev-2',
             'wireguard_address' => '10.6.0.46',
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ]);
         grantAppRegisterAccess(
             caller: $caller,
@@ -223,7 +223,7 @@ describe('AppRegisterController', function (): void {
                 'name' => 'prod-1',
                 'host' => APP_REGISTER_CALLER_WG_IP,
                 'wireguard_address' => APP_REGISTER_CALLER_WG_IP,
-                'orbit_agent_capable' => true,
+                'managed' => true,
             ],
             role: 'app-prod',
         );
@@ -268,7 +268,7 @@ describe('AppRegisterController', function (): void {
             'tld' => 'test',
             'status' => 'active',
             'wireguard_address' => '10.6.0.42',
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ]);
         grantAppRegisterAccess($caller, $targetNode);
         fake_app_register_source_path_probe('10.6.0.42');
@@ -314,7 +314,7 @@ describe('AppRegisterController', function (): void {
             'tld' => 'test',
             'status' => 'active',
             'wireguard_address' => '10.6.0.43',
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ]);
         grantAppRegisterAccess($caller, $targetNode);
         fake_app_register_source_path_probe('10.6.0.43');
@@ -410,7 +410,7 @@ describe('AppRegisterController', function (): void {
             'tld' => 'test',
             'status' => 'active',
             'wireguard_address' => '10.6.0.44',
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ]);
         grantAppRegisterAccess($caller, $targetNode);
         fake_app_register_source_path_probe('10.6.0.44', '/srv/docs');
@@ -663,7 +663,7 @@ describe('AppRegisterController', function (): void {
             'name' => 'app-1',
             'status' => 'active',
             'wireguard_address' => '10.6.0.45',
-            'orbit_agent_capable' => true,
+            'managed' => true,
         ]);
         grantAppRegisterAccess($caller, $targetNode);
         fake_app_register_source_path_probe('10.6.0.45');

@@ -40,7 +40,7 @@ it('pushes an allowlisted binary argv envelope to the target node agent listener
         'host' => 'mini.local',
         'wireguard_address' => '10.6.0.23',
         'status' => NodeStatus::Active,
-        'orbit_agent_capable' => true,
+        'managed' => true,
     ]);
 
     $result = new NodeAgentPushClient()->execute(
@@ -99,7 +99,7 @@ it('accepts nullable exit codes from the target node agent listener', function (
         'host' => 'mini.local',
         'wireguard_address' => '10.6.0.23',
         'status' => NodeStatus::Active,
-        'orbit_agent_capable' => true,
+        'managed' => true,
     ]);
 
     $result = new NodeAgentPushClient()->execute(
@@ -136,7 +136,7 @@ it('pushes runtime cwd and environment context to the target node agent listener
         'host' => 'mini.local',
         'wireguard_address' => '10.6.0.23',
         'status' => NodeStatus::Active,
-        'orbit_agent_capable' => true,
+        'managed' => true,
     ]);
 
     new NodeAgentPushClient()->execute(
@@ -186,7 +186,7 @@ it('includes a redacted agent response body when command push fails', function (
         'host' => 'mini.local',
         'wireguard_address' => '10.6.0.23',
         'status' => NodeStatus::Active,
-        'orbit_agent_capable' => true,
+        'managed' => true,
     ]);
 
     try {
@@ -243,7 +243,7 @@ it('refuses to push envelopes that are not allowlisted for agent push', function
         'host' => 'mini.local',
         'wireguard_address' => '10.6.0.23',
         'status' => NodeStatus::Active,
-        'orbit_agent_capable' => true,
+        'managed' => true,
     ]);
 
     new NodeAgentPushClient()->execute(

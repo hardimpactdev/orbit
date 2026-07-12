@@ -21,7 +21,7 @@ it('treats omitted template and roles as a client identity request', function ()
         ->toBeFalse()
         ->and($selection->gateway)
         ->toBeFalse()
-        ->and($selection->hosted)
+        ->and($selection->workloadRoles)
         ->toBe([])
         ->and($selection->requestedRoleMeta)
         ->toBe('client');
@@ -29,7 +29,7 @@ it('treats omitted template and roles as a client identity request', function ()
 
 it('expands node templates to canonical stored roles', function (
     string $template,
-    array $hosted,
+    array $workloadRoles,
     bool $gateway = false,
     bool $operator = false,
 ): void {
@@ -41,8 +41,8 @@ it('expands node templates to canonical stored roles', function (
 
     expect($selection->template)
         ->toBe($template)
-        ->and($selection->hosted)
-        ->toBe($hosted)
+        ->and($selection->workloadRoles)
+        ->toBe($workloadRoles)
         ->and($selection->gateway)
         ->toBe($gateway)
         ->and($selection->operator)
@@ -60,7 +60,7 @@ it('expands node templates to canonical stored roles', function (
 
 it('resolves comma-separated programmatic roles without template expansion', function (
     string $roles,
-    array $hosted,
+    array $workloadRoles,
     string $requestedRole,
 ): void {
     $selection = app(NodeCreationRoleResolver::class)->resolve(
@@ -71,8 +71,8 @@ it('resolves comma-separated programmatic roles without template expansion', fun
 
     expect($selection->template)
         ->toBeNull()
-        ->and($selection->hosted)
-        ->toBe($hosted)
+        ->and($selection->workloadRoles)
+        ->toBe($workloadRoles)
         ->and($selection->requestedRoleMeta)
         ->toBe($requestedRole);
 })->with([

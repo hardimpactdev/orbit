@@ -10,6 +10,7 @@ use App\Models\NodeRoleAssignment;
 use App\Services\Firewall\FirewallRuleIntent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process as ProcessFacade;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use Tests\TestCase;
 
@@ -18,6 +19,10 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     app()->instance(RemoteShell::class, new FirewallRuleIntentRecordingRemoteShell);
+    ProcessFacade::preventStrayProcesses();
+    ProcessFacade::fake([
+        '*' => ProcessFacade::result(),
+    ]);
 });
 
 /**

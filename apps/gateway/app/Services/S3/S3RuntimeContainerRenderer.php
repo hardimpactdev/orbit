@@ -29,7 +29,7 @@ class S3RuntimeContainerRenderer
             name: S3RuntimeContainer::ContainerName,
             image: $image,
             network: $this->names->network(),
-            restartPolicy: 'unless-stopped',
+            restartPolicy: 'always',
             wireGuardAddress: $wireGuardAddress,
             mounts: [
                 [

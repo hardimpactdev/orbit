@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,14 +13,15 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $app_id
+ * @property int $app_instance_id
  * @property string $status
  * @property int|null $exit_code
  * @property Carbon|null $started_at
  * @property Carbon|null $finished_at
  * @property int|null $duration_ms
  * @property array<string, mixed>|null $context
- * @property-read App|null $app
+ * @property-read AppInstance $appInstance
+ * @property-read Collection<int, DeploymentRunStep> $steps
  */
 class DeploymentRun extends Model
 {
@@ -27,7 +29,7 @@ class DeploymentRun extends Model
 
     #[\Override]
     protected $fillable = [
-        'app_id',
+        'app_instance_id',
         'status',
         'exit_code',
         'started_at',
@@ -47,11 +49,11 @@ class DeploymentRun extends Model
     }
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return BelongsTo<AppInstance, $this>
      */
-    public function app(): BelongsTo
+    public function appInstance(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->belongsTo(AppInstance::class);
     }
 
     /**

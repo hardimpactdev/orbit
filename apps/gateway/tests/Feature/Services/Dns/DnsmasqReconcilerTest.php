@@ -44,7 +44,7 @@ it('writes dnsmasq.conf and restarts orbit-dns when state changes', function ():
     expect(File::exists($this->confPath))
         ->toBeTrue()
         ->and(File::get($this->confPath))
-        ->toContain('address=/gateway/10.6.0.2');
+        ->toContain('address=/orbit.gateway/10.6.0.2');
 
     Process::assertRan(fn ($process): bool => str_contains(
         (string) $process->command,
@@ -93,13 +93,13 @@ it('rewrites the conf and restarts dns when fleet state changes', function (): v
 
     Node::factory()->create([
         'name' => 'app-1',
-        'tld' => 'app-1.test',
+        'tld' => 'app-1',
         'wireguard_address' => '10.6.0.3',
     ]);
 
     $reconciler->reconcile();
 
-    expect(File::get($this->confPath))->toContain('address=/app-1.test/10.6.0.3');
+    expect(File::get($this->confPath))->toContain('address=/orbit.app-1/10.6.0.3');
 });
 
 it('writes router-owned orbit service routes as an orbit tld mapping into dnsmasq.conf', function (): void {

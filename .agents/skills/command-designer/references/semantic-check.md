@@ -12,7 +12,8 @@ Find product-level mismatches that a linter cannot know:
   `docs/tech-stack.md`, `docs/concepts.md`, or a family concept document;
 - command behavior that assigns ownership to the wrong node, state family, or
   transport edge;
-- caller-role behavior that contradicts the shared role model;
+- peer-identity or grant behavior that contradicts the shared authorization
+  model;
 - input, output, failure, or recovery contracts that are under-specified,
   over-specified, or inconsistent across split files;
 - current-code drift encoded as ideal documentation;
@@ -54,19 +55,23 @@ contract.
 - Identify what state the command reads or mutates: local settings, gateway
   intent, node reality, or durable history.
 - Confirm the gateway remains authoritative for fleet intent.
-- Confirm app-node CLI behavior is client-side unless the command documents a
-  narrow exception.
+- Confirm every gateway-backed CLI invocation remains a typed gateway client,
+  regardless of the caller's node role or execution location.
 - Check that doctor/family ownership is singular and product-level.
 
-### 3. Caller Role And Transport
+### 3. Peer Authorization And Transport
 
-- Check control, gateway, app, and unknown caller behavior.
-- Confirm pre-input caller-role eligibility is documented before prompts or side
-  effects.
-- Confirm control-to-gateway and gateway-to-app-node transport follows the
-  architecture model.
-- Flag any direct control-node to app-node orchestration unless it is a
-  documented gateway infrastructure exception.
+- Confirm gateway-backed calls authenticate a gateway-known WireGuard peer.
+- Confirm the default path uses a stored grant edge plus the scoped permission
+  required by the command.
+- When the default grants gate does not apply, require one of the four named
+  exception classes: gateway implicit authority, pre-grants bootstrap,
+  local-only, or identity-gated self-management.
+- Confirm self-targeting workload calls use self-grants; local filesystem
+  context may resolve defaults but never authorizes a write.
+- Confirm CLI-to-gateway HTTPS and gateway-to-node transport follows the
+  architecture model. Flag direct caller-to-target orchestration unless the
+  command is explicitly local-only or pre-grants bootstrap.
 
 ### 4. Input And Path Semantics
 
@@ -79,8 +84,8 @@ contract.
 
 ### 5. Side Effects And Failure Semantics
 
-- Confirm side effects begin only after inputs, role eligibility, and path
-  eligibility are resolved.
+- Confirm side effects begin only after inputs, peer identity, authorization,
+  and path eligibility are resolved.
 - Check failure codes use shared vocabulary unless a product-specific code is
   justified.
 - Check recovery guidance points to the owning command or doctor family.

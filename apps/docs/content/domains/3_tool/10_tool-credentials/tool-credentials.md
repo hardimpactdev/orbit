@@ -50,6 +50,8 @@ Run this command to read connection credentials for a managed tool on the target
 Credential-bearing tools use generated Orbit-owned secrets. `tool:credentials`
 reads the current values; it does not rotate credentials, reconfigure the tool,
 or expose credentials for tools that do not declare a credential contract.
+Credential reads stay gateway-local: the command exposes no node transport
+selector and uses neither Agent push nor SSH.
 
 ## Output
 

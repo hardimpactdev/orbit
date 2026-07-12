@@ -73,6 +73,7 @@ describe('node write commands', function (): void {
             'name' => 'app-1',
             '--roles' => 'app-dev, database',
             '--host' => '192.0.2.20',
+            '--tld' => 'test',
             '--json' => true,
         ]);
 
@@ -101,6 +102,7 @@ describe('node write commands', function (): void {
             'name' => 'metrics-1',
             '--roles' => 'metrics',
             '--host' => '192.0.2.55',
+            '--tld' => 'metrics',
             '--json' => true,
         ]);
 
@@ -114,6 +116,33 @@ describe('node write commands', function (): void {
         );
 
         expect($exitCode)->toBe(0);
+    });
+
+    it('requires an explicit node TLD before node:new gateway IO', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'node:new', [
+            'name' => 'metrics-1',
+            '--roles' => 'metrics',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('tld');
+    });
+
+    it('does not expose a role-local TLD option on node role:add', function (): void {
+        $command = $this->app->make(\App\Commands\Node\NodeRoleAddCommand::class);
+
+        expect($command->getDefinition()->hasOption('tld'))->toBeFalse();
     });
 
     it('runs the bootstrap path for first gateway node creation when no gateway is configured', function (): void {
@@ -152,6 +181,9 @@ describe('node write commands', function (): void {
             'name' => 'gateway-1',
             '--template' => 'gateway',
             '--host' => '192.0.2.10',
+            '--operator-name' => 'operator-1',
+            '--tld' => 'gateway',
+            '--operator-tld' => 'operator',
             '--json' => true,
         ]);
 
@@ -171,6 +203,10 @@ describe('node write commands', function (): void {
             ->toContain('--template=gateway')
             ->and($bootstrapper->arguments)
             ->toContain('--host=192.0.2.10')
+            ->and($bootstrapper->arguments)
+            ->toContain('--tld=gateway')
+            ->and($bootstrapper->arguments)
+            ->toContain('--operator-tld=operator')
             ->and($bootstrapper->arguments)
             ->toContain('--json');
 
@@ -206,6 +242,9 @@ describe('node write commands', function (): void {
             'name' => 'gateway-1',
             '--template' => 'gateway',
             '--host' => '192.0.2.10',
+            '--operator-name' => 'operator-1',
+            '--tld' => 'gateway',
+            '--operator-tld' => 'operator',
             '--stream-json' => true,
         ]);
 
@@ -245,6 +284,9 @@ describe('node write commands', function (): void {
             'name' => 'gateway-1',
             '--template' => 'gateway',
             '--host' => '192.0.2.10',
+            '--operator-name' => 'operator-1',
+            '--tld' => 'gateway',
+            '--operator-tld' => 'operator',
             '--json' => true,
         ]);
 
@@ -297,6 +339,9 @@ describe('node write commands', function (): void {
             'name' => 'gateway-1',
             '--template' => 'gateway',
             '--host' => '192.0.2.10',
+            '--operator-name' => 'operator-1',
+            '--tld' => 'gateway',
+            '--operator-tld' => 'operator',
             '--json' => true,
         ]);
 
@@ -343,6 +388,7 @@ describe('node write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'node:new', array_merge([
             'name' => 'app-1',
+            '--tld' => 'test',
             '--json' => true,
         ], $params));
 
@@ -371,6 +417,7 @@ describe('node write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'node:new', [
             'name' => 'app-1',
             '--roles' => $roles,
+            '--tld' => 'test',
             '--json' => true,
         ]);
 
@@ -428,13 +475,13 @@ describe('node write commands', function (): void {
     it('sends node:update Orbit Agent capability opt-in payloads', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'name' => 'app-1',
-            'changed' => ['orbit_agent_capable'],
+            'changed' => ['managed'],
             'action' => 'updated',
         ]));
 
         [$exitCode] = runCommand($this, 'node:update', [
             'name' => 'app-1',
-            '--orbit-agent-capable' => true,
+            '--managed' => true,
             '--json' => true,
         ]);
 
@@ -442,7 +489,7 @@ describe('node write commands', function (): void {
             fn (Request $request): bool => (
                 $request->method() === 'PUT'
                 && str_contains($request->url(), '/api/nodes/app-1')
-                && $request['orbit_agent_capable'] === true
+                && $request['managed'] === true
                 && ! isset($request['host'])
             ),
         );
@@ -453,13 +500,13 @@ describe('node write commands', function (): void {
     it('sends node:update Orbit Agent capability opt-out payloads', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'name' => 'app-1',
-            'changed' => ['orbit_agent_capable'],
+            'changed' => ['managed'],
             'action' => 'updated',
         ]));
 
         [$exitCode] = runCommand($this, 'node:update', [
             'name' => 'app-1',
-            '--no-orbit-agent-capable' => true,
+            '--no-managed' => true,
             '--json' => true,
         ]);
 
@@ -467,7 +514,7 @@ describe('node write commands', function (): void {
             fn (Request $request): bool => (
                 $request->method() === 'PUT'
                 && str_contains($request->url(), '/api/nodes/app-1')
-                && $request['orbit_agent_capable'] === false
+                && $request['managed'] === false
                 && ! isset($request['host'])
             ),
         );
@@ -964,7 +1011,6 @@ describe('node write commands', function (): void {
         [$exitCode] = runCommand($this, 'node role:add', [
             'node' => 'app-1',
             'role' => 'app-dev',
-            '--tld' => 'test',
             '--json' => true,
         ]);
 
@@ -973,7 +1019,7 @@ describe('node write commands', function (): void {
                 $request->method() === 'POST'
                 && str_contains($request->url(), '/api/nodes/app-1/roles')
                 && $request['role'] === 'app-dev'
-                && $request['settings'] === ['tld' => 'test']
+                && $request['settings'] === []
             ),
         );
 
@@ -989,7 +1035,6 @@ describe('node write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'node role:add', [
             'node' => 'app-1',
             'role' => 'app-dev',
-            '--tld' => 'test',
             '--json' => true,
         ]);
 
@@ -1010,7 +1055,6 @@ describe('node write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'node role:add', [
             'node' => 'app-1',
             'role' => 'app-dev',
-            '--tld' => 'test',
         ]);
 
         expect($exitCode)
@@ -1032,7 +1076,6 @@ describe('node write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'node role:add', [
             'node' => 'app-1',
             'role' => 'app-dev',
-            '--tld' => 'test',
         ]);
 
         expect($exitCode)
@@ -1056,6 +1099,7 @@ describe('node write commands', function (): void {
             'name' => 'analytics-1',
             '--roles' => 'analytics',
             '--host' => '192.0.2.30',
+            '--tld' => 'analytics',
             '--postgres-node' => 'database-1',
             '--clickhouse-node' => 'database-2',
             '--json' => true,
@@ -1112,6 +1156,7 @@ describe('node write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'node:new', [
             'name' => 'analytics-1',
             '--roles' => 'analytics',
+            '--tld' => 'analytics',
             '--json' => true,
             ...$params,
         ]);

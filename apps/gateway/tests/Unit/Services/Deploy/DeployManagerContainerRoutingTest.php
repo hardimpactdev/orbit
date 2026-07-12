@@ -2,49 +2,75 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DeploymentRun;
 use App\Models\DeployStep;
 use App\Models\Node;
 use App\Services\Deploy\DeployManager;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Orbit\Core\Enums\InternalCommand;
+use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-});
-
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
-
-final class DeployManagerRecordingShell implements RemoteShell
+final class DeployManagerRecordingShell implements RunsInternalCommands
 {
     public array $runs = [];
 
     public array $results = [];
 
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->runs[] = compact('node', 'script', 'options');
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $payload = json_decode(
+            (string) ($transportOptions['input'] ?? ''),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        assert(is_array($payload));
+        $argumentsPayload = $payload['arguments'] ?? [];
+        assert(is_array($argumentsPayload));
+        $result = $this->results !== []
+            ? array_shift($this->results)
+            : new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 25);
 
-        if ($this->results !== []) {
-            return array_shift($this->results);
-        }
+        $this->runs[] = [
+            'node' => $node,
+            'binary' => $payload['binary'] ?? null,
+            'arguments' => $argumentsPayload,
+            'script' => $argumentsPayload[1] ?? null,
+            'options' => [
+                'cwd' => $payload['cwd'] ?? null,
+                'timeout' => $payload['timeout'] ?? null,
+                'environment' => $payload['environment'] ?? null,
+            ],
+            'command_name' => $commandName,
+            'transport_options' => $transportOptions,
+        ];
 
         return new RemoteShellResult(
             exitCode: 0,
-            stdout: '',
+            stdout: json_encode(JsonEnvelope::success([
+                'exit_code' => $result->exitCode,
+                'stdout' => $result->stdout,
+                'stderr' => $result->stderr,
+                'duration_ms' => $result->durationMs,
+            ]), JSON_THROW_ON_ERROR),
             stderr: '',
-            durationMs: 25,
+            durationMs: $result->durationMs,
         );
     }
 }
@@ -57,20 +83,40 @@ function createDeployManagerTestApp(array $overrides = []): App
             'name' => 'app-prod-1',
         ]);
 
-    return App::factory()->create(array_merge([
+    $attributes = array_merge([
         'name' => 'docs',
         'node_id' => $node->id,
         'environment' => 'production',
         'path' => '/srv/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
-    ], $overrides));
+    ], $overrides);
+    $warmupPaths = $attributes['deploy_warmup_paths'] ?? null;
+    unset($attributes['deploy_warmup_paths']);
+
+    $app = App::factory()->create($attributes);
+    AppInstance::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'production',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+        'deploy_warmup_paths' => $warmupPaths,
+    ]);
+
+    return $app;
 }
 
 function createDeployManagerTestStep(App $app, string $command, string $title = 'Test step'): DeployStep
 {
+    $instance = AppInstance::query()->where('app_id', $app->id)->sole();
+
     return DeployStep::query()->create([
-        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
         'title' => $title,
         'command' => $command,
         'sort_order' => 1,
@@ -78,34 +124,105 @@ function createDeployManagerTestStep(App $app, string $command, string $title = 
     ]);
 }
 
-it('requires explicit transitional fallback before running deployment shell commands', function (): void {
+it('requires a concrete deployment instance when a logical app has multiple instances', function (): void {
+    $app = createDeployManagerTestApp();
+    AppInstance::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'canary',
+    ]);
+
+    expect(fn () => app(DeployManager::class)->listSteps('docs'))
+        ->toThrow(GatewayApiException::class, 'requires a concrete app instance selector');
+});
+
+it('scopes deployment policy to the selected app instance', function (): void {
+    $app = createDeployManagerTestApp();
+    $production = AppInstance::query()->where('app_id', $app->id)->sole();
+    $canary = AppInstance::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'canary',
+    ]);
+    DeployStep::query()->create([
+        'app_instance_id' => $canary->id,
+        'title' => 'Canary only',
+        'command' => 'true',
+        'sort_order' => 1,
+        'timeout_seconds' => 30,
+    ]);
+
+    $result = app(DeployManager::class)->addStep(
+        'docs.production',
+        'php artisan migrate --force',
+        'Production only',
+        null,
+        120,
+        null,
+    );
+
+    expect($result['step'])
+        ->toMatchArray([
+            'app' => 'docs',
+            'app_instance' => 'production',
+            'title' => 'Production only',
+        ])
+        ->and(DeployStep::query()->where('app_instance_id', $production->id)->count())
+        ->toBe(1)
+        ->and(DeployStep::query()->where('app_instance_id', $canary->id)->count())
+        ->toBe(1);
+});
+
+it('executes and records a deployment against the concrete instance target', function (): void {
+    $app = createDeployManagerTestApp();
+    $instance = AppInstance::query()->where('app_id', $app->id)->sole();
+    $instanceNode = Node::factory()->appProd()->create(['name' => 'instance-prod']);
+    $instance->forceFill([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $instanceNode->id,
+            node: $instanceNode->name,
+            path: '/home/billing/releases',
+            document_root: 'public',
+            domain: 'billing.example.com',
+        ),
+    ])->save();
+    createDeployManagerTestStep($app, 'git pull origin main');
+    $shell = new DeployManagerRecordingShell;
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $result = app(DeployManager::class)->run('docs.production');
+
+    expect($shell->runs[0]['node']->is($instanceNode))
+        ->toBeTrue()
+        ->and($shell->runs[0]['options']['cwd'])
+        ->toBe('/home/billing/releases')
+        ->and($result['run']['app_instance'])
+        ->toBe('production')
+        ->and($instance->refresh()->latest_deployment_status)
+        ->toBe('completed')
+        ->and(DeploymentRun::query()->sole()->app_instance_id)
+        ->toBe($instance->id);
+});
+
+it('dispatches deployment steps through the dedicated Agent-push command without an SSH fallback header', function (): void {
     $app = createDeployManagerTestApp();
     createDeployManagerTestStep($app, 'git pull origin main');
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
 
     $shell = new DeployManagerRecordingShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
-    try {
-        app(DeployManager::class)->run('docs');
-    } catch (GatewayApiException $exception) {
-        expect($exception->errorCode())
-            ->toBe('node_transport_required')
-            ->and($exception->getMessage())
-            ->toBe(
-                'deploy:run still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
-            )
-            ->and($exception->errorMeta())
-            ->toMatchArray([
-                'field' => 'node-transport',
-                'required' => 'transitional-ssh-fallback',
-            ]);
-    }
+    app(DeployManager::class)->run('docs');
 
     expect($shell->runs)
-        ->toBe([])
+        ->toHaveCount(3)
+        ->and($shell->runs[0]['command_name'])
+        ->toBe(InternalCommand::DeployRunStep->value)
+        ->and($shell->runs[0]['transport_options']['transport'])
+        ->toBe(NodeTransportPreference::AgentPush)
+        ->and($shell->runs[0]['binary'])
+        ->toBe('/bin/sh')
+        ->and($shell->runs[0]['arguments'][0])
+        ->toBe('-lc')
         ->and(DeploymentRun::query()->count())
-        ->toBe(0);
+        ->toBe(1);
 });
 
 it('routes php commands through the host php toolchain for php apps', function (): void {
@@ -114,7 +231,7 @@ it('routes php commands through the host php toolchain for php apps', function (
 
     $shell = new DeployManagerRecordingShell;
 
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -142,7 +259,7 @@ it('runs routed php deploy commands as the path-derived production app user', fu
 
     $shell = new DeployManagerRecordingShell;
 
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -162,7 +279,7 @@ it('routes composer commands through the host php toolchain for php apps', funct
 
     $shell = new DeployManagerRecordingShell;
 
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -181,7 +298,7 @@ it('routes artisan commands through the host php toolchain for php apps', functi
 
     $shell = new DeployManagerRecordingShell;
 
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -199,7 +316,7 @@ it('runs non-php commands on the host for php apps', function (): void {
     createDeployManagerTestStep($app, 'git pull origin main');
 
     $shell = new DeployManagerRecordingShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -218,7 +335,7 @@ it('runs all commands on the host for static apps', function (): void {
     createDeployManagerTestStep($app, 'php artisan migrate --force');
 
     $shell = new DeployManagerRecordingShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -236,7 +353,7 @@ it('does not transform host paths to container paths when routing through host',
 
     $shell = new DeployManagerRecordingShell;
 
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -256,7 +373,7 @@ it('passes deploy environment variables to the host command', function (): void 
 
     $shell = new DeployManagerRecordingShell;
 
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -274,7 +391,7 @@ it('sets the working directory to the app source path for host commands', functi
 
     $shell = new DeployManagerRecordingShell;
 
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -287,7 +404,7 @@ it('does not route php-fpm systemctl commands through host php toolchain', funct
     createDeployManagerTestStep($app, 'sudo systemctl reload php8.5-fpm');
 
     $shell = new DeployManagerRecordingShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -305,7 +422,7 @@ it('runs built-in warmup steps on the host after user steps for php apps', funct
 
     $shell = new DeployManagerRecordingShell;
 
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -331,7 +448,7 @@ it('skips warmup steps when a user step fails', function (): void {
     $shell->results = [
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'fail', durationMs: 25),
     ];
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
 
@@ -349,7 +466,7 @@ it('does not run warmup steps for static apps', function (): void {
     createDeployManagerTestStep($app, 'git pull origin main');
 
     $shell = new DeployManagerRecordingShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -363,7 +480,7 @@ it('runs http warmup when deploy_warmup_paths is configured', function (): void 
 
     $shell = new DeployManagerRecordingShell;
 
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -387,7 +504,7 @@ it('skips http warmup when deploy_warmup_paths is empty', function (): void {
 
     $shell = new DeployManagerRecordingShell;
 
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -401,7 +518,7 @@ it('uses version-matched php path in host commands', function (): void {
     createDeployManagerTestStep($app, 'php artisan migrate');
 
     $shell = new DeployManagerRecordingShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
     $manager->run('docs');
@@ -424,7 +541,7 @@ it('marks run failed when built-in warmup step fails', function (): void {
         // php artisan optimize fails
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'optimize failed', durationMs: 25),
     ];
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $manager = app(DeployManager::class);
 

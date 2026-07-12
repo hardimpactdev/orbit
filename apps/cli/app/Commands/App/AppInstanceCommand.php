@@ -11,6 +11,7 @@ use function Laravel\Prompts\table;
 
 final class AppInstanceCommand extends AppGatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use RendersShowDetails;
 
     #[\Override]

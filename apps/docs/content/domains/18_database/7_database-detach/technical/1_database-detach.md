@@ -8,8 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is authorized to manage the selected app,
-  app instance, or workspace.
+- The current node identity is authorized to manage the selected app instance
+  or workspace.
 
 ## Signature
 
@@ -25,13 +25,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- |
 | `connection` | `argument` | Always. | n/a | Visible database connection slug. |
 | `app` | `--app` | Required when `workspace` is absent. | None. | Visible active app the caller may manage. |
-| `instance` | `--instance` | Optional with `app`. | None. | App instance belonging to the selected app. |
+| `instance` | `--instance` | Required with `app`. | None. | App instance belonging to the selected app. |
 | `workspace` | `--workspace` | Required when `app` is absent. | None. | Visible workspace the caller may manage. |
 | `env_prefix` | `--env-prefix` | Optional. | `DB`. | Selects the mapping row to remove. |
 | `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |
 
-Exactly one of `--app` or `--workspace` is required. `--instance` may be used
-only with `--app` and selects an app-instance mapping instead of the app target.
+Exactly one of `--app` or `--workspace` is required. `--instance` is required
+with `--app`; a bare app is never a database target.
 `--env-prefix` defaults to `DB` and selects the mapping row to remove.
 
 ## Behavior Contract

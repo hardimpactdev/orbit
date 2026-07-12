@@ -16,6 +16,7 @@ use function Laravel\Prompts\text;
 
 final class AppNewCommand extends AppGatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use PromptsForGatewayRegistryEntities;
 
     #[\Override]

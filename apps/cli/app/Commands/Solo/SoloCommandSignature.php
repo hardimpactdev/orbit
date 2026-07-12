@@ -9,18 +9,16 @@ final class SoloCommandSignature
     public function withNodeOption(string $signature): string
     {
         $nodeOption = '{--node= : Target node with Solo installed}';
-        $transportOption = '{--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}';
         $firstOptionPosition = strpos(haystack: $signature, needle: ' {--');
-        $nodeOptions = "{$nodeOption} {$transportOption}";
 
         if ($firstOptionPosition === false) {
-            return "{$signature} {$nodeOptions}";
+            return "{$signature} {$nodeOption}";
         }
 
         return (
             substr(string: $signature, offset: 0, length: $firstOptionPosition)
             .' '
-            .$nodeOptions
+            .$nodeOption
             .substr(
                 string: $signature,
                 offset: $firstOptionPosition,

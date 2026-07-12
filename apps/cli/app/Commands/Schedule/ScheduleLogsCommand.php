@@ -12,6 +12,7 @@ use App\Exceptions\GatewayApiException;
 
 final class ScheduleLogsCommand extends GatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use PromptsForGatewayRegistryEntities;
     use ResolvesHostContext;
     use ResolvesScheduleSelection;

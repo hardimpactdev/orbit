@@ -195,7 +195,7 @@ it('lets explicit transitional SSH fallback override local executor for agent ca
 
     [$workspace, $node] = workspaceAndNodeForManagerTest();
     $node->forceFill([
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => '10.44.0.90',
     ])->save();
     $container = renderTestWorkspaceContainer($workspace);
@@ -266,7 +266,7 @@ it('creates the orbit network, writes php.ini, and runs the workspace runtime co
 });
 
 it('creates the app-dev packages bind mount source before running the workspace runtime container', function (): void {
-    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
@@ -335,7 +335,7 @@ it('creates the macos app-dev packages bind mount source before running the work
         ->toBeLessThan(strpos($script, 'docker run -d'));
 });
 
-it('creates inherited configured runtime mount sources before running the workspace runtime container', function (): void {
+it('creates configured app instance runtime mount sources before running the workspace runtime container', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'nckrtl',
@@ -343,16 +343,20 @@ it('creates inherited configured runtime mount sources before running the worksp
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $app->runtimeMounts()->create([
-        'source' => '/home/nckrtl/packages',
-        'target' => '/home/nckrtl/packages',
-        'read_only' => true,
-    ]);
     $workspace = Workspace::factory()->for($app, 'app')->create([
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/nckrtl/.worktrees/feature-a',
         'php_version' => null,
     ]);
+    $workspace
+        ->appInstance
+        ->runtimeMounts()
+        ->create([
+            'source' => '/home/nckrtl/packages',
+            'target' => '/home/nckrtl/packages',
+            'read_only' => true,
+        ]);
+    $workspace->unsetRelation('appInstance');
     $workspace->setRelation('app', $app);
     $container = renderTestWorkspaceContainer($workspace);
 
@@ -421,7 +425,7 @@ it('installs the Orbit runtime trust pool on the node and mounts it into app-dev
 });
 
 it('treats app-dev workspace runtime TLS certificate mounts as Orbit-managed built-ins', function (): void {
-    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',

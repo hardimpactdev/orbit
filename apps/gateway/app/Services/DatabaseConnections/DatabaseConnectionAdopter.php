@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\AdoptResult;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Enums\AdoptAction;
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\RemoteShell\RemoteEnvFile;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Str;
 
 final readonly class DatabaseConnectionAdopter
@@ -27,6 +29,7 @@ final readonly class DatabaseConnectionAdopter
         private EnvFileEditor $envFileEditor,
         private RemoteEnvFile $remoteEnvFile,
         private DatabaseConnectionTargetEndpointResolver $endpointResolver,
+        private WorkspacePlacement $workspacePlacement,
     ) {}
 
     /**
@@ -58,7 +61,7 @@ final readonly class DatabaseConnectionAdopter
 
                 DatabaseConnectionTarget::query()->updateOrCreate(
                     ['workspace_id' => $scopedWorkspace->id, 'env_prefix' => $prefix],
-                    ['database_connection_id' => $connection->id, 'app_id' => null],
+                    ['database_connection_id' => $connection->id, 'app_instance_id' => null],
                 );
 
                 $results[] = new AdoptResult(
@@ -77,23 +80,30 @@ final readonly class DatabaseConnectionAdopter
             }
         }
 
-        foreach ($this->appsForNode($node, $scope) as $scopedApp) {
-            foreach ($this->payloadsFromEnvPath($node, rtrim($scopedApp->path, '/').'/.env') as $prefix => $payload) {
+        foreach ($this->appInstancesForNode($node, $scope) as $scopedInstance) {
+            $path = $this->appInstancePath($scopedInstance);
+
+            if ($path === null) {
+                continue;
+            }
+
+            foreach ($this->payloadsFromEnvPath($node, $path) as $prefix => $payload) {
                 $target = DatabaseConnectionTarget::query()
                     ->with('connection')
-                    ->where('app_id', $scopedApp->id)
+                    ->where('app_instance_id', $scopedInstance->id)
                     ->where('env_prefix', $prefix)
                     ->first();
                 $baseSlug = sprintf(
-                    '%s%s',
-                    Str::slug($scopedApp->name),
+                    '%s-%s%s',
+                    Str::slug($scopedInstance->app->name),
+                    Str::slug($scopedInstance->name),
                     $prefix === 'DB' ? '' : '-'.Str::slug($prefix),
                 );
 
                 [$connection, $action, $key] = $this->persistObservedConnection($target, $baseSlug, $payload, $node);
 
                 DatabaseConnectionTarget::query()->updateOrCreate(
-                    ['app_id' => $scopedApp->id, 'env_prefix' => $prefix],
+                    ['app_instance_id' => $scopedInstance->id, 'env_prefix' => $prefix],
                     ['database_connection_id' => $connection->id, 'workspace_id' => null],
                 );
 
@@ -101,11 +111,12 @@ final readonly class DatabaseConnectionAdopter
                     family: 'database_connection',
                     key: $key,
                     action: $action,
-                    summary: "Adopted database connection for app '{$scopedApp->name}'.",
+                    summary: "Adopted database connection for app instance '{$scopedInstance->app->name}.{$scopedInstance->name}'.",
                     detail: [
-                        'target_type' => 'app',
-                        'target_id' => $scopedApp->id,
-                        'app' => $scopedApp->name,
+                        'target_type' => 'app_instance',
+                        'target_id' => $scopedInstance->id,
+                        'app' => $scopedInstance->app->name,
+                        'app_instance' => $scopedInstance->name,
                         'env_prefix' => $prefix,
                     ],
                 );
@@ -415,21 +426,33 @@ final readonly class DatabaseConnectionAdopter
     }
 
     /**
-     * @return list<App>
+     * @return list<AppInstance>
      */
-    private function appsForNode(Node $node, DoctorTargetScope $scope): array
+    private function appInstancesForNode(Node $node, DoctorTargetScope $scope): array
     {
         if ($scope->workspace !== null) {
             return [];
         }
 
-        $query = App::query()->where('node_id', $node->id);
+        $instances = [];
 
-        if ($scope->app !== null) {
-            $query->where('name', $scope->app);
+        foreach (AppInstance::query()->with('app')->get() as $instance) {
+            if (! $instance instanceof AppInstance) {
+                continue;
+            }
+
+            if ($this->workspacePlacement->nodeForInstance($instance)?->is($node) !== true) {
+                continue;
+            }
+
+            if ($scope->app !== null && $instance->app->name !== $scope->app) {
+                continue;
+            }
+
+            $instances[] = $instance;
         }
 
-        return $query->get()->all();
+        return $instances;
     }
 
     /**
@@ -442,8 +465,7 @@ final readonly class DatabaseConnectionAdopter
         }
 
         $query = Workspace::query()
-            ->with('app')
-            ->whereHas('app', static fn ($appQuery) => $appQuery->where('node_id', $node->id));
+            ->with(['app', 'appInstance']);
 
         if ($scope->workspace !== null) {
             $query->where('name', $scope->workspace);
@@ -453,7 +475,27 @@ final readonly class DatabaseConnectionAdopter
             }
         }
 
-        return $query->get()->all();
+        /** @var list<Workspace> */
+        return $query
+            ->get()
+            ->filter(
+                fn (Workspace $workspace): bool => (
+                    $this->workspacePlacement->nodeForWorkspace($workspace)?->is($node) === true
+                ),
+            )
+            ->values()
+            ->all();
+    }
+
+    private function appInstancePath(AppInstance $instance): ?string
+    {
+        $config = $instance->driver_config;
+
+        if (! $config instanceof OrbitAppInstanceDriverConfigData || ! is_string($config->path)) {
+            return null;
+        }
+
+        return rtrim($config->path, '/').'/.env';
     }
 
     private function shouldUseLocalFilesystem(Node $node): bool

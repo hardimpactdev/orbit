@@ -128,10 +128,6 @@ struct DashboardConfig {
 
 fn bootstrap_process_environment() {
     orbit_agent::install_launchd_safe_path();
-
-    if std::env::var_os("ORBIT_AGENT_HTTP_BIND").is_none() {
-        std::env::set_var("ORBIT_AGENT_HTTP_BIND", "0.0.0.0:9477");
-    }
 }
 
 fn start_embedded_agent_service() {
@@ -860,6 +856,14 @@ mod tests {
         std::env::remove_var("ORBIT_AGENT_SERVICE_URL");
 
         assert_eq!(agent_service_base_url(), "http://127.0.0.1:9477");
+    }
+
+    #[test]
+    fn listener_security_embedded_agent_never_configures_a_wildcard_bind() {
+        let source = include_str!("main.rs");
+        let wildcard_bind = ["0.0.0.0", ":9477"].concat();
+
+        assert!(!source.contains(&wildcard_bind));
     }
 
     fn node_list_payload(name: &str, ip: &str) -> NodeListPayload {

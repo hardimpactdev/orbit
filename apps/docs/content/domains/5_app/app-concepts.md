@@ -9,12 +9,12 @@ the [Architecture](../../architecture.md).
 The terms below define the core identity vocabulary for the app family.
 
 - **App:** Logical application record owned by the gateway, with a stable
-  identity slug, default source metadata, runtime policy, deployment policy, and
-  optional repository. An app may have multiple app instances.
+  identity slug, default source metadata, runtime policy, and optional
+  repository. An app may have multiple app instances.
 - **App instance:** Concrete runtime or deployment target for one app. An
   instance belongs to exactly one app, has a name unique within that app, selects
-  one driver, owns driver configuration, owns app env values, and is the target
-  for instance-scoped resources such as database attachments.
+  one driver, owns driver configuration, and owns app env values. It is the
+  target for database attachments plus deployment policy, runs, logs, and status.
 - **App instance driver:** Backend that knows how an instance is placed and
   operated. Current drivers are `orbit` for Orbit-managed app-role nodes and
   `laravel-cloud` for Laravel Cloud application/environment targets.
@@ -22,11 +22,10 @@ The terms below define the core identity vocabulary for the app family.
   Data object under `driver_config`. `orbit` config records node/path/root/domain
   placement. `laravel-cloud` config records organization, application,
   environment, and domain selectors.
-- **Default app instance:** Compatibility Orbit instance created for existing
-  and newly registered apps from the app's current node/path/root fields.
-  App-level command families use those fields until they become instance-aware;
-  proxy route rendering already targets a concrete app instance when an
-  app-owned primary route hostname resolves to that instance.
+- **Canonical app instance:** Concrete Orbit instance created when an app is
+  registered without one. Instance-owned commands must resolve this or another
+  concrete instance. A logical app selector fails when more than one instance
+  could own the operation; it never falls back to app-owned runtime state.
 - **App identity slug:** Lowercase identity slug used as the app's globally
   unique gateway registry key. Maximum 40 characters.
 - **App name argument:** Positional `[name]` argument used by commands that
@@ -35,8 +34,8 @@ The terms below define the core identity vocabulary for the app family.
   read, update, prune, or remove an existing app. May be a name or hostname when
   the command contract opts into hostname resolution; name matches win over
   hostname matches.
-- **Owning node:** Compatibility/default node slug currently stored on the app
-  record. New placement-specific behavior should use app instances. Orbit
+- **Default node:** Node slug stored on the logical app and used when creating
+  its initial Orbit instance. Placement-specific behavior uses app instances. Orbit
   instances may only run on nodes with an active `app-dev` or `app-prod` role; a
   node without an active app role is not a valid Orbit app instance target.
 
@@ -44,8 +43,8 @@ The terms below define the core identity vocabulary for the app family.
 
 These terms describe runtime/deployment environments. The app record remains the
 logical identity. The concrete environment is represented by an app instance and
-its driver/placement. Environment fields on the app record are compatibility
-metadata derived from the default node role.
+its driver/placement. Environment fields on the app record describe the logical
+app defaults used when creating an instance.
 
 - **Development app:** App whose owning node carries the `app-dev`
   role. Hostname uses the development TLD. Workspaces may attach to the app for
@@ -82,8 +81,8 @@ metadata derived from the default node role.
   instances of the same app may use different host source paths for the same
   container target. Configured instance runtime mounts are rendered into the app
   runtime container for the selected instance and inherited by workspace runtime
-  containers that use that instance. App-level mounts remain compatibility
-  fallback only until migrated.
+  containers that use that instance. App-level runtime-mount rows are not a
+  supported ownership form.
 - **Production app runtime container:** App-prod PHP runtime rendered as a
   per-app Docker container running FrankenPHP on the owning node. It
   listens on internal port `8080`, publishes no public host ports, and is
@@ -107,7 +106,7 @@ metadata derived from the default node role.
   lifecycle-managed FrankenPHP runtime for a concrete app or workspace is
   represented as a process with Docker runtime. The app family owns desired app
   configuration, URL,
-  source path, deployment policy, and runtime selection; the process family owns
+  source path, app-instance deployment policy, and runtime selection; the process family owns
   the concrete long-running lifecycle unit.
 - **Worker mode:** Opt-in FrankenPHP mode that keeps a validated Laravel app in
   memory. It is disabled by default and can be enabled only after readiness
@@ -118,7 +117,7 @@ metadata derived from the default node role.
 - **Required PHP extensions:** Instance-owned list of PHP extensions required by
   the app on that target. The list is normalized for stable output. Orbit driver
   instances are checked against the running FrankenPHP container by app doctor;
-  Laravel Cloud instances use compatibility metadata as a preflight signal.
+  Laravel Cloud instances use driver metadata as a preflight signal.
 - **App instance env:** Values owned by the instance for non-secret env keys,
   stored in the gateway, and rendered on demand. Secret env storage is
   intentionally deferred in this slice.
@@ -201,7 +200,7 @@ These boundaries define what the app family owns and what belongs to other famil
 - **App-owned route:** Proxy route whose lifecycle is owned by the app, edited
   through app commands, and surfaced as inventory by the `proxy` family.
 - **App-family boundaries:** App commands own app registry, app-instance
-  registry, instance env rendering, runtime policy, deployment policy, app health
+  registry, instance env rendering, runtime policy, app-instance deployment policy, app health
   configuration, app WebSocket binding state, and app analytics binding state.
   They do not own proxy route registry, workspace policy, process configuration,
   schedule definitions, tool registration, or firewall policy beyond what derives

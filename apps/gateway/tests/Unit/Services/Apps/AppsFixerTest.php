@@ -32,7 +32,6 @@ use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Tests\Fakes\SiteCertificateInstallerFake;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -93,7 +92,6 @@ function buildAppsFixer(RemoteShell $shell): AppsFixer
             new WorkspaceRuntimeContainerRenderer(new PhpRuntimePolicy(new PhpRuntimeCatalog), new OrbitContainerNames),
             new WorkspacePlacement,
         ),
-        new SiteCertificateInstallerFake,
     );
 }
 
@@ -153,7 +151,7 @@ function apps_fixer_security_repair_was_sent(string $user, string $home, string 
     return true;
 }
 
-it('re-applies a missing FrankenPHP runtime container via the manager', function (): void {
+it('hands a missing FrankenPHP runtime unit to the process fixer', function (): void {
     $node = appsFixerNode();
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
@@ -181,27 +179,10 @@ it('re-applies a missing FrankenPHP runtime container via the manager', function
         summary: 'missing',
     ));
 
-    expect($result)
-        ->toMatchArray([
-            'family' => 'app',
-            'node' => 'app-1',
-            'key' => 'app.runtime_container_missing',
-            'status' => 'completed',
-        ])
-        ->and($result['details']['container'])
-        ->toBe('orbit-app-docs')
-        ->and(
-            collect($shell->scripts)
-                ->contains(
-                    fn (string $script): bool => (
-                        str_contains($script, 'docker run -d') && str_contains($script, "'orbit-app-docs'")
-                    ),
-                ),
-        )
-        ->toBeTrue();
+    expect($result)->toBeNull()->and($shell->scripts)->toBe([]);
 });
 
-it('re-applies a missing app instance FrankenPHP runtime container via the manager', function (): void {
+it('hands a missing app instance FrankenPHP runtime unit to the process fixer', function (): void {
     $beast = appsFixerNode();
     $nmbp = createTestAppHostNode(['name' => 'nmbp', 'platform' => 'darwin', 'user' => 'nckrtl', 'tld' => 'nmbp']);
     $app = App::factory()->for($beast, 'node')->create([
@@ -238,25 +219,10 @@ it('re-applies a missing app instance FrankenPHP runtime container via the manag
         summary: 'missing',
     ));
 
-    expect($result)
-        ->toMatchArray([
-            'family' => 'app',
-            'node' => 'nmbp',
-            'key' => 'app.runtime_container_missing',
-            'status' => 'completed',
-            'details' => [
-                'app' => 'hauser',
-                'app_instance' => 'nmbp',
-                'target' => 'hauser.nmbp',
-                'container' => 'orbit-app-hauser-nmbp',
-            ],
-        ])
-        ->and(collect($shell->scripts)
-            ->contains(fn (string $script): bool => str_contains($script, 'orbit-app-hauser-nmbp')))
-        ->toBeTrue();
+    expect($result)->toBeNull()->and($shell->scripts)->toBe([]);
 });
 
-it('refreshes the managed FrankenPHP process intent when re-applying an app runtime container', function (): void {
+it('does not mutate managed process intent through an app runtime issue', function (): void {
     $node = appsFixerNode();
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
@@ -276,7 +242,6 @@ it('refreshes the managed FrankenPHP process intent when re-applying an app runt
                 'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
             ],
         ]);
-    $expectedHash = app(AppRuntimeContainerRenderer::class)->render($app)->specHash();
 
     $shell = new AppsFixerRecordingRemoteShell(
         // network inspect ok
@@ -296,18 +261,19 @@ it('refreshes the managed FrankenPHP process intent when re-applying an app runt
         summary: 'missing',
     ));
 
-    expect($result['status'])
-        ->toBe('completed')
+    expect($result)
+        ->toBeNull()
         ->and($process->refresh()->runtime_config)
         ->toMatchArray([
             'container_name' => 'orbit-app-docs',
-            'container_spec_hash' => $expectedHash,
+            'container_spec_hash' => 'stale',
             'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
-            'php_ini_path' => '/home/orbit/.config/orbit/apps/docs.ini',
-        ]);
+        ])
+        ->and($shell->scripts)
+        ->toBe([]);
 });
 
-it('re-applies a mismatched FrankenPHP runtime container by removing and recreating it', function (): void {
+it('hands a mismatched FrankenPHP runtime unit to the process fixer', function (): void {
     $node = appsFixerNode();
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
@@ -341,18 +307,7 @@ it('re-applies a mismatched FrankenPHP runtime container by removing and recreat
         summary: 'mismatch',
     ));
 
-    expect($result)
-        ->toMatchArray([
-            'family' => 'app',
-            'node' => 'app-1',
-            'key' => 'app.runtime_container_mismatch',
-            'status' => 'completed',
-        ])
-        ->and(collect($shell->scripts)
-            ->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-app-docs'")))
-        ->toBeTrue()
-        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker run -d')))
-        ->toBeTrue();
+    expect($result)->toBeNull()->and($shell->scripts)->toBe([]);
 });
 
 it('returns null for non-app-runtime drift keys', function (): void {
@@ -383,63 +338,6 @@ it('returns null for static apps even on runtime container drift keys', function
     ));
 
     expect($result)->toBeNull()->and($shell->scripts)->toBe([]);
-});
-
-it('removes an orphan app runtime container at the node when handed an app slug without an active App row', function (): void {
-    $node = appsFixerNode();
-
-    $inspectPayload = json_encode(['State' => ['Running' => true], 'Config' => ['Labels' => []]], JSON_THROW_ON_ERROR);
-
-    $shell = new AppsFixerRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: $inspectPayload, stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    );
-
-    $result = buildAppsFixer($shell)->removeExtra($node, 'orphan-docs');
-
-    expect($result)
-        ->toMatchArray([
-            'family' => 'app',
-            'node' => 'app-1',
-            'code' => 'app.runtime_container_extra',
-            'key' => 'app.runtime_container_extra',
-            'mode' => 'fix',
-            'status' => 'completed',
-        ])
-        ->and($result['details']['app'])
-        ->toBe('orphan-docs')
-        ->and($result['details']['container'])
-        ->toBe('orbit-app-orphan-docs')
-        ->and($result['details']['outcome'])
-        ->toBe('removed')
-        ->and($shell->scripts[1])
-        ->toContain("docker rm -f 'orbit-app-orphan-docs'");
-});
-
-it('reports already_absent without throwing when the orphan container does not exist anymore', function (): void {
-    $node = appsFixerNode();
-
-    $shell = new AppsFixerRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'no such container', durationMs: 1),
-    );
-
-    $result = buildAppsFixer($shell)->removeExtra($node, 'orphan-docs');
-
-    expect($result['status'])->toBe('completed')->and($result['details']['outcome'])->toBe('already_absent');
-});
-
-it('propagates docker failures from removeExtra so doctor can record the failure', function (): void {
-    $node = appsFixerNode();
-
-    $inspectPayload = json_encode(['State' => ['Running' => true], 'Config' => ['Labels' => []]], JSON_THROW_ON_ERROR);
-
-    $shell = new AppsFixerRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: $inspectPayload, stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'container in use', durationMs: 1),
-    );
-
-    expect(fn () => buildAppsFixer($shell)->removeExtra($node, 'orphan-docs'))
-        ->toThrow(RuntimeException::class);
 });
 
 it('removes an orphan managed runtime config file when handed an app slug without an active App row', function (): void {
@@ -505,22 +403,6 @@ it('throws from removeRuntimeConfigExtra when the sudo probe fails for an unknow
         ->toThrow(RuntimeException::class);
 });
 
-it('throws from removeExtra when the docker inspect probe fails for an unknown reason so doctor records the failure', function (): void {
-    $node = appsFixerNode();
-
-    $shell = new AppsFixerRecordingRemoteShell(
-        new RemoteShellResult(
-            exitCode: 1,
-            stdout: '',
-            stderr: 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock.',
-            durationMs: 1,
-        ),
-    );
-
-    expect(fn () => buildAppsFixer($shell)->removeExtra($node, 'orphan-docs'))
-        ->toThrow(RuntimeException::class);
-});
-
 it('rewrites the managed runtime config when handed app.runtime_config_missing', function (): void {
     $node = appsFixerNode();
     $app = App::factory()->for($node, 'node')->create([
@@ -580,7 +462,7 @@ it('repairs the production runtime user when handed app.security.system_user', f
     $node = createTestAppHostNode([
         'name' => 'app-1',
         'wireguard_address' => '10.6.0.64',
-        'orbit_agent_capable' => true,
+        'managed' => true,
     ], 'app-prod');
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
@@ -617,7 +499,7 @@ it('reapplies filesystem ownership when handed app.security.fs_permissions', fun
     $node = createTestAppHostNode([
         'name' => 'app-1',
         'wireguard_address' => '10.6.0.64',
-        'orbit_agent_capable' => true,
+        'managed' => true,
     ], 'app-prod');
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
@@ -650,7 +532,7 @@ it('reapplies filesystem ownership when handed app.security.fs_permissions', fun
         ->toBeTrue();
 });
 
-it('repairs production runtime container isolation by re-applying the container', function (): void {
+it('leaves production runtime container isolation repair to the process family', function (): void {
     $node = appsFixerNode();
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
@@ -678,10 +560,5 @@ it('repairs production runtime container isolation by re-applying the container'
         summary: 'isolation',
     ));
 
-    expect($result)->toMatchArray([
-        'family' => 'app',
-        'node' => 'app-1',
-        'key' => 'app.security.runtime_container_isolation',
-        'status' => 'completed',
-    ]);
+    expect($result)->toBeNull()->and($shell->scripts)->toBe([]);
 });

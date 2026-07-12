@@ -16,12 +16,12 @@ final class DeployHistoryCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'deploy:history
-        {app : Production app name or domain}
+        {app : Production app-instance selector}
         {--limit= : Number of runs to return (default 50, hard cap 500)}
         {--json}';
 
     #[\Override]
-    protected $description = 'List deployment runs for a production app.';
+    protected $description = 'List deployment runs for a production app instance.';
 
     public function handle(): int
     {

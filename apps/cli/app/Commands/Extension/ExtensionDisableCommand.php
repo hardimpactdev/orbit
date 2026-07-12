@@ -12,6 +12,7 @@ use Orbit\Core\Extensions\OrbitExtensionRegistry;
 
 final class ExtensionDisableCommand extends GatewayCommand
 {
+    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
 
     #[\Override]

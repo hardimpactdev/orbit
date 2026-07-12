@@ -246,15 +246,15 @@ describe('node role registry', function (): void {
             ->toBe(['ingress_node_id' => 12]);
     });
 
-    it('hydrates app development settings dtos', function (): void {
+    it('hydrates app development settings without role-owned tld data', function (): void {
         $settings = new NodeRoleRegistry()
             ->definition('app-dev')
-            ->settingsFromArray(['tld' => 'test']);
+            ->settingsFromArray([]);
 
         expect($settings)
             ->toBeInstanceOf(AppDevelopmentRoleSettings::class)
             ->and($settings->toArray())
-            ->toBe(['tld' => 'test']);
+            ->toBe([]);
     });
 
     it('hydrates s3 settings dtos with default data path', function (): void {
@@ -268,7 +268,7 @@ describe('node role registry', function (): void {
             ->toBe(['data_path' => '/srv/orbit/s3/data']);
     });
 
-    it('hydrates agent settings dtos with default tld', function (): void {
+    it('hydrates agent settings without role-owned tld data', function (): void {
         $settings = new NodeRoleRegistry()
             ->definition('agent')
             ->settingsFromArray([]);
@@ -276,18 +276,14 @@ describe('node role registry', function (): void {
         expect($settings)
             ->toBeInstanceOf(AgentRoleSettings::class)
             ->and($settings->toArray())
-            ->toBe(['tld' => 'agent']);
+            ->toBe([]);
     });
 
-    it('hydrates agent settings dtos with explicit tld', function (): void {
-        $settings = new NodeRoleRegistry()
+    it('rejects node tld data in agent role settings', function (): void {
+        expect(fn () => new NodeRoleRegistry()
             ->definition('agent')
-            ->settingsFromArray(['tld' => 'custom']);
-
-        expect($settings)
-            ->toBeInstanceOf(AgentRoleSettings::class)
-            ->and($settings->toArray())
-            ->toBe(['tld' => 'custom']);
+            ->settingsFromArray(['tld' => 'custom']))
+            ->toThrow(InvalidArgumentException::class, 'The agent role does not accept settings.');
     });
 
     it('hydrates vpn settings with defaults', function (): void {
@@ -376,42 +372,42 @@ describe('node role registry', function (): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition('app-dev')
             ->settingsFromArray(['tld' => '']))
-            ->toThrow(InvalidArgumentException::class, 'The app-dev role requires a valid tld setting.');
+            ->toThrow(InvalidArgumentException::class, 'The app-dev role does not accept settings.');
     });
 
     it('rejects path-like app development tld settings', function (): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition('app-dev')
             ->settingsFromArray(['tld' => '../../orbit']))
-            ->toThrow(InvalidArgumentException::class, 'The app-dev role requires a valid tld setting.');
+            ->toThrow(InvalidArgumentException::class, 'The app-dev role does not accept settings.');
     });
 
     it('rejects unknown app development settings', function (): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition('app-dev')
             ->settingsFromArray(['tld' => 'test', 'unexpected' => 'value']))
-            ->toThrow(InvalidArgumentException::class, 'The app-dev role does not accept unknown settings.');
+            ->toThrow(InvalidArgumentException::class, 'The app-dev role does not accept settings.');
     });
 
     it('rejects invalid agent settings', function (): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition('agent')
             ->settingsFromArray(['tld' => '']))
-            ->toThrow(InvalidArgumentException::class, 'The agent role requires a valid tld setting.');
+            ->toThrow(InvalidArgumentException::class, 'The agent role does not accept settings.');
     });
 
     it('rejects path-like agent tld settings', function (): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition('agent')
             ->settingsFromArray(['tld' => '../../orbit']))
-            ->toThrow(InvalidArgumentException::class, 'The agent role requires a valid tld setting.');
+            ->toThrow(InvalidArgumentException::class, 'The agent role does not accept settings.');
     });
 
     it('rejects unknown agent settings', function (): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition('agent')
             ->settingsFromArray(['tld' => 'test', 'unexpected' => 'value']))
-            ->toThrow(InvalidArgumentException::class, 'The agent role does not accept unknown settings.');
+            ->toThrow(InvalidArgumentException::class, 'The agent role does not accept settings.');
     });
 
     it('rejects invalid vpn settings', function (array $settings, string $message): void {

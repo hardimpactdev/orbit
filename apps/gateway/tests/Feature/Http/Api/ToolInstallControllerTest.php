@@ -139,6 +139,218 @@ describe('ToolInstallController', function (): void {
             ->toBe([]);
     });
 
+    it('rejects missing platform metadata through stable preflight before side effects', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'missing-platform-tool-node',
+            'status' => 'active',
+            'platform' => null,
+        ]);
+        assignToolInstallApiRole($node, 'app-dev');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/php-cli/install',
+            ['node' => $node->name],
+            [],
+            [],
+            tool_install_api_server_headers(),
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'tool.constraint_unsatisfied')
+            ->assertJsonPath('error.meta.tool', 'php-cli')
+            ->assertJsonPath('error.meta.node', $node->name)
+            ->assertJsonPath('error.meta.action', 'install')
+            ->assertJsonPath('error.meta.constraint', 'operating_system')
+            ->assertJsonPath('error.meta.actual', null)
+            ->assertJsonPath('error.meta.required', ['linux', 'macos']);
+
+        expect(NodeTool::query()->where('node_id', $node->id)->exists())
+            ->toBeFalse()
+            ->and($shell->scripts)
+            ->toBe([]);
+    });
+
+    it('checks agent runtime-user isolation before OpenClaw or Hermes installation side effects', function (
+        string $tool,
+    ): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => "{$tool}-missing-runtime-user",
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => "{$tool}-agent",
+        ]);
+        assignToolInstallApiRole($node, 'agent');
+        $shell = new ToolInstallApiRecordingShell([
+            "id -u 'agent'" => new RemoteShellResult(
+                exitCode: 64,
+                stdout: '',
+                stderr: "Required runtime user 'agent' does not exist.",
+                durationMs: 1,
+            ),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            "/api/tools/{$tool}/install",
+            ['node' => $node->name],
+            [],
+            [],
+            tool_install_api_server_headers(),
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'tool.constraint_unsatisfied')
+            ->assertJsonPath('error.meta.tool', $tool)
+            ->assertJsonPath('error.meta.constraint', 'runtime_user')
+            ->assertJsonPath('error.meta.required', 'agent')
+            ->assertJsonPath('error.meta.actual', 'missing')
+            ->assertJsonPath('error.meta.exit_code', 64);
+
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', $tool)->exists())
+            ->toBeFalse()
+            ->and($shell->scripts)
+            ->toHaveCount(1)
+            ->and($shell->scripts[0])
+            ->toContain("id -u 'agent'")
+            ->and($shell->toolRowsPresent)
+            ->toBe([false]);
+    })->with(['openclaw', 'hermes']);
+
+    it('rejects a privileged agent runtime user through stable isolation metadata', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'openclaw-privileged-runtime-user',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => 'openclaw-privileged',
+        ]);
+        assignToolInstallApiRole($node, 'agent');
+        $shell = new ToolInstallApiRecordingShell([
+            "id -u 'agent'" => new RemoteShellResult(
+                exitCode: 65,
+                stdout: '',
+                stderr: 'Required runtime user must be unprivileged.',
+                durationMs: 1,
+            ),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/openclaw/install',
+            ['node' => $node->name],
+            [],
+            [],
+            tool_install_api_server_headers(),
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'tool.constraint_unsatisfied')
+            ->assertJsonPath('error.meta.constraint', 'isolation')
+            ->assertJsonPath('error.meta.required', 'unprivileged-user')
+            ->assertJsonPath('error.meta.actual', 'privileged-user')
+            ->assertJsonPath('error.meta.exit_code', 65);
+
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'openclaw')->exists())
+            ->toBeFalse()
+            ->and($shell->toolRowsPresent)
+            ->toBe([false]);
+    });
+
+    it('checks required container providers before Docker-backed install side effects', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'mailpit-without-provider',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        assignToolInstallApiRole($node, 'app-dev');
+        $shell = new ToolInstallApiRecordingShell([
+            'docker info' => new RemoteShellResult(
+                exitCode: 67,
+                stdout: '',
+                stderr: 'Docker-compatible container provider is unreachable.',
+                durationMs: 1,
+            ),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/mailpit/install',
+            ['node' => $node->name],
+            [],
+            [],
+            tool_install_api_server_headers(),
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'tool.constraint_unsatisfied')
+            ->assertJsonPath('error.meta.constraint', 'container_provider')
+            ->assertJsonPath('error.meta.required', 'docker-compatible')
+            ->assertJsonPath('error.meta.actual', 'unreachable')
+            ->assertJsonPath('error.meta.exit_code', 67);
+
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'mailpit')->exists())
+            ->toBeFalse()
+            ->and($shell->scripts)
+            ->toHaveCount(1)
+            ->and($shell->scripts[0])
+            ->toContain('docker info')
+            ->and($shell->toolRowsPresent)
+            ->toBe([false]);
+    });
+
+    it('completes agent tool preflight before persisting intent and running the installer', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'openclaw-preflight-order',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => 'openclaw-agent',
+        ]);
+        assignToolInstallApiRole($node, 'agent');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/openclaw/install',
+            ['node' => $node->name],
+            [],
+            [],
+            tool_install_api_server_headers(),
+        );
+
+        $response->assertOk();
+
+        expect($shell->scripts)
+            ->toHaveCount(3)
+            ->and($shell->scripts[0])
+            ->toContain("id -u 'agent'")
+            ->and($shell->scripts[1])
+            ->toContain('https://openclaw.ai/install.sh')
+            ->and($shell->toolRowsPresent)
+            ->toBe([false, true, true])
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'openclaw')->exists())
+            ->toBeTrue();
+    });
+
     it('configures the related singleton process by default when installing a service tool', function (): void {
         $caller = createToolInstallApiCallerNode();
         assignToolInstallApiRole($caller, 'gateway');
@@ -260,7 +472,7 @@ describe('ToolInstallController', function (): void {
             ->assertJsonPath('success.data.tool.name', 'polyscope-server')
             ->assertJsonPath('success.data.tool.process.name', 'polyscope-server')
             ->assertJsonPath('success.data.tool.process.runtime', 'systemd')
-            ->assertJsonPath('success.data.tool.process.tool', 'polyscope')
+            ->assertJsonPath('success.data.tool.process.tool', 'polyscope-server')
             ->assertJsonPath('success.data.tool.process.action', 'configured');
 
         $process = DB::table('processes')
@@ -276,7 +488,7 @@ describe('ToolInstallController', function (): void {
             ->and($process->runtime)
             ->toBe('systemd')
             ->and($process->tool)
-            ->toBe('polyscope');
+            ->toBe('polyscope-server');
     });
 
     it('skips polyscope server process configuration when with_process is false', function (): void {
@@ -830,9 +1042,28 @@ final class ToolInstallApiRecordingShell implements RemoteShell
      */
     public array $scripts = [];
 
+    /**
+     * @var list<bool>
+     */
+    public array $toolRowsPresent = [];
+
+    /**
+     * @param  array<string, RemoteShellResult>  $resultsForScriptContaining
+     */
+    public function __construct(
+        private readonly array $resultsForScriptContaining = [],
+    ) {}
+
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
+        $this->toolRowsPresent[] = NodeTool::query()->where('node_id', $node->id)->exists();
+
+        foreach ($this->resultsForScriptContaining as $needle => $result) {
+            if (str_contains($script, $needle)) {
+                return $result;
+            }
+        }
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }

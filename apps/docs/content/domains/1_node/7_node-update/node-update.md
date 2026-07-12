@@ -16,14 +16,14 @@ and [`node role:add`](../12_node-role-add/node-role-add.md).
 ## Usage
 
 ```bash
-orbit node:update [name] [--host=<host>] [--user=<user>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--orbit-agent-capable|--no-orbit-agent-capable] [--json]
+orbit node:update [name] [--host=<host>] [--user=<user>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--managed|--no-managed] [--json]
 ```
 
 Run without arguments in a TTY to let the interactive input mode prompt for
-the node name and which field to change. Authorization is gateway-side and
-grants-only — the caller's grant on the target node must include
-`node:update`; the gateway rejects unauthorized requests with
-`authorization_failed` before gateway-owned side effects.
+the node name and which field to change. Authorization follows the shared
+gateway-owned classes. A normal caller's grant on the target node must include
+`node:update`; gateway implicit authority is the named exception. The gateway
+rejects unauthorized requests before gateway-owned side effects.
 
 In non-interactive input mode, at least one field flag must be provided;
 otherwise the command fails before side effects.
@@ -36,8 +36,8 @@ orbit node:update beast --user=nckrtl
 orbit node:update app-1 --tld=test
 orbit node:update app-1 --gateway-endpoint=10.3.0.2
 orbit node:update gateway-1 --public-ipv4=203.0.113.2
-orbit node:update NMBP --orbit-agent-capable
-orbit node:update NMBP --no-orbit-agent-capable
+orbit node:update NMBP --managed
+orbit node:update NMBP --no-managed
 orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
 ```
 
@@ -51,7 +51,7 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
   `node:new --template=gateway --host=<host>` seeds that endpoint only during
   first-gateway bootstrap before peer configs have been issued;
   `node:update --host` is later node metadata.
-- `--user=<user>`: SSH user the gateway should use for node operations. Valid
+- `--user=<user>`: Orbit owner/runtime user for node-local Agent work. Valid
   for workload-role-bearing nodes and role-less operator nodes. Forbidden on
   the gateway node. Orbit stores the value only; it does not create or validate
   the operating-system account.
@@ -71,13 +71,12 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
 - `--public-ipv6=<address>`: public IPv6 metadata supplied by the operator.
   Valid for `gateway` and workload-role-bearing nodes. Forbidden on
   operator-identity nodes.
-- `--orbit-agent-capable`: Opt the node into the Orbit Agent agent-push lane.
-  Defaults to off for every node until explicitly enabled. This only changes
-  gateway registry capability; it does not install, start, or update the local
-  Orbit Agent process.
-- `--no-orbit-agent-capable`: Opt the node out of the Orbit Agent agent-push
-  lane. New gateway operations that require Orbit Agent delivery do not target
-  the node while this is disabled.
+- `--managed`: opt an eligible roleless, non-gateway operator into the Orbit
+  Agent lane. The node must be active, use a supported Ubuntu/macOS/Darwin
+  platform, and have a valid WireGuard identity. Workload nodes derive Agent
+  intent from active roles and do not use this flag. Gateway nodes reject it.
+- `--no-managed`: clear the explicit roleless-operator opt-in. Clearing is
+  valid for every node so stale or invalid intent can always be removed.
 - `--json`: Output JSON.
 
 Each field flag may be supplied at most once per invocation. Supplying the
@@ -98,9 +97,9 @@ that are directly affected by the changed metadata.
   SSH reachability, or egress checks.
 - Treats public IPv4/IPv6 values as operator-supplied metadata only. Updating
   them does not change the gateway endpoint used in WireGuard peer configs.
-- Updates the SSH user when `--user` is provided. Subsequent gateway-to-node
-  SSH sessions use the stored user. If the account does not exist or cannot
-  authenticate, node-side artifact re-applying may warn and hand repair to
+- Updates the Orbit owner/runtime user when `--user` is provided. Subsequent
+  node-local Agent work uses the stored user context. If the account does not
+  exist, node-side artifact re-applying may warn and hand repair to
   `doctor --family=node --restore`.
 - Updates `gateway_endpoint` when `--gateway-endpoint` is provided. For nodes
   with workload roles, Orbit updates the WireGuard endpoint in
@@ -123,10 +122,9 @@ that are directly affected by the changed metadata.
   contract for the DNS substrate is
   [`docs/domains/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
   Other field changes do not touch DNS.
-- Toggles Orbit Agent capability when one of the Orbit Agent flags is supplied.
-  Capability is an explicit opt-in marker for typed gateway jobs on supported
-  nodes; it is not implied by the `agent` workload role, macOS platform
-  detection, or the presence of an agent process on the node.
+- Changes explicit roleless-operator Agent intent when one of the managed flags
+  is supplied. Workload Agent intent remains derived from active roles; no
+  duplicated capability state is stored.
 - Does not change node role after creation. Role change is an identity
   migration outside `node:update` scope; a future explicit role-migration
   contract will own that flow.

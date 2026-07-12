@@ -12,6 +12,7 @@ describe('workspace step mutation commands', function (): void {
             'step' => [
                 'id' => 10,
                 'app' => 'docs',
+                'app_instance' => 'development',
                 'phase' => 'setup',
                 'order' => 1,
                 'command' => 'composer install',
@@ -51,6 +52,7 @@ describe('workspace step mutation commands', function (): void {
             'step' => [
                 'id' => 11,
                 'app' => 'docs',
+                'app_instance' => 'development',
                 'phase' => 'teardown',
                 'order' => 1,
                 'command' => 'dropdb docs',
@@ -87,6 +89,7 @@ describe('workspace step mutation commands', function (): void {
             'step' => [
                 'id' => 10,
                 'app' => 'docs',
+                'app_instance' => 'development',
                 'phase' => 'setup',
                 'order' => 2,
                 'command' => 'composer install',
@@ -103,7 +106,7 @@ describe('workspace step mutation commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Setup step added for app 'docs'.")
+            ->toContain("Setup step added for app instance 'docs.development'.")
             ->and($output)
             ->toContain('ID: 10')
             ->and($output)
@@ -123,6 +126,7 @@ describe('workspace step mutation commands', function (): void {
             'step' => [
                 'id' => 11,
                 'app' => 'docs',
+                'app_instance' => 'development',
                 'phase' => 'teardown',
                 'order' => 1,
                 'command' => 'dropdb docs',
@@ -138,7 +142,7 @@ describe('workspace step mutation commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Teardown step added for app 'docs'.")
+            ->toContain("Teardown step added for app instance 'docs.development'.")
             ->and($output)
             ->toContain('ID: 11')
             ->and($output)
@@ -192,7 +196,7 @@ describe('workspace step mutation commands', function (): void {
             ->not->toContain('"error"');
     });
 
-    it('renders step-not-found gateway failures when legacy rows are used as anchors for instance adds', function (): void {
+    it('renders step-not-found gateway failures when another instance step is used as an anchor', function (): void {
         fakeGateway(fakeErrorEnvelope(
             'workspace.step_not_found',
             "Referenced insertion step '7' not found for app 'hauser' in phase 'setup'.",
@@ -333,7 +337,7 @@ describe('workspace step mutation commands', function (): void {
     it('deletes workspace setup steps with destructive consent when forced', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 12, 'app' => 'docs', 'phase' => 'setup'],
+            'step' => ['id' => 12, 'app' => 'docs', 'app_instance' => 'development', 'phase' => 'setup'],
         ], [
             'remaining_step_count' => 0,
             'new_step_count' => 0,
@@ -365,7 +369,7 @@ describe('workspace step mutation commands', function (): void {
     it('deletes workspace teardown steps with destructive consent when forced', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 14, 'app' => 'docs', 'phase' => 'teardown'],
+            'step' => ['id' => 14, 'app' => 'docs', 'app_instance' => 'development', 'phase' => 'teardown'],
         ], [
             'remaining_step_count' => 0,
             'new_step_count' => 0,
@@ -397,7 +401,7 @@ describe('workspace step mutation commands', function (): void {
     it('renders workspace-setup-step:remove human output as prose with the renumber hint', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 12, 'app' => 'docs', 'phase' => 'setup'],
+            'step' => ['id' => 12, 'app' => 'docs', 'app_instance' => 'development', 'phase' => 'setup'],
         ], [
             'remaining_step_count' => 2,
             'new_step_count' => 2,
@@ -412,7 +416,7 @@ describe('workspace step mutation commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("✓ Removed setup step 12 from app 'docs'.")
+            ->toContain("✓ Removed setup step 12 from app instance 'docs.development'.")
             ->and($output)
             ->toContain('Remaining steps renumbered.')
             ->and($output)
@@ -424,7 +428,7 @@ describe('workspace step mutation commands', function (): void {
     it('renders workspace-setup-step:remove empty-list hint when the last step is removed', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 12, 'app' => 'docs', 'phase' => 'setup'],
+            'step' => ['id' => 12, 'app' => 'docs', 'app_instance' => 'development', 'phase' => 'setup'],
         ], [
             'remaining_step_count' => 0,
             'new_step_count' => 0,
@@ -439,9 +443,9 @@ describe('workspace step mutation commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("✓ Removed setup step 12 from app 'docs'.")
+            ->toContain("✓ Removed setup step 12 from app instance 'docs.development'.")
             ->and($output)
-            ->toContain("App 'docs' now has no workspace setup steps.")
+            ->toContain("App instance 'docs.development' now has no workspace setup steps.")
             ->and($output)
             ->not->toContain('Remaining steps renumbered.');
     });
@@ -449,7 +453,7 @@ describe('workspace step mutation commands', function (): void {
     it('renders workspace-teardown-step:remove human output with the teardown label', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 14, 'app' => 'docs', 'phase' => 'teardown'],
+            'step' => ['id' => 14, 'app' => 'docs', 'app_instance' => 'development', 'phase' => 'teardown'],
         ], [
             'remaining_step_count' => 1,
             'new_step_count' => 1,
@@ -464,7 +468,7 @@ describe('workspace step mutation commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("✓ Removed teardown step 14 from app 'docs'.")
+            ->toContain("✓ Removed teardown step 14 from app instance 'docs.development'.")
             ->and($output)
             ->toContain('Remaining steps renumbered.')
             ->and($output)
@@ -495,7 +499,7 @@ describe('workspace step mutation commands', function (): void {
     it('prompts for setup step ids before confirmation in interactive mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 12, 'app' => 'docs', 'phase' => 'setup'],
+            'step' => ['id' => 12, 'app' => 'docs', 'app_instance' => 'development', 'phase' => 'setup'],
         ], [
             'remaining_step_count' => 0,
             'new_step_count' => 0,
@@ -505,7 +509,7 @@ describe('workspace step mutation commands', function (): void {
             ->artisan('workspace-setup-step:remove', ['--app' => 'docs'])
             ->expectsQuestion('Step ID', '12')
             ->expectsConfirmation('Remove this workspace step?', 'yes')
-            ->expectsOutputToContain("Removed setup step 12 from app 'docs'.")
+            ->expectsOutputToContain("Removed setup step 12 from app instance 'docs.development'.")
             ->assertSuccessful();
 
         Http::assertSent(function (Request $request): bool {
@@ -521,7 +525,7 @@ describe('workspace step mutation commands', function (): void {
     it('prompts for teardown step ids before confirmation in interactive mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
-            'step' => ['id' => 14, 'app' => 'docs', 'phase' => 'teardown'],
+            'step' => ['id' => 14, 'app' => 'docs', 'app_instance' => 'development', 'phase' => 'teardown'],
         ], [
             'remaining_step_count' => 0,
             'new_step_count' => 0,
@@ -531,7 +535,7 @@ describe('workspace step mutation commands', function (): void {
             ->artisan('workspace-teardown-step:remove', ['--app' => 'docs'])
             ->expectsQuestion('Step ID', '14')
             ->expectsConfirmation('Remove this workspace step?', 'yes')
-            ->expectsOutputToContain("Removed teardown step 14 from app 'docs'.")
+            ->expectsOutputToContain("Removed teardown step 14 from app instance 'docs.development'.")
             ->assertSuccessful();
 
         Http::assertSent(function (Request $request): bool {

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--json]`
+# Technical Contract: `orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--json]`
 
 [Back to public `tool-credentials` documentation.](../tool-credentials.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--json]
+orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -24,7 +24,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Required in non-interactive input mode.` | `Never.` | `interactive selection from credential-bearing tools` | `Registered credential-bearing tool name.` |
 | `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
@@ -39,6 +38,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Resolves a credential-bearing tool on the target node.
 - Reads credential metadata from gateway configuration or the managed secret store.
+- Keeps credential reads gateway-local. The command exposes no node transport
+  selector and uses neither Agent push nor SSH.
 - Returns generated Orbit-owned credentials for credential-bearing tools, using
   the tool catalog's field names and endpoint shape.
 - Does not rotate credentials or reconfigure the tool.
@@ -61,7 +62,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
-| Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |
 
 ## Doctor Relationship
 

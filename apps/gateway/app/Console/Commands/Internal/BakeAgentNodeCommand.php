@@ -21,7 +21,7 @@ use RuntimeException;
     {--wireguard-address= : Agent node WireGuard address}
     {--gateway-endpoint= : Gateway endpoint address}
     {--user=orbit : Runtime user}
-    {--tld=agent : Agent node TLD}')]
+    {--tld= : Required agent node TLD}')]
 #[Description('Bake an agent-node registry row for prepared E2E topology images')]
 class BakeAgentNodeCommand extends Command
 {
@@ -36,10 +36,10 @@ class BakeAgentNodeCommand extends Command
         $wireguardAddress = $this->stringOption('wireguard-address');
         $gatewayEndpoint = $this->stringOption('gateway-endpoint');
         $user = $this->stringOption('user') ?? 'orbit';
-        $tld = $this->stringOption('tld') ?? 'agent';
+        $tld = $this->stringOption('tld');
 
-        if ($name === null || $host === null || $wireguardAddress === null) {
-            throw new RuntimeException('Name, host, and wireguard-address are required.');
+        if ($name === null || $host === null || $wireguardAddress === null || $tld === null) {
+            throw new RuntimeException('Name, host, wireguard-address, and tld are required.');
         }
 
         $hostKey = app(SshHostKeyPinner::class)->pin($hostKeyHost ?? $host);
@@ -63,7 +63,7 @@ class BakeAgentNodeCommand extends Command
             ],
             [
                 'status' => NodeRoleStatus::Active->value,
-                'settings' => ['tld' => $tld],
+                'settings' => [],
                 'last_error' => null,
                 'converged_at' => now(),
             ],

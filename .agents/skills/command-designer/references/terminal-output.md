@@ -1,8 +1,8 @@
 # Terminal Output
 
 Use this reference for the implementation mechanics behind Orbit's terminal
-output: ANSI codes, animation patterns, traits, and the gateway-streamed SSE
-shape. Primitive selection (which renderer or prompt to use, and when) is
+output: ANSI codes, animation patterns, traits, durable operation progress, and
+the exact transitional SSE surface. Primitive selection (which renderer or prompt to use, and when) is
 product-authority and lives in
 [`apps/docs/content/ux/commands/`](../../../../apps/docs/content/ux/commands/README.md).
 
@@ -121,11 +121,13 @@ $outcome = $this->runStepOperation(
 Both helpers return an `Orbit\Core\Progress\StepTreeResult`; check
 `isCompleted()` before rendering follow-up notes.
 
-### Pattern 3: Gateway-Streamed Progress (SSE)
+### Pattern 3: Durable Operation Progress (WebSocket)
 
-Commands whose work executes on the gateway use
-`App\Commands\Concerns\StreamsGatewayProgress`. The gateway emits
-Server-Sent Events typed by `Orbit\Core\Progress\ProgressEventType`:
+Long-running gateway operations first return a durable operation descriptor.
+The CLI then uses `App\Services\GatewayOperationStreamSubscriber` to replay the
+journal and follow the private operations WebSocket channel. The gateway
+persists every typed `Orbit\Core\Progress\ProgressEventType` frame before
+publication:
 
 | Event | Purpose |
 | --- | --- |
@@ -137,18 +139,25 @@ Server-Sent Events typed by `Orbit\Core\Progress\ProgressEventType`:
 In human mode the frames drive an animated
 `Orbit\Core\Progress\StreamedStepTree` locally; in `--json` mode intermediate
 frames are silent and only the terminal frame is emitted; with `--stream-json`
-every frame is emitted as a JSON line. See `NodeNewCommand`:
+every frame is emitted as a JSON line. Replay and live delivery share the same
+renderer and deduplicate by journal cursor. See `DeployRunCommand`:
 
 ```php
-use App\Commands\Concerns\StreamsGatewayProgress;
+use App\Services\GatewayOperationStreamSubscriber;
 
-return $this->streamProgress(
-    '/api/nodes',
-    $payload,
-    fn (ProgressEventType $type, array $payload): int =>
-        $this->renderProgressTerminalFrame($type, $payload),
+$response = $this->gatewayPost('/api/deploy/run', $payload);
+$operationId = data_get($response, 'success.data.operation.uuid');
+
+app(GatewayOperationStreamSubscriber::class)->subscribe(
+    $operationId,
+    null,
+    fn (array $frame): mixed => $this->renderOperationFrame($frame),
 );
 ```
+
+`StreamsGatewayProgress` and direct Server-Sent Events remain only on
+exact transitional command surfaces. Do not use them for new operation-backed
+commands; port those consumers to the durable operations WebSocket.
 
 Do not fake remote progress by wrapping a blocking JSON call in a local
 spinner, and do not forward commands by SSH. Prompting remains a caller-side
@@ -307,7 +316,7 @@ All command-side traits live in `apps/cli/app/Commands/Concerns/`.
 | Trait | Purpose | When to use |
 | --- | --- | --- |
 | `WithStepTree` | `runStepTree()` / `runStepOperation()` over the shared `StepTree` engine. | Any command with tree-style progress. |
-| `StreamsGatewayProgress` | Consume gateway SSE progress; `--json` / `--stream-json` frame handling. | Gateway-executed long-running commands. |
+| `StreamsGatewayProgress` | Consume exact transitional gateway SSE progress. | Existing marked SSE commands only; do not add consumers. |
 | `EmitsCanonicalEnvelopes` | `wantsJson()`, `renderSuccess()`, `renderFailure()`, `allowsInteractiveInput()`. | Already included by every command base. |
 | `RendersShowDetails` | Tree-shaped single-entity detail output. | Show/detail commands. |
 | `PromptsForGatewayRegistryEntities` | `datatable` selection prompts for apps, nodes, workspaces, schedules. | Interactive entity selection. |
@@ -319,8 +328,9 @@ All command-side traits live in `apps/cli/app/Commands/Concerns/`.
 | --- | --- |
 | `Node\NodeRemoveCommand` | `runStepOperation` with drift-aware closure footer. |
 | `App\AppRemoveCommand` | `runStepOperation` plus `confirm()`/`--force` destructive consent. |
-| `Node\NodeNewCommand` | Gateway SSE via `streamProgress()`. |
-| `Workspace\WorkspaceSetupCommand` | Gateway SSE via `streamProgress()`. |
+| `Deploy\DeployRunCommand` | Durable operation journal plus operations WebSocket subscription. |
+| `Node\NodeNewCommand` | Transitional gateway SSE via `streamProgress()`. |
+| `Workspace\WorkspaceSetupCommand` | Transitional gateway SSE via `streamProgress()`. |
 | `Database\DatabaseShowCommand` | `show-detail` rendering through `RendersShowDetails`. |
 | `Operation\DoctorCommand` | Custom parallel panel via `DoctorPanelRenderer`. |
 | `App\AppListCommand` | `Laravel\Prompts\table` grouped list output. |

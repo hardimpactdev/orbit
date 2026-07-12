@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeKind;
@@ -22,8 +21,6 @@ final readonly class AppsFixer
         private AppRuntimeContainerManager $appRuntimeContainerManager,
         private AppRuntimeUser $appRuntimeUser,
         private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
-        private SiteCertificateInstaller $siteCertificateInstaller,
-        private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private ?RemoteAppSecurityRepair $securityRepair = null,
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
@@ -41,10 +38,6 @@ final readonly class AppsFixer
         }
 
         return match ($entry->key) {
-            'app.runtime_container_missing',
-            'app.runtime_container_mismatch',
-            'app.security.runtime_container_isolation',
-                => $this->reapplyRuntimeContainer($app, $node, $entry),
             'app.runtime_config_missing', 'app.runtime_config_mismatch' => $this->reapplyRuntimeConfig(
                 $app,
                 $node,
@@ -67,12 +60,6 @@ final readonly class AppsFixer
         }
 
         return match ($entry->key) {
-            'app.runtime_container_missing', 'app.runtime_container_mismatch' => $this->reapplyRuntimeContainer(
-                $app,
-                $node,
-                $entry,
-                $instance,
-            ),
             'app.runtime_config_missing', 'app.runtime_config_mismatch' => $this->reapplyRuntimeConfig(
                 $app,
                 $node,
@@ -81,36 +68,6 @@ final readonly class AppsFixer
             ),
             default => null,
         };
-    }
-
-    /**
-     * Remove an Orbit-owned app runtime container whose encoded app identity
-     * no longer maps to an active app record on the node.
-     *
-     * @return array<string, mixed>
-     */
-    public function removeExtra(Node $node, string $appSlug): array
-    {
-        $outcome = $this->appRuntimeContainerManager->remove($node, $appSlug);
-
-        if ($outcome === AppRuntimeArtifactRemovalOutcome::FailedRemaining) {
-            throw new RuntimeException("Failed to remove orbit-app-{$appSlug} container on {$node->name}.");
-        }
-
-        return [
-            'family' => 'app',
-            'node' => $node->name,
-            'code' => 'app.runtime_container_extra',
-            'key' => 'app.runtime_container_extra',
-            'mode' => 'fix',
-            'status' => 'completed',
-            'summary' => "Removed extra app runtime container for {$appSlug}.",
-            'details' => [
-                'app' => $appSlug,
-                'container' => "orbit-app-{$appSlug}",
-                'outcome' => $outcome->value,
-            ],
-        ];
     }
 
     /**
@@ -143,68 +100,6 @@ final readonly class AppsFixer
                 'outcome' => $outcome->value,
             ],
         ];
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function reapplyRuntimeContainer(
-        App $app,
-        Node $node,
-        DriftEntry $entry,
-        ?AppInstance $instance = null,
-    ): ?array {
-        if ($app->runtimeKind() !== AppRuntimeKind::Php) {
-            return null;
-        }
-
-        if ($instance instanceof AppInstance) {
-            $runtimeApp = $this->appRuntimeContainerRenderer->runtimeAppForInstance($app, $instance);
-            $this->ensureRuntimeTlsMaterial($runtimeApp, $node);
-            $container = $this->appRuntimeContainerRenderer->renderForInstance($app, $instance);
-        } else {
-            $this->ensureFrankenPhpRuntimeProcess->forApp($app);
-            $this->ensureRuntimeTlsMaterial($app, $node);
-            $container = $this->appRuntimeContainerRenderer->render($app);
-        }
-
-        $this->appRuntimeContainerManager->apply($node, $container);
-
-        return [
-            'family' => 'app',
-            'node' => $node->name,
-            'code' => $entry->key,
-            'key' => $entry->key,
-            'mode' => 'fix',
-            'status' => 'completed',
-            'summary' => $instance instanceof AppInstance
-                ? "Re-applied app instance runtime container for {$app->name}.{$instance->name}."
-                : "Re-applied app runtime container for {$app->name}.",
-            'details' => [
-                'app' => $app->name,
-                'container' => $container->name(),
-                ...(
-                    $instance instanceof AppInstance
-                        ? [
-                            'app_instance' => $instance->name,
-                            'target' => $this->appRuntimeContainerRenderer->targetName($app, $instance),
-                        ]
-                        : []
-                ),
-            ],
-        ];
-    }
-
-    private function ensureRuntimeTlsMaterial(App $app, Node $node): void
-    {
-        if (! $this->innerTlsPolicy->appliesToApp($app)) {
-            return;
-        }
-
-        $this->siteCertificateInstaller->ensureFor(
-            $node,
-            $this->innerTlsPolicy->appRouteDomain($app),
-        );
     }
 
     /**

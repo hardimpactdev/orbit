@@ -6,6 +6,7 @@ namespace App\Services\RemoteShell;
 
 final readonly class ExplicitRemoteShellFallback
 {
+    // @orbit-ssh-lane transitional-ssh
     public const string HEADER = 'X-Orbit-Node-Transport-Preference';
 
     public const string REQUIRED = 'transitional-ssh-fallback';

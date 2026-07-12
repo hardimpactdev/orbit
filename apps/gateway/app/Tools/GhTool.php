@@ -6,6 +6,11 @@ namespace App\Tools;
 
 final class GhTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux'];
+
     public function slug(): string
     {
         return 'gh';

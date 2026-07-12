@@ -11,7 +11,6 @@ final class ToolReconfigureCommand extends ToolGatewayCommand
         {tool? : Tool catalog name to reconfigure}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--password= : Auth password (OpenCode Server)}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';

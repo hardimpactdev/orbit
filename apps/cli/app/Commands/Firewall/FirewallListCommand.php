@@ -17,7 +17,6 @@ final class FirewallListCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'firewall:list
         {--node= : Filter by node name}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json}';
 
     #[\Override]

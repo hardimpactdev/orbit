@@ -36,7 +36,6 @@ orbit process:add [<name>] [<command>] [--app=<name>] [--node=<node>]
 | `--crash-notification` | `none` | `agent_ide` posts crash notes to the effective Agent IDE adapter; rejected for `launchd` until the macOS crash wrapper exists. |
 | `--runtime` | platform/service default | Host commands default to `systemd` on Linux and `launchd` on macOS. Managed services default to `docker`; `docker-swarm` is Linux-only and service-catalog gated. |
 | `--no-start` | off | Skip starting rendered runtime units after apply. |
-| `--start` | redundant | Accepted for backward compatibility; processes start by default. |
 
 Examples:
 
@@ -115,4 +114,5 @@ orbit process:logs [<name>] [--app=<name>] [--workspace=<name>]
 processes read Orbit-owned stdout/stderr files under
 `~/Library/Logs/Orbit/processes`. On agent-capable nodes, bounded reads and
 follow streams use the gateway-to-Agent command transport; explicit
-transitional SSH fallback is reserved for migration and recovery.
+exact-marked `transitional-ssh` fallback is reserved for the remaining migration
+seam until it is ported.

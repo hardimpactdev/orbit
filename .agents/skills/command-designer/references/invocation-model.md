@@ -92,14 +92,13 @@ domain-owned code:
 | Code | Use for | Required metadata |
 | --- | --- | --- |
 | `validation_failed` | Missing required input, malformed input, unsupported scalar values, and static validation failures. | `error.meta.field` when one field caused the failure. |
-| `caller_role_not_allowed` | The local caller role is not permitted to invoke this command path. | `error.meta.caller_role`. |
-| `authorization_failed` | The caller role may invoke the command, but the authenticated identity is not authorized for the resolved target. | Target identifiers when stable, such as `app`, `node`, or `target`. |
-| `gateway_unavailable` | A configured non-gateway caller cannot reach the gateway API required for the command. | Stable connection context when available. |
+| `authorization_failed` | The WireGuard peer is unknown, or the gateway authorization class denies the action for the resolved target. | `error.meta.reason`; when the required grant permission is missing, `error.meta.reason=missing_permission`, `error.meta.missing_permission`, and the stable serving-node or target identifier. |
+| `gateway_unavailable` | A configured caller cannot reach the gateway API required for the command. | Stable connection context when available. |
 
-Use `caller_role_not_allowed` only for the local caller role being invalid for
-the command path before command input is resolved. Use a domain-specific target
-eligibility code, such as `app.ineligible_node`, when the caller may run the
-command but the resolved target cannot satisfy the command's domain rules.
+Do not use a node role as an authorization classifier. Use a domain-specific
+target eligibility code, such as `app.ineligible_node` or
+`node.field_role_incompatible`, when the authenticated caller may request the
+command but the resolved target cannot satisfy its domain or capability rules.
 
 Do not invent synonyms such as `missing_input`, `missing_argument`,
 `validation.missing_input`, `unauthorized`, `auth.unauthorized_role`, or
@@ -231,29 +230,48 @@ There is no generic retry cap unless the command contract explicitly documents
 one. Prompt aborts such as Ctrl-C, EOF, or a primitive-supported cancel action
 exit with the standard command failure status and must not start side effects.
 
-## Caller-Role Denial
+## Peer Identity And Authorization
 
-Caller-role denial is a pre-input prerequisite failure. A command that may only
-run from control or gateway nodes must reject app-node callers before prompts,
-forwarding, local writes, SSH, WireGuard changes, or other side effects.
+Every gateway-backed command authenticates the caller's WireGuard peer. The
+gateway then applies one documented authorization class before side effects:
 
-The human message and JSON `error.message` must match exactly for the same
-failure. Use these canonical caller-role messages unless a command documents a
-narrower role-specific reason:
+- **Default grants gate:** a stored consuming-node to serving-node grant exists
+  and contains the command's scoped permission.
+- **Gateway implicit authority:** the singleton gateway role carries implicit
+  fleet authority without a grant row.
+- **Pre-grants bootstrap:** first-gateway `node:new` and `gateway:add` establish
+  the identity and grants needed by later calls.
+- **Local-only:** the command touches only caller-local state or a directly
+  reachable URL and does not call the gateway for authorization.
+- **Identity-gated self-management:** a known roleless operator peer may update
+  only the explicitly approved fields on itself.
 
-| Allowed caller roles | Message |
-| --- | --- |
-| `control` | `This command may only be run from a control node.` |
-| `control`, `gateway` | `This command may only be run from a control or gateway node.` |
-| Any known role, but local role is `unknown` | `The local Orbit caller role could not be resolved.` |
+Node role labels and CLI installation do not grant or deny commands. A
+self-targeting workload command follows the normal gateway path and uses the
+node's explicit self-grant. Local path context may resolve defaults but never
+acts as authorization.
 
-The JSON envelope carries the stable classifier
-`error.code=caller_role_not_allowed` and `error.meta.caller_role`.
+An authorization denial uses the same human message and JSON `error.message`
+for the same failure. When the peer is known but lacks the required permission,
+the JSON envelope uses this shape:
 
-CLI availability on an app node does not grant write permission. App-node write
-exceptions must be explicit in the command contract and should be narrow,
-workflow-specific paths rather than inherited permissions for neighboring app or
-node commands.
+```json
+{
+  "error": {
+    "code": "authorization_failed",
+    "message": "The caller is not authorized for this action.",
+    "meta": {
+      "reason": "missing_permission",
+      "missing_permission": "workspace:new",
+      "serving_node": "app-1"
+    }
+  }
+}
+```
+
+When a target's role or platform is incompatible after input resolution, use a
+domain-owned eligibility failure. Do not reclassify target capability as an
+authorization denial.
 
 ## Destructive Confirmation
 

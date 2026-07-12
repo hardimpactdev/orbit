@@ -61,6 +61,7 @@ describe('Solo mutating commands', function (): void {
                 $request->method() === 'POST'
                 && str_contains($request->url(), '/api/solo/project/create')
                 && ($request->data()['name'] ?? null) === 'orbit'
+                && ($request->data()['self'] ?? null) === true
             ),
         );
 
@@ -68,6 +69,24 @@ describe('Solo mutating commands', function (): void {
             ->toBe(0)
             ->and($decoded['success']['data']['project']['name'])
             ->toBe('orbit');
+    });
+
+    it('uses the configured default node for mutations without an explicit target', function (): void {
+        enable_solo_mutating_extension();
+        app(OrbitConfigStore::class)->setDefaultNode('NMBP');
+        fakeGateway(fakeSuccessEnvelope(['project' => ['name' => 'orbit']]));
+
+        [$exitCode] = runCommand($this, command: 'solo:project:create', params: [
+            'name' => 'orbit',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => ($request->data()['node'] ?? null) === 'NMBP'
+            && ! array_key_exists('self', $request->data()),
+        );
+
+        expect($exitCode)->toBe(0);
     });
 
     it('passes the target node to gateway-backed mutations', function (): void {

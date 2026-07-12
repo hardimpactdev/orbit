@@ -9,7 +9,6 @@ return [
     ],
     'shared' => [
         'authorization_failed',
-        'caller_role_not_allowed',
         'gateway_unavailable',
         'local_context_invalid',
         'validation_failed',

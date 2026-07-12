@@ -330,7 +330,7 @@ describe('SchedulesProbe', function (): void {
         ]);
         $node = createTestAppHostNode([
             'name' => 'app-1',
-            'orbit_agent_capable' => true,
+            'managed' => true,
             'wireguard_address' => '10.44.0.82',
         ]);
         $app = App::factory()->create(['node_id' => $node->id]);
@@ -366,7 +366,7 @@ describe('SchedulesProbe', function (): void {
         ]);
         $node = createTestAppHostNode([
             'name' => 'app-1',
-            'orbit_agent_capable' => true,
+            'managed' => true,
             'wireguard_address' => '10.44.0.82',
         ]);
         $app = App::factory()->create(['node_id' => $node->id]);

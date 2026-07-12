@@ -219,7 +219,9 @@ describe('command list visibility', function (): void {
             'tool:credentials',
             'tool:install',
             'tool:list',
+            'tool:logs',
             'tool:reconfigure',
+            'tool:reload',
             'tool:remove',
             'tool:restart',
             'tool:show',
@@ -267,6 +269,30 @@ describe('command list visibility', function (): void {
             ->and(findCommandInList($list, 'workspace:exec'))
             ->toBeNull();
     });
+
+    it('does not expose node transport on commands with a fixed execution lane', function (string $commandName): void {
+        $command = app(\Illuminate\Contracts\Console\Kernel::class)->all()[$commandName];
+
+        expect($command->getDefinition()->hasOption('node-transport'))->toBeFalse();
+    })->with([
+        'tool:list',
+        'firewall:list',
+        'app:list',
+        'workspace:list',
+        'process:list',
+        'proxy:list',
+        'schedule:list',
+        'activity:list',
+        'database:list',
+        'php:list',
+        'php:use',
+        'codex:app',
+        'tool:credentials',
+        'tool:install',
+        'tool:reconfigure',
+        'tool:remove',
+        'tool:update',
+    ]);
 
     it('hides Cloudflare commands until the local cloudflare extension is enabled', function (): void {
         $defaultConfigPath = orbit_test_config_path(prefix: 'orbit-command-list-default-');
@@ -440,7 +466,9 @@ describe('command list visibility', function (): void {
         'tool:credentials',
         'tool:install',
         'tool:list',
+        'tool:logs',
         'tool:reconfigure',
+        'tool:reload',
         'tool:remove',
         'tool:restart',
         'tool:show',

@@ -46,10 +46,10 @@ composer e2e:reap-docker
 
 ## Porting Rule
 
-Do not reintroduce standing live-node smoke tests as a default verification
-lane. Persistent nodes are operational infrastructure, not a test fixture.
+Standing live-node smoke tests are excluded from the default verification lane.
+Persistent nodes are operational infrastructure, not a test fixture.
 
-When porting an old behavior, start with in-memory Pest coverage. Move the test
+When porting existing behavior, start with in-memory Pest coverage. Move the test
 to Docker-backed feature E2E only when the prepared topology is part of the
 contract. Move it to Incus/provisioning E2E only when the behavior depends on
 real VM, network, OS, or installer semantics.

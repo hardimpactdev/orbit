@@ -47,6 +47,8 @@ class NodeNewPayloadBuilder
         ?string $roles,
         ?string $host,
         ?string $operatorName,
+        ?string $operatorTld,
+        bool $firstGatewayBootstrap,
         ?string $tld,
         ?string $user,
         ?string $gatewayEndpoint,
@@ -97,6 +99,58 @@ class NodeNewPayloadBuilder
             );
         }
 
+        if ($tld === null) {
+            throw new NodeWriteInputException('validation_failed', 'Node TLD is required.', ['field' => 'tld']);
+        }
+
+        if (! $this->isValidTld($tld)) {
+            throw new NodeWriteInputException(
+                'validation_failed',
+                'Node TLD must be a lowercase DNS label without a leading dot.',
+                ['field' => 'tld', 'value' => $tld],
+            );
+        }
+
+        if ($firstGatewayBootstrap) {
+            if ($operatorName === null) {
+                throw new NodeWriteInputException(
+                    'validation_failed',
+                    'Initiating operator node name is required for first-gateway bootstrap.',
+                    ['field' => 'operator_name'],
+                );
+            }
+
+            if ($operatorTld === null) {
+                throw new NodeWriteInputException(
+                    'validation_failed',
+                    'Initiating operator node TLD is required for first-gateway bootstrap.',
+                    ['field' => 'operator_tld'],
+                );
+            }
+
+            if (! $this->isValidTld($operatorTld)) {
+                throw new NodeWriteInputException(
+                    'validation_failed',
+                    'Initiating operator node TLD must be a lowercase DNS label without a leading dot.',
+                    ['field' => 'operator_tld', 'value' => $operatorTld],
+                );
+            }
+
+            if ($operatorTld === $tld) {
+                throw new NodeWriteInputException(
+                    'validation_failed',
+                    'Gateway and initiating operator node TLDs must be unique.',
+                    ['fields' => ['tld', 'operator_tld']],
+                );
+            }
+        } elseif ($operatorTld !== null) {
+            throw new NodeWriteInputException(
+                'validation_failed',
+                '--operator-tld is only valid for first-gateway bootstrap.',
+                ['field' => 'operator_tld'],
+            );
+        }
+
         $payload = [
             'name' => $name,
         ];
@@ -104,6 +158,7 @@ class NodeNewPayloadBuilder
         $this->putString($payload, 'template', $template);
         $this->putString($payload, 'host', $host);
         $this->putString($payload, 'operator_name', $operatorName);
+        $this->putString($payload, 'operator_tld', $operatorTld);
         $this->putString($payload, 'tld', $tld);
         $this->putString($payload, 'user', $user);
         $this->putString($payload, 'gateway_endpoint', $gatewayEndpoint);
@@ -160,6 +215,7 @@ class NodeNewPayloadBuilder
             'template' => 'template',
             'host' => 'host',
             'operator_name' => 'operator-name',
+            'operator_tld' => 'operator-tld',
             'tld' => 'tld',
             'user' => 'user',
             'gateway_endpoint' => 'gateway-endpoint',
@@ -323,6 +379,11 @@ class NodeNewPayloadBuilder
         if ($value !== null) {
             $payload[$key] = $value;
         }
+    }
+
+    private function isValidTld(string $tld): bool
+    {
+        return strlen($tld) <= 63 && preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld) === 1;
     }
 
     /**

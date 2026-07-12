@@ -9,8 +9,10 @@
 When run from a client with an operator identity, `workspace:new` acts as a gateway client:
 
 - **Input Resolution:** Gathers all arguments and options. Resolves the
-  parent app from `--app`, the `.orbit/config` marker, or the gateway
-  path-ownership lookup. Performs local static validation (slug regex,
+  concrete app instance from `--app`, the `.orbit/config` marker, or the
+  gateway path-ownership lookup. Context that identifies only the parent app
+  succeeds when it resolves uniquely; zero or multiple instances fail with
+  `app_instance_required`. Performs local static validation (slug regex,
   length, reserved name) before calling the gateway.
 - **Gateway Dispatch:** Forwards the resolved configuration to the gateway
   over HTTPS through WireGuard.
@@ -28,8 +30,8 @@ When run from a client with an operator identity, `workspace:new` acts as a gate
 
 ## Authorization
 
-- Requires a valid client identity authorized to manage the parent
-  app and its node.
+- Requires a valid WireGuard peer with `workspace:new` on the selected app
+  instance's owning node.
 
 ## Test Mapping
 

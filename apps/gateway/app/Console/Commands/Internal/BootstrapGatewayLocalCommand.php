@@ -14,7 +14,6 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
-use App\Services\Gateway\GatewayHostAgentConverger;
 use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmInstaller;
 use App\Services\Security\SshHostKeyPinner;
@@ -35,7 +34,8 @@ use RuntimeException;
     {wireguard-address : WireGuard address for the gateway}
     {--identity-json= : Gateway/operator WireGuard identity payload; use - to read JSON from STDIN}
     {--public-host= : Public IPv4 or DNS name that external WG peers connect to (required to provision wg-easy/orbit-dns)}
-    {--tld=gateway : TLD assigned to the gateway node; used to resolve <gateway-name>.<tld> over WG-served DNS}
+    {--tld= : Explicit unique TLD assigned to the gateway node}
+    {--operator-tld= : Explicit unique TLD assigned to the initiating operator identity}
     {--metadata-json : Output bootstrap metadata JSON instead of only the root CA PEM}
     {--skip-gateway-service-install : Skip orbit-caddy gateway API site write, wg-easy, and orbit-dns installation for container-only E2E topology preparation}
     {--skip-wireguard-install : Skip gateway WireGuard interface installation for Docker E2E topology preparation}',
@@ -47,13 +47,13 @@ class BootstrapGatewayLocalCommand extends Command
         OrbitCaService $caService,
         WireGuardInterfaceInstaller $wireGuard,
         GatewaySwarmInstaller $gatewaySwarmInstaller,
-        GatewayHostAgentConverger $gatewayHostAgent,
         VpnDnsSwarmInstaller $vpnDnsSwarmInstaller,
     ): int {
         $name = $this->stringArgument('name');
         $wireguardAddress = $this->stringArgument('wireguard-address');
         $identity = $this->identityPayload();
-        $gatewayTld = $this->stringOption('tld') ?? 'gateway';
+        $gatewayTld = $this->stringOption('tld');
+        $operatorTld = $this->stringOption('operator-tld');
         $publicHost = $this->stringOption('public-host');
         $hostKey = $publicHost !== null
             ? app(SshHostKeyPinner::class)->pin($publicHost)
@@ -63,12 +63,25 @@ class BootstrapGatewayLocalCommand extends Command
             throw new RuntimeException('Name and wireguard-address are required.');
         }
 
+        if ($gatewayTld === null || ! $this->validTld($gatewayTld)) {
+            throw new RuntimeException('Gateway TLD is required and must be a lowercase DNS label.');
+        }
+
+        if ($identity !== null && ($operatorTld === null || ! $this->validTld($operatorTld))) {
+            throw new RuntimeException('Operator TLD is required and must be a lowercase DNS label.');
+        }
+
+        if ($operatorTld !== null && $operatorTld === $gatewayTld) {
+            throw new RuntimeException('Gateway and operator TLDs must be unique.');
+        }
+
         /** @var array{gateway_name: string, gateway_public_key: string, gateway_private_key: string, gateway_pre_shared_key: string|null, gateway_wireguard_address: string|null, operator_name: string, operator_public_key: string, operator_private_key: string, operator_pre_shared_key: string|null, operator_wireguard_address: string|null}|null $enrollment */
         $enrollment = DB::transaction(function () use (
             $name,
             $wireguardAddress,
             $identity,
             $gatewayTld,
+            $operatorTld,
             $publicHost,
             $hostKey,
         ) {
@@ -131,7 +144,7 @@ class BootstrapGatewayLocalCommand extends Command
             $control = Node::query()->updateOrCreate(
                 ['name' => $identity['control']['name']],
                 [
-                    'tld' => null,
+                    'tld' => $operatorTld,
                     'platform' => 'unknown',
                     'host' => $identity['control']['wireguard_address'],
                     'wireguard_address' => $identity['control']['wireguard_address'],
@@ -248,10 +261,6 @@ class BootstrapGatewayLocalCommand extends Command
         }
 
         if (! (bool) $this->option('skip-gateway-service-install')) {
-            $gateway = Node::query()->where('name', $name)->firstOrFail();
-
-            $gatewayHostAgent->converge($gateway);
-
             $gatewaySwarmInstaller->install(
                 wireguardAddress: $wireguardAddress,
                 image: $this->gatewayImage(),
@@ -286,6 +295,11 @@ class BootstrapGatewayLocalCommand extends Command
         }
 
         return GatewayImageReference::fromString($image);
+    }
+
+    private function validTld(string $tld): bool
+    {
+        return strlen($tld) <= 63 && preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld) === 1;
     }
 
     private function gatewayImageArchive(): ?string

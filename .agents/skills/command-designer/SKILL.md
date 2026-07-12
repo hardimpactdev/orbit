@@ -10,9 +10,10 @@ human terminal output, JSON envelopes, or command implementation patterns are
 being created or changed.
 
 Orbit command design is contract-first: the authoritative command docs define
-the product behavior, input and output contracts, role behavior, side-effect
-boundaries, doctor relationship, and test mapping. Current implementation is
-evidence, not product authority, when it conflicts with the command docs.
+the product behavior, input and output contracts, authorization, target
+capability, side-effect boundaries, doctor relationship, and test mapping.
+Current implementation is evidence, not product authority, when it conflicts
+with the command docs.
 
 ## Reference Map
 
@@ -35,9 +36,12 @@ Read only the reference files needed for the task:
 - Keep documentation domains distinct from doctor state families. Commands live
   in documentation domains; drift convergence uses the stable product family
   keys defined by the blueprint.
-- Caller-role eligibility is a pre-input contract. App-node CLI availability
-  never grants app/node write permission by itself; app-node write exceptions
-  must be narrow and explicitly documented by the command that owns them.
+- Gateway-backed commands authenticate the caller's WireGuard peer and apply
+  gateway-owned authorization. The default gate is a stored grant plus its
+  scoped permissions. The only alternatives are the four named exception
+  classes: gateway implicit authority, pre-grants bootstrap, local-only, and
+  identity-gated self-management. A caller or target role may affect topology
+  and capability, but it is not a generic authorization gate.
 - Every command with substantial behavior must define input modes and output
   renderers separately when those paths have meaningful differences.
 - `--json` selects the JSON renderer and forces non-interactive input mode; it
@@ -49,8 +53,11 @@ Read only the reference files needed for the task:
   Long-lived stream commands may emit multiple frames instead, but they must
   document their frame shape and pre-stream error envelope explicitly.
 - Use shared failure vocabulary unless a domain-specific code is needed:
-  `validation_failed` for missing/invalid input, `caller_role_not_allowed` for
-  role denial, and `authorization_failed` for access-policy denial.
+  `validation_failed` for missing or invalid input and
+  `authorization_failed` when peer identity or gateway authorization denies
+  the action. A known missing permission uses
+  `error.meta.reason=missing_permission` and
+  `error.meta.missing_permission=<permission>`.
 - Command contracts use the shared exit status policy: `0` for success, `1`
   for Orbit-handled command failures, and `2` only for console-runtime invalid
   usage before Orbit can apply the command contract.

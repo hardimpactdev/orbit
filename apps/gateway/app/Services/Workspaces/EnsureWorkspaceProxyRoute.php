@@ -23,6 +23,7 @@ use Throwable;
 
 final readonly class EnsureWorkspaceProxyRoute
 {
+    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private RemoteShell $remoteShell,
         private WorkspaceRuntimeContainerRenderer $runtimeContainerRenderer,

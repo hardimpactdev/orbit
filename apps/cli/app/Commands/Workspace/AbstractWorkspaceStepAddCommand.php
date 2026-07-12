@@ -79,8 +79,12 @@ abstract class AbstractWorkspaceStepAddCommand extends WorkspaceGatewayCommand
         $data = $this->successData($response);
         $step = is_array($data['step'] ?? null) ? $data['step'] : [];
         $app = is_string($step['app'] ?? null) && $step['app'] !== '' ? $step['app'] : '';
+        $instance = is_string($step['app_instance'] ?? null) && $step['app_instance'] !== ''
+            ? $step['app_instance']
+            : '';
+        $target = $instance === '' ? $app : "{$app}.{$instance}";
 
-        $this->line(ucfirst($this->phaseLabel())." step added for app '{$app}'.");
+        $this->line(ucfirst($this->phaseLabel())." step added for app instance '{$target}'.");
         $this->line('ID: '.$this->scalarField($step, 'id'));
         $this->line('Command: '.$this->scalarField($step, 'command'));
         $this->line('Order: '.$this->scalarField($step, 'order'));

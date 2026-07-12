@@ -8,7 +8,7 @@
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to manage the target workspace or
   parent app.
-- The gateway can reach the owning node over SSH.
+- The gateway can reach the owning node through Agent push.
 
 [Back to the public command page.](../workspace-setup.md)
 
@@ -173,13 +173,12 @@ authorization decision.
    - Ensures a workspace-owned route record exists in `proxy`.
    - Updates the record if configuration has changed.
 3. **Artifact Apply** (`phase=artifacts`):
-   - Connects to the resolved workspace node via SSH.
+   - Dispatches to the resolved workspace node through Agent push.
    - Applies workspace-specific runtime artifacts (runtime container, environment).
    - Hands proxy backend artifact convergence to the `proxy` family.
 4. **Setup Steps** (`phase=setup_steps`):
-   - Reads configured setup step definitions for the workspace's selected app
-     instance, falling back to legacy app-level rows only when no
-     instance-scoped rows exist.
+   - Reads configured setup step definitions owned by the workspace's selected
+     app instance.
    - Executes steps sequentially in the workspace directory on the node through typed `internal:workspace-setup-step` over agent-push on agent-capable nodes.
    - Setup environment values travel only in the token-bound stdin payload, not in transport metadata or activity summaries.
    - Steps receive the lifecycle environment defined in the
@@ -245,7 +244,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   `error.code=workspace.path_is_app_root`, `error.meta.app=<app>`,
   `error.meta.path=<path>`, and
   `error.meta.next_command=orbit workspace:new`.
-- **Remote Failures**: SSH timeout, permission denied, or remote command
+- **Remote Failures**: Agent-push timeout, permission denied, or remote command
   termination that prevents Orbit from classifying the remaining artifact
   state (`error.code=workspace.enactment_failed`, `error.meta.phase`,
   `error.meta.node`). Retryable runtime container or runtime artifact drift is

@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Laravel\Requests\Workspaces;
 
-use Orbit\Sdk\Laravel\GatewayRequest;
 use Orbit\Sdk\Laravel\Responses\Workspaces\WorkspaceStepMutationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
-final class AddWorkspaceStepRequest extends GatewayRequest implements HasBody
+final class AddWorkspaceStepRequest extends WorkspaceStepRequest implements HasBody
 {
     use HasJsonBody;
 
@@ -61,8 +60,8 @@ final class AddWorkspaceStepRequest extends GatewayRequest implements HasBody
         $step = is_array($data) ? $data['step'] ?? [] : [];
 
         return new WorkspaceStepMutationResponse(
-            result: $this->stringKeyedArray($result),
-            step: $this->stringKeyedArray($step),
+            result: $this->workspaceStepResult($result),
+            step: $this->workspaceStep($step),
             meta: $this->stringKeyedArray($meta),
         );
     }

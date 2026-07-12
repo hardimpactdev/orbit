@@ -151,7 +151,7 @@ final readonly class EnactAppRuntimeTestCa extends OrbitCaService
 it('converges a FrankenPHP runtime container for PHP apps and writes the php.ini config', function (): void {
     $app = makeAppOnDevNode(AppRuntimeKind::Php);
     $app->node->forceFill([
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => '10.48.0.11',
     ])->save();
 
@@ -221,7 +221,7 @@ it('skips the FrankenPHP runtime container for static apps and serves the proxy 
 
     $app = makeAppOnDevNode(AppRuntimeKind::Static);
     $app->node->forceFill([
-        'orbit_agent_capable' => true,
+        'managed' => true,
         'wireguard_address' => '10.48.0.12',
     ])->save();
 
@@ -258,7 +258,7 @@ it('skips the FrankenPHP runtime container for static apps and serves the proxy 
         ->not->toContain('php_fastcgi');
 });
 
-it('returns app.runtime_container_missing when installing the container fails', function (): void {
+it('returns process.runtime_unit_missing when installing the container fails', function (): void {
     $app = makeAppOnDevNode(AppRuntimeKind::Php);
 
     $shell = new EnactAppRuntimeRecordingShell(
@@ -281,13 +281,13 @@ it('returns app.runtime_container_missing when installing the container fails', 
     // this, the warning's `doctor --family=app --restore` next_command
     // would have no proxy route to converge against (app doctor does not
     // edit app-owned proxy routes).
-    expect(collect($drift)->firstWhere('code', 'app.runtime_container_missing'))
+    expect(collect($drift)->firstWhere('code', 'process.runtime_unit_missing'))
         ->not
         ->toBeNull()
-        ->and(collect($drift)->firstWhere('code', 'app.runtime_container_missing'))
+        ->and(collect($drift)->firstWhere('code', 'process.runtime_unit_missing'))
         ->toMatchArray([
-            'family' => 'app',
-            'next_command' => 'doctor --family=app --restore',
+            'family' => 'process',
+            'next_command' => 'doctor --family=process --restore',
         ])
         ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())
         ->toBeTrue();
@@ -321,7 +321,7 @@ it('returns app.security.system_user when production runtime user resolution fai
         ->toBe('doctor --family=app --restore')
         ->and($systemUser['message'])
         ->toContain("Production runtime user 'docs'")
-        ->and(collect($drift)->firstWhere('code', 'app.runtime_container_missing'))
+        ->and(collect($drift)->firstWhere('code', 'process.runtime_unit_missing'))
         ->toBeNull()
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker run -d')))
         ->toBeFalse()
@@ -400,7 +400,7 @@ it('returns app.php_version_unavailable when the selected FrankenPHP image is mi
 });
 
 it(
-    'returns app.runtime_container_missing (NOT app.php_version_unavailable) when the docker image probe fails for an unknown reason and no container existed',
+    'returns process.runtime_unit_missing when the docker image probe fails for an unknown reason and no container existed',
     function (): void {
         $app = makeAppOnDevNode(AppRuntimeKind::Php);
 
@@ -422,7 +422,7 @@ it(
 
         $drift = app(EnactAppRuntime::class)->handle($app);
 
-        $missing = collect($drift)->firstWhere('code', 'app.runtime_container_missing');
+        $missing = collect($drift)->firstWhere('code', 'process.runtime_unit_missing');
 
         expect($missing)
             ->not
@@ -430,14 +430,14 @@ it(
             ->and(collect($drift)->firstWhere('code', 'app.php_version_unavailable'))
             ->toBeNull()
             ->and($missing['next_command'])
-            ->toBe('doctor --family=app --restore')
+            ->toBe('doctor --family=process --restore')
             ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())
             ->toBeTrue();
     },
 );
 
 it(
-    'returns app.runtime_container_mismatch (NOT app.php_version_unavailable) when the docker image probe fails for an unknown reason but a container already existed',
+    'returns process.runtime_unit_mismatch when the docker image probe fails for an unknown reason but a container already existed',
     function (): void {
         $app = makeAppOnDevNode(AppRuntimeKind::Php);
 
@@ -457,7 +457,7 @@ it(
 
         $drift = app(EnactAppRuntime::class)->handle($app);
 
-        $mismatch = collect($drift)->firstWhere('code', 'app.runtime_container_mismatch');
+        $mismatch = collect($drift)->firstWhere('code', 'process.runtime_unit_mismatch');
 
         expect($mismatch)
             ->not
@@ -503,16 +503,16 @@ it(
         expect($phpUnavailable)
             ->not
             ->toBeNull()
-            ->and(collect($drift)->firstWhere('code', 'app.runtime_container_missing'))
+            ->and(collect($drift)->firstWhere('code', 'process.runtime_unit_missing'))
             ->toBeNull()
-            ->and(collect($drift)->firstWhere('code', 'app.runtime_container_mismatch'))
+            ->and(collect($drift)->firstWhere('code', 'process.runtime_unit_mismatch'))
             ->toBeNull()
             ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())
             ->toBeTrue();
     },
 );
 
-it('returns app.runtime_container_mismatch when recreating a drifted container fails', function (): void {
+it('returns process.runtime_unit_mismatch when recreating a drifted container fails', function (): void {
     $app = makeAppOnDevNode(AppRuntimeKind::Php);
 
     $inspectPayload = json_encode([
@@ -534,15 +534,15 @@ it('returns app.runtime_container_mismatch when recreating a drifted container f
 
     $drift = app(EnactAppRuntime::class)->handle($app);
 
-    $mismatch = collect($drift)->firstWhere('code', 'app.runtime_container_mismatch');
+    $mismatch = collect($drift)->firstWhere('code', 'process.runtime_unit_mismatch');
 
     expect($mismatch)
         ->not
         ->toBeNull()
         ->and($mismatch['family'])
-        ->toBe('app')
+        ->toBe('process')
         ->and($mismatch['next_command'])
-        ->toBe('doctor --family=app --restore')
+        ->toBe('doctor --family=process --restore')
         // Route row exists so app doctor's restore has something to converge.
         ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())
         ->toBeTrue();

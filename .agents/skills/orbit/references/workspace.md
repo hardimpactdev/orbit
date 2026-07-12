@@ -51,8 +51,8 @@ Use `--stream-json` for JSONL setup progress when an agent needs incremental
 frames; use `--json` for the final result envelope only.
 
 Workspace setup runs the steps configured for the workspace's app instance via
-`workspace-setup-step:add --app=<app.instance>`. Legacy app-level rows are
-compatibility fallback only when no instance-scoped rows exist.
+`workspace-setup-step:add --app=<app.instance>`. There is no logical-app row or
+read fallback.
 Setup steps receive `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`,
 `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT` for the workspace URL.
 
@@ -63,6 +63,7 @@ intent, certificate material, history, and files).
 
 ```bash
 orbit workspace:remove [<name>] [--app=<name>] [--keep-files] [--force] [--json]
+                       [--node-transport=transitional-ssh-fallback]
 ```
 
 `--keep-files` preserves the workspace directory on the owning app-role node;
@@ -105,11 +106,11 @@ Without `--before` / `--after`, the step is appended.
 ### `orbit workspace-setup-step:list`
 
 ```bash
-orbit workspace-setup-step:list [--app=<app|app.instance>] [--json]
+orbit workspace-setup-step:list [--app=<app.instance>] [--json]
 ```
 
-Dotted selectors list instance-scoped steps; bare app slugs list legacy
-app-level fallback rows only.
+The selector resolves exactly one app instance. Ambiguous bare app slugs fail
+for explicit instance selection; there are no app-level fallback rows.
 
 ### `orbit workspace-setup-step:remove`
 
@@ -129,7 +130,7 @@ Mirrors the setup pipeline.
 orbit workspace-teardown-step:add --command='<shell>' --app=<app.instance>
                                   [--before=<step-id>] [--after=<step-id>]
                                   [--timeout=600] [--json]
-orbit workspace-teardown-step:list [--app=<app|app.instance>] [--json]
+orbit workspace-teardown-step:list [--app=<app.instance>] [--json]
 orbit workspace-teardown-step:remove --step=<id> --app=<app.instance> [--force] [--json]
 ```
 

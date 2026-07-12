@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:install <tool> [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]`
+# Technical Contract: `orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]`
 
 [Back to public `tool-install` documentation.](../tool-install.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:install <tool> [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
+orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -24,7 +24,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Supported tool name.` |
 | `node` | `--node` | When no `--app`, local `node:default`, or interactive target selection resolves a target. | `Never.` | `node:default` if set; otherwise interactive selection in TTY mode. | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `version` | `--tool-version` | Optional. | When the selected tool definition does not explicitly support install versions. | Tool-defined latest supported version when applicable. | Specific version or installer channel supported by the selected tool definition. |
 | `config.install_users` | `--user` (repeatable) | Optional for user-scoped CLI tools. | For tools that are not user-scoped CLI tools. | `None.` | Additional existing Linux usernames for user-scoped CLI installs. Each value must match a conservative Linux username allow-list; Orbit does not create the account. |
@@ -51,9 +50,15 @@ the concrete Claude Code binary version returned by `claude --version`.
 
 - Verifies the tool supports managed installation on the target node.
 - Resolves the requested expected version before any gateway row or node artifact is written.
-- Verifies the target node is active, visible, not the gateway, and supported
-  by the selected tool definition's operating system metadata before writing
-  gateway rows or node artifacts.
+- Keeps gateway configuration work gateway-local and dispatches target-node
+  probes and apply actions through Agent push. The command exposes no node
+  transport selector and never falls back to SSH.
+- Runs a read-only install preflight before writing gateway rows, staging
+  secrets, creating routes, or running the installer. The preflight checks the
+  node's explicit platform against the tool's supported operating systems,
+  required Docker-compatible container provider, runtime user and isolation,
+  route/TLD requirement, gateway-local constraint, and active status. Missing
+  platform metadata is not inferred as generic Linux.
 - Requires an explicit target source: `--node`, `--app`, local `node:default`,
   or interactive target selection. Non-interactive mode without a target source
   fails with `validation_failed`.
@@ -64,13 +69,13 @@ the concrete Claude Code binary version returned by `claude --version`.
   definition declares an endpoint.
 - Applies install and configuration through the gateway.
 - For user-scoped CLI tools, treats the tool as a normal installable `runtime`
-  tool with `requiredNodeRole() === null`. Eligibility is explicit target
+  tool without a role eligibility gate. Eligibility is explicit target
   authorization, active non-gateway node selection, and supported operating
   system metadata.
   The command derives the default install user from `nodes.user` with an
   `orbit` fallback, sanitizes repeatable `--user` values into
-  `config.install_users`, rejects unsafe usernames before row writes or remote
-  shell actions, and runs the selected tool's source-backed installer as each
+  `config.install_users`, rejects unsafe usernames before row writes or node
+  actions, and runs the selected tool's source-backed installer as each
   existing target user with `sudo -u <user> -H bash -lc`. Tool doctor later
   probes the persisted `default_user` from the tool row, not a shared launcher.
   When `expected_version` is `latest` or `stable` for `claude-code`, doctor
@@ -122,7 +127,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
-| Unsupported node OS | The selected tool definition does not support the target node operating system. | `error.code=tool.unsupported_on_node`; `error.meta.supported_operating_systems=<values>` |
+| Unsatisfied install constraint | A declared operating-system, container-provider, runtime-user, isolation, route/TLD, gateway-local, or active-status requirement is not satisfied. | `error.code=tool.constraint_unsatisfied`; `error.meta.constraint=<constraint>`; `error.meta.required=<value>`; `error.meta.actual=<value>` |
 | Unsupported status value | `--status` is not `installed` or `running`. | `error.code=validation_failed`; `error.meta.field=status`; `error.meta.reason=unsupported_value` |
 | Missing target source | Non-interactive input provides no `--node`, `--app`, or local `node:default`. | `error.code=validation_failed`; `error.meta.fields=["target"]` |
 | Unsupported runtime field | API input includes `runtime`. Tools do not own runtime lifecycle. | `error.code=validation_failed`; `error.meta.field=runtime`; `error.meta.reason=unsupported_field` |
@@ -143,6 +148,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI install write flow: prompts, payloads, default node resolution, `--tool-version`, user-scoped CLI `--user` forwarding, empty `--user` gateway rejection, unsupported `--status`, and gateway install error envelope pass-through. |
 | `apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php` | CLI stream adapter behavior for install: final complete frame in `--json` mode, canonical stream request shape, `--no-process`, and pre-stream gateway error pass-through. |
-| `apps/gateway/tests/Feature/Http/Api/ToolInstallControllerTest.php` | Gateway/API install: row writes, CLI install-user config, rejected runtime/instance fields, related process convergence, authorization failure, unsupported status/action/version, and update-only version intent rejection. |
+| `apps/gateway/tests/Feature/Http/Api/ToolInstallControllerTest.php` | Gateway/API install: constraint preflight ordering and stable failure metadata, row writes, CLI install-user config, rejected runtime/instance fields, related process convergence, authorization failure, unsupported status/action/version, and update-only version intent rejection. |
+| `apps/gateway/tests/Unit/Services/Tools/ToolInstallPreflightTest.php` | Read-only route/TLD constraint preflight before any remote probe. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolsProbeTest.php` | Tool-family probe behavior, including `claude-code` row-specific probing through the persisted default install user. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape and tool-family entity mapping used by install request handling. |

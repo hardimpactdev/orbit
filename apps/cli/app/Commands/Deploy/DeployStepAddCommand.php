@@ -12,7 +12,7 @@ final class DeployStepAddCommand extends DeployGatewayCommand
 
     #[\Override]
     protected $signature = 'deploy:step-add
-        {app? : Production app name or domain}
+        {app? : Production app-instance selector}
         {deploy_command? : Shell command to run}
         {--title= : Display title}
         {--order= : Positive insertion order}
@@ -21,7 +21,7 @@ final class DeployStepAddCommand extends DeployGatewayCommand
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Add a deployment pipeline step for a production app.';
+    protected $description = 'Add a deployment pipeline step for a production app instance.';
 
     public function handle(): int
     {
@@ -66,8 +66,10 @@ final class DeployStepAddCommand extends DeployGatewayCommand
         $id = $this->stepString($step, 'id');
         $title = $this->stepString($step, 'title');
         $appName = $this->stepString($step, 'app') ?? $app;
+        $appInstance = $this->stepString($step, 'app_instance');
+        $target = $appInstance === null ? $appName : "{$appName}.{$appInstance}";
 
-        $this->line("Added deployment step #{$id} '{$title}' to app '{$appName}'.");
+        $this->line("Added deployment step #{$id} '{$title}' to app instance '{$target}'.");
 
         $command = $this->stepString($step, 'command');
 

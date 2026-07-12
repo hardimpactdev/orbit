@@ -14,7 +14,7 @@ uses(RefreshDatabase::class);
 
 function appAtPath(string $name, string $path): App
 {
-    $node = createTestAppHostNode(['name' => "app-{$name}", 'tld' => 'test']);
+    $node = createTestAppHostNode(['name' => "app-{$name}", 'tld' => "app-{$name}"]);
 
     return App::factory()->for($node, 'node')->create([
         'name' => $name,

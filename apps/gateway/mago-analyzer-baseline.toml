@@ -4653,13 +4653,13 @@ count = 3
 [[issues]]
 file = "app/Services/Deploy/DeployManager.php"
 code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `Illuminate\Support\Collection::map`: expected `(callable(stdClass, int): array<array-key, mixed>)`, but found `(closure(App\Models\DeployStep): array<array-key, mixed>)`.'
+message = 'Invalid argument type for argument #1 of `Illuminate\Support\Collection::map`: expected `(callable(stdClass, int): array<string, mixed>)`, but found `(closure(App\Models\DeployStep): array<string, mixed>)`.'
 count = 1
 
 [[issues]]
 file = "app/Services/Deploy/DeployManager.php"
 code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `Illuminate\Support\Collection::map`: expected `(callable(stdClass, int): array<array-key, mixed>)`, but found `(closure(App\Models\DeploymentRun): array<array-key, mixed>)`.'
+message = 'Invalid argument type for argument #1 of `Illuminate\Support\Collection::map`: expected `(callable(stdClass, int): array<string, mixed>)`, but found `(closure(App\Models\DeploymentRun): array<string, mixed>)`.'
 count = 1
 
 [[issues]]
@@ -5122,18 +5122,6 @@ count = 1
 file = "app/Services/Gateway/FetchGatewayRootCa.php"
 code = "redundant-type-comparison"
 message = "Redundant type assertion: `$decoded` is already `array<string, mixed>`."
-count = 1
-
-[[issues]]
-file = "app/Services/Gateway/GatewayHostAgentConfigWriter.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Services/Gateway/GatewayHostAgentConverger.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]

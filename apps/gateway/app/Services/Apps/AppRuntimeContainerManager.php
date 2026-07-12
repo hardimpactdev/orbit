@@ -21,6 +21,7 @@ use Throwable;
 
 final readonly class AppRuntimeContainerManager
 {
+    // @orbit-ssh-lane transitional-ssh
     /**
      * @mago-expect lint:excessive-parameter-list
      */
@@ -1055,7 +1056,7 @@ final readonly class AppRuntimeContainerManager
             return null;
         }
 
-        if (! $node->orbit_agent_capable) {
+        if (! $node->isAgentEligible()) {
             return null;
         }
 

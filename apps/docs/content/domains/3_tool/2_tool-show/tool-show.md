@@ -11,7 +11,7 @@ inspect current node reality.
 ## Usage
 
 ```bash
-orbit tool:show <tool> [--app=<app>] [--node=<node>] [--live] [--json]
+orbit tool:show <tool> [--app=<app>] [--node=<node>] [--node-transport=transitional-ssh-fallback] [--live] [--json]
 ```
 
 ## Examples
@@ -19,7 +19,7 @@ orbit tool:show <tool> [--app=<app>] [--node=<node>] [--live] [--json]
 ```bash
 orbit tool:show composer --node=app-1
 orbit tool:show opencode-cli --app=docs
-orbit tool:show composer --node=app-1 --live
+orbit tool:show composer --node=app-1 --live --node-transport=transitional-ssh-fallback
 orbit tool:show composer --node=app-1 --json
 ```
 
@@ -28,8 +28,12 @@ orbit tool:show composer --node=app-1 --json
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node. Defaults to local `node:default` when configured.
 - `--app`: Resolve the target node from an app.
-- `--live`: Include live node status through the gateway. Without this flag,
-  the command does not run remote shell/process inspection.
+- `--node-transport`: Accepted only with `--live` and must be exactly
+  `transitional-ssh-fallback`. This explicitly opts into the temporary SSH
+  inspection lane until `tool:show --live` is ported to Agent push.
+- `--live`: Include live node status through the gateway. It requires the
+  explicit transitional transport selector above. Without this flag, the
+  command reads the gateway registry only and performs no node transport.
 - `--json`: Output JSON.
 
 Target context is required. Provide `--node`, `--app`, or configure local
@@ -43,8 +47,11 @@ Run this command to read a tool's gateway configuration and optionally inspect i
 `tool:show`:
 
 1. Resolves the target node.
-2. Reads the registered tool row and configuration from the gateway.
-3. Optionally asks the gateway to inspect live state on the target node.
+2. Reads the registered tool row and configuration from the gateway without
+   contacting the target node.
+3. With `--live` and the exact transitional transport selector, asks the
+   gateway to inspect live state on the target node over the transitional SSH
+   lane. This path remains transitional until it is ported to Agent push.
 4. Renders the tool details.
 
 The command does not mutate gateway configuration or node artifacts.
@@ -68,8 +75,9 @@ metadata that is not secret may be included in the machine-readable output.
 - The current node identity is authorized to inspect tools for the selected
   node or app.
 - The tool is registered for the resolved node.
-- `--live` requires the gateway to reach the target node through Orbit's node
-  execution primitive.
+- `--live` requires
+  `--node-transport=transitional-ssh-fallback`; omitting it fails with
+  `node_transport_required` before live inspection starts.
 
 ## Related Commands
 

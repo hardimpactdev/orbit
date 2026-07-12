@@ -44,6 +44,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
+use Orbit\Core\Http\JsonEnvelope;
 use RuntimeException;
 use Throwable;
 
@@ -53,6 +54,7 @@ use function Laravel\Prompts\text;
 
 final class GatewayNodeCreator
 {
+    // @orbit-ssh-lane provisioning-ssh
     private const string DEFAULT_RUNTIME_USER = 'orbit';
 
     private const int SUCCESS = 0;
@@ -122,7 +124,7 @@ final class GatewayNodeCreator
 
         if (
             $this->arrayOption('agent-tool') !== []
-            && ! in_array(NodeRoleName::Agent->value, $requestedRoles->hosted, true)
+            && ! in_array(NodeRoleName::Agent->value, $requestedRoles->workloadRoles, true)
         ) {
             return $this->failCommand(
                 code: 'validation_failed',
@@ -133,15 +135,15 @@ final class GatewayNodeCreator
 
         $gatewayConfigured = $this->gatewayConfigured();
 
-        if ($requestedRoles->hosted !== []) {
-            $inputs = $this->resolveHostedRoleInputs($requestedRoles->hosted);
+        if ($requestedRoles->workloadRoles !== []) {
+            $inputs = $this->resolveWorkloadRoleInputs($requestedRoles->workloadRoles);
 
             if (is_int($inputs)) {
                 return $inputs;
             }
 
             $placement = $this->resolveIngressPlacement(
-                $requestedRoles->hosted,
+                $requestedRoles->workloadRoles,
                 validateLocalIngressRegistry: true,
             );
 
@@ -157,7 +159,7 @@ final class GatewayNodeCreator
                 );
             }
 
-            if ($this->containsAppHostingRole($placement['roles'])) {
+            if ($this->containsAppWorkloadRole($placement['roles'])) {
                 return $this->provisionAppNode(
                     installer: $installer,
                     registryWriter: $registryWriter,
@@ -173,12 +175,12 @@ final class GatewayNodeCreator
                         'gatewayEndpoint' => $inputs['gatewayEndpoint'],
                         'hostKeyFingerprint' => $inputs['hostKeyFingerprint'],
                     ],
-                    initialHostedRoles: $placement['roles'],
+                    initialWorkloadRoles: $placement['roles'],
                     appProductionIngressNodeId: $placement['ingress_node_id'],
                 );
             }
 
-            return $this->provisionHostedRoleNode(
+            return $this->provisionWorkloadRoleNode(
                 installer: $installer,
                 registryWriter: $registryWriter,
                 roleAssignmentService: $nodeRoleAssignmentService,
@@ -218,7 +220,7 @@ final class GatewayNodeCreator
      * @param  list<string>  $roles
      * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
      */
-    private function provisionHostedRoleNode(
+    private function provisionWorkloadRoleNode(
         OrbitHostInstaller $installer,
         NodeRegistryWriter $registryWriter,
         NodeRoleAssignmentService $roleAssignmentService,
@@ -332,7 +334,7 @@ final class GatewayNodeCreator
                 return $failure;
             }
 
-            $sshAuthorization = $this->authorizeRuntimeSshUser($node, $runtimeUser, $runtimeUser);
+            $sshAuthorization = $this->authorizeProvisioningRuntimeUser($node, $runtimeUser, $runtimeUser);
 
             if (is_int($sshAuthorization)) {
                 $this->rollbackProvisioningNode($node, 'runtime_ssh_authorization_failed', [
@@ -343,7 +345,7 @@ final class GatewayNodeCreator
                 return $sshAuthorization;
             }
 
-            $sshHardening = $this->hardenRuntimeSshAccess($node, $runtimeUser);
+            $sshHardening = $this->hardenProvisioningSshAccess($node, $runtimeUser);
 
             if (is_int($sshHardening)) {
                 $this->rollbackProvisioningNode($node, 'ssh_hardening_failed', [
@@ -398,12 +400,11 @@ final class GatewayNodeCreator
 
         $failedAssignment = null;
 
-        foreach ($this->orderHostedRoles($roles) as $role) {
+        foreach ($this->orderWorkloadRoles($roles) as $role) {
             $settings = $role === NodeRoleName::AppProduction->value
                 ? ['ingress_node_id' => $appProductionIngressNodeId ?? $node->id]
                 : $this->settingsForRole(
                     role: $role,
-                    tld: $inputs['tld'],
                     postgresNodeId: $inputs['postgresNodeId'] ?? null,
                     clickhouseNodeId: $inputs['clickhouseNodeId'] ?? null,
                 );
@@ -422,7 +423,7 @@ final class GatewayNodeCreator
         if ($failedAssignment instanceof NodeRoleAssignment) {
             $failure = $this->failCommand(
                 code: 'node.provisioning_incomplete',
-                message: "Node '{$name}' created but hosted role '{$failedAssignment->role}' failed to converge.",
+                message: "Node '{$name}' created but workload role '{$failedAssignment->role}' failed to converge.",
                 meta: [
                     'node' => $name,
                     'role' => $failedAssignment->role,
@@ -922,6 +923,12 @@ final class GatewayNodeCreator
 
     private function convergeGatewayLocally(string $name): int
     {
+        $tld = $this->stringOption('tld');
+
+        if ($tld === null || ! $this->isValidTld($tld)) {
+            return $this->validationFailed('tld', 'Every node requires an explicit valid TLD.');
+        }
+
         $host = $this->resolveHost('gateway');
 
         if ($host === null) {
@@ -937,7 +944,11 @@ final class GatewayNodeCreator
             ->where('name', $name)
             ->first();
 
-        if (! $gateway instanceof Node || ! $this->gatewayHostMatches($gateway, $host)) {
+        if (
+            ! $gateway instanceof Node
+            || ! $this->gatewayHostMatches($gateway, $host)
+            || $gateway->tld !== $tld
+        ) {
             return $this->failCommand(
                 code: 'node.incompatible',
                 message: 'Existing gateway is incompatible with the requested host or identity.',
@@ -1050,16 +1061,40 @@ final class GatewayNodeCreator
             );
         }
 
-        $tld = $this->resolveDefaultNodeTld($name, $existing instanceof Node ? $existing->tld : null);
+        $tld = $this->stringOption('tld');
 
-        if ($tld === null) {
+        if ($tld === null || ! $this->isValidTld($tld)) {
             return $this->failCommand(
                 code: 'validation_failed',
-                message: 'A unique node TLD could not be assigned during enrollment.',
+                message: 'Every node identity requires an explicit valid TLD.',
                 meta: [
                     'field' => 'tld',
                     'name' => $name,
                 ],
+            );
+        }
+
+        if ($existing instanceof Node && is_string($existing->tld) && $existing->tld !== $tld) {
+            return $this->failCommand(
+                code: 'node.incompatible',
+                message: "Node '{$name}' already exists with a different TLD.",
+                meta: ['field' => 'tld', 'existing' => $existing->tld, 'requested' => $tld],
+            );
+        }
+
+        $tldConflict = Node::query()
+            ->where('status', NodeStatus::Active->value)
+            ->where('tld', $tld);
+
+        if ($existing instanceof Node) {
+            $tldConflict->whereKeyNot($existing->id);
+        }
+
+        if ($tldConflict->exists()) {
+            return $this->failCommand(
+                code: 'node.tld_in_use',
+                message: "Node TLD '{$tld}' is already assigned to another node.",
+                meta: ['field' => 'tld', 'value' => $tld],
             );
         }
 
@@ -1136,7 +1171,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  array{host: string, tld: ?string, sshUser: string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string}  $inputs
-     * @param  list<string>  $initialHostedRoles
+     * @param  list<string>  $initialWorkloadRoles
      */
     private function provisionAppNode(
         OrbitHostInstaller $installer,
@@ -1147,7 +1182,7 @@ final class GatewayNodeCreator
         NodeConverger $nodeConverger,
         string $name,
         array $inputs,
-        array $initialHostedRoles = [],
+        array $initialWorkloadRoles = [],
         ?int $appProductionIngressNodeId = null,
     ): int {
         $existing = Node::query()->where('name', $name)->first();
@@ -1164,7 +1199,7 @@ final class GatewayNodeCreator
                 $existing,
                 $inputs,
                 $roleAssignmentService,
-                $initialHostedRoles,
+                $initialWorkloadRoles,
                 $appProductionIngressNodeId,
             );
         }
@@ -1184,7 +1219,7 @@ final class GatewayNodeCreator
                 $existing,
                 $inputs,
                 $roleAssignmentService,
-                $initialHostedRoles,
+                $initialWorkloadRoles,
                 $appProductionIngressNodeId,
             );
         }
@@ -1210,7 +1245,7 @@ final class GatewayNodeCreator
             $name,
             $inputs,
             $roleAssignmentService,
-            $initialHostedRoles,
+            $initialWorkloadRoles,
             $appProductionIngressNodeId,
         );
 
@@ -1267,7 +1302,7 @@ final class GatewayNodeCreator
 
             if (! $installation->successful) {
                 $failure = $this->installerFailure(
-                    role: $this->firstRole($initialHostedRoles),
+                    role: $this->firstRole($initialWorkloadRoles),
                     host: $inputs['host'],
                     sshUser: $inputs['sshUser'],
                     errorOutput: $installation->errorOutput,
@@ -1282,7 +1317,7 @@ final class GatewayNodeCreator
                 return $failure;
             }
 
-            $sshAuthorization = $this->authorizeRuntimeSshUser($node, $runtimeUser, $runtimeUser);
+            $sshAuthorization = $this->authorizeProvisioningRuntimeUser($node, $runtimeUser, $runtimeUser);
 
             if (is_int($sshAuthorization)) {
                 $this->rollbackProvisioningNode($node, 'runtime_ssh_authorization_failed', [
@@ -1293,7 +1328,7 @@ final class GatewayNodeCreator
                 return $sshAuthorization;
             }
 
-            $sshHardening = $this->hardenRuntimeSshAccess($node, $runtimeUser);
+            $sshHardening = $this->hardenProvisioningSshAccess($node, $runtimeUser);
 
             if (is_int($sshHardening)) {
                 $this->rollbackProvisioningNode($node, 'ssh_hardening_failed', [
@@ -1319,11 +1354,10 @@ final class GatewayNodeCreator
                 return $wireGuardProvisioning;
             }
 
-            $roleAssignmentFailure = $this->ensureInitialHostedRoles(
+            $roleAssignmentFailure = $this->ensureInitialWorkloadRoles(
                 $node,
                 $roleAssignmentService,
-                $initialHostedRoles,
-                $inputs['tld'],
+                $initialWorkloadRoles,
                 $appProductionIngressNodeId,
             );
 
@@ -1336,7 +1370,7 @@ final class GatewayNodeCreator
                 return $roleAssignmentFailure;
             }
 
-            $nodeSetup = $this->setupManagedNode($nodeConverger, $node, $initialHostedRoles);
+            $nodeSetup = $this->setupManagedNode($nodeConverger, $node, $initialWorkloadRoles);
 
             if (is_int($nodeSetup)) {
                 $this->rollbackProvisioningNode($node, 'node_setup_failed', [
@@ -1371,7 +1405,7 @@ final class GatewayNodeCreator
             throw $exception;
         }
 
-        if ($initialHostedRoles !== [] && ($developmentDns['status'] ?? null) === 'already_configured') {
+        if ($initialWorkloadRoles !== [] && ($developmentDns['status'] ?? null) === 'already_configured') {
             $developmentDns['status'] = 'configured';
         }
 
@@ -1396,7 +1430,7 @@ final class GatewayNodeCreator
             'next_steps' => [],
         ];
 
-        if ($this->containsDevelopmentAppRole($initialHostedRoles)) {
+        if ($this->containsDevelopmentAppRole($initialWorkloadRoles)) {
             $payload['development_tld'] = [
                 'tld' => $inputs['tld'],
                 'gateway_dns' => [
@@ -1419,7 +1453,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  array{host: string, tld: ?string, sshUser: string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string}  $inputs
-     * @param  list<string>  $initialHostedRoles
+     * @param  list<string>  $initialWorkloadRoles
      */
     private function materializeUnknownAppNode(
         NodesProbe $nodesProbe,
@@ -1428,7 +1462,7 @@ final class GatewayNodeCreator
         string $name,
         array $inputs,
         NodeRoleAssignmentService $roleAssignmentService,
-        array $initialHostedRoles = [],
+        array $initialWorkloadRoles = [],
         ?int $appProductionIngressNodeId = null,
     ): ?int {
         $candidate = new Node([
@@ -1449,13 +1483,13 @@ final class GatewayNodeCreator
             return null;
         }
 
-        if (! $this->identityArtifactMatchesAppRequest($artifact, $name, $initialHostedRoles)) {
+        if (! $this->identityArtifactMatchesAppRequest($artifact, $name, $initialWorkloadRoles)) {
             return $this->failCommand(
                 code: 'node.incompatible',
                 message: "Host '{$inputs['host']}' has an incompatible Orbit node identity.",
                 meta: [
                     'name' => $name,
-                    'requested_role' => $this->firstRole($initialHostedRoles),
+                    'requested_role' => $this->firstRole($initialWorkloadRoles),
                     'observed_name' => $artifact->name,
                     'observed_role' => $artifact->role,
                     'observed_local_role' => $artifact->localRole,
@@ -1528,20 +1562,20 @@ final class GatewayNodeCreator
             $node->refresh(),
             $inputs,
             $roleAssignmentService,
-            $initialHostedRoles,
+            $initialWorkloadRoles,
             $appProductionIngressNodeId,
         );
     }
 
     /**
-     * @param  list<string>  $initialHostedRoles
+     * @param  list<string>  $initialWorkloadRoles
      */
     private function identityArtifactMatchesAppRequest(
         NodeIdentityArtifact $artifact,
         string $name,
-        array $initialHostedRoles,
+        array $initialWorkloadRoles,
     ): bool {
-        $requestedAppRoles = array_values(array_intersect($initialHostedRoles, [
+        $requestedAppRoles = array_values(array_intersect($initialWorkloadRoles, [
             NodeRoleName::AppDevelopment->value,
             NodeRoleName::AppProduction->value,
         ]));
@@ -1558,7 +1592,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  array{host: string, tld: ?string, sshUser: string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string}  $inputs
-     * @param  list<string>  $initialHostedRoles
+     * @param  list<string>  $initialWorkloadRoles
      */
     private function adoptExistingAppNode(
         NodesProbe $nodesProbe,
@@ -1566,12 +1600,12 @@ final class GatewayNodeCreator
         Node $node,
         array $inputs,
         NodeRoleAssignmentService $roleAssignmentService,
-        array $initialHostedRoles = [],
+        array $initialWorkloadRoles = [],
         ?int $appProductionIngressNodeId = null,
     ): int {
         $incompatibleFields = [];
 
-        if (! $this->nodeCanAdoptAppHostingRole($node, $initialHostedRoles)) {
+        if (! $this->nodeCanAdoptAppWorkloadRole($node, $initialWorkloadRoles)) {
             $incompatibleFields['role'] = $node->displayRole();
         }
 
@@ -1589,18 +1623,17 @@ final class GatewayNodeCreator
                 message: "Node '{$node->name}' is not compatible with this adoption request.",
                 meta: [
                     'name' => $node->name,
-                    'requested_role' => $this->firstRole($initialHostedRoles),
+                    'requested_role' => $this->firstRole($initialWorkloadRoles),
                     'incompatible_fields' => $incompatibleFields,
                 ],
             );
         }
 
         if ($node->isActive()) {
-            $roleAssignmentFailure = $this->ensureInitialHostedRoles(
+            $roleAssignmentFailure = $this->ensureInitialWorkloadRoles(
                 $node,
                 $roleAssignmentService,
-                $initialHostedRoles,
-                $inputs['tld'],
+                $initialWorkloadRoles,
                 $appProductionIngressNodeId,
             );
 
@@ -1646,11 +1679,10 @@ final class GatewayNodeCreator
             );
         }
 
-        $roleAssignmentFailure = $this->ensureInitialHostedRoles(
+        $roleAssignmentFailure = $this->ensureInitialWorkloadRoles(
             $node,
             $roleAssignmentService,
-            $initialHostedRoles,
-            $inputs['tld'],
+            $initialWorkloadRoles,
             $appProductionIngressNodeId,
         );
 
@@ -1660,13 +1692,13 @@ final class GatewayNodeCreator
 
         $developmentDns = app(DevelopmentDnsMappingEnactor::class)->converge($node);
 
-        $nodeSetup = $this->setupManagedNode($nodeConverger, $node, $initialHostedRoles);
+        $nodeSetup = $this->setupManagedNode($nodeConverger, $node, $initialWorkloadRoles);
 
         if (is_int($nodeSetup)) {
             return $nodeSetup;
         }
 
-        if ($initialHostedRoles !== [] && ($developmentDns['status'] ?? null) === 'already_configured') {
+        if ($initialWorkloadRoles !== [] && ($developmentDns['status'] ?? null) === 'already_configured') {
             $developmentDns['status'] = 'configured';
         }
 
@@ -1713,21 +1745,21 @@ final class GatewayNodeCreator
     }
 
     /**
-     * @param  list<string>  $initialHostedRoles
+     * @param  list<string>  $initialWorkloadRoles
      */
-    private function nodeCanAdoptAppHostingRole(Node $node, array $initialHostedRoles): bool
+    private function nodeCanAdoptAppWorkloadRole(Node $node, array $initialWorkloadRoles): bool
     {
         if (app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
             return $this->nodeHasAnyActiveRole(
                 $node,
-                array_values(array_intersect($initialHostedRoles, [
+                array_values(array_intersect($initialWorkloadRoles, [
                     NodeRoleName::AppDevelopment->value,
                     NodeRoleName::AppProduction->value,
                 ])),
             );
         }
 
-        if (! $this->containsAppHostingRole($initialHostedRoles)) {
+        if (! $this->containsAppWorkloadRole($initialWorkloadRoles)) {
             return false;
         }
 
@@ -1770,7 +1802,7 @@ final class GatewayNodeCreator
             ->exists();
     }
 
-    private function authorizeRuntimeSshUser(Node $node, string $sshUser, string $runtimeUser): ?int
+    private function authorizeProvisioningRuntimeUser(Node $node, string $sshUser, string $runtimeUser): ?int
     {
         $publicKey = $this->gatewaySshPublicKey();
 
@@ -1801,16 +1833,16 @@ final class GatewayNodeCreator
 
         return $this->failCommand(
             code: 'node.provisioning_incomplete',
-            message: "Host '{$node->host}' could not authorize the steady-state SSH user.",
+            message: "Host '{$node->host}' could not authorize the provisioning runtime user.",
             meta: [
                 'host' => $node->host,
-                'step' => 'steady_state_ssh_authorization',
+                'step' => 'provisioning_runtime_user_authorization',
                 'error' => trim($authorization->errorOutput()) ?: trim($authorization->output()) ?: null,
             ],
         );
     }
 
-    private function hardenRuntimeSshAccess(Node $node, string $runtimeUser): ?int
+    private function hardenProvisioningSshAccess(Node $node, string $runtimeUser): ?int
     {
         $script = sprintf(
             <<<'SCRIPT'
@@ -1849,7 +1881,7 @@ final class GatewayNodeCreator
 
         return $this->failCommand(
             code: 'node.provisioning_incomplete',
-            message: "Host '{$node->host}' could not harden steady-state SSH access.",
+            message: "Host '{$node->host}' could not harden provisioning SSH access.",
             meta: [
                 'host' => $node->host,
                 'step' => 'ssh_hardening',
@@ -2096,7 +2128,7 @@ final class GatewayNodeCreator
         foreach ([
             'host',
             'operator-name',
-            'tld',
+            'operator-tld',
             'ingress',
             'redis-node',
             'postgres-node',
@@ -2167,7 +2199,7 @@ final class GatewayNodeCreator
      * @param  list<string>  $roles
      * @return array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, postgresNodeId: ?int, clickhouseNodeId: ?int}|int
      */
-    private function resolveHostedRoleInputs(array $roles): array|int
+    private function resolveWorkloadRoleInputs(array $roles): array|int
     {
         $needsHost = array_intersect($roles, [
             NodeRoleName::AppDevelopment->value,
@@ -2212,7 +2244,7 @@ final class GatewayNodeCreator
         $host = $needsHost ? $this->resolveHost($hostRole) : null;
 
         if ($needsHost && $host === null) {
-            return $this->validationFailed('host', 'Host is required for hosted roles that provision a host.');
+            return $this->validationFailed('host', 'Host is required for workload roles that provision a host.');
         }
 
         if ($host !== null && ! $this->isValidHost($host)) {
@@ -2229,12 +2261,6 @@ final class GatewayNodeCreator
         }
 
         $tld = $this->stringOption('tld');
-
-        $nodeName = $this->resolveName();
-
-        if ($tld === null && is_string($nodeName) && $nodeName !== '') {
-            $tld = $this->resolveDefaultNodeTld($nodeName);
-        }
 
         if ($tld === null) {
             return $this->validationFailed('tld', 'Every node requires a unique TLD.');
@@ -2321,7 +2347,7 @@ final class GatewayNodeCreator
     /**
      * @param  list<string>  $roles
      */
-    private function containsAppHostingRole(array $roles): bool
+    private function containsAppWorkloadRole(array $roles): bool
     {
         return (
             array_intersect($roles, [
@@ -2337,7 +2363,7 @@ final class GatewayNodeCreator
     private function firstRole(array $roles): string
     {
         if ($roles === []) {
-            throw new RuntimeException('Expected at least one hosted role.');
+            throw new RuntimeException('Expected at least one workload role.');
         }
 
         return $roles[0];
@@ -2348,14 +2374,9 @@ final class GatewayNodeCreator
      */
     private function settingsForRole(
         string $role,
-        ?string $tld,
         ?int $postgresNodeId = null,
         ?int $clickhouseNodeId = null,
     ): array {
-        if (in_array($role, [NodeRoleName::AppDevelopment->value, NodeRoleName::Agent->value], true)) {
-            return ['tld' => $tld];
-        }
-
         if ($role === NodeRoleName::Analytics->value) {
             return [
                 'postgres_node_id' => $postgresNodeId,
@@ -2369,18 +2390,17 @@ final class GatewayNodeCreator
     /**
      * @param  list<string>  $roles
      */
-    private function ensureInitialHostedRoles(
+    private function ensureInitialWorkloadRoles(
         Node $node,
         NodeRoleAssignmentService $roleAssignmentService,
         array $roles,
-        ?string $tld,
         ?int $appProductionIngressNodeId = null,
     ): ?int {
-        foreach ($this->orderHostedRoles($roles) as $role) {
+        foreach ($this->orderWorkloadRoles($roles) as $role) {
             $existingAssignment = $node->roleAssignments()->where('role', $role)->first();
             $settings = $role === NodeRoleName::AppProduction->value
                 ? ['ingress_node_id' => $appProductionIngressNodeId ?? $node->id]
-                : $this->settingsForRole($role, $tld);
+                : $this->settingsForRole($role);
 
             $assignment = $existingAssignment instanceof NodeRoleAssignment
                 ? $roleAssignmentService->update($node, $role, $settings)
@@ -2392,7 +2412,7 @@ final class GatewayNodeCreator
 
             return $this->failCommand(
                 code: 'node.provisioning_incomplete',
-                message: "Node '{$node->name}' created but hosted role '{$assignment->role}' failed to converge.",
+                message: "Node '{$node->name}' created but workload role '{$assignment->role}' failed to converge.",
                 meta: [
                     'node' => $node->name,
                     'role' => $assignment->role,
@@ -2469,7 +2489,7 @@ final class GatewayNodeCreator
 
         if (in_array(NodeRoleName::Ingress->value, $roles, true)) {
             return [
-                'roles' => $this->orderHostedRoles($roles),
+                'roles' => $this->orderWorkloadRoles($roles),
                 'ingress_node_id' => null,
                 'ingress_node_name' => null,
             ];
@@ -2478,7 +2498,7 @@ final class GatewayNodeCreator
         if ($ingressNodeName !== null) {
             if (! $validateLocalIngressRegistry) {
                 return [
-                    'roles' => $this->orderHostedRoles($roles),
+                    'roles' => $this->orderWorkloadRoles($roles),
                     'ingress_node_id' => null,
                     'ingress_node_name' => $ingressNodeName,
                 ];
@@ -2491,7 +2511,7 @@ final class GatewayNodeCreator
             }
 
             return [
-                'roles' => $this->orderHostedRoles($roles),
+                'roles' => $this->orderWorkloadRoles($roles),
                 'ingress_node_id' => $ingressNode->id,
                 'ingress_node_name' => $ingressNode->name,
             ];
@@ -2503,7 +2523,7 @@ final class GatewayNodeCreator
 
         if (confirm(label: 'Serve public traffic from this node?', default: true)) {
             return [
-                'roles' => $this->orderHostedRoles([...$roles, NodeRoleName::Ingress->value]),
+                'roles' => $this->orderWorkloadRoles([...$roles, NodeRoleName::Ingress->value]),
                 'ingress_node_id' => null,
                 'ingress_node_name' => null,
             ];
@@ -2528,7 +2548,7 @@ final class GatewayNodeCreator
         }
 
         return [
-            'roles' => $this->orderHostedRoles($roles),
+            'roles' => $this->orderWorkloadRoles($roles),
             'ingress_node_id' => $ingressNode->id,
             'ingress_node_name' => $ingressNode->name,
         ];
@@ -2538,16 +2558,24 @@ final class GatewayNodeCreator
      * @param  list<string>  $roles
      * @return list<string>
      */
-    private function orderHostedRoles(array $roles): array
+    private function orderWorkloadRoles(array $roles): array
     {
-        return collect($roles)
-            ->sortBy(fn (string $role): int => match ($role) {
-                NodeRoleName::Ingress->value => 10,
-                NodeRoleName::AppProduction->value => 20,
-                default => 30,
-            })
-            ->values()
-            ->all();
+        usort(
+            $roles,
+            static fn (string $first, string $second): int => (
+                match ($first) {
+                    NodeRoleName::Ingress->value => 10,
+                    NodeRoleName::AppProduction->value => 20,
+                    default => 30,
+                } <=> match ($second) {
+                    NodeRoleName::Ingress->value => 10,
+                    NodeRoleName::AppProduction->value => 20,
+                    default => 30,
+                }
+            ),
+        );
+
+        return $roles;
     }
 
     /**
@@ -3001,29 +3029,7 @@ final class GatewayNodeCreator
 
     private function isValidTld(string $tld): bool
     {
-        return (bool) preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld);
-    }
-
-    private function resolveDefaultNodeTld(string $name, ?string $existingTld = null): ?string
-    {
-        if (is_string($existingTld) && trim($existingTld) !== '') {
-            return trim($existingTld);
-        }
-
-        $candidate = strtolower(trim($name));
-
-        if ($candidate === '' || ! $this->isValidTld($candidate)) {
-            return null;
-        }
-
-        if (Node::query()
-            ->where('tld', $candidate)
-            ->where('status', NodeStatus::Active->value)
-            ->exists()) {
-            return null;
-        }
-
-        return $candidate;
+        return strlen($tld) <= 63 && preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld) === 1;
     }
 
     private function isValidHost(string $host): bool
@@ -3276,17 +3282,7 @@ final class GatewayNodeCreator
      */
     private function jsonSuccess(array $data, array $meta = []): int
     {
-        $response = [
-            'success' => [
-                'data' => $data,
-            ],
-        ];
-
-        if ($meta !== []) {
-            $response['success']['meta'] = $meta;
-        }
-
-        $this->line(json_encode($response, JSON_THROW_ON_ERROR));
+        $this->line(json_encode(JsonEnvelope::success($data, $meta), JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;
     }
