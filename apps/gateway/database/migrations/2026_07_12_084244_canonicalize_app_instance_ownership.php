@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Data\Apps\AppInstanceRuntimeRequirementsData;
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Query\JoinClause;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -56,7 +55,11 @@ return new class extends Migration {
                     || $this->rowInteger($app, 'runtime_mount_count') > 0
                     || $this->rowInteger($app, 'database_target_count') > 0;
 
-                return $this->rowInteger($app, 'instance_count') > 1 && $hasAmbiguousRows;
+                if ($this->rowInteger($app, 'instance_count') <= 1 || ! $hasAmbiguousRows) {
+                    return false;
+                }
+
+                return count($this->matchingHistoricalOrbitInstanceIds($this->rowInteger($app, 'id'))) !== 1;
             });
 
         if ($ambiguous->isNotEmpty()) {
@@ -83,25 +86,45 @@ return new class extends Migration {
 
     private function assertDatabaseTargetConflictsAreAbsent(): void
     {
-        $conflicts = DB::table('database_connection_targets as app_targets')
-            ->join('app_instances', 'app_instances.app_id', '=', 'app_targets.app_id')
-            ->join('app_instance_database_connection_targets as instance_targets', static function (JoinClause $join): void {
-                $join
-                    ->on('instance_targets.app_instance_id', '=', 'app_instances.id')
-                    ->on('instance_targets.env_prefix', '=', 'app_targets.env_prefix');
-            })
-            ->whereColumn(
-                'instance_targets.database_connection_id',
-                '!=',
-                'app_targets.database_connection_id',
-            )
-            ->select([
-                'app_targets.app_id',
-                'app_targets.env_prefix',
-                'app_targets.database_connection_id as app_connection_id',
-                'instance_targets.database_connection_id as instance_connection_id',
-            ])
-            ->get();
+        $conflicts = collect();
+
+        DB::table('database_connection_targets')
+            ->whereNotNull('app_id')
+            ->orderBy('id')
+            ->get()
+            ->each(function (object $appTarget) use ($conflicts): void {
+                $appId = $this->rowInteger($appTarget, 'app_id');
+                $instanceId = $this->existingHistoricalOwnerInstanceId($appId);
+
+                if ($instanceId === null) {
+                    return;
+                }
+
+                $instanceTarget = DB::table('app_instance_database_connection_targets')
+                    ->where('app_instance_id', $instanceId)
+                    ->where('env_prefix', $this->rowString($appTarget, 'env_prefix'))
+                    ->first();
+
+                if (
+                    ! is_object($instanceTarget)
+                    || $this->rowInteger($instanceTarget, 'database_connection_id') === $this->rowInteger(
+                        $appTarget,
+                        'database_connection_id',
+                    )
+                ) {
+                    return;
+                }
+
+                $conflicts->push((object) [
+                    'app_id' => $appId,
+                    'env_prefix' => $this->rowString($appTarget, 'env_prefix'),
+                    'app_connection_id' => $this->rowInteger($appTarget, 'database_connection_id'),
+                    'instance_connection_id' => $this->rowInteger(
+                        $instanceTarget,
+                        'database_connection_id',
+                    ),
+                ]);
+            });
 
         if ($conflicts->isEmpty()) {
             return;
@@ -135,7 +158,7 @@ return new class extends Migration {
 
                 DB::table('workspaces')
                     ->where('id', $workspaceId)
-                    ->update(['app_instance_id' => $this->soleInstanceId($appId)]);
+                    ->update(['app_instance_id' => $this->historicalOwnerInstanceId($appId)]);
             });
     }
 
@@ -211,7 +234,7 @@ return new class extends Migration {
             ->get()
             ->each(function (object $mount): void {
                 $appId = $this->rowInteger($mount, 'app_id');
-                $instanceId = $this->soleInstanceId($appId);
+                $instanceId = $this->historicalOwnerInstanceId($appId);
                 $target = $this->rowString($mount, 'target');
                 $existing = DB::table('app_instance_runtime_mounts')
                     ->where('app_instance_id', $instanceId)
@@ -244,19 +267,100 @@ return new class extends Migration {
             });
     }
 
-    private function soleInstanceId(int $appId): int
+    private function historicalOwnerInstanceId(int $appId): int
     {
         $instanceIds = $this->instanceIds($appId);
 
-        if (count($instanceIds) !== 1) {
-            throw new RuntimeException(
-                "Canonical app-instance ownership expected exactly one instance for app_id={$appId}; found "
-                .count($instanceIds)
-                .'.',
-            );
+        if (count($instanceIds) === 1) {
+            return $instanceIds[0];
         }
 
-        return $instanceIds[0];
+        $matchingInstanceIds = $this->matchingHistoricalOrbitInstanceIds($appId);
+
+        if (count($matchingInstanceIds) === 1) {
+            return $matchingInstanceIds[0];
+        }
+
+        throw new RuntimeException(
+            "Canonical app-instance ownership could not resolve the historical owner for app_id={$appId}.",
+        );
+    }
+
+    private function existingHistoricalOwnerInstanceId(int $appId): ?int
+    {
+        $instanceIds = array_values(
+            DB::table('app_instances')
+                ->where('app_id', $appId)
+                ->orderBy('id')
+                ->pluck('id')
+                ->map(static fn (mixed $id): int => (int) $id)
+                ->all(),
+        );
+
+        if (count($instanceIds) <= 1) {
+            return $instanceIds[0] ?? null;
+        }
+
+        $matchingInstanceIds = $this->matchingHistoricalOrbitInstanceIds($appId);
+
+        return count($matchingInstanceIds) === 1 ? $matchingInstanceIds[0] : null;
+    }
+
+    /** @return list<int> */
+    private function matchingHistoricalOrbitInstanceIds(int $appId): array
+    {
+        $app = DB::table('apps')->where('id', $appId)->first();
+
+        if (! is_object($app)) {
+            throw new RuntimeException("Cannot resolve historical ownership for missing app_id={$appId}.");
+        }
+
+        $nodeId = $this->rowInteger($app, 'node_id');
+        $path = $this->rowString($app, 'path');
+
+        return array_values(
+            DB::table('app_instances')
+                ->where('app_id', $appId)
+                ->where('driver', 'orbit')
+                ->orderBy('id')
+                ->get()
+                ->filter(function (object $instance) use ($nodeId, $path): bool {
+                    $config = $this->decodeDriverConfig($this->rowValue($instance, 'driver_config'));
+                    $data = is_array($config['data'] ?? null) ? $config['data'] : [];
+
+                    return (
+                        ($config['type'] ?? null) === 'orbit_app_instance_driver_config'
+                        && ($data['node_id'] ?? null) === $nodeId
+                        && ($data['path'] ?? null) === $path
+                    );
+                })
+                ->map(fn (object $instance): int => $this->rowInteger($instance, 'id'))
+                ->all(),
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function decodeDriverConfig(mixed $value): array
+    {
+        if (! is_string($value)) {
+            return [];
+        }
+
+        /** @var mixed $decoded */
+        $decoded = json_decode($value, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        foreach (array_keys($decoded) as $key) {
+            if (! is_string($key)) {
+                return [];
+            }
+        }
+
+        /** @var array<string, mixed> $decoded */
+        return $decoded;
     }
 
     /**
@@ -413,7 +517,9 @@ return new class extends Migration {
             ->each(function (object $target): void {
                 DB::table('database_connection_targets')->updateOrInsert(
                     [
-                        'app_instance_id' => $this->soleInstanceId($this->rowInteger($target, 'app_id')),
+                        'app_instance_id' => $this->historicalOwnerInstanceId(
+                            $this->rowInteger($target, 'app_id'),
+                        ),
                         'env_prefix' => $this->rowString($target, 'env_prefix'),
                     ],
                     [

@@ -134,6 +134,173 @@ it('migrates unambiguous historical ownership and copies only dependent step pha
     });
 });
 
+it('migrates app-level targets to the matching Orbit instance beside a cloud instance', function (): void {
+    with_historical_ownership_schema(function (): void {
+        $now = now();
+        DB::table('nodes')->insert(['id' => 1, 'name' => 'beast']);
+        DB::table('apps')->insert(historical_ownership_app(1, 'platform11', $now));
+        DB::table('app_instances')->insert([
+            [
+                ...historical_ownership_instance(1, 1, 'cloud', $now),
+                'driver' => 'laravel-cloud',
+                'driver_config' => json_encode([
+                    'type' => 'laravel_cloud_app_instance_driver_config',
+                    'data' => ['domain' => 'cloud.platform11.nl'],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                ...historical_ownership_instance(2, 1, 'development', $now),
+                'driver_config' => json_encode([
+                    'type' => 'orbit_app_instance_driver_config',
+                    'data' => [
+                        'node_id' => 1,
+                        'node' => 'beast',
+                        'path' => '/srv/platform11',
+                        'document_root' => 'public',
+                        'domain' => null,
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+        ]);
+        DB::table('workspaces')->insert([
+            'id' => 1,
+            'app_id' => 1,
+            'app_instance_id' => null,
+            'name' => 'feature',
+            'path' => '/srv/platform11/.worktrees/feature',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('app_runtime_mounts')->insert([
+            'id' => 1,
+            'app_id' => 1,
+            'source' => '/srv/platform11/storage',
+            'target' => '/app/storage',
+            'read_only' => false,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('database_connections')->insert([
+            [
+                'id' => 1,
+                'slug' => 'platform11',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'id' => 2,
+                'slug' => 'platform11-cloud',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+        ]);
+        DB::table('database_connection_targets')->insert([
+            'id' => 1,
+            'database_connection_id' => 1,
+            'app_id' => 1,
+            'workspace_id' => null,
+            'env_prefix' => 'DB',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('app_instance_database_connection_targets')->insert([
+            'id' => 1,
+            'app_instance_id' => 1,
+            'database_connection_id' => 2,
+            'env_prefix' => 'DB',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        run_canonical_ownership_migration();
+
+        expect(DB::table('workspaces')->where('id', 1)->value('app_instance_id'))
+            ->toBe(2)
+            ->and(DB::table('app_instance_runtime_mounts')->where('target', '/app/storage')->value('app_instance_id'))
+            ->toBe(2)
+            ->and(
+                DB::table('database_connection_targets')
+                    ->where('env_prefix', 'DB')
+                    ->where('database_connection_id', 1)
+                    ->value('app_instance_id'),
+            )
+            ->toBe(2)
+            ->and(
+                DB::table('database_connection_targets')->where('app_instance_id', 1)->value('database_connection_id'),
+            )
+            ->toBe(2);
+    });
+});
+
+it('fails before mutation when the resolved Orbit instance has a conflicting database target', function (): void {
+    with_historical_ownership_schema(function (): void {
+        $now = now();
+        DB::table('nodes')->insert(['id' => 1, 'name' => 'beast']);
+        DB::table('apps')->insert(historical_ownership_app(1, 'platform11', $now));
+        DB::table('app_instances')->insert([
+            [
+                ...historical_ownership_instance(1, 1, 'cloud', $now),
+                'driver' => 'laravel-cloud',
+                'driver_config' => json_encode([
+                    'type' => 'laravel_cloud_app_instance_driver_config',
+                    'data' => ['domain' => 'cloud.platform11.nl'],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                ...historical_ownership_instance(2, 1, 'development', $now),
+                'driver_config' => json_encode([
+                    'type' => 'orbit_app_instance_driver_config',
+                    'data' => [
+                        'node_id' => 1,
+                        'node' => 'beast',
+                        'path' => '/srv/platform11',
+                        'document_root' => 'public',
+                        'domain' => null,
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+        ]);
+        DB::table('database_connections')->insert([
+            [
+                'id' => 1,
+                'slug' => 'platform11',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'id' => 2,
+                'slug' => 'conflict',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+        ]);
+        DB::table('database_connection_targets')->insert([
+            'id' => 1,
+            'database_connection_id' => 1,
+            'app_id' => 1,
+            'workspace_id' => null,
+            'env_prefix' => 'DB',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('app_instance_database_connection_targets')->insert([
+            'id' => 1,
+            'app_instance_id' => 2,
+            'database_connection_id' => 2,
+            'env_prefix' => 'DB',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        expect(run_canonical_ownership_migration(...))
+            ->toThrow(RuntimeException::class, 'conflicting assignments')
+            ->and(DB::table('database_connection_targets')->where('id', 1)->value('app_id'))
+            ->toBe(1)
+            ->and(Schema::hasTable('app_runtime_mounts'))
+            ->toBeTrue();
+    });
+});
+
 it('fails before mutation when historical ownership is ambiguous', function (): void {
     with_historical_ownership_schema(function (): void {
         $now = now();
