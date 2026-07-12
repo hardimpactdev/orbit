@@ -215,6 +215,70 @@ final readonly class GatewaySwarmManager
         );
     }
 
+    /** @mago-expect lint:excessive-parameter-list */
+    public function installHostCli(
+        GatewayImageReference $image,
+        string $artifactUrl,
+        string $sha256,
+        string $installRoot,
+        string $homeDirectory,
+        string $binPath,
+    ): void {
+        $artifactUrl = trim($artifactUrl);
+        $sha256 = strtolower(trim($sha256));
+        $installRoot = $this->absolutePath($installRoot, 'install root');
+        $homeDirectory = $this->absolutePath($homeDirectory, 'home directory');
+        $binPath = $this->absolutePath($binPath, 'CLI bin path');
+
+        if ($artifactUrl === '') {
+            throw new InvalidArgumentException('Gateway host CLI artifact URL cannot be empty.');
+        }
+
+        if (preg_match('/^[a-f0-9]{64}$/', $sha256) !== 1) {
+            throw new InvalidArgumentException('Gateway host CLI sha256 must be a SHA-256 hash.');
+        }
+
+        if (! str_starts_with($binPath, $homeDirectory.'/')) {
+            throw new InvalidArgumentException('Gateway host CLI bin path must be inside the gateway home directory.');
+        }
+
+        $relativeBinPath = substr($binPath, strlen($homeDirectory) + 1);
+        $script = implode("\n", [
+            'set -euo pipefail',
+            'artifact="$(mktemp /tmp/orbit-host-cli.XXXXXX)"',
+            'cleanup() { rm -f "$artifact"; }',
+            'trap cleanup EXIT',
+            'curl -fksSL '.escapeshellarg($artifactUrl).' -o "$artifact"',
+            'printf "%s  %s\\n" '.escapeshellarg($sha256).' "$artifact" | sha256sum -c -',
+            'sha_prefix='.escapeshellarg(substr($sha256, offset: 0, length: 12)),
+            'versioned_container_path="/mnt/orbit-install/bin/orbit-binary-$sha_prefix"',
+            'versioned_host_path='.escapeshellarg($installRoot).'/bin/orbit-binary-$sha_prefix',
+            'install -d -m 0755 /mnt/orbit-install/bin '.escapeshellarg(dirname('/mnt/orbit-home/'.$relativeBinPath)),
+            'install -m 0755 "$artifact" "$versioned_container_path"',
+            'printf "%s  %s\\n" '.escapeshellarg($sha256).' "$versioned_container_path" | sha256sum -c -',
+            'ln -sfn "$versioned_host_path" /mnt/orbit-install/bin/orbit-binary',
+            'ln -sfn "$versioned_host_path" '.escapeshellarg('/mnt/orbit-home/'.$relativeBinPath),
+            '',
+        ]);
+        $command = implode(' ', [
+            'docker run --rm',
+            '--entrypoint '.escapeshellarg('bash'),
+            '--mount '.escapeshellarg("type=bind,source={$installRoot},target=/mnt/orbit-install"),
+            '--mount '.escapeshellarg("type=bind,source={$homeDirectory},target=/mnt/orbit-home"),
+            escapeshellarg($image->canonical()),
+            escapeshellarg('-s'),
+        ]);
+        $result = Process::timeout(300)->input($script)->run($command);
+
+        if ($result->successful()) {
+            return;
+        }
+
+        $message = trim($result->errorOutput().$result->output());
+
+        throw new RuntimeException("Failed to install gateway host CLI artifact: {$message}");
+    }
+
     public function serviceImage(string $service): ?string
     {
         $service = $this->normalizeName($service, 'service');
@@ -292,6 +356,17 @@ final readonly class GatewaySwarmManager
         }
 
         return rtrim($path, '/');
+    }
+
+    private function absolutePath(string $path, string $field): string
+    {
+        $path = $this->normalizePath($path);
+
+        if (! str_starts_with($path, '/')) {
+            throw new InvalidArgumentException("Gateway Swarm {$field} must be absolute.");
+        }
+
+        return $path;
     }
 
     private function normalizeUpdateOrder(string $order): string

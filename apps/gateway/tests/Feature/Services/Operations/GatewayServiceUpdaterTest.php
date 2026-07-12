@@ -2,16 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
-use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
-use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
@@ -38,8 +35,6 @@ it('updates gateway and scheduler services to the plan image after target image 
     $plan = gateway_service_updater_plan_with_reverb_artifact($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
     $operations = [];
-    $localExecutor = gateway_service_updater_fake_local_executor();
-    app()->instance(RunsInternalCommands::class, $localExecutor);
     $gateway = Node::factory()
         ->gateway()
         ->create([
@@ -75,6 +70,7 @@ it('updates gateway and scheduler services to the plan image after target image 
             "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'",
             "docker service scale --detach=true 'orbit_orbit-scheduler=0'",
             gateway_service_updater_migration_command($plan),
+            gateway_service_updater_host_cli_command($plan),
             "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
             "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'",
@@ -89,9 +85,12 @@ it('updates gateway and scheduler services to the plan image after target image 
             $operations,
             fn (string $operation): bool => str_starts_with($operation, 'docker run'),
         )))
-        ->toBe([gateway_service_updater_migration_command($plan)]);
+        ->toBe([
+            gateway_service_updater_migration_command($plan),
+            gateway_service_updater_host_cli_command($plan),
+        ]);
 
-    Process::assertRan(function ($process): bool {
+    Process::assertRan(function ($process) use ($plan): bool {
         if ((string) $process->command !== 'bash -s') {
             return false;
         }
@@ -125,54 +124,28 @@ it('updates gateway and scheduler services to the plan image after target image 
         ->and($gateway->fresh()->installed_cli?->sha256)
         ->toBe(str_repeat('c', times: 64))
         ->and($gateway->fresh()->installed_agent)
-        ->toBeNull()
-        ->and($localExecutor->calls)
-        ->toHaveCount(1)
-        ->and($localExecutor->calls[0]['node'])
-        ->toBe('gateway-1')
-        ->and($localExecutor->calls[0]['command'])
-        ->toBe('internal:fleet-update:install-cli')
-        ->and($localExecutor->calls[0]['command_options']['payload-file'] ?? null)
-        ->toBe("/tmp/orbit-gateway-host-cli-install-{$run->id}.json")
-        ->and($localExecutor->calls[0]['command_options']['payload-sha256'] ?? null)
-        ->toBe(hash('sha256', $localExecutor->calls[0]['options']['input']))
-        ->and($localExecutor->calls[0]['options']['transport'] ?? null)
-        ->toBe(NodeTransportPreference::TransitionalSshFallback)
-        ->and($localExecutor->calls[0]['options']['force_remote_host'] ?? null)
-        ->toBeTrue()
-        ->and($localExecutor->calls[0]['options']['cwd'] ?? null)
-        ->toBe('/home/orbit')
-        ->and($localExecutor->calls[0]['options']['environment'] ?? null)
-        ->toBe([
-            'HOME' => '/home/orbit',
-            'ORBIT_CONFIG_PATH' => '/home/orbit/.config/orbit/config.json',
-            'ORBIT_INSTALL_METADATA_PATH' => '/home/orbit/.config/orbit/install.json',
-        ])
-        ->and($localExecutor->calls[0]['options']['bind_application_key'] ?? null)
-        ->toBeFalse()
-        ->and($localExecutor->calls[0]['options']['bind_input'] ?? null)
-        ->toBeFalse()
-        ->and($localExecutor->calls[0]['options']['ssh_bootstrap_binary'] ?? null)
-        ->toBe([
-            'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
-            'sha256' => str_repeat('c', times: 64),
-        ])
-        ->and($localExecutor->calls[0]['options']['ssh_bootstrap_input_file'] ?? null)
-        ->toBe([
-            'path' => "/tmp/orbit-gateway-host-cli-install-{$run->id}.json",
-            'sha256' => hash('sha256', $localExecutor->calls[0]['options']['input']),
-        ])
-        ->and($localExecutor->payloads()[0])
-        ->toMatchArray([
-            'artifact_url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
-            'sha256' => str_repeat('c', times: 64),
-            'install_root' => '/home/orbit/orbit',
-            'bin_path' => '/home/orbit/.local/bin/orbit',
-            'shared_binary_path' => null,
-            'agent_artifact' => null,
-            'agent_service' => null,
-            'role_images' => [],
-        ]);
+        ->toBeNull();
+
+    Process::assertRan(function ($process) use ($plan): bool {
+        return (
+            (string) $process->command === gateway_service_updater_host_cli_command($plan)
+            && str_contains((string) $process->input, 'orbit-binary-$sha_prefix')
+            && str_contains((string) $process->input, '/mnt/orbit-install/bin/orbit-binary')
+        );
+    });
+
+    $hostCliIndex = array_search(gateway_service_updater_host_cli_command($plan), $operations, true);
+    $gatewayServiceIndex = array_search(
+        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
+        $operations,
+        true,
+    );
+
+    if (! is_int($hostCliIndex) || ! is_int($gatewayServiceIndex)) {
+        throw new RuntimeException('Expected host CLI install and gateway service replacement operations.');
+    }
+
+    expect($hostCliIndex)->toBeLessThan($gatewayServiceIndex);
 
     $stack = File::get("{$this->configRoot}/swarm/orbit-gateway-stack.yml");
 
@@ -200,7 +173,6 @@ it('runs gateway migrations through the target gateway image before replacing th
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
     $operations = [];
-    app()->instance(RunsInternalCommands::class, gateway_service_updater_fake_local_executor());
     Node::factory()
         ->gateway()
         ->create([
@@ -249,15 +221,23 @@ it('runs gateway migrations through the target gateway image before replacing th
         );
 });
 
-it('retries gateway host CLI install when the previous launcher exits during self update', function (): void {
+it('installs the gateway host CLI once through the local Docker helper', function (): void {
     $run = gatewayServiceUpdaterRun();
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
-    $localExecutor = gateway_service_updater_fake_local_executor([
-        new RemoteShellResult(exitCode: 255, stdout: '', stderr: '', durationMs: 3),
-        new RemoteShellResult(exitCode: 0, stdout: "updated\n", stderr: '', durationMs: 20),
-    ]);
-    app()->instance(RunsInternalCommands::class, $localExecutor);
+    $hostCliInstalls = 0;
+    $hostCliScript = '';
+    $relayUrl = 'https://10.6.0.2/api/update/artifacts/run/cli/linux-amd64?token=relay-token';
+    $artifactRelay = Mockery::mock(GatewayCliArtifactRelay::class);
+    $artifactRelay
+        ->shouldReceive('artifactFor')
+        ->once()
+        ->andReturn([
+            'url' => $relayUrl,
+            'sha256' => str_repeat('c', times: 64),
+            'source_url' => 'file:///tmp/orbit-linux-amd64',
+        ]);
+    app()->instance(GatewayCliArtifactRelay::class, $artifactRelay);
     $gateway = Node::factory()
         ->gateway()
         ->create([
@@ -266,8 +246,13 @@ it('retries gateway host CLI install when the previous launcher exits during sel
             'orbit_path' => '/home/orbit/orbit',
         ]);
 
-    Process::fake(function ($process) use ($plan, $previousImage) {
+    Process::fake(function ($process) use ($plan, $previousImage, &$hostCliInstalls, &$hostCliScript) {
         $command = (string) $process->command;
+
+        if ($command === gateway_service_updater_host_cli_command($plan)) {
+            $hostCliInstalls++;
+            $hostCliScript = (string) $process->input;
+        }
 
         $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
 
@@ -285,24 +270,21 @@ it('retries gateway host CLI install when the previous launcher exits during sel
 
     app(GatewayServiceUpdater::class)->update($run, $plan);
 
-    expect($localExecutor->calls)
-        ->toHaveCount(2)
-        ->and($localExecutor->payloads()[0])
-        ->toEqual($localExecutor->payloads()[1])
+    expect($hostCliInstalls)
+        ->toBe(1)
+        ->and($hostCliScript)
+        ->toContain($relayUrl)
+        ->not
+        ->toContain('file:///tmp/orbit-linux-amd64')
         ->and($gateway->fresh()->installed_cli?->version)
         ->toBe('1.2.3');
 });
 
-it('fails gateway host CLI install when its transport fails', function (): void {
+it('fails gateway host CLI install when the local Docker helper fails', function (): void {
     $run = gatewayServiceUpdaterRun();
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
-    $localExecutor = gateway_service_updater_fake_local_executor([
-        new RemoteLocalExecutorTransportFailed(
-            'Remote local executor transport failed: cURL error 7: Failed to connect',
-        ),
-    ]);
-    app()->instance(RunsInternalCommands::class, $localExecutor);
+    $operations = [];
     $gateway = Node::factory()
         ->gateway()
         ->create([
@@ -311,8 +293,13 @@ it('fails gateway host CLI install when its transport fails', function (): void 
             'orbit_path' => '/home/orbit/orbit',
         ]);
 
-    Process::fake(function ($process) use ($plan, $previousImage) {
+    Process::fake(function ($process) use ($plan, $previousImage, &$operations) {
         $command = (string) $process->command;
+        $operations[] = $command;
+
+        if ($command === gateway_service_updater_host_cli_command($plan)) {
+            return Process::result(exitCode: 1, errorOutput: "artifact install failed\n");
+        }
 
         $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
 
@@ -331,12 +318,16 @@ it('fails gateway host CLI install when its transport fails', function (): void 
     });
 
     expect(fn () => app(GatewayServiceUpdater::class)->update($run, $plan))
-        ->toThrow(RemoteLocalExecutorTransportFailed::class, 'cURL error 7');
+        ->toThrow(RuntimeException::class, 'Failed to install gateway host CLI artifact: artifact install failed');
 
-    expect($localExecutor->calls)
-        ->toHaveCount(1)
-        ->and($gateway->fresh()->installed_cli)
+    expect($gateway->fresh()->installed_cli)
         ->toBeNull();
+
+    expect($operations)
+        ->toContain(
+            "docker service update --detach=true --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'",
+            "docker service scale --detach=true 'orbit_orbit-scheduler=1'",
+        );
 });
 
 it('restores the scheduler previous image and replica when gateway migrations fail', function (): void {
@@ -678,12 +669,28 @@ function gateway_service_updater_migration_command(OperationUpdatePlan $plan): s
     ]);
 }
 
+function gateway_service_updater_host_cli_command(OperationUpdatePlan $plan): string
+{
+    return implode(' ', [
+        'docker run --rm',
+        '--entrypoint '.escapeshellarg('bash'),
+        '--mount '.escapeshellarg('type=bind,source=/home/orbit/orbit,target=/mnt/orbit-install'),
+        '--mount '.escapeshellarg('type=bind,source=/home/orbit,target=/mnt/orbit-home'),
+        escapeshellarg($plan->gateway_image),
+        escapeshellarg('-s'),
+    ]);
+}
+
 function gateway_service_updater_common_process_result(
     string $command,
     OperationUpdatePlan $plan,
     string $previousImage,
 ): mixed {
     if ($command === gateway_service_updater_migration_command($plan)) {
+        return Process::result();
+    }
+
+    if ($command === gateway_service_updater_host_cli_command($plan)) {
         return Process::result();
     }
 
@@ -705,77 +712,5 @@ function gateway_service_updater_common_process_result(
             output: "1/1\n",
         ),
         default => null,
-    };
-}
-
-/**
- * @param  list<RemoteShellResult|RemoteLocalExecutorTransportFailed>  $responses
- */
-function gateway_service_updater_fake_local_executor(array $responses = []): RunsInternalCommands
-{
-    return new class($responses) implements RunsInternalCommands {
-        /**
-         * @var list<array{node: string, command: string, command_options: array<int|string, mixed>, options: array<string, mixed>}>
-         */
-        public array $calls = [];
-
-        /**
-         * @param  list<RemoteShellResult|RemoteLocalExecutorTransportFailed>  $responses
-         */
-        public function __construct(
-            private array $responses,
-        ) {}
-
-        /**
-         * @param  array<int|string, mixed>  $arguments
-         * @param  array<int|string, mixed>  $commandOptions
-         * @param  array<string, mixed>  $transportOptions
-         */
-        #[Override]
-        public function runInternal(
-            Node $node,
-            string $commandName,
-            array $arguments = [],
-            array $commandOptions = [],
-            array $transportOptions = [],
-        ): RemoteShellResult {
-            $this->calls[] = [
-                'node' => $node->name,
-                'command' => $commandName,
-                'command_options' => $commandOptions,
-                'options' => $transportOptions,
-            ];
-
-            $response = array_shift($this->responses) ?? new RemoteShellResult(
-                exitCode: 0,
-                stdout: "updated\n",
-                stderr: '',
-                durationMs: 20,
-            );
-
-            if ($response instanceof RemoteLocalExecutorTransportFailed) {
-                throw $response;
-            }
-
-            return $response;
-        }
-
-        /**
-         * @return list<array<string, mixed>>
-         */
-        public function payloads(): array
-        {
-            return array_map(static function (array $call): array {
-                $input = $call['options']['input'] ?? null;
-
-                if (! is_string($input)) {
-                    return [];
-                }
-
-                $payload = json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR);
-
-                return is_array($payload) ? $payload : [];
-            }, $this->calls);
-        }
     };
 }

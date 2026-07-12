@@ -244,10 +244,6 @@
             "marker_line": 17
         },
         {
-            "path": "apps/gateway/app/Services/Operations/GatewayServiceUpdater.php",
-            "marker_line": 29
-        },
-        {
             "path": "apps/gateway/app/Services/Operations/WorkloadNodeUpdater.php",
             "marker_line": 23
         },

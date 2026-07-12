@@ -151,6 +151,59 @@ it('loads docker image archives after verifying the artifact hash', function ():
         ->toContain('docker load -i "$archive"');
 });
 
+it('installs the gateway host CLI through a local Docker helper', function (): void {
+    $script = null;
+    $image = GatewayImageReference::fromString(
+        'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
+
+    Process::fake(function ($process) use (&$script) {
+        $script = (string) $process->input;
+
+        return Process::result();
+    });
+
+    new GatewaySwarmManager()->installHostCli(
+        image: $image,
+        artifactUrl: 'https://artifacts.example.test/orbit-linux-amd64',
+        sha256: str_repeat('c', times: 64),
+        installRoot: '/home/orbit/orbit',
+        homeDirectory: '/home/orbit',
+        binPath: '/home/orbit/.local/bin/orbit',
+    );
+
+    Process::assertRan(function ($process): bool {
+        $command = (string) $process->command;
+
+        return (
+            str_contains($command, 'docker run --rm')
+            && str_contains($command, "--entrypoint 'bash'")
+            && str_contains($command, 'source=/home/orbit/orbit,target=/mnt/orbit-install')
+            && str_contains($command, 'source=/home/orbit,target=/mnt/orbit-home')
+            && str_contains($command, 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:')
+            && str_ends_with($command, " '-s'")
+        );
+    });
+
+    expect($script)
+        ->toContain('curl -fksSL')
+        ->toContain('https://artifacts.example.test/orbit-linux-amd64')
+        ->toContain(str_repeat('c', times: 64))
+        ->toContain('/mnt/orbit-install/bin/orbit-binary-$sha_prefix')
+        ->toContain('ln -sfn "$versioned_host_path" /mnt/orbit-install/bin/orbit-binary')
+        ->toContain('ln -sfn "$versioned_host_path" \'/mnt/orbit-home/.local/bin/orbit\'')
+        ->not->toContain('ssh');
+
+    $checksumIndex = strpos((string) $script, '"$versioned_container_path" | sha256sum -c -');
+    $linkIndex = strpos((string) $script, 'ln -sfn "$versioned_host_path"');
+
+    if (! is_int($checksumIndex) || ! is_int($linkIndex)) {
+        throw new RuntimeException('Expected checksum verification before host CLI link replacement.');
+    }
+
+    expect($checksumIndex)->toBeLessThan($linkIndex);
+});
+
 it('updates and scales Swarm services using the planned command shapes', function (): void {
     $image = GatewayImageReference::fromString(
         'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
