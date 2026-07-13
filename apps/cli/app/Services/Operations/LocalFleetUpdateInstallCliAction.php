@@ -237,6 +237,11 @@ final readonly class LocalFleetUpdateInstallCliAction
                 fi
 
                 if [ "$status_rc" -eq 0 ] || [ "$enabled_rc" -eq 0 ]; then
+                    if agent_systemd_service_payload_present; then
+                        converge_agent_systemd_service "$systemctl_bin" "$agent_bin_path"
+                        echo converge_agent_unit
+                    fi
+
                     systemd_run_bin="$(find_command systemd-run || true)"
 
                     if [ -n "$systemd_run_bin" ]; then
@@ -293,15 +298,41 @@ final readonly class LocalFleetUpdateInstallCliAction
             adopt_agent_systemd_service() {
                 systemctl_bin="$1"
                 agent_bin_path="$2"
+
+                if ! agent_systemd_service_payload_present; then
+                    return 1
+                fi
+
+                converge_agent_systemd_service "$systemctl_bin" "$agent_bin_path"
+                http_bind="${ORBIT_AGENT_SERVICE_HTTP_BIND:-}"
+                unit_name="${ORBIT_AGENT_SERVICE_UNIT_NAME:-}"
+
+                case "$unit_name" in
+                    *.service) service="$unit_name" ;;
+                    *) service="$unit_name.service" ;;
+                esac
+
+                kill_agent_http_bind_owner "$http_bind"
+                run_privileged "$systemctl_bin" restart "$service"
+                echo adopt_agent_unit
+            }
+
+            agent_systemd_service_payload_present() {
+                unit_name="${ORBIT_AGENT_SERVICE_UNIT_NAME:-}"
+                config_path="${ORBIT_AGENT_SERVICE_CONFIG_PATH:-}"
+                http_bind="${ORBIT_AGENT_SERVICE_HTTP_BIND:-}"
+
+                [ -n "$unit_name" ] && [ -n "$config_path" ] && [ -n "$http_bind" ]
+            }
+
+            converge_agent_systemd_service() {
+                systemctl_bin="$1"
+                agent_bin_path="$2"
                 unit_name="${ORBIT_AGENT_SERVICE_UNIT_NAME:-}"
                 exec_start="${ORBIT_AGENT_SERVICE_EXEC_START:-$agent_bin_path}"
                 config_path="${ORBIT_AGENT_SERVICE_CONFIG_PATH:-}"
                 http_bind="${ORBIT_AGENT_SERVICE_HTTP_BIND:-}"
                 service_user="${ORBIT_AGENT_SERVICE_USER:-}"
-
-                if [ -z "$unit_name" ] || [ -z "$config_path" ] || [ -z "$http_bind" ]; then
-                    return 1
-                fi
 
                 if [ -z "$service_user" ]; then
                     service_user="$(id -un)"
@@ -340,9 +371,6 @@ final readonly class LocalFleetUpdateInstallCliAction
                 run_privileged install -m 0644 "$unit_path" "/etc/systemd/system/$service"
                 run_privileged "$systemctl_bin" daemon-reload
                 run_privileged "$systemctl_bin" enable "$service"
-                kill_agent_http_bind_owner "$http_bind"
-                run_privileged "$systemctl_bin" restart "$service"
-                echo adopt_agent_unit
             }
 
             kill_agent_http_bind_owner() {

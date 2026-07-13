@@ -526,7 +526,7 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->and(substr_count($script, $compactToken))
             ->toBe(1)
             ->and($token->id)
-            ->toBe($operationId)
+            ->toBe(remote_local_executor_operation_run($operationId)->id)
             ->and($token->node)
             ->toBe($node->name)
             ->and($token->command)
@@ -1368,6 +1368,13 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $rows = DB::table('operation_runs')->where('operation_id', $operationId)->orderBy('created_at')->get();
 
+        $tokenAttemptIds = array_map(
+            static fn (array $call): string => OperationToken::parse(
+                remoteLocalExecutorTokenFromScript($call['script']),
+            )->id,
+            $transport->calls,
+        );
+
         expect($rows)
             ->toHaveCount(2)
             ->and($rows[0]->id)
@@ -1376,7 +1383,9 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->and($rows[0]->status)
             ->toBe('succeeded')
             ->and($rows[1]->status)
-            ->toBe('succeeded');
+            ->toBe('succeeded')
+            ->and($tokenAttemptIds)
+            ->toBe([$rows[0]->id, $rows[1]->id]);
     });
 
     it('keeps activity_log properties JSON free of raw operation_token substrings even after recording operation_runs', function (): void {

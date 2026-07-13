@@ -73,6 +73,7 @@ final readonly class GatewaySwarmStackRenderer
             '      ORBIT_CONFIG_ROOT: '.$configRoot,
             '      ORBIT_FORWARD_INSTALL_BINARY: /usr/local/bin/orbit-cli',
             '      ORBIT_GATEWAY_EXPOSURE_MODE: '.$exposureMode->value,
+            '      ORBIT_GATEWAY_CONTAINER: "{{.Task.Name}}"',
             '      ORBIT_GATEWAY_HEALTH_PORT: "8080"',
             '      ORBIT_LOCAL_EXECUTOR_BINARY: /usr/local/bin/orbit-cli',
         ];

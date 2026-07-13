@@ -132,12 +132,15 @@ verify operation tokens through the gateway API before any side effects, and
 nodes do not store executor token signing material.
 
 Operation tokens are signed with the gateway's dedicated operation-token key,
-carry a key id for rotation, bind the operation id, target node, command, and
+carry a key id for rotation, bind the exact per-attempt operation-run id, target
+node, command, and
 canonical hash of the dispatched `argv`, `cwd`, environment, and input, and are
 checked for not-before/expiry before use. Verification consumes the
-corresponding operation run; a second verification for the same operation id
+corresponding operation-run row; a second verification for the same attempt id
 returns a distinct already-dispatched denial instead of authorizing another
-node-local execution.
+node-local execution. The row's `operation_id` remains the logical grouping key
+for retries or concurrent fan-out that share caller metadata; consuming one
+attempt never consumes sibling rows in that logical group.
 
 Gateway API requests normally authenticate by WireGuard peer identity. The
 `/api/internal-executor/token/verify` endpoint has one scoped exception for
@@ -153,7 +156,15 @@ candidate `internal:fleet-update:install-cli` command without relaxing token
 verification. The JSON install payload, its SHA-256, argv, cwd, environment,
 and input remain bound to the scoped operation token. A node whose Agent cannot
 accept that envelope fails with the standard Agent transport error; Orbit does
-not retry it over SSH.
+not retry it over SSH. On Linux, the install converges an existing managed
+`orbit-agent` systemd unit to the candidate binary and service configuration
+before scheduling the deferred Agent restart, so a stale unit cannot keep an
+older transport implementation alive after a successful artifact install.
+
+Gateway-only execution resolves the gateway container through
+`ORBIT_GATEWAY_CONTAINER`. The production Swarm service sets that value from
+the task-name template (`{{.Task.Name}}`), while standalone and prepared
+topologies may supply their own explicit container name.
 
 #### Result-boundary redaction patterns
 
@@ -201,8 +212,10 @@ Forbidden work:
 Every `RemoteLocalExecutor` invocation must carry a gateway-issued operation
 token. The local executor validates the token before side effects, and
 node-local CLI execution is never an authority bypass. The token id corresponds
-to the gateway operation id supplied in `ORBIT_OPERATION_ID`, or to a generated
-operation id when the caller did not provide one. The command process spawned
+to the fresh `operation_runs.id` created for that dispatch attempt.
+`ORBIT_OPERATION_ID`, when supplied, is retained as the row's logical
+`operation_id`; otherwise Orbit generates that logical grouping value. The
+command process spawned
 after Agent-side verification carries a gateway authorization marker so the
 node-local internal command can confirm the operation id, command, and token
 without spending the single-use verify token twice.

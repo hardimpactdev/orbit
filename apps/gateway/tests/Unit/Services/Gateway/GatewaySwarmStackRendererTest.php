@@ -28,6 +28,7 @@ it('renders the gateway and scheduler Swarm services for gateway-direct mode', f
         ->toContain('aliases:')
         ->toContain('- orbit-gateway')
         ->toContain('ORBIT_GATEWAY_EXPOSURE_MODE: gateway-direct')
+        ->toContain('ORBIT_GATEWAY_CONTAINER: "{{.Task.Name}}"')
         ->toContain('DB_BUSY_TIMEOUT: "5000"')
         ->toContain('DB_JOURNAL_MODE: wal')
         ->toContain('DB_SYNCHRONOUS: NORMAL')

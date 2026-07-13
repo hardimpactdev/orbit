@@ -115,15 +115,14 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $transportOptions = [],
     ): RemoteShellResult {
         $operationId = $this->operationId($transportOptions);
-        $dispatch = $this->dispatchCommand(
-            node: $node,
+        $trustedArgv = $this->commands->buildArgv(
+            targetNode: $node,
             commandName: $commandName,
             arguments: $arguments,
-            commandOptions: $commandOptions,
-            operationId: $operationId,
-            transportOptions: $transportOptions,
+            options: $commandOptions,
+            operationToken: OperationTokenCommandContext::OPERATION_TOKEN_SENTINEL,
         );
-
+        $environment = $this->localExecutorEnvironment($node, $transportOptions);
         $run = $this->operationRuns->queued(
             operationId: $operationId,
             lane: 'local',
@@ -131,6 +130,26 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             targetNodeId: $this->nodeId($node),
         );
         $this->operationRuns->running($run->id);
+        try {
+            $dispatch = $this->dispatchCommand(
+                node: $node,
+                commandName: $commandName,
+                arguments: $arguments,
+                commandOptions: $commandOptions,
+                operationId: $operationId,
+                operationRunId: $run->id,
+                trustedArgv: $trustedArgv,
+                environment: $environment,
+                transportOptions: $transportOptions,
+            );
+        } catch (Throwable $throwable) {
+            $this->operationRuns->failed(
+                id: $run->id,
+                error: ['code' => 'dispatch_failed', 'class' => $throwable::class],
+            );
+
+            throw $throwable;
+        }
 
         try {
             $this->logDispatching(
@@ -298,15 +317,14 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $transportOptions = [],
     ): void {
         $operationId = $this->operationId($transportOptions);
-        $dispatch = $this->dispatchCommand(
-            node: $node,
+        $trustedArgv = $this->commands->buildArgv(
+            targetNode: $node,
             commandName: $commandName,
             arguments: $arguments,
-            commandOptions: $commandOptions,
-            operationId: $operationId,
-            transportOptions: $transportOptions,
+            options: $commandOptions,
+            operationToken: OperationTokenCommandContext::OPERATION_TOKEN_SENTINEL,
         );
-
+        $environment = $this->localExecutorEnvironment($node, $transportOptions);
         $run = $this->operationRuns->queued(
             operationId: $operationId,
             lane: 'local',
@@ -314,6 +332,26 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             targetNodeId: $this->nodeId($node),
         );
         $this->operationRuns->running($run->id);
+        try {
+            $dispatch = $this->dispatchCommand(
+                node: $node,
+                commandName: $commandName,
+                arguments: $arguments,
+                commandOptions: $commandOptions,
+                operationId: $operationId,
+                operationRunId: $run->id,
+                trustedArgv: $trustedArgv,
+                environment: $environment,
+                transportOptions: $transportOptions,
+            );
+        } catch (Throwable $throwable) {
+            $this->operationRuns->failed(
+                id: $run->id,
+                error: ['code' => 'dispatch_failed', 'class' => $throwable::class],
+            );
+
+            throw $throwable;
+        }
         $startedAt = $this->monotonicNanoseconds();
 
         try {
@@ -473,6 +511,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     /**
      * @param  array<int|string, mixed>  $arguments
      * @param  array<int|string, mixed>  $commandOptions
+     * @param  list<string>  $trustedArgv
+     * @param  array<string, string>  $environment
      * @param  array<string, mixed>  $transportOptions
      * @return array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}
      *
@@ -484,20 +524,14 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $arguments,
         array $commandOptions,
         string $operationId,
+        string $operationRunId,
+        array $trustedArgv,
+        array $environment,
         array $transportOptions,
     ): array {
-        $trustedArgv = $this->commands->buildArgv(
-            targetNode: $node,
-            commandName: $commandName,
-            arguments: $arguments,
-            options: $commandOptions,
-            operationToken: OperationTokenCommandContext::OPERATION_TOKEN_SENTINEL,
-        );
-        $environment = $this->localExecutorEnvironment($node, $transportOptions);
-
         $operationToken = $this->operationTokens
             ->mint(
-                operationId: $operationId,
+                operationId: $operationRunId,
                 targetNode: $node->name,
                 command: $commandName,
                 commandContext: OperationTokenCommandContext::fromTrustedDispatch(

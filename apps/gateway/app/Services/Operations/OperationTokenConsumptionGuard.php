@@ -18,7 +18,7 @@ final readonly class OperationTokenConsumptionGuard
             $operationId,
         ): OperationTokenConsumptionResult {
             $consumedRows = DB::table('operation_runs')
-                ->where('operation_id', $operationId)
+                ->where('id', $operationId)
                 ->whereNull('operation_token_consumed_at')
                 ->update([
                     'operation_token_consumed_at' => now(),
@@ -30,7 +30,7 @@ final readonly class OperationTokenConsumptionGuard
             }
 
             $runExists = DB::table('operation_runs')
-                ->where('operation_id', $operationId)
+                ->where('id', $operationId)
                 ->exists();
 
             return $runExists

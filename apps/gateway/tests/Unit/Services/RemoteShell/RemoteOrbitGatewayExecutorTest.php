@@ -14,6 +14,31 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
+it('targets the active Swarm gateway task name from the runtime environment', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "installed\n"),
+    ]);
+    $previous = getenv('ORBIT_GATEWAY_CONTAINER');
+    putenv('ORBIT_GATEWAY_CONTAINER=orbit_orbit-gateway.1.active-task');
+
+    try {
+        app(RemoteOrbitGatewayExecutor::class)->run(
+            remoteRuntimeExecutorNode(),
+            'composer install --no-interaction',
+        );
+
+        Process::assertRan(fn (PendingProcess $process): bool => str_contains(
+            (string) $process->command,
+            'docker exec -i orbit_orbit-gateway.1.active-task composer install --no-interaction',
+        ));
+    } finally {
+        $previous === false
+            ? putenv('ORBIT_GATEWAY_CONTAINER')
+            : putenv("ORBIT_GATEWAY_CONTAINER={$previous}");
+    }
+});
+
 it('wraps plain commands in docker exec on orbit-gateway', function (): void {
     Process::preventStrayProcesses();
     Process::fake([

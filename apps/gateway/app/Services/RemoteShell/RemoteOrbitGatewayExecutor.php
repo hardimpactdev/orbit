@@ -7,6 +7,7 @@ namespace App\Services\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
+use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Runtime\OrbitGatewayContainer;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Process\PendingProcess;
@@ -16,13 +17,14 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
 {
     private const int DEFAULT_TIMEOUT = 120;
 
-    private const string CONTAINER = 'orbit-gateway';
+    private const string DEFAULT_CONTAINER = 'orbit-gateway';
 
     private const string ARTISAN = 'php apps/gateway/artisan';
 
     public function __construct(
         private RemoteShellScriptComposer $scripts,
         private RemoteShellAuditLogger $auditLogger,
+        private OrbitContainerNames $containers,
     ) {}
 
     /**
@@ -236,7 +238,7 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
             $parts[] = '--workdir '.escapeshellarg($workdir);
         }
 
-        $parts[] = self::CONTAINER;
+        $parts[] = $this->containers->gateway();
 
         return implode(' ', $parts);
     }
@@ -325,7 +327,11 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
             }
         }
 
-        if (! isset($tokens[$index]) || $tokens[$index]['value'] !== self::CONTAINER || ! isset($tokens[$index + 1])) {
+        if (
+            ! isset($tokens[$index])
+            || ! in_array($tokens[$index]['value'], [self::DEFAULT_CONTAINER, $this->containers->gateway()], true)
+            || ! isset($tokens[$index + 1])
+        ) {
             return null;
         }
 

@@ -107,6 +107,39 @@ describe('InternalExecutorTokenController', function (): void {
         expect($run->operation_token_consumed_at)->not->toBeNull();
     });
 
+    it('consumes only the exact attempt when sibling runs share a logical operation id', function (): void {
+        internalExecutorCallerNode();
+        $logicalOperationId = (string) Str::uuid();
+        $firstAttemptId = (string) Str::uuid();
+        $secondAttemptId = (string) Str::uuid();
+        internal_executor_operation_run($logicalOperationId, $firstAttemptId);
+        internal_executor_operation_run($logicalOperationId, $secondAttemptId);
+
+        foreach ([$firstAttemptId, $secondAttemptId] as $attemptId) {
+            $operationToken = app(OperationTokenFactory::class)->mint(
+                operationId: $attemptId,
+                targetNode: 'app-dev',
+                command: 'internal:executor:verify',
+            );
+
+            internalExecutorVerifyTokenRequest([
+                'operation_token' => $operationToken->toString(),
+                'command' => 'internal:executor:verify',
+            ])
+                ->assertOk()
+                ->assertJsonPath('success.data.allowed', true)
+                ->assertJsonPath('success.data.operation_id', $attemptId);
+        }
+
+        expect(
+            DB::table('operation_runs')
+                ->whereIn('id', [$firstAttemptId, $secondAttemptId])
+                ->whereNotNull('operation_token_consumed_at')
+                ->count(),
+        )
+            ->toBe(2);
+    });
+
     it('returns invalid_token for malformed tokens', function (): void {
         internalExecutorCallerNode();
 
@@ -355,14 +388,16 @@ function internal_executor_gateway_node(): Node
     return $node;
 }
 
-function internal_executor_operation_run(string $operationId): void
+function internal_executor_operation_run(string $operationId, ?string $attemptId = null): void
 {
-    if (DB::table('operation_runs')->where('operation_id', $operationId)->exists()) {
+    $attemptId ??= $operationId;
+
+    if (DB::table('operation_runs')->where('id', $attemptId)->exists()) {
         return;
     }
 
     DB::table('operation_runs')->insert([
-        'id' => (string) Str::uuid(),
+        'id' => $attemptId,
         'operation_id' => $operationId,
         'internal_command' => 'internal:executor:verify',
         'lane' => 'local',

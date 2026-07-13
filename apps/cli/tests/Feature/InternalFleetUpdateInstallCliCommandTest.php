@@ -249,6 +249,9 @@ describe('internal fleet update install cli command', function (): void {
         $systemdBin = make_fleet_update_install_cli_fake_systemd_bin($workspace);
         $artifactPath = "{$workspace}/artifact/orbit";
         $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
+        $agentConfigPath = "{$workspace}/agent.toml";
+        $agentCaPath = "{$workspace}/ca/root.crt";
+        $agentCaPem = "-----BEGIN CERTIFICATE-----\ndGVzdA==\n-----END CERTIFICATE-----\n";
         file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
         chmod(filename: $agentArtifactPath, permissions: 0o755);
         $sha256 = fleet_update_install_cli_sha256($artifactPath);
@@ -275,21 +278,37 @@ describe('internal fleet update install cli command', function (): void {
                     'sha256' => $agentSha256,
                     'bin_path' => "{$workspace}/bin/orbit-agent",
                 ],
+                'agent_service' => [
+                    'unit_name' => 'orbit-agent',
+                    'exec_start' => "{$workspace}/bin/orbit-agent",
+                    'config_path' => $agentConfigPath,
+                    'config' => "node_name = \"app-1\"\n",
+                    'ca_path' => $agentCaPath,
+                    'ca_pem' => $agentCaPem,
+                    'http_bind' => '10.6.0.2:9477',
+                    'user' => 'orbit',
+                ],
                 'role_images' => [],
             ], JSON_THROW_ON_ERROR),
         );
         $data = fleet_update_install_cli_success_data($output);
         $calls = file_get_contents("{$workspace}/systemd-calls.log");
+        $unit = file_get_contents("{$workspace}/converged-orbit-agent.service");
 
         expect($exitCode)
             ->toBe(0)
             ->and($data['stdout'] ?? '')
             ->toContain('probe_agent_unit')
+            ->toContain('converge_agent_unit')
             ->toContain('schedule_agent_restart')
             ->and($calls)
             ->toContain('systemd-run')
             ->toContain('--on-active=5s')
-            ->toContain('systemctl restart orbit-agent');
+            ->toContain('systemctl restart orbit-agent')
+            ->toContain('systemctl daemon-reload')
+            ->and($unit)
+            ->toContain("ExecStart={$workspace}/bin/orbit-agent")
+            ->toContain("Environment=ORBIT_AGENT_CONFIG={$agentConfigPath}");
     });
 
     it('restarts an unmanaged Orbit Agent listener when no service unit is present', function (): void {
@@ -939,6 +958,8 @@ function make_fleet_update_install_cli_fake_systemd_bin(string $workspace): stri
 {
     $bin = "{$workspace}/systemd-bin";
     $log = "{$workspace}/systemd-calls.log";
+    $unit = "{$workspace}/converged-orbit-agent.service";
+    $realInstall = trim((string) shell_exec('command -v install'));
 
     mkdir($bin, recursive: true);
     file_put_contents($log, '');
@@ -952,6 +973,21 @@ function make_fleet_update_install_cli_fake_systemd_bin(string $workspace): stri
         exit 0
         SH);
     chmod(filename: "{$bin}/systemctl", permissions: 0o755);
+
+    file_put_contents("{$bin}/install", <<<SH
+        #!/usr/bin/env sh
+        echo "install \$*" >> {$log}
+        last=""
+        for arg in "\$@"; do
+          last="\$arg"
+        done
+        if [ "\$last" = "/etc/systemd/system/orbit-agent.service" ]; then
+          cp "\$3" {$unit}
+          exit 0
+        fi
+        exec {$realInstall} "\$@"
+        SH);
+    chmod(filename: "{$bin}/install", permissions: 0o755);
 
     file_put_contents("{$bin}/systemd-run", <<<SH
         #!/usr/bin/env sh
