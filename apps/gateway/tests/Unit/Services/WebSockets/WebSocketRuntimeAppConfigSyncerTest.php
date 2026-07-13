@@ -136,7 +136,7 @@ it('writes an empty runtime app list when no bindings are enabled', function ():
 function websocketRuntimeAppConfigFromRequest(): array
 {
     $requests = Http::recorded(
-        fn (Request $request): bool => ($request['operation_id'] ?? null) === 'websocket-runtime.app-config:sync',
+        fn (Request $request): bool => agentPushRequestOperationIdMatchesToken($request),
     );
 
     expect($requests)->toHaveCount(1);
@@ -172,7 +172,7 @@ function websocketRuntimeAppConfigRequestMatches(Request $request, string $url, 
         $request->url() === $url
         && $node->wireguard_address === '10.6.0.44'
         && $request['binary'] === 'orbit'
-        && $request['operation_id'] === 'websocket-runtime.app-config:sync'
+        && agentPushRequestOperationIdMatchesToken($request)
         && is_array($argv)
         && ($argv[0] ?? null) === 'internal:websocket-runtime'
         && ($argv[1] ?? null) === 'app-config:sync'

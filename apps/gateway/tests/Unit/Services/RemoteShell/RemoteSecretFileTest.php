@@ -53,8 +53,8 @@ it('stages secrets through the agent-push local executor and removes them after 
         ->toBe('internal:secret-file')
         ->and($requests[0]['argv'][1] ?? null)
         ->toBe('stage')
-        ->and($requests[0]['operation_id'] ?? null)
-        ->toBe('secret-file-stage')
+        ->and(agentPushRequestOperationIdMatchesToken($requests[0]))
+        ->toBeTrue()
         ->and(json_decode((string) $requests[0]['input'], associative: true, flags: JSON_THROW_ON_ERROR))
         ->toMatchArray([
             'content_base64' => base64_encode('super-secret-token'),
@@ -63,8 +63,8 @@ it('stages secrets through the agent-push local executor and removes them after 
         ->toBe('internal:secret-file')
         ->and($requests[1]['argv'][1] ?? null)
         ->toBe('remove')
-        ->and($requests[1]['operation_id'] ?? null)
-        ->toBe('secret-file-remove')
+        ->and(agentPushRequestOperationIdMatchesToken($requests[1]))
+        ->toBeTrue()
         ->and(json_decode((string) $requests[1]['input'], associative: true, flags: JSON_THROW_ON_ERROR))
         ->toMatchArray([
             'path' => '/tmp/orbit-secret.abcd',

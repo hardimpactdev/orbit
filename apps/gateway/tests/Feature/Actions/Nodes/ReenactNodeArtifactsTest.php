@@ -140,6 +140,6 @@ function reenact_node_artifacts_request_matches(Request $request): bool
         && is_string($argv[2] ?? null)
         && str_starts_with($argv[2], '--operation-token=')
         && ($argv[3] ?? null) === '--json'
-        && $request['operation_id'] === 'node.gateway_endpoint.rotate'
+        && agentPushRequestOperationIdMatchesToken($request)
     );
 }

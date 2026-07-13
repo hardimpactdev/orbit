@@ -236,7 +236,7 @@ function managed_file_request_matches(
         is_array($argv)
         && $inputMatches
         && $request['binary'] === 'orbit'
-        && $request['operation_id'] === $operationId
+        && agentPushRequestOperationIdMatchesToken($request)
         && ($argv[0] ?? null) === 'internal:managed-file'
         && ($argv[1] ?? null) === $action
         && is_string($argv[2] ?? null)

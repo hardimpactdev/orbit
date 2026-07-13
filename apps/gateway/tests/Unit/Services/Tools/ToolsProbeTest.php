@@ -196,7 +196,7 @@ function tools_probe_agent_runtime_request_matches(Request $request, string $url
     return (
         $request->url() === $url
         && $request['binary'] === 'orbit'
-        && $request['operation_id'] === 'tool-agent-runtime.probe'
+        && agentPushRequestOperationIdMatchesToken($request)
         && $request['timeout_seconds'] === 10
         && $request['argv'][0] === 'internal:agent-runtime:probe'
         && str_starts_with((string) $request['argv'][1], '--operation-token=')

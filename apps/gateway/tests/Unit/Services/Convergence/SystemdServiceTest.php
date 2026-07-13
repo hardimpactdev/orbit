@@ -265,7 +265,7 @@ function systemd_service_request_matches(
     return (
         is_array($argv)
         && $request['binary'] === 'orbit'
-        && $request['operation_id'] === $operationId
+        && agentPushRequestOperationIdMatchesToken($request)
         && ($argv[0] ?? null) === 'internal:process-systemd-service'
         && ($argv[1] ?? null) === $action
         && ($argv[2] ?? null) === $service

@@ -1606,15 +1606,17 @@ function remote_local_executor_default_agent_push_request_matches(Request $reque
 {
     $body = $request->body();
     $payload = remote_local_executor_json_object($body);
+    $operationToken = remote_local_executor_agent_push_operation_token($payload);
 
     return (
         $request->url() === 'http://10.44.0.70:9477/v1/commands'
+        && $operationToken !== null
+        && ($payload['operation_id'] ?? null) === OperationToken::parse($operationToken)->id
         && ($payload['environment'] ?? null) === array_merge([
             'ORBIT_REQUEST_MARKER' => 'agent-push-env',
         ], remoteLocalExecutorEnvironment())
         && remote_local_executor_request_body_contains_all($body, [
             '"command_id":"orbit.agent.binary"',
-            '"operation_id":"00000000-0000-4000-8000-000000000406"',
             '"binary":"orbit"',
             '"argv":["internal:workspace-adapter:lookup","lookup","polyscope","--state-path=\/home\/orbit\/.polyscope\/state\'s.db","--operation-token=',
             '--json"',
@@ -1627,17 +1629,42 @@ function remote_local_executor_default_agent_push_request_matches(Request $reque
 function remote_local_executor_stream_agent_push_request_matches(Request $request): bool
 {
     $body = $request->body();
+    $payload = remote_local_executor_json_object($body);
+    $operationToken = remote_local_executor_agent_push_operation_token($payload);
 
-    return $request->url() === 'http://10.44.0.70:9477/v1/commands/stream'
-    && remote_local_executor_request_body_contains_all($body, [
-        '"command_id":"orbit.agent.binary"',
-        '"operation_id":"00000000-0000-4000-8000-000000000407"',
-        '"binary":"orbit"',
-        '"argv":["internal:process-logs","--operation-token=',
-        '--json"',
-        '"input":"{\\"follow\\":true}"',
-        '"stream":true',
-    ]);
+    return (
+        $request->url() === 'http://10.44.0.70:9477/v1/commands/stream'
+        && $operationToken !== null
+        && ($payload['operation_id'] ?? null) === OperationToken::parse($operationToken)->id
+        && remote_local_executor_request_body_contains_all($body, [
+            '"command_id":"orbit.agent.binary"',
+            '"binary":"orbit"',
+            '"argv":["internal:process-logs","--operation-token=',
+            '--json"',
+            '"input":"{\\"follow\\":true}"',
+            '"stream":true',
+        ])
+    );
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ */
+function remote_local_executor_agent_push_operation_token(array $payload): ?string
+{
+    $argv = $payload['argv'] ?? null;
+
+    if (! is_array($argv)) {
+        return null;
+    }
+
+    foreach ($argv as $argument) {
+        if (is_string($argument) && str_starts_with($argument, '--operation-token=')) {
+            return substr($argument, strlen('--operation-token='));
+        }
+    }
+
+    return null;
 }
 
 function remote_local_executor_node_id(Node $node): int

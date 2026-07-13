@@ -2390,7 +2390,7 @@ function nodes_probe_executor_verify_request_matches(Request $request, string $u
         && $request['argv'][0] === 'internal:executor:verify'
         && str_starts_with((string) $request['argv'][1], '--operation-token=')
         && $request['argv'][2] === '--json'
-        && $request['operation_id'] === 'node.reachable'
+        && agentPushRequestOperationIdMatchesToken($request)
     );
 }
 
@@ -2402,7 +2402,7 @@ function nodes_probe_agent_runtime_request_matches(Request $request): bool
         && $request['argv'][0] === 'internal:agent-runtime:probe'
         && str_starts_with((string) $request['argv'][1], '--operation-token=')
         && $request['argv'][2] === '--json'
-        && $request['operation_id'] === 'node-agent-runtime.probe'
+        && agentPushRequestOperationIdMatchesToken($request)
     );
 }
 

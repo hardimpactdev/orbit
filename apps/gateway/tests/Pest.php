@@ -19,12 +19,14 @@ use App\Services\Vpn\VpnBackend;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Testing\ParallelRunner;
 use Orbit\Core\Enums\InternalCommand;
 use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Core\Security\OperationToken;
 use Orbit\Sdk\Laravel\Requests\Gateway\ShowGatewayIdentityRequest;
 use Orbit\Sdk\Laravel\Testing\GatewayMockClient;
 use Orbit\Sdk\Laravel\Testing\GatewayMockResponse;
@@ -515,6 +517,36 @@ function orbitPestTestFilename(object $testCase): string
     }
 
     return is_string($filename) ? str_replace('\\', '/', $filename) : '';
+}
+
+/**
+ * @param  array<string, mixed>|Request  $request
+ */
+function agentPushRequestOperationIdMatchesToken(array|Request $request): bool
+{
+    $operationId = $request['operation_id'] ?? null;
+    $argv = $request['argv'] ?? null;
+
+    if (! is_string($operationId) || ! is_array($argv)) {
+        return false;
+    }
+
+    foreach ($argv as $argument) {
+        if (! is_string($argument) || ! str_starts_with($argument, '--operation-token=')) {
+            continue;
+        }
+
+        try {
+            return hash_equals(
+                OperationToken::parse(substr($argument, strlen('--operation-token=')))->id,
+                $operationId,
+            );
+        } catch (InvalidArgumentException) {
+            return false;
+        }
+    }
+
+    return false;
 }
 
 /**

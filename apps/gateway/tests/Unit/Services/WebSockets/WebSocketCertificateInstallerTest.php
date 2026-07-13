@@ -195,7 +195,7 @@ function websocket_certificate_install_request_matches(Request $request, string 
     return (
         $request->url() === $url
         && $request['binary'] === 'orbit'
-        && $request['operation_id'] === 'websocket-certificate.install'
+        && agentPushRequestOperationIdMatchesToken($request)
         && is_array($argv)
         && ($argv[0] ?? null) === 'internal:site-certificate:install'
         && str_starts_with((string) ($argv[1] ?? ''), '--operation-token=')

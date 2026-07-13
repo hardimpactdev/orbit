@@ -482,7 +482,7 @@ function unattended_upgrades_probe_request_matches(Request $request): bool
         && strlen($request['argv'][2]) === 64
         && str_starts_with((string) $request['argv'][3], '--operation-token=')
         && $request['argv'][4] === '--json'
-        && $request['operation_id'] === 'unattended-upgrades.probe'
+        && agentPushRequestOperationIdMatchesToken($request)
     );
 }
 
@@ -494,7 +494,7 @@ function unattended_upgrades_apply_request_matches(Request $request): bool
         && $request['argv'][0] === 'internal:unattended-upgrades:apply'
         && str_starts_with((string) $request['argv'][1], '--operation-token=')
         && $request['argv'][2] === '--json'
-        && $request['operation_id'] === 'unattended-upgrades.apply'
+        && agentPushRequestOperationIdMatchesToken($request)
     );
 }
 

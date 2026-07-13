@@ -374,7 +374,7 @@ describe('Solo proxy API', function (): void {
             return (
                 $request->url() === 'http://10.6.0.3:9477/v1/commands'
                 && $request['binary'] === 'orbit'
-                && $request['operation_id'] === 'solo-upstream-request'
+                && agentPushRequestOperationIdMatchesToken($request)
                 && $request['argv'][0] === 'internal:solo-upstream-request'
                 && str_starts_with((string) $request['argv'][1], '--operation-token=')
                 && $request['argv'][2] === '--json'

@@ -355,7 +355,7 @@ describe('SchedulesProbe', function (): void {
                 && $request['argv'][0] === 'internal:executor:verify'
                 && str_starts_with((string) $request['argv'][1], '--operation-token=')
                 && $request['argv'][2] === '--json'
-                && $request['operation_id'] === 'schedule.target.reachable'
+                && agentPushRequestOperationIdMatchesToken($request)
             ),
         );
     });

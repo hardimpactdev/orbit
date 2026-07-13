@@ -74,7 +74,7 @@ function node_identity_public_key_request_matches(Request $request, string $url)
     return (
         $request->url() === $url
         && $request['binary'] === 'orbit'
-        && $request['operation_id'] === 'node-identity.wireguard-public-key'
+        && agentPushRequestOperationIdMatchesToken($request)
         && $request['timeout_seconds'] === 15
         && ($argv[0] ?? null) === 'internal:wireguard-interface-public-key:read'
         && is_string($argv[1] ?? null)

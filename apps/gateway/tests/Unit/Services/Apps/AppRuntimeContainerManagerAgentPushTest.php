@@ -263,7 +263,6 @@ function app_runtime_manager_macos_node(): Node
 
 /**
  * @param  array{
- *     operation_id: string,
  *     kind: string,
  *     container_name: string,
  *     expected_hash: string,
@@ -286,7 +285,7 @@ function app_runtime_manager_request_matches(Request $request, array $expected):
         ($argv[1] ?? null) === 'container:apply',
         str_starts_with($argv[2] ?? '', '--operation-token='),
         ($argv[3] ?? null) === '--json',
-        ($payload['operation_id'] ?? null) === $expected['operation_id'],
+        agentPushRequestOperationIdMatchesToken($payload),
         ($spec['kind'] ?? null) === $expected['kind'],
         ($spec['name'] ?? null) === $expected['container_name'],
         ($spec['expected_hash'] ?? null) === $expected['expected_hash'],

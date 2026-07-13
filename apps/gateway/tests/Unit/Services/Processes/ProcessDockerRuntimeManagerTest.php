@@ -84,7 +84,7 @@ it('converges a missing docker process container through the agent-push local ex
             && $request['argv'][2] === '--json'
             && $request['timeout_seconds'] === 120
             && $request['stream'] === true
-            && $request['operation_id'] === 'process.docker.apply'
+            && agentPushRequestOperationIdMatchesToken($request)
             && is_array($spec)
             && $input['action'] === 'apply'
             && $spec['name'] === 'orbit_docs_main_queue'
@@ -203,7 +203,7 @@ it('runs docker container lifecycle actions through the agent-push local executo
             && $request['argv'][2] === '--json'
             && $request['timeout_seconds'] === 120
             && $request['stream'] === true
-            && $request['operation_id'] === "process.docker.{$action}"
+            && agentPushRequestOperationIdMatchesToken($request)
             && $input === [
                 'action' => $action,
                 'container' => 'orbit_docs_main_queue',

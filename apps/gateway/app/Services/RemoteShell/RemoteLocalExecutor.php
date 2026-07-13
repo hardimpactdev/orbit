@@ -163,7 +163,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             );
 
             $envelope = NodeCommandEnvelope::agentPushBinary(
-                operationId: $operationId,
+                operationId: $run->id,
                 binary: 'orbit',
                 argv: $dispatch['argv'],
                 input: $this->input($transportOptions),
@@ -368,7 +368,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             $streamResult = $this->streamAgentPush(
                 node: $node,
                 dispatch: $dispatch,
-                operationId: $operationId,
+                operationId: $run->id,
                 transportOptions: $transportOptions,
                 onOutput: $onOutput,
             );

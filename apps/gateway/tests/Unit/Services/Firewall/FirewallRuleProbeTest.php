@@ -101,7 +101,7 @@ function firewall_rule_probe_request_matches(Request $request): bool
     return (
         $request->url() === 'http://10.44.0.81:9477/v1/commands'
         && $request['binary'] === 'orbit'
-        && $request['operation_id'] === 'firewall.rule.probe'
+        && agentPushRequestOperationIdMatchesToken($request)
         && $request['timeout_seconds'] === 15
         && $request['argv'][0] === 'internal:firewall-rule:probe'
         && str_starts_with((string) $request['argv'][1], '--operation-token=')

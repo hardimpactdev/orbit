@@ -58,8 +58,8 @@ it('runs node doctor self through agent-push internal command', function (): voi
         ->toHaveCount(1)
         ->and($requests[0]['argv'] ?? [])
         ->toContain('internal:doctor-self')
-        ->and($requests[0]['operation_id'] ?? null)
-        ->toBe((string) $run->id);
+        ->and(agentPushRequestOperationIdMatchesToken($requests[0]))
+        ->toBeTrue();
 });
 
 it('returns null when agent-push doctor transport fails', function (): void {

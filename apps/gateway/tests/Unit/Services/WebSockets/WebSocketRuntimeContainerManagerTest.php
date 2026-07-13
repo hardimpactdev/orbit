@@ -69,7 +69,7 @@ it('applies websocket runtime containers through the agent-push local executor',
             && $request['argv'][3] === '--json'
             && $request['timeout_seconds'] === 120
             && $request['stream'] === true
-            && $request['operation_id'] === 'websocket-runtime-container-apply'
+            && agentPushRequestOperationIdMatchesToken($request)
             && is_array($spec)
             && $spec['name'] === 'orbit-websocket-app-dev-1'
             && $spec['expected_hash'] === $container->specHash()

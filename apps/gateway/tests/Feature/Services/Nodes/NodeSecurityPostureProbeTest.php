@@ -234,7 +234,7 @@ function node_security_posture_request_matches(Request $request, string $managed
         && $request['argv'][1] === $managedUser
         && str_starts_with((string) $request['argv'][2], '--operation-token=')
         && $request['argv'][3] === '--json'
-        && $request['operation_id'] === 'node-security-posture.probe'
+        && agentPushRequestOperationIdMatchesToken($request)
     );
 }
 

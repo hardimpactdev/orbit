@@ -76,7 +76,7 @@ it('installs the WebSocket Reverb runtime source through the agent-push local ex
         return (
             $request->url() === 'http://10.6.0.44:9477/v1/commands'
             && $request['binary'] === 'orbit'
-            && $request['operation_id'] === 'websocket-runtime-source-install'
+            && agentPushRequestOperationIdMatchesToken($request)
             && $request['timeout_seconds'] === 360
             && $request['stream'] === true
             && $request['argv'][0] === 'internal:websocket-runtime'

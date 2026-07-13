@@ -253,7 +253,7 @@ function site_certificate_install_request_matches(Request $request, string $url,
     return (
         $request->url() === $url
         && $request['binary'] === 'orbit'
-        && $request['operation_id'] === 'site-certificate.install'
+        && agentPushRequestOperationIdMatchesToken($request)
         && is_array($argv)
         && ($argv[0] ?? null) === 'internal:site-certificate:install'
         && str_starts_with((string) ($argv[1] ?? ''), '--operation-token=')

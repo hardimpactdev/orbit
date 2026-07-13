@@ -121,7 +121,7 @@ function workspace_reachability_request_matches(Request $request, string $url): 
         && ($argv[0] ?? null) === 'internal:executor:verify'
         && str_starts_with((string) ($argv[1] ?? ''), '--operation-token=')
         && ($argv[2] ?? null) === '--json'
-        && $request['operation_id'] === 'workspace.node.reachable'
+        && agentPushRequestOperationIdMatchesToken($request)
     );
 }
 

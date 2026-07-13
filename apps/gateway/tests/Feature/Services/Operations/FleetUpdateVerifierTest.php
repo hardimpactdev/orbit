@@ -141,8 +141,8 @@ it('verifies gateway scheduler workload CLI and required role images', function 
         ])
         ->and($requests[0]['input'])
         ->toBe(json_encode(['bin_path' => '/home/orbit/.local/bin/orbit'], JSON_THROW_ON_ERROR))
-        ->and($requests[0]['operation_id'])
-        ->toBe($run->id)
+        ->and(agentPushRequestOperationIdMatchesToken($requests[0]))
+        ->toBeTrue()
         ->and(array_column($requests, 'node'))
         ->toBe([
             '10.44.0.11',

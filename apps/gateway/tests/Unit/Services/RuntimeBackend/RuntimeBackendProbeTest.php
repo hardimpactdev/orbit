@@ -167,7 +167,7 @@ function runtime_backend_probe_request_matches(Request $request, string $provide
         && $request['argv'][1] === $provider
         && str_starts_with((string) $request['argv'][2], '--operation-token=')
         && $request['argv'][3] === '--json'
-        && $request['operation_id'] === 'runtime-backend.probe'
+        && agentPushRequestOperationIdMatchesToken($request)
     );
 }
 

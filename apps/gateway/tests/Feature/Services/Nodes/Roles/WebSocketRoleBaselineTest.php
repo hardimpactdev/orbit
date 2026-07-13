@@ -332,7 +332,7 @@ function webSocketBaselineRuntimeRequestMatches(Request $request, string $action
 
     return (
         $request['binary'] === 'orbit'
-        && $request['operation_id'] === $operationId
+        && agentPushRequestOperationIdMatchesToken($request)
         && is_array($argv)
         && ($argv[0] ?? null) === 'internal:websocket-runtime'
         && ($argv[1] ?? null) === $action
@@ -345,7 +345,7 @@ function webSocketBaselineCertificateRequestMatches(Request $request): bool
 
     if (
         $request['binary'] !== 'orbit'
-        || $request['operation_id'] !== 'websocket-certificate.install'
+        || ! agentPushRequestOperationIdMatchesToken($request)
         || ! is_array($argv)
         || ($argv[0] ?? null) !== 'internal:site-certificate:install'
         || ! str_starts_with((string) ($argv[1] ?? ''), '--operation-token=')
