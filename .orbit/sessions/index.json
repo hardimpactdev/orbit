@@ -1,7 +1,7 @@
 {
     "schema_version": 2,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 100,
+    "record_count": 101,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -3285,6 +3285,27 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "state": "land",
+            "review_status": "passed",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-07-13-093156-codex-agent-transport-drift-followup",
+            "slug": "codex-agent-transport-drift-followup",
+            "timestamp": "2026-07-13-093156",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "state": "accepted",
             "review_status": "passed",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",

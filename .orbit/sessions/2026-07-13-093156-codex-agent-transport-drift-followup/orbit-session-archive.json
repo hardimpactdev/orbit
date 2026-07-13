@@ -1,0 +1,21 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-13T07:31:56+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-agent-transport-drift-followup/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-13-093156-codex-agent-transport-drift-followup",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "2dbe858d5544793e3316880c17ab5af0f84cef615918f43988a9ffcaa5a96d5e"
+    },
+    "branch": "codex/agent-transport-drift-followup",
+    "candidate_commit": "9b4310df22693b5d9b9535de766d68e6ca87339d",
+    "accepted_feature_tip": "9b4310df22693b5d9b9535de766d68e6ca87339d",
+    "accepted_main_tip": "9c631156b11ff122d387bf4c103f5ead5f6cad78",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
