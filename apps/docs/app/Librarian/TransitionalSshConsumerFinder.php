@@ -23,9 +23,9 @@ final readonly class TransitionalSshConsumerFinder
 
     /** @var list<string> */
     private const array EDGE_PATTERNS = [
-        'typed RemoteShell/RemoteExecutor/StartsRemoteShellProcesses run/start call',
+        'typed or container-resolved RemoteShell/RemoteExecutor/StartsRemoteShellProcesses run/start call',
         'SshCommandBuilder ssh/enforceForNode/scpTo/scpToNode call',
-        'RemoteHostExecutor run/start call',
+        'SshRemoteShell/RemoteHostExecutor run/start call',
         'NodeTransportPreference',
         'withNodeTransportPreference',
         'X-Orbit-Node-Transport-Preference',
@@ -53,6 +53,7 @@ final readonly class TransitionalSshConsumerFinder
         'RemoteExecutor' => 'remote-executor',
         'StartsRemoteShellProcesses' => 'remote-shell-processes',
         'RemoteHostExecutor' => 'remote-host-executor',
+        'SshRemoteShell' => 'ssh-remote-shell',
         'SshCommandBuilder' => 'ssh-builder',
     ];
 
@@ -62,6 +63,7 @@ final readonly class TransitionalSshConsumerFinder
         'App\\Contracts\\StartsRemoteShellProcesses' => 'remote-shell-processes',
         'App\\Services\\RemoteShell\\RemoteExecutor' => 'remote-executor',
         'App\\Services\\RemoteShell\\RemoteHostExecutor' => 'remote-host-executor',
+        'App\\Services\\RemoteShell\\SshRemoteShell' => 'ssh-remote-shell',
         'App\\Services\\RemoteShell\\SshCommandBuilder' => 'ssh-builder',
     ];
 
@@ -158,7 +160,10 @@ final readonly class TransitionalSshConsumerFinder
         $codeByLine = $this->codeByLine($contents);
         $code = implode('', $codeByLine);
         $typePrefixes = $this->typePrefixes($code);
-        $receivers = $this->typedReceivers($code, $typePrefixes);
+        $receivers = array_merge(
+            $this->typedReceivers($code, $typePrefixes),
+            $this->containerResolvedReceivers($code, $typePrefixes),
+        );
 
         foreach ($codeByLine as $line => $lineCode) {
             $callCandidate = [
@@ -361,6 +366,35 @@ final readonly class TransitionalSshConsumerFinder
             $matches = [];
             $matchCount = preg_match_all(
                 '/'.preg_quote(str: $type, delimiter: '/').'\$(\w+)/',
+                $code,
+                $matches,
+            );
+
+            if ($matchCount === false || $matchCount < 1) {
+                continue;
+            }
+
+            foreach ($matches[1] as $receiver) {
+                $receivers[$receiver] = $prefix;
+            }
+        }
+
+        return $receivers;
+    }
+
+    /**
+     * @param  array<string, string>  $typePrefixes
+     * @return array<string, string>
+     */
+    private function containerResolvedReceivers(string $code, array $typePrefixes): array
+    {
+        $receivers = [];
+
+        foreach ($typePrefixes as $type => $prefix) {
+            $matches = [];
+            $typePattern = preg_quote(str: $type, delimiter: '/');
+            $matchCount = preg_match_all(
+                sprintf('/(?:\\$this->|\\$)(\\w+)=app\\(%s::class,?\\);/', $typePattern),
                 $code,
                 $matches,
             );

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -134,6 +135,119 @@ it('requires agent-push transport before running lifecycle scripts', function ()
         ->assertJsonPath('error.meta.node', 'mac-1');
 
     expect($shell->scripts)->toBe([]);
+});
+
+it('reports direct log transport failures as an unreachable Agent', function (): void {
+    $caller = createToolLifecycleApiCallerNode();
+    $node = Node::factory()->create([
+        'name' => 'app-caddy-1',
+        'platform' => 'ubuntu_24-04',
+        'status' => 'active',
+    ]);
+    assignToolLifecycleApiRole($node, role: 'app-dev');
+    grantToolLifecycleApiAccess($caller, $node, ['tool:logs']);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'caddy',
+    ]);
+    bind_unavailable_tool_script_dispatcher();
+
+    $response = $this->call(
+        'GET',
+        '/api/tools/caddy/logs',
+        ['node' => 'app-caddy-1'],
+        [],
+        [],
+        tool_lifecycle_api_server_headers(),
+    );
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node.agent_unreachable')
+        ->assertJsonPath('error.meta.reason', 'agent_push_unavailable')
+        ->assertJsonPath('error.meta.node', 'app-caddy-1')
+        ->assertJsonPath('error.meta.tool', 'caddy')
+        ->assertJsonPath('error.meta.action', 'logs');
+});
+
+it('reports process-backed lifecycle transport failures as an unreachable Agent', function (): void {
+    $caller = createToolLifecycleApiCallerNode();
+    $node = Node::factory()->create([
+        'name' => 'app-opencode-lifecycle-1',
+        'platform' => 'ubuntu_24-04',
+        'status' => 'active',
+    ]);
+    assignToolLifecycleApiRole($node, role: 'app-dev');
+    grantToolLifecycleApiAccess($caller, $node, ['tool:start']);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'opencode-cli',
+    ]);
+    ProcessModel::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'opencode-server',
+            'runtime' => ProcessRuntime::Systemd,
+            'tool' => 'opencode-cli',
+        ]);
+    bind_unavailable_tool_script_dispatcher();
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/opencode-cli/start',
+        ['node' => 'app-opencode-lifecycle-1'],
+        [],
+        [],
+        tool_lifecycle_api_server_headers(),
+    );
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node.agent_unreachable')
+        ->assertJsonPath('error.meta.reason', 'agent_push_unavailable')
+        ->assertJsonPath('error.meta.node', 'app-opencode-lifecycle-1')
+        ->assertJsonPath('error.meta.tool', 'opencode-cli')
+        ->assertJsonPath('error.meta.action', 'start');
+});
+
+it('reports process-backed log transport failures as an unreachable Agent', function (): void {
+    $caller = createToolLifecycleApiCallerNode();
+    $node = Node::factory()->create([
+        'name' => 'app-opencode-logs-1',
+        'platform' => 'ubuntu_24-04',
+        'status' => 'active',
+        'wireguard_address' => null,
+    ]);
+    assignToolLifecycleApiRole($node, role: 'app-dev');
+    grantToolLifecycleApiAccess($caller, $node, ['tool:logs']);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'opencode-cli',
+    ]);
+    ProcessModel::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'opencode-server',
+            'runtime' => ProcessRuntime::Systemd,
+            'tool' => 'opencode-cli',
+        ]);
+
+    $response = $this->call(
+        'GET',
+        '/api/tools/opencode-cli/logs',
+        ['node' => 'app-opencode-logs-1'],
+        [],
+        [],
+        tool_lifecycle_api_server_headers(),
+    );
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node.agent_unreachable')
+        ->assertJsonPath('error.meta.reason', 'agent_push_unavailable')
+        ->assertJsonPath('error.meta.node', 'app-opencode-logs-1')
+        ->assertJsonPath('error.meta.tool', 'opencode-cli')
+        ->assertJsonPath('error.meta.action', 'logs');
 });
 
 it('fails unsupported lifecycle tools before running host commands', function (): void {

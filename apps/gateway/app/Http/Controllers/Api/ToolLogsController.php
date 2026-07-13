@@ -141,7 +141,11 @@ final class ToolLogsController implements Loggable
         $status = match ($failure->code) {
             'tool.not_found' => 404,
             'authorization_failed' => 403,
-            'tool.runtime_missing', 'tool.runtime_ambiguous', 'tool.unsupported_on_node' => 422,
+            'node.agent_unreachable',
+            'tool.runtime_missing',
+            'tool.runtime_ambiguous',
+            'tool.unsupported_on_node',
+                => 422,
             'tool.remote_action_failed' => 502,
             default => 400,
         };

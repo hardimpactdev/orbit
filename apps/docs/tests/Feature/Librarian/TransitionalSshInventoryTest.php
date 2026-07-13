@@ -191,6 +191,49 @@ it('classifies aliased SSH types in receiver and container calls', function (): 
         ->toBeEmpty();
 });
 
+it('classifies calls through container-resolved SSH receivers', function (): void {
+    $classification = app(TransitionalSshConsumerClassifier::class)->classify(consumers: [
+        'apps/gateway/app/Example.php' => <<<'PHP'
+            <?php
+            use App\Contracts\RemoteShell;
+            $shell = app(RemoteShell::class);
+            // @orbit-ssh-lane provisioning-ssh
+            $shell->run($node, 'hostname');
+            PHP,
+    ]);
+
+    expect($classification['provisioning_ssh'])
+        ->toBe([[
+            'path' => 'apps/gateway/app/Example.php',
+            'call_line' => 5,
+            'marker_line' => 4,
+            'edge' => 'remote-shell.run',
+        ]])
+        ->and($classification['unmarked_consumers'])
+        ->toBeEmpty();
+});
+
+it('classifies direct calls through the concrete SSH remote shell', function (): void {
+    $classification = app(TransitionalSshConsumerClassifier::class)->classify(consumers: [
+        'apps/gateway/app/Example.php' => <<<'PHP'
+            <?php
+            use App\Services\RemoteShell\SshRemoteShell;
+            // @orbit-ssh-lane provisioning-ssh
+            app(SshRemoteShell::class)->run($node, 'hostname');
+            PHP,
+    ]);
+
+    expect($classification['provisioning_ssh'])
+        ->toBe([[
+            'path' => 'apps/gateway/app/Example.php',
+            'call_line' => 4,
+            'marker_line' => 3,
+            'edge' => 'ssh-remote-shell.run',
+        ]])
+        ->and($classification['unmarked_consumers'])
+        ->toBeEmpty();
+});
+
 it('ignores type-only SSH dependencies', function (): void {
     $classification = app(TransitionalSshConsumerClassifier::class)->classify(consumers: [
         'apps/gateway/app/Example.php' => <<<'PHP'
@@ -255,24 +298,41 @@ it('passes the transitional SSH inventory freshness command', function (): void 
 
 it('does not advertise the removed node transport selector in active docs or Orbit skill references', function (): void {
     foreach (active_agent_transport_reference_files() as $path => $contents) {
-        expect($contents, $path)
-            ->not->toContain('--node-transport')
-            ->not->toContain('transitional-ssh-fallback')
-            ->not->toContain('exact-marked transitional cleanup seam')
-            ->not->toContain('tracked SSH seam');
+        foreach ([
+            '--node-transport',
+            'transitional-ssh-fallback',
+            'exact-marked transitional cleanup seam',
+            'tracked SSH seam',
+        ] as $retiredContract) {
+            expect($contents)->not->toContain($retiredContract);
+        }
 
         if (str_starts_with($path, '.agents/skills/orbit/references/')) {
-            expect($contents, $path)->not->toContain('transitional-ssh');
+            expect($contents)->not->toContain('transitional-ssh');
         }
     }
 });
 
 it('does not publish retired SSH-era machine contracts in active docs', function (): void {
-    foreach (active_agent_transport_reference_files() as $path => $contents) {
-        expect($contents, $path)
-            ->not->toContain('app.ssh_failure')
-            ->not->toContain('node.app_ssh_unreachable')
-            ->not->toContain('node_transport_required');
+    foreach (active_agent_transport_reference_files() as $contents) {
+        foreach ([
+            'app.ssh_failure',
+            'node.app_ssh_unreachable',
+            'node_transport_required',
+        ] as $retiredContract) {
+            expect($contents)->not->toContain($retiredContract);
+        }
+    }
+});
+
+it('does not retain pre-migration RemoteShell caller audits in active docs', function (): void {
+    foreach (active_agent_transport_reference_files() as $contents) {
+        foreach ([
+            '# RemoteShell Env Caller Audit',
+            '`SshRemoteShell::run` | 13',
+        ] as $staleAuditContract) {
+            expect($contents)->not->toContain($staleAuditContract);
+        }
     }
 });
 
@@ -288,12 +348,7 @@ function active_agent_transport_reference_files(): array
     $files = [];
 
     foreach ([
-        'apps/docs/content/domains',
-        'apps/docs/content/architecture.md',
-        'apps/docs/content/concepts.md',
-        'apps/docs/content/execution-lanes.md',
-        'apps/docs/content/mission.md',
-        'apps/docs/content/tech-stack.md',
+        'apps/docs/content',
         '.agents/skills/orbit/references',
     ] as $relativePath) {
         $path = "{$repositoryRoot}/{$relativePath}";
@@ -321,7 +376,10 @@ function active_agent_transport_reference_files(): array
                 continue;
             }
 
-            $relativeFile = ltrim(str_replace($repositoryRoot, '', $file->getPathname()), '/');
+            $relativeFile = ltrim(
+                string: str_replace(search: $repositoryRoot, replace: '', subject: $file->getPathname()),
+                characters: '/',
+            );
             $files[$relativeFile] = $contents;
         }
     }

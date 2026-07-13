@@ -6,9 +6,9 @@
             "apps/cli/app"
         ],
         "edge_patterns": [
-            "typed RemoteShell/RemoteExecutor/StartsRemoteShellProcesses run/start call",
+            "typed or container-resolved RemoteShell/RemoteExecutor/StartsRemoteShellProcesses run/start call",
             "SshCommandBuilder ssh/enforceForNode/scpTo/scpToNode call",
-            "RemoteHostExecutor run/start call",
+            "SshRemoteShell/RemoteHostExecutor run/start call",
             "NodeTransportPreference",
             "withNodeTransportPreference",
             "X-Orbit-Node-Transport-Preference",
