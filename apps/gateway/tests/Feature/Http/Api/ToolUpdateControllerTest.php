@@ -124,8 +124,9 @@ it('requires agent-push transport before running tool update scripts', function 
 
     $response
         ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'node_transport_required')
-        ->assertJsonPath('error.meta.required', 'agent-push');
+        ->assertJsonPath('error.code', 'node.agent_unreachable')
+        ->assertJsonPath('error.meta.reason', 'agent_push_unavailable')
+        ->assertJsonPath('error.meta.node', 'app-update-api-1');
 
     expect($shell->scripts)->toBe([]);
 });

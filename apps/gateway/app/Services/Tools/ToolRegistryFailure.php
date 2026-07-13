@@ -156,10 +156,10 @@ final readonly class ToolRegistryFailure
     /**
      * @param  array<string, mixed>  $meta
      */
-    public static function nodeTransportRequired(string $message, array $meta = []): self
+    public static function agentUnreachable(string $message, array $meta = []): self
     {
         return new self(
-            code: 'node_transport_required',
+            code: 'node.agent_unreachable',
             message: $message,
             meta: $meta,
         );

@@ -63,7 +63,6 @@ intent, certificate material, history, and files).
 
 ```bash
 orbit workspace:remove [<name>] [--app=<name>] [--keep-files] [--force] [--json]
-                       [--node-transport=transitional-ssh-fallback]
 ```
 
 `--keep-files` preserves the workspace directory on the owning app-role node;

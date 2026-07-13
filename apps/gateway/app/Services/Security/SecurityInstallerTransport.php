@@ -12,7 +12,6 @@ use RuntimeException;
 
 final readonly class SecurityInstallerTransport
 {
-    // @orbit-ssh-lane provisioning-ssh
     public function __construct(
         private ToolScriptDispatcher $scripts,
     ) {}
@@ -24,6 +23,7 @@ final readonly class SecurityInstallerTransport
                 throw new RuntimeException('Provisioning security convergence requires its SSH bootstrap shell.');
             }
 
+            // @orbit-ssh-lane provisioning-ssh
             return $provisioningShell->run($node, $script, [
                 'timeout' => $timeout,
                 'throw' => false,

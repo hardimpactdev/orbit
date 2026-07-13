@@ -44,7 +44,7 @@ it('emits the two check steps before the gateway phase and reports outdated node
         ->appDev()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'installed_cli' => checkStepsInstalledCliArtifact(),
         ]);
     Node::factory()

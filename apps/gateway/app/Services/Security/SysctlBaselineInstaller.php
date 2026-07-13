@@ -9,7 +9,6 @@ use App\Models\Node;
 
 final class SysctlBaselineInstaller implements SecurityInstaller
 {
-    // @orbit-ssh-lane provisioning-ssh
     public function installFor(Node $node, ?RemoteShell $provisioningShell = null): InstallReport
     {
         $result = app(SecurityInstallerTransport::class)->run($node, $provisioningShell, $this->script(), 120);

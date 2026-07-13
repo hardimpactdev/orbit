@@ -31,10 +31,12 @@ orbit node:manage --json
 1. Reads the current gateway identity with `/api/me`.
 2. Confirms the identity is active and has no active node roles.
 3. Detects the local operating system platform.
-4. Provisionally stores `node.user`, `node.platform`, and `node.managed=true`.
+4. Stores `node.user`, `node.platform`, and `node.managed=true` as durable
+   management intent.
 5. Dispatches a typed Agent runtime probe over the node's WireGuard address.
-6. Keeps the managed state only when the Agent probe succeeds; otherwise the
-   prior node metadata is restored.
+6. Reports `node.agent_unreachable` when the probe fails while retaining the
+   stored intent so `doctor --family=node` can report the Agent drift for
+   repair.
 
 The command does not add a node role, create a transport object, modify public
 hostnames, install SSH keys, or open public SSH.

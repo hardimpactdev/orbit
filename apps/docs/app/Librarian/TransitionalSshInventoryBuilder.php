@@ -18,8 +18,8 @@ final readonly class TransitionalSshInventoryBuilder
      *     schema_version: int,
      *     generated_from: array<string, mixed>,
      *     policy: array<string, string>,
-     *     provisioning_ssh: list<array{path: string, marker_line: int}>,
-     *     transitional_ssh: list<array{path: string, marker_line: int}>,
+     *     provisioning_ssh: list<array{path: string, call_line: int, marker_line: int, edge: string}>,
+     *     transitional_ssh: list<array{path: string, call_line: int, marker_line: int, edge: string}>,
      *     unmarked_consumers: list<string>,
      * }
      */
@@ -28,12 +28,11 @@ final readonly class TransitionalSshInventoryBuilder
         $classifiedConsumers = $this->consumerClassifier->classify($this->consumerFinder->find());
 
         return [
-            'schema_version' => 1,
+            'schema_version' => 2,
             'generated_from' => [
                 'source_roots' => $this->consumerFinder->sourceRoots(),
-                'consumer_patterns' => $this->consumerFinder->consumerPatterns(),
+                'edge_patterns' => $this->consumerFinder->edgePatterns(),
                 'cli_selector_patterns' => $this->consumerFinder->cliSelectorPatterns(),
-                'explicit_executor_paths' => $this->consumerFinder->explicitExecutorPaths(),
             ],
             'policy' => [
                 'permanent_lane' => 'provisioning/bootstrap only',
@@ -41,7 +40,12 @@ final readonly class TransitionalSshInventoryBuilder
                 'transitional_marker' => $this->consumerClassifier->transitionalMarker(),
                 'steady_state_lane' => 'Agent push or gateway-local execution',
             ],
-            ...$classifiedConsumers,
+            'provisioning_ssh' => $classifiedConsumers['provisioning_ssh'],
+            'transitional_ssh' => $classifiedConsumers['transitional_ssh'],
+            'unmarked_consumers' => array_map(
+                static fn (array $edge): string => "{$edge['path']}:{$edge['call_line']} ({$edge['edge']})",
+                $classifiedConsumers['unmarked_consumers'],
+            ),
         ];
     }
 

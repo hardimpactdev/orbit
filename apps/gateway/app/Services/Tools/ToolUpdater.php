@@ -257,7 +257,7 @@ final readonly class ToolUpdater
                 ),
             );
         } catch (RemoteLocalExecutorTransportFailed $exception) {
-            return $this->toolScriptDispatcher->nodeTransportRequired($tool, 'update', $exception);
+            return $this->toolScriptDispatcher->agentUnreachable($node, $tool, 'update', $exception);
         }
     }
 

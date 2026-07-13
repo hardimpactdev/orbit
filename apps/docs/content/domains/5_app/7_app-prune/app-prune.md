@@ -22,9 +22,6 @@ orbit app:prune docs --force
 
 # Get machine-readable cleanup results
 orbit app:prune docs --json --force
-
-# Opt stale workspaces into the exact-marked transitional cleanup seam
-orbit app:prune docs --force
 ```
 
 ## Arguments and options

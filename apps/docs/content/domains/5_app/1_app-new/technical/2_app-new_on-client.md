@@ -16,7 +16,7 @@ response.
   request is allowed.
 - **Apply:** After the CLI resolves the complete source plan, the gateway writes
   app configuration locally and orchestrates all remote work to the target node
-  through the classified host execution lane.
+  through authenticated Agent push over WireGuard.
 - **Progress:** The CLI consumes the gateway's progress stream and renders the
   human-facing tree or JSON envelope.
 

@@ -11,7 +11,6 @@ use RuntimeException;
 
 class ProvisioningAgentInstaller
 {
-    // @orbit-ssh-lane provisioning-ssh
     public function __construct(
         private readonly RemoteExecutor $transport,
         private readonly ReleaseManifestResolver $manifests,
@@ -42,6 +41,7 @@ class ProvisioningAgentInstaller
 
         $service = $this->agentServices->forProvisioningNode($node, $gateway);
 
+        // @orbit-ssh-lane provisioning-ssh
         $result = $this->transport->run(
             node: $node,
             script: $this->installScript($artifact, $service),

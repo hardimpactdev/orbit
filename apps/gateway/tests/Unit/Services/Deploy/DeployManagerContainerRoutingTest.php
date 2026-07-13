@@ -11,6 +11,7 @@ use App\Models\DeploymentRun;
 use App\Models\DeployStep;
 use App\Models\Node;
 use App\Services\Deploy\DeployManager;
+use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Enums\InternalCommand;
@@ -45,6 +46,10 @@ final class DeployManagerRecordingShell implements RunsInternalCommands
         $result = $this->results !== []
             ? array_shift($this->results)
             : new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 25);
+
+        if ($result instanceof RemoteLocalExecutorTransportFailed) {
+            throw $result;
+        }
 
         $this->runs[] = [
             'node' => $node,
@@ -557,4 +562,25 @@ it('marks run failed when built-in warmup step fails', function (): void {
 
     $run = DeploymentRun::query()->sole();
     expect($run->status)->toBe('failed')->and($run->exit_code)->toBe(1);
+});
+
+it('reports Agent reachability when remote deploy execution cannot start', function (): void {
+    $app = createDeployManagerTestApp();
+    createDeployManagerTestStep($app, 'git pull origin main');
+
+    $shell = new DeployManagerRecordingShell;
+    $shell->results = [
+        new RemoteLocalExecutorTransportFailed('agent-push transport is unavailable'),
+    ];
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    expect(fn (): array => app(DeployManager::class)->run('docs'))
+        ->toThrow(function (GatewayApiException $exception): void {
+            expect($exception->errorCode())
+                ->toBe('node.agent_unreachable')
+                ->and($exception->errorMeta()['reason'])
+                ->toBe('agent_push_unavailable')
+                ->and($exception->errorMeta()['node'])
+                ->toBe('app-prod-1');
+        });
 });

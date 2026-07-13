@@ -441,7 +441,7 @@ final readonly class ToolInstaller
                 ),
             );
         } catch (RemoteLocalExecutorTransportFailed $exception) {
-            return $this->toolScriptDispatcher->nodeTransportRequired($tool, 'install', $exception);
+            return $this->toolScriptDispatcher->agentUnreachable($node, $tool, 'install', $exception);
         }
     }
 

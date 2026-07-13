@@ -1,15 +1,14 @@
 {
-    "schema_version": 1,
+    "schema_version": 2,
     "generated_from": {
         "source_roots": [
             "apps/gateway/app",
             "apps/cli/app"
         ],
-        "consumer_patterns": [
-            "use App\\Contracts\\RemoteShell;",
-            "use App\\Contracts\\StartsRemoteShellProcesses;",
-            "use App\\Services\\RemoteShell\\RemoteExecutor;",
-            "use App\\Services\\RemoteShell\\SshCommandBuilder;",
+        "edge_patterns": [
+            "typed or container-resolved RemoteShell/RemoteExecutor/StartsRemoteShellProcesses run/start call",
+            "SshCommandBuilder ssh/enforceForNode/scpTo/scpToNode call",
+            "SshRemoteShell/RemoteHostExecutor run/start call",
             "NodeTransportPreference",
             "withNodeTransportPreference",
             "X-Orbit-Node-Transport-Preference",
@@ -19,10 +18,6 @@
         "cli_selector_patterns": [
             "--node-transport",
             "node-transport"
-        ],
-        "explicit_executor_paths": [
-            "apps/gateway/app/Services/RemoteShell/RemoteHostExecutor.php",
-            "apps/gateway/app/Services/RemoteShell/SshRemoteShell.php"
         ]
     },
     "policy": {
@@ -34,51 +29,75 @@
     "provisioning_ssh": [
         {
             "path": "apps/gateway/app/Services/Nodes/GatewayNodeCreator.php",
-            "marker_line": 58
+            "call_line": 925,
+            "marker_line": 924,
+            "edge": "remote-shell.run"
+        },
+        {
+            "path": "apps/gateway/app/Services/Nodes/GatewayNodeCreator.php",
+            "call_line": 3413,
+            "marker_line": 3412,
+            "edge": "ssh-builder.enforce-for-node"
+        },
+        {
+            "path": "apps/gateway/app/Services/Nodes/GatewayNodeCreator.php",
+            "call_line": 3425,
+            "marker_line": 3424,
+            "edge": "ssh-builder.ssh"
         },
         {
             "path": "apps/gateway/app/Services/Operations/ProvisioningAgentInstaller.php",
-            "marker_line": 14
+            "call_line": 45,
+            "marker_line": 44,
+            "edge": "remote-executor.run"
         },
         {
             "path": "apps/gateway/app/Services/OrbitHostInstaller.php",
-            "marker_line": 21
+            "call_line": 455,
+            "marker_line": 454,
+            "edge": "ssh-builder.scp-to-node"
+        },
+        {
+            "path": "apps/gateway/app/Services/OrbitHostInstaller.php",
+            "call_line": 469,
+            "marker_line": 468,
+            "edge": "ssh-builder.scp-to"
+        },
+        {
+            "path": "apps/gateway/app/Services/OrbitHostInstaller.php",
+            "call_line": 482,
+            "marker_line": 481,
+            "edge": "ssh-builder.enforce-for-node"
+        },
+        {
+            "path": "apps/gateway/app/Services/OrbitHostInstaller.php",
+            "call_line": 494,
+            "marker_line": 493,
+            "edge": "ssh-builder.ssh"
         },
         {
             "path": "apps/gateway/app/Services/RemoteShell/RemoteHostExecutor.php",
-            "marker_line": 17
+            "call_line": 169,
+            "marker_line": 168,
+            "edge": "ssh-builder.enforce-for-node"
         },
         {
             "path": "apps/gateway/app/Services/RemoteShell/SshRemoteShell.php",
-            "marker_line": 13
+            "call_line": 29,
+            "marker_line": 28,
+            "edge": "remote-host-executor.run"
         },
         {
-            "path": "apps/gateway/app/Services/Security/HomeDirectoryLockdownInstaller.php",
-            "marker_line": 12
-        },
-        {
-            "path": "apps/gateway/app/Services/Security/PublicSshDenyInstaller.php",
-            "marker_line": 13
-        },
-        {
-            "path": "apps/gateway/app/Services/Security/SecurityInstaller.php",
-            "marker_line": 12
+            "path": "apps/gateway/app/Services/RemoteShell/SshRemoteShell.php",
+            "call_line": 48,
+            "marker_line": 47,
+            "edge": "remote-host-executor.start"
         },
         {
             "path": "apps/gateway/app/Services/Security/SecurityInstallerTransport.php",
-            "marker_line": 15
-        },
-        {
-            "path": "apps/gateway/app/Services/Security/SshdHardenedInstaller.php",
-            "marker_line": 12
-        },
-        {
-            "path": "apps/gateway/app/Services/Security/SysctlBaselineInstaller.php",
-            "marker_line": 12
-        },
-        {
-            "path": "apps/gateway/app/Services/Security/UnattendedUpgradesInstaller.php",
-            "marker_line": 14
+            "call_line": 27,
+            "marker_line": 26,
+            "edge": "remote-shell.run"
         }
     ],
     "transitional_ssh": [],

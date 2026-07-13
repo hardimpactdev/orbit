@@ -37,7 +37,9 @@ orbit process:add mysql8 --service=mysql --runtime=docker --version=8.3 --node=b
 
 When the process exists and is a Docker managed MySQL service, Orbit:
 
-1. Connects to the MySQL container through the gateway remote-shell lane.
+1. Runs the typed request gateway-locally when the gateway owns the process, or
+   sends it through authenticated Agent push over WireGuard when a non-gateway
+   node owns the process, then executes inside the MySQL container.
 2. Creates the database if missing.
 3. Creates or updates the MySQL user and password.
 4. Grants that user privileges on the named database.
@@ -48,7 +50,8 @@ password encrypted in gateway state for `.env` restore and query execution.
 
 ## Requirements
 
-The caller needs `database:write` on the node that owns the MySQL process.
+The caller needs `database:write` on the node that owns the MySQL process. A
+non-gateway owning node must be Agent-eligible and reachable through Agent push.
 
 ## Output Summary
 

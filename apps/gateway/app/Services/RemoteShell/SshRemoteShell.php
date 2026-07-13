@@ -10,7 +10,6 @@ use Illuminate\Contracts\Process\InvokedProcess;
 
 final readonly class SshRemoteShell implements RemoteExecutor
 {
-    // @orbit-ssh-lane provisioning-ssh
     /**
      * @param  array{
      *     cwd?: string,
@@ -26,6 +25,7 @@ final readonly class SshRemoteShell implements RemoteExecutor
     #[\Override]
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        // @orbit-ssh-lane provisioning-ssh
         return app(RemoteHostExecutor::class)->run($node, $script, $options);
     }
 
@@ -44,6 +44,7 @@ final readonly class SshRemoteShell implements RemoteExecutor
     #[\Override]
     public function start(Node $node, string $script, array $options = []): InvokedProcess
     {
+        // @orbit-ssh-lane provisioning-ssh
         return app(RemoteHostExecutor::class)->start($node, $script, $options);
     }
 }

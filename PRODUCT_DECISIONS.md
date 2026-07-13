@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-07-13 — `node:manage` persists the operator-selected user, platform, and managed Agent intent before convergence; Agent reachability failures report repairable drift without rolling back that intent so doctor can converge it later.
 - 2026-07-12 — Deployment policy, ordered steps, warmup paths, runs, history, logs, and latest deployment status belong to one concrete production app instance; bare app selectors are shorthand only when exactly one instance exists, ambiguous historical ownership stops for explicit resolution, and logical-app deployment columns and read fallbacks are removed. Supersedes the temporary app-level deployment direction recorded on 2026-06-17.
 - 2026-07-12 — Orbit maintains no supported legacy tier: ownership changes use explicit forward fleet migrations, ambiguous state stops for operator resolution, and superseded rows, columns, fallbacks, aliases, launchers, code, tests, and active compatibility prose are removed after verified convergence.
 - 2026-07-12 — Workspace records, workspace lifecycle steps, runtime mounts, and database attachments persist concrete app-instance ownership; database targets are app instances or workspaces, and logical-app compatibility rows are migrated or removed rather than retained as read fallback.

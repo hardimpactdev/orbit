@@ -51,8 +51,9 @@ This command follows the shared
 - Store the detected platform in `node.platform`.
 - Use the node's `node.wireguard_address` for Agent push. Do not use public
   hostnames, local hostnames, TLDs, or host metadata for this path.
-- Provisionally set `node.managed=true`, dispatch `internal:agent-runtime:probe`,
-  and restore the previous user, platform, and managed state if dispatch fails.
+- Persist `node.managed=true`, then dispatch `internal:agent-runtime:probe`.
+  If dispatch fails, retain the selected user, platform, and managed intent and
+  report repairable Agent drift.
 
 ## Context Contracts
 
@@ -88,7 +89,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Not an operator node | The authenticated node is inactive or has an active role assignment. | `error.code=node.not_operator` |
 | Missing WireGuard address | The node has no `wireguard_address` for Agent push. | `error.code=node.wireguard_address_missing` |
-| Agent reachability failed | The gateway could not complete the typed Agent runtime probe. | `error.code=node.agent_unreachable`; prior management metadata is restored. |
+| Agent reachability failed | The gateway could not complete the typed Agent runtime probe. | `error.code=node.agent_unreachable`; management intent remains stored so node doctor can report repairable drift. |
 
 ## Doctor Relationship
 
@@ -103,4 +104,4 @@ Agent expectation, user metadata, platform metadata, or reachability belongs to
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Node/NodeManageCommandTest.php` | CLI validation, platform detection, and gateway request sequencing. |
 | `apps/gateway/tests/Feature/Http/Api/NodeManageControllerTest.php` | Gateway self-management API authorization and metadata persistence. |
-| `apps/gateway/tests/Unit/Services/Nodes/OperatorNodeManagerTest.php` | Roleless eligibility, Agent-push verification, and rollback on reachability failure. |
+| `apps/gateway/tests/Unit/Services/Nodes/OperatorNodeManagerTest.php` | Roleless eligibility, Agent-push verification, and retained management intent on reachability failure. |

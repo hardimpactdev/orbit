@@ -14,7 +14,6 @@ use Illuminate\Support\Facades\Process;
 
 final readonly class RemoteHostExecutor implements RemoteExecutor
 {
-    // @orbit-ssh-lane provisioning-ssh
     private const int DEFAULT_TIMEOUT = 120;
 
     public function __construct(
@@ -166,6 +165,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
             return 'bash -c '.escapeshellarg($script);
         }
 
+        // @orbit-ssh-lane provisioning-ssh
         return $this->ssh->enforceForNode(
             node: $node,
             remoteCommand: 'bash -lc '.escapeshellarg($this->scriptWithE2eDockerEnvironment($node, $script)),

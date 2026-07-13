@@ -21,15 +21,32 @@ final readonly class FleetUpdateTargetSelector
      */
     public function workloadNodes(): Collection
     {
+        /** @var Collection<int, Node> $nodes */
+        $nodes = $this
+            ->activeNonGatewayRoleNodes()
+            ->filter(static fn (Node $node): bool => $node->isAgentEligible())
+            ->values();
+
+        return $nodes;
+    }
+
+    /**
+     * @return Collection<int, Node>
+     */
+    public function activeNonGatewayRoleNodes(): Collection
+    {
         $gatewayIds = $this->roles->activeNodeIdsForRole(NodeRoleName::Gateway->value);
 
-        return Node::query()
+        /** @var Collection<int, Node> $nodes */
+        $nodes = Node::query()
             ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $this->roles->activeAssignedNodeIds())
             ->when($gatewayIds !== [], fn ($query) => $query->whereNotIn('id', $gatewayIds))
             ->with('roleAssignments')
             ->orderBy('name')
             ->get();
+
+        return $nodes;
     }
 
     public function gatewayNode(): ?Node

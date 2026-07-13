@@ -628,6 +628,6 @@ orbit_docs_feature-docs_vite
 ### Next
 
 For backend implementations — WireGuard, `orbit-caddy`, Docker runtime
-containers, the SQLite schema, transitional `RemoteShell` infrastructure, and
+containers, the SQLite schema, provisioning `RemoteShell` infrastructure, and
 the Orbit Agent push lane — see [tech-stack.md](tech-stack.md).
 Command contracts live under [docs/domains/](domains/).

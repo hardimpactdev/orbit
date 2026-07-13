@@ -448,7 +448,7 @@ it('records agent artifact installs when the retry disconnects during agent rest
         ->toBe(str_repeat('7', times: 64));
 });
 
-it('skips Agent artifacts for nodes on unsupported platforms', function (): void {
+it('excludes Agent-ineligible workload nodes from fleet updates', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
 
@@ -473,12 +473,16 @@ it('skips Agent artifacts for nodes on unsupported platforms', function (): void
         ),
     );
 
-    app(WorkloadNodeUpdater::class)->update($run, $plan);
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
 
-    expect(workload_updater_install_payload($shell, node: 'app-dev-1')['agent_artifact'])
-        ->toBeNull()
+    expect($results)
+        ->toBeEmpty()
+        ->and($shell->calls)
+        ->toBeEmpty()
         ->and($node->fresh()->installed_agent)
-        ->toBeNull();
+        ->toBeNull()
+        ->and($node->fresh()->installed_cli?->version)
+        ->toBe('1.0.0');
 });
 
 it('skips a workload node already on the target version and runs no remote update', function (): void {
@@ -490,10 +494,10 @@ it('skips a workload node already on the target version and runs no remote updat
         ->appDev()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0'),
         ]);
-    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'linux']);
+    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'ubuntu_24-04']);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
@@ -535,7 +539,7 @@ it('runs workload installs through the typed Agent-push local executor', functio
         ->appDev()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
         ]);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
@@ -579,7 +583,7 @@ it('retries workload CLI installs when the previous launcher exits during self u
         ->appDev()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
         ]);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
@@ -666,7 +670,7 @@ it('keeps workload transport failures that are not agent restart disconnects fai
         ->appDev()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
         ]);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
@@ -750,7 +754,7 @@ it('updates topology candidate artifacts with the same version when the CLI hash
         ->appDev()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0', sha256: str_repeat(
                 'c',
                 times: 64,
@@ -869,8 +873,8 @@ it('runs orbit doctor after a node update and reports the issue count in the don
     ));
 
     $run = workloadUpdaterRun();
-    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
-    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'linux']);
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'ubuntu_24-04']);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
@@ -904,7 +908,7 @@ it('keeps a workload update completed when advisory node doctor fails', function
         ->appDev()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'orbit_path' => '/opt/orbit-app-dev',
         ]);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
@@ -934,7 +938,7 @@ it('emits per-node sub-steps: installing cli, recording metadata, running doctor
     app()->instance(RunsInternalCommands::class, $shell);
 
     $run = workloadUpdaterRun();
-    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'ubuntu_24-04']);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
 
     app(WorkloadNodeUpdater::class)->update($run, $plan);
@@ -979,7 +983,7 @@ it('emits skipped sub-step (no download/replace/doctor) for a node already on th
         ->appDev()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0'),
         ]);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
@@ -1007,7 +1011,7 @@ it('keeps a non-zero doctor issue count from failing the node update', function 
     ));
 
     $run = workloadUpdaterRun();
-    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'ubuntu_24-04']);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
@@ -1022,8 +1026,8 @@ it('continues updating later workload nodes when one remote update fails', funct
     app()->instance(RunsInternalCommands::class, $shell);
 
     $run = workloadUpdaterRun();
-    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
-    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'linux']);
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'ubuntu_24-04']);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot());
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
@@ -1065,8 +1069,8 @@ it('fails the runner workload phase with target results when any workload update
     app()->instance(FleetUpdateVerifier::class, new WorkloadUpdaterFailIfCalledFleetVerifier);
 
     $run = workloadUpdaterRun();
-    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
-    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'linux']);
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'ubuntu_24-04']);
     app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot());
 
     expect(fn () => app(UpdateRunner::class)->run($run->id))
@@ -1165,8 +1169,8 @@ it('fails the update operation when a workload node lease is already held', func
     app()->instance(FleetUpdateVerifier::class, new WorkloadUpdaterNoopFleetVerifier);
 
     $run = workloadUpdaterRun();
-    $conflictingNode = Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
-    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'linux']);
+    $conflictingNode = Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'ubuntu_24-04']);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot());
     $otherRun = workloadUpdaterRun();
 
@@ -1244,7 +1248,7 @@ it('is invoked by the default update runner pipeline while the fleet lease is ac
     app()->instance(FleetUpdateVerifier::class, new WorkloadUpdaterNoopFleetVerifier);
 
     $run = workloadUpdaterRun();
-    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'ubuntu_24-04']);
     app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
 
     app(UpdateRunner::class)->run($run->id);

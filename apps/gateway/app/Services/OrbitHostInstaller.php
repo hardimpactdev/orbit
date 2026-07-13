@@ -18,7 +18,6 @@ use Illuminate\Support\Str;
 
 class OrbitHostInstaller
 {
-    // @orbit-ssh-lane provisioning-ssh
     private const string PreferredTempDirectory = '/var/tmp';
 
     private ?Node $pinnedNode = null;
@@ -452,6 +451,7 @@ class OrbitHostInstaller
     private function scp(string $source, string $sshUser, string $host, string $destination): ProcessResult
     {
         if ($this->pinnedNode instanceof Node) {
+            // @orbit-ssh-lane provisioning-ssh
             return Process::timeout(600)->run(app(SshCommandBuilder::class)->scpToNode(
                 node: $this->pinnedNode,
                 source: $source,
@@ -465,6 +465,7 @@ class OrbitHostInstaller
             ));
         }
 
+        // @orbit-ssh-lane provisioning-ssh
         return Process::timeout(600)->run(app(SshCommandBuilder::class)->scpTo(
             source: $source,
             user: $sshUser,
@@ -477,6 +478,7 @@ class OrbitHostInstaller
     private function ssh(string $user, string $host, string $command): string
     {
         if ($this->pinnedNode instanceof Node) {
+            // @orbit-ssh-lane provisioning-ssh
             return app(SshCommandBuilder::class)->enforceForNode(
                 node: $this->pinnedNode,
                 remoteCommand: $command,
@@ -488,6 +490,7 @@ class OrbitHostInstaller
             );
         }
 
+        // @orbit-ssh-lane provisioning-ssh
         return app(SshCommandBuilder::class)->ssh(
             user: $user,
             host: $host,

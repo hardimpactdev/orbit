@@ -157,7 +157,6 @@ owned app path.
 
 ```bash
 orbit app:remove [<app>] [--force] [--json]
-                 [--node-transport=transitional-ssh-fallback]
 ```
 
 Orbit removes the app runtime artifact and route intent through the gateway;
@@ -169,7 +168,6 @@ Remove stale workspaces for an app. Stale = workspaces present on disk but unkno
 
 ```bash
 orbit app:prune [<app>] [--dry-run] [--force] [--json]
-                [--node-transport=transitional-ssh-fallback]
 ```
 
 `--dry-run` shows what would be removed. `--force` skips confirmation. Removal goes through workspace-removal semantics, not a raw `rm`.

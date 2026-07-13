@@ -95,8 +95,8 @@ Apply the source branch resolved before the gateway request:
 `app:register`.
 
 - App path is derived from the app name and the target node's app root.
-- Remote source creation is applied through the gateway's classified host
-  execution lane.
+- Remote source creation is applied through authenticated Agent push from the
+  gateway to the owning node over WireGuard.
 - `--repo` accepts either a full Git URL or a GitHub-only `owner/repo` shorthand.
   GitHub shorthand and GitHub URLs are cloned with `gh repo clone` on the
   target node. Full Git URLs for other hosts are cloned with `git clone` as

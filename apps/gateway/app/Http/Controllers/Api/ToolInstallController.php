@@ -205,7 +205,7 @@ final class ToolInstallController implements Loggable
         $status = match ($failure->code) {
             'tool.not_found' => 404,
             'authorization_failed' => 403,
-            'node_transport_required',
+            'node.agent_unreachable',
             'validation_failed',
             'tool.constraint_unsatisfied',
             'tool.unsupported_on_node',

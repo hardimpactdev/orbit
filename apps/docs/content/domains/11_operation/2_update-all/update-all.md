@@ -90,8 +90,8 @@ node did not update. The failure result includes the failed node results so
 operators see the update failure directly instead of only a later version
 verification error.
 
-`update:all` updates the gateway, the local installation, and active workload
-nodes.
+`update:all` updates the gateway, the caller-local installation, and active
+non-gateway role-bearing nodes that are Agent-eligible.
 **Clients other than the caller are never remote update targets.** Each
 client is an operator workstation and updates through `orbit update` on
 that machine. When the gateway is the calling peer, the command therefore
@@ -124,10 +124,9 @@ the exact shape of both modes.
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the calling WireGuard peer with gateway-admin authority
   (`*` on the active gateway node).
-- The gateway can reach every selected node through its node execution path.
-  For nodes with Orbit Agent enabled, the gateway pushes typed requests to run
-  the installer and verifier. SSH remains classified as bootstrap/recovery
-  fallback rather than the default managed transport.
+- The gateway can reach every selected role-bearing node through authenticated
+  Agent push over WireGuard to run the installer and verifier. Provisioning SSH
+  is outside `update:all`.
 - The gateway can persist operation rows, event journal rows, immutable update
   plans, and expiring update leases.
 - The gateway can launch a one-shot runner from the target `orbit-gateway`

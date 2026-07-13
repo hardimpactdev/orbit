@@ -9,6 +9,5 @@ use App\Models\Node;
 
 interface SecurityInstaller
 {
-    // @orbit-ssh-lane provisioning-ssh
     public function installFor(Node $node, ?RemoteShell $provisioningShell = null): InstallReport;
 }

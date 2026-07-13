@@ -64,9 +64,10 @@ touch.
   operations, and read-only WireGuard self-route diagnostics for same-node
   connections, not service installation, lifecycle, or route mutation.
 - `database:add-user` converges a database and user inside an existing managed
-  MySQL service process, then creates or updates the reusable database
-  connection record for that user. It does not install, start, stop, restart,
-  or log the MySQL service.
+  MySQL service process. It executes gateway-locally for a gateway owner or
+  through authenticated Agent push for a non-gateway owner, then creates or
+  updates the reusable database connection record for that user. It does not
+  install, start, stop, restart, or log the MySQL service.
 - In the current implementation, `database:add-user` supports Docker runtime
   managed MySQL processes. Docker Swarm support needs a service exec primitive
   before it can converge users safely.

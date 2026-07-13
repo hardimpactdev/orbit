@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationRun;
@@ -14,6 +13,7 @@ use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdatePlanBuilder;
 use App\Services\Operations\UpdateRunner;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -69,7 +69,7 @@ it('hands the manifest backed plan to gateway and workload update phases exactly
         'github.com/*' => Http::response($manifest, 200),
     ]);
     app()->instance(GatewayServiceUpdater::class, $gatewayUpdater);
-    app()->instance(RemoteShell::class, $remoteShell);
+    app()->instance(RunsInternalCommands::class, $remoteShell);
     app()->instance(FleetUpdateVerifier::class, new UpdateRunnerManifestPlanNoopVerifier);
 
     $run = updateRunnerManifestPlanRun();
@@ -77,10 +77,17 @@ it('hands the manifest backed plan to gateway and workload update phases exactly
     app(OperationUpdatePlanStore::class)->create($run, $snapshot);
 
     Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    Node::factory()
         ->appDev()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux-amd64',
+            'platform' => 'ubuntu_24-04',
             'orbit_path' => '/opt/orbit-app-dev',
         ]);
 
@@ -184,7 +191,7 @@ final class UpdateRunnerManifestPlanNoopVerifier extends FleetUpdateVerifier
     }
 }
 
-final class UpdateRunnerManifestPlanShell implements RemoteShell
+final class UpdateRunnerManifestPlanShell implements RunsInternalCommands
 {
     /**
      * @var list<array{node: string, script: string, options: array<string, mixed>}>
@@ -192,16 +199,37 @@ final class UpdateRunnerManifestPlanShell implements RemoteShell
     public array $calls = [];
 
     /**
-     * @param  array<string, mixed>  $options
+     * @param  array<int|string, mixed>  $arguments
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array<string, mixed>  $transportOptions
      */
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
         $this->calls[] = [
             'node' => $node->name,
-            'script' => $script,
-            'options' => $options,
+            'script' => $commandName,
+            'options' => $transportOptions,
         ];
 
-        return new RemoteShellResult(exitCode: 0, stdout: "ok\n", stderr: '', durationMs: 1);
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => [
+                    'data' => [
+                        'exit_code' => 0,
+                        'stdout' => "ok\n",
+                        'stderr' => '',
+                        'duration_ms' => 1,
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 1,
+        );
     }
 }

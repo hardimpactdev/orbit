@@ -113,6 +113,5 @@ orbit process:logs [<name>] [--app=<name>] [--workspace=<name>]
 `--follow` streams new lines as they arrive (Ctrl-C to stop). Launchd-backed
 processes read Orbit-owned stdout/stderr files under
 `~/Library/Logs/Orbit/processes`. On agent-capable nodes, bounded reads and
-follow streams use the gateway-to-Agent command transport; explicit
-exact-marked `transitional-ssh` fallback is reserved for the remaining migration
-seam until it is ported.
+follow streams use gateway-to-Agent command transport and fail clearly when
+Agent push is unavailable. They never fall back to SSH.

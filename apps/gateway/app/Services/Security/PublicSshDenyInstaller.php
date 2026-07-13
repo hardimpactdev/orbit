@@ -10,7 +10,6 @@ use App\Models\Node;
 
 final class PublicSshDenyInstaller implements SecurityInstaller
 {
-    // @orbit-ssh-lane provisioning-ssh
     public function installFor(Node $node, ?RemoteShell $provisioningShell = null): InstallReport
     {
         $this->declareRules($node);

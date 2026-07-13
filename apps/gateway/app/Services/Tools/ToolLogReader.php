@@ -11,6 +11,7 @@ use App\Models\Process as ProcessModel;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessOwnerContextResolver;
+use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use Illuminate\Support\Facades\Process;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
@@ -45,6 +46,17 @@ final readonly class ToolLogReader
                     $this->contextFor($target->process),
                     $target->process->name,
                     $lines,
+                );
+            } catch (RemoteLocalExecutorTransportFailed $exception) {
+                return ToolRegistryFailure::agentUnreachable(
+                    message: "Orbit Agent is unreachable for tool '{$tool}' logs on node '{$target->node->name}'.",
+                    meta: [
+                        'reason' => 'agent_push_unavailable',
+                        'node' => $target->node->name,
+                        'tool' => $tool,
+                        'action' => 'logs',
+                        'error' => $exception->getMessage(),
+                    ],
                 );
             } catch (GatewayApiException $exception) {
                 return ToolRegistryFailure::remoteActionFailed(

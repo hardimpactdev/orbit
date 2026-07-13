@@ -238,7 +238,7 @@ class MetricsRoleBaseline implements RoleBaseline
 
     private function convergeWorkloadNodeExporters(Node $metricsNode): void
     {
-        foreach ($this->fleetUpdateTargets()->workloadNodes() as $workloadNode) {
+        foreach ($this->fleetUpdateTargets()->activeNonGatewayRoleNodes() as $workloadNode) {
             if ($workloadNode->is($metricsNode)) {
                 continue;
             }
@@ -1039,7 +1039,7 @@ class MetricsRoleBaseline implements RoleBaseline
     private function hostExporterNodes(Node $metricsNode): Collection
     {
         return collect([$metricsNode])
-            ->merge($this->fleetUpdateTargets()->workloadNodes())
+            ->merge($this->fleetUpdateTargets()->activeNonGatewayRoleNodes())
             ->unique(fn (Node $node): int => $node->id)
             ->filter(fn (Node $node): bool => $this->nodeSupportsHostExporter($node))
             ->values();
@@ -1096,7 +1096,7 @@ class MetricsRoleBaseline implements RoleBaseline
     {
         $nodeIds = $this
             ->fleetUpdateTargets()
-            ->workloadNodes()
+            ->activeNonGatewayRoleNodes()
             ->map(fn (Node $node): int => $node->id)
             ->push($metricsNode->id)
             ->unique()

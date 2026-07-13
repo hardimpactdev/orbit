@@ -265,9 +265,10 @@ recording, or `streamInternal()` for an approved raw stream such as
 `process:logs --follow`. Other asynchronous workflows should route through a
 lane with its own audit contract.
 
-The inherited `RemoteShell::run()` method is reserved for command-name-only
-internal invocations such as `internal:executor:verify`; callers must not encode
-structured local-executor input as JSON or as a free-form shell script.
+The `RemoteLocalExecutor::run()` compatibility adapter is reserved for
+command-name-only internal invocations such as `internal:executor:verify`;
+callers must not encode structured local-executor input as JSON or as a
+free-form shell script.
 
 ## Hard Rules
 
