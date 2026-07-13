@@ -1,0 +1,21 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-13T09:45:53+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-doctor-agent-drift-contracts/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-13-114553-codex-doctor-agent-drift-contracts",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "15e2cd2a30e288b876097b4d93a116e1e784c20cc540c3622b25510883d53a87"
+    },
+    "branch": "codex/doctor-agent-drift-contracts",
+    "candidate_commit": "008693e414d0b0a63d4f51025fe6439f6504a5a2",
+    "accepted_feature_tip": "008693e414d0b0a63d4f51025fe6439f6504a5a2",
+    "accepted_main_tip": "5bf9906dd1f858b1c91f9ab42bb5fea46e537aae",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
