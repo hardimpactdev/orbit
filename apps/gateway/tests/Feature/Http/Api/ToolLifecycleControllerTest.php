@@ -129,8 +129,9 @@ it('requires agent-push transport before running lifecycle scripts', function ()
 
     $response
         ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'node_transport_required')
-        ->assertJsonPath('error.meta.required', 'agent-push');
+        ->assertJsonPath('error.code', 'node.agent_unreachable')
+        ->assertJsonPath('error.meta.reason', 'agent_push_unavailable')
+        ->assertJsonPath('error.meta.node', 'mac-1');
 
     expect($shell->scripts)->toBe([]);
 });

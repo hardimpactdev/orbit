@@ -61,7 +61,7 @@ it('opts a roleless operator into management after an Agent-push probe succeeds'
     );
 });
 
-it('restores prior management metadata when Agent push fails', function (): void {
+it('retains management intent when Agent push fails', function (): void {
     Http::fake([
         'http://10.44.0.24:9477/v1/commands' => Http::response(['error' => 'unreachable'], 503),
     ]);
@@ -81,11 +81,11 @@ it('restores prior management metadata when Agent push fails', function (): void
             expect($exception->errorCode)
                 ->toBe('node.agent_unreachable')
                 ->and($node->fresh()->user)
-                ->toBeNull()
+                ->toBe('nicky')
                 ->and($node->fresh()->platform)
-                ->toBeNull()
+                ->toBe('macos_15-5')
                 ->and($node->fresh()->managed)
-                ->toBeFalse();
+                ->toBeTrue();
         });
 });
 

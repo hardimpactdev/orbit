@@ -129,8 +129,9 @@ describe('ToolInstallController', function (): void {
 
         $response
             ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node_transport_required')
-            ->assertJsonPath('error.meta.required', 'agent-push');
+            ->assertJsonPath('error.code', 'node.agent_unreachable')
+            ->assertJsonPath('error.meta.reason', 'agent_push_unavailable')
+            ->assertJsonPath('error.meta.node', 'app-install-api-1');
 
         expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'php-cli')->exists())
             ->toBeFalse()

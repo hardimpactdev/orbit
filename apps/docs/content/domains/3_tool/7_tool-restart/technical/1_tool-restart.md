@@ -70,7 +70,7 @@ falls back to a similarly named process.
 | Unsupported platform | The selected tool does not support the target node operating system. | `error.code=tool.unsupported_on_node` |
 | Runtime missing | No direct runtime or matching process row exists. | `error.code=tool.runtime_missing` |
 | Runtime ambiguous | More than one direct/process runtime target resolves. | `error.code=tool.runtime_ambiguous` |
-| Agent push required | A direct remote runtime cannot be reached through Agent push. | `error.code=node_transport_required` |
+| Agent unreachable | A direct remote runtime cannot be reached through Agent push. | `error.code=node.agent_unreachable`, `error.meta.reason=agent_push_unavailable` |
 | Remote action failed | Gateway configuration was readable, but node execution failed. | `error.code=tool.remote_action_failed` |
 
 ## Doctor Relationship

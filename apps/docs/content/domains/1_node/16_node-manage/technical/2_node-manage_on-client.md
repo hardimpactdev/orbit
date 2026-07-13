@@ -7,8 +7,9 @@ represented by the current gateway identity.
 
 The CLI resolves the local Agent user and platform, then asks the gateway to
 verify roleless eligibility and Agent-push reachability by
-`node.wireguard_address`. The gateway retains `managed=true` only after the
-probe succeeds.
+`node.wireguard_address`. The gateway persists `managed=true`, the selected
+user, and the detected platform before the probe. If the probe fails, that
+intent remains stored as repairable Agent drift.
 
 Running this command on a gateway host is not a special management shortcut.
 Gateway nodes are role-bearing nodes and are rejected by the roleless operator

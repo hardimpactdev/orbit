@@ -528,7 +528,7 @@ command-specific failures.
 | Authorization failed | The authenticated peer's grant does not include the permission(s) required for the command's resource. | `error.code=authorization_failed` with `error.meta.reason` and (when applicable) `error.meta.missing_permission`. |
 
 Per-family failure codes (`cloudflare_unavailable`, `vpn_backend_unavailable`,
-`gateway_ssh_unavailable`, and similar) live in the family READMEs or in the
+`node.agent_unreachable`, and similar) live in the family READMEs or in the
 canonical command contract that introduces them.
 
 ## Public Command Page Template

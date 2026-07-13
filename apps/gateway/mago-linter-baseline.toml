@@ -4309,30 +4309,6 @@ message = "Class has too many methods."
 count = 1
 
 [[issues]]
-file = "app/Services/Convergence/ProcessDockerContainerResource.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Services/Convergence/ProcessDockerContainerResource.php"
-code = "inline-variable-return"
-message = "Variable assignment can be inlined into the return statement."
-count = 2
-
-[[issues]]
-file = "app/Services/Convergence/ProcessDockerContainerResource.php"
-code = "prefer-static-closure"
-message = "This arrow function does not use `$this` and should be declared static."
-count = 2
-
-[[issues]]
-file = "app/Services/Convergence/ProcessDockerContainerResource.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Services/Convergence/SystemdService.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -8026,30 +8002,6 @@ count = 1
 file = "app/Services/RemoteShell/RemoteShellMetadata.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 1
-
-[[issues]]
-file = "app/Services/RemoteShell/RemoteShellPool.php"
-code = "constant-name"
-message = "Constant name `DefaultConcurrency` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Services/RemoteShell/RemoteShellPool.php"
-code = "constant-name"
-message = "Constant name `PollIntervalMicroseconds` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Services/RemoteShell/RemoteShellPool.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Services/RemoteShell/RemoteShellPool.php"
-code = "halstead"
-message = "Method has a high halstead difficulty and effort"
 count = 1
 
 [[issues]]
@@ -21373,30 +21325,6 @@ message = "Literal argument `'/'` should be passed as a named argument for clari
 count = 1
 
 [[issues]]
-file = "tests/Unit/Services/Convergence/ProcessDockerContainerResourceTest.php"
-code = "cyclomatic-complexity"
-message = "Closure has high complexity."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Convergence/ProcessDockerContainerResourceTest.php"
-code = "cyclomatic-complexity"
-message = "Function has high complexity."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Convergence/ProcessDockerContainerResourceTest.php"
-code = "function-name"
-message = "Function name `processDockerContainerResourceContainer` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Convergence/ProcessDockerContainerResourceTest.php"
-code = "single-class-per-file"
-message = "File contains multiple class-like definitions; found class `ProcessDockerContainerResourceUnusedTransport` but class `ProcessDockerContainerResourceUnusedShell` is already defined in this file."
-count = 1
-
-[[issues]]
 file = "tests/Unit/Services/Convergence/SystemdServiceTest.php"
 code = "cyclomatic-complexity"
 message = "Function has high complexity."
@@ -23566,30 +23494,6 @@ count = 1
 file = "tests/Unit/Services/RemoteShell/RemoteShellNoEnvTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/RemoteShell/RemoteShellPoolTest.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/RemoteShell/RemoteShellPoolTest.php"
-code = "single-class-per-file"
-message = "File contains multiple class-like definitions; found class `RemoteShellPoolAsyncShell` but class `RemoteShellPoolSynchronousShell` is already defined in this file."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/RemoteShell/RemoteShellPoolTest.php"
-code = "single-class-per-file"
-message = "File contains multiple class-like definitions; found class `RemoteShellPoolTrackingInvokedProcess` but class `RemoteShellPoolSynchronousShell` is already defined in this file."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/RemoteShell/RemoteShellPoolTest.php"
-code = "too-many-methods"
-message = "Class has too many methods."
 count = 1
 
 [[issues]]

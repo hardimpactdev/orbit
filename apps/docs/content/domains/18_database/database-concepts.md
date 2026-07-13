@@ -75,4 +75,6 @@ These rules define what database commands may and may not change.
 - **Managed service boundary:** MySQL service installation, image selection,
   runtime backend, lifecycle, and logs belong to process-owned managed service
   rows. `database:add-user` may converge database users through a supported
-  running MySQL process, but it does not create or operate the process itself.
+  running MySQL process. Execution is gateway-local for a gateway owner and
+  uses authenticated Agent push for a non-gateway owner. The command does not
+  create or operate the process itself.

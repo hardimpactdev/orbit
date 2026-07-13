@@ -64,10 +64,9 @@ This command follows the shared
 - **Step 3: Node Artifact Cleanup:**
     - Remove app runtime container and managed runtime configuration through
       Agent push.
-    - With the exact transitional marker only, remove residual route/process
-      artifacts and the eligible app path through the tracked SSH seam.
-    - Without that marker, leave residual cleanup to drift reporting rather
-      than selecting SSH implicitly.
+    - Remove residual route/process artifacts and the eligible app path through
+      Agent push.
+    - Report any cleanup that cannot finish as drift; never select SSH.
 
 #### App path deletion eligibility
 

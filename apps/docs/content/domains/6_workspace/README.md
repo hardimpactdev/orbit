@@ -189,8 +189,8 @@ path on the owning node — flow through the gateway like any other
 command and are authorized by the node's self-grant. See [Architecture:
 Self-grants and
 self-serving](../../architecture.md#self-grants-and-self-serving). The
-gateway dispatches setup steps back to the same node through the classified
-host execution lane;
+gateway dispatches setup steps back to the same node through authenticated
+Agent push over WireGuard;
 the CLI never applies artifacts locally.
 
 Local context on the caller filesystem may resolve defaults (parent app,

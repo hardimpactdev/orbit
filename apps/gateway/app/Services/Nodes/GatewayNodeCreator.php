@@ -55,7 +55,6 @@ use function Laravel\Prompts\text;
 
 final class GatewayNodeCreator
 {
-    // @orbit-ssh-lane provisioning-ssh
     private const string DEFAULT_RUNTIME_USER = 'orbit';
 
     private const int SUCCESS = 0;
@@ -922,6 +921,7 @@ final class GatewayNodeCreator
                 );
             }
 
+            // @orbit-ssh-lane provisioning-ssh
             return app(RemoteShell::class)->run($gateway, $command, ['timeout' => 5]);
         }
 
@@ -3409,6 +3409,7 @@ final class GatewayNodeCreator
     private function ssh(string $user, string $host, string $command, ?Node $node = null): string
     {
         if ($node instanceof Node) {
+            // @orbit-ssh-lane provisioning-ssh
             return app(SshCommandBuilder::class)->enforceForNode(
                 node: $node,
                 remoteCommand: $command,
@@ -3420,6 +3421,7 @@ final class GatewayNodeCreator
             );
         }
 
+        // @orbit-ssh-lane provisioning-ssh
         return app(SshCommandBuilder::class)->ssh(
             user: $user,
             host: $host,

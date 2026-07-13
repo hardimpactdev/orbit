@@ -10,30 +10,39 @@ use Illuminate\Support\Facades\Artisan;
 it('keeps SSH limited to the provisioning and bootstrap lane', function (): void {
     $inventory = app(TransitionalSshInventoryBuilder::class)->build();
 
-    expect($inventory['unmarked_consumers'])
+    expect($inventory['schema_version'])
+        ->toBe(2)
+        ->and($inventory['unmarked_consumers'])
         ->toBeEmpty()
         ->and($inventory['generated_from']['source_roots'])
         ->toBe([
             'apps/gateway/app',
             'apps/cli/app',
         ])
-        ->and(array_column($inventory['provisioning_ssh'], 'path'))
+        ->and(array_map(
+            static fn (array $edge): string => "{$edge['path']}#{$edge['edge']}",
+            $inventory['provisioning_ssh'],
+        ))
         ->toBe([
-            'apps/gateway/app/Services/Nodes/GatewayNodeCreator.php',
-            'apps/gateway/app/Services/Operations/ProvisioningAgentInstaller.php',
-            'apps/gateway/app/Services/OrbitHostInstaller.php',
-            'apps/gateway/app/Services/RemoteShell/RemoteHostExecutor.php',
-            'apps/gateway/app/Services/RemoteShell/SshRemoteShell.php',
-            'apps/gateway/app/Services/Security/HomeDirectoryLockdownInstaller.php',
-            'apps/gateway/app/Services/Security/PublicSshDenyInstaller.php',
-            'apps/gateway/app/Services/Security/SecurityInstaller.php',
-            'apps/gateway/app/Services/Security/SecurityInstallerTransport.php',
-            'apps/gateway/app/Services/Security/SshdHardenedInstaller.php',
-            'apps/gateway/app/Services/Security/SysctlBaselineInstaller.php',
-            'apps/gateway/app/Services/Security/UnattendedUpgradesInstaller.php',
+            'apps/gateway/app/Services/Nodes/GatewayNodeCreator.php#remote-shell.run',
+            'apps/gateway/app/Services/Nodes/GatewayNodeCreator.php#ssh-builder.enforce-for-node',
+            'apps/gateway/app/Services/Nodes/GatewayNodeCreator.php#ssh-builder.ssh',
+            'apps/gateway/app/Services/Operations/ProvisioningAgentInstaller.php#remote-executor.run',
+            'apps/gateway/app/Services/OrbitHostInstaller.php#ssh-builder.scp-to-node',
+            'apps/gateway/app/Services/OrbitHostInstaller.php#ssh-builder.scp-to',
+            'apps/gateway/app/Services/OrbitHostInstaller.php#ssh-builder.enforce-for-node',
+            'apps/gateway/app/Services/OrbitHostInstaller.php#ssh-builder.ssh',
+            'apps/gateway/app/Services/RemoteShell/RemoteHostExecutor.php#ssh-builder.enforce-for-node',
+            'apps/gateway/app/Services/RemoteShell/SshRemoteShell.php#remote-host-executor.run',
+            'apps/gateway/app/Services/RemoteShell/SshRemoteShell.php#remote-host-executor.start',
+            'apps/gateway/app/Services/Security/SecurityInstallerTransport.php#remote-shell.run',
         ])
         ->and($inventory['transitional_ssh'])
         ->toBeEmpty();
+
+    foreach ($inventory['provisioning_ssh'] as $edge) {
+        expect($edge['marker_line'])->toBe($edge['call_line'] - 1);
+    }
 });
 
 it('keeps the committed transitional SSH inventory fresh', function (): void {
@@ -50,20 +59,169 @@ it('reports unmarked consumers and rejects conflicting lane markers', function (
 
     expect(
         $classifier->classify(consumers: [
-            'apps/gateway/app/Example.php' => '<?php',
+            'apps/gateway/app/Example.php' => <<<'PHP'
+                <?php
+                app(RemoteShell::class)->run($node, 'hostname');
+                PHP,
         ])['unmarked_consumers'],
-    )->toBe(['apps/gateway/app/Example.php']);
+    )->toBe([[
+        'path' => 'apps/gateway/app/Example.php',
+        'call_line' => 2,
+        'edge' => 'remote-shell.run',
+    ]]);
 
     expect(fn (): array => $classifier->classify(consumers: [
         'apps/gateway/app/Conflicting.php' => <<<'PHP'
             <?php
             // @orbit-ssh-lane transitional-ssh
             // @orbit-ssh-lane provisioning-ssh
+            app(RemoteShell::class)->run($node, 'hostname');
             PHP,
     ]))
         ->toThrow(
             RuntimeException::class,
             'SSH consumer apps/gateway/app/Conflicting.php declares both execution-lane markers.',
+        );
+});
+
+it('classifies each SSH call edge independently', function (): void {
+    $classification = app(TransitionalSshConsumerClassifier::class)->classify(consumers: [
+        'apps/gateway/app/Example.php' => <<<'PHP'
+            <?php
+            use App\Contracts\RemoteShell;
+            function apply(Node $node, RemoteShell $provisioningShell): void
+            {
+                // @orbit-ssh-lane provisioning-ssh
+                $provisioningShell->run($node, 'first');
+                $provisioningShell->run($node, 'second');
+            }
+            PHP,
+    ]);
+
+    expect($classification['provisioning_ssh'])
+        ->toBe([[
+            'path' => 'apps/gateway/app/Example.php',
+            'call_line' => 6,
+            'marker_line' => 5,
+            'edge' => 'remote-shell.run',
+        ]])
+        ->and($classification['unmarked_consumers'])
+        ->toBe([[
+            'path' => 'apps/gateway/app/Example.php',
+            'call_line' => 7,
+            'edge' => 'remote-shell.run',
+        ]]);
+});
+
+it('classifies multiline SSH call edges from the invocation line', function (): void {
+    $classification = app(TransitionalSshConsumerClassifier::class)->classify(consumers: [
+        'apps/gateway/app/DirectExample.php' => <<<'PHP'
+            <?php
+            // @orbit-ssh-lane provisioning-ssh
+            app(
+                RemoteShell::class,
+            )->run($node, 'hostname');
+            PHP,
+        'apps/gateway/app/TypedExample.php' => <<<'PHP'
+            <?php
+            use App\Services\RemoteShell\RemoteExecutor;
+            final class TypedExample
+            {
+                public function __construct(private RemoteExecutor $transport) {}
+                public function apply(Node $node): void
+                {
+                    // @orbit-ssh-lane provisioning-ssh
+                    $this->transport
+                        ->run($node, 'hostname');
+                }
+            }
+            PHP,
+    ]);
+
+    expect($classification['provisioning_ssh'])
+        ->toBe([
+            [
+                'path' => 'apps/gateway/app/DirectExample.php',
+                'call_line' => 3,
+                'marker_line' => 2,
+                'edge' => 'remote-shell.run',
+            ],
+            [
+                'path' => 'apps/gateway/app/TypedExample.php',
+                'call_line' => 9,
+                'marker_line' => 8,
+                'edge' => 'remote-executor.run',
+            ],
+        ])
+        ->and($classification['unmarked_consumers'])
+        ->toBeEmpty();
+});
+
+it('classifies aliased SSH types in receiver and container calls', function (): void {
+    $classification = app(TransitionalSshConsumerClassifier::class)->classify(consumers: [
+        'apps/gateway/app/Example.php' => <<<'PHP'
+            <?php
+            use App\Contracts\RemoteShell as ProvisioningShell;
+            function apply(Node $node, ProvisioningShell $shell): void
+            {
+                // @orbit-ssh-lane provisioning-ssh
+                $shell->run($node, 'first');
+                // @orbit-ssh-lane provisioning-ssh
+                app(ProvisioningShell::class)->run($node, 'second');
+            }
+            PHP,
+    ]);
+
+    expect($classification['provisioning_ssh'])
+        ->toBe([
+            [
+                'path' => 'apps/gateway/app/Example.php',
+                'call_line' => 6,
+                'marker_line' => 5,
+                'edge' => 'remote-shell.run',
+            ],
+            [
+                'path' => 'apps/gateway/app/Example.php',
+                'call_line' => 8,
+                'marker_line' => 7,
+                'edge' => 'remote-shell.run',
+            ],
+        ])
+        ->and($classification['unmarked_consumers'])
+        ->toBeEmpty();
+});
+
+it('ignores type-only SSH dependencies', function (): void {
+    $classification = app(TransitionalSshConsumerClassifier::class)->classify(consumers: [
+        'apps/gateway/app/Example.php' => <<<'PHP'
+            <?php
+            use App\Contracts\RemoteShell;
+
+            interface Example
+            {
+                public function installFor(Node $node, ?RemoteShell $shell): void;
+            }
+            PHP,
+    ]);
+
+    expect($classification)->toBe([
+        'provisioning_ssh' => [],
+        'transitional_ssh' => [],
+        'unmarked_consumers' => [],
+    ]);
+});
+
+it('rejects an SSH lane marker that is not attached to an SSH call edge', function (): void {
+    expect(fn (): array => app(TransitionalSshConsumerClassifier::class)->classify(consumers: [
+        'apps/gateway/app/Example.php' => <<<'PHP'
+            <?php
+            // @orbit-ssh-lane provisioning-ssh
+            $this->scripts->run($node, 'orbit-security', 'reconfigure', $script);
+            PHP,
+    ]))
+        ->toThrow(
+            RuntimeException::class,
+            'SSH lane marker apps/gateway/app/Example.php:2 is not attached to an SSH call edge.',
         );
 });
 
@@ -94,3 +252,81 @@ it('passes the transitional SSH inventory freshness command', function (): void 
 
     expect($exitCode)->toBe(0)->and(Artisan::output())->toContain('Orbit transitional SSH inventory is up to date.');
 });
+
+it('does not advertise the removed node transport selector in active docs or Orbit skill references', function (): void {
+    foreach (active_agent_transport_reference_files() as $path => $contents) {
+        expect($contents, $path)
+            ->not->toContain('--node-transport')
+            ->not->toContain('transitional-ssh-fallback')
+            ->not->toContain('exact-marked transitional cleanup seam')
+            ->not->toContain('tracked SSH seam');
+
+        if (str_starts_with($path, '.agents/skills/orbit/references/')) {
+            expect($contents, $path)->not->toContain('transitional-ssh');
+        }
+    }
+});
+
+it('does not publish retired SSH-era machine contracts in active docs', function (): void {
+    foreach (active_agent_transport_reference_files() as $path => $contents) {
+        expect($contents, $path)
+            ->not->toContain('app.ssh_failure')
+            ->not->toContain('node.app_ssh_unreachable')
+            ->not->toContain('node_transport_required');
+    }
+});
+
+/** @return array<string, string> */
+function active_agent_transport_reference_files(): array
+{
+    $repositoryRoot = realpath(base_path('../..'));
+
+    if (! is_string($repositoryRoot)) {
+        throw new RuntimeException('Unable to resolve the repository root.');
+    }
+
+    $files = [];
+
+    foreach ([
+        'apps/docs/content/domains',
+        'apps/docs/content/architecture.md',
+        'apps/docs/content/concepts.md',
+        'apps/docs/content/execution-lanes.md',
+        'apps/docs/content/mission.md',
+        'apps/docs/content/tech-stack.md',
+        '.agents/skills/orbit/references',
+    ] as $relativePath) {
+        $path = "{$repositoryRoot}/{$relativePath}";
+
+        if (is_file($path)) {
+            $contents = file_get_contents($path);
+
+            if (is_string($contents)) {
+                $files[$relativePath] = $contents;
+            }
+
+            continue;
+        }
+
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path));
+
+        foreach ($iterator as $file) {
+            if (! $file instanceof SplFileInfo || ! $file->isFile() || $file->getExtension() !== 'md') {
+                continue;
+            }
+
+            $contents = file_get_contents($file->getPathname());
+
+            if (! is_string($contents)) {
+                continue;
+            }
+
+            $relativeFile = ltrim(str_replace($repositoryRoot, '', $file->getPathname()), '/');
+            $files[$relativeFile] = $contents;
+        }
+    }
+
+    ksort($files);
+
+    return $files;
+}

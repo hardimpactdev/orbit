@@ -27,7 +27,6 @@ final readonly class OperatorNodeManager
         }
 
         $this->wireguardAddress($node);
-        $original = $node->only(['user', 'platform', 'managed']);
 
         $node->forceFill([
             'user' => $user,
@@ -47,14 +46,10 @@ final readonly class OperatorNodeManager
                 ],
             );
         } catch (Throwable $exception) {
-            $node->forceFill($original)->save();
-
             throw new OperatorNodeManagementException('node.agent_unreachable', $exception->getMessage());
         }
 
         if (! $result->successful()) {
-            $node->forceFill($original)->save();
-
             throw new OperatorNodeManagementException(
                 'node.agent_unreachable',
                 'Gateway Agent-push reachability check failed.',

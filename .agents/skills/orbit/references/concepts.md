@@ -94,9 +94,8 @@ Scope flags: `--node`, `--self`, `--all`, `--app`, `--workspace`, `--family=<key
 Every CLI call lands on the gateway (HTTPS over WireGuard). For supported
 node-local command execution, the gateway pushes an allowlisted typed command
 envelope to the node's Orbit Agent listener. SSH is permanent only for
-provisioning/bootstrap. Every remaining non-provisioning consumer carries the
-exact `transitional-ssh` marker until it is ported to Agent push or
-gateway-local execution.
+provisioning/bootstrap. Every non-provisioning command executes through Agent
+push or gateway-local execution and fails clearly when that lane is unavailable.
 
 `node:new --user` is a bootstrap credential only; the steady-state user is
 created during provisioning and stored on the node record.

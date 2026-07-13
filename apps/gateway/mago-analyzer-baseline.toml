@@ -4207,24 +4207,6 @@ message = "Assigning `nonnull` type to a variable may lead to unexpected behavio
 count = 2
 
 [[issues]]
-file = "app/Services/Convergence/ProcessDockerContainerResource.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #4 of `App\Data\Convergence\ProcessDockerContainerProbe::__construct`: expected `array<string, mixed>|null`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/Convergence/ProcessDockerContainerResource.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Services/Convergence/ProcessDockerContainerResource.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
 file = "app/Services/Convergence/UfwFirewallRule.php"
 code = "possibly-invalid-argument"
 message = '''Possible argument type mismatch for argument #1 of `App\Services\Convergence\UfwFirewallRule::identityKey`: expected `array{'action': string, 'address_family'?: string, 'destination': null|string, 'direction': string, 'interface'?: null|string, 'port': string, 'protocol': string, 'source': string}`, but possibly received `array<string, mixed>`.'''

@@ -388,11 +388,18 @@ it('emits terminal success only after runner verification passes', function (): 
 
     $run = fleetVerifierRun();
     Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'wireguard_address' => '10.44.0.2',
+        ]);
+    Node::factory()
         ->appDev()
         ->managed()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.44.0.12',
         ]);
     $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVerifierSnapshot(targetVersion: '1.2.3'));
@@ -468,11 +475,18 @@ it('emits terminal failure when runner verification fails', function (): void {
 
     $run = fleetVerifierRun();
     Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'wireguard_address' => '10.44.0.2',
+        ]);
+    Node::factory()
         ->appDev()
         ->managed()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.44.0.12',
         ]);
     $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVerifierSnapshot());
@@ -530,6 +544,10 @@ function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
         ),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
         fleet_verifier_gateway_migration_command($gatewayImage) => Process::result(),
+        fleet_verifier_gateway_host_cli_command($gatewayImage) => Process::result(),
+        fleet_verifier_root_ca_subject_command() => Process::result(
+            output: "subject=CN = Orbit Root CA\n",
+        ),
         "docker service update --detach=true --image '{$gatewayImage}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" =>
             Process::result(),
         "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
@@ -548,6 +566,28 @@ function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
             output: "{$gatewayImage}\n",
         ),
+    ]);
+}
+
+function fleet_verifier_root_ca_subject_command(): string
+{
+    $rootCertificate = config('orbit.paths.config_root').'/ca/root.crt';
+
+    return sprintf(
+        'openssl x509 -in %s -noout -subject',
+        escapeshellarg($rootCertificate),
+    );
+}
+
+function fleet_verifier_gateway_host_cli_command(string $gatewayImage): string
+{
+    return implode(' ', [
+        'docker run --rm',
+        '--entrypoint '.escapeshellarg('bash'),
+        '--mount '.escapeshellarg('type=bind,source=/home/orbit/orbit,target=/mnt/orbit-install'),
+        '--mount '.escapeshellarg('type=bind,source=/home/orbit,target=/mnt/orbit-home'),
+        escapeshellarg($gatewayImage),
+        escapeshellarg('-s'),
     ]);
 }
 
@@ -617,6 +657,7 @@ function fleetVerifierStepEvents(OperationRun $run): array
 function fleet_verifier_agent_response(Request $request, ?string $failCheck = null): mixed
 {
     $argv = $request['argv'];
+    $command = is_array($argv) && is_string($argv[0] ?? null) ? $argv[0] : 'unknown';
     $check = is_array($argv) && is_string($argv[1] ?? null) ? $argv[1] : 'unknown';
     $failed = $failCheck === $check;
 
@@ -631,7 +672,11 @@ function fleet_verifier_agent_response(Request $request, ?string $failCheck = nu
                 'type' => $failed ? 'stderr' : 'stdout',
                 'message' => $failed
                     ? fleet_verifier_failure_envelope($check)
-                    : fleet_verifier_success_envelope($check, $request['input'] ?? null),
+                    : (
+                        $command === 'internal:fleet-update:install-cli'
+                            ? fleet_verifier_install_success_envelope()
+                            : fleet_verifier_success_envelope($check, $request['input'] ?? null)
+                    ),
             ],
             [
                 'type' => 'exit',
@@ -639,6 +684,21 @@ function fleet_verifier_agent_response(Request $request, ?string $failCheck = nu
             ],
         ],
     ]);
+}
+
+function fleet_verifier_install_success_envelope(): string
+{
+    return json_encode([
+        'success' => [
+            'data' => [
+                'exit_code' => 0,
+                'stdout' => "ok\n",
+                'stderr' => '',
+                'duration_ms' => 1,
+            ],
+            'meta' => [],
+        ],
+    ], JSON_THROW_ON_ERROR);
 }
 
 function fleet_verifier_success_envelope(string $check, mixed $input): string

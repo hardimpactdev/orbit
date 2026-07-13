@@ -315,13 +315,13 @@ Node transport has different rules before and after bootstrap:
   operate without owning fleet state.
 - A roleless active operator node can explicitly opt into managed Agent intent
   by running `orbit node:manage`
-  locally. The command does not add a role; it sets `node.managed=true` only
-  after its Agent-push verification succeeds.
-- `node:manage` persists `node.user` and `node.platform`, provisionally opts the
-  node into management, and verifies a typed Agent runtime probe over the
-  node's WireGuard identity. Failed verification restores the prior metadata.
+  locally. The command does not add a role; it persists `node.managed=true` as
+  explicit Agent intent.
+- `node:manage` persists `node.user`, `node.platform`, and managed intent, then
+  verifies a typed Agent runtime probe over the node's WireGuard identity.
+  Failed verification retains that intent and reports Agent drift for
+  `doctor --family=node` to surface for repair.
 - Provisioning is the sole managed SSH lane.
-  ported to Agent push.
 - Provisioning uses SSH to establish a node's managed substrate.
   After bootstrap, the gateway sends typed `binary + argv` envelopes to the
   Orbit Agent for work on that node. Work for the gateway executes locally.
@@ -346,9 +346,9 @@ The current steady-state paths are therefore:
 2. gateway-local execution for gateway work, or gateway-pushed Agent HTTP for
    non-gateway node-local execution.
 
-Provisioning is the sole permanent Orbit SSH lane. The SSH seam in
-`node:manage` is transitional and requires its exact transport marker.
-Break-glass SSH belongs to the operator and remains outside Orbit commands.
+Provisioning is the sole permanent Orbit SSH lane. `node:manage` verifies the
+authenticated Agent-push path and never selects SSH. Break-glass SSH belongs to
+the operator and remains outside Orbit commands.
 
 ## Role Bootstrap Network Policy
 

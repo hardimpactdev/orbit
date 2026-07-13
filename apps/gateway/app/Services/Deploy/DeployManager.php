@@ -454,11 +454,11 @@ final readonly class DeployManager
             );
         } catch (RemoteLocalExecutorTransportFailed $exception) {
             throw new GatewayApiException(
-                message: 'Deployment requires Agent-push transport on the target node.',
-                errorCode: 'node_transport_required',
+                message: "Orbit Agent is unreachable for deployment on node '{$node->name}'.",
+                errorCode: 'node.agent_unreachable',
                 errorMeta: [
-                    'required' => 'agent-push',
-                    'transport' => 'agent-push',
+                    'reason' => 'agent_push_unavailable',
+                    'node' => $node->name,
                     'error' => $exception->getMessage(),
                 ],
             );

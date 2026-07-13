@@ -475,8 +475,8 @@ V1 has no WebSocket requirement, no arbitrary shell-over-agent transport, no
 menu job history, no production packaging or autostart installer, no
 self-update, and no separate approval UI. Agent execution is limited to
 explicitly supported binary argv envelopes with node-local binary allowlisting.
-App-dev convergence over Orbit Agent remains deferred until it can run as a
-direct gateway-pushed command envelope.
+App-dev convergence uses direct command envelopes that the gateway constructs,
+authorizes, and sends through Agent push.
 
 ## Access Policy
 

@@ -27,7 +27,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `user` | `--user` | Never. | `--as-first-user` is present. | `null`. | Non-empty user primary key string. |
 | `json` | `--json` | Never. | Never. | `false`. | Selects JSON output and non-interactive input. |
 
-`--app`, `--node`, `--node-transport`, and `--uri` are not part of this command.
+`--app`, `--node`, and `--uri` are not part of this command.
 
 ## Input Mode Contracts
 

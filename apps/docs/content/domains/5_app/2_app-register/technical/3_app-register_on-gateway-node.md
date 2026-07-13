@@ -15,9 +15,9 @@ a peer the gateway identifies as a **gateway node**.
 - **Path resolution:** `--path` is resolved on the target node through
   gateway-owned Agent-push inspection and application, not on the gateway filesystem.
 - **Apply:** The gateway writes app configuration locally and applies app-role
-  artifacts to the target node through the classified host execution lane — even when the
-  CLI invocation originated on the gateway host. The CLI still calls the
-  gateway API; there is no client-side bypass.
+  artifacts to the target node through authenticated Agent push over WireGuard,
+  even when the CLI invocation originated on the gateway host. The CLI still
+  calls the gateway API; there is no client-side bypass.
 
 ## Test Mapping
 

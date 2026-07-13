@@ -394,8 +394,8 @@ Each PHP workspace gets its own FrankenPHP container so workspaces are isolated
 from one another. Production PHP apps get a dedicated FrankenPHP runtime container
 as well. The PHP version for an app or workspace is gateway-tracked
 configuration; changing it recreates the affected runtime artifact from the
-selected PHP image on the owning node through the classified host execution
-lane. In production installs the CLI/local-
+selected PHP image on the owning node through authenticated Agent push over
+WireGuard. In production installs the CLI/local-
 executor artifact runs in the native CLI binary's embedded PHP; source-mounted
 Docker/Incus development and E2E nodes invoke `<source>/apps/cli/orbit`. Host
 PHP and PHP-FPM are not app/workspace runtime fallbacks.
@@ -557,8 +557,8 @@ The `metrics` role runs Orbit's host-resource observability backend. Prometheus
 and Grafana are node-owned service process definitions using the Docker Swarm
 runtime on the selected metrics node. node-exporter is a node-owned host binary
 tool with a node-owned host command process using systemd on the metrics node
-and every active workload node selected by the same target selector used by
-`update:all`. The role baseline creates the expected process rows, Docker
+and every active non-gateway role-bearing workload node. The role baseline
+creates the expected process rows, Docker
 substrate intent, and node-exporter host binary tool intent; start, stop,
 restart, logs, and runtime drift remain process-family behavior.
 

@@ -44,7 +44,7 @@ it('persists management metadata after Agent-push verification', function (): vo
         ->host_key_fingerprint->toBeNull();
 });
 
-it('rolls management metadata back when Agent push is unavailable', function (): void {
+it('retains management intent when Agent push is unavailable', function (): void {
     Http::fake([
         'http://10.44.0.24:9477/v1/commands' => Http::response(['error' => 'unreachable'], 503),
     ]);
@@ -70,9 +70,9 @@ it('rolls management metadata back when Agent push is unavailable', function ():
         ->assertJsonPath('error.code', 'node.agent_unreachable');
 
     expect($node->fresh())
-        ->user->toBeNull()
-        ->platform->toBeNull()
-        ->managed->toBeFalse();
+        ->user->toBe('nicky')
+        ->platform->toBe('macos_15-5')
+        ->managed->toBeTrue();
 });
 
 it('rejects role-bearing callers before management side effects', function (): void {

@@ -70,20 +70,21 @@ final readonly class ToolScriptDispatcher
                 throw: $throw,
             );
         } catch (RemoteLocalExecutorTransportFailed $exception) {
-            return $this->nodeTransportRequired($tool, $action, $exception);
+            return $this->agentUnreachable($node, $tool, $action, $exception);
         }
     }
 
-    public function nodeTransportRequired(
+    public function agentUnreachable(
+        Node $node,
         string $tool,
         string $action,
         RemoteLocalExecutorTransportFailed $exception,
     ): ToolRegistryFailure {
-        return ToolRegistryFailure::nodeTransportRequired(
-            message: "Tool '{$tool}' {$action} requires agent-push transport on the target node.",
+        return ToolRegistryFailure::agentUnreachable(
+            message: "Orbit Agent is unreachable for tool '{$tool}' {$action} on node '{$node->name}'.",
             meta: [
-                'required' => 'agent-push',
-                'transport' => 'agent-push',
+                'reason' => 'agent_push_unavailable',
+                'node' => $node->name,
                 'tool' => $tool,
                 'action' => $action,
                 'error' => $exception->getMessage(),

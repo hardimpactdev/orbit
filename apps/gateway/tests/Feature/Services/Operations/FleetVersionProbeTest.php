@@ -37,7 +37,7 @@ it('compares gateway image and workload CLI artifact identity from node DTOs', f
         ->appDev()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
         ]);
     Node::factory()->operator()->create(['name' => 'operator-1']);
@@ -122,7 +122,7 @@ it('reports all current when the gateway digest and workload hashes match', func
         ->appDev()
         ->create([
             'name' => 'app-dev-1',
-            'platform' => 'linux',
+            'platform' => 'ubuntu_24-04',
             'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
         ]);
 

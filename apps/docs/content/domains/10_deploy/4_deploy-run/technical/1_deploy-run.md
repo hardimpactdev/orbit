@@ -136,7 +136,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | App instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
 | Instance driver unsupported | The selected instance does not have an Orbit node and source path for Agent execution. | `error.code=deploy.instance_driver_unsupported` |
 | Pipeline empty | The production app instance has no configured deployment steps. | `error.code=deploy.pipeline_empty` |
-| Agent push required | The owning node is ineligible or the Agent-push transport cannot be reached. | `error.code=node_transport_required` |
+| Agent unreachable | The owning node is ineligible or the Agent-push transport cannot be reached. | `error.code=node.agent_unreachable`, `error.meta.reason=agent_push_unavailable` |
 | Execution failed | The gateway cannot execute a step on the owning node. | `error.code=deploy.execution_failed` |
 | Step failed | A deployment step exits non-zero. | `error.code=deploy.step_failed` |
 | History write failed | The gateway cannot persist the run or final run status. | `error.code=deploy.history_write_failed` |

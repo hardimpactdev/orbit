@@ -43,8 +43,8 @@ envelope (`meta.fields = ["json", "stream-json"]`,
 ## Input Resolution
 
 1. Select the output renderer.
-2. Call the gateway to authorize gateway-admin authority and resolve selected
-   non-local managed Orbit installations from active gateway node configuration.
+2. Call the gateway to authorize gateway-admin authority and resolve active
+   non-gateway role-bearing nodes that are Agent-eligible.
 3. Submit a start request to the gateway. The gateway persists an operation row,
    returns the durable event stream URL promptly, and launches a one-shot runner.
    When the request omits an inline manifest, the gateway defers release-manifest
@@ -131,11 +131,10 @@ execution details live in the renderer contracts.
 ## Fleet Selection Rules
 
 - Include the caller's local Orbit installation.
-- Include active non-local managed Orbit installations from gateway node
-  configuration when the gateway has both an Orbit installation path and enough
-  `RemoteShell` transport metadata to reach the node.
-- **Exclude operator identities, regardless of caller.** Operator
-  workstations update locally through
+- Include active non-gateway nodes with at least one active role assignment
+  only when they are Agent-eligible.
+- **Exclude roleless operator identities, regardless of managed Agent intent or
+  caller.** Operator workstations update locally through
   [`orbit update`](../../1_update/update.md) on each workstation.
 - Exclude inactive, removed, unknown, or caller-local node records from the
   gateway-selected installation list. The local installation is updated once
@@ -144,10 +143,10 @@ execution details live in the renderer contracts.
 
 The expected target shape per calling context:
 
-| Calling context | Local target | Gateway target | App-role targets | Other client targets |
+| Calling context | Local target | Gateway target | Role-bearing workload targets | Other client targets |
 | --- | --- | --- | --- | --- |
-| Non-gateway caller with gateway-admin authority | The caller-local installation, updated as a fan-out target after the gateway phase. | Yes, when the gateway is an active node distinct from the caller. Updated first, before local and app-role targets. | Yes, every active node selected by the rules above. Updated in parallel with the local target after the gateway phase. | Never. |
-| Gateway caller | The gateway installation (via the local target). Updated as the gateway phase; the local target concept does not apply separately. | N/A — the gateway is the local target. | Yes, every active node selected by the rules above. | Never. |
+| Non-gateway caller with gateway-admin authority | The caller-local installation, updated as a fan-out target after the gateway phase. | Yes, when the gateway is an active node distinct from the caller. Updated first, before local and workload-role targets. | Yes, every active Agent-eligible role-bearing node selected by the rules above. Updated in parallel with the local target after the gateway phase. | Never. |
+| Gateway caller | The gateway installation (via the local target). Updated as the gateway phase; the local target concept does not apply separately. | N/A — the gateway is the local target. | Yes, every active Agent-eligible role-bearing node selected by the rules above. | Never. |
 
 ## Durable Operation Rules
 
@@ -276,12 +275,10 @@ The expected target shape per calling context:
 - Workload fan-out uses the same persisted manifest snapshot as the gateway
   update for CLI artifacts, Orbit Agent artifacts, and required role image
   metadata.
-- Remote update execution is gateway-owned node execution through typed Orbit
-  Agent requests for agent-capable nodes, with the classified host update lane
-  retained for bootstrap/recovery fallback.
-  Clients do not SSH directly to the gateway, nodes, or other operator
-  workstations as part of the command contract. The gateway does not SSH to
-  operator workstations as part of the command contract.
+- For each remote update, the gateway authorizes a typed Orbit Agent request
+  and pushes it over WireGuard to the selected Agent-eligible node.
+  `update:all` never selects SSH, and the gateway does not target operator
+  workstations.
 - Continue updating remaining installations after a target fails.
 - If any workload target result is failed, the workload phase fails with
   `workload_update_failed` and preserves the selected target results before
@@ -304,13 +301,13 @@ The expected target shape per calling context:
   success. If one or more installations fail after side effects begin, report
   both successful and failed target results.
 - When the gateway installation update fails, do not start the local or
-  app-role fan-out.
+  workload-role fan-out.
 - When the caller's local installation update fails after the gateway phase
   succeeded, report a partial failure: the fleet was updated but the
   operator-local install was not. The operator re-runs `orbit update` to
   recover.
-- When a node with an app role fails, do not hide successful app-role updates
-  and do not cancel unrelated in-flight app-role updates.
+- When a selected workload node fails, do not hide successful workload updates
+  and do not cancel unrelated in-flight workload updates.
 
 ## Scope Boundaries
 
@@ -335,9 +332,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Local update failed (partial) | The caller's local CLI update fails after the fleet has already been updated by the gateway phase. | Partial failure. The fleet is updated. The operator re-runs `orbit update` to recover the local install. |
 | Immutable plan missing | The gateway cannot persist or load the immutable update plan for `operation_run_id`. | Failure before side effects |
 | Update lease conflict | Another active update lease owns the same fleet, gateway, scheduler, or node resource. | Failure before conflicting side effects |
-| Gateway update failed | The gateway service update, migration, or health verification fails. | Terminal operation failure; local and app-role targets are not started |
+| Gateway update failed | The gateway service update, migration, or health verification fails. | Terminal operation failure; local and workload-role targets are not started |
 | Scheduler recovery failed | The scheduler could not be restored after failed migrations or gateway health. | Terminal operation failure with explicit recovery metadata |
-| App-role update failed | One or more selected app-role installations fail to update. | Failure with partial target results |
+| Workload update failed | One or more selected role-bearing workload installations fail to update. | Failure with partial target results |
 | Final verification failed | Gateway, scheduler, CLI, or required image verification fails after updates. | Terminal operation failure with partial target results |
 
 The shared [Exit Status](../../../README.md#exit-status) policy applies. Partial
