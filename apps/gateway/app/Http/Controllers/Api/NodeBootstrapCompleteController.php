@@ -60,12 +60,11 @@ final readonly class NodeBootstrapCompleteController
             ], 403);
         }
 
-        $shouldLogCompletion = $nodeBootstrap->status === 'pending';
-
         if (! in_array('text/event-stream', $request->getAcceptableContentTypes(), strict: true)) {
-            $result = $nodes->completeBootstrap($nodeBootstrap, $caller);
+            $completion = $nodes->completeBootstrap($nodeBootstrap, $caller);
+            $result = $completion->result;
 
-            if ($result->successful() && $shouldLogCompletion) {
+            if ($result->successful() && $completion->completedNow) {
                 $this->activityLogger->log(
                     new NodeBootstrapCompletedActivity($nodeBootstrap),
                     channel: 'api',
@@ -99,7 +98,6 @@ final readonly class NodeBootstrapCompleteController
             $operationRuns,
             $operationRun,
             $activityLogger,
-            $shouldLogCompletion,
         ): void {
             $events->tree('Completing Node Bootstrap', [
                 ['key' => 'agent', 'label' => 'Wait for WireGuard Agent'],
@@ -110,10 +108,11 @@ final readonly class NodeBootstrapCompleteController
             $operationRun = $operationRuns->running($operationRun->id);
 
             try {
-                $result = $nodes->completeBootstrap($nodeBootstrap, $caller);
+                $completion = $nodes->completeBootstrap($nodeBootstrap, $caller);
+                $result = $completion->result;
 
                 if ($result->successful()) {
-                    if ($shouldLogCompletion) {
+                    if ($completion->completedNow) {
                         $activityLogger->log(
                             new NodeBootstrapCompletedActivity($nodeBootstrap),
                             channel: 'api',

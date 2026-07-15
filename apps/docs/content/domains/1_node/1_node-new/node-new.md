@@ -363,6 +363,10 @@ reservations cannot claim the same address. Readiness or convergence
 failure remains inspectable until the bootstrap is retried or explicitly
 removed.
 
+The gateway also serializes completion for each bootstrap. Overlapping callers
+wait for the winning request, refresh the terminal state, and return the same
+active result without rerunning convergence or duplicating `node.created`.
+
 `node:new` does not detect, infer, or store public IPv4/IPv6 metadata. The
 provided `--host` is treated as the operator-supplied SSH/bootstrap endpoint;
 for first-gateway bootstrap it also seeds the initial gateway endpoint used in

@@ -9,6 +9,8 @@ use App\Models\NodeBootstrap;
 use App\Models\NodeRoleAssignment;
 use App\Models\OperationRun;
 use App\Models\WireGuardPeer;
+use App\Services\Nodes\NodeBootstrapCompletionLock;
+use App\Services\Nodes\NodeBootstrapCompletionResult;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
@@ -272,6 +274,129 @@ it('completes through the WireGuard Agent once and then returns the active resul
         fn ($process): bool => preg_match('/(?:^|\s)(?:ssh|scp)(?:\s|$)/', (string) $process->command) === 1,
         0,
     );
+});
+
+it('serializes overlapping completion requests and records the winning transition once', function (): void {
+    [$gateway, $caller] = nodeBootstrapGatewayAndCaller();
+
+    WireGuardPeer::query()->create([
+        'node_id' => $gateway->id,
+        'public_key' => 'gateway-peer-public-key',
+        'private_key' => 'gateway-peer-private-key',
+        'pre_shared_key' => 'gateway-peer-preshared-key',
+        'allowed_ips' => '10.6.0.2/32',
+    ]);
+
+    $completionLock = new class extends NodeBootstrapCompletionLock {
+        private bool $held = false;
+
+        public function synchronized(
+            string $bootstrapId,
+            \Closure $callback,
+        ): NodeBootstrapCompletionResult {
+            if ($this->held) {
+                \Fiber::suspend('waiting-for-bootstrap-lock');
+
+                return $this->synchronized($bootstrapId, $callback);
+            }
+
+            $this->held = true;
+
+            try {
+                return $callback();
+            } finally {
+                $this->held = false;
+            }
+        }
+    };
+    app()->instance(NodeBootstrapCompletionLock::class, $completionLock);
+
+    $roleAssignments = nodeBootstrapRoleAssignments();
+    app()->instance(NodeRoleAssignmentService::class, $roleAssignments);
+
+    $agentPush = new class implements RunsInternalCommands {
+        public int $calls = 0;
+
+        public function runInternal(
+            Node $node,
+            string $commandName,
+            array $arguments = [],
+            array $commandOptions = [],
+            array $transportOptions = [],
+        ): RemoteShellResult {
+            $this->calls++;
+
+            if ($this->calls === 1) {
+                \Fiber::suspend('convergence-started');
+            }
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(JsonEnvelope::success([
+                    'exit_code' => 0,
+                    'stdout' => '',
+                    'stderr' => '',
+                    'duration_ms' => 1,
+                ]), JSON_THROW_ON_ERROR)
+                    ."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+    };
+    app()->instance(RunsInternalCommands::class, $agentPush);
+
+    $prepare = $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap', [
+            'name' => 'database-overlap',
+            'roles' => ['database'],
+            'host' => '192.0.2.74',
+            'user' => 'root',
+            'tld' => 'database-overlap',
+            'platform' => 'ubuntu_24-04',
+            'architecture' => 'amd64',
+        ])
+        ->assertOk();
+
+    Http::fake([
+        'http://10.6.0.3:9477/v1/commands' => Http::response([], 405),
+    ]);
+
+    $bootstrapId = $prepare->json('success.data.bootstrap.id');
+    $complete = fn () => $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson("/api/nodes/bootstrap/{$bootstrapId}/complete");
+
+    $firstResponse = null;
+    $first = new \Fiber(function () use ($complete, &$firstResponse): void {
+        $firstResponse = $complete();
+    });
+    $secondResponse = null;
+    $second = new \Fiber(function () use ($complete, &$secondResponse): void {
+        $secondResponse = $complete();
+    });
+
+    expect($first->start())->toBe('convergence-started')->and($second->start())->toBe('waiting-for-bootstrap-lock');
+
+    $first->resume();
+    $second->resume();
+
+    $firstResponse->assertOk()->assertJsonPath('success.data.node.status', 'active');
+    $secondResponse->assertOk()->assertJsonPath('success.data.node.status', 'active');
+
+    expect($first->isTerminated())
+        ->toBeTrue()
+        ->and($second->isTerminated())
+        ->toBeTrue()
+        ->and(NodeBootstrap::query()->findOrFail($bootstrapId)->status)
+        ->toBe('completed')
+        ->and(Node::query()->where('name', 'database-overlap')->firstOrFail()->isActive())
+        ->toBeTrue()
+        ->and($agentPush->calls)
+        ->toBe(5)
+        ->and(DB::table('activity_log')->where('event', 'node.created')->count())
+        ->toBe(1);
 });
 
 it('allows only the initiating client to complete a pending bootstrap', function (): void {
@@ -677,8 +802,11 @@ it('keeps the node and bootstrap retryable when the terminal transition is inter
     ]);
 
     $terminalAttempts = 0;
-    NodeBootstrap::updating(function (NodeBootstrap $bootstrap) use (&$terminalAttempts): void {
-        if ($bootstrap->status !== 'completed') {
+    DB::connection()->beforeExecuting(function (string $query, array $bindings) use (&$terminalAttempts): void {
+        if (
+            ! str_contains($query, 'update "node_bootstraps"')
+            || ! in_array('completed', $bindings, strict: true)
+        ) {
             return;
         }
 

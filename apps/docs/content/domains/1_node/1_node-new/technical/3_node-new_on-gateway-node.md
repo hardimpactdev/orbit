@@ -123,7 +123,9 @@ endpoint.
 1. Authenticate the caller again and require it to match the bootstrap's
    initiating node before queuing an operation run, writing activity, or
    emitting progress.
-2. Require the pending node and request state to remain compatible.
+2. Serialize completion by bootstrap identifier, then refresh and require the
+   pending node and request state to remain compatible. An overlapping caller
+   waits for the current completion and returns the resulting active state.
 3. Wait for WireGuard reachability and for the Agent command endpoint at the
    reserved WireGuard address to return its readiness status.
 4. Create and converge initial role assignments through typed Agent-push
@@ -136,8 +138,9 @@ endpoint.
 6. Atomically mark the node active and bootstrap complete only after required
    readiness and convergence succeed. An interruption before that commit
    leaves both pending for idempotent completion retry.
-7. Emit one `node.created` activity only after that terminal commit. Denied,
-   failed, and already-completed retries do not emit or duplicate that activity.
+7. Emit one `node.created` activity only for the request that durably wins the
+   pending-to-completed transition. Denied, failed, overlapping, and
+   already-completed retries do not emit or duplicate that activity.
 
 The completion phase never falls back to SSH. An Agent readiness or convergence
 failure leaves inspectable pending/error state for a safe retry.
@@ -147,8 +150,10 @@ failure leaves inspectable pending/error state for a safe retry.
 - A compatible repeated prepare request from the same initiating node reuses
   the pending node, peer, address, and bootstrap identifier and renders a fresh
   equivalent bundle from the persisted identity state.
-- A repeated completion for an already completed bootstrap returns the same
-  active result without rerunning destructive setup.
+- Repeated or overlapping completion calls return the same active result.
+  Completion is locked by bootstrap identifier, which prevents destructive
+  setup from running twice. The durable pending-to-completed transition
+  identifies the sole activity winner.
 - A repeated command performs resume lookup before SSH, so Agent-ready pending
   and completed bootstraps remain recoverable after public SSH is denied.
 - Interrupted reservation cannot leave a node without its peer/bootstrap
@@ -169,5 +174,5 @@ failure leaves inspectable pending/error state for a safe retry.
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI input and authenticated prepare payload mapping plus first-gateway handling. |
 | `apps/cli/tests/Feature/Commands/Node/NodeNewBootstrapCommandTest.php` | Client-local platform/architecture preflight, template routing, SSH bundle streaming, failure behavior, and completion ordering. |
-| `apps/gateway/tests/Feature/Http/Api/NodeBootstrapControllerTest.php` | Resume, prepare, and completion authorization; unique-address collision retry; atomic terminal retry; success-only activity; readiness; and no gateway target SSH. |
+| `apps/gateway/tests/Feature/Http/Api/NodeBootstrapControllerTest.php` | Resume, prepare, and completion authorization; unique-address collision retry; serialized overlapping completion; atomic terminal retry; success-only activity; readiness; and no gateway target SSH. |
 | `apps/gateway/tests/Feature/Services/Nodes/NodeBootstrapBundleBuilderTest.php` | Minimal idempotent WireGuard/CLI/Agent bootstrap bundle and secret handling. |

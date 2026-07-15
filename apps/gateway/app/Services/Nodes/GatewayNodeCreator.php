@@ -179,28 +179,61 @@ final class GatewayNodeCreator
         );
     }
 
-    public function completeBootstrap(NodeBootstrap $bootstrap, Node $caller): GatewayActionResult
+    public function completeBootstrap(NodeBootstrap $bootstrap, Node $caller): NodeBootstrapCompletionResult
     {
+        try {
+            return app(NodeBootstrapCompletionLock::class)->synchronized(
+                $bootstrap->id,
+                fn (): NodeBootstrapCompletionResult => $this->completeBootstrapWhileLocked($bootstrap, $caller),
+            );
+        } catch (LockTimeoutException) {
+            return new NodeBootstrapCompletionResult(
+                result: GatewayActionResult::error(
+                    code: 'node.provisioning_incomplete',
+                    message: 'Node bootstrap completion is already in progress; retry shortly.',
+                    meta: [
+                        'bootstrap_id' => $bootstrap->id,
+                        'step' => 'completion_lock',
+                    ],
+                ),
+                completedNow: false,
+            );
+        }
+    }
+
+    private function completeBootstrapWhileLocked(
+        NodeBootstrap $bootstrap,
+        Node $caller,
+    ): NodeBootstrapCompletionResult {
         $bootstrap->refresh();
         $node = Node::query()->find($bootstrap->node_id);
 
         if ($bootstrap->initiating_node_id !== $caller->id) {
-            return GatewayActionResult::error(
-                code: 'authorization_failed',
-                message: 'Only the initiating node can complete this bootstrap.',
-                meta: ['bootstrap_id' => $bootstrap->id],
+            return new NodeBootstrapCompletionResult(
+                result: GatewayActionResult::error(
+                    code: 'authorization_failed',
+                    message: 'Only the initiating node can complete this bootstrap.',
+                    meta: ['bootstrap_id' => $bootstrap->id],
+                ),
+                completedNow: false,
             );
         }
 
         if ($bootstrap->status === 'completed' && $node instanceof Node && $node->isActive()) {
-            return $this->completedBootstrapResult($bootstrap, $node);
+            return new NodeBootstrapCompletionResult(
+                result: $this->completedBootstrapResult($bootstrap, $node),
+                completedNow: false,
+            );
         }
 
         if ($bootstrap->status !== 'pending' || ! $node instanceof Node || ! $node->isProvisioning()) {
-            return GatewayActionResult::error(
-                code: 'node.incompatible',
-                message: 'Node bootstrap is not in a compatible pending state.',
-                meta: ['bootstrap_id' => $bootstrap->id],
+            return new NodeBootstrapCompletionResult(
+                result: GatewayActionResult::error(
+                    code: 'node.incompatible',
+                    message: 'Node bootstrap is not in a compatible pending state.',
+                    meta: ['bootstrap_id' => $bootstrap->id],
+                ),
+                completedNow: false,
             );
         }
 
@@ -211,62 +244,147 @@ final class GatewayNodeCreator
         try {
             $result = $this->execute([...$bootstrap->request, '--json' => true]);
         } catch (Throwable $exception) {
-            $bootstrap->forceFill([
-                'status' => 'pending',
-                'last_error' => [
-                    'code' => 'node.provisioning_incomplete',
-                    'message' => $exception->getMessage(),
-                ],
-            ])->save();
+            $completed = $this->refreshCompletedBootstrap($bootstrap, $node);
 
-            return GatewayActionResult::error(
-                code: 'node.provisioning_incomplete',
-                message: 'Node bootstrap completion failed.',
-                meta: [
-                    'bootstrap_id' => $bootstrap->id,
-                    'error' => $exception->getMessage(),
-                ],
-            );
-        }
+            if ($completed instanceof GatewayActionResult) {
+                return new NodeBootstrapCompletionResult(
+                    result: $completed,
+                    completedNow: false,
+                );
+            }
 
-        if ($result->successful()) {
-            try {
-                DB::transaction(static function () use ($bootstrap, $node): void {
-                    $node->forceFill(['status' => NodeStatus::Active])->save();
-                    $bootstrap->forceFill([
-                        'status' => 'completed',
-                        'last_error' => null,
-                    ])->save();
-                });
-            } catch (Throwable $exception) {
-                $bootstrap->refresh();
+            if ($bootstrap->status === 'pending') {
                 $bootstrap->forceFill([
-                    'status' => 'pending',
                     'last_error' => [
                         'code' => 'node.provisioning_incomplete',
                         'message' => $exception->getMessage(),
                     ],
                 ])->save();
+            }
 
-                return GatewayActionResult::error(
+            return new NodeBootstrapCompletionResult(
+                result: GatewayActionResult::error(
                     code: 'node.provisioning_incomplete',
-                    message: 'Node bootstrap terminal state could not be committed.',
+                    message: 'Node bootstrap completion failed.',
                     meta: [
                         'bootstrap_id' => $bootstrap->id,
                         'error' => $exception->getMessage(),
                     ],
+                ),
+                completedNow: false,
+            );
+        }
+
+        if ($result->successful()) {
+            try {
+                $completedNow = DB::transaction(static function () use ($bootstrap, $node): bool {
+                    $transitioned = NodeBootstrap::query()
+                        ->whereKey($bootstrap->id)
+                        ->where('status', 'pending')
+                        ->update([
+                            'status' => 'completed',
+                            'last_error' => null,
+                        ]);
+
+                    if ($transitioned !== 1) {
+                        return false;
+                    }
+
+                    $node->forceFill(['status' => NodeStatus::Active])->save();
+
+                    return true;
+                });
+            } catch (Throwable $exception) {
+                $completed = $this->refreshCompletedBootstrap($bootstrap, $node);
+
+                if ($completed instanceof GatewayActionResult) {
+                    return new NodeBootstrapCompletionResult(
+                        result: $completed,
+                        completedNow: false,
+                    );
+                }
+
+                if ($bootstrap->status === 'pending') {
+                    $bootstrap->forceFill([
+                        'last_error' => [
+                            'code' => 'node.provisioning_incomplete',
+                            'message' => $exception->getMessage(),
+                        ],
+                    ])->save();
+                }
+
+                return new NodeBootstrapCompletionResult(
+                    result: GatewayActionResult::error(
+                        code: 'node.provisioning_incomplete',
+                        message: 'Node bootstrap terminal state could not be committed.',
+                        meta: [
+                            'bootstrap_id' => $bootstrap->id,
+                            'error' => $exception->getMessage(),
+                        ],
+                    ),
+                    completedNow: false,
                 );
             }
 
-            return $result;
+            if (! $completedNow) {
+                $completed = $this->refreshCompletedBootstrap($bootstrap, $node);
+
+                if ($completed instanceof GatewayActionResult) {
+                    return new NodeBootstrapCompletionResult(
+                        result: $completed,
+                        completedNow: false,
+                    );
+                }
+
+                return new NodeBootstrapCompletionResult(
+                    result: GatewayActionResult::error(
+                        code: 'node.incompatible',
+                        message: 'Node bootstrap completion lost its pending transition.',
+                        meta: ['bootstrap_id' => $bootstrap->id],
+                    ),
+                    completedNow: false,
+                );
+            }
+
+            return new NodeBootstrapCompletionResult(
+                result: $result,
+                completedNow: true,
+            );
         }
 
-        $bootstrap->forceFill([
-            'status' => 'pending',
-            'last_error' => is_array($result->payload['error'] ?? null) ? $result->payload['error'] : null,
-        ])->save();
+        $completed = $this->refreshCompletedBootstrap($bootstrap, $node);
 
-        return $result;
+        if ($completed instanceof GatewayActionResult) {
+            return new NodeBootstrapCompletionResult(
+                result: $completed,
+                completedNow: false,
+            );
+        }
+
+        if ($bootstrap->status === 'pending') {
+            $bootstrap->forceFill([
+                'last_error' => is_array($result->payload['error'] ?? null) ? $result->payload['error'] : null,
+            ])->save();
+        }
+
+        return new NodeBootstrapCompletionResult(
+            result: $result,
+            completedNow: false,
+        );
+    }
+
+    private function refreshCompletedBootstrap(
+        NodeBootstrap $bootstrap,
+        Node $node,
+    ): ?GatewayActionResult {
+        $bootstrap->refresh();
+        $node->refresh();
+
+        if ($bootstrap->status === 'completed' && $node->isActive()) {
+            return $this->completedBootstrapResult($bootstrap, $node);
+        }
+
+        return null;
     }
 
     /**

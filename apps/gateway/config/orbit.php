@@ -48,6 +48,8 @@ return [
     'node_bootstrap' => [
         'readiness_attempts' => (int) env('ORBIT_NODE_BOOTSTRAP_READINESS_ATTEMPTS', 30),
         'readiness_delay_milliseconds' => (int) env('ORBIT_NODE_BOOTSTRAP_READINESS_DELAY_MILLISECONDS', 1000),
+        'completion_lock_seconds' => (int) env('ORBIT_NODE_BOOTSTRAP_COMPLETION_LOCK_SECONDS', 3600),
+        'completion_lock_wait_seconds' => (int) env('ORBIT_NODE_BOOTSTRAP_COMPLETION_LOCK_WAIT_SECONDS', 3600),
     ],
 
     'operations' => [
