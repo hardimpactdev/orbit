@@ -153,8 +153,9 @@ Each template pre-selects a role set and provisioning path. Use a template when 
 
 > **Status:** Templates `s3` and `websocket` are documented so the CLI surface
 > stays stable, but current behavior fails before side effects with
-> `template_not_implemented` or `role_not_implemented` until the S3 and
-> WebSocket implementations land.
+> `validation_failed` until the S3 and WebSocket implementations land. See the
+> [JSON renderer contract](technical/6.2_node-new_output-render_json.md#validation-error)
+> for the exact machine-readable failure shape.
 
 ## Templates
 

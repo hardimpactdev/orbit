@@ -95,6 +95,40 @@ function grantStoreNodeAccess(int $consumerId, int $servingId, array $permission
 }
 
 describe('NodeStoreController', function (): void {
+    it('returns registered validation JSON for accepted but pending node inputs', function (
+        array $input,
+        string $field,
+        string $valueKey,
+        string $value,
+    ): void {
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
+        assignStoreNodeRole($gatewayId, 'gateway');
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $response = $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.2'])
+            ->postJson('/api/nodes', [
+                'name' => 'pending-1',
+                'tld' => 'pending',
+                ...$input,
+            ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', $field)
+            ->assertJsonPath('error.meta.reason', 'not_implemented')
+            ->assertJsonPath("error.meta.{$valueKey}", $value);
+        Process::assertRanTimes(fn (): bool => true, 0);
+    })->with([
+        'template s3' => [['template' => 's3'], 'template', 'template', 's3'],
+        'template websocket' => [['template' => 'websocket'], 'template', 'template', 'websocket'],
+        'role s3' => [['roles' => ['s3']], 'roles', 'role', 's3'],
+        'role websocket' => [['roles' => ['websocket']], 'roles', 'role', 'websocket'],
+    ]);
+
     it('rejects gateway-named callers without an active gateway assignment', function (): void {
         DB::table('nodes')->insert([
             apiStoreNodeRow([

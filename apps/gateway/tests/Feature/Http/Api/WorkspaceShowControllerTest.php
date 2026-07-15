@@ -229,8 +229,8 @@ describe('WorkspaceShowController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'app')
             ->assertJsonPath('error.meta.reason', 'app_instance_required')
-            ->assertJsonPath('error.meta.app', 'docs')
-            ->assertJsonPath('error.meta.instances', ['development', 'production']);
+            ->assertJsonPath('error.meta.app', 'docs');
+        expect($response->json('error.meta'))->not->toHaveKey('instances');
     });
 
     it('requires an explicit bare app selector to resolve one instance by workspace path', function (): void {
@@ -260,8 +260,64 @@ describe('WorkspaceShowController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'app')
             ->assertJsonPath('error.meta.reason', 'app_instance_required')
-            ->assertJsonPath('error.meta.app', 'docs')
-            ->assertJsonPath('error.meta.instances', ['development', 'production']);
+            ->assertJsonPath('error.meta.app', 'docs');
+        expect($response->json('error.meta'))->not->toHaveKey('instances');
+    });
+
+    it('does not disclose hidden app instances when resolving by workspace name', function (): void {
+        $caller = createWorkspaceShowCallerNode();
+        $visibleNode = Node::factory()->create(['name' => 'visible-app']);
+        $hiddenNode = Node::factory()->create(['name' => 'hidden-app']);
+        assignWorkspaceShowRole($visibleNode);
+        assignWorkspaceShowRole($hiddenNode);
+        grantWorkspaceShowAccess($caller, $visibleNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $hiddenNode->id]);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        AppInstance::factory()->for($app)->create(['name' => 'production']);
+
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/feature-docs?app=docs',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+        expect($response->json('error.meta'))->not->toHaveKey('instances');
+    });
+
+    it('does not disclose hidden app instances when resolving by workspace path', function (): void {
+        $caller = createWorkspaceShowCallerNode();
+        $visibleNode = Node::factory()->create(['name' => 'visible-app']);
+        $hiddenNode = Node::factory()->create(['name' => 'hidden-app']);
+        assignWorkspaceShowRole($visibleNode);
+        assignWorkspaceShowRole($hiddenNode);
+        grantWorkspaceShowAccess($caller, $visibleNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $hiddenNode->id]);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'path' => '/srv/docs/.worktrees/feature-docs',
+        ]);
+        AppInstance::factory()->for($app)->create(['name' => 'production']);
+
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app&app=docs',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+        expect($response->json('error.meta'))->not->toHaveKey('instances');
     });
 
     it('resolves a workspace path through an explicit app instance selector', function (): void {

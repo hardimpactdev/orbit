@@ -159,9 +159,13 @@ final class NodeCreationRoleResolver
     {
         if (in_array($template, self::IMPLEMENTATION_PENDING_ROLES, true)) {
             throw new NodeCreationRoleInputException(
-                errorCode: 'template_not_implemented',
+                errorCode: 'validation_failed',
                 message: "Node template '{$template}' is not implemented yet.",
-                meta: ['field' => 'template', 'template' => $template],
+                meta: [
+                    'field' => 'template',
+                    'reason' => 'not_implemented',
+                    'template' => $template,
+                ],
             );
         }
 
@@ -260,9 +264,13 @@ final class NodeCreationRoleResolver
         foreach (self::IMPLEMENTATION_PENDING_ROLES as $pendingRole) {
             if (in_array($pendingRole, $roles, true)) {
                 throw new NodeCreationRoleInputException(
-                    errorCode: 'role_not_implemented',
+                    errorCode: 'validation_failed',
                     message: "Node role '{$pendingRole}' is not implemented yet.",
-                    meta: ['field' => 'roles', 'role' => $pendingRole],
+                    meta: [
+                        'field' => 'roles',
+                        'reason' => 'not_implemented',
+                        'role' => $pendingRole,
+                    ],
                 );
             }
         }

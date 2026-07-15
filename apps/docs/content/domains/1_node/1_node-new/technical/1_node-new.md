@@ -84,7 +84,8 @@ before role validation:
 | `analytics` | `analytics` |
 | `agent` | `agent` |
 
-Templates `s3` and `websocket` fail with `template_not_implemented` until
+Templates `s3` and `websocket` fail with `validation_failed`,
+`error.meta.field=template`, and `error.meta.reason=not_implemented` until
 their implementations land.
 
 ## Input Resolution

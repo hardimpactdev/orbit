@@ -116,3 +116,49 @@ it('rejects retired aggregate role values without aliases', function (): void {
 
     $this->fail('Expected retired role input to fail.');
 });
+
+it('uses registered validation failures for pending node templates', function (string $template): void {
+    try {
+        app(NodeCreationRoleResolver::class)->resolve(
+            template: $template,
+            operator: false,
+            roles: null,
+        );
+    } catch (NodeCreationRoleInputException $exception) {
+        expect($exception->errorCode)
+            ->toBe('validation_failed')
+            ->and($exception->meta)
+            ->toBe([
+                'field' => 'template',
+                'reason' => 'not_implemented',
+                'template' => $template,
+            ]);
+
+        return;
+    }
+
+    $this->fail('Expected the pending template to fail validation.');
+})->with(['s3', 'websocket']);
+
+it('uses registered validation failures for pending explicit node roles', function (string $role): void {
+    try {
+        app(NodeCreationRoleResolver::class)->resolve(
+            template: null,
+            operator: false,
+            roles: $role,
+        );
+    } catch (NodeCreationRoleInputException $exception) {
+        expect($exception->errorCode)
+            ->toBe('validation_failed')
+            ->and($exception->meta)
+            ->toBe([
+                'field' => 'roles',
+                'reason' => 'not_implemented',
+                'role' => $role,
+            ]);
+
+        return;
+    }
+
+    $this->fail('Expected the pending role to fail validation.');
+})->with(['s3', 'websocket']);
