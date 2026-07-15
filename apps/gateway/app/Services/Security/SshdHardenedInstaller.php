@@ -43,6 +43,13 @@ final class SshdHardenedInstaller implements SecurityInstaller
                     exit 1
                 fi
                 sudo install -d -m 0755 /etc/ssh/sshd_config.d
+                if ! sudo grep -Eq '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf([[:space:]]|$)' /etc/ssh/sshd_config; then
+                    SSHD_CONFIG_TMP="$(mktemp)"
+                    printf '%%s\n' 'Include /etc/ssh/sshd_config.d/*.conf' > "$SSHD_CONFIG_TMP"
+                    sudo cat /etc/ssh/sshd_config >> "$SSHD_CONFIG_TMP"
+                    sudo install -m 0644 -o root -g root "$SSHD_CONFIG_TMP" /etc/ssh/sshd_config
+                    rm -f "$SSHD_CONFIG_TMP"
+                fi
                 sudo tee /etc/ssh/sshd_config.d/99-orbit-hardening.conf > /dev/null <<EOF
                 # Managed by Orbit.
                 PermitRootLogin no
