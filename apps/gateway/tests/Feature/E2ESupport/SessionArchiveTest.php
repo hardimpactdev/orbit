@@ -56,6 +56,229 @@ it('session archive stores a compact receipt by default', function (): void {
     }
 });
 
+it('retains only regular proof files explicitly cited by the compact loop', function (): void {
+    $workspace = session_archive_workspace('compact-cited-proof');
+
+    try {
+        $paths = session_archive_paths($workspace);
+        session_archive_prepare_accepted_feature($paths);
+        $evidencePath = "{$paths['sourceOrbitDir']}/evidence/runtime/acceptance.md";
+        $qualityGatePath = "{$paths['sourceOrbitDir']}/quality-gates/quality-check.json";
+        mkdir(dirname($evidencePath), recursive: true);
+        mkdir(dirname($qualityGatePath), recursive: true);
+        file_put_contents($evidencePath, "retained topology passed\n");
+        file_put_contents($qualityGatePath, "{\"status\":\"passed\"}\n");
+        file_put_contents("{$paths['sourceOrbitDir']}/evidence/unreferenced.txt", "omit this\n");
+
+        $loop = (string) file_get_contents($paths['loopPath']);
+        $loop = str_replace(
+            '## Status',
+            <<<'MARKDOWN'
+                - Runtime evidence: `.orbit/evidence/runtime/acceptance.md`
+                - Broader gate: `.orbit/quality-gates/quality-check.json`
+
+                ## Status
+                MARKDOWN,
+            $loop,
+        );
+        file_put_contents($paths['loopPath'], $loop);
+
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180011',
+            '--slug=compact-cited-proof',
+            "--cwd={$paths['cwd']}",
+        ], full: false);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = session_archive_summary($process);
+        $archive = (string) $summary['archive_dir'];
+
+        expect($summary['copied_entries'])
+            ->toBe([
+                'evidence/runtime/acceptance.md',
+                'loop.md',
+                'quality-gates/quality-check.json',
+            ])
+            ->and($summary['entry_digests'])
+            ->toBe([
+                'evidence/runtime/acceptance.md' => hash_file(
+                    'sha256',
+                    "{$archive}/evidence/runtime/acceptance.md",
+                ),
+                'loop.md' => hash_file('sha256', "{$archive}/loop.md"),
+                'quality-gates/quality-check.json' => hash_file(
+                    'sha256',
+                    "{$archive}/quality-gates/quality-check.json",
+                ),
+            ])
+            ->and("{$archive}/evidence/runtime/acceptance.md")
+            ->toBeFile()
+            ->and(file_get_contents("{$archive}/evidence/runtime/acceptance.md"))
+            ->toBe("retained topology passed\n")
+            ->and("{$archive}/quality-gates/quality-check.json")
+            ->toBeFile()
+            ->and(file_get_contents("{$archive}/quality-gates/quality-check.json"))
+            ->toBe("{\"status\":\"passed\"}\n")
+            ->and("{$archive}/evidence/unreferenced.txt")
+            ->not->toBeFile();
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+});
+
+it('refuses a compact archive when the loop cites missing proof', function (): void {
+    $workspace = session_archive_workspace('compact-missing-proof');
+
+    try {
+        $paths = session_archive_paths($workspace);
+        session_archive_prepare_accepted_feature($paths);
+        $loop = (string) file_get_contents($paths['loopPath']);
+        file_put_contents(
+            $paths['loopPath'],
+            str_replace(
+                '## Status',
+                "- Runtime evidence: `.orbit/evidence/missing-proof.txt`\n\n## Status",
+                $loop,
+            ),
+        );
+
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180012',
+            '--slug=compact-missing-proof',
+            "--cwd={$paths['cwd']}",
+        ], full: false);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('.orbit/evidence/missing-proof.txt')
+            ->and(session_archive_directories($paths['archiveRoot']))
+            ->toBe([]);
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+});
+
+it('refuses unsafe compact proof citations: :dataset', function (
+    string $kind,
+    string $citation,
+    string $openingPrefix = '',
+): void {
+    $workspace = session_archive_workspace("compact-unsafe-proof-{$kind}");
+
+    try {
+        $paths = session_archive_paths($workspace);
+        session_archive_prepare_accepted_feature($paths);
+
+        if ($kind === 'symlink') {
+            $externalProof = "{$workspace}/external-proof.txt";
+            file_put_contents($externalProof, "must not be archived\n");
+            symlink($externalProof, "{$paths['sourceOrbitDir']}/evidence/linked-proof.txt");
+        }
+
+        if ($kind === 'directory') {
+            mkdir("{$paths['sourceOrbitDir']}/evidence/proof-directory");
+            file_put_contents(
+                "{$paths['sourceOrbitDir']}/evidence/proof-directory/proof.txt",
+                "must not be copied through a directory citation\n",
+            );
+        }
+
+        if ($kind === 'traversal') {
+            file_put_contents("{$paths['sourceOrbitDir']}/outside-proof.txt", "must remain outside proof roots\n");
+        }
+
+        if (str_starts_with($kind, 'truncated-')) {
+            file_put_contents(
+                "{$paths['sourceOrbitDir']}/evidence/proof",
+                "must not be substituted for the malformed citation\n",
+            );
+        }
+
+        $loop = (string) file_get_contents($paths['loopPath']);
+        file_put_contents(
+            $paths['loopPath'],
+            str_replace('## Status', "- Runtime evidence: {$openingPrefix}`{$citation}`\n\n## Status", $loop),
+        );
+
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180013',
+            '--slug=compact-unsafe-proof',
+            "--cwd={$paths['cwd']}",
+        ], full: false);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain(trim($citation, " \t\n\r\0\x0B`"))
+            ->and(session_archive_directories($paths['archiveRoot']))
+            ->toBe([]);
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+})->with([
+    'symlink' => ['symlink', '.orbit/evidence/linked-proof.txt'],
+    'directory' => ['directory', '.orbit/evidence/proof-directory'],
+    'traversal' => ['traversal', '.orbit/evidence/../outside-proof.txt'],
+    'empty path segment' => ['empty-path-segment', '.orbit/evidence//proof.txt'],
+    'truncated invalid character' => [
+        'truncated-invalid-character',
+        '.orbit/evidence/proof?.txt',
+    ],
+    'truncated after accepted punctuation' => [
+        'truncated-after-punctuation',
+        '.orbit/evidence/proof.?txt',
+    ],
+    'truncated after colon punctuation' => [
+        'truncated-after-colon',
+        '.orbit/evidence/proof:?txt',
+    ],
+    'repeated trailing punctuation' => [
+        'truncated-repeated-punctuation',
+        '.orbit/evidence/proof..',
+    ],
+    'trailing punctuation inside code span' => [
+        'truncated-code-span-punctuation',
+        '.orbit/evidence/proof.',
+    ],
+    'padded code span' => [
+        'truncated-padded-code-span',
+        ' .orbit/evidence/proof. ',
+    ],
+    'double-backtick code span' => [
+        'truncated-double-backtick-span',
+        '`.orbit/evidence/proof`',
+    ],
+    'triple-backtick code span' => [
+        'truncated-triple-backtick-span',
+        '``.orbit/evidence/proof``',
+    ],
+    'escaped opening delimiter' => [
+        'truncated-escaped-opening-delimiter',
+        '.orbit/evidence/proof',
+        '\\',
+    ],
+    'malformed leading prefix' => [
+        'truncated-leading-prefix',
+        'bad.orbit/evidence/proof',
+    ],
+    'absolute leading prefix' => [
+        'truncated-absolute-prefix',
+        '/tmp/.orbit/evidence/proof',
+    ],
+    'punctuated leading prefix' => [
+        'truncated-punctuated-prefix',
+        'bad:.orbit/evidence/proof',
+    ],
+]);
+
 it('binds a compact receipt to the branch and accepted candidate identity', function (): void {
     $workspace = session_archive_workspace('compact-identity');
 
@@ -103,6 +326,7 @@ it('binds a compact receipt to the branch and accepted candidate identity', func
               - focused: passed - fixture
               - broader: passed - fixture
               - runtime: not applicable - fixture
+            - Blast radius: not-required - local fixture change
             - Review: passed - reviewer - non-observable
             - Reviewed feature tip: {$featureTip}
             - Acceptance venue: automated
@@ -913,6 +1137,7 @@ function session_archive_prepare_accepted_feature(array $paths, bool $land = tru
           - focused: passed - fixture
           - broader: passed - fixture
           - runtime: not applicable - fixture
+        - Blast radius: not-required - local fixture change
         - Review: passed - reviewer - non-observable
         - Reviewed feature tip: {$featureTip}
         - Acceptance venue: automated

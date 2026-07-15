@@ -988,6 +988,12 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
         return false;
     }
 
+    foreach ($copiedEntries as $entry) {
+        if (! is_string($entry)) {
+            return false;
+        }
+    }
+
     $sortedEntries = $copiedEntries;
     sort($sortedEntries);
 
@@ -995,24 +1001,38 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
         $copiedEntries !== $sortedEntries
         || count($copiedEntries) !== count(array_unique($copiedEntries))
         || ! in_array('loop.md', $copiedEntries, true)
-        || array_diff($copiedEntries, ['feedback.jsonl', 'loop.md']) !== []
         || array_keys($entryDigests) !== $copiedEntries
     ) {
         return false;
     }
 
-    $actualEntries = array_values(array_filter(
-        scandir($archiveDir) ?: [],
-        static fn (string $entry): bool => ! in_array($entry, ['.', '..', 'orbit-session-archive.json'], true),
-    ));
-    sort($actualEntries);
+    try {
+        $loopProofEntries = array_map(
+            static fn (string $reference): string => substr($reference, strlen('.orbit/')),
+            orbitLoopProofReferences($loop),
+        );
+    } catch (RuntimeException) {
+        return false;
+    }
 
-    if ($actualEntries !== $copiedEntries) {
+    $receiptProofEntries = array_values(array_filter(
+        $copiedEntries,
+        static fn (string $entry): bool => str_starts_with($entry, 'evidence/')
+            || str_starts_with($entry, 'quality-gates/'),
+    ));
+
+    if ($receiptProofEntries !== $loopProofEntries) {
+        return false;
+    }
+
+    $actualEntries = compact_archive_actual_entries($archiveDir);
+
+    if ($actualEntries === null || $actualEntries !== $copiedEntries) {
         return false;
     }
 
     foreach ($copiedEntries as $entry) {
-        if (! is_string($entry) || $entry === '' || basename($entry) !== $entry) {
+        if (! is_string($entry) || ! compact_archive_entry_path_is_allowed($entry)) {
             return false;
         }
 
@@ -1039,50 +1059,69 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
 
 function compact_archive_entry_digest(string $path): ?string
 {
-    if (is_link($path)) {
+    if (is_link($path) || ! is_file($path)) {
         return null;
     }
 
-    if (is_file($path)) {
-        return hash_file('sha256', $path) ?: null;
+    return hash_file('sha256', $path) ?: null;
+}
+
+function compact_archive_entry_path_is_allowed(string $entry): bool
+{
+    if (in_array($entry, ['feedback.jsonl', 'loop.md'], true)) {
+        return true;
     }
 
-    if (! is_dir($path)) {
-        return null;
-    }
+    return preg_match(
+        '~^(?:evidence|quality-gates)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]$~',
+        $entry,
+    ) === 1
+        && ! in_array('.', explode('/', $entry), true)
+        && ! in_array('..', explode('/', $entry), true);
+}
 
-    $lines = [];
+/** @return list<string>|null */
+function compact_archive_actual_entries(string $archiveDir): ?array
+{
+    $entries = [];
     $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+        new RecursiveDirectoryIterator($archiveDir, FilesystemIterator::SKIP_DOTS),
         RecursiveIteratorIterator::SELF_FIRST,
     );
 
     foreach ($iterator as $entry) {
+        $relative = ltrim(substr($entry->getPathname(), strlen(rtrim($archiveDir, '/'))), '/');
+
+        if ($relative === 'orbit-session-archive.json') {
+            continue;
+        }
+
         if ($entry->isLink()) {
             return null;
         }
 
         if ($entry->isDir()) {
+            if (
+                preg_match('~^(?:evidence|quality-gates)(?:/[A-Za-z0-9._-]+)*$~', $relative) !== 1
+                || in_array('.', explode('/', $relative), true)
+                || in_array('..', explode('/', $relative), true)
+            ) {
+                return null;
+            }
+
             continue;
         }
 
-        if (! $entry->isFile()) {
+        if (! $entry->isFile() || ! compact_archive_entry_path_is_allowed($relative)) {
             return null;
         }
 
-        $digest = hash_file('sha256', $entry->getPathname());
-
-        if ($digest === false) {
-            return null;
-        }
-
-        $relativePath = substr($entry->getPathname(), strlen(rtrim($path, '/')) + 1);
-        $lines[] = $relativePath."\0".$digest;
+        $entries[] = $relative;
     }
 
-    sort($lines);
+    sort($entries, SORT_STRING);
 
-    return hash('sha256', implode("\n", $lines));
+    return $entries;
 }
 
 /**
@@ -1429,6 +1468,12 @@ function compact_feature_check(
         ? (string) orbitLoopLabel($contents, 'Proof', 'Accepted main tip')
         : 'main';
     $compactChangedFiles = branch_changed_files($worktree, 'HEAD', $compactDiffBase);
+    $blastRadiusProblem = orbitLoopBlastRadiusProblem($contents, $compactChangedFiles);
+
+    if ($blastRadiusProblem !== null) {
+        return block_result($subject, $blastRadiusProblem);
+    }
+
     $acceptanceProblem = compact_acceptance_provenance_problem(
         $contents,
         $worktree,
@@ -1579,6 +1624,12 @@ function compact_loop_problems(string $contents): array
         $problems[] = 'Review must be passed; current: '.($review ?? 'missing');
     } elseif (orbitLoopReviewHumanJudgment($review) === null) {
         $problems[] = 'Review must record human-judgment=required or human-judgment=not-required';
+    }
+
+    $blastRadiusProblem = orbitLoopBlastRadiusProblem($contents);
+
+    if ($blastRadiusProblem !== null) {
+        $problems[] = $blastRadiusProblem;
     }
 
     $reviewedTip = orbitLoopLabel($contents, 'Proof', 'Reviewed feature tip');
@@ -2016,22 +2067,7 @@ function changed_files(string $root, string $worktree, string $subject): array
  */
 function branch_changed_files(string $cwd, string $headRef, string $baseRef = 'main'): array
 {
-    $base = trim(run_git($cwd, ['merge-base', $baseRef, $headRef])['stdout']);
-
-    if ($base === '') {
-        return [];
-    }
-
-    $diff = run_git($cwd, ['diff', '--name-only', '--diff-filter=ACDMRT', $base, $headRef]);
-
-    if ($diff['exit_code'] !== 0) {
-        return [];
-    }
-
-    return array_values(array_filter(
-        array_map('trim', preg_split('/\R/', $diff['stdout']) ?: []),
-        fn (string $path): bool => $path !== '',
-    ));
+    return orbitLoopChangedFiles($cwd, $headRef, $baseRef);
 }
 
 /**

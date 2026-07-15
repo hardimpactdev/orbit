@@ -6,6 +6,20 @@ const ORBIT_LOOP_STATES = ['frame', 'build', 'prove', 'accept', 'accepted', 'lan
 
 const ORBIT_LOOP_ACCEPTANCE_VENUES = ['automated', 'retained-incus', 'browser', 'host-macos'];
 
+const ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PATHS = [
+    'PRODUCT_DECISIONS.md',
+    'apps/docs/content/architecture.md',
+    'apps/docs/content/concepts.md',
+    'apps/docs/content/domains/authorization-matrix.md',
+    'apps/docs/content/execution-lanes.md',
+    'apps/docs/content/mission.md',
+    'apps/docs/content/tech-stack.md',
+];
+
+const ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PREFIXES = [
+    'apps/docs/content/domains/',
+];
+
 function orbitLoopIsCompact(string $markdown): bool
 {
     return (
@@ -217,6 +231,155 @@ function orbitLoopReviewSaysNoHumanJudgment(?string $review): bool
     return orbitLoopReviewHumanJudgment($review) === 'not-required';
 }
 
+/** @param list<string> $changedFiles */
+function orbitLoopBlastRadiusProblem(string $markdown, array $changedFiles = []): ?string
+{
+    $blastRadius = orbitLoopLabel($markdown, 'Proof', 'Blast radius');
+    $status = orbitLoopStatusHead($blastRadius);
+
+    if ($status === null) {
+        return 'Blast radius is missing';
+    }
+
+    if (in_array($status, ['pending', 'gaps'], true)) {
+        return "Blast radius is {$status}";
+    }
+
+    if (! in_array($status, ['not-required', 'complete'], true)) {
+        return "Blast radius must be not-required or complete; current: {$status}";
+    }
+
+    if ($status === 'not-required') {
+        if (preg_match('/^not-required\s+-\s+\S.+$/i', (string) $blastRadius) !== 1) {
+            return 'Blast radius not-required must include a reason';
+        }
+
+        if (orbitLoopBlastRadiusRequiresClosure($changedFiles)) {
+            return 'Blast radius must be complete for a high-authority product contract change';
+        }
+
+        return null;
+    }
+
+    if (preg_match('/^complete\s+-\s+evidence=\S.+;\s*result=\S.+$/i', (string) $blastRadius) !== 1) {
+        return 'Blast radius complete must record evidence=<repository-wide search, inventory, or lintable check>; result=<summary>';
+    }
+
+    return null;
+}
+
+/** @param list<string> $changedFiles */
+function orbitLoopBlastRadiusRequiresClosure(array $changedFiles): bool
+{
+    foreach ($changedFiles as $path) {
+        $normalizedPath = ltrim((string) $path, './');
+
+        if (in_array($normalizedPath, ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PATHS, true)) {
+            return true;
+        }
+
+        foreach (ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PREFIXES as $prefix) {
+            if (str_starts_with($normalizedPath, $prefix)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/** @return list<string> */
+function orbitLoopProofReferences(string $markdown): array
+{
+    preg_match_all(
+        '~\.orbit/(?:evidence|quality-gates)/~',
+        $markdown,
+        $markers,
+        PREG_OFFSET_CAPTURE,
+    );
+
+    $references = [];
+
+    foreach ($markers[0] ?? [] as $marker) {
+        if (! is_array($marker) || ! isset($marker[1]) || ! is_int($marker[1])) {
+            continue;
+        }
+
+        $markerOffset = $marker[1];
+        $beforeOpeningDelimiter = $markerOffset > 1
+            ? substr($markdown, $markerOffset - 2, 1)
+            : '';
+
+        $openingDelimiterIsExact = $markerOffset > 0
+            && substr($markdown, $markerOffset - 1, 1) === '`'
+            && ! in_array($beforeOpeningDelimiter, ['`', '\\'], true);
+
+        if (! $openingDelimiterIsExact) {
+            throw new RuntimeException(
+                'Compact cited proof must be one exact inline-code path: '
+                .orbitLoopProofReferenceContainingToken($markdown, $markerOffset),
+            );
+        }
+
+        $candidate = substr($markdown, $markerOffset);
+        $matched = preg_match(
+            '~^\.orbit/(?:evidence|quality-gates)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]~',
+            $candidate,
+            $match,
+        );
+
+        if ($matched !== 1) {
+            throw new RuntimeException(
+                'Compact cited proof has an unsafe or malformed path: '.orbitLoopProofReferenceToken($candidate),
+            );
+        }
+
+        $reference = $match[0];
+        $token = orbitLoopProofReferenceToken($candidate);
+        $following = substr($candidate, strlen($reference), 1);
+        $afterClosingDelimiter = substr($candidate, strlen($reference) + 1, 1);
+
+        if ($following !== '`' || $afterClosingDelimiter === '`') {
+            throw new RuntimeException(
+                'Compact cited proof must be one exact inline-code path: '.$token,
+            );
+        }
+
+        $references[] = $reference;
+    }
+
+    $references = array_values(array_unique($references));
+    sort($references, SORT_STRING);
+
+    return $references;
+}
+
+function orbitLoopProofReferenceContainingToken(string $markdown, int $offset): string
+{
+    $start = $offset;
+
+    while ($start > 0) {
+        $preceding = substr($markdown, $start - 1, 1);
+
+        if (preg_match('~^[\s`\'"<>]$~u', $preceding) === 1) {
+            break;
+        }
+
+        $start--;
+    }
+
+    return orbitLoopProofReferenceToken(substr($markdown, $start));
+}
+
+function orbitLoopProofReferenceToken(string $candidate): string
+{
+    if (preg_match('~^[^\s`\'"<>]+~u', $candidate, $match) === 1) {
+        return $match[0];
+    }
+
+    return substr($candidate, 0, 120);
+}
+
 function orbitLoopReviewedIdentityProblem(string $markdown, string $featureTip): ?string
 {
     $review = orbitLoopLabel($markdown, 'Proof', 'Review');
@@ -332,7 +495,15 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
         || str_starts_with($path, '.github/')
         || in_array(
             $path,
-            ['composer.json', 'composer.lock', 'LOOP.md.example', 'AGENTS.md', 'AGENT_FAST_PATH.md', 'HARNESS.md'],
+            [
+                'orbit/sessions/index.json',
+                'composer.json',
+                'composer.lock',
+                'LOOP.md.example',
+                'AGENTS.md',
+                'AGENT_FAST_PATH.md',
+                'HARNESS.md',
+            ],
             true,
         )
     );
@@ -361,19 +532,55 @@ function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', string $base 
         return [];
     }
 
-    $output = orbitLoopGitValue($cwd, ['diff', '--name-only', '--diff-filter=ACDMRT', $mergeBase, $head]);
+    $output = orbitLoopGitOutput($cwd, [
+        'diff',
+        '--name-status',
+        '-z',
+        '--diff-filter=ACDMRT',
+        $mergeBase,
+        $head,
+    ]);
 
     if ($output === null) {
         return [];
     }
 
-    return array_values(array_filter(
-        array_map('trim', preg_split('/\R/', $output) ?: []),
-        static fn (string $path): bool => $path !== '',
-    ));
+    $tokens = explode("\0", $output);
+    $paths = [];
+
+    for ($index = 0; $index < count($tokens);) {
+        $status = $tokens[$index++] ?? '';
+
+        if ($status === '') {
+            continue;
+        }
+
+        $source = $tokens[$index++] ?? '';
+
+        if ($source !== '') {
+            $paths[] = $source;
+        }
+
+        if (in_array($status[0] ?? '', ['C', 'R'], true)) {
+            $destination = $tokens[$index++] ?? '';
+
+            if ($destination !== '') {
+                $paths[] = $destination;
+            }
+        }
+    }
+
+    return array_values(array_unique($paths));
 }
 
 function orbitLoopGitValue(string $cwd, array $arguments): ?string
+{
+    $output = orbitLoopGitOutput($cwd, $arguments);
+
+    return $output === null ? null : trim($output);
+}
+
+function orbitLoopGitOutput(string $cwd, array $arguments): ?string
 {
     $command = ['git', ...$arguments];
     $descriptorSpec = [
@@ -392,5 +599,5 @@ function orbitLoopGitValue(string $cwd, array $arguments): ?string
     fclose($pipes[2]);
     $exitCode = proc_close($process);
 
-    return $exitCode === 0 ? trim((string) $stdout) : null;
+    return $exitCode === 0 ? (string) $stdout : null;
 }

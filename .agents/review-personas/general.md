@@ -30,6 +30,14 @@ product authority. Check correctness, missing behavior, security, failure
 handling, idempotency, performance risk, maintainable extraction, extension
 points, docs alignment, test strength, operator UX, and acceptance routing.
 
+Classify `BLAST_RADIUS: complete` when the change affects a product decision, ownership boundary, transport, shared vocabulary, or shared schema. Before that
+classification, inspect beyond the candidate diff with one bounded
+repository-wide search, inventory, or lintable check and report the evidence
+and result. Otherwise classify `BLAST_RADIUS: not-required` and give the local
+reason. Use `BLAST_RADIUS: gaps` when an affected surface remains unresolved.
+Never return PASS with BLAST_RADIUS: gaps. Return FIX, or ESCALATE one concrete
+specialist question back to this same reviewer when the gap requires it.
+
 Report only concrete findings. Each finding contains severity, file/line or
 evidence ref, impact, and the smallest correction. Do not propose unrelated
 refactors or process improvements.
@@ -48,6 +56,7 @@ dispatch a standing specialist suite.
 ## Required Final Lines
 
 ```text
+BLAST_RADIUS: not-required|complete|gaps
 HUMAN_JUDGMENT: required|not-required
 VERDICT: PASS|FIX|ESCALATE
 ```

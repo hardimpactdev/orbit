@@ -107,6 +107,12 @@ function build_session_index(string $sessionsDir): array
             continue;
         }
 
+        $loopPath = "{$path}/loop.md";
+
+        if (! is_file($loopPath) || is_link($loopPath)) {
+            continue;
+        }
+
         $records[] = parse_archive($path, $matches[1], $matches[2]);
     }
 
@@ -164,6 +170,7 @@ function parse_archive(string $archiveDir, string $timestamp, string $slug): arr
     return array_merge($record, [
         'state' => orbitLoopStatusHead(orbitLoopLabel($loop, 'Status', 'State')),
         'review_status' => orbitLoopStatusHead(orbitLoopLabel($loop, 'Proof', 'Review')),
+        'blast_radius_status' => orbitLoopStatusHead(orbitLoopLabel($loop, 'Proof', 'Blast radius')),
         'acceptance_status' => orbitLoopStatusHead(orbitLoopLabel($loop, 'Proof', 'Acceptance')),
         'acceptance_venue' => orbitLoopStatusHead(orbitLoopLabel($loop, 'Proof', 'Acceptance venue')),
         'feedback_count' => $feedback['event_count'],

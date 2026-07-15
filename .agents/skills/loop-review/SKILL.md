@@ -30,6 +30,14 @@ Return the recurring failure, exact evidence refs, likely cause, existing
 protection, and smallest preventive change. Do not require analyzer, capture,
 observer, or signal-taxonomy fields that compact receipts do not contain.
 
+For prevention trend, count an escaped same-surface defect after terminal PASS:
+a later session or feedback event exposes a contradiction in the same contract
+surface that the earlier accepted review should have covered. Bind each count to
+both archive refs and keep uncertain matches `unknown`. Internal commit count and
+autonomous pre-land rework are not prevention failures; they show recovery before
+the defect escaped. Use `blast_radius_status` to explain coverage when present,
+not as proof that no defect escaped.
+
 ## One Bounded Experiment
 
 There may be one active loop experiment at a time. Create a Solo scratchpad

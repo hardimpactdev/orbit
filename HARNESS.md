@@ -65,10 +65,18 @@ baseline exists.
 
 After checks pass, use one independent general reviewer from
 `.agents/review-personas/general.md`. The reviewer returns `PASS`, `FIX`, or
-`ESCALATE` and `HUMAN_JUDGMENT: required|not-required`.
+`ESCALATE`, `BLAST_RADIUS: not-required|complete|gaps`, and
+`HUMAN_JUDGMENT: required|not-required`.
+
+Blast radius is the prevention hook inside the same general reviewer, not a new
+lane. Use `not-required - <reason>` for a local change. A product decision,
+ownership boundary, transport, shared vocabulary, or shared schema requires
+`complete - evidence=<repository-wide search, inventory, or lintable check>;
+result=<summary>`. `gaps` cannot PASS or enter acceptance.
 
 - `PASS`: continue.
-- `FIX`: record `Review: fix`, reset `Reviewed feature tip: none`, return to
+- `FIX`: record `Review: fix`, reset `Reviewed feature tip: none` and `Blast
+  radius: pending`, return to
   BUILD, add or adjust executable coverage, fix, commit the clean delta, repeat
   affected proof, and re-review the delta.
 - `ESCALATE`: name one specialist and one concrete high-risk question. A
@@ -77,8 +85,10 @@ After checks pass, use one independent general reviewer from
   requires no code delta. There are no standing specialist lanes.
 
 On terminal PASS, record `Reviewed feature tip` as the exact reviewed HEAD and
-include `human-judgment=required|not-required` in Review. Acceptance refuses a
-PASS recorded against any other commit or without that decision.
+include `human-judgment=required|not-required` in Review. Record the reviewer's
+Blast radius classification and closure evidence on the loop row. Acceptance
+refuses a PASS recorded against any other commit, without that decision, or
+with unresolved blast-radius gaps.
 
 ## Acceptance Venues
 
@@ -211,8 +221,11 @@ passes.
 5. After merge, keep the accepted feature worktree open and run its now-landed
    `bin/orbit-session-archive` with the feature worktree as cwd. Do not run the
    compact archive from main. Archives are compact by default: `loop.md`,
-   optional `feedback.jsonl`, and a versioned receipt bound to the landed
-   feature branch and archived bytes.
+   optional `feedback.jsonl`, regular files cited by the loop as one exact
+   inline-code path below `.orbit/evidence/` or `.orbit/quality-gates/`, and a
+   versioned receipt bound to the landed feature branch and every archived
+   byte. Cite files, never proof directories; missing, malformed, or unsafe
+   citations block archival.
 6. Use `bin/orbit-session-archive --full` only for failure diagnosis,
    escalation, security or release scope, or an explicit request.
 7. Update the session index and commit the archive/index.
@@ -242,6 +255,10 @@ one target metric, exact derivation from existing compact receipts, baseline
 boundary, fixed window, and revert command. Revert by default when the target
 does not improve, a hard protection fails, or ordinary delivery slows
 materially. Do not create generic evaluator tooling for a one-off calculation.
+
+The prevention metric counts escaped same-surface defects after terminal PASS,
+not internal commit count or autonomous pre-land rework. The latter is recovery
+that remained inside the loop.
 
 Hard security, correctness, acceptance, and evidence-integrity protections are
 never experiments. Historical session and signal tools remain available for an

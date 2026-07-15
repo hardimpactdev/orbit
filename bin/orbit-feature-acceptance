@@ -80,7 +80,14 @@ function acceptanceReady(string $cwd, string $loopPath, array $options): never
 
     acceptanceRequireCurrentMainIncluded($cwd, $featureTip);
 
-    $minimum = orbitLoopAcceptanceVenue(orbitLoopChangedFiles($cwd));
+    $changedFiles = orbitLoopChangedFiles($cwd);
+    $blastRadiusProblem = orbitLoopBlastRadiusProblem($loop, $changedFiles);
+
+    if ($blastRadiusProblem !== null) {
+        throw new RuntimeException($blastRadiusProblem);
+    }
+
+    $minimum = orbitLoopAcceptanceVenue($changedFiles);
     $venue = (string) ($options['venue'] ?? $minimum);
 
     if (! in_array($venue, ORBIT_LOOP_ACCEPTANCE_VENUES, true)) {
@@ -138,7 +145,14 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
         throw new RuntimeException('acceptance actor must be user or automated');
     }
 
-    $minimum = orbitLoopAcceptanceVenue(orbitLoopChangedFiles($cwd));
+    $changedFiles = orbitLoopChangedFiles($cwd);
+    $blastRadiusProblem = orbitLoopBlastRadiusProblem($loop, $changedFiles);
+
+    if ($blastRadiusProblem !== null) {
+        throw new RuntimeException($blastRadiusProblem);
+    }
+
+    $minimum = orbitLoopAcceptanceVenue($changedFiles);
     $venue = (string) orbitLoopLabel($loop, 'Proof', 'Acceptance venue');
 
     if (! orbitLoopVenueSatisfies($venue, $minimum)) {
@@ -206,6 +220,7 @@ function acceptanceInvalidate(string $loopPath, array $options): never
     $reason = orbitRedactSecrets(acceptanceRequiredOption($options, 'reason'))['text'];
     $loop = acceptanceLoop($loopPath);
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Review', 'fix - acceptance invalidated - '.$reason);
+    $loop = orbitLoopSetLabel($loop, 'Proof', 'Blast radius', 'pending');
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Reviewed feature tip', 'none');
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance', 'changes-requested - '.$reason);
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Accepted feature tip', 'none');
