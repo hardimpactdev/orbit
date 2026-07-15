@@ -240,6 +240,22 @@ it('refuses unsafe compact proof citations: :dataset', function (string $kind, s
         'truncated-repeated-punctuation',
         '.orbit/evidence/proof..',
     ],
+    'trailing punctuation inside code span' => [
+        'truncated-code-span-punctuation',
+        '.orbit/evidence/proof.',
+    ],
+    'malformed leading prefix' => [
+        'truncated-leading-prefix',
+        'bad.orbit/evidence/proof',
+    ],
+    'absolute leading prefix' => [
+        'truncated-absolute-prefix',
+        '/tmp/.orbit/evidence/proof',
+    ],
+    'punctuated leading prefix' => [
+        'truncated-punctuated-prefix',
+        'bad:.orbit/evidence/proof',
+    ],
 ]);
 
 it('binds a compact receipt to the branch and accepted candidate identity', function (): void {

@@ -305,7 +305,16 @@ function orbitLoopProofReferences(string $markdown): array
             continue;
         }
 
-        $candidate = substr($markdown, $marker[1]);
+        $markerOffset = $marker[1];
+
+        if (! orbitLoopProofReferenceHasSafeLeftBoundary($markdown, $markerOffset)) {
+            throw new RuntimeException(
+                'Compact cited proof has an unsafe or malformed path: '
+                .orbitLoopProofReferenceContainingToken($markdown, $markerOffset),
+            );
+        }
+
+        $candidate = substr($markdown, $markerOffset);
         $matched = preg_match(
             '~^\.orbit/(?:evidence|quality-gates)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]~',
             $candidate,
@@ -321,8 +330,9 @@ function orbitLoopProofReferences(string $markdown): array
         $reference = $match[0];
         $token = orbitLoopProofReferenceToken($candidate);
         $suffix = substr($token, strlen($reference));
+        $insideCodeSpan = $markerOffset > 0 && substr($markdown, $markerOffset - 1, 1) === '`';
 
-        if ($suffix !== '' && preg_match('~^[)}\],;:.]$~u', $suffix) !== 1) {
+        if ($suffix !== '' && ($insideCodeSpan || preg_match('~^[)}\],;:.]$~u', $suffix) !== 1)) {
             throw new RuntimeException(
                 'Compact cited proof has an unsafe or malformed path: '.$token,
             );
@@ -335,6 +345,38 @@ function orbitLoopProofReferences(string $markdown): array
     sort($references, SORT_STRING);
 
     return $references;
+}
+
+function orbitLoopProofReferenceHasSafeLeftBoundary(string $markdown, int $offset): bool
+{
+    if ($offset === 0) {
+        return true;
+    }
+
+    $preceding = substr($markdown, $offset - 1, 1);
+
+    if (preg_match('~^\s$~u', $preceding) === 1) {
+        return true;
+    }
+
+    return in_array($preceding, ['`', '\'', '"', '<', '(', '[', '{'], true);
+}
+
+function orbitLoopProofReferenceContainingToken(string $markdown, int $offset): string
+{
+    $start = $offset;
+
+    while ($start > 0) {
+        $preceding = substr($markdown, $start - 1, 1);
+
+        if (preg_match('~^[\s`\'"<>]$~u', $preceding) === 1) {
+            break;
+        }
+
+        $start--;
+    }
+
+    return orbitLoopProofReferenceToken(substr($markdown, $start));
 }
 
 function orbitLoopProofReferenceToken(string $candidate): string

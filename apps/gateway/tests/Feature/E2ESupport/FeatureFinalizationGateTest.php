@@ -2294,7 +2294,7 @@ it('allows cleanup when a compact receipt binds cited nested proof files', funct
     }
 });
 
-it('rejects a compact receipt that binds only a truncated proof citation', function (): void {
+it('rejects a compact receipt that binds only a truncated proof citation', function (string $citation): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
 
     commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
@@ -2306,7 +2306,7 @@ it('rejects a compact receipt that binds only a truncated proof citation', funct
         $loopPath,
         str_replace(
             '## Status',
-            "- Broader proof: `.orbit/quality-gates/proof.?json`\n\n## Status",
+            "- Broader proof: `{$citation}`\n\n## Status",
             $loop,
         ),
     );
@@ -2339,7 +2339,10 @@ it('rejects a compact receipt that binds only a truncated proof citation', funct
     } finally {
         remove_finalization_gate_fixture($repo, $worktree);
     }
-});
+})->with([
+    'invalid right suffix' => ['.orbit/quality-gates/proof.?json'],
+    'invalid left prefix' => ['prefix.orbit/quality-gates/proof'],
+]);
 
 it('rejects a malformed compact archive receipt', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
