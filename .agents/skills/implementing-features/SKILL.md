@@ -99,10 +99,18 @@ It returns:
 
 - `CHECKOUT_PROOF: ...`
 - concrete findings, if any;
+- `BLAST_RADIUS: not-required|complete|gaps`
 - `HUMAN_JUDGMENT: required|not-required`
 - `VERDICT: PASS|FIX|ESCALATE`
 
-On FIX, record `Review: fix`, reset `Reviewed feature tip: none`, return to BUILD
+Blast radius stays inside the same general reviewer. Use `not-required -
+<reason>` for a local change. A product decision, ownership boundary, transport,
+shared vocabulary, or shared schema requires `complete -
+evidence=<repository-wide search, inventory, or lintable check>;
+result=<summary>`. `gaps` cannot PASS or enter ACCEPT.
+
+On FIX, record `Review: fix`, reset `Reviewed feature tip: none` and `Blast
+radius: pending`, return to BUILD
 and add coverage before the fix where practical, then commit and re-review the
 proven delta. On ESCALATE, dispatch only the named specialist with the concrete
 high-risk question. The specialist answers back to the same general reviewer,
@@ -111,8 +119,9 @@ reviewer PASS is enough when no specialist question exists.
 
 Record Review in `.orbit/loop.md` with
 `human-judgment=required|not-required`. On terminal PASS, record
-`Reviewed feature tip` as the exact reviewed HEAD; acceptance rejects any other
-commit or a PASS without that decision.
+`Reviewed feature tip` as the exact reviewed HEAD and record the reviewer blast
+radius classification plus closure evidence; acceptance rejects any other
+commit, a PASS without that decision, or unresolved blast-radius gaps.
 
 ## ACCEPT
 

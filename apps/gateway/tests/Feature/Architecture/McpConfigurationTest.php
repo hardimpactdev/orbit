@@ -254,11 +254,17 @@ it('uses one general reviewer and no standing specialist reviewers in the active
         ->toBeFile()
         ->and($reviewer)
         ->toContain('CHECKOUT_PROOF')
+        ->toContain('BLAST_RADIUS: not-required|complete|gaps')
+        ->toContain('Never return PASS with BLAST_RADIUS: gaps')
+        ->toContain('product decision, ownership boundary, transport, shared vocabulary, or shared schema')
+        ->toContain('repository-wide search, inventory, or lintable check')
         ->toContain('HUMAN_JUDGMENT: required|not-required')
         ->toContain('VERDICT: PASS|FIX|ESCALATE')
         ->toContain('one concrete high-risk question')
         ->and($active)
         ->toContain('.agents/review-personas/general.md')
+        ->toContain('Blast radius')
+        ->toContain('same general reviewer')
         ->not->toContain('.agents/review-personas/cli-command.md')
         ->not->toContain('.agents/review-personas/docs-librarian.md')
         ->not->toContain('.agents/review-personas/post-feature-analyzer.md')
@@ -391,12 +397,16 @@ it('keeps loop improvement trigger-only and bounded', function (): void {
         ->toContain('Clean loops create no experiment')
         ->toContain('one active loop experiment')
         ->toContain('one target metric')
+        ->toContain('prevention metric counts escaped same-surface defects after terminal PASS')
+        ->toContain('not internal commit count or autonomous pre-land rework')
         ->toContain('Revert by default')
         ->not->toContain('## Metrics')
         ->not->toContain('bin/orbit-loop-metrics')->and($normalizedLoopReview)->toContain(
             'failed promoted protection',
         )->toContain('reviewer-confirmed recurring process failure')->toContain('existing compact receipts')->toContain(
             'Do not create generic evaluator tooling',
+        )->toContain('escaped same-surface defect after terminal PASS')->toContain(
+            'Internal commit count and autonomous pre-land rework are not prevention failures',
         );
 });
 

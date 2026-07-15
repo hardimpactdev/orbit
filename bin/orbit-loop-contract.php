@@ -6,6 +6,16 @@ const ORBIT_LOOP_STATES = ['frame', 'build', 'prove', 'accept', 'accepted', 'lan
 
 const ORBIT_LOOP_ACCEPTANCE_VENUES = ['automated', 'retained-incus', 'browser', 'host-macos'];
 
+const ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PATHS = [
+    'PRODUCT_DECISIONS.md',
+    'apps/docs/content/architecture.md',
+    'apps/docs/content/concepts.md',
+    'apps/docs/content/domains/authorization-matrix.md',
+    'apps/docs/content/execution-lanes.md',
+    'apps/docs/content/mission.md',
+    'apps/docs/content/tech-stack.md',
+];
+
 function orbitLoopIsCompact(string $markdown): bool
 {
     return (
@@ -215,6 +225,55 @@ function orbitLoopReviewRequiresHumanJudgment(?string $review): bool
 function orbitLoopReviewSaysNoHumanJudgment(?string $review): bool
 {
     return orbitLoopReviewHumanJudgment($review) === 'not-required';
+}
+
+/** @param list<string> $changedFiles */
+function orbitLoopBlastRadiusProblem(string $markdown, array $changedFiles = []): ?string
+{
+    $blastRadius = orbitLoopLabel($markdown, 'Proof', 'Blast radius');
+    $status = orbitLoopStatusHead($blastRadius);
+
+    if ($status === null) {
+        return 'Blast radius is missing';
+    }
+
+    if (in_array($status, ['pending', 'gaps'], true)) {
+        return "Blast radius is {$status}";
+    }
+
+    if (! in_array($status, ['not-required', 'complete'], true)) {
+        return "Blast radius must be not-required or complete; current: {$status}";
+    }
+
+    if ($status === 'not-required') {
+        if (preg_match('/^not-required\s+-\s+\S.+$/i', (string) $blastRadius) !== 1) {
+            return 'Blast radius not-required must include a reason';
+        }
+
+        if (orbitLoopBlastRadiusRequiresClosure($changedFiles)) {
+            return 'Blast radius must be complete for a high-authority product contract change';
+        }
+
+        return null;
+    }
+
+    if (preg_match('/^complete\s+-\s+evidence=\S.+;\s*result=\S.+$/i', (string) $blastRadius) !== 1) {
+        return 'Blast radius complete must record evidence=<repository-wide search, inventory, or lintable check>; result=<summary>';
+    }
+
+    return null;
+}
+
+/** @param list<string> $changedFiles */
+function orbitLoopBlastRadiusRequiresClosure(array $changedFiles): bool
+{
+    foreach ($changedFiles as $path) {
+        if (in_array(ltrim((string) $path, './'), ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PATHS, true)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function orbitLoopReviewedIdentityProblem(string $markdown, string $featureTip): ?string

@@ -12,6 +12,7 @@ it('documents one compact zero-touch loop contract', function (): void {
         ->toContain('## Goal')
         ->toContain('## Scope')
         ->toContain('## Proof')
+        ->toContain('- Blast radius: pending')
         ->toContain('- Review: pending')
         ->toContain('- Reviewed feature tip: none')
         ->toContain('- Acceptance venue: automated')
@@ -78,6 +79,25 @@ it('lints the compact loop contract without historical ceremony', function (): v
     }
 });
 
+it('blocks compact finalization while blast-radius closure is unresolved', function (string $blastRadius): void {
+    $packetDir = make_finalization_lint_dir(compact_feature_loop_packet(blastRadius: $blastRadius));
+
+    try {
+        $process = run_finalization_check_wrapper($packetDir, ['--lint']);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and(strtolower($process->getOutput().$process->getErrorOutput()))
+            ->toContain('blast radius')
+            ->toContain(explode(' ', $blastRadius, 2)[0]);
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+})->with([
+    'pending' => 'pending',
+    'gaps' => 'gaps - shared failure vocabulary still has stale consumers',
+]);
+
 it('allows only the exact reviewed and accepted feature and main tips to merge', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
 
@@ -91,6 +111,46 @@ it('allows only the exact reviewed and accepted feature and main tips to merge',
         expect($process->getExitCode())
             ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
+            ->toContain('FINALIZATION: PASS');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('requires complete blast-radius evidence before finalizing a high-authority change', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file(
+            $worktree,
+            'PRODUCT_DECISIONS.md',
+            "# Decisions\n\n2026-07-15: Gateway transport ownership changed.\n",
+        );
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture(
+            $repo,
+            $worktree,
+            blastRadius: 'not-required - incorrectly treated as local',
+        );
+
+        $blocked = run_finalization_gate($repo, 'git merge feature');
+
+        write_compact_feature_loop_for_fixture(
+            $repo,
+            $worktree,
+            blastRadius: "complete - evidence=rg 'transport ownership' apps packages bin; result=all affected surfaces aligned",
+        );
+
+        $passed = run_finalization_gate($repo, 'git merge feature');
+
+        expect($blocked->getExitCode())
+            ->toBe(2)
+            ->and(strtolower($blocked->getErrorOutput()))
+            ->toContain('blast radius')
+            ->toContain('complete')
+            ->and($passed->getExitCode())
+            ->toBe(0, $passed->getErrorOutput())
+            ->and($passed->getOutput())
             ->toContain('FINALIZATION: PASS');
     } finally {
         remove_finalization_gate_fixture($repo, $worktree);
@@ -2153,6 +2213,52 @@ it('allows cleanup with a valid compact archive receipt and no agent manifests',
     }
 });
 
+it('allows cleanup when a compact receipt binds cited nested proof files', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    $proofSource = latest_finalization_artifact_path($worktree, 'docs-lint');
+    $proofEntry = 'quality-gates/'.basename($proofSource);
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    $loopPath = "{$worktree}/.orbit/loop.md";
+    $loop = (string) file_get_contents($loopPath);
+    file_put_contents(
+        $loopPath,
+        str_replace(
+            '## Status',
+            "- Broader proof: `.orbit/{$proofEntry}`\n\n## Status",
+            $loop,
+        ),
+    );
+    land_finalization_gate_feature($repo);
+    $archive = write_compact_finalization_gate_session_archive($repo, $worktree, 'feature');
+    mkdir("{$archive}/quality-gates", recursive: true);
+    copy($proofSource, "{$archive}/{$proofEntry}");
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['copied_entries'][] = $proofEntry;
+    sort($receipt['copied_entries']);
+    $receipt['entry_digests']['loop.md'] = hash_file('sha256', "{$archive}/loop.md");
+    $receipt['entry_digests'][$proofEntry] = hash_file(
+        'sha256',
+        "{$archive}/{$proofEntry}",
+    );
+    ksort($receipt['entry_digests']);
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
 it('rejects a malformed compact archive receipt', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
 
@@ -3130,6 +3236,7 @@ function compact_feature_loop_packet(
     string $venue = 'automated',
     ?string $reviewedTip = null,
     string $runtime = 'not applicable - no runtime proof venue',
+    string $blastRadius = 'not-required - local change',
 ): string {
     $reviewedTip ??= $featureTip;
 
@@ -3156,6 +3263,7 @@ function compact_feature_loop_packet(
           - focused: passed - focused test
           - broader: passed - quality artifact
           - runtime: {$runtime}
+        - Blast radius: {$blastRadius}
         - Review: {$review}
         - Reviewed feature tip: {$reviewedTip}
         - Acceptance venue: {$venue}
@@ -3179,6 +3287,7 @@ function write_compact_feature_loop_for_fixture(
     string $worktree,
     string $venue = 'automated',
     string $runtime = 'not applicable - no runtime proof venue',
+    string $blastRadius = 'not-required - local change',
 ): void {
     $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
     $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
@@ -3190,6 +3299,7 @@ function write_compact_feature_loop_for_fixture(
             mainTip: $mainTip,
             venue: $venue,
             runtime: $runtime,
+            blastRadius: $blastRadius,
         ),
     );
 }

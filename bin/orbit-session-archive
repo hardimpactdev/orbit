@@ -65,7 +65,7 @@ if (array_key_exists('help', $options)) {
           --cwd=<path>                  Feature checkout cwd. Defaults to the current directory.
           --full                       Preserve the complete active .orbit state and provider captures.
                                        The default archive is compact: loop.md, feedback.jsonl when present,
-                                       and a versioned archive receipt.
+                                       explicitly cited evidence/quality-gate files, and a versioned archive receipt.
 
         In --full mode, provider session options are forwarded to bin/orbit-agent-session-archive:
           --processes-json, --solo-process-id, --solo-project-id, --discover-by-cwd,
@@ -236,7 +236,9 @@ try {
         assertRefreshPreservesArchive($archiveDir, $temporaryArchiveDir);
     }
 
-    $copiedEntries = archiveTopLevelEntries($temporaryArchiveDir);
+    $copiedEntries = $archiveMode === 'compact'
+        ? archiveCompactFileEntries($temporaryArchiveDir)
+        : archiveTopLevelEntries($temporaryArchiveDir);
     $entryDigests = archiveEntryDigests($temporaryArchiveDir, $copiedEntries);
     $branch = archiveGitValue($cwd, ['branch', '--show-current']) ?? 'unknown';
     $candidateCommit = archiveGitValue($cwd, ['rev-parse', 'HEAD']) ?? 'unknown';
@@ -326,6 +328,28 @@ function archiveTopLevelEntries(string $archiveDir): array
         }
 
         $entries[] = $entry->getFilename();
+    }
+
+    sort($entries, SORT_STRING);
+
+    return $entries;
+}
+
+/** @return list<string> */
+function archiveCompactFileEntries(string $archiveDir): array
+{
+    $entries = [];
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($archiveDir, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::LEAVES_ONLY,
+    );
+
+    foreach ($iterator as $entry) {
+        if ($entry->isLink() || ! $entry->isFile()) {
+            throw new RuntimeException("Unsafe constructed compact archive entry: {$entry->getPathname()}");
+        }
+
+        $entries[] = ltrim(substr($entry->getPathname(), strlen($archiveDir)), '/');
     }
 
     sort($entries, SORT_STRING);
@@ -472,6 +496,15 @@ function assertCompactArchiveIdentity(string $cwd, string $sourceOrbitDir, strin
 
     if (archiveGitExitCode($cwd, ['merge-base', '--is-ancestor', $acceptedMain, $candidate]) !== 0) {
         throw new RuntimeException('Compact archive accepted main tip is not an ancestor of candidate HEAD.');
+    }
+
+    $blastRadiusProblem = orbitLoopBlastRadiusProblem(
+        $loop,
+        orbitLoopChangedFiles($cwd, $candidate, $acceptedMain),
+    );
+
+    if ($blastRadiusProblem !== null) {
+        throw new RuntimeException('Compact archive '.$blastRadiusProblem.'.');
     }
 
     if (archiveGitExitCode($cwd, ['merge-base', '--is-ancestor', $candidate, 'main']) !== 0) {
@@ -914,10 +947,78 @@ function copyCompactOrbitEntries(string $sourceOrbitDir, string $archiveDir): ar
         $copiedEntries[] = $name;
     }
 
+    $archivedLoopPath = "{$archiveDir}/loop.md";
+    $archivedLoop = is_file($archivedLoopPath) ? (string) file_get_contents($archivedLoopPath) : '';
+
+    foreach (compactOrbitProofReferences($archivedLoop) as $reference) {
+        assertArchiveDirectoryIdentity($sourceOrbitDir, $sourceIdentity);
+        $relative = substr($reference, strlen('.orbit/'));
+        $source = compactOrbitProofSource($sourceOrbitDir, $relative, $reference);
+        orbitSessionArchiveCopyFile($source, "{$archiveDir}/{$relative}");
+        $copiedEntries[] = $relative;
+    }
+
     sort($copiedEntries, SORT_STRING);
     assertArchiveDirectoryIdentity($sourceOrbitDir, $sourceIdentity);
 
     return $copiedEntries;
+}
+
+/** @return list<string> */
+function compactOrbitProofReferences(string $loop): array
+{
+    preg_match_all(
+        '~\.orbit/(?:evidence|quality-gates)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]~',
+        $loop,
+        $matches,
+    );
+
+    $references = array_values(array_unique($matches[0] ?? []));
+    sort($references, SORT_STRING);
+
+    return $references;
+}
+
+function compactOrbitProofSource(string $sourceOrbitDir, string $relative, string $reference): string
+{
+    $segments = explode('/', $relative);
+
+    if (
+        ! in_array($segments[0] ?? '', ['evidence', 'quality-gates'], true)
+        || count($segments) < 2
+        || in_array('', $segments, true)
+        || in_array('.', $segments, true)
+        || in_array('..', $segments, true)
+    ) {
+        throw new RuntimeException("Compact cited proof has an unsafe path: {$reference}");
+    }
+
+    $current = rtrim($sourceOrbitDir, '/');
+
+    foreach ($segments as $segment) {
+        $current .= '/'.$segment;
+
+        if (is_link($current)) {
+            throw new RuntimeException("Compact cited proof must not traverse a symlink: {$reference}");
+        }
+    }
+
+    if (! is_file($current)) {
+        throw new RuntimeException("Compact cited proof must name an existing regular file: {$reference}");
+    }
+
+    $canonicalRoot = realpath($sourceOrbitDir);
+    $canonicalSource = realpath($current);
+
+    if (
+        $canonicalRoot === false
+        || $canonicalSource === false
+        || ! str_starts_with($canonicalSource, rtrim($canonicalRoot, '/').'/')
+    ) {
+        throw new RuntimeException("Compact cited proof escapes the active .orbit directory: {$reference}");
+    }
+
+    return $current;
 }
 
 /**

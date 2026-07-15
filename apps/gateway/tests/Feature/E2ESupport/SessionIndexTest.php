@@ -75,6 +75,7 @@ it('indexes compact loop receipts alongside historical archives', function (): v
                 'schema' => 'compact-v1',
                 'state' => 'accepted',
                 'review_status' => 'passed',
+                'blast_radius_status' => 'complete',
                 'acceptance_status' => 'accepted',
                 'acceptance_venue' => 'automated',
                 'feedback_count' => 2,
@@ -1328,6 +1329,45 @@ it('treats only exact current no-blocker entries as blocker free', function (): 
     }
 });
 
+it('ignores timestamp shaped directories without an archive payload', function (): void {
+    $workspace = session_index_workspace('empty-archive-directory');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+
+        mkdir("{$sessionsDir}/2026-07-10-120000-empty-directory", recursive: true);
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-120100-compact-payload',
+            loop: session_index_compact_loop(),
+        );
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-120200-legacy-payload',
+            loop: session_index_loop(outcome: 'complete'),
+        );
+
+        $write = run_session_index($sessionsDir, ['--write']);
+
+        expect($write->getExitCode())->toBe(0, $write->getErrorOutput());
+
+        $index = session_index_json($sessionsDir);
+        $archives = array_column($index['records'], 'archive');
+
+        expect($index)
+            ->toHaveKey('record_count', 2)
+            ->and($archives)
+            ->toBe([
+                '2026-07-10-120100-compact-payload',
+                '2026-07-10-120200-legacy-payload',
+            ])
+            ->and(run_session_index($sessionsDir, ['--check'])->getExitCode())
+            ->toBe(0);
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
 it('fails check mode when the committed session index is stale', function (): void {
     $workspace = session_index_workspace('drift');
 
@@ -1566,6 +1606,7 @@ function session_index_compact_loop(): string
           - broader: passed - quality
           - runtime: not applicable - tooling
         - Review: passed - reviewer 1 - non-observable
+        - Blast radius: complete - evidence=docs-lint; result=all affected surfaces aligned
         - Acceptance venue: automated
         - Acceptance: accepted - automated
         - Accepted feature tip: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

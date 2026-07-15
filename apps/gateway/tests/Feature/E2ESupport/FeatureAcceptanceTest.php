@@ -179,6 +179,122 @@ it('does not require retained runtime proof for repository tooling', function ()
     }
 });
 
+it('allows a local change to record that blast-radius closure is not required', function (): void {
+    $fixture = acceptance_test_workspace('local-blast-radius', 'bin/orbit-example');
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'automated',
+            blastRadius: 'not-required - repository-local tooling change',
+        );
+
+        $ready = acceptance_test_run($fixture, ['ready']);
+        $accepted = acceptance_test_run($fixture, ['accept', '--actor=automated']);
+
+        expect($ready->getExitCode())
+            ->toBe(0, $ready->getErrorOutput())
+            ->and($accepted->getExitCode())
+            ->toBe(0, $accepted->getErrorOutput())
+            ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toContain('- Blast radius: not-required - repository-local tooling change')
+            ->toContain('- State: accepted');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
+it('requires high-authority changes to record complete blast-radius closure evidence', function (): void {
+    $notRequired = acceptance_test_workspace('authority-blast-radius-not-required', 'PRODUCT_DECISIONS.md');
+    $bareComplete = acceptance_test_workspace('authority-blast-radius-bare-complete', 'PRODUCT_DECISIONS.md');
+    $closed = acceptance_test_workspace('authority-blast-radius-complete', 'PRODUCT_DECISIONS.md');
+
+    try {
+        acceptance_test_seed_loop(
+            $notRequired,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'automated',
+            blastRadius: 'not-required - incorrectly treated as local',
+        );
+        acceptance_test_seed_loop(
+            $bareComplete,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'automated',
+            blastRadius: 'complete',
+        );
+        acceptance_test_seed_loop(
+            $closed,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'automated',
+            blastRadius: "complete - evidence=rg 'transport contract' apps packages bin; result=all affected surfaces aligned",
+        );
+
+        $notRequiredReady = acceptance_test_run($notRequired, ['ready']);
+        $bareCompleteReady = acceptance_test_run($bareComplete, ['ready']);
+        $closedReady = acceptance_test_run($closed, ['ready']);
+        $closedAccepted = acceptance_test_run($closed, ['accept', '--actor=automated']);
+
+        expect($notRequiredReady->getExitCode())
+            ->toBe(2)
+            ->and(strtolower($notRequiredReady->getErrorOutput()))
+            ->toContain('blast radius')
+            ->toContain('complete')
+            ->and($bareCompleteReady->getExitCode())
+            ->toBe(2)
+            ->and(strtolower($bareCompleteReady->getErrorOutput()))
+            ->toContain('blast radius')
+            ->toContain('evidence')
+            ->toContain('result')
+            ->and($closedReady->getExitCode())
+            ->toBe(0, $closedReady->getErrorOutput())
+            ->and($closedAccepted->getExitCode())
+            ->toBe(0, $closedAccepted->getErrorOutput());
+    } finally {
+        acceptance_test_remove($notRequired);
+        acceptance_test_remove($bareComplete);
+        acceptance_test_remove($closed);
+    }
+});
+
+it('blocks readiness and acceptance while blast-radius closure is unresolved', function (string $blastRadius): void {
+    $status = explode(' ', $blastRadius, 2)[0];
+    $fixture = acceptance_test_workspace("unresolved-blast-radius-{$status}", 'bin/orbit-example');
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'automated',
+            blastRadius: $blastRadius,
+        );
+
+        $ready = acceptance_test_run($fixture, ['ready']);
+        $accepted = acceptance_test_run($fixture, ['accept', '--actor=automated']);
+
+        expect($ready->getExitCode())
+            ->toBe(2)
+            ->and(strtolower($ready->getErrorOutput()))
+            ->toContain('blast radius')
+            ->toContain($status)
+            ->and($accepted->getExitCode())
+            ->toBe(2)
+            ->and(strtolower($accepted->getErrorOutput()))
+            ->toContain('blast radius')
+            ->toContain($status);
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+})->with([
+    'pending' => 'pending',
+    'gaps' => 'gaps - gateway-owned workload SSH remains unclassified',
+]);
+
 it('keeps diff-derived proof separate from the automated acceptance actor', function (): void {
     $fixture = acceptance_test_workspace(
         'automated-retained-proof',
@@ -613,7 +729,12 @@ function acceptance_test_workspace(string $suffix, string $changedPath): string
     acceptance_test_git($workspace, ['commit', '-m', 'Initial']);
     acceptance_test_git($workspace, ['checkout', '-b', 'feature']);
     $absolute = "{$workspace}/{$changedPath}";
-    mkdir(dirname($absolute), recursive: true);
+    $directory = dirname($absolute);
+
+    if (! is_dir($directory)) {
+        mkdir($directory, recursive: true);
+    }
+
     file_put_contents($absolute, "candidate\n");
     acceptance_test_git($workspace, ['add', $changedPath]);
     acceptance_test_git($workspace, ['commit', '-m', 'Candidate']);
@@ -627,6 +748,7 @@ function acceptance_test_seed_loop(
     string $state,
     string $review,
     string $venue,
+    string $blastRadius = 'not-required - local change',
 ): void {
     $reviewedTip = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
 
@@ -653,6 +775,7 @@ function acceptance_test_seed_loop(
           - focused: passed - initial focused proof
           - broader: passed - initial broader proof
           - runtime: passed - retained fixture
+        - Blast radius: {$blastRadius}
         - Review: {$review}
         - Reviewed feature tip: {$reviewedTip}
         - Acceptance venue: {$venue}

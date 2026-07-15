@@ -1,7 +1,7 @@
 {
     "schema_version": 2,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 106,
+    "record_count": 104,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -3154,6 +3154,7 @@
             "archive_mode": "compact",
             "state": "accepted",
             "review_status": "passed",
+            "blast_radius_status": null,
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 21,
@@ -3175,6 +3176,7 @@
             "archive_mode": "compact",
             "state": "accepted",
             "review_status": "passed",
+            "blast_radius_status": null,
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 2,
@@ -3196,6 +3198,7 @@
             "archive_mode": "compact",
             "state": "accepted",
             "review_status": "passed",
+            "blast_radius_status": null,
             "acceptance_status": "accepted",
             "acceptance_venue": "automated",
             "feedback_count": 0,
@@ -3217,6 +3220,7 @@
             "archive_mode": "compact",
             "state": "accepted",
             "review_status": "passed",
+            "blast_radius_status": null,
             "acceptance_status": "accepted",
             "acceptance_venue": "automated",
             "feedback_count": 0,
@@ -3238,6 +3242,7 @@
             "archive_mode": "compact",
             "state": "accepted",
             "review_status": "passed",
+            "blast_radius_status": null,
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 0,
@@ -3252,33 +3257,6 @@
             "legacy": null
         },
         {
-            "archive": "2026-07-13-004810-agent-push-transports",
-            "slug": "agent-push-transports",
-            "timestamp": "2026-07-13-004810",
-            "schema": "legacy",
-            "archive_mode": "legacy",
-            "legacy": {
-                "loop_outcome": "unknown",
-                "loop_outcome_raw": null,
-                "required_verification": [],
-                "fresh_analyzer_verdict": "unknown",
-                "fresh_analyzer_verdict_raw": null,
-                "candidate_signals": {
-                    "total": 0,
-                    "classifications": {}
-                },
-                "blockers_present": false,
-                "token_usage": {
-                    "status": "unavailable",
-                    "input_tokens": null,
-                    "output_tokens": null,
-                    "total_tokens": null,
-                    "reasoning_tokens": null
-                },
-                "capture_status": "legacy"
-            }
-        },
-        {
             "archive": "2026-07-13-004849-codex-agent-push-transports",
             "slug": "codex-agent-push-transports",
             "timestamp": "2026-07-13-004849",
@@ -3286,6 +3264,7 @@
             "archive_mode": "compact",
             "state": "land",
             "review_status": "passed",
+            "blast_radius_status": null,
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 0,
@@ -3307,6 +3286,7 @@
             "archive_mode": "compact",
             "state": "accepted",
             "review_status": "passed",
+            "blast_radius_status": null,
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 0,
@@ -3328,6 +3308,7 @@
             "archive_mode": "compact",
             "state": "accepted",
             "review_status": "passed",
+            "blast_radius_status": null,
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 0,
@@ -3342,33 +3323,6 @@
             "legacy": null
         },
         {
-            "archive": "2026-07-15-133249-docs-drift-alignment",
-            "slug": "docs-drift-alignment",
-            "timestamp": "2026-07-15-133249",
-            "schema": "legacy",
-            "archive_mode": "legacy",
-            "legacy": {
-                "loop_outcome": "unknown",
-                "loop_outcome_raw": null,
-                "required_verification": [],
-                "fresh_analyzer_verdict": "unknown",
-                "fresh_analyzer_verdict_raw": null,
-                "candidate_signals": {
-                    "total": 0,
-                    "classifications": {}
-                },
-                "blockers_present": false,
-                "token_usage": {
-                    "status": "unavailable",
-                    "input_tokens": null,
-                    "output_tokens": null,
-                    "total_tokens": null,
-                    "reasoning_tokens": null
-                },
-                "capture_status": "legacy"
-            }
-        },
-        {
             "archive": "2026-07-15-133336-codex-docs-drift-alignment",
             "slug": "codex-docs-drift-alignment",
             "timestamp": "2026-07-15-133336",
@@ -3376,6 +3330,7 @@
             "archive_mode": "compact",
             "state": "accepted",
             "review_status": "passed",
+            "blast_radius_status": null,
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 0,
@@ -3397,6 +3352,7 @@
             "archive_mode": "compact",
             "state": "accepted",
             "review_status": "passed",
+            "blast_radius_status": null,
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 0,
@@ -3418,6 +3374,7 @@
             "archive_mode": "compact",
             "state": "accepted",
             "review_status": "passed",
+            "blast_radius_status": null,
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
             "feedback_count": 0,
