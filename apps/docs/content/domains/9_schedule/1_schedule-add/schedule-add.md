@@ -39,7 +39,7 @@ Orbit-owned maintenance schedules may be created by lifecycle commands, but this
 
 Use `schedule:add` when you need to define a new recurring task for an app or node. `schedule:add` validates the target, validates the execution source and interval, and writes gateway schedule configuration. The Orbit Scheduler (gateway-only) reads the gateway database every tick and dispatches due schedules to the resolved target through agent-push; target node agent-push reachability is verified at dispatch time, not at `schedule:add` time.
 
-It does not create apps, nodes, app process definitions, proxy routes, firewall rules, or schedules that exist only on the scheduler side outside gateway configuration.
+It does not create apps, nodes, app-instance process definitions, proxy routes, firewall rules, or schedules that exist only on the scheduler side outside gateway configuration.
 
 ## Output
 

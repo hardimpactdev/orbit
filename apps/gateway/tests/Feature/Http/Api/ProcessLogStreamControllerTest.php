@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
-use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -92,12 +91,9 @@ function process_log_stream_create_app(array $attributes): App
 
 function process_log_stream_create_process(App $app, string $name): Process
 {
-    $process = Process::factory()->create([
-        'node_id' => $app->node_id,
-        'owner_type' => $app->getMorphClass(),
-        'owner_id' => $app->getKey(),
-        'name' => $name,
-    ]);
+    $process = Process::factory()
+        ->forOwner($app)
+        ->create(['name' => $name]);
 
     if (! $process instanceof Process) {
         throw new RuntimeException('Expected process factory to create a process model.');

@@ -14212,6 +14212,13 @@
                     "doctor --family=proxy --restore"
                 ]
             },
+            "proxy.enactment_failed": {
+                "family": "proxy",
+                "kind": "command_handoff",
+                "allowed_next_commands": [
+                    "doctor --family=proxy --restore"
+                ]
+            },
             "proxy.docker_runtime_unavailable": {
                 "family": "proxy",
                 "kind": "command_handoff",
@@ -14309,13 +14316,15 @@
                     "name": "string"
                 },
                 "optional": {
-                    "app": "string",
+                    "app": "string|null",
+                    "app_instance": "string|null",
                     "command": "string",
                     "crash_notification": "string",
                     "last_event": "object|null",
                     "restart_policy": "string",
                     "runtime": "string",
-                    "runtime_unit": "string"
+                    "runtime_unit": "string",
+                    "workspace": "string|null"
                 }
             },
             "workspace": {

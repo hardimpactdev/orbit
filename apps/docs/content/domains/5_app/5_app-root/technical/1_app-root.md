@@ -135,31 +135,33 @@ to `success.meta.warnings[]`.
 
 Drift surfaces as structured warnings under `success.meta.warnings[]`. Each
 entry carries `code`, `family`, `message`, and `next_command`. Warning codes
-reuse the `app` doctor vocabulary defined in [`app-doctor.md`](../../app-doctor.md):
+reuse the vocabulary of the family that owns the drift:
 
 | Code | Family | Meaning |
 | --- | --- | --- |
-| `app.runtime_container_mismatch` | `app` | The app's runtime container configuration could not be re-applied to match gateway configuration on the owning node. |
-| `app.runtime_container_missing` | `app` | The app's runtime container configuration could not be installed while applying. |
+| `process.runtime_unit_mismatch` | `process` | The app instance's concrete runtime container could not be re-applied to match its process-backed runtime definition. |
+| `process.runtime_unit_missing` | `process` | The app instance's concrete runtime container could not be rendered or started while applying. |
 | `app.runtime_config_mismatch` | `app` | Managed app runtime configuration could not be re-applied to match gateway configuration. |
 | `app.runtime_config_missing` | `app` | Managed app runtime configuration could not be installed while applying. |
 
-`next_command` for each warning is `doctor --family=app --app=<app> --restore`.
+Process warnings use `doctor --family=process --restore`. Managed-configuration
+warnings use `doctor --family=app --app=<app> --restore`.
 
 `app.enactment_failed` and other drift codes specific to this command are
-not used; the app family already owns the precise vocabulary for runtime container and
-runtime configuration drift.
+not used. The process family already owns concrete runtime-unit drift, while
+the app family owns managed app runtime configuration.
 
 ## Doctor Relationship
 
 - This command updates gateway configuration that is verified by `doctor --family=app`.
   See [`app-doctor.md`](../../app-doctor.md) for the app-family probe and
   issue-code contract.
-- If re-application fails, `doctor --family=app` reports the same
-  `app.runtime_container_*` / `app.runtime_config_*` drift surfaced as warnings
-  here.
-- Repairing drift caused by a partial success of `app:root` belongs to
-  `doctor --family=app --restore`.
+- If re-application fails, `doctor --family=process` reports concrete
+  `process.runtime_unit_*` drift, while `doctor --family=app` reports managed
+  `app.runtime_config_*` drift.
+- Repairing drift caused by a partial success of `app:root` uses the Doctor
+  family named by each warning: `process` for runtime units and `app` for
+  managed runtime configuration.
 - The filesystem reality of the document root (`app.root_outside_path`,
   `app.root_missing`) is doctor-owned and never duplicated as `app:root`
   input validation.

@@ -42,6 +42,10 @@ describe('tool:list', function (): void {
                     'node' => 'app-1',
                     'expected_state' => 'installed',
                     'observed_state' => null,
+                    'observed_version' => null,
+                    'version' => '2.8',
+                    'managed' => true,
+                    'endpoints' => [],
                 ],
             ],
         ], ['node' => 'app-1', 'count' => 1]));
@@ -61,8 +65,17 @@ describe('tool:list', function (): void {
 
         expect($exitCode)
             ->toBe(0)
-            ->and($decoded['success']['data']['tools'][0]['name'])
-            ->toBe('composer')
+            ->and($decoded['success']['data']['tools'][0])
+            ->toBe([
+                'name' => 'composer',
+                'node' => 'app-1',
+                'expected_state' => 'installed',
+                'observed_state' => null,
+                'observed_version' => null,
+                'version' => '2.8',
+                'managed' => true,
+                'endpoints' => [],
+            ])
             ->and($decoded['success']['meta']['count'])
             ->toBe(1);
     });
@@ -188,6 +201,7 @@ describe('tool:list', function (): void {
                     'node' => 'app-1',
                     'expected_state' => 'installed',
                     'observed_state' => null,
+                    'observed_version' => null,
                     'version' => null,
                     'managed' => true,
                     'endpoints' => [],

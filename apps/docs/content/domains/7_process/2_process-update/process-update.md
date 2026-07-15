@@ -2,7 +2,7 @@
 
 [Back to Process commands.](../README.md)
 
-Update or rename a node-, app-, or workspace-owned process definition.
+Update or rename a node-, app-instance-, or workspace-owned process definition.
 
 `process:update` changes a process identity slug, command, restart policy,
 crash notification policy, or process runtime for the resolved owner scope. It
@@ -12,14 +12,14 @@ derived unit names so they match the current identity slug.
 ## Usage
 
 ```bash
-orbit process:update vite --app=docs --command="npm run dev"
-orbit process:update queue --app=docs --restart-policy=on_failure --restart
-orbit process:update horizon --app=docs --workspace=feature-docs --command="php artisan horizon"
+orbit process:update vite --app=docs.production --command="npm run dev"
+orbit process:update queue --app=docs.production --restart-policy=on_failure --restart
+orbit process:update horizon --app=docs.production --workspace=feature-docs --command="php artisan horizon"
 orbit process:update opencode-server --node=app-dev-1 --command="opencode serve -a" --runtime=systemd
-orbit process:update watcher --app=docs --runtime=systemd
-orbit process:update worker --app=feedback --runtime=launchd --restart
+orbit process:update watcher --app=docs.production --runtime=systemd
+orbit process:update worker --app=feedback.development --runtime=launchd --restart
 orbit process:update mysql --node=database-1 --name=app-mysql --json
-orbit process:update vite --app=docs --command="npm run dev" --json
+orbit process:update vite --app=docs.production --command="npm run dev" --json
 ```
 
 ## Behavior Summary
@@ -32,7 +32,9 @@ slug, and re-render its runtime units.
   the owning scope after uniqueness validation.
 - **Scope Resolution**: `--node` updates a node-owned process and cannot be
   combined with `--app` or `--workspace`; `--workspace` updates a workspace-owned
-  process; otherwise `--app` updates an app-owned process.
+  process for that workspace's app instance; otherwise `--app` updates an
+  app-instance-owned process. Prefer `<app.instance>`; a bare app slug is
+  accepted only when that logical app has exactly one instance.
 - **Runtime Unit Replacement**: Re-renders the runtime units derived from the
   selected process definition and removes or replaces derived units that no
   longer match when the process identity changes.

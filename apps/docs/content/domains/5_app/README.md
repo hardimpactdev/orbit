@@ -53,6 +53,9 @@ These rules govern all app family commands.
   `process` family. App commands record the app URL, document root, and runtime
   policy; they do not create Vite-specific proxy routes or rewrite app-side
   frontend configuration.
+- Process definitions for app and workspace contexts belong to one concrete app
+  instance. Process commands accept dotted selectors such as `docs.nmbp`; bare
+  logical-app shorthand is valid only when the app has exactly one instance.
 - PHP app runtime uses a FrankenPHP app runtime container selected by gateway
   app configuration. The concrete FrankenPHP runtime, managed through the
   process lifecycle, is represented as a process with Docker runtime. Changing

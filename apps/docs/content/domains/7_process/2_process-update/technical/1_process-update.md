@@ -9,13 +9,13 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the authenticated peer for `process:update` on the
-  resolved owning node.
-- To re-render runtime artifacts, the gateway must reach the owning node.
+  resolved node or app instance serving node.
+- To re-render runtime artifacts, the gateway must reach that serving node.
 
 ## Signature
 
 ```bash
-orbit process:update [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--name=<new-name>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--restart] [--json]
+orbit process:update [name] [--app=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--name=<new-name>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--restart] [--json]
 ```
 
 ## Input Contract
@@ -27,8 +27,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owner scope. |
 | `new_name` | `--name` | Optional. At least one editable field is required. | Never. | Current process slug. | Valid process slug, unique inside the resolved owner scope, and supported by the selected runtime/backend rename path. |
 | `node` | `--node` | Required when updating a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants process-configuration mutation. |
-| `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants process-configuration mutation. |
-| `workspace` | `--workspace` or workspace context | Required when updating a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants process-configuration mutation; pass `--app` when the workspace name is ambiguous. |
+| `app` | `--app` or app-instance context | Required unless `node` is supplied or `workspace` resolves the app instance. | `node` is present. | Local app instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare logical-app slug is valid only when it has exactly one instance. The selected instance's serving node must grant process-configuration mutation. |
+| `workspace` | `--workspace` or workspace context | Required when updating a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its app instance whose serving node grants process-configuration mutation; pass `--app=<app.instance>` when the workspace name is ambiguous. |
 | `command` | `--command` | Optional. At least one editable field is required. | Never. | Current value. | Non-empty command string when supplied. |
 | `restart_policy` | `--restart-policy` | Optional. At least one editable field is required. | Never. | Current value. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. At least one editable field is required. | Never. | Current value. | One of `none`, `agent_ide`. |
@@ -62,7 +62,7 @@ commands.
 
 ### Process Definition Update Rules
 
-1. Resolve target node, app, or workspace context from supplied input or local context, and resolve the existing process definition within that owner scope.
+1. Resolve a target node, concrete app instance, or workspace context from supplied input or local context, and resolve the existing process definition within that owner scope. Reject a bare logical-app selector with `validation_failed`, `field=app`, and `reason=app_instance_required` unless that app has exactly one instance.
 2. Validate that at least one editable field is supplied.
 3. When `--name` is supplied, validate that the new slug is unique in the owning
    scope and that the selected runtime/backend can safely replace derived unit
@@ -71,9 +71,11 @@ commands.
 5. Update gateway-owned process configuration. Rename updates are atomic at the
    gateway state layer: either the process row has the new identity and
    dependent gateway records point at it, or the previous identity remains active.
-6. Re-render the runtime units that the process definition produces. Node-owned
-   and workspace-owned processes normally derive one unit. App-owned processes
-   derive one main-app unit plus one unit for each active workspace.
+6. Re-render the runtime units that the process definition produces on the
+   resolved node or app instance serving node. Node-owned and workspace-owned
+   processes normally derive one unit. App-instance-owned processes derive one
+   main-instance unit plus one unit for each active workspace belonging to that
+   same instance. Canonical identities include both logical app and app-instance slugs.
 7. When identity changes, remove or replace derived runtime units for the
    previous identity after the current desired units have been rendered, so
    `doctor --family=process --restore`
@@ -97,7 +99,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Process not found | The named process does not exist for the resolved owner scope. | Failure (`error.code=process.not_found`). |
 | Duplicate process name | `--name` matches another process in the resolved owner scope. | Failure (`error.code=process.name_conflict`; `error.meta.field=name`). |
 | Unsupported rename | The selected runtime/backend cannot safely replace derived unit identity. | Failure (`error.code=process.rename_unsupported`; gateway state remains unchanged). |
-| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app-instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| App instance required | A bare logical-app selector resolves to more than one app instance. | Failure (`error.code=validation_failed`; `error.meta.field=app`; `error.meta.reason=app_instance_required`). |
 | Invalid host-command container runtime | `--runtime=docker` or `--runtime=docker-swarm` is supplied for a public app- or workspace-owned host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=docker_runtime_requires_service_or_managed_process` or `docker_swarm_requires_node_owned_process`). |
 | Invalid host-command platform runtime | `--runtime=systemd` is supplied for a macOS host-command process, or `--runtime=launchd` is supplied for a Linux host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=systemd_runtime_requires_linux` or `launchd_runtime_requires_macos`). |
 | Launchd crash notification deferred | `--runtime=launchd` is combined with `--crash-notification=agent_ide`. | Failure (`error.code=validation_failed`; `error.meta.field=crash_notification`; `error.meta.reason=launchd_crash_notification_deferred`). |
@@ -114,8 +117,8 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:PATCH /processes/{name}` |
 | Effect | `write` |
-| Subject | Resolved `Node` for node-owned processes or `App` for app/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
-| Properties | `node` (string or null), `app` (string or null), `workspace` (string or null), `old_name` (string), and `new_name` (string or null). No raw process command text, environment data, runtime output, or secrets. |
+| Subject | Resolved `Node` for node-owned processes or `AppInstance` for app-instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Properties | `node` (string or null), `app` (string or null), `app_instance` (string or null), `workspace` (string or null), `old_name` (string), and `new_name` (string or null). No raw process command text, environment data, runtime output, or secrets. |
 | Description | derived |
 
 ## Test Mapping

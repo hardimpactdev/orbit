@@ -30,6 +30,7 @@ final readonly class RecordProcessEvent
             'event_id' => (string) Str::uuid(),
             'process_id' => $process->id,
             'app_id' => $app?->id,
+            'app_instance_id' => $process->app_instance_id,
             'workspace_id' => $workspace?->id,
             'node_id' => $node->id,
             'unit_name' => $unitName,

@@ -263,10 +263,6 @@ final readonly class LocalFleetUpdateInstallCliAction
                     return
                 fi
 
-                if [ -n "$systemctl_bin" ] && adopt_agent_systemd_service "$systemctl_bin" "$agent_bin_path"; then
-                    return
-                fi
-
                 launchctl_bin="${ORBIT_AGENT_LAUNCHCTL_BIN:-}"
 
                 if [ -z "$launchctl_bin" ]; then
@@ -292,29 +288,8 @@ final readonly class LocalFleetUpdateInstallCliAction
                     return
                 fi
 
-                echo skip_agent_restart_no_unit
-            }
-
-            adopt_agent_systemd_service() {
-                systemctl_bin="$1"
-                agent_bin_path="$2"
-
-                if ! agent_systemd_service_payload_present; then
-                    return 1
-                fi
-
-                converge_agent_systemd_service "$systemctl_bin" "$agent_bin_path"
-                http_bind="${ORBIT_AGENT_SERVICE_HTTP_BIND:-}"
-                unit_name="${ORBIT_AGENT_SERVICE_UNIT_NAME:-}"
-
-                case "$unit_name" in
-                    *.service) service="$unit_name" ;;
-                    *) service="$unit_name.service" ;;
-                esac
-
-                kill_agent_http_bind_owner "$http_bind"
-                run_privileged "$systemctl_bin" restart "$service"
-                echo adopt_agent_unit
+                echo 'agent_service_missing_bootstrap_required: bootstrap must create the Orbit Agent service before update' >&2
+                return 1
             }
 
             agent_systemd_service_payload_present() {
@@ -344,7 +319,7 @@ final readonly class LocalFleetUpdateInstallCliAction
                 esac
 
                 if [ ! -f "$config_path" ]; then
-                    echo skip_agent_adopt_no_config
+                    echo skip_agent_converge_no_config
                     return 1
                 fi
 
@@ -371,48 +346,6 @@ final readonly class LocalFleetUpdateInstallCliAction
                 run_privileged install -m 0644 "$unit_path" "/etc/systemd/system/$service"
                 run_privileged "$systemctl_bin" daemon-reload
                 run_privileged "$systemctl_bin" enable "$service"
-            }
-
-            kill_agent_http_bind_owner() {
-                http_bind="$1"
-                port="${http_bind##*:}"
-
-                case "$port" in
-                    ''|*[!0-9]*) return ;;
-                esac
-
-                ss_bin="$(find_command ss || true)"
-
-                if [ -z "$ss_bin" ]; then
-                    return
-                fi
-
-                owner_pids="$(run_privileged "$ss_bin" -ltnp 2>/dev/null | sed -n "s/.*:${port}[[:space:]].*pid=\([0-9][0-9]*\).*/\1/p" || true)"
-
-                if [ -z "$owner_pids" ]; then
-                    return
-                fi
-
-                echo kill_agent_port_owner
-                printf '%s\n' "$owner_pids" | while IFS= read -r owner_pid; do
-                    [ -n "$owner_pid" ] || continue
-
-                    if [ "$owner_pid" = "$$" ]; then
-                        continue
-                    fi
-
-                    run_privileged kill -TERM "$owner_pid" >/dev/null 2>&1 || true
-                done
-                sleep 1
-                printf '%s\n' "$owner_pids" | while IFS= read -r owner_pid; do
-                    [ -n "$owner_pid" ] || continue
-
-                    if [ "$owner_pid" = "$$" ]; then
-                        continue
-                    fi
-
-                    run_privileged kill -KILL "$owner_pid" >/dev/null 2>&1 || true
-                done
             }
 
             restart_unmanaged_agent_process() {

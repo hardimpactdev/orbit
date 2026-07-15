@@ -18,6 +18,10 @@ describe('firewall:list', function (): void {
                     'destination' => null,
                     'port' => 5173,
                     'protocol' => 'tcp',
+                    'address_family' => 'v4',
+                    'interface_scope' => 'public',
+                    'owner' => 'node-security',
+                    'protected' => true,
                     'reason' => 'local development server',
                     'status' => 'expected',
                 ],
@@ -38,8 +42,23 @@ describe('firewall:list', function (): void {
 
         expect($exitCode)
             ->toBe(0)
-            ->and($decoded['success']['data']['rules'][0]['name'])
-            ->toBe('local-vite')
+            ->and($decoded['success']['data']['rules'][0])
+            ->toBe([
+                'name' => 'local-vite',
+                'node' => 'app-1',
+                'direction' => 'incoming',
+                'action' => 'allow',
+                'source' => '10.6.0.0/24',
+                'destination' => null,
+                'port' => 5173,
+                'protocol' => 'tcp',
+                'address_family' => 'v4',
+                'interface_scope' => 'public',
+                'owner' => 'node-security',
+                'protected' => true,
+                'reason' => 'local development server',
+                'status' => 'expected',
+            ])
             ->and($decoded['success']['meta'])
             ->toMatchArray([
                 'node' => null,

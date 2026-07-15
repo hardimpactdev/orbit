@@ -5,18 +5,21 @@ declare(strict_types=1);
 use App\Actions\Apps\EnactAppRuntime;
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Runtime\DockerCommandBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -42,12 +45,25 @@ function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
         'status' => 'active',
     ]);
 
-    return App::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => $kind,
     ]);
+
+    AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+
+    return $app;
 }
 
 function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
@@ -77,13 +93,26 @@ function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
         ],
     ]);
 
-    return App::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'environment' => 'production',
         'path' => '/home/docs/app',
         'php_version' => '8.5',
         'runtime' => $kind,
     ]);
+
+    AppInstance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+
+    return $app;
 }
 
 final class EnactAppRuntimeRecordingShell implements RemoteShell
@@ -185,11 +214,11 @@ it('converges a FrankenPHP runtime container for PHP apps and writes the php.ini
         ->and($runtimeScripts[4])
         ->toContain('docker run -d')
         ->and($runtimeScripts[4])
-        ->toContain("'orbit-app-docs'")
+        ->toContain("'orbit-app-docs-development'")
         ->and($runtimeScripts[4])
         ->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
         ->and($runtimeScripts[4])
-        ->toContain("'/home/orbit/.config/orbit/apps/docs.ini'")
+        ->toContain("'/home/orbit/.config/orbit/apps/docs-development.ini'")
         ->and(base64DecodedPhpIni($runtimeScripts[4]))
         ->toContain('opcache.enable=1')
         ->and(base64DecodedPhpIni($runtimeScripts[4]))
@@ -202,7 +231,7 @@ function base64DecodedPhpIni(string $script): string
 {
     if (
         preg_match(
-            "/printf %s\\s+'([A-Za-z0-9+\\/=]+)' \\| base64 -d > '\\/home\\/orbit\\/\\.config\\/orbit\\/apps\\/docs\\.ini'/",
+            "/printf %s\\s+'([A-Za-z0-9+\\/=]+)' \\| base64 -d > '\\/home\\/orbit\\/\\.config\\/orbit\\/apps\\/docs-development\\.ini'/",
             $script,
             $match,
         ) !== 1
@@ -359,6 +388,61 @@ it('reconciles an existing FrankenPHP app runtime process row', function (): voi
     app(EnactAppRuntime::class)->handle($app);
 
     expectAppFrankenPhpRuntimeProcess($app);
+});
+
+it('seeds one FrankenPHP process definition per concrete app instance', function (): void {
+    $app = makeAppOnDevNode(AppRuntimeKind::Php);
+    $development = $app->instances()->sole();
+    $productionNode = createTestAppHostNode(['name' => 'app-production']);
+    $production = AppInstance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $productionNode->id,
+            node: $productionNode->name,
+            path: '/srv/docs-production',
+            document_root: 'public',
+            domain: 'docs.example.com',
+        ),
+    ]);
+    $seeder = app(EnsureFrankenPhpRuntimeProcess::class);
+
+    $developmentProcess = $seeder->forApp($app, $development);
+    $productionProcess = $seeder->forApp($app, $production);
+
+    expect($developmentProcess->app_instance_id)
+        ->toBe($development->id)
+        ->and($developmentProcess->node_id)
+        ->toBe($app->node_id)
+        ->and($developmentProcess->runtime_config['container_name'])
+        ->toBe('orbit-app-docs-development')
+        ->and($productionProcess->app_instance_id)
+        ->toBe($production->id)
+        ->and($productionProcess->node_id)
+        ->toBe($productionNode->id)
+        ->and($productionProcess->runtime_config['container_name'])
+        ->toBe('orbit-app-docs-production')
+        ->and(OrbitProcess::query()->ownedBy($app)->count())
+        ->toBe(2);
+});
+
+it('keeps logical app runtime enactment safe after the app gains multiple instances', function (): void {
+    $app = makeAppOnDevNode(AppRuntimeKind::Static);
+    $productionNode = createTestAppHostNode(['name' => 'app-production']);
+    AppInstance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $productionNode->id,
+            node: $productionNode->name,
+            path: '/srv/docs-production',
+            document_root: 'public',
+            domain: 'docs.example.com',
+        ),
+    ]);
+    app()->instance(RemoteShell::class, new EnactAppRuntimeRecordingShell);
+    Http::preventStrayRequests();
+    Http::fake(['*' => enact_app_runtime_caddy_sequence('docs.test')]);
+
+    expect(app(EnactAppRuntime::class)->handle($app))->toBe([]);
 });
 
 it('returns app.php_version_unavailable when the selected FrankenPHP image is missing on the owning node', function (): void {
@@ -565,14 +649,18 @@ it('throws when the app has no owning node', function (): void {
 
 function expectAppFrankenPhpRuntimeProcess(App $app): void
 {
+    $instance = $app->instances()->sole();
     $process = OrbitProcess::query()
         ->ownedBy($app)
+        ->where('app_instance_id', $instance->id)
         ->where('name', "frankenphp-{$app->name}")
         ->first();
 
     expect($process)
         ->not
         ->toBeNull()
+        ->and($process?->app_instance_id)
+        ->toBe($instance->id)
         ->and($process?->node_id)
         ->toBe($app->node_id)
         ->and($process?->command)
@@ -587,8 +675,8 @@ function expectAppFrankenPhpRuntimeProcess(App $app): void
         ->toBeNull()
         ->and($process?->runtime_config)
         ->toMatchArray([
-            'container_name' => 'orbit-app-docs',
-            'php_ini_path' => '/home/orbit/.config/orbit/apps/docs.ini',
+            'container_name' => "orbit-app-docs-{$instance->name}",
+            'php_ini_path' => "/home/orbit/.config/orbit/apps/docs-{$instance->name}.ini",
             'container_spec_hash_label' => 'orbit.app.spec_hash',
         ]);
 }

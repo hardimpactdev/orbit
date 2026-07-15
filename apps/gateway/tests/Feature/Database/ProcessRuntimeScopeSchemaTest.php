@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
@@ -26,6 +28,80 @@ it('uses polymorphic process ownership instead of app or workspace columns', fun
         ->toBeFalse()
         ->and(Schema::hasColumn('processes', 'workspace_id'))
         ->toBeFalse();
+});
+
+it('stores concrete app instance ownership for process definitions and events', function (): void {
+    expect(Schema::hasColumn('processes', 'app_instance_id'))
+        ->toBeTrue()
+        ->and(Schema::hasColumn('process_events', 'app_instance_id'))
+        ->toBeTrue();
+});
+
+it('derives an app process node from its concrete instance instead of legacy app placement', function (): void {
+    $legacyNode = Node::factory()->create(['name' => 'legacy-app-node']);
+    $instanceNode = Node::factory()->create(['name' => 'production-app-node']);
+    $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $instanceNode->id),
+    ]);
+
+    $process = $app->processes()->create([
+        'app_instance_id' => $instance->id,
+        'name' => 'queue',
+        'command' => 'php artisan queue:work',
+        'sort_order' => 1,
+    ]);
+
+    expect($process->node_id)->toBe($instanceNode->id);
+});
+
+it('rejects an app process node that contradicts its concrete instance placement', function (): void {
+    $legacyNode = Node::factory()->create(['name' => 'legacy-app-node']);
+    $instanceNode = Node::factory()->create(['name' => 'production-app-node']);
+    $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $instanceNode->id),
+    ]);
+
+    expect(fn (): Process => $app->processes()->create([
+        'app_instance_id' => $instance->id,
+        'node_id' => $legacyNode->id,
+        'name' => 'queue',
+        'command' => 'php artisan queue:work',
+        'sort_order' => 1,
+    ]))
+        ->toThrow(InvalidArgumentException::class, 'canonical owner placement');
+});
+
+it('rejects app process writes without concrete app instance ownership', function (): void {
+    $node = Node::factory()->create(['name' => 'app-dev-1']);
+    $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
+
+    expect(fn (): Process => $app->processes()->create([
+        'node_id' => $node->id,
+        'name' => 'queue',
+        'command' => 'php artisan queue:work',
+        'sort_order' => 1,
+    ]))
+        ->toThrow(InvalidArgumentException::class, 'requires concrete app instance ownership');
+});
+
+it('rejects workspace process writes without concrete app instance ownership', function (): void {
+    $node = Node::factory()->create(['name' => 'app-dev-1']);
+    $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
+    $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'redesign']);
+
+    expect(fn (): Process => $workspace
+        ->processes()
+        ->create([
+            'node_id' => $node->id,
+            'name' => 'horizon',
+            'command' => 'php artisan horizon',
+            'sort_order' => 1,
+        ]))
+        ->toThrow(InvalidArgumentException::class, 'requires concrete app instance ownership');
 });
 
 it('stores node owned process runtime configuration', function (): void {
@@ -202,8 +278,12 @@ it('stores role owned process runtime configuration', function (): void {
 it('stores app owned process runtime configuration', function (): void {
     $node = Node::factory()->create(['name' => 'app-dev-1']);
     $app = App::factory()->create(['node_id' => $node->id, 'name' => 'abc']);
+    $instance = AppInstance::factory()->for($app)->create([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+    ]);
 
     $process = $app->processes()->create([
+        'app_instance_id' => $instance->id,
         'node_id' => $node->id,
         'name' => 'queue',
         'command' => 'php artisan queue:work',
@@ -232,6 +312,7 @@ it('stores workspace owned process runtime configuration', function (): void {
     $process = $workspace
         ->processes()
         ->create([
+            'app_instance_id' => $workspace->app_instance_id,
             'node_id' => $node->id,
             'name' => 'horizon-redesign',
             'runtime' => ProcessRuntime::Systemd,
@@ -258,6 +339,7 @@ it('defaults app and workspace host command processes to systemd when runtime is
     $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'redesign']);
 
     $relationProcess = $app->processes()->create([
+        'app_instance_id' => $workspace->app_instance_id,
         'node_id' => $node->id,
         'name' => 'queue',
         'command' => 'php artisan queue:work',

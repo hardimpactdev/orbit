@@ -33,7 +33,7 @@ orbit schedule:run backups --node=app-1
 
 Use `schedule:run` when you want to test a schedule or run a missed task on demand. `schedule:run` resolves the schedule from gateway configuration, executes its stored command or script once on the target node through the gateway, and records the run output in gateway schedule history.
 
-It does not change the recurring interval, enabled state, app process definitions, or schedule ownership.
+It does not change the recurring interval, enabled state, app-instance process definitions, or schedule ownership.
 
 ## Output
 

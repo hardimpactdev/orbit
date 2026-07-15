@@ -173,7 +173,7 @@ class FirewallRuleQuery
             'port' => is_numeric($rule->port) ? (int) $rule->port : $rule->port,
             'protocol' => $rule->protocol,
             'address_family' => $rule->address_family,
-            'interface' => $rule->interface,
+            'interface_scope' => $rule->interface,
             'owner' => $rule->owner,
             'protected' => $rule->protected,
             'reason' => $rule->reason,

@@ -7,23 +7,36 @@ namespace App\Actions\Apps;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
+use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeContainerManager;
+use App\Services\Processes\ProcessRuntimeApp;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use App\Services\Processes\ProcessRuntimeUnitPayload;
 use App\Services\Tools\ToolScriptDispatcher;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Tools\CaddyTool;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
+/**
+ * Coordinates destructive cleanup across every concrete instance of one logical app.
+ *
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
+ */
 final readonly class RemoveApp
 {
     public function __construct(
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
+        private ProcessRuntimeUnitPayload $runtimeUnits,
         private AppRuntimeContainerManager $appRuntimeContainerManager,
         private ToolScriptDispatcher $scripts,
+        private WorkspacePlacement $placement,
     ) {}
 
     /**
@@ -43,12 +56,17 @@ final readonly class RemoveApp
      */
     public function handle(App $app): array
     {
-        $app->loadMissing(['node', 'processes']);
+        $app->loadMissing([
+            'node',
+            'instances',
+            'processes.appInstance',
+            'workspaces.processes.appInstance',
+        ]);
 
         $appPayload = $this->appPayload($app);
         $appName = $app->name;
         $isPhpApp = $app->runtimeKind() === AppRuntimeKind::Php;
-        $processCleanupScripts = $this->processCleanupScripts($app);
+        $cleanupTargets = $this->cleanupTargets($app);
         $proxyRouteIds = ProxyRoute::query()
             ->where('app_id', $app->id)
             ->pluck('id')
@@ -90,31 +108,41 @@ final readonly class RemoveApp
             }
         });
 
-        $containerOutcome = AppRuntimeArtifactRemovalOutcome::AlreadyAbsent;
-        $configOutcome = AppRuntimeArtifactRemovalOutcome::AlreadyAbsent;
+        $containerOutcomes = [];
+        $configOutcomes = [];
         $warnings = [];
 
-        if ($app->node !== null) {
+        foreach ($cleanupTargets as $target) {
+            $node = $target['node'];
+            $identity = $target['identity'];
+            $containerOutcome = AppRuntimeArtifactRemovalOutcome::AlreadyAbsent;
+            $configOutcome = AppRuntimeArtifactRemovalOutcome::AlreadyAbsent;
+
             if ($isPhpApp) {
                 try {
-                    $containerOutcome = $this->appRuntimeContainerManager->remove($app->node, $appName);
+                    $containerOutcome = $this->appRuntimeContainerManager->remove($node, $target['runtime_slug']);
                 } catch (Throwable) {
                     $containerOutcome = AppRuntimeArtifactRemovalOutcome::FailedRemaining;
                 }
+                $containerOutcomes[] = $containerOutcome;
 
                 try {
-                    $configOutcome = $this->appRuntimeContainerManager->removeRuntimeConfigFile($app->node, $appName);
+                    $configOutcome = $this->appRuntimeContainerManager->removeRuntimeConfigFile(
+                        $node,
+                        $target['runtime_slug'],
+                    );
                 } catch (Throwable) {
                     $configOutcome = AppRuntimeArtifactRemovalOutcome::FailedRemaining;
                 }
+                $configOutcomes[] = $configOutcome;
             }
 
             if ($containerOutcome === AppRuntimeArtifactRemovalOutcome::FailedRemaining) {
                 $warnings[] = [
-                    'code' => 'app.runtime_container_extra',
-                    'family' => 'app',
-                    'message' => "App runtime container for '{$appName}' could not be removed during cleanup.",
-                    'next_command' => 'doctor --family=app --restore',
+                    'code' => 'process.runtime_unit_extra',
+                    'family' => 'process',
+                    'message' => "App runtime unit for '{$identity}' could not be removed during cleanup.",
+                    'next_command' => 'doctor --family=process --restore',
                 ];
             }
 
@@ -122,23 +150,27 @@ final readonly class RemoveApp
                 $warnings[] = [
                     'code' => 'app.runtime_config_extra',
                     'family' => 'app',
-                    'message' => "Managed app runtime configuration for '{$appName}' could not be removed during cleanup.",
+                    'message' => "Managed app runtime configuration for '{$identity}' could not be removed during cleanup.",
                     'next_command' => 'doctor --family=app --restore',
                 ];
             }
 
             $cleanup = $this->scripts->run(
-                $app->node,
+                $node,
                 'orbit',
                 'remove',
-                $this->renderNonRuntimeCleanupScript($app, $processCleanupScripts, $removeAppPath),
+                $this->renderNonRuntimeCleanupScript(
+                    $target['app'],
+                    $target['process_cleanup_scripts'],
+                    $removeAppPath,
+                ),
             );
 
             if (! $cleanup->successful()) {
                 $warnings[] = [
                     'code' => 'app.cleanup_failed',
                     'family' => 'app',
-                    'message' => "App non-runtime artifacts for '{$appName}' could not be removed during cleanup.",
+                    'message' => "App non-runtime artifacts for '{$identity}' could not be removed during cleanup.",
                     'next_command' => 'doctor --family=app --restore',
                 ];
             }
@@ -152,8 +184,18 @@ final readonly class RemoveApp
                 'workspaces_removed' => $workspacesRemoved,
                 'schedules_removed' => $schedulesRemoved,
                 'processes_removed' => $processesRemoved,
-                'runtime_container_removed' => $containerOutcome === AppRuntimeArtifactRemovalOutcome::Removed,
-                'runtime_config_removed' => $configOutcome === AppRuntimeArtifactRemovalOutcome::Removed,
+                'runtime_container_removed' => $containerOutcomes !== []
+                    && collect($containerOutcomes)->every(
+                        static fn (AppRuntimeArtifactRemovalOutcome $outcome): bool => (
+                            $outcome === AppRuntimeArtifactRemovalOutcome::Removed
+                        ),
+                    ),
+                'runtime_config_removed' => $configOutcomes !== []
+                    && collect($configOutcomes)->every(
+                        static fn (AppRuntimeArtifactRemovalOutcome $outcome): bool => (
+                            $outcome === AppRuntimeArtifactRemovalOutcome::Removed
+                        ),
+                    ),
             ],
             'warnings' => $warnings,
         ];
@@ -181,20 +223,69 @@ final readonly class RemoveApp
     }
 
     /**
-     * @return list<string>
+     * @return list<array{app: App, identity: string, node: Node, process_cleanup_scripts: list<string>, runtime_slug: string}>
      */
-    private function processCleanupScripts(App $app): array
+    private function cleanupTargets(App $app): array
     {
-        return $app
-            ->processes
-            ->map(function (Process $process) use ($app): string {
-                $driver = $this->runtimeDrivers->forProcess($process);
-                $runtimeUnit = $driver->runtimeUnitName($app, $process);
+        $targets = $app
+            ->instances
+            ->map(function (AppInstance $instance) use ($app): ?array {
+                $node = $this->placement->nodeForInstance($instance);
 
-                return $driver->cleanupScript($runtimeUnit);
+                if (! $node instanceof Node) {
+                    return null;
+                }
+
+                $runtimeApp = ProcessRuntimeApp::make($app, $node, $instance);
+                $runtimeApp->setRelation('node', $node);
+                $workspaces = $app->workspaces->where('app_instance_id', $instance->id)->values();
+                $runtimeApp->setRelation('workspaces', $workspaces);
+                $scripts = [];
+
+                foreach ($app->processes->where('app_instance_id', $instance->id) as $process) {
+                    foreach ($this->runtimeUnits->forProcess($runtimeApp, $process) as $runtimeUnit) {
+                        $scripts[] = $this->runtimeDrivers
+                            ->forProcess($process)
+                            ->cleanupScript($runtimeUnit['name']);
+                    }
+                }
+
+                foreach ($workspaces as $workspace) {
+                    foreach ($workspace->processes as $process) {
+                        if (! $process instanceof Process || $process->app_instance_id !== $instance->id) {
+                            continue;
+                        }
+
+                        $driver = $this->runtimeDrivers->forProcess($process);
+                        $scripts[] = $driver->cleanupScript(
+                            $driver->runtimeUnitName($runtimeApp, $process, $workspace),
+                        );
+                    }
+                }
+
+                return [
+                    'app' => $runtimeApp,
+                    'identity' => "{$app->name}.{$instance->name}",
+                    'node' => $node,
+                    'process_cleanup_scripts' => array_values(array_unique($scripts)),
+                    'runtime_slug' => "{$app->name}-{$instance->name}",
+                ];
             })
+            ->filter(static fn (mixed $target): bool => is_array($target))
             ->values()
             ->all();
+
+        if ($targets !== [] || ! $app->node instanceof Node) {
+            return $targets;
+        }
+
+        return [[
+            'app' => $app,
+            'identity' => $app->name,
+            'node' => $app->node,
+            'process_cleanup_scripts' => [],
+            'runtime_slug' => $app->name,
+        ]];
     }
 
     /**

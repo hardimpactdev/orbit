@@ -5,7 +5,7 @@
 Show connection credentials for a managed tool.
 
 `tool:credentials` displays generated or registered connection details for
-tools that declare a credential contract, such as Mailpit, Reverb, OpenClaw,
+tools that declare a credential contract, such as Mailpit, SeaweedFS, OpenClaw,
 or OpenCode Server. Credentials for runnable services such as MySQL,
 PostgreSQL, and Redis are not tool credentials.
 

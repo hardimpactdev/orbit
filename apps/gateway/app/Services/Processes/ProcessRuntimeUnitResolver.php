@@ -5,14 +5,20 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class ProcessRuntimeUnitResolver
 {
+    public function __construct(
+        private WorkspacePlacement $placement,
+    ) {}
+
     /**
-     * @return array{app: App, workspace: Workspace|null, process: Process}|null
+     * @return array{app: App, app_instance: AppInstance, workspace: Workspace|null, process: Process}|null
      */
     public function resolve(Node $node, string $unitName): ?array
     {
@@ -22,18 +28,29 @@ final readonly class ProcessRuntimeUnitResolver
 
         $parts = explode('_', $unitName);
 
-        if (count($parts) !== 4 || $parts[0] !== 'orbit') {
+        if (! in_array(count($parts), [4, 5], true) || $parts[0] !== 'orbit') {
             return null;
         }
 
-        [, $appName, $scope, $processName] = $parts;
+        $hasInstanceIdentity = count($parts) === 5;
+        $appName = $parts[1];
+        $instanceName = $hasInstanceIdentity ? $parts[2] : null;
+        $scope = $parts[$hasInstanceIdentity ? 3 : 2];
+        $processName = $parts[$hasInstanceIdentity ? 4 : 3];
 
-        $app = App::query()
-            ->where('node_id', $node->id)
-            ->where('name', $appName)
-            ->first();
+        $instances = AppInstance::query()
+            ->with('app')
+            ->whereHas('app', fn ($query) => $query->where('name', $appName))
+            ->when($instanceName !== null, fn ($query) => $query->where('name', $instanceName))
+            ->get()
+            ->filter(
+                fn (AppInstance $instance): bool => $this->placement->nodeForInstance($instance)?->is($node) === true,
+            )
+            ->values();
+        $appInstance = $instances->count() === 1 ? $instances->first() : null;
+        $app = $appInstance?->app;
 
-        if (! $app instanceof App) {
+        if (! $appInstance instanceof AppInstance || ! $app instanceof App) {
             return null;
         }
 
@@ -42,6 +59,7 @@ final readonly class ProcessRuntimeUnitResolver
         if ($scope !== 'main') {
             $workspace = Workspace::query()
                 ->where('app_id', $app->id)
+                ->where('app_instance_id', $appInstance->id)
                 ->where('name', $scope)
                 ->first();
 
@@ -51,12 +69,17 @@ final readonly class ProcessRuntimeUnitResolver
         }
 
         $process = $workspace instanceof Workspace
-            ? $workspace->processes()->where('name', $processName)->first()
+            ? $workspace
+                ->processes()
+                ->where('app_instance_id', $appInstance->id)
+                ->where('name', $processName)
+                ->first()
             : null;
 
         if (! $process instanceof Process) {
             $process = $app
                 ->processes()
+                ->where('app_instance_id', $appInstance->id)
                 ->where('name', $processName)
                 ->first();
         }
@@ -67,6 +90,7 @@ final readonly class ProcessRuntimeUnitResolver
 
         return [
             'app' => $app,
+            'app_instance' => $appInstance,
             'workspace' => $workspace,
             'process' => $process,
         ];

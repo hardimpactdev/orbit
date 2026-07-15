@@ -143,7 +143,7 @@ it('reports partial failure in json mode when the local update fails after the g
         ->and($decoded['error']['code'])
         ->toBe('local_update_failed')
         ->and($decoded['error']['message'])
-        ->toBe('Failed to update local Orbit checkout.');
+        ->toBe('Failed to update local Orbit installation.');
 });
 
 it('advertises both the --json and --stream-json output modes', function (): void {

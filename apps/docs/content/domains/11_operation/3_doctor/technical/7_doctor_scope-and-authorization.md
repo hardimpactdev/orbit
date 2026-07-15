@@ -25,7 +25,12 @@ and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
 - Reject `--node=all` with `validation_failed` and `field=node` metadata before
   probes.
 - Reject unresolvable family, node, app, or workspace scopes before probes.
-- Reject family selections outside the target node's active-role category set before probes. The `process` family is inside that set for every node with at least one active role assignment.
+- Reject family selections outside the target node's resolved eligibility set
+  before probes. Active roles provide the base set; gateway-owned facts and
+  platform support add overlays. `process` is eligible for every role-bearing
+  node, `tool` includes VPN DNS ownership, `firewall_rule` includes eligible
+  Ubuntu protected-rule targets, and `schedule` includes the gateway plus every
+  node targeted by a schedule definition.
 - Reject mode requests unsupported by the selected family before side effects.
 
 ## Grant Boundaries

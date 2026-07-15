@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
+use App\Models\Process;
 use App\Services\Apps\AppAgentIdeDefaults;
 use App\Services\Apps\AppResponsePayload;
 use App\Services\Apps\DependencyAudit\AppDependencyAuditAggregatePayload;
@@ -80,6 +81,20 @@ final class AppShowController implements Loggable
     private function detailsPayload(App $app): array
     {
         $app->loadMissing('dependencyAuditSummaries');
+        $processes = $app
+            ->processes()
+            ->with('appInstance')
+            ->orderBy('app_instance_id')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(static fn (Process $process): array => [
+                'name' => $process->name,
+                'app_instance' => $process->appInstance?->name,
+                'runtime' => $process->runtime->value,
+            ])
+            ->values()
+            ->all();
 
         return [
             'domain' => $this->domain($app),
@@ -91,7 +106,7 @@ final class AppShowController implements Loggable
             'agent_ide' => $this->agentIdePayload($app),
             'dependency_audits' => app(AppDependencyAuditAggregatePayload::class)->managerDetailsFor($app),
             'workspaces' => [],
-            'processes' => [],
+            'processes' => $processes,
             'routes' => [
                 [
                     'host' => $this->domain($app),

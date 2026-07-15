@@ -53,10 +53,10 @@ on macOS.
 
 Docker is the infrastructure substrate for process-defined services such as MySQL
 and Redis, app/workspace runtime containers, the `websocket` role's Laravel Reverb
-runtime, the `s3` role's SeaweedFS runtime, and `dns`. Compatibility tools such as
-Mailpit and Reverb run as Docker services while they remain tool-backed. Docker is
-not itself a database, cache, mail, realtime, object-storage, or DNS configuration
-owner.
+runtime, the `s3` role's SeaweedFS runtime, and `dns`. Mailpit remains a tool-backed
+Docker service; Reverb is owned by the websocket role rather than a separate Tool
+row. Docker is not itself a database, cache, mail, realtime, object-storage, or DNS
+configuration owner.
 
 ## Doctor Relationship
 

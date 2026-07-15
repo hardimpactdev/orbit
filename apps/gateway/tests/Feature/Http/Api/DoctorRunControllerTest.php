@@ -777,6 +777,8 @@ describe('DoctorRunController', function (): void {
 
     it('requires doctor write authority for fix mode requests', function (): void {
         createDoctorRunCallerNode(role: 'app-dev');
+        $shell = new DoctorRunRemoteShell('');
+        app()->instance(RemoteShell::class, $shell);
 
         $response = $this->call(
             'POST',
@@ -795,6 +797,8 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'doctor:adopt')
             ->assertJsonPath('error.meta.mode', 'adopt');
+
+        expect($shell->runs)->toBe(0);
     });
 
     it('allows app-node fix mode requests with explicit doctor authority', function (): void {
@@ -1306,6 +1310,8 @@ final readonly class DoctorRunFleetRemoteShell implements RemoteShell
 
 final class DoctorRunRemoteShell implements RemoteShell
 {
+    public int $runs = 0;
+
     /** @var list<string> */
     private array $perRouteStdouts;
 
@@ -1326,6 +1332,8 @@ final class DoctorRunRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->runs++;
+
         if (str_contains($script, 'docker container ls')) {
             return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
         }

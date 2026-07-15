@@ -22,6 +22,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Models\Schedule;
 use App\Models\SchedulerState;
 use App\Models\WireGuardPeer;
 use App\Models\Workspace;
@@ -615,7 +616,7 @@ describe('DoctorReportRunner', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "orbit_docs_main_vite\t0\t0\t0\t0\n__notifier\t1\t1\t1\t1\t1\n",
+                stdout: "orbit_docs_development_main_vite\t0\t0\t0\t0\n__notifier\t1\t1\t1\t1\t1\n",
                 stderr: '',
                 durationMs: 1,
             ),
@@ -658,7 +659,7 @@ describe('DoctorReportRunner', function (): void {
                 ->contains(
                     fn (string $script): bool => (
                         str_contains($script, 'internal:process-systemd-service')
-                        && str_contains($script, 'orbit_docs_main_vite.service')
+                        && str_contains($script, 'orbit_docs_development_main_vite.service')
                     ),
                 ))
             ->toBeTrue();
@@ -700,14 +701,14 @@ describe('DoctorReportRunner', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "orbit_docs_main_vp-dev\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n",
+                stdout: "orbit_docs_development_main_vp-dev\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n",
                 stderr: '',
                 durationMs: 1,
             ),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "orbit_blog_main_vp-dev\t0\t0\t0\t0\n__notifier\t1\t1\t1\t1\t1\n",
+                stdout: "orbit_blog_development_main_vp-dev\t0\t0\t0\t0\n__notifier\t1\t1\t1\t1\t1\n",
                 stderr: '',
                 durationMs: 1,
             ),
@@ -737,16 +738,132 @@ describe('DoctorReportRunner', function (): void {
                 'key' => 'process.runtime_unit_missing',
                 'mode' => 'restore',
                 'status' => 'completed',
-                'details' => ['app' => 'blog', 'process' => 'vp-dev'],
+                'details' => [
+                    'app' => 'blog',
+                    'app_instance' => 'development',
+                    'process' => 'vp-dev',
+                ],
             ])
             ->and(collect($shell->scripts)
                 ->contains(
                     fn (string $script): bool => (
                         str_contains($script, 'internal:process-systemd-service')
-                        && str_contains($script, 'orbit_blog_main_vp-dev.service')
+                        && str_contains($script, 'orbit_blog_development_main_vp-dev.service')
                     ),
                 ))
             ->toBeTrue();
+    });
+
+    it('restores only the concrete app instance named by process drift', function (): void {
+        $node = createDoctorRunnerAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+        ]);
+        $development = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                path: '/home/orbit/apps/docs-development',
+            ),
+        ]);
+        $production = AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                path: '/home/orbit/apps/docs-production',
+            ),
+        ]);
+        \App\Models\Process::factory()
+            ->forOwner($app, $node)
+            ->create([
+                'app_instance_id' => $development->id,
+                'name' => 'vp-dev',
+                'command' => 'npm run development',
+                'restart_policy' => 'on_failure',
+                'crash_notification' => 'none',
+                'sort_order' => 1,
+            ]);
+        \App\Models\Process::factory()
+            ->forOwner($app, $node)
+            ->create([
+                'app_instance_id' => $production->id,
+                'name' => 'vp-dev',
+                'command' => 'npm run production',
+                'restart_policy' => 'on_failure',
+                'crash_notification' => 'none',
+                'sort_order' => 1,
+            ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "orbit_docs_development_main_vp-dev\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "orbit_docs_production_main_vp-dev\t0\t0\t0\t0\n__notifier\t1\t1\t1\t1\t1\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'exists' => false,
+                    'hash' => null,
+                    'enabled' => false,
+                ], JSON_THROW_ON_ERROR)
+                    ."\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
+
+        expect($report['healthy'])
+            ->toBeTrue()
+            ->and($report['actions'])
+            ->toHaveCount(1)
+            ->and($report['actions'][0])
+            ->toMatchArray([
+                'family' => 'process',
+                'node' => 'app-1',
+                'key' => 'process.runtime_unit_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => [
+                    'app' => 'docs',
+                    'app_instance' => 'production',
+                    'process' => 'vp-dev',
+                ],
+            ])
+            ->and(collect($shell->scripts)
+                ->contains(
+                    fn (string $script): bool => (
+                        str_contains($script, 'internal:process-systemd-service')
+                        && str_contains($script, 'orbit_docs_production_main_vp-dev.service')
+                    ),
+                ))
+            ->toBeTrue()
+            ->and(collect($shell->scripts)
+                ->contains(
+                    fn (string $script): bool => (
+                        str_contains($script, 'internal:process-systemd-service')
+                        && str_contains($script, 'orbit_docs_development_main_vp-dev.service')
+                    ),
+                ))
+            ->toBeFalse();
     });
 
     it('refreshes stale managed FrankenPHP app process intent during process restore', function (): void {
@@ -761,15 +878,34 @@ describe('DoctorReportRunner', function (): void {
             'php_version' => '8.5',
             'runtime' => AppRuntimeKind::Php,
         ]);
-        $expectedHash = app(AppRuntimeContainerRenderer::class)->render($app)->specHash();
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                path: $app->path,
+                document_root: $app->document_root,
+                domain: $app->domain,
+            ),
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                path: '/home/orbit/apps/docs-production',
+                document_root: $app->document_root,
+                domain: 'docs.test',
+            ),
+        ]);
+        $expectedHash = app(AppRuntimeContainerRenderer::class)->renderForInstance($app, $instance)->specHash();
         $process = \App\Models\Process::factory()
             ->forOwner($app)
             ->create([
+                'app_instance_id' => $instance->id,
                 'name' => 'frankenphp-docs',
                 'command' => 'frankenphp',
                 'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => [
-                    'container_name' => 'orbit-app-docs',
+                    'container_name' => 'orbit-app-docs-development',
                     'container_spec_hash' => 'stale',
                     'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
                 ],
@@ -826,8 +962,9 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
                 'details' => [
                     'app' => 'docs',
+                    'app_instance' => 'development',
                     'process' => 'frankenphp-docs',
-                    'container' => 'orbit-app-docs',
+                    'container' => 'orbit-app-docs-development',
                     'outcome' => 'unchanged',
                 ],
             ])
@@ -835,10 +972,10 @@ describe('DoctorReportRunner', function (): void {
             ->toBeTrue()
             ->and($process->refresh()->runtime_config)
             ->toMatchArray([
-                'container_name' => 'orbit-app-docs',
+                'container_name' => 'orbit-app-docs-development',
                 'container_spec_hash' => $expectedHash,
                 'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
-                'php_ini_path' => '/home/orbit/.config/orbit/apps/docs.ini',
+                'php_ini_path' => '/home/orbit/.config/orbit/apps/docs-development.ini',
             ]);
     });
 
@@ -854,15 +991,25 @@ describe('DoctorReportRunner', function (): void {
             'php_version' => '8.5',
             'runtime' => AppRuntimeKind::Php,
         ]);
-        $expectedHash = app(AppRuntimeContainerRenderer::class)->render($app)->specHash();
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                path: $app->path,
+                document_root: $app->document_root,
+                domain: $app->domain,
+            ),
+        ]);
+        $expectedHash = app(AppRuntimeContainerRenderer::class)->renderForInstance($app, $instance)->specHash();
         \App\Models\Process::factory()
             ->forOwner($app)
             ->create([
+                'app_instance_id' => $instance->id,
                 'name' => 'frankenphp-docs',
                 'command' => 'frankenphp',
                 'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => [
-                    'container_name' => 'orbit-app-docs',
+                    'container_name' => 'orbit-app-docs-development',
                     'container_spec_hash' => $expectedHash,
                     'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
                 ],
@@ -909,8 +1056,9 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
                 'details' => [
                     'app' => 'docs',
+                    'app_instance' => 'development',
                     'process' => 'frankenphp-docs',
-                    'container' => 'orbit-app-docs',
+                    'container' => 'orbit-app-docs-development',
                     'outcome' => 'recreated',
                 ],
             ])
@@ -1064,7 +1212,7 @@ describe('DoctorReportRunner', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "orbit_docs_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t0\t1\t1\n",
+                stdout: "orbit_docs_development_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t0\t1\t1\n",
                 stderr: '',
                 durationMs: 1,
             ),
@@ -2382,20 +2530,160 @@ function doctorRunnerDatabaseAppInstance(App $app): AppInstance
     ]);
 }
 
-describe('DoctorReportRunner firewall categories', function (): void {
-    it('includes firewall rules for active Ubuntu agent nodes', function (): void {
+describe('DoctorReportRunner fact-derived categories', function (): void {
+    it('does not include schedule for unscheduled app hosts merely because of role', function (string $role): void {
+        $node = Node::factory()->create([
+            'name' => "unscheduled-{$role}",
+            'status' => 'active',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => $role,
+            'status' => 'active',
+        ]);
+
+        $runner = app(DoctorReportRunner::class);
+        $failure = app(DoctorScopeValidator::class)->validate(
+            families: ['schedule'],
+            runner: $runner,
+            target: $node,
+        );
+
+        expect($runner->categoriesForNode($node))
+            ->not
+            ->toContain('schedule')
+            ->and($failure?->code)
+            ->toBe('family_not_in_node_scope');
+    })->with([
+        'app development' => ['app-dev'],
+        'app production' => ['app-prod'],
+    ]);
+
+    it('keeps gateway scheduler eligibility without an expected schedule target', function (): void {
         $node = Node::factory()
-            ->agent()
+            ->gateway()
             ->create([
-                'name' => 'agent-firewall-cat',
+                'name' => 'gateway-scheduler-category',
                 'status' => 'active',
-                'platform' => 'ubuntu_24-04',
-                'wireguard_address' => '10.6.0.42',
             ]);
+
+        expect(app(DoctorReportRunner::class)->categoriesForNode($node))
+            ->toContain('schedule');
+    });
+
+    it('includes schedule for every enabled expected schedule target regardless of role', function (?string $role): void {
+        $node = Node::factory()->create([
+            'name' => 'scheduled-'.($role ?? 'roleless'),
+            'status' => 'active',
+        ]);
+
+        if (is_string($role)) {
+            NodeRoleAssignment::factory()->create([
+                'node_id' => $node->id,
+                'role' => $role,
+                'status' => 'active',
+            ]);
+        }
+
+        Schedule::factory()->forNode($node)->create();
+
+        $runner = app(DoctorReportRunner::class);
+        $failure = app(DoctorScopeValidator::class)->validate(
+            families: ['schedule'],
+            runner: $runner,
+            target: $node,
+        );
+
+        expect($runner->categoriesForNode($node))
+            ->toContain('schedule')
+            ->and($failure)
+            ->toBeNull();
+    })->with([
+        'roleless' => [null],
+        'database' => ['database'],
+        'agent' => ['agent'],
+        'metrics' => ['metrics'],
+        'ingress' => ['ingress'],
+    ]);
+
+    it('includes tool for an active gateway with the vpn capability', function (): void {
+        $node = Node::factory()
+            ->gateway()
+            ->create([
+                'name' => 'gateway-vpn-categories',
+                'status' => 'active',
+            ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'vpn',
+            'status' => 'active',
+        ]);
+
+        $runner = app(DoctorReportRunner::class);
+        $failure = app(DoctorScopeValidator::class)->validate(
+            families: ['tool'],
+            runner: $runner,
+            target: $node,
+        );
+
+        expect($runner->categoriesForNode($node))
+            ->toContain('tool')
+            ->and($failure)
+            ->toBeNull();
+    });
+
+    it('keeps gateway scheduler singleton probes off non-gateway schedule targets', function (): void {
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'scheduled-database',
+                'status' => 'active',
+            ]);
+        Schedule::factory()->forNode($node)->create();
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+        Process::preventStrayProcesses();
+        Process::fake();
+
+        $runner = app(DoctorReportRunner::class);
+        $failure = app(DoctorScopeValidator::class)->validate(
+            families: ['schedule'],
+            runner: $runner,
+            target: $node,
+        );
+
+        expect($failure)->toBeNull();
+
+        $report = $runner->probe($node, families: ['schedule']);
+
+        expect($report['scope']['families'])->toBe(['schedule']);
+        Process::assertNothingRan();
+    });
+});
+
+describe('DoctorReportRunner firewall categories', function (): void {
+    it('includes firewall rules through the fact overlay for eligible active Ubuntu nodes', function (string $role): void {
+        $node = Node::factory()->create([
+            'name' => "{$role}-firewall-cat",
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.42',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => $role,
+            'status' => 'active',
+        ]);
 
         $runner = app(DoctorReportRunner::class);
 
         $categories = $runner->categoriesForNode($node);
+        $failure = app(DoctorScopeValidator::class)->validate(
+            families: ['firewall_rule'],
+            runner: $runner,
+            target: $node,
+        );
 
         expect($categories)
             ->toContain('node')
@@ -2404,7 +2692,74 @@ describe('DoctorReportRunner firewall categories', function (): void {
             ->and($categories)
             ->toContain('process')
             ->and($categories)
-            ->toContain('firewall_rule');
+            ->toContain('firewall_rule')
+            ->and($failure)
+            ->toBeNull();
+    })->with([
+        'agent' => ['agent'],
+        'app development' => ['app-dev'],
+        'app production' => ['app-prod'],
+        'ingress' => ['ingress'],
+    ]);
+
+    it('does not include firewall rules for macOS app or ingress nodes merely because of role', function (
+        string $role,
+    ): void {
+        $node = Node::factory()->create([
+            'name' => "{$role}-macos-firewall-cat",
+            'status' => 'active',
+            'platform' => 'macos_15',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => $role,
+            'status' => 'active',
+        ]);
+
+        $runner = app(DoctorReportRunner::class);
+        $failure = app(DoctorScopeValidator::class)->validate(
+            families: ['firewall_rule'],
+            runner: $runner,
+            target: $node,
+        );
+
+        expect($runner->categoriesForNode($node))
+            ->not
+            ->toContain('firewall_rule')
+            ->and($failure?->code)
+            ->toBe('family_not_in_node_scope');
+    })->with([
+        'app development' => ['app-dev'],
+        'app production' => ['app-prod'],
+        'ingress' => ['ingress'],
+    ]);
+
+    it('excludes firewall rules on macOS even when the node role is otherwise eligible', function (): void {
+        $node = Node::factory()
+            ->agent()
+            ->create([
+                'name' => 'agent-macos-firewall-cat',
+                'status' => 'active',
+                'platform' => 'macos_15',
+            ]);
+
+        $runner = app(DoctorReportRunner::class);
+        $categories = $runner->categoriesForNode($node);
+        $failure = app(DoctorScopeValidator::class)->validate(
+            families: ['firewall_rule'],
+            runner: $runner,
+            target: $node,
+        );
+
+        expect($categories)
+            ->not->toContain('firewall_rule')->and($failure)
+            ->not->toBeNull()->and($failure?->code)->toBe('family_not_in_node_scope')->and($failure?->message)->toBe(
+                "Doctor family 'firewall_rule' is not available for node 'agent-macos-firewall-cat'.",
+            )->and($failure?->meta)->toBe([
+                'family' => 'firewall_rule',
+                'target_node' => 'agent-macos-firewall-cat',
+                'allowed_families' => ['node', 'tool', 'process'],
+            ]);
     });
 });
 

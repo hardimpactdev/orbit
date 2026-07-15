@@ -22,7 +22,7 @@ final readonly class LocalUpdateResult
     public const string STATUS_CHECK_FAILED = 'check_failed';
 
     /** The local install root does not exist and cannot be updated. */
-    public const string STATUS_CHECKOUT_UNAVAILABLE = 'checkout_unavailable';
+    public const string STATUS_INSTALLATION_UNAVAILABLE = 'installation_unavailable';
 
     /**
      * @param  array<string, string>  $stepResults  Ordered step key => terminal status.
@@ -32,7 +32,7 @@ final readonly class LocalUpdateResult
         public array $stepResults = [],
         public ?string $failedStep = null,
         public string $output = '',
-        public ?string $checkoutPath = null,
+        public ?string $installationPath = null,
         public ?string $fromVersion = null,
         public ?string $toVersion = null,
         public ?string $latestVersion = null,

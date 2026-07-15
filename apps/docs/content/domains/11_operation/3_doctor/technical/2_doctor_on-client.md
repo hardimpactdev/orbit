@@ -32,38 +32,23 @@ node. An operator may target a different node with `--node=<other>`. Fleet
 verification is explicit `--all` only.
 
 - Forward `--self` to the gateway; the gateway resolves it to the calling peer's identified node.
-- Forward `--node=<other>` to the gateway; the gateway resolves it and uses that node's active roles to derive the rendered category set.
+- Forward `--node=<other>` to the gateway; the gateway resolves the selected target.
 - Reject `--node=all`; fleet verification uses `--all`.
 - Reject `--self` combined with `--node` before forwarding.
 - The CLI may forward its configured local default node for omitted scope.
 - The CLI forwards `self=true` for omitted scope when no default node exists.
 - App and workspace filters are forwarded only when explicit options are present.
 
-## Category Set by Target Roles
+## Category Set by Target Eligibility
 
-The rendered category set is derived from the *target* node's active roles, not
-the calling peer's role. The CLI forwards the request, the gateway authorizes
-and probes, and the renderer shows only categories that apply to the target.
-Every node with at least one active role assignment includes `Processes`. A
-client/operator identity with no active role assignment renders only `Node`.
-
-| Target role assignment state | Categories |
-| --- | --- |
-| client with no active role (default or `--self`) | `Node` |
-| active `gateway` role (via `--node=<gateway>`) | `Node`, `Processes`, `Scheduling` |
-| active `database` role only | `Node`, `Tools`, `Processes` |
-| active `agent` role | `Node`, `Tools`, `Processes` |
-| active `router` role | `Node`, `Proxy routes`, `Processes` |
-| active `app-dev` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
-| active `app-prod` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
-| active `ingress` role | `Node`, `Proxy routes`, `Firewall`, `Tools`, `Processes` |
-| active `websocket` role | `Node`, `Tools`, `Processes` |
-| active `s3` role | `Node`, `Tools`, `Proxy routes`, `Processes` |
-| active `metrics` role | `Node`, `Tools`, `Processes`, `Proxy routes` |
-| active `vpn` or `analytics` role without another role-specific category | `Node`, `Processes` |
-
-A narrow `--family` filter intersects with the target active-role set; families
-outside the set are rejected before probes.
+The CLI forwards the request; it never derives Doctor eligibility from the
+calling peer's role. The gateway authorizes the selected target, then resolves
+the role-derived base categories and owned-fact/platform overlays defined by
+the [canonical category model](1_doctor.md#target-eligibility-and-category-set).
+That model includes VPN DNS under `Tools`, Orbit-protected rules on eligible
+Ubuntu nodes under `Firewall`, and `Scheduling` for the gateway plus every node
+targeted by a schedule. A narrow `--family` filter intersects with the resolved
+eligibility set; ineligible families are rejected before probes.
 
 DNS/TLD facts currently live inside the `Node` row. A separate `DNS/TLD`
 slice for operator/app targets and a `DNS` slice for gateway targets is
@@ -75,7 +60,7 @@ source lands.
 The CLI sends one doctor orchestration request to the gateway. The gateway owns:
 
 - scope authorization;
-- target-role resolution and category-set derivation;
+- target eligibility resolution and category-set derivation;
 - family dispatch;
 - gateway-configuration reads;
 - node reality inspection on the target node;
@@ -97,7 +82,7 @@ Operator peers must not:
 
 ## Progress and rendering
 
-In human mode, progress is gateway-streamed when transport supports it. The CLI renders the same doctor check-up frame defined by [`6.1_doctor_output-render_human.md`](6.1_doctor_output-render_human.md), restricted to the target-role category set.
+In human mode, progress is gateway-streamed when transport supports it. The CLI renders the same doctor check-up frame defined by [`6.1_doctor_output-render_human.md`](6.1_doctor_output-render_human.md), restricted to the target's resolved eligibility set.
 
 If streaming progress is unavailable, the CLI may show a gateway request state until the final diagnostic arrives, then render the final framed result. It must not fabricate per-category progress that the gateway did not report.
 

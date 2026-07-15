@@ -72,7 +72,7 @@ belong to that concrete app instance.
      runtime container, derived hostname;
    - agent IDE configuration: effective adapter, resolution source, and
      workspace discovery capability;
-   - inherited process: app-owned process definitions inherited by this
+   - inherited process: app-instance-owned process definitions inherited by this
      workspace (registry-shaped, not live status);
    - workspace-owned proxy route: host, kind, owner;
    - latest setup run summary: ID, status, completed_at.

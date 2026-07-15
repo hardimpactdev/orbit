@@ -5,17 +5,20 @@ declare(strict_types=1);
 namespace App\Actions\Apps;
 
 use App\Contracts\SiteCertificateInstaller;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
-use App\Services\Apps\AppOwningNodeResolver;
 use App\Services\Apps\AppRuntimeContainerApplyException;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeImageUnavailableException;
 use App\Services\Apps\AppRuntimeUserUnavailableException;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
+use App\Services\Workspaces\WorkspacePlacement;
+use RuntimeException;
 use Throwable;
 
 final readonly class EnactAppRuntime
@@ -27,7 +30,7 @@ final readonly class EnactAppRuntime
         private AppRuntimeContainerManager $appRuntimeContainerManager,
         private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
         private SiteCertificateInstaller $siteCertificateInstaller,
-        private AppOwningNodeResolver $appOwningNodeResolver,
+        private WorkspacePlacement $placement,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
     ) {}
 
@@ -36,25 +39,56 @@ final readonly class EnactAppRuntime
      */
     public function handle(App $app): array
     {
-        $owningNode = $this->appOwningNodeResolver->resolve($app);
+        $app->loadMissing('instances');
+
+        if ($app->instances->isEmpty()) {
+            throw new RuntimeException("App '{$app->name}' has no concrete app instance.");
+        }
 
         $warnings = [];
 
-        if ($app->runtimeKind() === AppRuntimeKind::Php) {
-            try {
-                $this->ensureFrankenPhpRuntimeProcess->forApp($app);
-                $this->ensureRuntimeTlsMaterial($app, $owningNode);
-                $container = $this->appRuntimeContainerRenderer->render($app);
-                $this->appRuntimeContainerManager->apply($owningNode, $container);
-            } catch (AppRuntimeImageUnavailableException $exception) {
-                $warnings[] = $this->phpVersionUnavailableWarning($app, $exception);
-            } catch (AppRuntimeUserUnavailableException $exception) {
-                $warnings[] = $this->runtimeUserUnavailableWarning($app, $exception);
-            } catch (AppRuntimeContainerApplyException $exception) {
-                $warnings[] = $this->runtimeContainerWarning($app, $exception->hadExistingContainer, $exception);
-            } catch (Throwable $exception) {
-                $warnings[] = $this->runtimeContainerWarning($app, hadExistingContainer: false, exception: $exception);
+        foreach ($app->instances as $instance) {
+            if (! $instance instanceof AppInstance || $instance->driver !== AppInstanceDriver::Orbit) {
+                continue;
             }
+
+            $node = $this->placement->nodeForInstance($instance);
+
+            if (! $node instanceof Node) {
+                throw new RuntimeException("App instance '{$app->name}.{$instance->name}' has no owning node.");
+            }
+
+            $runtimeApp = $this->appRuntimeContainerRenderer->runtimeAppForInstance($app, $instance);
+
+            if ($runtimeApp->runtimeKind() === AppRuntimeKind::Php) {
+                try {
+                    $this->ensureFrankenPhpRuntimeProcess->forApp($app, $instance);
+                    $this->ensureRuntimeTlsMaterial($runtimeApp, $node);
+                    $container = $this->appRuntimeContainerRenderer->renderForInstance($app, $instance);
+                    $this->appRuntimeContainerManager->apply($node, $container);
+                } catch (AppRuntimeImageUnavailableException $exception) {
+                    $warnings[] = $this->phpVersionUnavailableWarning($runtimeApp, $exception);
+                } catch (AppRuntimeUserUnavailableException $exception) {
+                    $warnings[] = $this->runtimeUserUnavailableWarning($runtimeApp, $exception);
+                } catch (AppRuntimeContainerApplyException $exception) {
+                    $warnings[] = $this->runtimeContainerWarning(
+                        $runtimeApp,
+                        $exception->hadExistingContainer,
+                        $exception,
+                    );
+                } catch (Throwable $exception) {
+                    $warnings[] = $this->runtimeContainerWarning(
+                        $runtimeApp,
+                        hadExistingContainer: false,
+                        exception: $exception,
+                    );
+                }
+            }
+
+            $warnings = [
+                ...$warnings,
+                ...$this->ensureAppProcessRuntimeUnits->handle($app, $instance),
+            ];
         }
 
         // Always record gateway-side intent for app-owned proxy routes and
@@ -69,7 +103,6 @@ final readonly class EnactAppRuntime
         return [
             ...$warnings,
             ...$this->ensureAppProxyRoute->handle($app),
-            ...$this->ensureAppProcessRuntimeUnits->handle($app),
         ];
     }
 

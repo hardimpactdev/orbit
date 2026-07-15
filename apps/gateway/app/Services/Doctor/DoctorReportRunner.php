@@ -75,6 +75,7 @@ use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use App\Services\Workspaces\WorkspacesProbe;
 use Closure;
 use Illuminate\Contracts\Process\InvokedProcess;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Process as ProcessFacade;
@@ -109,9 +110,7 @@ final readonly class DoctorReportRunner
         'workspace',
         'process',
         'proxy',
-        'firewall_rule',
         'tool',
-        'schedule',
         'database_connection',
     ];
 
@@ -120,9 +119,7 @@ final readonly class DoctorReportRunner
         'app',
         'process',
         'proxy',
-        'firewall_rule',
         'tool',
-        'schedule',
         'database_connection',
     ];
 
@@ -130,7 +127,7 @@ final readonly class DoctorReportRunner
 
     private const array AGENT_CATEGORIES = ['node', 'tool'];
 
-    private const array INGRESS_CATEGORIES = ['node', 'proxy', 'firewall_rule', 'tool'];
+    private const array INGRESS_CATEGORIES = ['node', 'proxy', 'tool'];
 
     private const array ROUTER_CATEGORIES = ['node', 'proxy'];
 
@@ -278,6 +275,13 @@ final readonly class DoctorReportRunner
             && $this->nodeRoleAssignments->nodeCanOwnFirewallRules($node)
         ) {
             $categories[] = 'firewall_rule';
+        }
+
+        if (
+            ! in_array('schedule', $categories, true)
+            && $this->expectedSchedulesTargetingNode($node)->exists()
+        ) {
+            $categories[] = 'schedule';
         }
 
         return array_values(array_unique($categories));
@@ -2555,9 +2559,16 @@ final readonly class DoctorReportRunner
             return $this->applyNodeOwnedProcessIssue($node, $key, $process);
         }
 
+        $process->loadMissing('appInstance');
+        $appInstance = $process->appInstance;
+
+        if (! $appInstance instanceof AppInstance) {
+            return null;
+        }
+
         try {
             $this->refreshManagedFrankenPhpProcessIntent($process);
-            $warnings = app(EnsureAppProcessRuntimeUnits::class)->handle($app);
+            $warnings = app(EnsureAppProcessRuntimeUnits::class)->handle($app, $appInstance);
         } catch (\Throwable $e) {
             return [
                 'family' => 'process',
@@ -2581,7 +2592,7 @@ final readonly class DoctorReportRunner
                 'key' => $key,
                 'mode' => 'restore',
                 'status' => 'failed',
-                'summary' => "Process runtime restore for {$app->name} completed with warnings.",
+                'summary' => "Process runtime restore for {$app->name}.{$appInstance->name} completed with warnings.",
                 'details' => [
                     'warnings' => $warnings,
                 ],
@@ -2595,9 +2606,10 @@ final readonly class DoctorReportRunner
             'key' => $key,
             'mode' => 'restore',
             'status' => 'completed',
-            'summary' => "Restored process runtime units for {$app->name}.",
+            'summary' => "Restored process runtime units for {$app->name}.{$appInstance->name}.",
             'details' => [
                 'app' => $app->name,
+                'app_instance' => $appInstance->name,
                 'process' => $process->name,
             ],
         ];
@@ -2674,9 +2686,18 @@ final readonly class DoctorReportRunner
      */
     private function restoreManagedFrankenPhpAppRuntime(Node $node, string $key, Process $process, App $app): array
     {
-        $app->loadMissing('node');
+        $process->loadMissing('appInstance');
+        $appInstance = $process->appInstance;
+        $instanceNode = $appInstance instanceof AppInstance
+            ? $this->workspacePlacement->nodeForInstance($appInstance)
+            : null;
 
-        if (! $app->node instanceof Node || $app->node->id !== $node->id) {
+        if (
+            ! $appInstance instanceof AppInstance
+            || $appInstance->app_id !== $app->id
+            || ! $instanceNode instanceof Node
+            || $instanceNode->id !== $node->id
+        ) {
             return [
                 'family' => 'process',
                 'node' => $node->name,
@@ -2687,18 +2708,20 @@ final readonly class DoctorReportRunner
                 'summary' => "Failed to restore {$key}.",
                 'details' => [
                     'app' => $app->name,
+                    'app_instance' => $appInstance?->name,
                     'process' => $process->name,
-                    'error' => 'Process app has no active parent node.',
+                    'error' => 'Process app instance has no active serving node.',
                 ],
             ];
         }
 
         try {
-            app(EnsureFrankenPhpRuntimeProcess::class)->forApp($app);
-            $this->ensureAppRuntimeTlsMaterial($app, $node);
+            app(EnsureFrankenPhpRuntimeProcess::class)->forApp($app, $appInstance);
+            $runtimeApp = app(AppRuntimeContainerRenderer::class)->runtimeAppForInstance($app, $appInstance);
+            $this->ensureAppRuntimeTlsMaterial($runtimeApp, $instanceNode);
 
-            $container = app(AppRuntimeContainerRenderer::class)->render($app);
-            $outcome = $this->appRuntimeContainerManagerForAgentPush()->apply($node, $container);
+            $container = app(AppRuntimeContainerRenderer::class)->renderForInstance($app, $appInstance);
+            $outcome = $this->appRuntimeContainerManagerForAgentPush()->apply($instanceNode, $container);
         } catch (\Throwable $e) {
             return [
                 'family' => 'process',
@@ -2710,6 +2733,7 @@ final readonly class DoctorReportRunner
                 'summary' => "Failed to restore {$key}.",
                 'details' => [
                     'app' => $app->name,
+                    'app_instance' => $appInstance->name,
                     'process' => $process->name,
                     'error' => $e->getMessage(),
                 ],
@@ -2723,9 +2747,10 @@ final readonly class DoctorReportRunner
             'key' => $key,
             'mode' => 'restore',
             'status' => 'completed',
-            'summary' => "Restored managed FrankenPHP runtime container for {$app->name}.",
+            'summary' => "Restored managed FrankenPHP runtime container for {$app->name}.{$appInstance->name}.",
             'details' => [
                 'app' => $app->name,
+                'app_instance' => $appInstance->name,
                 'process' => $process->name,
                 'container' => $container->name(),
                 'outcome' => $outcome->value,
@@ -2946,7 +2971,7 @@ final readonly class DoctorReportRunner
 
     private function refreshManagedFrankenPhpProcessIntent(Process $process): void
     {
-        $process->loadMissing('owner');
+        $process->loadMissing(['owner', 'appInstance']);
 
         $config = $process->runtime_config;
         $hashLabel = is_string($config['container_spec_hash_label'] ?? null)
@@ -2960,7 +2985,13 @@ final readonly class DoctorReportRunner
         $ensureFrankenPhpRuntimeProcess = app(EnsureFrankenPhpRuntimeProcess::class);
 
         if ($hashLabel === AppRuntimeContainer::SpecHashLabel && $process->owner instanceof App) {
-            $ensureFrankenPhpRuntimeProcess->forApp($process->owner);
+            if (! $process->appInstance instanceof AppInstance) {
+                throw new \RuntimeException(
+                    'A concrete app instance is required to refresh FrankenPHP process intent.',
+                );
+            }
+
+            $ensureFrankenPhpRuntimeProcess->forApp($process->owner, $process->appInstance);
 
             return;
         }
@@ -3125,14 +3156,38 @@ final readonly class DoctorReportRunner
             return null;
         }
 
+        $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
+        $appInstanceName = is_string($detail['app_instance'] ?? null) ? $detail['app_instance'] : null;
+
+        if (($appName === null) !== ($appInstanceName === null)) {
+            return null;
+        }
+
         $processes = Process::query()
-            ->with('owner')
+            ->with(['owner', 'appInstance.app'])
             ->where('node_id', $node->id)
             ->where('name', $processName)
+            ->when(
+                $appName !== null && $appInstanceName !== null,
+                fn (Builder $query): Builder => $query->whereHas(
+                    'appInstance',
+                    fn (Builder $instanceQuery): Builder => $instanceQuery
+                        ->where('name', $appInstanceName)
+                        ->whereHas(
+                            'app',
+                            fn (Builder $appQuery): Builder => $appQuery->where('name', $appName),
+                        ),
+                ),
+            )
             ->get();
         $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? $detail['runtime_unit'] : null;
+        $runtimeProcess = $this->processForRuntimeUnit($node, $processes, $runtimeUnit);
 
-        return $this->processForRuntimeUnit($node, $processes, $runtimeUnit) ?? $processes->first();
+        if ($runtimeProcess instanceof Process) {
+            return $runtimeProcess;
+        }
+
+        return $processes->count() === 1 ? $processes->first() : null;
     }
 
     /**
@@ -3144,15 +3199,9 @@ final readonly class DoctorReportRunner
             return null;
         }
 
-        return $processes->first(function (Process $process) use ($node, $runtimeUnit): bool {
-            if ($this->runtimeUnitNameForProcess($node, $process) === $runtimeUnit) {
-                return true;
-            }
-
-            $app = $process->ownerApp();
-
-            return $app instanceof App && $app->name !== '' && str_starts_with($runtimeUnit, "orbit_{$app->name}_");
-        });
+        return $processes->first(
+            fn (Process $process): bool => $this->runtimeUnitNameForProcess($node, $process) === $runtimeUnit,
+        );
     }
 
     private function runtimeUnitNameForProcess(Node $node, Process $process): ?string
@@ -3174,7 +3223,7 @@ final readonly class DoctorReportRunner
 
     private function processOwnerContext(Node $node, Process $process): ?ProcessOwnerContext
     {
-        $process->loadMissing('owner');
+        $process->loadMissing(['owner', 'appInstance']);
 
         if ($process->owner instanceof Node) {
             return new ProcessOwnerContext(
@@ -3186,18 +3235,28 @@ final readonly class DoctorReportRunner
         }
 
         if ($process->owner instanceof App) {
+            if (! $process->appInstance instanceof AppInstance) {
+                return null;
+            }
+
             return new ProcessOwnerContext(
                 node: $node,
                 app: $process->owner,
                 workspace: null,
                 owner: $process->owner,
+                appInstance: $process->appInstance,
             );
         }
 
         if ($process->owner instanceof Workspace) {
-            $process->owner->loadMissing('app');
+            $process->owner->loadMissing(['app', 'appInstance']);
 
-            if (! $process->owner->app instanceof App) {
+            if (
+                ! $process->owner->app instanceof App
+                || ! $process->appInstance instanceof AppInstance
+                || ! $process->owner->appInstance instanceof AppInstance
+                || ! $process->appInstance->is($process->owner->appInstance)
+            ) {
                 return null;
             }
 
@@ -3206,6 +3265,7 @@ final readonly class DoctorReportRunner
                 app: $process->owner->app,
                 workspace: $process->owner,
                 owner: $process->owner,
+                appInstance: $process->appInstance,
             );
         }
 
@@ -4318,22 +4378,33 @@ final readonly class DoctorReportRunner
      */
     private function schedulesForNode(Node $node): Collection
     {
-        $query = Schedule::query()
-            ->with(['app.node', 'node'])
-            ->where('enabled', true)
-            ->where('status', 'expected');
-
         if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
-            return $query->get();
+            return Schedule::query()
+                ->with(['app.node', 'node'])
+                ->where('enabled', true)
+                ->where('status', 'expected')
+                ->get();
         }
 
-        return $query
-            ->where(function ($query) use ($node): void {
+        return $this
+            ->expectedSchedulesTargetingNode($node)
+            ->with(['app.node', 'node'])
+            ->get();
+    }
+
+    /**
+     * @return Builder<Schedule>
+     */
+    private function expectedSchedulesTargetingNode(Node $node): Builder
+    {
+        return Schedule::query()
+            ->where('enabled', true)
+            ->where('status', 'expected')
+            ->where(function (Builder $query) use ($node): void {
                 $query
                     ->where('node_id', $node->id)
-                    ->orWhereHas('app', fn ($appQuery) => $appQuery->where('node_id', $node->id));
-            })
-            ->get();
+                    ->orWhereHas('app', fn (Builder $appQuery): Builder => $appQuery->where('node_id', $node->id));
+            });
     }
 
     private function gatewayNode(): ?Node

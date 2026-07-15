@@ -88,6 +88,7 @@ final readonly class ProcessEventIngestController implements Loggable
             'event_id' => $payload['event_id'],
             'process_id' => $resolved['process']->id ?? null,
             'app_id' => $resolved['app']->id ?? null,
+            'app_instance_id' => $resolved['app_instance']->id ?? null,
             'workspace_id' => $resolved['workspace']->id ?? null,
             'node_id' => $caller->id,
             'unit_name' => $payload['unit'],

@@ -71,16 +71,20 @@ orbit update:all --stream-json
    source-dev topologies keep `/usr/local/bin/orbit` pointed at
    `<source>/apps/cli/orbit`.
    The same immutable update plan selects both the CLI artifact and Orbit Agent
-   artifact for agent-capable nodes. The signed internal installer replaces the
-   node-local `orbit-agent` binary, restarts an existing managed service when
-   present, falls back to replacing an unmanaged listener when one is running,
-   and records installed artifact identity for future drift checks.
-5. The CLI follows the operation event journal over Server-Sent Events. If the
-   gateway service is replaced mid-stream, the CLI reconnects with
-   `Last-Event-ID` and replays only events it has not rendered.
+   artifact for supported Agent-eligible Linux and macOS/Darwin nodes. The
+   signed internal installer replaces the node-local `orbit-agent` binary,
+   restarts an existing managed service when present, falls back to replacing
+   an unmanaged listener when one is running, and records installed artifact
+   identity for future drift checks.
+5. Each persisted operation event carries a monotonic journal cursor. This
+   command still follows an exact-marked transitional Server-Sent Events
+   adapter; `Last-Event-ID` temporarily carries that cursor so a reconnect
+   replays only events the CLI has not rendered. The adapter is removed when
+   `update:all` moves to the private operations WebSocket/Reverb plane.
 6. The runner performs final verification: gateway health, scheduler health,
-   CLI execution on selected nodes, Orbit Agent artifact hashes on
-   agent-capable nodes, and required role image availability.
+   CLI execution on selected nodes, Orbit Agent artifact hashes on supported
+   Agent-eligible Linux and macOS/Darwin nodes, and required role image
+   availability.
 7. Report every per-installation result and the terminal operation status,
    including partial failures.
 

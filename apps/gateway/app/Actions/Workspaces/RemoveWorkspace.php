@@ -22,9 +22,6 @@ use Throwable;
 
 final readonly class RemoveWorkspace
 {
-    /**
-     * @mago-expect lint:excessive-parameter-list
-     */
     public function __construct(
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private WorkspaceRuntimeContainerManager $workspaceRuntimeContainerManager,
@@ -107,10 +104,10 @@ final readonly class RemoveWorkspace
 
                 if ($containerOutcome === WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining) {
                     $warnings[] = [
-                        'code' => 'workspace.runtime_container_extra',
-                        'family' => 'workspace',
-                        'message' => "Workspace runtime container for '{$name}' could not be removed during cleanup.",
-                        'next_command' => 'doctor --family=workspace --restore',
+                        'code' => 'process.runtime_unit_extra',
+                        'family' => 'process',
+                        'message' => "Workspace runtime unit for '{$name}' could not be removed during cleanup.",
+                        'next_command' => 'doctor --family=process --restore',
                     ];
                 }
 
@@ -211,7 +208,10 @@ final readonly class RemoveWorkspace
         }
 
         return $app
-            ->processes
+            ->processes()
+            ->where('app_instance_id', $workspace->app_instance_id)
+            ->orderBy('sort_order')
+            ->get()
             ->map(function (Process $process) use ($app, $workspace): string {
                 $driver = $this->runtimeDrivers->forProcess($process);
                 $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);

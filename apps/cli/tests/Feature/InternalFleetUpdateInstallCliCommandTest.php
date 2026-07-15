@@ -408,7 +408,10 @@ describe('internal fleet update install cli command', function (): void {
     });
 });
 
-describe('systemd Orbit Agent adoption during fleet update install', function (): void {
+/**
+ * @mago-expect lint:halstead
+ */
+describe('managed Orbit Agent service boundary during fleet update install', function (): void {
     beforeEach(function (): void {
         app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
         fakeGateway(fakeSuccessEnvelope([
@@ -426,7 +429,7 @@ describe('systemd Orbit Agent adoption during fleet update install', function ()
         $_SERVER['PATH'] = $path;
     });
 
-    it('adopts a missing systemd Orbit Agent service from the install payload', function (): void {
+    it('fails closed when the managed systemd Orbit Agent service is missing', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $systemdBin = make_fleet_update_install_cli_fake_missing_agent_systemd_bin($workspace);
         $artifactPath = "{$workspace}/artifact/orbit";
@@ -481,38 +484,29 @@ describe('systemd Orbit Agent adoption during fleet update install', function ()
             ], JSON_THROW_ON_ERROR),
         );
 
-        $data = fleet_update_install_cli_success_data($output);
-        $stdout = is_string($data['stdout'] ?? null) ? $data['stdout'] : '';
+        /** @var array{error?: array{code?: string, meta?: array{stdout?: string, stderr?: string}}} $payload */
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        $error = $payload['error'] ?? [];
+        $meta = $error['meta'] ?? [];
         $calls = file_get_contents("{$workspace}/missing-systemd-calls.log");
-        $unit = file_get_contents("{$workspace}/adopted-orbit-agent.service");
-        $config = file_get_contents($agentConfigPath);
-        $caPem = file_get_contents($agentCaPath);
 
-        expect($exitCode)->toBe(0);
-        expect($stdout)
+        expect($exitCode)
+            ->toBe(1, $output)
+            ->and($error['code'] ?? null)
+            ->toBe('fleet_update.cli_install_failed')
+            ->and($meta['stdout'] ?? '')
             ->toContain('probe_agent_unit')
-            ->toContain('kill_agent_port_owner')
-            ->toContain('adopt_agent_unit');
-        expect(str_contains($stdout, 'skip_agent_restart_no_unit'))->toBeFalse();
+            ->and($meta['stderr'] ?? '')
+            ->toContain('agent_service_missing_bootstrap_required');
         expect($calls)
             ->toContain('systemctl status orbit-agent')
             ->toContain('systemctl is-enabled orbit-agent')
-            ->toContain('install -m 0644')
-            ->toContain('/etc/systemd/system/orbit-agent.service')
-            ->toContain('systemctl daemon-reload')
-            ->toContain('systemctl enable orbit-agent.service')
-            ->toContain('systemctl restart orbit-agent.service')
-            ->toContain('ss -ltnp');
-        expect($unit)
-            ->toContain('User=orbit')
-            ->toContain("Environment=ORBIT_AGENT_CONFIG={$agentConfigPath}")
-            ->toContain('Environment=ORBIT_AGENT_HTTP_BIND=10.6.0.2:9477')
-            ->toContain("ExecStart={$workspace}/bin/orbit-agent");
-        expect($config)
-            ->toContain('platform = "ubuntu_24-04"')
-            ->toContain('managed = true')
-            ->toContain('wireguard_address = "10.6.0.2"');
-        expect($caPem)->toBe($agentCaPem);
+            ->not->toContain('/etc/systemd/system/orbit-agent.service')
+            ->not->toContain('systemctl daemon-reload')
+            ->not->toContain('systemctl enable')
+            ->not->toContain('systemctl restart')
+            ->not->toContain('ss -ltnp');
+        expect(file_exists("{$workspace}/unexpected-orbit-agent.service"))->toBeFalse();
     });
 
     it('preserves live Agent trust files and does not restart when staging fails', function (): void {
@@ -1003,7 +997,7 @@ function make_fleet_update_install_cli_fake_missing_agent_systemd_bin(string $wo
 {
     $bin = "{$workspace}/missing-systemd-bin";
     $log = "{$workspace}/missing-systemd-calls.log";
-    $unit = "{$workspace}/adopted-orbit-agent.service";
+    $unit = "{$workspace}/unexpected-orbit-agent.service";
     $realInstall = trim((string) shell_exec('command -v install'));
 
     mkdir($bin, recursive: true);
@@ -1018,6 +1012,15 @@ function make_fleet_update_install_cli_fake_missing_agent_systemd_bin(string $wo
         exit 0
         SH);
     chmod(filename: "{$bin}/systemctl", permissions: 0o755);
+
+    foreach (['launchctl', 'pgrep', 'ps'] as $command) {
+        file_put_contents("{$bin}/{$command}", <<<SH
+            #!/usr/bin/env sh
+            echo "{$command} \$*" >> {$log}
+            exit 1
+            SH);
+        chmod(filename: "{$bin}/{$command}", permissions: 0o755);
+    }
 
     file_put_contents("{$bin}/install", <<<SH
         #!/usr/bin/env sh
@@ -1145,7 +1148,7 @@ function make_fleet_update_install_cli_fake_launchctl_bin(string $workspace): st
     $log = "{$workspace}/launchctl-calls.log";
 
     mkdir($bin, recursive: true);
-    file_put_contents($log, '');
+    file_put_contents(filename: $log, data: '');
 
     file_put_contents("{$bin}/systemctl", <<<'SH'
         #!/usr/bin/env sh

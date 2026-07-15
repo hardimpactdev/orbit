@@ -1,17 +1,17 @@
 # `orbit workspace-teardown-step:remove`
 
-Remove a workspace teardown step from an app.
+Remove a workspace teardown step from a concrete app instance.
 
 ## Usage
 
 ```bash
-orbit workspace-teardown-step:remove --step=<id> [--app=<app>] [--force] [--json]
+orbit workspace-teardown-step:remove --step=<id> --app=<app.instance> [--force] [--json]
 ```
 
 ## Description
 
 The `workspace-teardown-step:remove` command deletes a teardown step definition
-from an app's workspace lifecycle policy. Removing the step excludes it from
+from an app instance's workspace lifecycle policy. Removing the step excludes it from
 future workspace removal and app prune teardown runs.
 
 Removing a step definition does not undo side effects (such as removed files or
@@ -21,8 +21,11 @@ policy used for future executions.
 ## Arguments
 
 - `--step=<id>`: The ID of the teardown step to remove. Required.
-- `--app=<app>`: The parent app slug. When omitted, Orbit infers the app from
-  the current directory.
+- `--app=<app.instance>`: Concrete dotted app-instance selector, such as
+  `my-app.production`. A caller context may supply the same concrete instance,
+  but a bare logical-app slug is rejected with an app-instance-required
+  validation error before side effects. The exact error shape is defined by the
+  [JSON renderer contract](technical/6.2_workspace-teardown-step-remove_output-render_json.md).
 - `--force`: Skip interactive confirmation.
 - `--json`: Output structured JSON payload.
 
@@ -34,7 +37,8 @@ The following rules govern how the step is removed.
   it permanently deletes a policy definition. Use `--force` to bypass the
   confirmation prompt.
 - **Order Compaction**: After a step is removed, Orbit renumbers the remaining
-  teardown steps for the app to maintain a continuous, gap-free execution order.
+  teardown steps for the selected app instance to maintain a continuous,
+  gap-free execution order.
 - **Future Runs Only**: In-flight teardown runs continue using the ordered step
   list they snapshotted at teardown-phase entry. Removal affects later runs.
 - **History Preservation**: Removal does not mutate existing workspace run
@@ -50,7 +54,7 @@ The following rules govern how the step is removed.
 This prompts before removing the step.
 
 ```bash
-orbit workspace-teardown-step:remove --step=18
+orbit workspace-teardown-step:remove --step=18 --app=my-app.production
 ```
 
 ### Force remove a step without prompting
@@ -58,14 +62,15 @@ orbit workspace-teardown-step:remove --step=18
 Use `--force` to skip the confirmation prompt.
 
 ```bash
-orbit workspace-teardown-step:remove --step=18 --force
+orbit workspace-teardown-step:remove --step=18 --app=my-app.production --force
 ```
 
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The caller is authorized to manage workspace policy for the target app.
-- The target app exists.
+- The caller is authorized to manage workspace policy on the selected app
+  instance's serving node.
+- The target app instance exists.
 
 ## Related
 

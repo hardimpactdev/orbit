@@ -38,6 +38,13 @@ return [
             'doctor --family=proxy --restore',
         ],
     ],
+    'proxy.enactment_failed' => [
+        'family' => 'proxy',
+        'kind' => 'command_handoff',
+        'allowed_next_commands' => [
+            'doctor --family=proxy --restore',
+        ],
+    ],
     'proxy.docker_runtime_unavailable' => [
         'family' => 'proxy',
         'kind' => 'command_handoff',

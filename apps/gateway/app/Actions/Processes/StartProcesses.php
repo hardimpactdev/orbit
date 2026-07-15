@@ -70,6 +70,7 @@ final readonly class StartProcesses
                 'process' => $process->name,
                 'node' => $context->node->name,
                 'app' => $context->app?->name,
+                'app_instance' => $context->appInstance?->name,
                 'workspace' => $workspace?->name,
                 'runtime_unit' => $runtimeUnit,
                 'state' => $ok ? 'running' : 'failed',

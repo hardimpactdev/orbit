@@ -49,12 +49,13 @@ These rules govern all workspace family commands.
 - A workspace hostname is the workspace slug prepended to the selected app
   instance's primary hostname. For a development app this yields
   `{workspace}.{app}.{instance-tld}`.
-- Workspaces inherit app process definitions as app-instance runtime units.
+- Workspaces inherit the selected app instance's process definitions as
+  app-instance runtime units.
   Each inherited runtime unit is owned
   by the process family and uses the selected process runtime backend. It has
   its own unit name, working directory, environment block, and log stream
   distinct from the main app instance and from sibling workspaces.
-  The parent app's process definition supplies the shared fields (command,
+  The selected app instance's process definition supplies the shared fields (command,
   restart policy, crash notification policy). The workspace context supplies
   the per-instance fields (working directory, workspace-specific URL,
   Orbit-managed TLS material, and log paths scoped to the program name).

@@ -35,30 +35,16 @@ only.
 - Reject `--self` combined with `--node`.
 - Apply authorization before probing the selected target node.
 
-## Category Set by Target Roles
+## Category Set by Target Eligibility
 
-The rendered category set is derived from the *target* node's active roles, not
-the calling peer's role. Every node with at least one active role assignment
-includes `Processes`. A client/operator identity with no active role assignment
-renders only `Node`.
-
-| Target role assignment state | Categories |
-| --- | --- |
-| active `gateway` role (default or `--self`) | `Node`, `Processes`, `Scheduling` |
-| client with no active role | `Node` |
-| active `database` role only | `Node`, `Tools`, `Processes` |
-| active `agent` role | `Node`, `Tools`, `Processes` |
-| active `router` role | `Node`, `Proxy routes`, `Processes` |
-| active `app-dev` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
-| active `app-prod` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
-| active `ingress` role | `Node`, `Proxy routes`, `Firewall`, `Tools`, `Processes` |
-| active `websocket` role | `Node`, `Tools`, `Processes` |
-| active `s3` role | `Node`, `Tools`, `Proxy routes`, `Processes` |
-| active `metrics` role | `Node`, `Tools`, `Processes`, `Proxy routes` |
-| active `vpn` or `analytics` role without another role-specific category | `Node`, `Processes` |
-
-A narrow `--family` filter intersects with the target active-role set; families
-outside the set are rejected before probes.
+Gateway implicit authority changes authorization only; it does not change
+family eligibility. After selecting the target, the gateway resolves the
+role-derived base categories and owned-fact/platform overlays defined by the
+[canonical category model](1_doctor.md#target-eligibility-and-category-set).
+That model includes VPN DNS under `Tools`, Orbit-protected rules on eligible
+Ubuntu nodes under `Firewall`, and `Scheduling` for the gateway plus every node
+targeted by a schedule. A narrow `--family` filter intersects with the resolved
+eligibility set; ineligible families are rejected before probes.
 
 DNS/TLD facts currently live inside the `Node` row. A separate `DNS/TLD`
 slice for operator/app targets and a `DNS` slice for gateway targets is
@@ -113,7 +99,7 @@ Gateway peers must not:
 
 ## Progress and rendering
 
-In human mode, the gateway renders the doctor check-up frame directly, restricted to the target-role category set. Category rows update as each family starts, gathers results, finishes, skips, or fails. Issue and action details render inline under the category that owns them.
+In human mode, the gateway renders the doctor check-up frame directly, restricted to the target's resolved eligibility set. Active roles establish the base categories; owned facts and platform support add overlays. Category rows update as each family starts, gathers results, finishes, skips, or fails. Issue and action details render inline under the category that owns them.
 
 In JSON mode, no human progress frame is emitted. The final diagnostic is returned in the shared envelope defined by [`6.2_doctor_output-render_json.md`](6.2_doctor_output-render_json.md).
 

@@ -68,6 +68,11 @@ describe('FirewallRule mutation controllers', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.rule.name', 'local-vite')
+            ->assertJsonPath('success.data.rule.address_family', 'both')
+            ->assertJsonPath('success.data.rule.interface_scope', null)
+            ->assertJsonPath('success.data.rule.owner', 'user')
+            ->assertJsonPath('success.data.rule.protected', false)
+            ->assertJsonMissingPath('success.data.rule.interface')
             ->assertJsonPath('success.meta.backend_enacted', true)
             ->assertJsonPath('success.meta.warnings', []);
 

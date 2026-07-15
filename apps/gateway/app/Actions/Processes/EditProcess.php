@@ -148,7 +148,7 @@ final readonly class EditProcess
         $restartableRuntimeUnits = $runtimeUnits;
 
         if ($context->app !== null && $context->workspace === null) {
-            $warnings = $this->ensureRuntimeUnits->handle($app);
+            $warnings = $this->ensureRuntimeUnits->handle($app, $context->appInstance);
 
             if ($warnings === []) {
                 $warnings = $this->runtimeUnits->cleanupPrevious(

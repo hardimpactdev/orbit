@@ -5,12 +5,12 @@ Create a Solo todo.
 ## Usage
 
 ```bash
-orbit solo:todo:create <title> [--node=<node>] [--body=<body>] [--json]
+orbit solo:todo:create <title> [--node=<node>] [--project=<project>] [--body=<body>] [--json]
 ```
 
 ## Contract
 
-`solo:todo:create` is available only when the local Solo extension is enabled with `orbit extension:enable solo`. The command calls the gateway Solo proxy route `POST /api/solo/todo/create`; the gateway must also have the Solo extension enabled. Use `--node=<node>` to target that node's configured node-local Solo API; when omitted, Orbit uses local `node:default`, then the caller node.
+`solo:todo:create` is available only when the local Solo extension is enabled with `orbit extension:enable solo`. The command calls the gateway Solo proxy route `POST /api/solo/todo/create`; the gateway must also have the Solo extension enabled. Use `--node=<node>` to target that node's configured node-local Solo API; when omitted, Orbit uses local `node:default`, then the caller node. Use `--project=<project>` to scope the todo lookup or mutation to one Solo project; when omitted, Solo applies its default project resolution.
 
 The gateway authorizes the caller with `solo:todo:write` on the target node and records Orbit activity for the operation. Gateway targets use direct loopback; non-gateway targets use Agent push to target-local loopback. Solo ports and SSH transport are never exposed.
 

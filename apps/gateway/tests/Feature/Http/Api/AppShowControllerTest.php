@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Models\App;
 use App\Models\AppDependencyAuditSummary;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Process;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -127,6 +130,47 @@ describe('AppShowController', function (): void {
                 'success.data.details.dependency_audits.0.advisory_summary.0.package_name',
                 'guzzlehttp/guzzle',
             );
+    });
+
+    it('returns app process definitions with concrete instance identity', function (): void {
+        $caller = createAppShowCallerNode();
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        grantAppShowAccess($caller, $node);
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $development = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+        ]);
+        $production = AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+        ]);
+        Process::factory()
+            ->forOwner($app, $node)
+            ->create([
+                'app_instance_id' => $development->id,
+                'name' => 'queue',
+            ]);
+        Process::factory()
+            ->forOwner($app, $node)
+            ->create([
+                'app_instance_id' => $production->id,
+                'name' => 'queue',
+            ]);
+
+        $this
+            ->call('GET', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP])
+            ->assertOk()
+            ->assertJsonFragment([
+                'name' => 'queue',
+                'app_instance' => 'development',
+                'runtime' => 'systemd',
+            ])
+            ->assertJsonFragment([
+                'name' => 'queue',
+                'app_instance' => 'production',
+                'runtime' => 'systemd',
+            ]);
     });
 
     it('resolves by hostname when no app name matches', function (): void {

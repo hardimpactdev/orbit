@@ -346,7 +346,11 @@ V1 is scoped narrowly:
   managing only the UI process and any embedded service it started itself;
 - no menu job history;
 - app-dev convergence uses direct gateway-pushed command envelopes;
-- no production packaging, autostart, signing, notarization, or self-update.
+- owner-user local Agent installation and updates replace the configured
+  artifact and restart an existing managed service; first service creation
+  remains bootstrap-owned and updates do not create a missing service;
+- native platform installer packaging, signing, and notarization remain
+  deferred.
 
 Orbit Agent is distinct from the existing `agent` workload role and from Agent
 IDE adapters. The `agent` role runs autonomous agent tools such as OpenClaw and

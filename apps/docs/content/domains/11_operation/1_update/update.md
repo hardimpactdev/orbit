@@ -45,9 +45,10 @@ orbit update --json
    overridable with `ORBIT_BINARY_URL`). Source-mounted Docker/Incus
    development and E2E lanes keep `/usr/local/bin/orbit` pointed at
    `<source>/apps/cli/orbit` and update by changing the mounted source.
-   Fleet updates can use the same release manifest to select an Orbit Agent
-   artifact for an agent-capable Linux node. `orbit update` itself still updates
-   only the current host CLI installation.
+   Fleet updates use the same release manifest to select the matching
+   platform/architecture Orbit Agent artifact for supported Agent-eligible
+   Linux and macOS/Darwin nodes. `orbit update` itself still updates only the
+   current host CLI installation.
 4. Keep the configured owner-user `orbit` launcher pointed at the correct local
    entry point (updated binary artifact in production, mounted source entry
    point in source-mounted lanes). Production self-update does not discover or
@@ -59,8 +60,9 @@ orbit update --json
 The command affects only the current Orbit CLI installation. On a gateway host,
 it updates the host CLI binary or source-dev CLI entrypoint; it does not replace
 `orbit-gateway`, run gateway migrations, or mutate fleet configuration.
-Orbit Agent artifact replacement is part of `update:all` for agent-capable
-Linux nodes. Bootstrap still owns first install and service unit creation;
+Orbit Agent artifact replacement is part of `update:all` for supported
+Agent-eligible nodes on Linux and macOS/Darwin. Bootstrap still owns first
+install and service unit creation;
 `orbit update` updates the local Orbit CLI installation only.
 
 Use [`update:all`](../2_update-all/update-all.md) when the operator needs to

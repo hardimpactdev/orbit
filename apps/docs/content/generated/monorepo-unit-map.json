@@ -407,7 +407,6 @@
                 "apps/reverb/composer.json"
             ],
             "authority_docs": [
-                "apps/docs/content/domains/3_tool/catalog/reverb.md",
                 "apps/docs/content/domains/1_node/node-concepts.md"
             ],
             "agent_skills": [

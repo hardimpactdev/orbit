@@ -34,7 +34,7 @@ orbit schedule:remove backups --node=app-1 --force
 
 Run `schedule:remove` when a recurring task should be removed from Orbit management. `schedule:remove` resolves the schedule and removes the gateway schedule row. Subsequent gateway-scheduler ticks skip it.
 
-It does not remove app code, app process definitions, nodes, scripts outside the managed schedule policy, or past run-history records.
+It does not remove app code, app-instance process definitions, nodes, scripts outside the managed schedule policy, or past run-history records.
 
 ## Output
 

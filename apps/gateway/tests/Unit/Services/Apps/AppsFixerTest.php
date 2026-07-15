@@ -400,7 +400,7 @@ it('throws from removeRuntimeConfigExtra when the sudo probe fails for an unknow
         ->toThrow(RuntimeException::class);
 });
 
-it('rewrites the managed runtime config when handed app.runtime_config_missing', function (): void {
+it('rewrites the selected instance runtime config when handed app.runtime_config_missing', function (): void {
     $node = appsFixerNode();
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
@@ -408,12 +408,23 @@ it('rewrites the managed runtime config when handed app.runtime_config_missing',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+            domain: 'docs.test',
+        ),
+    ]);
 
     $shell = new AppsFixerRecordingRemoteShell(
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    $result = buildAppsFixer($shell)->fix($app, new DriftEntry(
+    $result = buildAppsFixer($shell)->fixInstance($app, $instance, new DriftEntry(
         family: 'app',
         key: 'app.runtime_config_missing',
         kind: DriftKind::Missing,
@@ -424,15 +435,19 @@ it('rewrites the managed runtime config when handed app.runtime_config_missing',
         ->toBe('completed')
         ->and($result['key'])
         ->toBe('app.runtime_config_missing')
+        ->and($result['details']['app_instance'])
+        ->toBe('production')
         ->and($result['details']['path'])
-        ->toBe('/home/orbit/.config/orbit/apps/docs.ini')
+        ->toBe('/home/orbit/.config/orbit/apps/docs-production.ini')
         ->and($shell->scripts[0])
-        ->toContain('/home/orbit/.config/orbit/apps/docs.ini')
+        ->toContain('/home/orbit/.config/orbit/apps/docs-production.ini')
         ->and($shell->scripts[0])
-        ->toContain('base64 -d');
+        ->toContain('base64 -d')
+        ->and(OrbitProcess::query()->where('app_instance_id', $instance->id)->exists())
+        ->toBeTrue();
 });
 
-it('rewrites the managed runtime config when handed app.runtime_config_mismatch', function (): void {
+it('rewrites the selected instance runtime config when handed app.runtime_config_mismatch', function (): void {
     $node = appsFixerNode();
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
@@ -440,19 +455,35 @@ it('rewrites the managed runtime config when handed app.runtime_config_mismatch'
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+            domain: 'docs.test',
+        ),
+    ]);
 
     $shell = new AppsFixerRecordingRemoteShell(
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    $result = buildAppsFixer($shell)->fix($app, new DriftEntry(
+    $result = buildAppsFixer($shell)->fixInstance($app, $instance, new DriftEntry(
         family: 'app',
         key: 'app.runtime_config_mismatch',
         kind: DriftKind::Divergent,
         summary: 'mismatch',
     ));
 
-    expect($result['status'])->toBe('completed')->and($result['key'])->toBe('app.runtime_config_mismatch');
+    expect($result['status'])
+        ->toBe('completed')
+        ->and($result['key'])
+        ->toBe('app.runtime_config_mismatch')
+        ->and($result['details']['app_instance'])
+        ->toBe('production');
 });
 
 it('repairs the production runtime user when handed app.security.system_user', function (): void {

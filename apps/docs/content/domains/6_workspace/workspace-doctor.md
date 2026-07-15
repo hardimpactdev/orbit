@@ -32,7 +32,7 @@ The workspace family owns these facts:
 - stale workspace artifacts owned by Orbit with identities absent from
   active gateway workspace records.
 
-A workspace record that points at a missing, unauthorized, or non-workspaceable
+A workspace record that points at a missing or non-workspaceable
 parent app is a workspace record issue because the workspace cannot resolve.
 Parent app runtime health belongs to the app family. Node reachability belongs
 to the node family. Workspace-owned proxy routes belong to `proxy`.
@@ -84,7 +84,7 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | Code | Detected when |
 | --- | --- |
 | `workspace.record_incomplete` | A selected workspace record lacks name, parent app reference, workspace path, derived hostname, effective PHP version, or required lifecycle fields. |
-| `workspace.parent_app_invalid` | The workspace record points at a missing app, unauthorized app, or app that cannot own workspaces. |
+| `workspace.parent_app_invalid` | The workspace record points at a missing app or app that cannot own workspaces. |
 | `workspace.path_missing` | The configured workspace path does not exist on the effective workspace node. |
 | `workspace.path_unusable` | The configured workspace path exists but cannot be read, entered, or managed by Orbit. |
 | `workspace.path_outside_policy` | A generic workspace path equals the parent app root instead of a distinct workspace path. Adapter-owned paths are checked against their adapter metadata instead of this generic policy. |
@@ -125,7 +125,7 @@ edits inherited runtime units, or changes node reachability.
 
 Workspace doctor is a development app-role surface. `app-prod` targets
 reject `doctor --family=workspace` before probes with
-`family_not_in_role_scope`.
+`family_not_in_node_scope` and the resolved `target_node`.
 
 ## Workspace Adopt Map
 

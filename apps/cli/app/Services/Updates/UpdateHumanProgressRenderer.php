@@ -30,9 +30,9 @@ final class UpdateHumanProgressRenderer
 
     private const string SUCCESS_FOOTER = 'Success: Updated';
 
-    private const string FAILURE_FOOTER = 'Failed to update local Orbit checkout.';
+    private const string FAILURE_FOOTER = 'Failed to update local Orbit installation.';
 
-    private const string CHECKOUT_UNAVAILABLE_FOOTER = 'Local Orbit checkout cannot be updated.';
+    private const string INSTALLATION_UNAVAILABLE_FOOTER = 'Local Orbit installation cannot be updated.';
 
     private ?StreamedStepTree $tree = null;
 
@@ -135,18 +135,18 @@ final class UpdateHumanProgressRenderer
     }
 
     /**
-     * Render the checkout-unavailable case: no tree was meaningfully advanced;
+     * Render the installation-unavailable case: no tree was meaningfully advanced;
      * print a single prose line instead.
      */
-    public function renderCheckoutUnavailable(): void
+    public function renderInstallationUnavailable(): void
     {
         if ($this->tree !== null && $this->tree->isStarted()) {
-            $this->tree->finish(self::CHECKOUT_UNAVAILABLE_FOOTER, false);
+            $this->tree->finish(self::INSTALLATION_UNAVAILABLE_FOOTER, false);
 
             return;
         }
 
-        $this->output->writeln(self::CHECKOUT_UNAVAILABLE_FOOTER);
+        $this->output->writeln(self::INSTALLATION_UNAVAILABLE_FOOTER);
     }
 
     /**

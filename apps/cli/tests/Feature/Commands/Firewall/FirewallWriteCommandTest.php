@@ -13,6 +13,10 @@ describe('firewall write commands', function (): void {
                 'name' => 'local-vite',
                 'node' => 'app-1',
                 'action' => 'allow',
+                'address_family' => 'both',
+                'interface_scope' => null,
+                'owner' => 'user',
+                'protected' => false,
                 'status' => 'expected',
             ],
         ], [
@@ -56,6 +60,13 @@ describe('firewall write commands', function (): void {
             ->toBe(0)
             ->and($decoded['success']['data']['rule']['action'])
             ->toBe('allow')
+            ->and($decoded['success']['data']['rule'])
+            ->toMatchArray([
+                'address_family' => 'both',
+                'interface_scope' => null,
+                'owner' => 'user',
+                'protected' => false,
+            ])
             ->and($decoded['success']['meta']['backend_enacted'])
             ->toBeTrue();
     });

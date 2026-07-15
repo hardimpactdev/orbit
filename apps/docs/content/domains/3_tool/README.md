@@ -98,7 +98,6 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`dns`](catalog/dns.md) | DNS | Gateway-local Docker service | Required infrastructure tool, kept converged on the gateway | `infrastructure` | update, restore, restart, logs; no adopt/start/stop/reload |
 | [`php`](catalog/php.md) | PHP images | FrankenPHP Docker image capability | Selected by app/workspace runtime configuration | `runtime` | image inventory, update, fix, adopt |
 | [`mailpit`](catalog/mailpit.md) | Mailpit | Docker service | Installable and removable by Orbit | `development` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
-| [`reverb`](catalog/reverb.md) | Reverb | Docker service | Compatibility tool; the `websocket` role is the current choice for fleet realtime | `communication` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`seaweedfs`](catalog/seaweedfs.md) | SeaweedFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`node-exporter`](catalog/node-exporter.md) | node-exporter | host binary (`/usr/local/bin/node_exporter`) | Role baseline tool for the `metrics` role and active workload nodes scraped by metrics | `observability` | install, remove, update, fix, adopt; lifecycle and logs through `process:*` |
 | [`polyscope-server`](catalog/polyscope-server.md) | PolyScope Server | Node-owned `systemd` process with `tool=polyscope-server` | Installable and removable by Orbit | `development` | install, remove, reconfigure, update, fix, adopt, start, stop, restart, logs through its exact process row |
@@ -143,6 +142,7 @@ the entity in the command result.
   "expected_state": "installed",
   "observed_state": null,
   "version": "2.9.2",
+  "observed_version": null,
   "managed": true,
   "endpoints": []
 }
@@ -154,7 +154,8 @@ the entity in the command result.
 | `node` | string | Node slug where the tool is expected. |
 | `expected_state` | string | Gateway-owned intended capability state, such as `installed`, `available`, or `absent`. |
 | `observed_state` | string \| null | Last known or live observed state when the command includes it. Registry reads may return `null`. |
-| `version` | string \| null | Intended or observed version when the tool definition tracks versions. |
+| `version` | string \| null | Gateway-owned intended or registry-known version when the tool definition tracks versions. |
+| `observed_version` | string \| null | Live observed version when a command performs an explicit probe; otherwise `null`. The key remains present in canonical tool entities. |
 | `managed` | boolean | Whether Orbit owns capability configuration for this tool on the node. |
 | `endpoints` | array | Non-secret endpoint metadata declared by the tool definition. Omit or return an empty array when the tool declares no endpoint. |
 

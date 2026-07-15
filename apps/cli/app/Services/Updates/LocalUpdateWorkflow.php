@@ -20,8 +20,8 @@ final readonly class LocalUpdateWorkflow
 
         if (! is_dir($installRoot)) {
             return new LocalUpdateResult(
-                status: LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE,
-                checkoutPath: $installRoot,
+                status: LocalUpdateResult::STATUS_INSTALLATION_UNAVAILABLE,
+                installationPath: $installRoot,
             );
         }
 

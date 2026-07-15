@@ -760,10 +760,10 @@ it('starts configured app processes for the workspace after rendering runtime un
             ]))
             ->push(setup_workspace_agent_response('process.systemd.apply', [
                 'status' => 'changed',
-                'summary' => 'Applied systemd service orbit_demo_feature-a_vite.service.',
+                'summary' => 'Applied systemd service orbit_demo_development_feature-a_vite.service.',
             ]))
             ->push(setup_workspace_agent_response('process.systemd.start', [
-                'service' => 'orbit_demo_feature-a_vite.service',
+                'service' => 'orbit_demo_development_feature-a_vite.service',
             ])),
     ]);
 
@@ -779,12 +779,12 @@ it('starts configured app processes for the workspace after rendering runtime un
         ->and($requests)
         ->toHaveCount(6)
         ->and(array_slice($requests[4]['argv'] ?? [], offset: 0, length: 3))
-        ->toBe(['internal:process-systemd-service', 'apply', 'orbit_demo_feature-a_vite.service'])
+        ->toBe(['internal:process-systemd-service', 'apply', 'orbit_demo_development_feature-a_vite.service'])
         ->and(array_slice($requests[5]['argv'] ?? [], offset: 0, length: 3))
-        ->toBe(['internal:process-systemd-service', 'start', 'orbit_demo_feature-a_vite.service'])
+        ->toBe(['internal:process-systemd-service', 'start', 'orbit_demo_development_feature-a_vite.service'])
         ->and($shell->scripts)
         ->not
-        ->toContain("sudo systemctl start 'orbit_demo_feature-a_vite.service'")
+        ->toContain("sudo systemctl start 'orbit_demo_development_feature-a_vite.service'")
         ->and(array_values(array_unique($certificates->hosts)))
         ->toBe(['feature-a.demo.beast']);
 });
@@ -1281,6 +1281,8 @@ function expectWorkspaceFrankenPhpRuntimeProcess(Workspace $workspace, ?int $exp
     expect($process)
         ->not
         ->toBeNull()
+        ->and($process?->app_instance_id)
+        ->toBe($workspace->app_instance_id)
         ->and($process?->node_id)
         ->toBe($expectedNodeId)
         ->and($process?->command)

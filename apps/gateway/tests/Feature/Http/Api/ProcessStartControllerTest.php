@@ -69,7 +69,7 @@ describe('ProcessStartController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_main_vite')
+            ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_development_main_vite')
             ->assertJsonPath('success.data.runtimes.0.event.type', 'started')
             ->assertJsonPath('success.meta', []);
 
@@ -101,7 +101,7 @@ describe('ProcessStartController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.runtimes.0.workspace', 'feature-docs')
-            ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_feature-docs_vite');
+            ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_development_feature-docs_vite');
     });
 
     it('starts a workspace owned process for workspace context', function (): void {

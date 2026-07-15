@@ -252,7 +252,7 @@ final class UpdateAllCommand extends GatewayCommand
                 'data' => array_filter(
                     [
                         'code' => 'local_update_failed',
-                        'message' => 'Failed to update local Orbit checkout.',
+                        'message' => 'Failed to update local Orbit installation.',
                         'meta' => $meta,
                         'data' => $data,
                     ],
@@ -263,7 +263,7 @@ final class UpdateAllCommand extends GatewayCommand
 
         return $this->renderFailure(
             'local_update_failed',
-            'Failed to update local Orbit checkout.',
+            'Failed to update local Orbit installation.',
             $meta,
             $data,
         );

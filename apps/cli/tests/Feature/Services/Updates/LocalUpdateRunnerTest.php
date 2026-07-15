@@ -146,7 +146,7 @@ describe('LocalUpdateRunner', function (): void {
             : putenv("ORBIT_INSTALL_PATH={$this->previousInstallPath}");
     });
 
-    it('returns checkout_unavailable without running steps when the install root is missing', function (): void {
+    it('returns installation_unavailable without running steps when the install root is missing', function (): void {
         putenv('ORBIT_INSTALL_PATH=/nonexistent/orbit-runner-test-install');
 
         $updater = new RunnerFakeUpdater;
@@ -154,8 +154,8 @@ describe('LocalUpdateRunner', function (): void {
         $result = makeRunner($updater)->run();
 
         expect($result->status)
-            ->toBe(LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE)
-            ->and($result->checkoutPath)
+            ->toBe(LocalUpdateResult::STATUS_INSTALLATION_UNAVAILABLE)
+            ->and($result->installationPath)
             ->toBe('/nonexistent/orbit-runner-test-install')
             ->and($updater->calls)
             ->toBe([]);

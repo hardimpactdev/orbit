@@ -323,7 +323,7 @@ describe('update', function (): void {
             ->toBe([]);
     });
 
-    it('renders local_checkout_unavailable when the install root does not exist', function (): void {
+    it('renders local_installation_unavailable when the install root does not exist', function (): void {
         putenv('ORBIT_INSTALL_PATH=/nonexistent/orbit-update-cmd-test');
 
         [$exitCode, $output] = runCommand($this, 'update', ['--json' => true]);
@@ -333,9 +333,9 @@ describe('update', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and($decoded['error']['code'])
-            ->toBe('local_checkout_unavailable')
+            ->toBe('local_installation_unavailable')
             ->and($decoded['error']['message'])
-            ->toBe('Local Orbit checkout cannot be updated.')
+            ->toBe('Local Orbit installation cannot be updated.')
             ->and($decoded['error']['meta'])
             ->toBe(['path' => '/nonexistent/orbit-update-cmd-test'])
             ->and($this->updater->calls)
@@ -364,7 +364,7 @@ describe('update', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('local_update_failed')
             ->and($decoded['error']['message'])
-            ->toBe('Failed to update local Orbit checkout.')
+            ->toBe('Failed to update local Orbit installation.')
             ->and($decoded['error']['meta'])
             ->toBe(['failed_step' => 'download'])
             ->and($decoded['error']['data'])
@@ -389,7 +389,7 @@ describe('update', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and($output)
-            ->toContain('Failed to update local Orbit checkout.')
+            ->toContain('Failed to update local Orbit installation.')
             ->and($output)
             ->toContain('binary verify failed')
             ->and($output)

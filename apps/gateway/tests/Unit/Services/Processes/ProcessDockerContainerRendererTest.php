@@ -63,7 +63,7 @@ it('renders a docker process container for a main app PHP process with determini
     expect($container)
         ->toBeInstanceOf(ProcessDockerContainer::class)
         ->and($container->name())
-        ->toBe('orbit_docs_main_queue')
+        ->toBe('orbit_docs_development_main_queue')
         ->and($container->image())
         ->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
         ->and($container->network())
@@ -73,7 +73,7 @@ it('renders a docker process container for a main app PHP process with determini
         ->and($container->command())
         ->toBe('php artisan queue:work')
         ->and($container->networkAliases())
-        ->toContain('orbit_docs_main_queue');
+        ->toContain('orbit_docs_development_main_queue');
 });
 
 it('renders a docker process container for a workspace process with workspace identity', function (): void {
@@ -88,7 +88,7 @@ it('renders a docker process container for a workspace process with workspace id
     $container = processDockerRenderer()->render($app, $process, $workspace);
 
     expect($container->name())
-        ->toBe('orbit_docs_feature-x_vite')
+        ->toBe('orbit_docs_development_feature-x_vite')
         ->and($container->command())
         ->toBe('npm run dev -- --host=0.0.0.0')
         ->and($container->mounts())

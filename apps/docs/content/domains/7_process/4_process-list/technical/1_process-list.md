@@ -8,12 +8,12 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for `process:read` on the resolved owning node.
+- The gateway authorizes the authenticated peer for `process:read` on the resolved node or app instance serving node.
 
 ## Signature
 
 ```bash
-orbit process:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--json]
+orbit process:list [--app=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -23,8 +23,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | Required when listing node-owned processes. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:read`. |
-| `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:read`. |
-| `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:read`; pass `--app` when the workspace name is ambiguous. |
+| `app` | `--app` or app-instance context | Required unless `node` is supplied or `workspace` resolves the app instance. | `node` is present. | Local app instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare logical-app slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:read`. |
+| `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its app instance whose serving node grants `process:read`; pass `--app=<app.instance>` when the workspace name is ambiguous. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Mode Contracts
@@ -36,9 +36,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Listing Rules
 
-1. Resolve target node, app, or workspace context from supplied input or local context.
+1. Resolve a target node, concrete app instance, or workspace context from supplied input or local context. Reject a bare logical-app selector with `validation_failed`, `field=app`, and `reason=app_instance_required` unless that app has exactly one instance.
 2. Send the request to the gateway, which validates the authenticated peer's authorization.
-3. Read process definitions from gateway configuration in process order. A workspace context includes workspace-owned definitions and app-owned definitions inherited by that workspace.
+3. Read process definitions from gateway configuration in process order. An app-instance context includes only definitions owned by that instance. A workspace context includes workspace-owned definitions and app-instance-owned definitions inherited by that workspace.
 4. Derive expected runtime-unit identities for the selected context.
 5. For service process definitions, include process-owned connection metadata: definition name, version, service name, endpoint, and credential field names. Credential values are excluded.
 6. Read latest durable lifecycle events for the selected runtime context when events exist.
@@ -56,9 +56,10 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app-instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| App instance required | A bare logical-app selector resolves to more than one app instance. | Failure (`error.code=validation_failed`; `error.meta.field=app`; `error.meta.reason=app_instance_required`). |
 
-Owning app-host reachability is not part of the default list path and does not cause this command to fail.
+App instance serving-node reachability is not part of the default list path and does not cause this command to fail.
 
 ## Doctor Relationship
 

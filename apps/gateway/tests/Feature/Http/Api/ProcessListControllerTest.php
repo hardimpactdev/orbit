@@ -2,12 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
+use App\Enums\ProcessEventType;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\ProcessEvent;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -44,6 +48,60 @@ function grantProcessListAccess(Node $caller, Node $appNode): void
 }
 
 describe('ProcessListController', function (): void {
+    it('filters process events by the selected app instance', function (): void {
+        createProcessListCallerNode(role: 'gateway');
+        $developmentNode = createTestAppHostNode(['name' => 'app-development']);
+        $productionNode = createTestAppHostNode(['name' => 'app-production']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
+        $development = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $developmentNode->id),
+        ]);
+        $production = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $productionNode->id),
+        ]);
+        $process = Process::factory()
+            ->forOwner($app, $developmentNode)
+            ->create([
+                'app_instance_id' => $development->id,
+                'name' => 'vite',
+            ]);
+        $developmentEvent = ProcessEvent::factory()->create([
+            'event' => ProcessEventType::Started,
+            'process_id' => $process->id,
+            'app_id' => $app->id,
+            'app_instance_id' => $development->id,
+            'node_id' => $developmentNode->id,
+            'recorded_at' => now()->subMinute(),
+        ]);
+        ProcessEvent::factory()->create([
+            'event' => ProcessEventType::Crashed,
+            'process_id' => $process->id,
+            'app_id' => $app->id,
+            'app_instance_id' => $production->id,
+            'node_id' => $productionNode->id,
+            'recorded_at' => now(),
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/processes?app=docs.development',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.context.app_instance', 'development')
+            ->assertJsonPath('success.data.processes.0.last_event.id', $developmentEvent->id)
+            ->assertJsonPath('success.data.processes.0.last_event.type', 'started');
+    });
+
     it('lists app processes in process order with runtime units', function (): void {
         $caller = createProcessListCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1']);
@@ -80,9 +138,15 @@ describe('ProcessListController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.context', ['node' => 'app-1', 'app' => 'docs', 'workspace' => null])
+            ->assertJsonPath('success.data.context', [
+                'node' => 'app-1',
+                'app' => 'docs',
+                'app_instance' => 'development',
+                'workspace' => null,
+            ])
             ->assertJsonPath('success.data.processes.0.name', 'vite')
-            ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit_docs_main_vite')
+            ->assertJsonPath('success.data.processes.0.app_instance', 'development')
+            ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit_docs_development_main_vite')
             ->assertJsonPath('success.data.processes.0.last_event', null)
             ->assertJsonPath('success.data.processes.1.name', 'queue');
     });
@@ -108,9 +172,10 @@ describe('ProcessListController', function (): void {
             ->assertJsonPath('success.data.context', [
                 'node' => 'app-1',
                 'app' => 'docs',
+                'app_instance' => 'development',
                 'workspace' => 'feature-docs',
             ])
-            ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit_docs_feature-docs_vite');
+            ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit_docs_development_feature-docs_vite');
     });
 
     it('lists workspace owned process rows for workspace context', function (): void {
@@ -141,6 +206,7 @@ describe('ProcessListController', function (): void {
             ->assertJsonPath('success.data.context', [
                 'node' => 'app-1',
                 'app' => 'docs',
+                'app_instance' => 'development',
                 'workspace' => 'feature-docs',
             ])
             ->assertJsonPath('success.data.processes.0.name', 'frankenphp-docs-feature-docs')
@@ -170,7 +236,12 @@ describe('ProcessListController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.context', ['node' => 'app-1', 'app' => null, 'workspace' => null])
+            ->assertJsonPath('success.data.context', [
+                'node' => 'app-1',
+                'app' => null,
+                'app_instance' => null,
+                'workspace' => null,
+            ])
             ->assertJsonPath('success.data.processes.0.name', 'opencode-server')
             ->assertJsonPath('success.data.processes.0.tool', 'opencode-cli')
             ->assertJsonPath('success.data.processes.0.runtime', 'systemd')
@@ -201,7 +272,12 @@ describe('ProcessListController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.context', ['node' => 'gateway', 'app' => null, 'workspace' => null])
+            ->assertJsonPath('success.data.context', [
+                'node' => 'gateway',
+                'app' => null,
+                'app_instance' => null,
+                'workspace' => null,
+            ])
             ->assertJsonPath('success.data.processes.0.name', 'prometheus')
             ->assertJsonPath('success.data.processes.0.runtime', 'docker-swarm')
             ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit-prometheus');
@@ -283,6 +359,55 @@ describe('ProcessListController', function (): void {
         );
 
         $response
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'app');
+    });
+
+    it('defaults by concrete app instance placement instead of legacy app placement', function (): void {
+        $caller = createProcessListCallerNode();
+        $legacyNode = createTestAppHostNode(['name' => 'legacy-app-node']);
+        $instanceNode = createTestAppHostNode(['name' => 'instance-node']);
+        grantProcessListAccess($caller, $instanceNode);
+        $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $instanceNode->id),
+        ]);
+        Process::factory()
+            ->forOwner($app, $instanceNode)
+            ->create([
+                'app_instance_id' => $instance->id,
+                'name' => 'queue',
+            ]);
+
+        $this
+            ->call('GET', '/api/processes', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP])
+            ->assertOk()
+            ->assertJsonPath('success.data.context.node', 'instance-node')
+            ->assertJsonPath('success.data.context.app_instance', 'production');
+    });
+
+    it('does not authorize a concrete app instance through legacy app placement', function (): void {
+        $caller = createProcessListCallerNode();
+        $legacyNode = createTestAppHostNode(['name' => 'legacy-app-node']);
+        $instanceNode = createTestAppHostNode(['name' => 'instance-node']);
+        grantProcessListAccess($caller, $legacyNode);
+        $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $instanceNode->id),
+        ]);
+
+        $this
+            ->call(
+                'GET',
+                '/api/processes?app=docs.production',
+                [],
+                [],
+                [],
+                ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP],
+            )
             ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'app');

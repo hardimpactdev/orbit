@@ -20,7 +20,7 @@ behavior, and failure semantics.
 ## Signature
 
 ```bash
-orbit workspace-teardown-step:remove --step=<id> [--app=<app>] [--force] [--json]
+orbit workspace-teardown-step:remove --step=<id> [--app=<app.instance>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -31,18 +31,18 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `step` | `--step` | Always. | Never. | None. | Strict positive integer. Must reference an existing teardown-step record belonging to the resolved app instance and `phase=teardown`. |
-| `app` | `--app` | Always for writes. | Never. | Cwd-inferred parent app when omitted in docs only; writes fail without a dotted selector. | Must resolve to an existing app-instance selector such as `happie.nmbp`. Bare app slugs are rejected with `error.meta.reason=app_instance_required`. Deletes only instance-owned rows for the selected app instance. |
+| `app` | `--app` | Always for writes unless caller context resolves a concrete instance. | Never. | Concrete cwd-inferred app instance. | Must resolve to an existing app-instance selector such as `happie.nmbp`. Bare logical-app slugs are rejected with `error.meta.reason=app_instance_required`. Deletes only instance-owned rows for the selected app instance. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
 ## Input Resolution
 
-1. **Resolve Parent App.** Mirror the resolved
+1. **Resolve App Instance.** Mirror the resolved
    [`workspace:new`](../../1_workspace-new/workspace-new.md) and
    [`workspace-teardown-step:add`](../../11_workspace-teardown-step-add/workspace-teardown-step-add.md)
    precedence chain:
-   - Explicit `--app=<app>`, where `<app>` may be a parent app slug or
-     app-instance selector such as `happie.nmbp`.
+   - Explicit `--app=<app.instance>`, which must be a dotted app-instance
+     selector such as `happie.nmbp`.
    - `.orbit/config` marker on the caller filesystem that names the owning app
      slug.
    - Gateway path-ownership lookup keyed on `(caller node identity,
@@ -118,7 +118,7 @@ configuration. Nodes are not contacted.
   previous executions of the removed step on nodes. Past executions remain
   visible in [`workspace:history`](../../6_workspace-history/workspace-history.md).
 - Read project files (`composer.json`, `package.json`, `.php-version`, `.env`,
-  lockfiles, or framework manifests) during parent-app inference.
+  lockfiles, or framework manifests) during app-instance inference.
 - Remove a step belonging to `phase=setup`. Setup steps are owned by
   [`workspace-setup-step:remove`](../../10_workspace-setup-step-remove/workspace-setup-step-remove.md).
 
@@ -137,7 +137,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | App instance required | Bare app slug or path-only resolution without a concrete app instance. | Failure (`error.code=validation_failed`, `error.meta.field=app`, `error.meta.reason=app_instance_required`). |
 | Step not found | No teardown-step record matches `(step_id, app_instance, phase=teardown)`. Already-absent removal is not idempotent. | Failure (`error.code=workspace.step_not_found`, `error.meta.{step_id, app}`). |
 | App not found | Resolved app slug does not exist in gateway configuration. | Failure (`error.code=workspace.app_not_found`, `error.meta.app`). |
-| App unresolved | Parent app cannot be resolved from `--app`, `.orbit/config`, or gateway path-ownership lookup, and prompting is disabled. | Failure (`error.code=validation_failed`, `error.meta.field=app`). |
+| App instance unresolved | A concrete app instance cannot be resolved from `--app`, `.orbit/config`, or gateway path-ownership lookup, and prompting is disabled. | Failure (`error.code=validation_failed`, `error.meta.field=app`). |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 | Cancelled confirmation | Interactive mode where the operator declines the prompt. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 

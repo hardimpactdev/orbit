@@ -229,6 +229,100 @@ describe('WorkspaceRemoveController', function (): void {
             ->toBe([$localNode->id]);
     });
 
+    it('cleans up only inherited processes from the workspace app instance', function (): void {
+        $caller = createWorkspaceRemoveCallerNode();
+        $sharedNode = createTestAppHostNode([
+            'name' => 'shared-app-host',
+            'status' => 'active',
+        ]);
+        grantWorkspaceRemoveAccess($caller, $sharedNode);
+
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $sharedNode->id,
+            'runtime' => 'static',
+        ]);
+        $development = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $sharedNode->id,
+                node: $sharedNode->name,
+                path: '/srv/docs-development',
+                document_root: 'public',
+                domain: 'docs-development.test',
+            ),
+        ]);
+        $production = AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $sharedNode->id,
+                node: $sharedNode->name,
+                path: '/srv/docs-production',
+                document_root: 'public',
+                domain: 'docs.test',
+            ),
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => $development->id,
+            'name' => 'feature-api',
+            'path' => '/srv/docs-development-feature-api',
+        ]);
+
+        OrbitProcess::factory()
+            ->forOwner($app, $sharedNode)
+            ->create([
+                'app_instance_id' => $development->id,
+                'name' => 'queue',
+                'runtime' => ProcessRuntime::Systemd,
+            ]);
+        OrbitProcess::factory()
+            ->forOwner($app, $sharedNode)
+            ->create([
+                'app_instance_id' => $production->id,
+                'name' => 'queue',
+                'runtime' => ProcessRuntime::Systemd,
+            ]);
+
+        $shell = new WorkspaceRemoveApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
+
+        $this
+            ->call(
+                'DELETE',
+                '/api/workspaces/feature-api?app=docs.development',
+                [
+                    'keep_files' => true,
+                    'destructive_consent' => true,
+                ],
+                [],
+                [],
+                workspaceRemoveRemoteShellFallbackHeader(),
+            )
+            ->assertOk()
+            ->assertJsonPath('success.data.processes_removed', 1);
+
+        expect(collect($shell->scripts)
+            ->contains(
+                fn (string $script): bool => str_contains(
+                    $script,
+                    'orbit_docs_development_feature-api_queue',
+                ),
+            ))
+            ->toBeTrue()
+            ->and(collect($shell->scripts)
+                ->contains(
+                    fn (string $script): bool => str_contains(
+                        $script,
+                        'orbit_docs_production_feature-api_queue',
+                    ),
+                ))
+            ->toBeFalse();
+    });
+
     it('removes workspace intent through the fixed Agent-push cleanup lane', function (): void {
         $caller = createWorkspaceRemoveCallerNode();
         $targetNode = createTestAppHostNode([
@@ -286,6 +380,66 @@ describe('WorkspaceRemoveController', function (): void {
             ->toBeFalse()
             ->and($shell->scripts)
             ->toHaveCount(2);
+    });
+
+    it('reports concrete runtime cleanup through process doctor while workspace config stays workspace-owned', function (): void {
+        $caller = createWorkspaceRemoveCallerNode();
+        $targetNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'status' => 'active',
+        ]);
+        grantWorkspaceRemoveAccess($caller, $targetNode);
+
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $targetNode->id,
+            'runtime' => 'php',
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'feature-api',
+        ]);
+
+        $shell = new WorkspaceRemoveApiSequencedRemoteShell([
+            new RemoteShellResult(
+                exitCode: 1,
+                stdout: '',
+                stderr: 'Cannot connect to the Docker daemon',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "orbit-container-config-probe:error\n",
+                stderr: 'permission denied',
+                durationMs: 1,
+            ),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
+
+        $response = $this->call(
+            'DELETE',
+            '/api/workspaces/feature-api?app=docs',
+            [
+                'keep_files' => false,
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            workspaceRemoveRemoteShellFallbackHeader(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.meta.warnings.0.code', 'process.runtime_unit_extra')
+            ->assertJsonPath('success.meta.warnings.0.family', 'process')
+            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=process --restore')
+            ->assertJsonPath('success.meta.warnings.1.code', 'workspace.runtime_config_extra')
+            ->assertJsonPath('success.meta.warnings.1.family', 'workspace')
+            ->assertJsonPath('success.meta.warnings.1.next_command', 'doctor --family=workspace --restore')
+            ->assertJsonCount(2, 'success.meta.warnings');
+
+        expect(Workspace::query()->whereKey($workspace->id)->exists())->toBeFalse();
     });
 
     it('requires destructive consent before removing workspace intent', function (): void {

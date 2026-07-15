@@ -1,6 +1,6 @@
-# Technical Contract: `orbit solo:agent:tool:list`
+# Technical Contract: `orbit solo:agent-tool:list`
 
-[Back to public `solo:agent:tool:list` documentation.](../solo-agent-tool-list.md)
+[Back to public `solo:agent-tool:list` documentation.](../solo-agent-tool-list.md)
 
 **Owner:** `solo`.
 

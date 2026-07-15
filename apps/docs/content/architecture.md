@@ -361,11 +361,15 @@ listener binds only to that WireGuard address. `/health` and `/status` use a
 separate loopback-only listener. A gateway is never an Agent-push target, and
 wildcard or non-WireGuard command binds fail closed.
 
-The bootstrap is not production packaged, autostarted, signed, notarized, or
-self-updating. Agent-push requests are structured Orbit CLI invocations
-submitted by the gateway. App-dev convergence is sent as a direct
-gateway-pushed command envelope; `node role:add` does not create an Agent work
-item because workload-role convergence sends the envelope directly.
+Orbit installs and updates the Agent artifact in the configured owner user's
+local installation and restarts its managed service when that service already
+exists. Bootstrap owns first service creation; `update` and `update:all` replace
+and restart an existing service but do not create a missing one. Native platform
+installer packaging, signing, and notarization remain separate deferred work.
+Agent-push requests are structured Orbit CLI invocations submitted by the
+gateway. App-dev convergence is sent as a direct gateway-pushed command
+envelope; `node role:add` does not create an Agent work item because
+workload-role convergence sends the envelope directly.
 
 The macOS menu-bar surface lives in `apps/macos` and is intentionally minimal:
 it can show service/gateway status, refresh status on menu open or Refresh, and
@@ -451,7 +455,7 @@ This grant model lets you scope access naturally:
 
 - A developer's client might have a `developer` preset to nodes with the `app-dev` role and no grant at all to nodes with the `app-prod` role.
 - A CI runner's client might have an `operator` preset only to the apps it deploys.
-- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own app registry rows through `app:read`. An `app-dev` node can also register apps on itself and manage app-owned process definitions for apps hosted by itself. `app-prod` self-grants remain read-only plus workspace setup. These self-grants do not grant app writes, credentials, deploy, runtime lifecycle process start/stop/restart, workspace reads, or cross-node app/process visibility.
+- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own app registry rows through `app:read`. An `app-dev` node can also register apps on itself and manage process definitions for concrete app instances served by itself. `app-prod` self-grants remain read-only plus workspace setup. These self-grants do not grant app writes, credentials, deploy, runtime lifecycle process start/stop/restart, workspace reads, or cross-node app/process visibility.
 
 Authority is revocable through the lever that owns its class: remove a grant or
 permission, remove the gateway role, or disable the peer. `node:grant` creates

@@ -6,6 +6,8 @@ namespace App\Librarian\Rules;
 
 use App\Librarian\CommandDocsRegistry;
 use App\Librarian\DoctorIssueTableParser;
+use App\Librarian\DoctorWarningInspection;
+use App\Librarian\DoctorWarningTableParser;
 use App\Librarian\JsonExampleParser;
 use App\Librarian\OrbitCommandDocs;
 use HardImpact\Librarian\Linting\Finding;
@@ -19,6 +21,7 @@ final readonly class DoctorWarningCoherenceRule implements GroupedRule
         private JsonExampleParser $jsonParser,
         private DoctorIssueTableParser $doctorParser,
         private CommandDocsRegistry $registry,
+        private DoctorWarningTableParser $warningTableParser,
     ) {}
 
     public function group(): string
@@ -29,12 +32,15 @@ final readonly class DoctorWarningCoherenceRule implements GroupedRule
     public function check(): array
     {
         $findings = [];
-        $stateFamilies = $this->registry->stateFamilies();
-        $warningCodes = $this->registry->warningCodes();
-        $doctorIssues = [];
+        $inspection = new DoctorWarningInspection(
+            stateFamilies: $this->registry->stateFamilies(),
+            warningCodes: $this->registry->warningCodes(),
+        );
 
         foreach ($this->jsonRendererFiles() as $file) {
-            foreach ($this->jsonParser->parse($file, file_get_contents($file) ?: '') as $example) {
+            $contents = (string) file_get_contents($file);
+
+            foreach ($this->jsonParser->parse($file, $contents) as $example) {
                 if (! $example->isValidArray() || ! is_array($example->decoded)) {
                     continue;
                 }
@@ -44,108 +50,43 @@ final readonly class DoctorWarningCoherenceRule implements GroupedRule
                         continue;
                     }
 
-                    $code = $warning['code'] ?? null;
-                    $family = $warning['family'] ?? null;
-                    $nextCommand = $warning['next_command'] ?? null;
-
-                    if (! is_string($code)) {
-                        continue;
-                    }
-
-                    if ($family === null) {
-                        if (is_string($nextCommand) && $this->nextCommandFamily($nextCommand) !== null) {
-                            $findings[] = $this->finding(
-                                $file,
-                                $example->line,
-                                'Command-owned warnings with null family must not point at a doctor next_command.',
-                            );
-                        }
-
-                        continue;
-                    }
-
-                    if (! is_string($family) || ! isset($stateFamilies[$family])) {
-                        $findings[] = $this->finding(
-                            $file,
-                            $example->line,
-                            "Warning code `{$code}` uses unknown doctor family `"
-                            .(is_scalar($family) ? (string) $family : gettype($family))
-                            .'`.',
-                        );
-
-                        continue;
-                    }
-
-                    $singular = $stateFamilies[$family]['singular'];
-
-                    if (! str_starts_with($code, "{$singular}.")) {
-                        $findings[] = $this->finding(
-                            $file,
-                            $example->line,
-                            "Warning code `{$code}` with family `{$family}` must use singular product prefix `{$singular}.`.",
-                        );
-                    }
-
-                    if (! is_string($nextCommand) || $nextCommand === '') {
-                        continue;
-                    }
-
-                    $nextCommandFamily = $this->nextCommandFamily($nextCommand);
-
-                    if ($nextCommandFamily !== null && $nextCommandFamily !== $family) {
-                        $findings[] = $this->finding(
-                            $file,
-                            $example->line,
-                            "Warning code `{$code}` uses family `{$family}` but next_command points at `{$nextCommandFamily}`.",
-                        );
-                    }
-
-                    $doctorPath = $stateFamilies[$family]['doctor_doc'];
-
-                    if ($doctorPath === null) {
-                        continue;
-                    }
-
-                    $absoluteDoctorPath = "{$this->docs->docsRoot()}/{$doctorPath}";
-
-                    if (! is_file($absoluteDoctorPath)) {
-                        continue;
-                    }
-
-                    $doctorIssues[$family] ??= $this->doctorParser->parse(file_get_contents($absoluteDoctorPath) ?: '');
-                    $issue = $doctorIssues[$family][$code] ?? null;
-
-                    if ($issue === null) {
-                        if ($this->isRegisteredCommandHandoff($warningCodes, $code, $family, $nextCommand)) {
-                            continue;
-                        }
-
-                        $findings[] = $this->finding(
-                            path: $file,
+                    array_push(
+                        $findings,
+                        ...$this->checkWarning(
+                            file: $file,
                             line: $example->line,
-                            message: "Warning code `{$code}` is not listed in the {$family} doctor issue codes. If this is a command-level handoff warning, document it as such; otherwise use a doctor issue code.",
-                            severity: FindingSeverity::Warning,
-                        );
-
-                        continue;
-                    }
-
-                    if (str_contains($nextCommand, '--fix') && ! $issue->hasFix) {
-                        $findings[] = $this->finding(
-                            $file,
-                            $example->line,
-                            "Warning code `{$code}` points at --fix but is not listed in the {$family} doctor fix map.",
-                        );
-                    }
-
-                    if (str_contains($nextCommand, '--adopt') && ! $issue->hasAdopt) {
-                        $findings[] = $this->finding(
-                            $file,
-                            $example->line,
-                            "Warning code `{$code}` points at --adopt but is not listed in the {$family} doctor adopt map.",
-                        );
-                    }
+                            warning: $warning,
+                            inspection: $inspection,
+                        ),
+                    );
                 }
+            }
+
+            $tableWarnings = $this->warningTableParser->parse($contents);
+            $firstTableLineByCode = [];
+
+            foreach ($tableWarnings as $warning) {
+                $code = $warning['code'];
+
+                if (array_key_exists($code, $firstTableLineByCode)) {
+                    $findings[] = $this->finding(
+                        path: $file,
+                        line: $warning['line'],
+                        message: "Warning code `{$code}` is duplicated in this warning-code table; the first declaration is on line {$firstTableLineByCode[$code]}.",
+                    );
+                } else {
+                    $firstTableLineByCode[$code] = $warning['line'];
+                }
+
+                array_push(
+                    $findings,
+                    ...$this->checkWarning(
+                        file: $file,
+                        line: $warning['line'],
+                        warning: $warning,
+                        inspection: $inspection,
+                    ),
+                );
             }
         }
 
@@ -153,21 +94,149 @@ final readonly class DoctorWarningCoherenceRule implements GroupedRule
     }
 
     /**
-     * @param  array<string, array{family?: ?string, kind?: string, allowed_next_commands?: list<string>}>  $warningCodes
+     * @param  array<mixed>  $warning
+     * @return list<Finding>
      */
+    private function checkWarning(
+        string $file,
+        int $line,
+        array $warning,
+        DoctorWarningInspection $inspection,
+    ): array {
+        $code = $warning['code'] ?? null;
+        $family = $warning['family'] ?? null;
+        $nextCommand = $warning['next_command'] ?? null;
+
+        if (! is_string($code)) {
+            return [];
+        }
+
+        if ($family === null) {
+            if (is_string($nextCommand) && $this->nextCommandFamily($nextCommand) !== null) {
+                return [$this->finding(
+                    $file,
+                    $line,
+                    'Command-owned warnings with null family must not point at a doctor next_command.',
+                )];
+            }
+
+            if (
+                is_string($nextCommand)
+                && $nextCommand !== ''
+                && ! $this->isRegisteredCommandHandoff($inspection, $code, null, $nextCommand)
+            ) {
+                return [$this->finding(
+                    path: $file,
+                    line: $line,
+                    message: "Warning code `{$code}` uses a null-family command handoff that is not registered for `{$nextCommand}`.",
+                    severity: FindingSeverity::Warning,
+                )];
+            }
+
+            return [];
+        }
+
+        if (! is_string($family) || ! array_key_exists($family, $inspection->stateFamilies)) {
+            return [$this->finding(
+                $file,
+                $line,
+                "Warning code `{$code}` uses unknown doctor family `"
+                .(is_scalar($family) ? (string) $family : gettype($family))
+                .'`.',
+            )];
+        }
+
+        $findings = [];
+        $singular = $inspection->stateFamilies[$family]['singular'];
+
+        if (! str_starts_with($code, "{$singular}.")) {
+            $findings[] = $this->finding(
+                $file,
+                $line,
+                "Warning code `{$code}` with family `{$family}` must use singular product prefix `{$singular}.`.",
+            );
+        }
+
+        if (! is_string($nextCommand) || $nextCommand === '') {
+            return $findings;
+        }
+
+        $nextCommandFamily = $this->nextCommandFamily($nextCommand);
+
+        if ($nextCommandFamily !== null && $nextCommandFamily !== $family) {
+            $findings[] = $this->finding(
+                $file,
+                $line,
+                "Warning code `{$code}` uses family `{$family}` but next_command points at `{$nextCommandFamily}`.",
+            );
+        }
+
+        $doctorPath = $inspection->stateFamilies[$family]['doctor_doc'];
+
+        if ($doctorPath === null) {
+            return $findings;
+        }
+
+        $absoluteDoctorPath = "{$this->docs->docsRoot()}/{$doctorPath}";
+
+        if (! is_file($absoluteDoctorPath)) {
+            return $findings;
+        }
+
+        $inspection->doctorIssues[$family] ??= $this->doctorParser->parse(
+            (string) file_get_contents($absoluteDoctorPath),
+        );
+        $issue = $inspection->doctorIssues[$family][$code] ?? null;
+
+        if ($issue === null) {
+            if ($this->isRegisteredCommandHandoff($inspection, $code, $family, $nextCommand)) {
+                return $findings;
+            }
+
+            $findings[] = $this->finding(
+                path: $file,
+                line: $line,
+                message: "Warning code `{$code}` is not listed in the {$family} doctor issue codes. If this is a command-level handoff warning, document it as such; otherwise use a doctor issue code.",
+                severity: FindingSeverity::Warning,
+            );
+
+            return $findings;
+        }
+
+        if (str_contains($nextCommand, '--fix') && ! $issue->hasFix) {
+            $findings[] = $this->finding(
+                $file,
+                $line,
+                "Warning code `{$code}` points at --fix but is not listed in the {$family} doctor fix map.",
+            );
+        }
+
+        if (str_contains($nextCommand, '--adopt') && ! $issue->hasAdopt) {
+            $findings[] = $this->finding(
+                $file,
+                $line,
+                "Warning code `{$code}` points at --adopt but is not listed in the {$family} doctor adopt map.",
+            );
+        }
+
+        return $findings;
+    }
+
     private function isRegisteredCommandHandoff(
-        array $warningCodes,
+        DoctorWarningInspection $inspection,
         string $code,
-        string $family,
+        ?string $family,
         string $nextCommand,
     ): bool {
-        $warning = $warningCodes[$code] ?? null;
+        $warning = $inspection->warningCodes[$code] ?? null;
 
         if ($warning === null) {
             return false;
         }
 
-        if (($warning['kind'] ?? null) !== 'command_handoff') {
+        $kind = $warning['kind'] ?? null;
+
+        if ($kind !== 'command_handoff' && ! ($family === null && $kind === 'command_owned')) {
             return false;
         }
 
@@ -176,12 +245,25 @@ final readonly class DoctorWarningCoherenceRule implements GroupedRule
         }
 
         foreach ($warning['allowed_next_commands'] ?? [] as $allowedNextCommand) {
-            if ($nextCommand === $allowedNextCommand || str_starts_with($nextCommand, "{$allowedNextCommand} ")) {
+            $normalizedNextCommand = $this->normalizeCommand($nextCommand);
+            $normalizedAllowedCommand = $this->normalizeCommand($allowedNextCommand);
+
+            if (
+                $normalizedNextCommand === $normalizedAllowedCommand
+                || str_starts_with($normalizedNextCommand, "{$normalizedAllowedCommand} ")
+            ) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private function normalizeCommand(string $command): string
+    {
+        $command = trim($command);
+
+        return str_starts_with($command, 'orbit ') ? substr($command, strlen('orbit ')) : $command;
     }
 
     /**
@@ -223,6 +305,8 @@ final readonly class DoctorWarningCoherenceRule implements GroupedRule
 
     private function nextCommandFamily(string $nextCommand): ?string
     {
+        $matches = [];
+
         if (preg_match('/(?:^|\s)doctor(?::fix)?\s+.*?--family=(?<family>[a-z_]+)/', $nextCommand, $matches) !== 1) {
             return null;
         }

@@ -125,7 +125,7 @@ describe('ProcessLogController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.logs.runtime_unit', 'orbit_docs_main_vite')
+            ->assertJsonPath('success.data.logs.runtime_unit', 'orbit_docs_development_main_vite')
             ->assertJsonPath('success.data.logs.lines.0.message', 'Vite ready')
             ->assertJsonPath('success.meta.line_count', 1);
 
@@ -134,7 +134,7 @@ describe('ProcessLogController', function (): void {
                 $request['argv'][0] === 'internal:process-logs'
                 && json_decode((string) $request['input'], associative: true) === [
                     'backend' => 'systemd',
-                    'runtime_unit' => 'orbit_docs_main_vite',
+                    'runtime_unit' => 'orbit_docs_development_main_vite',
                     'lines' => 5,
                     'follow' => false,
                 ]
@@ -434,7 +434,7 @@ describe('ProcessLogController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.logs.runtime_unit', 'orbit_docs_main_feedback')
+            ->assertJsonPath('success.data.logs.runtime_unit', 'orbit_docs_development_main_feedback')
             ->assertJsonPath('success.data.logs.lines.0.message', 'Feedback ready');
 
         Http::assertSent(
@@ -442,11 +442,11 @@ describe('ProcessLogController', function (): void {
                 $request['argv'][0] === 'internal:process-logs'
                 && json_decode((string) $request['input'], associative: true) === [
                     'backend' => 'launchd',
-                    'runtime_unit' => 'orbit_docs_main_feedback',
+                    'runtime_unit' => 'orbit_docs_development_main_feedback',
                     'lines' => 5,
                     'follow' => false,
-                    'stdout_path' => '/Users/nckrtl/Library/Logs/Orbit/processes/orbit_docs_main_feedback.out.log',
-                    'stderr_path' => '/Users/nckrtl/Library/Logs/Orbit/processes/orbit_docs_main_feedback.err.log',
+                    'stdout_path' => '/Users/nckrtl/Library/Logs/Orbit/processes/orbit_docs_development_main_feedback.out.log',
+                    'stderr_path' => '/Users/nckrtl/Library/Logs/Orbit/processes/orbit_docs_development_main_feedback.err.log',
                 ]
             ),
         );

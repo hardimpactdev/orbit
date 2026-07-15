@@ -27,17 +27,16 @@ final readonly class DoctorScopeValidator
         }
 
         if ($target instanceof Node) {
-            $targetRole = $target->displayRole();
             $allowed = $runner->categoriesForNode($target);
 
             foreach ($families as $family) {
                 if (! in_array($family, $allowed, true)) {
                     return new DoctorValidationFailure(
-                        code: 'family_not_in_role_scope',
-                        message: "Doctor family '{$family}' is not part of the '{$targetRole}' node category set.",
+                        code: 'family_not_in_node_scope',
+                        message: "Doctor family '{$family}' is not available for node '{$target->name}'.",
                         meta: [
                             'family' => $family,
-                            'target_role' => $targetRole,
+                            'target_node' => $target->name,
                             'allowed_families' => $allowed,
                         ],
                     );

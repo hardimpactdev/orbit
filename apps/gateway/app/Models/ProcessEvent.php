@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $event_id
  * @property int|null $process_id
  * @property int|null $app_id
+ * @property int|null $app_instance_id
  * @property int|null $workspace_id
  * @property int|null $node_id
  * @property string|null $unit_name
@@ -34,6 +35,7 @@ class ProcessEvent extends Model
         'event_id',
         'process_id',
         'app_id',
+        'app_instance_id',
         'workspace_id',
         'node_id',
         'unit_name',
@@ -60,6 +62,14 @@ class ProcessEvent extends Model
     public function app(): BelongsTo
     {
         return $this->belongsTo(App::class);
+    }
+
+    /**
+     * @return BelongsTo<AppInstance, $this>
+     */
+    public function appInstance(): BelongsTo
+    {
+        return $this->belongsTo(AppInstance::class);
     }
 
     /**

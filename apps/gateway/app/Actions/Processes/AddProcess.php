@@ -163,6 +163,7 @@ final readonly class AddProcess
                 ->ownerProcesses()
                 ->create([
                     'node_id' => $context->node->id,
+                    'app_instance_id' => $context->appInstance?->id,
                     'name' => $name,
                     'command' => $command,
                     'restart_policy' => $restartPolicy,
@@ -185,7 +186,7 @@ final readonly class AddProcess
         $startableRuntimeUnits = $runtimeUnits;
 
         if ($context->app instanceof App && $context->workspace === null) {
-            $warnings = $this->ensureRuntimeUnits->handle($app);
+            $warnings = $this->ensureRuntimeUnits->handle($app, $context->appInstance);
         } else {
             $applyResult = $this->applyRuntimeUnits($context, $app, $process, $runtimeUnits);
             $warnings = $applyResult['warnings'];

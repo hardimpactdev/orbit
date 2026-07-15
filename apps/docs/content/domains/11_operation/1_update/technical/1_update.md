@@ -196,11 +196,11 @@ Primary CLI test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Operation/UpdateCommandTest.php` | Local update contract: gate outcomes, JSON success/skip and error envelopes, human progress tree, failure prose, and checkout-unavailable handling. |
+| `apps/cli/tests/Feature/Commands/Operation/UpdateCommandTest.php` | Local update contract: gate outcomes, JSON success/skip and error envelopes, human progress tree, failure prose, and local-installation-unavailable handling. |
 | `apps/cli/tests/Feature/Services/Updates/LocalUpdateRunnerTest.php` | Gate decisions (check-failed, already-installed, gateway-behind, proceed), step ordering (check→download→replace→doctor), and result fields (`fromVersion`/`toVersion`/`latestVersion`/`doctorIssues`). |
 | `apps/cli/tests/Feature/Services/Updates/GatewayVersionProbeTest.php` | Gateway version read from `/api/status` and unknown-version handling (no gateway, unreachable, unparseable, `0.0.0`). |
-| `apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php` | Binary download/replace split (`downloadBinary`/`replaceBinary`), entry-point verification, post-update doctor parsing, and offline proof via `ORBIT_BINARY_URL=file://`. |
-| `apps/cli/tests/Feature/Services/Updates/CheckoutPathResolverTest.php` | Install-root resolution from `ORBIT_INSTALL_PATH`, `HOME/orbit` fallback, and no `phar://` or `base_path()` paths. |
+| `apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php` | Local-installation binary download/replace split (`downloadBinary`/`replaceBinary`), source-checkout branch handling, entry-point verification, post-update doctor parsing, and offline proof via `ORBIT_BINARY_URL=file://`. |
+| `apps/cli/tests/Feature/Services/Updates/CheckoutPathResolverTest.php` | Local install-root resolution from `ORBIT_INSTALL_PATH`, `HOME/orbit` fallback, and no `phar://` or `base_path()` paths; the historical class name does not narrow the public contract to checkouts. |
 
 There is no gateway-side coverage for this command: the gateway `update`
 Artisan command was removed when public command ownership moved to

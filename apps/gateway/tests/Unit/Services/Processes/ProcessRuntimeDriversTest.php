@@ -48,7 +48,7 @@ it('runs docker process lifecycle through the docker runtime driver', function (
     $runtimeUnit = $driver->runtimeUnitName($app, $process);
 
     expect($runtimeUnit)
-        ->toBe('orbit_docs_main_queue')
+        ->toBe('orbit_docs_development_main_queue')
         ->and($driver->start($node, $runtimeUnit))
         ->toBeTrue()
         ->and($driver->stop($node, $runtimeUnit))
@@ -56,9 +56,9 @@ it('runs docker process lifecycle through the docker runtime driver', function (
         ->and($driver->restart($node, $runtimeUnit))
         ->toBeTrue()
         ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, false))
-        ->toBe("docker logs --tail 25 'orbit_docs_main_queue' 2>&1")
+        ->toBe("docker logs --tail 25 'orbit_docs_development_main_queue' 2>&1")
         ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, true))
-        ->toBe("docker logs --tail 25 --follow 'orbit_docs_main_queue' 2>&1");
+        ->toBe("docker logs --tail 25 --follow 'orbit_docs_development_main_queue' 2>&1");
 
     expect(docker_process_driver_agent_actions())->toBe(['start', 'stop', 'restart']);
 });
@@ -93,7 +93,7 @@ it('applies, removes, and cleans up docker process runtime units through the doc
     $runtimeUnit = $driver->runtimeUnitName($app, $process);
 
     expect($driver->cleanupScript($runtimeUnit))
-        ->toBe("docker rm -f 'orbit_docs_main_queue' 2>/dev/null || true")
+        ->toBe("docker rm -f 'orbit_docs_development_main_queue' 2>/dev/null || true")
         ->and($driver->apply($node, $app, $process))
         ->toBeTrue()
         ->and($driver->remove($node, $runtimeUnit))
@@ -108,11 +108,11 @@ it('applies, removes, and cleans up docker process runtime units through the doc
         ->and($payloads[0]['prepare_prerequisites'])
         ->toBeFalse()
         ->and($payloads[0]['spec']['name'])
-        ->toBe('orbit_docs_main_queue')
+        ->toBe('orbit_docs_development_main_queue')
         ->and($payloads[1])
         ->toMatchArray([
             'action' => 'remove',
-            'container' => 'orbit_docs_main_queue',
+            'container' => 'orbit_docs_development_main_queue',
         ]);
 });
 

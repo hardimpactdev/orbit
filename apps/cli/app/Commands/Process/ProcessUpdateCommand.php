@@ -13,7 +13,7 @@ class ProcessUpdateCommand extends ProcessGatewayCommand
         {name? : Existing process name}
         {--name= : New process name}
         {--node= : Owning node name}
-        {--app= : Parent app slug}
+        {--app= : App or app-instance selector}
         {--workspace= : Workspace name}
         {--command= : New command}
         {--restart-policy= : Restart policy (never|on_failure|always)}

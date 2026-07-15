@@ -140,7 +140,9 @@ abstract class ProcessGatewayCommand extends GatewayCommand
         }
 
         if ($app !== null) {
-            return "app '{$app}'";
+            return str_contains($app, '.')
+                ? "app instance '{$app}'"
+                : "app '{$app}'";
         }
 
         return "node '{$node}'";

@@ -41,9 +41,45 @@ describe('process:list', function (): void {
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['processes'][0]['name'])->toBe('vite');
     });
 
+    it('forwards an app-instance selector and preserves concrete context in JSON', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'context' => [
+                'app' => 'docs',
+                'app_instance' => 'production',
+                'workspace' => null,
+            ],
+            'processes' => [
+                [
+                    'name' => 'vite',
+                    'app' => 'docs',
+                    'app_instance' => 'production',
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:list', [
+            '--app' => 'docs.production',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => str_contains(
+            urldecode($request->url()),
+            'app=docs.production',
+        ));
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['context']['app_instance'])
+            ->toBe('production')
+            ->and($decoded['success']['data']['processes'][0]['app_instance'])
+            ->toBe('production');
+    });
+
     it('renders human output as a table with uppercase headers and derived status', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'context' => ['app' => 'docs', 'workspace' => null],
+            'context' => ['app' => 'docs', 'app_instance' => 'production', 'workspace' => null],
             'processes' => [
                 [
                     'name' => 'vite',
@@ -67,7 +103,7 @@ describe('process:list', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('Processes for docs')
+            ->toContain('Processes for docs.production')
             ->and($output)
             ->toContain('NAME')
             ->and($output)
@@ -124,6 +160,7 @@ describe('process:list', function (): void {
     it('passes through gateway error envelopes from HTTP failures', function (): void {
         fakeGateway(fakeErrorEnvelope('validation_failed', 'An app context is required.', [
             'field' => 'app',
+            'reason' => 'app_instance_required',
         ]), 422);
 
         [$exitCode, $output] = runCommand($this, 'process:list', ['--json' => true]);
@@ -135,7 +172,9 @@ describe('process:list', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('app')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('app_instance_required');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {

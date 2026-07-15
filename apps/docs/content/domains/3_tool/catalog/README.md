@@ -98,10 +98,10 @@ tool supports removal, and verified by `doctor --family=tool`.
 
 ### Runtime and communication
 
-These installable tools cover the PHP runtime, mail, and compatibility
-websocket capability. MySQL, PostgreSQL, and Redis are process-owned services,
-not tool installs. Fleet realtime uses the `websocket` role; the `reverb` tool
-remains documented for compatibility until it is removed or migrated.
+These installable tools cover the PHP runtime and mail. MySQL, PostgreSQL,
+Redis, and fleet realtime are process- or role-owned services, not separate
+tool installs. Fleet realtime uses the `websocket` role and its Laravel Reverb
+runtime.
 
 Agent coding CLI supported-OS metadata follows the operating systems documented
 by the upstream installer source. `claude-code`, `codex-cli`, `grok-cli`,
@@ -112,12 +112,11 @@ the generated install/update scripts for macOS client targets.
 
 1. [`php`](php.md)
 2. [`mailpit`](mailpit.md)
-3. [`reverb`](reverb.md)
-4. [`claude-code`](claude-code.md)
-5. [`codex-cli`](codex-cli.md)
-6. [`grok-cli`](grok-cli.md)
-7. [`antigravity-cli`](antigravity-cli.md)
-8. [`cursor-cli`](cursor-cli.md)
+3. [`claude-code`](claude-code.md)
+4. [`codex-cli`](codex-cli.md)
+5. [`grok-cli`](grok-cli.md)
+6. [`antigravity-cli`](antigravity-cli.md)
+7. [`cursor-cli`](cursor-cli.md)
 
 ### Agent IDE servers, operator tools, and autonomous agent tools
 

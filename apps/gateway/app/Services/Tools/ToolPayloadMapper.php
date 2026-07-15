@@ -18,6 +18,7 @@ final readonly class ToolPayloadMapper
             'node' => $tool->node?->name,
             'expected_state' => $tool->expected_state,
             'observed_state' => null,
+            'observed_version' => null,
             'version' => $tool->expected_version,
             'managed' => true,
             'endpoints' => $this->endpoints($tool),

@@ -27,7 +27,7 @@ Node reachability belongs to `node`. Proxy routes, apps, workspaces, processes, 
 The firewall probe reads gateway firewall rules and checks these layers:
 
 1. **Registry configuration:** every selected rule has a valid node reference, rule name, direction, action, source, protocol, and port.
-2. **Node eligibility:** the node reference resolves to a visible active Ubuntu node with at least one active role assignment.
+2. **Node eligibility:** the node reference resolves to an active supported Ubuntu node eligible to own Orbit-protected firewall rules. This predicate is derived from authoritative node state, not caller visibility.
 3. **Baseline policy boundary:** the rule does not attempt to mutate node bootstrap policy owned by the node family.
 4. **Ownership boundary:** protected rows are reported read-only in the
    firewall family unless the firewall family owns the representation drift.
@@ -48,7 +48,7 @@ Each code below identifies a specific kind of drift the firewall probe can detec
 | Code | Detected when |
 | --- | --- |
 | `firewall_rule.record_incomplete` | A selected gateway firewall rule lacks node, name, direction, action, source, protocol, port, or backend identity metadata required for comparison. |
-| `firewall_rule.node_invalid` | The rule points at a missing, unauthorized, inactive, unsupported, non-Ubuntu, or role-incompatible node. |
+| `firewall_rule.node_invalid` | The rule points at a missing, inactive, unsupported, non-Ubuntu node or one otherwise ineligible to own Orbit-protected firewall rules. |
 | `firewall_rule.baseline_conflict` | The rule attempts to edit role bootstrap policy owned by the node family. |
 | `firewall_rule.rule_missing` | Gateway configuration expects a managed backend rule, but the rule is absent from node reality. |
 | `firewall_rule.rule_mismatch` | A managed backend rule exists but differs from gateway configuration. |

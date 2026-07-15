@@ -45,6 +45,44 @@ describe('process write commands', function (): void {
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['process']['name'])->toBe('vite');
     });
 
+    it('forwards an app-instance selector and preserves the concrete instance in JSON', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => [
+                'name' => 'vite',
+                'app' => 'docs',
+                'app_instance' => 'production',
+            ],
+            'runtime_units' => [],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'vite',
+            'process_command' => 'npm run dev',
+            '--app' => 'docs.production',
+            '--runtime' => 'systemd',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/processes'
+                && $request->data()['app'] === 'docs.production'
+            ),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['process']['app'])
+            ->toBe('docs')
+            ->and($decoded['success']['data']['process']['app_instance'])
+            ->toBe('production');
+    });
+
     it('rejects app scoped docker process:add payloads before contacting the gateway', function (): void {
         Http::fake();
 
@@ -691,7 +729,13 @@ describe('process write commands', function (): void {
 
     it('renders process:add human output as a progress tree with a success footer', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'process' => [
+                'name' => 'vite',
+                'node' => 'app-1',
+                'app' => 'docs',
+                'app_instance' => 'production',
+                'workspace' => null,
+            ],
             'runtime_units' => [],
         ], [
             'warnings' => [],
@@ -700,7 +744,7 @@ describe('process write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'vite',
             'process_command' => 'npm run dev',
-            '--app' => 'docs',
+            '--app' => 'docs.production',
         ]);
 
         expect($exitCode)
@@ -712,7 +756,7 @@ describe('process write commands', function (): void {
             ->and($output)
             ->toContain('Start runtime units')
             ->and($output)
-            ->toContain("Process 'vite' added for app 'docs'")
+            ->toContain("Process 'vite' added for app instance 'docs.production'")
             ->and($output)
             ->not->toContain('process:')->and($output)
             ->not->toContain('{');
