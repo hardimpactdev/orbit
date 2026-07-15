@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Orbit\Core\Http\JsonEnvelope;
 
+/** @mago-expect lint:cyclomatic-complexity */
 it('prepares bootstrap streams it through client local SSH and then completes over the gateway', function (): void {
     $prepareTimeout = null;
 
@@ -21,6 +22,10 @@ it('prepares bootstrap streams it through client local SSH and then completes ov
 
     Http::fake(function (Request $request, array $options) use (&$prepareTimeout) {
         $prepareTimeout = $options['timeout'] ?? null;
+
+        if ($request->url() === 'https://gateway.test/api/nodes/bootstrap/resume') {
+            return Http::response(JsonEnvelope::success(['preflight_required' => true]));
+        }
 
         return Http::response(JsonEnvelope::success([
             'bootstrap' => [
@@ -102,6 +107,9 @@ it('routes host-provisioned templates through client SSH bootstrap', function (s
     ]));
 
     Http::fake([
+        'https://gateway.test/api/nodes/bootstrap/resume' => Http::response(JsonEnvelope::success([
+            'preflight_required' => true,
+        ])),
         'https://gateway.test/api/nodes/bootstrap' => Http::response(JsonEnvelope::success([
             'bootstrap' => [
                 'id' => "bootstrap-{$template}",
@@ -156,6 +164,9 @@ it('does not ask the gateway to complete when client local SSH fails', function 
     ]));
 
     Http::fake([
+        'https://gateway.test/api/nodes/bootstrap/resume' => Http::response(JsonEnvelope::success([
+            'preflight_required' => true,
+        ])),
         'https://gateway.test/api/nodes/bootstrap' => Http::response(JsonEnvelope::success([
             'bootstrap' => [
                 'id' => 'bootstrap-123',
@@ -193,7 +204,12 @@ it('does not ask the gateway to complete when client local SSH fails', function 
 });
 
 it('rejects an unsupported target platform before reserving gateway identity', function (): void {
-    Http::preventStrayRequests();
+    config()->set('orbit.gateway.url', 'https://gateway.test');
+    Http::fake([
+        'https://gateway.test/api/nodes/bootstrap/resume' => Http::response(JsonEnvelope::success([
+            'preflight_required' => true,
+        ])),
+    ]);
     Process::fake([
         '*' => Process::result(output: "debian_13\namd64\n"),
     ]);
@@ -215,7 +231,10 @@ it('rejects an unsupported target platform before reserving gateway identity', f
         ->toBe('node.unsupported_platform')
         ->and($decoded['error']['meta']['platform'])
         ->toBe('debian_13');
-    Http::assertNothingSent();
+    Http::assertSentCount(1);
+    Http::assertSent(
+        fn (Request $request): bool => $request->url() === 'https://gateway.test/api/nodes/bootstrap/resume',
+    );
 });
 
 /** @mago-expect lint:cyclomatic-complexity */
@@ -226,6 +245,9 @@ it('verifies an explicit SSH host key locally before streaming the bootstrap', f
     ]));
 
     Http::fake([
+        'https://gateway.test/api/nodes/bootstrap/resume' => Http::response(JsonEnvelope::success([
+            'preflight_required' => true,
+        ])),
         'https://gateway.test/api/nodes/bootstrap' => Http::response(JsonEnvelope::success([
             'bootstrap' => [
                 'id' => 'bootstrap-verified',
@@ -239,7 +261,8 @@ it('verifies an explicit SSH host key locally before streaming the bootstrap', f
     ]);
 
     $knownHostsPath = null;
-    Process::fake(function ($process) use (&$knownHostsPath) {
+    $knownHostsContents = null;
+    Process::fake(function ($process) use (&$knownHostsPath, &$knownHostsContents) {
         $command = $process->command;
 
         if (is_array($command) && $command[0] === 'ssh-keyscan') {
@@ -251,11 +274,9 @@ it('verifies an explicit SSH host key locally before streaming the bootstrap', f
         }
 
         if (is_array($command) && $command[0] === 'ssh-keygen') {
-            return Process::result(output: implode("\n", [
-                '3072 SHA256:other 192.0.2.30 (RSA)',
-                '256 SHA256:verified 192.0.2.30 (ED25519)',
-                '',
-            ]));
+            return str_contains((string) $process->input, 'AAAATEST')
+                ? Process::result(output: "256 SHA256:verified 192.0.2.30 (ED25519)\n")
+                : Process::result(output: "3072 SHA256:other 192.0.2.30 (RSA)\n");
         }
 
         if (
@@ -270,6 +291,7 @@ it('verifies an explicit SSH host key locally before streaming the bootstrap', f
             foreach ($command as $argument) {
                 if (is_string($argument) && str_starts_with($argument, 'UserKnownHostsFile=')) {
                     $knownHostsPath = substr($argument, strlen('UserKnownHostsFile='));
+                    $knownHostsContents = File::get($knownHostsPath);
                 }
             }
 
@@ -307,6 +329,8 @@ it('verifies an explicit SSH host key locally before streaming the bootstrap', f
         ->toBe(0)
         ->and($knownHostsPath)
         ->toBeString()
+        ->and($knownHostsContents)
+        ->toBe("192.0.2.30 ssh-ed25519 AAAATEST\n")
         ->and(File::exists((string) $knownHostsPath))
         ->toBeFalse();
 });
@@ -318,6 +342,9 @@ it('rejects an SSH host key mismatch locally without completing the bootstrap', 
     ]));
 
     Http::fake([
+        'https://gateway.test/api/nodes/bootstrap/resume' => Http::response(JsonEnvelope::success([
+            'preflight_required' => true,
+        ])),
         'https://gateway.test/api/nodes/bootstrap' => Http::response(JsonEnvelope::success([
             'bootstrap' => [
                 'id' => 'bootstrap-mismatch',
@@ -366,4 +393,50 @@ it('rejects an SSH host key mismatch locally without completing the bootstrap', 
         0,
     );
     assertGatewayStreamNothingSent();
+});
+
+it('resumes a completed bootstrap without touching SSH after the target is hardened', function (): void {
+    fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', [
+        'exit_code' => 0,
+        'data' => JsonEnvelope::success(['node' => ['name' => 'database-1']]),
+    ]));
+
+    Http::fake([
+        'https://gateway.test/api/nodes/bootstrap/resume' => Http::response(JsonEnvelope::success([
+            'preflight_required' => false,
+            'bootstrap' => [
+                'id' => 'bootstrap-completed',
+                'status' => 'completed',
+                'ssh_required' => false,
+            ],
+        ])),
+    ]);
+    Process::fake();
+    Process::preventStrayProcesses();
+
+    [$exitCode] = runCommand($this, 'node:new', [
+        'name' => 'database-1',
+        '--roles' => 'database',
+        '--host' => '192.0.2.30',
+        '--tld' => 'database-test',
+        '--json' => true,
+    ]);
+
+    Http::assertSentCount(1);
+    Http::assertSent(
+        fn (Request $request): bool => (
+            $request->url() === 'https://gateway.test/api/nodes/bootstrap/resume'
+            && ! array_key_exists('platform', $request->data())
+            && ! array_key_exists('architecture', $request->data())
+        ),
+    );
+    Process::assertNothingRan();
+    assertGatewayStreamSent(
+        fn (FakeGatewayStreamRequest $request): bool => (
+            $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/nodes/bootstrap/bootstrap-completed/complete'
+        ),
+    );
+
+    expect($exitCode)->toBe(0);
 });

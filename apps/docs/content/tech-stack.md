@@ -310,10 +310,13 @@ work locally inside the gateway boundary. VPN commands never SSH from the
 caller or from the gateway to another node.
 
 Workload bootstrap SSH is constructed and executed by the initiating CLI. The
-client observes and validates the target platform/architecture before prepare.
+client first performs a gateway resume lookup; Agent-ready pending and completed
+bootstraps continue without SSH. Only when target substrate is still required
+does the client observe and validate the target platform/architecture before prepare.
 The gateway atomically reserves the pending node, WireGuard peer, and bootstrap state and renders the secret
 bootstrap bundle, but it does not receive SSH credentials or connect to the
-target. Bootstrap establishes the managed user, WireGuard, and the initial CLI
+target. WireGuard address allocation is serialized at the gateway and protected
+by a database uniqueness constraint. Bootstrap establishes the managed user, WireGuard, and the initial CLI
 and Agent artifacts. After the Agent is reachable on its reserved WireGuard
 address, host prerequisites and runtime/security baselines converge through
 Agent push, including home permissions, hardened WireGuard-only SSH, root-key

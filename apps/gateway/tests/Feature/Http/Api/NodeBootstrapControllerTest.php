@@ -12,6 +12,7 @@ use App\Models\WireGuardPeer;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -106,7 +107,9 @@ it('keeps bootstrap pending when the WireGuard-bound Agent is not ready', functi
     expect(NodeBootstrap::query()->findOrFail($bootstrapId)->status)
         ->toBe('pending')
         ->and(Node::query()->where('name', 'agent-1')->firstOrFail()->isProvisioning())
-        ->toBeTrue();
+        ->toBeTrue()
+        ->and(DB::table('activity_log')->where('event', 'node.created')->count())
+        ->toBe(0);
 
     Process::assertRanTimes(
         fn ($process): bool => preg_match('/(?:^|\s)(?:ssh|scp)(?:\s|$)/', (string) $process->command) === 1,
@@ -260,7 +263,9 @@ it('completes through the WireGuard Agent once and then returns the active resul
         ->toContain('rm -f /root/.ssh/authorized_keys')
         ->toContain('/etc/sysctl.d/60-orbit.conf')
         ->toContain('/etc/apt/apt.conf.d/50unattended-upgrades')
-        ->toContain('ufw deny in');
+        ->toContain('ufw deny in')
+        ->and(DB::table('activity_log')->where('event', 'node.created')->count())
+        ->toBe(1);
 
     Http::assertSentCount(1);
     Process::assertRanTimes(
@@ -328,7 +333,119 @@ it('allows only the initiating client to complete a pending bootstrap', function
         ->and(Node::query()->where('name', 'database-1')->firstOrFail()->isProvisioning())
         ->toBeTrue()
         ->and(OperationRun::query()->count())
+        ->toBe(0)
+        ->and(DB::table('activity_log')->where('event', 'node.created')->count())
         ->toBe(0);
+});
+
+it('requires client SSH preflight when no matching bootstrap is reserved yet', function (): void {
+    [, $caller] = nodeBootstrapGatewayAndCaller();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap/resume', [
+            'name' => 'database-new',
+            'roles' => ['database'],
+            'host' => '192.0.2.70',
+            'user' => 'root',
+            'tld' => 'database-new',
+        ])
+        ->assertOk()
+        ->assertJsonPath('success.data.preflight_required', true);
+});
+
+it('resumes Agent-ready and completed bootstraps without requiring SSH', function (string $status): void {
+    [, $caller] = nodeBootstrapGatewayAndCaller();
+
+    $node = Node::factory()->create([
+        'name' => "database-{$status}",
+        'host' => '192.0.2.71',
+        'tld' => "database-{$status}",
+        'wireguard_address' => '10.6.0.7',
+        'platform' => 'ubuntu_24-04',
+        'architecture' => 'amd64',
+        'status' => $status === 'completed' ? 'active' : 'provisioning',
+    ]);
+    $bootstrap = NodeBootstrap::query()->create([
+        'node_id' => $node->id,
+        'initiating_node_id' => $caller->id,
+        'request' => [
+            'name' => "database-{$status}",
+            '--host' => '192.0.2.71',
+            '--tld' => "database-{$status}",
+            '--user' => 'root',
+            '--platform' => 'ubuntu_24-04',
+            '--architecture' => 'amd64',
+            '--roles' => 'database',
+        ],
+        'status' => $status,
+    ]);
+
+    Http::fake([
+        'http://10.6.0.7:9477/v1/commands' => Http::response([], 405),
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap/resume', [
+            'name' => "database-{$status}",
+            'roles' => ['database'],
+            'host' => '192.0.2.71',
+            'user' => 'root',
+            'tld' => "database-{$status}",
+        ])
+        ->assertOk()
+        ->assertJsonPath('success.data.preflight_required', false)
+        ->assertJsonPath('success.data.bootstrap.id', $bootstrap->id)
+        ->assertJsonPath('success.data.bootstrap.status', $status)
+        ->assertJsonPath('success.data.bootstrap.ssh_required', false);
+
+    if ($status === 'completed') {
+        Http::assertNothingSent();
+    } else {
+        Http::assertSentCount(1);
+    }
+})->with(['pending', 'completed']);
+
+it('does not expose another client bootstrap through the resume lookup', function (): void {
+    [, $caller] = nodeBootstrapGatewayAndCaller();
+    $otherCaller = Node::factory()->create([
+        'name' => 'operator-resume',
+        'wireguard_address' => '10.6.0.22',
+    ]);
+    $node = Node::factory()->create([
+        'name' => 'database-private',
+        'host' => '192.0.2.72',
+        'tld' => 'database-private',
+        'status' => 'provisioning',
+    ]);
+    NodeBootstrap::query()->create([
+        'node_id' => $node->id,
+        'initiating_node_id' => $otherCaller->id,
+        'request' => [
+            'name' => 'database-private',
+            '--host' => '192.0.2.72',
+            '--tld' => 'database-private',
+            '--user' => 'root',
+            '--platform' => 'ubuntu_24-04',
+            '--architecture' => 'amd64',
+            '--roles' => 'database',
+        ],
+        'status' => 'pending',
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap/resume', [
+            'name' => 'database-private',
+            'roles' => ['database'],
+            'host' => '192.0.2.72',
+            'user' => 'root',
+            'tld' => 'database-private',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node.incompatible')
+        ->assertJsonMissingPath('success.data.bootstrap.id');
 });
 
 it('reserves one retryable bootstrap without gateway target SSH', function (): void {
@@ -474,6 +591,58 @@ it('rolls back an interrupted identity reservation so the same prepare can retry
         ->postJson('/api/nodes/bootstrap', $payload)
         ->assertOk()
         ->assertJsonPath('success.data.bootstrap.status', 'pending');
+});
+
+it('enforces a unique WireGuard address across node identities', function (): void {
+    Node::factory()->create(['wireguard_address' => '10.6.0.40']);
+
+    expect(fn () => Node::factory()->create(['wireguard_address' => '10.6.0.40']))
+        ->toThrow(QueryException::class);
+});
+
+it('retries a WireGuard reservation that loses a unique-address race', function (): void {
+    [$gateway, $caller] = nodeBootstrapGatewayAndCaller();
+
+    WireGuardPeer::query()->create([
+        'node_id' => $gateway->id,
+        'public_key' => 'gateway-peer-public-key',
+        'private_key' => 'gateway-peer-private-key',
+        'pre_shared_key' => 'gateway-peer-preshared-key',
+        'allowed_ips' => '10.6.0.2/32',
+    ]);
+
+    $collisions = 0;
+    Node::creating(function (Node $node) use (&$collisions): void {
+        if ($node->name !== 'database-collision' || $collisions > 0) {
+            return;
+        }
+
+        $collisions++;
+        Node::withoutEvents(
+            fn () => Node::factory()->create(['wireguard_address' => $node->wireguard_address]),
+        );
+    });
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap', [
+            'name' => 'database-collision',
+            'roles' => ['database'],
+            'host' => '192.0.2.73',
+            'user' => 'root',
+            'tld' => 'database-collision',
+            'platform' => 'ubuntu_24-04',
+            'architecture' => 'amd64',
+        ])
+        ->assertOk()
+        ->assertJsonPath('success.data.bootstrap.wireguard_address', '10.6.0.3');
+
+    expect($collisions)
+        ->toBe(1)
+        ->and(Node::query()->where('wireguard_address', '10.6.0.3')->count())
+        ->toBe(1)
+        ->and(Node::query()->where('name', 'database-collision')->count())
+        ->toBe(1);
 });
 
 it('keeps the node and bootstrap retryable when the terminal transition is interrupted', function (): void {

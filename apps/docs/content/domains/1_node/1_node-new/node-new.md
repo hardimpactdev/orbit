@@ -352,7 +352,14 @@ first convergence fails, the command fails and leaves that role assignment in
 During provisioning, `provisioning` is a transient node status: the pending
 node, WireGuard peer, and bootstrap record exist in the gateway database, but client-local
 bootstrap and the first Agent-push convergence have not completed. A compatible
-retry reuses that pending identity and address. Readiness or convergence
+retry first asks the gateway whether that initiating-client-bound request can
+continue without SSH. An Agent-ready pending bootstrap or completed bootstrap
+continues directly through completion; only an unreserved or not-yet-Agent-ready
+bootstrap returns to client-local SSH.
+
+The gateway serializes WireGuard address
+allocation and enforces address uniqueness in durable node state, so concurrent
+reservations cannot claim the same address. Readiness or convergence
 failure remains inspectable until the bootstrap is retried or explicitly
 removed.
 

@@ -4,18 +4,17 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Contracts\Loggable;
-use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Models\NodeBootstrap;
 use App\Models\OperationRun;
+use App\Services\ActivityLogger;
 use App\Services\Nodes\GatewayNodeCreator;
+use App\Services\Nodes\NodeBootstrapCompletedActivity;
 use App\Services\Operations\OperationRunRecorder;
 use App\Support\Streaming\ProgressEventStreamEmitter;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -24,8 +23,12 @@ use Throwable;
 
 /** @mago-expect lint:cyclomatic-complexity */
 #[RequiresPermission('node:new', servingNode: ServingNode::Gateway)]
-final readonly class NodeBootstrapCompleteController implements Loggable
+final readonly class NodeBootstrapCompleteController
 {
+    public function __construct(
+        private ActivityLogger $activityLogger,
+    ) {}
+
     public function __invoke(
         Request $request,
         NodeBootstrap $nodeBootstrap,
@@ -57,8 +60,18 @@ final readonly class NodeBootstrapCompleteController implements Loggable
             ], 403);
         }
 
+        $shouldLogCompletion = $nodeBootstrap->status === 'pending';
+
         if (! in_array('text/event-stream', $request->getAcceptableContentTypes(), strict: true)) {
             $result = $nodes->completeBootstrap($nodeBootstrap, $caller);
+
+            if ($result->successful() && $shouldLogCompletion) {
+                $this->activityLogger->log(
+                    new NodeBootstrapCompletedActivity($nodeBootstrap),
+                    channel: 'api',
+                    causer: $caller,
+                );
+            }
 
             return response()->json(
                 $result->payload,
@@ -77,6 +90,7 @@ final readonly class NodeBootstrapCompleteController implements Loggable
             callerNodeId: $caller->id,
             targetNodeId: $nodeBootstrap->node_id,
         );
+        $activityLogger = $this->activityLogger;
 
         return $streams->make(function (ProgressEventStreamEmitter $events) use (
             $nodes,
@@ -84,6 +98,8 @@ final readonly class NodeBootstrapCompleteController implements Loggable
             $caller,
             $operationRuns,
             $operationRun,
+            $activityLogger,
+            $shouldLogCompletion,
         ): void {
             $events->tree('Completing Node Bootstrap', [
                 ['key' => 'agent', 'label' => 'Wait for WireGuard Agent'],
@@ -97,6 +113,14 @@ final readonly class NodeBootstrapCompleteController implements Loggable
                 $result = $nodes->completeBootstrap($nodeBootstrap, $caller);
 
                 if ($result->successful()) {
+                    if ($shouldLogCompletion) {
+                        $activityLogger->log(
+                            new NodeBootstrapCompletedActivity($nodeBootstrap),
+                            channel: 'api',
+                            causer: $caller,
+                        );
+                    }
+
                     $operationRun = $operationRuns->succeeded($operationRun->id, 0, $result->payload);
                     $events->stepEvent('agent', 'done', 'WireGuard-bound Agent ready');
                     $events->stepEvent('node', 'done', 'Node converged');
@@ -149,54 +173,6 @@ final readonly class NodeBootstrapCompleteController implements Loggable
             'type' => $operationRun->operation_type,
             'status' => $operationRun->status->value,
         ];
-    }
-
-    public function effect(): ActivityLogType
-    {
-        return ActivityLogType::Write;
-    }
-
-    public function type(): string
-    {
-        return 'node.created';
-    }
-
-    public function subject(): ?Model
-    {
-        return $this->bootstrapFromRoute()?->node()->first();
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    public function properties(): array
-    {
-        $bootstrap = $this->bootstrapFromRoute();
-        $request = $bootstrap instanceof NodeBootstrap ? $bootstrap->request : [];
-        /** @var mixed $roles */
-        $roles = $request['--roles'] ?? null;
-
-        return [
-            'name' => is_string($request['name'] ?? null) ? $request['name'] : null,
-            'roles' => is_string($roles) ? array_values(array_filter(explode(',', $roles))) : [],
-            'tld' => is_string($request['--tld'] ?? null) ? $request['--tld'] : null,
-            'template' => is_string($request['--template'] ?? null) ? $request['--template'] : null,
-        ];
-    }
-
-    public function description(): ?string
-    {
-        /** @var mixed $name */
-        $name = $this->properties()['name'];
-
-        return is_string($name) ? "Created node {$name}." : null;
-    }
-
-    private function bootstrapFromRoute(): ?NodeBootstrap
-    {
-        $bootstrap = request()->route('nodeBootstrap');
-
-        return $bootstrap instanceof NodeBootstrap ? $bootstrap : null;
     }
 
     /**

@@ -33,7 +33,10 @@ use App\Services\Tools\ToolRegistryFailure;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
 use App\Services\Vpn\WgEasyAddressReservationProbe;
 use App\Services\WireGuard\WireGuardKeyGenerator;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use InvalidArgumentException;
@@ -58,6 +61,10 @@ final class GatewayNodeCreator
     private const int SUCCESS = 0;
 
     private const int FAILURE = 1;
+
+    private const int WIREGUARD_RESERVATION_ATTEMPTS = 3;
+
+    private const string WIREGUARD_RESERVATION_LOCK = 'orbit:node-bootstrap:wireguard-reservation';
 
     /** @var array<string, mixed> */
     private array $arguments = [];
@@ -93,6 +100,77 @@ final class GatewayNodeCreator
         $arguments['--json'] = true;
 
         return $this->execute($arguments);
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
+    public function resumeBootstrap(array $arguments, Node $caller): GatewayActionResult
+    {
+        /** @var mixed $rawName */
+        $rawName = $arguments['name'] ?? null;
+        $name = is_string($rawName) ? trim($rawName) : '';
+        $node = $name !== '' ? Node::query()->where('name', $name)->first() : null;
+
+        if (! $node instanceof Node) {
+            return new GatewayActionResult(
+                exitCode: self::SUCCESS,
+                payload: JsonEnvelope::success(['preflight_required' => true]),
+            );
+        }
+
+        $bootstrap = NodeBootstrap::query()->where('node_id', $node->id)->first();
+        $request = array_diff_key($arguments, [
+            '--json' => true,
+            '--platform' => true,
+            '--architecture' => true,
+        ]);
+        $storedRequest = $bootstrap instanceof NodeBootstrap
+            ? array_diff_key($bootstrap->request, [
+                '--platform' => true,
+                '--architecture' => true,
+            ])
+            : [];
+
+        if (
+            ! $bootstrap instanceof NodeBootstrap
+            || $bootstrap->initiating_node_id !== $caller->id
+            || $storedRequest !== $request
+        ) {
+            return GatewayActionResult::error(
+                code: 'node.incompatible',
+                message: "Node '{$name}' already exists with incompatible bootstrap state.",
+                meta: ['name' => $name],
+            );
+        }
+
+        if ($bootstrap->status === 'completed' && $node->isActive()) {
+            return $this->resumedBootstrapResult($bootstrap, 'completed');
+        }
+
+        if ($bootstrap->status !== 'pending' || ! $node->isProvisioning()) {
+            return GatewayActionResult::error(
+                code: 'node.incompatible',
+                message: 'Node bootstrap is not in a compatible resumable state.',
+                meta: ['bootstrap_id' => $bootstrap->id],
+            );
+        }
+
+        if (app(ProvisioningAgentReadinessProbe::class)->isReady($node)) {
+            return $this->resumedBootstrapResult($bootstrap, 'pending');
+        }
+
+        return new GatewayActionResult(
+            exitCode: self::SUCCESS,
+            payload: JsonEnvelope::success([
+                'preflight_required' => true,
+                'bootstrap' => [
+                    'id' => $bootstrap->id,
+                    'status' => 'pending',
+                    'ssh_required' => true,
+                ],
+            ]),
+        );
     }
 
     public function completeBootstrap(NodeBootstrap $bootstrap, Node $caller): GatewayActionResult
@@ -911,6 +989,52 @@ final class GatewayNodeCreator
         array $roles,
         array $inputs,
     ): int {
+        for ($attempt = 1; $attempt <= self::WIREGUARD_RESERVATION_ATTEMPTS; $attempt++) {
+            try {
+                /** @var int */
+                return Cache::lock(self::WIREGUARD_RESERVATION_LOCK, 120)->block(
+                    30,
+                    fn (): int => $this->prepareHostBootstrapWithReservationLock(
+                        $registryWriter,
+                        $wireGuardKeyGenerator,
+                        $name,
+                        $roles,
+                        $inputs,
+                    ),
+                );
+            } catch (QueryException $exception) {
+                if (
+                    $attempt === self::WIREGUARD_RESERVATION_ATTEMPTS
+                    || ! $this->isWireguardAddressCollision($exception)
+                ) {
+                    throw $exception;
+                }
+            } catch (LockTimeoutException) {
+                return $this->failCommand(
+                    code: 'node.provisioning_incomplete',
+                    message: 'WireGuard identity reservation is busy; retry node bootstrap.',
+                    meta: [
+                        'node' => $name,
+                        'step' => 'wireguard_allocation',
+                    ],
+                );
+            }
+        }
+
+        throw new RuntimeException('WireGuard identity reservation attempts were exhausted.');
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
+     */
+    private function prepareHostBootstrapWithReservationLock(
+        NodeRegistryWriter $registryWriter,
+        WireGuardKeyGenerator $wireGuardKeyGenerator,
+        string $name,
+        array $roles,
+        array $inputs,
+    ): int {
         $caller = $this->bootstrapCaller;
 
         if (! $caller instanceof Node) {
@@ -1107,6 +1231,16 @@ final class GatewayNodeCreator
         ]);
     }
 
+    private function isWireguardAddressCollision(QueryException $exception): bool
+    {
+        $message = strtolower($exception->getMessage());
+
+        return (
+            str_contains($message, 'wireguard_address')
+            && (str_contains($message, 'unique') || str_contains($message, 'duplicate'))
+        );
+    }
+
     /**
      * @param  list<string>  $roles
      * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
@@ -1290,6 +1424,21 @@ final class GatewayNodeCreator
         return new GatewayActionResult(
             exitCode: self::SUCCESS,
             payload: $payload,
+        );
+    }
+
+    private function resumedBootstrapResult(NodeBootstrap $bootstrap, string $status): GatewayActionResult
+    {
+        return new GatewayActionResult(
+            exitCode: self::SUCCESS,
+            payload: JsonEnvelope::success([
+                'preflight_required' => false,
+                'bootstrap' => [
+                    'id' => $bootstrap->id,
+                    'status' => $status,
+                    'ssh_required' => false,
+                ],
+            ]),
         );
     }
 

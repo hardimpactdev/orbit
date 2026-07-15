@@ -21,11 +21,12 @@ use RuntimeException;
 
 use function Laravel\Prompts\text;
 
+/** @mago-expect lint:too-many-methods */
 final class NodeNewCommand extends BootstrapGatewayCommand
 {
     use StreamsGatewayProgress;
 
-    private const int BootstrapTimeoutSeconds = 900;
+    private const int BOOTSTRAP_TIMEOUT_SECONDS = 900;
 
     #[\Override]
     protected $signature = 'node:new
@@ -191,6 +192,27 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         unset($preparePayload['host_key_fingerprint']);
 
         try {
+            $resumeResponse = $gatewayClient
+                ->withMinimumTimeout(self::BOOTSTRAP_TIMEOUT_SECONDS)
+                ->post('/api/nodes/bootstrap/resume', $preparePayload);
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
+        }
+
+        $resumedBootstrap = $this->resumedBootstrapPayload($resumeResponse);
+
+        if ($resumedBootstrap !== null) {
+            return $this->completeBootstrap($resumedBootstrap['id']);
+        }
+
+        if (! $this->bootstrapPreflightRequired($resumeResponse)) {
+            return $this->renderFailure(
+                'gateway_invalid_response',
+                'Gateway node bootstrap resume response is incomplete.',
+            );
+        }
+
+        try {
             $target = $bootstrapSsh->inspectTarget(
                 host: (string) $payload['host'],
                 user: is_string($payload['user'] ?? null) ? $payload['user'] : 'root',
@@ -236,7 +258,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
 
         try {
             $response = $gatewayClient
-                ->withMinimumTimeout(self::BootstrapTimeoutSeconds)
+                ->withMinimumTimeout(self::BOOTSTRAP_TIMEOUT_SECONDS)
                 ->post('/api/nodes/bootstrap', $preparePayload);
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
@@ -293,11 +315,51 @@ final class NodeNewCommand extends BootstrapGatewayCommand
             );
         }
 
+        return $this->completeBootstrap($bootstrap['id']);
+    }
+
+    private function completeBootstrap(string $bootstrapId): int
+    {
         return $this->streamProgress(
-            '/api/nodes/bootstrap/'.rawurlencode($bootstrap['id']).'/complete',
+            '/api/nodes/bootstrap/'.rawurlencode($bootstrapId).'/complete',
             [],
             fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function bootstrapPreflightRequired(array $response): bool
+    {
+        return ($response['success']['data']['preflight_required'] ?? null) === true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array{id: string, status: string}|null
+     */
+    private function resumedBootstrapPayload(array $response): ?array
+    {
+        $bootstrap = $response['success']['data']['bootstrap'] ?? null;
+
+        if (! is_array($bootstrap) || ($bootstrap['ssh_required'] ?? null) !== false) {
+            return null;
+        }
+
+        /** @var mixed $id */
+        $id = $bootstrap['id'] ?? null;
+        /** @var mixed $status */
+        $status = $bootstrap['status'] ?? null;
+
+        if (! is_string($id) || $id === '' || ! is_string($status) || $status === '') {
+            return null;
+        }
+
+        return [
+            'id' => $id,
+            'status' => $status,
+        ];
     }
 
     /**

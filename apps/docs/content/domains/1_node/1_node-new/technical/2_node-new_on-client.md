@@ -103,6 +103,10 @@ When a gateway is configured:
   - host and user fields for metrics role provisioning.
 - Use the CLI's WireGuard identity for gateway API authorization.
 - Do not write durable node records locally.
+- Before target inspection or SSH, ask the gateway to resume the resolved
+  request. If the same initiating client owns an Agent-ready pending bootstrap
+  or a completed bootstrap, skip target SSH and call completion with the
+  existing bootstrap identifier. Otherwise continue with preflight and prepare.
 - For a host-provisioned workload, receive the node-specific bootstrap bundle
   over that authenticated connection and stream it to `node_new.user` at
   `node_new.host` through a client-local SSH process.
@@ -127,7 +131,8 @@ gateway itself is not a pre-WireGuard artifact or enrollment endpoint.
 
 There is no manual no-SSH fallback. If the initiating client cannot SSH to the
 target, `node:new` fails and leaves the compatible pending gateway reservation
-available for an idempotent retry.
+available for an idempotent retry. Once the Agent is ready, or after completion
+has committed and public SSH is closed, that retry does not require SSH.
 
 ## Failure Semantics
 

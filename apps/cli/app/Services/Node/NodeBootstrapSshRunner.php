@@ -149,30 +149,9 @@ final class NodeBootstrapSshRunner
             throw new RuntimeException("Could not read the SSH host key for {$host}.");
         }
 
-        $fingerprint = Process::timeout(self::CONNECT_TIMEOUT_SECONDS)
-            ->input($scan->output())
-            ->run(['ssh-keygen', '-E', 'sha256', '-lf', '-']);
+        $approvedRows = $this->approvedKnownHostRows($host, $scan->output(), $expectedFingerprint);
 
-        if (! $fingerprint->successful()) {
-            throw new RuntimeException("Could not fingerprint the SSH host key for {$host}.");
-        }
-
-        $matches = [];
-        $matchCount = preg_match_all('/\b(SHA256:[A-Za-z0-9+\/=]+)\b/', $fingerprint->output(), $matches);
-
-        if ($matchCount === false || $matchCount < 1) {
-            throw new RuntimeException("SSH host key fingerprint output for {$host} is invalid.");
-        }
-
-        $matchesExpectedFingerprint = array_any(
-            $matches[1],
-            static fn (string $observedFingerprint): bool => hash_equals(
-                $expectedFingerprint,
-                $observedFingerprint,
-            ),
-        );
-
-        if (! $matchesExpectedFingerprint) {
+        if ($approvedRows === []) {
             throw new NodeBootstrapHostKeyMismatch("SSH host key fingerprint mismatch for {$host}.");
         }
 
@@ -182,12 +161,47 @@ final class NodeBootstrapSshRunner
             throw new RuntimeException('Could not create a temporary SSH known-hosts file.');
         }
 
-        if (file_put_contents($path, $scan->output()) === false || ! chmod($path, 0o600)) {
+        if (file_put_contents($path, implode("\n", $approvedRows)."\n") === false || ! chmod($path, 0o600)) {
             File::delete($path);
 
             throw new RuntimeException('Could not secure the temporary SSH known-hosts file.');
         }
 
         return $path;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function approvedKnownHostRows(string $host, string $scan, string $expectedFingerprint): array
+    {
+        $splitRows = preg_split('/\R/', trim($scan));
+        $rows = array_values(array_filter(
+            is_array($splitRows) ? $splitRows : [],
+            static fn (string $row): bool => trim($row) !== '',
+        ));
+        $approved = [];
+
+        foreach ($rows as $row) {
+            $fingerprint = Process::timeout(self::CONNECT_TIMEOUT_SECONDS)
+                ->input($row."\n")
+                ->run(['ssh-keygen', '-E', 'sha256', '-lf', '-']);
+
+            if (! $fingerprint->successful()) {
+                throw new RuntimeException("Could not fingerprint the SSH host key for {$host}.");
+            }
+
+            $matches = [];
+
+            if (preg_match('/\b(SHA256:[A-Za-z0-9+\/=]+)\b/', $fingerprint->output(), $matches) !== 1) {
+                throw new RuntimeException("SSH host key fingerprint output for {$host} is invalid.");
+            }
+
+            if (hash_equals($expectedFingerprint, $matches[1])) {
+                $approved[] = $row;
+            }
+        }
+
+        return $approved;
     }
 }

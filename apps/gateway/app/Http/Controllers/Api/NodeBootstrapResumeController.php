@@ -13,7 +13,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 #[RequiresPermission('node:new', servingNode: ServingNode::Gateway)]
-final readonly class NodeBootstrapController
+final readonly class NodeBootstrapResumeController
 {
     public function __invoke(
         Request $request,
@@ -28,13 +28,13 @@ final readonly class NodeBootstrapController
             return response()->json([
                 'error' => [
                     'code' => 'authorization_failed',
-                    'message' => 'This caller cannot prepare node bootstrap.',
+                    'message' => 'This caller cannot resume node bootstrap.',
                     'meta' => [],
                 ],
             ], 403);
         }
 
-        $result = $nodes->prepareBootstrap($arguments->fromRequest($request), $caller);
+        $result = $nodes->resumeBootstrap($arguments->fromRequest($request), $caller);
 
         return response()->json($result->payload, $result->status());
     }

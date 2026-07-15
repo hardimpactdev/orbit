@@ -9,6 +9,9 @@ use Orbit\Core\Http\JsonEnvelope;
 function fakeNodeBootstrapStreamPrepare(string $id = 'bootstrap-stream'): void
 {
     Http::fake([
+        'https://gateway.test/api/nodes/bootstrap/resume' => Http::response(JsonEnvelope::success([
+            'preflight_required' => true,
+        ])),
         'https://gateway.test/api/nodes/bootstrap' => Http::response(JsonEnvelope::success([
             'bootstrap' => [
                 'id' => $id,

@@ -11,6 +11,24 @@ use RuntimeException;
 
 final readonly class ProvisioningAgentReadinessProbe
 {
+    public function isReady(Node $node): bool
+    {
+        $address = trim((string) $node->wireguard_address);
+
+        if ($address === '') {
+            return false;
+        }
+
+        try {
+            return Http::connectTimeout(2)
+                ->timeout(2)
+                ->get("http://{$address}:9477/v1/commands")
+                ->status() === 405;
+        } catch (ConnectionException) {
+            return false;
+        }
+    }
+
     public function waitUntilReady(Node $node): void
     {
         $address = trim((string) $node->wireguard_address);
