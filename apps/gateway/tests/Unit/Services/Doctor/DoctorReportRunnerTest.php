@@ -2632,6 +2632,28 @@ describe('DoctorReportRunner fact-derived categories', function (): void {
             ->toBeNull();
     });
 
+    it('includes tool for a roleless node that owns a tool record', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'roleless-tool-owner',
+            'status' => 'active',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+        ]);
+
+        $runner = app(DoctorReportRunner::class);
+        $failure = app(DoctorScopeValidator::class)->validate(
+            families: ['tool'],
+            runner: $runner,
+            target: $node,
+        );
+
+        expect($runner->categoriesForNode($node))
+            ->toContain('tool')
+            ->and($failure)
+            ->toBeNull();
+    });
+
     it('keeps gateway scheduler singleton probes off non-gateway schedule targets', function (): void {
         $node = Node::factory()
             ->database()

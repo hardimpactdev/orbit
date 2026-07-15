@@ -270,6 +270,13 @@ final readonly class DoctorReportRunner
         }
 
         if (
+            ! in_array('tool', $categories, true)
+            && NodeTool::query()->where('node_id', $node->id)->exists()
+        ) {
+            $categories[] = 'tool';
+        }
+
+        if (
             $node->isActive()
             && $this->isUbuntuPlatform($node)
             && $this->nodeRoleAssignments->nodeCanOwnFirewallRules($node)
