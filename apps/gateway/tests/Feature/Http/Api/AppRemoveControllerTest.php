@@ -235,10 +235,7 @@ describe('AppRemoveController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.meta.warnings.0.code', 'app.cleanup_failed')
-            ->assertJsonPath('success.meta.warnings.0.family', 'app')
-            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=app --restore')
-            ->assertJsonCount(1, 'success.meta.warnings');
+            ->assertJsonMissingPath('success.meta.warnings');
 
         expect($shell->scripts)->toBeEmpty();
     });
@@ -288,6 +285,88 @@ describe('AppRemoveController', function (): void {
             ->assertJsonCount(1, 'success.meta.warnings');
 
         expect($shell->scripts)->toBeEmpty();
+    });
+
+    it('cleans resolved Orbit instances and warns for unresolved Orbit siblings without legacy fallback', function (): void {
+        $caller = createAppRemoveCallerNode();
+        $legacyNode = Node::factory()->create([
+            'name' => 'legacy-app-node',
+            'status' => 'active',
+        ]);
+        $resolvedNode = Node::factory()->create([
+            'name' => 'resolved-app-node',
+            'status' => 'active',
+        ]);
+        grantAppRemoveAccess($caller, $legacyNode);
+
+        $app = App::factory()
+            ->static()
+            ->create([
+                'name' => 'docs',
+                'node_id' => $legacyNode->id,
+                'path' => '/legacy/apps/docs',
+            ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $resolvedNode->id,
+                node: $resolvedNode->name,
+                path: '/srv/apps/docs-development',
+            ),
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node: 'missing-app-node',
+                path: '/srv/apps/docs-production',
+            ),
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'staging',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node: 'missing-staging-node',
+                path: '/srv/apps/docs-staging',
+            ),
+        ]);
+
+        $shell = new AppRemoveApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
+
+        $response = $this->call(
+            'DELETE',
+            '/api/apps/docs',
+            ['destructive_consent' => true],
+            [],
+            [],
+            appRemoveRemoteShellFallbackHeader(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.meta.warnings.0.code', 'app.cleanup_failed')
+            ->assertJsonPath('success.meta.warnings.0.family', 'app')
+            ->assertJsonPath(
+                'success.meta.warnings.0.message',
+                'Local cleanup was skipped for Orbit app instances with unresolved node placement: docs.production, docs.staging.',
+            )
+            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=app --restore')
+            ->assertJsonCount(1, 'success.meta.warnings');
+
+        expect($shell->scriptsForNode($resolvedNode))
+            ->toHaveCount(1)
+            ->and($shell->scriptsForNode($resolvedNode)[0])
+            ->toContain("sudo rm -rf '/srv/apps/docs-development'")
+            ->and($shell->scriptsForNode($legacyNode))
+            ->toBeEmpty()
+            ->and(collect($shell->scripts)
+                ->contains(
+                    fn (string $script): bool => str_contains($script, '/legacy/apps/docs'),
+                ))
+            ->toBeFalse();
     });
 
     it('isolates process cleanup by concrete app instance and node', function (): void {

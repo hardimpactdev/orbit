@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Apps;
 
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
@@ -66,6 +67,7 @@ final readonly class RemoveApp
         $appPayload = $this->appPayload($app);
         $isPhpApp = $app->runtimeKind() === AppRuntimeKind::Php;
         $cleanupTargets = $this->cleanupTargets($app);
+        $cleanupWarnings = $this->unresolvedOrbitCleanupWarnings($app);
         $occupiedAppPlacements = $this->occupiedAppPlacements($app);
         $proxyRouteIds = ProxyRoute::query()
             ->where('app_id', $app->id)
@@ -104,14 +106,7 @@ final readonly class RemoveApp
 
         $containerOutcomes = [];
         $configOutcomes = [];
-        $warnings = $cleanupTargets === [] && $app->instances->isNotEmpty()
-            ? [[
-                'code' => 'app.cleanup_failed',
-                'family' => 'app',
-                'message' => "Local cleanup for app '{$app->name}' was skipped because none of its concrete instances resolved to an Orbit node.",
-                'next_command' => 'doctor --family=app --restore',
-            ]]
-            : [];
+        $warnings = $cleanupWarnings;
 
         foreach ($cleanupTargets as $target) {
             $node = $target['node'];
@@ -235,6 +230,10 @@ final readonly class RemoveApp
         $appWorkspaces = $app->workspaces;
 
         foreach ($instances as $instance) {
+            if ($instance->driver !== AppInstanceDriver::Orbit) {
+                continue;
+            }
+
             $node = $this->placement->nodeForInstance($instance);
 
             if (! $node instanceof Node) {
@@ -300,6 +299,40 @@ final readonly class RemoveApp
             'node' => $app->node,
             'process_cleanup_scripts' => [],
             'runtime_slug' => $app->name,
+        ]];
+    }
+
+    /**
+     * @return list<array{code: string, family: string, message: string, next_command: string}>
+     */
+    private function unresolvedOrbitCleanupWarnings(App $app): array
+    {
+        $unresolvedIdentities = [];
+
+        foreach ($app->instances as $instance) {
+            if ($instance->driver !== AppInstanceDriver::Orbit) {
+                continue;
+            }
+
+            if ($this->placement->nodeForInstance($instance) instanceof Node) {
+                continue;
+            }
+
+            $unresolvedIdentities[] = "{$app->name}.{$instance->name}";
+        }
+
+        if ($unresolvedIdentities === []) {
+            return [];
+        }
+
+        sort($unresolvedIdentities);
+        $identities = implode(', ', $unresolvedIdentities);
+
+        return [[
+            'code' => 'app.cleanup_failed',
+            'family' => 'app',
+            'message' => "Local cleanup was skipped for Orbit app instances with unresolved node placement: {$identities}.",
+            'next_command' => 'doctor --family=app --restore',
         ]];
     }
 
