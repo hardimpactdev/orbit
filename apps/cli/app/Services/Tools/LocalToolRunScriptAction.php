@@ -16,10 +16,10 @@ final readonly class LocalToolRunScriptAction
     {
         $payload = LocalToolRunScriptPayload::fromArray($payload);
         $startedAt = hrtime(true);
-        $process = Process::fromShellCommandline(
-            command: $payload->script,
-            cwd: LocalToolRunScriptPayload::FIXED_CWD,
-            env: [],
+        $process = new Process(
+            ['bash', '-lc', $payload->script],
+            LocalToolRunScriptPayload::FIXED_CWD,
+            [],
         );
         $process->setTimeout($payload->timeout);
         $process->run();

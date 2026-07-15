@@ -117,7 +117,9 @@ and logs use the process action path instead. The gateway builds
 operation-token-bound JSON stdin that
 includes the tool slug, action, and rendered script text; secret values such as
 GitHub tokens stage separately through `internal:secret-file` and reach the
-script only as a staged token-file path in the rendered config.
+script only as a staged token-file path in the rendered config. The local
+executor runs declared catalog scripts explicitly with Bash from its fixed
+working directory.
 
 ## Boundaries
 

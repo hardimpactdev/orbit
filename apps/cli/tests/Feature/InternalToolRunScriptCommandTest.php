@@ -95,6 +95,29 @@ describe('internal tool run script command', function (): void {
             ->toBeInt();
     });
 
+    it('runs catalog scripts explicitly with Bash', function (): void {
+        [$exitCode, $output] = run_internal_tool_run_script_command(
+            [
+                '--operation-token' => tool_run_script_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'tool' => 'node-exporter',
+                'action' => 'reconfigure',
+                'script' => 'set -euo pipefail; test "$0" = bash; printf bash',
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['exit_code'] ?? null)
+            ->toBe(0)
+            ->and($payload['success']['data']['stdout'] ?? null)
+            ->toBe('bash');
+    });
+
     it('captures non-zero script exits as successful internal responses', function (): void {
         [$exitCode, $output] = run_internal_tool_run_script_command(
             [
