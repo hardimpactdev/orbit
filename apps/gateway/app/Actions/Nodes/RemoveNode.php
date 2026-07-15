@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
+use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\WireGuardPeer;
@@ -33,6 +34,10 @@ final readonly class RemoveNode
         $wireguardPeerRemoved = WireGuardPeer::query()
             ->where('node_id', $node->id)
             ->delete() > 0;
+
+        FirewallRule::query()
+            ->where('node_id', $node->id)
+            ->delete();
 
         if ($this->developmentDnsMappingEnactor->mappingFor($node) !== null) {
             $dnsResult = $this->developmentDnsMappingEnactor->remove($node);

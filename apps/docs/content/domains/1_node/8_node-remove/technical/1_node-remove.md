@@ -85,6 +85,9 @@ This command follows the shared
 
 - Delete all `node_access` records where the node is the consumer or the
   serving node.
+- Delete all gateway-side `firewall_rules` registry rows for the removed node so
+  the node record can be deleted. Do not contact the target or alter live
+  firewall state.
 - When the removed node is a development node with a stored TLD, remove the
   development DNS mapping that the gateway owns for `*.{nodes.tld}` through the
   internal DNS applier for the node family before deleting the node row.
@@ -113,8 +116,8 @@ public/provider DNS.
 
 `node:remove` must not:
 - SSH into the target node.
-- Clean apps, workspaces, tools, processes, schedules, firewall rules, user
-  proxy routes, or deploy artifacts on the server.
+- Clean apps, workspaces, tools, processes, schedules, operator-managed
+  firewall rules, user proxy routes, or deploy artifacts on the server.
 - Block removal because downstream family state exists.
 - Remove local caller settings or local WireGuard configuration when the removed
   node is the local machine.

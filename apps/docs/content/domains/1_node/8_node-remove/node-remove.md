@@ -60,9 +60,12 @@ command.
 3. Removes all node access grants where the node is the consumer or the
    serving node.
 4. Removes the node's WireGuard peer identity that the gateway manages.
-5. Removes development DNS mappings that the gateway owns for development nodes.
-6. Removes the node record from the gateway registry.
-7. Reconciles the active `vpn` role DNS runtime so the removed node's TLD no
+5. Deletes the removed node's firewall-rule registry rows. This changes gateway
+   configuration only; it does not contact the target or alter its live
+   firewall.
+6. Removes development DNS mappings that the gateway owns for development nodes.
+7. Removes the node record from the gateway registry.
+8. Reconciles the active `vpn` role DNS runtime so the removed node's TLD no
    longer resolves over WG. In v1 this materializes the desired DNS mappings
    and policy owned by the gateway on the gateway-coupled `vpn` role runtime.
    Contract:
@@ -82,7 +85,9 @@ peer. Local settings and local WireGuard configuration are left untouched.
   gateway migration/removal flow.
 - Treat an already-absent node as successful removal.
 - Stop, remove, or modify apps, workspaces, tools, processes, schedules,
-  firewall rules, proxy routes, or deploy artifacts on the server.
+  operator-managed firewall rules, proxy routes, or deploy artifacts on the
+  server. Removing the deleted node's firewall-rule registry rows from gateway
+  state is part of deleting the node identity.
 - Block removal when downstream family state exists on the node.
 - Clean up local caller settings, gateway trust, or local WireGuard
   configuration when the removed node is the local machine.

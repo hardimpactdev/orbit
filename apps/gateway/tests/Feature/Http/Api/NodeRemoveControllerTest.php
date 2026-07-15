@@ -137,6 +137,20 @@ describe('NodeRemoveController', function (): void {
         grantRemoveNodeAccess($callerId, $targetId);
         grantRemoveNodeAccess($targetId, $gatewayId);
         grantRemoveNodeAccess($callerId, $otherId);
+        DB::table('firewall_rules')->insert([
+            'node_id' => $targetId,
+            'name' => 'orbit-deny-public-ssh',
+            'direction' => 'in',
+            'action' => 'deny',
+            'source' => 'any',
+            'destination' => null,
+            'port' => '22',
+            'protocol' => 'tcp',
+            'reason' => 'Orbit security baseline',
+            'source_hash' => hash('sha256', 'orbit-deny-public-ssh'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         $response = deleteRemoveNodeJson(
             '/api/nodes/app-1',
@@ -162,6 +176,8 @@ describe('NodeRemoveController', function (): void {
             ]);
 
         expect(DB::table('nodes')->where('name', 'app-1')->exists())
+            ->toBeFalse()
+            ->and(DB::table('firewall_rules')->where('node_id', $targetId)->exists())
             ->toBeFalse()
             ->and(DB::table('node_access')->count())
             ->toBe(2)

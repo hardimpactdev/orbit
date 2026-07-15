@@ -31,9 +31,11 @@ execution.
 3. Apply destructive consent.
 4. Delete node access grants.
 5. Remove the gateway-managed WireGuard peer.
-6. Remove development DNS mappings that the gateway owns for development nodes.
-7. Delete the node record.
-8. Return the result.
+6. Delete the node's firewall-rule registry rows from gateway state without
+   contacting the target or altering its live firewall.
+7. Remove development DNS mappings that the gateway owns for development nodes.
+8. Delete the node record.
+9. Return the result.
 
 ## Failure Semantics
 
