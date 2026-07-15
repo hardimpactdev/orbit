@@ -58,7 +58,11 @@ final class SshdHardenedInstaller implements SecurityInstaller
                 EOF
                 sudo chmod 0644 /etc/ssh/sshd_config.d/99-orbit-hardening.conf
                 sudo sshd -t
-                sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd
+                if sudo systemctl list-unit-files ssh.socket --no-legend 2>/dev/null | grep -q '^ssh.socket'; then
+                    sudo systemctl disable --now ssh.socket
+                fi
+                sudo systemctl enable ssh.service >/dev/null 2>&1 || true
+                sudo systemctl restart ssh.service 2>/dev/null || sudo systemctl restart sshd
                 sudo passwd -l root >/dev/null 2>&1 || true
                 sudo rm -f /root/.ssh/authorized_keys
                 SH_WRAP,

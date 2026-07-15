@@ -112,6 +112,10 @@ describe('security installers', function (): void {
             ->and($shell->runs[0]['script'])
             ->toContain('sudo sshd -t')
             ->and($shell->runs[0]['script'])
+            ->toContain('sudo systemctl disable --now ssh.socket')
+            ->and($shell->runs[0]['script'])
+            ->toContain('sudo systemctl restart ssh.service')
+            ->and($shell->runs[0]['script'])
             ->toContain('sudo passwd -l root')
             ->and($shell->runs[0]['script'])
             ->toContain('sudo rm -f /root/.ssh/authorized_keys');
