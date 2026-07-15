@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-15T23:24:45+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-loop-prevention-closure/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-16-012445-codex-loop-prevention-closure",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-topology-loop-prevention-dev-4e9725.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-15T232332Z-d3f48ff5ee64.json"
+    ],
+    "entry_digests": {
+        "evidence/retained-topology-loop-prevention-dev-4e9725.txt": "d59a3b6b6032586f9fd06dee1019c8269439fa7b11db36050a1d90ab66b44327",
+        "loop.md": "47fc71dbec0c10d1faeba36c903d24983b84ce905c0eb9c0a27f398774baa631",
+        "quality-gates/quality-check-2026-07-15T232332Z-d3f48ff5ee64.json": "cda509f4db85462ce7452eab0ca85da809325b6df84e545f1c1cf7be0f57a65c"
+    },
+    "branch": "codex/loop-prevention-closure",
+    "candidate_commit": "7c0d7e89b11cb335104e336f44814bab4bd8e22d",
+    "accepted_feature_tip": "7c0d7e89b11cb335104e336f44814bab4bd8e22d",
+    "accepted_main_tip": "26f55b7d6a3fde7b75c63dfaae1acbd967ba203b",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

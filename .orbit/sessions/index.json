@@ -3389,9 +3389,9 @@
             "legacy": null
         },
         {
-            "archive": "2026-07-16-011102-codex-loop-prevention-closure",
+            "archive": "2026-07-16-012445-codex-loop-prevention-closure",
             "slug": "codex-loop-prevention-closure",
-            "timestamp": "2026-07-16-011102",
+            "timestamp": "2026-07-16-012445",
             "schema": "compact-v1",
             "archive_mode": "compact",
             "state": "accepted",

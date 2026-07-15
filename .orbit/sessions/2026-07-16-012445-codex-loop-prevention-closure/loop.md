@@ -21,16 +21,16 @@ Make the existing single-reviewer feature loop prevent missing affected surfaces
 ## Proof
 
 - Verification:
-  - focused: passed - original closure 281 combined tests / 1,529 assertions plus isolated CLI 2,254 tests / 9,359 assertions; exact follow-up archive suite 82 tests / 454 assertions; reviewer identity subset 6 tests / 25 assertions; hook, PHP syntax, and diff checks passed
-  - broader: passed - `composer quality-check` passed all 43 subgates at exact reviewed commit; artifact `.orbit/quality-gates/quality-check-2026-07-15T230932Z-af8f4a059113.json`
+  - focused: passed - original closure 281 combined tests / 1,529 assertions plus isolated CLI 2,254 tests / 9,359 assertions; final archive and cleanup suites 210 tests / 772 assertions; final reviewer parser matrix 9 tests / 32 assertions; hook, PHP syntax, and diff checks passed
+  - broader: passed - `composer quality-check` passed all 43 subgates at exact reviewed commit; artifact `.orbit/quality-gates/quality-check-2026-07-15T232332Z-d3f48ff5ee64.json`
   - runtime: not applicable - current main-to-tip follow-up changes only the repository-local archive parser and its fixture; earlier closure candidate cc3dc30c918ff06f63521c1cb45f35d95d677bb8 passed retained operator proof recorded at `.orbit/evidence/retained-topology-loop-prevention-dev-4e9725.txt`
-- Review: passed - independent general reviewer loop_machinery_audit follow-up - human-judgment=not-required
-- Blast radius: not-required - follow-up changes only exact inline-code normalization in the compact archive identity parser and its production-shaped regression; the full loop-prevention closure is already landed on current main
-- Reviewed feature tip: fc21e4c76b73ba5498218ebe263af91ade53be9f
+- Review: passed - independent general reviewer loop_machinery_audit final follow-up - human-judgment=not-required
+- Blast radius: not-required - final follow-up centralizes exact top-label normalization for archive and cleanup identity checks, rejects multiline labels, and changes only repository-local loop tooling plus regressions
+- Reviewed feature tip: 7c0d7e89b11cb335104e336f44814bab4bd8e22d
 - Acceptance venue: automated
 - Acceptance: accepted - automated - reviewer-confirmed no-human-judgment
-- Accepted feature tip: fc21e4c76b73ba5498218ebe263af91ade53be9f
-- Accepted main tip: 0c91924c0f4c20cf7c2b7d6693ec03242455531b
+- Accepted feature tip: 7c0d7e89b11cb335104e336f44814bab4bd8e22d
+- Accepted main tip: 26f55b7d6a3fde7b75c63dfaae1acbd967ba203b
 
 ## Status
 
