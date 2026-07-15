@@ -41,6 +41,9 @@ final readonly class ToolsFixer
         }
 
         $result = match ($entry->key) {
+            'tool.capability_missing' => $tool->name === 'caddy'
+                ? $this->repairContainer($tool, $entry)
+                : $this->runRepairCommand($tool, $this->repairCommand($tool, $entry), $entry),
             'tool.config_missing', 'tool.config_mismatch' => $this->repairManagedConfig($tool, $entry),
             'tool.credentials_missing', 'tool.credentials_mismatch' => $this->repairManagedSecret($tool, $entry),
             'tool.container_missing',
@@ -176,7 +179,13 @@ final readonly class ToolsFixer
         $config = $this->configForToolScript($tool);
 
         if ($entry->key === 'tool.capability_missing') {
-            return $catalog->installScript($tool->name, $config);
+            $install = $catalog->installScript($tool->name, $config);
+
+            if ($install !== null || ! $catalog->hasCapability($tool->name, 'safe-fix')) {
+                return $install;
+            }
+
+            return $catalog->definition($tool->name)?->installScript($config);
         }
 
         if ($entry->key !== 'tool.version_mismatch') {

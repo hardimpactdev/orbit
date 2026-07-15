@@ -355,6 +355,7 @@ describe('tool catalog definitions', function (): void {
     it('catalogs Docker as the Linux and macOS Docker-compatible provider capability', function (): void {
         $catalog = app(ToolCatalog::class);
         $metadata = $catalog->probeMetadata('docker');
+        $install = $catalog->definition('docker')?->installScript(['managed_user' => 'orbit']);
 
         expect($catalog->definition('docker'))
             ->toBeInstanceOf(DockerTool::class)
@@ -366,6 +367,10 @@ describe('tool catalog definitions', function (): void {
             ->toBeFalse()
             ->and($catalog->hasCapability('docker', 'safe-adopt'))
             ->toBeTrue()
+            ->and($install)
+            ->toContain('# orbit install docker')
+            ->toContain('apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io')
+            ->toContain("usermod -aG docker 'orbit'")
             ->and($metadata)
             ->toMatchArray([
                 'binary' => 'docker',

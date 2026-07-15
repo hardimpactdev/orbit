@@ -110,6 +110,8 @@ final readonly class NodeBootstrapBundleBuilder
             sudo usermod -s /bin/bash "\$RUNTIME_USER" 2>/dev/null || true
             sudo usermod -p '*' "\$RUNTIME_USER" 2>/dev/null || true
             sudo usermod -aG sudo "\$RUNTIME_USER" 2>/dev/null || true
+            sudo groupadd -f docker
+            sudo usermod -aG docker "\$RUNTIME_USER"
             RUNTIME_HOME="\$(getent passwd "\$RUNTIME_USER" | cut -d: -f6)"
             if [ -z "\$RUNTIME_HOME" ]; then
                 printf 'Could not resolve home for Orbit runtime user %s.\n' "\$RUNTIME_USER" >&2

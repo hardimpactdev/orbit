@@ -17,12 +17,12 @@ These fields describe the Docker tool's identity, backend, and support model in 
 ## Capabilities
 
 `docker` is a required prerequisite for Docker-backed processes and any
-remaining Docker-backed tool capabilities. Orbit probes and
-adopts Docker as baseline node capability. Safe fix may repair supported
-service drift once the node bootstrap contract provides Docker.
+remaining Docker-backed tool capabilities. Orbit probes and adopts Docker as
+baseline node capability. During Ubuntu managed-node setup, safe fix can
+install the `docker.io` package and enable its system service through Agent
+push. Later safe fix repairs supported service drift.
 
 `tool:install docker` and `tool:remove docker` are not supported by the tool
-family.
 
 ## macOS Provider Support
 

@@ -567,7 +567,9 @@ describe('ToolsFixer', function (): void {
         $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: $key,
-            kind: $key === 'tool.container_missing' ? DriftKind::Missing : DriftKind::Divergent,
+            kind: in_array($key, ['tool.capability_missing', 'tool.container_missing'], true)
+                ? DriftKind::Missing
+                : DriftKind::Divergent,
             summary: 'orbit-caddy container drift',
             detail: ['tool' => 'caddy'],
         ));
@@ -586,6 +588,7 @@ describe('ToolsFixer', function (): void {
             ->and($shell->scripts[0])
             ->toContain('orbit.caddy.spec_hash');
     })->with([
+        'missing caddy capability' => ['tool.capability_missing'],
         'missing container' => ['tool.container_missing'],
         'stopped container' => ['tool.container_not_running'],
         'drifted container spec' => ['tool.container_spec_mismatch'],

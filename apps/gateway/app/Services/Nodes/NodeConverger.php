@@ -474,6 +474,7 @@ final readonly class NodeConverger
     private function toolIssuePriority(array $issue): int
     {
         return match ($this->toolNameFromIssue($issue)) {
+            'docker' => 5,
             'php-cli' => 10,
             'composer' => 20,
             'git' => 30,
@@ -506,7 +507,7 @@ final readonly class NodeConverger
             return null;
         }
 
-        return ['caddy', 'php-cli', 'composer', 'git', 'gh', 'laravel-installer'];
+        return ['caddy', 'docker', 'php-cli', 'composer', 'git', 'gh', 'laravel-installer'];
     }
 
     /**
