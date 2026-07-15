@@ -160,7 +160,7 @@ it('rejects callers without workspace creation permission', function (): void {
     Node::factory()->create([
         'name' => 'beast',
         'host' => 'beast',
-        'wireguard_address' => '10.6.0.7',
+        'wireguard_address' => '10.6.0.8',
         'status' => 'active',
     ]);
 
@@ -173,7 +173,7 @@ it('rejects callers without workspace creation permission', function (): void {
         ],
         [],
         [],
-        ['REMOTE_ADDR' => '10.6.0.7'],
+        ['REMOTE_ADDR' => '10.6.0.8'],
     );
 
     $response->assertStatus(403);

@@ -40,6 +40,14 @@ function apiNodeRow(array $overrides = []): array
 
     $row['tld'] ??= $row['name'];
 
+    if (
+        ! array_key_exists('wireguard_address', $overrides)
+        && is_string($row['name'])
+        && $row['name'] !== 'app-1'
+    ) {
+        $row['wireguard_address'] = '10.250.0.'.((crc32($row['name']) % 253) + 1);
+    }
+
     return $row;
 }
 

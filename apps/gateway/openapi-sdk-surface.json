@@ -346,6 +346,14 @@
       "reason": "Metrics status belongs to the optional metrics role and is outside the first SDK promotion set."
     },
     {
+      "operation": "POST /nodes/bootstrap/resume",
+      "operation_id": "nodeBootstrapResume",
+      "classification": "public_sdk",
+      "group": "node_bootstrap",
+      "reason": "Configured Orbit clients use this authenticated endpoint to recover Agent-ready or completed bootstrap state before opening SSH.",
+      "follow_up": "Add a dedicated PHP SDK request class for resuming a client-side node bootstrap."
+    },
+    {
       "operation": "POST /nodes/bootstrap",
       "operation_id": "nodeBootstrap",
       "classification": "public_sdk",

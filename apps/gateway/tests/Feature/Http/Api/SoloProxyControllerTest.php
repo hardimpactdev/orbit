@@ -80,10 +80,11 @@ function enable_solo_gateway_extension(): void
 
 function create_solo_target_node(array $toolConfig = [], string $name = 'gateway-1'): Node
 {
+    $wireguardAddress = $name === 'a-gateway' ? '10.6.0.4' : '10.6.0.2';
     $node = createTestGatewayNode([
         'name' => $name,
-        'host' => '10.6.0.2',
-        'wireguard_address' => '10.6.0.2',
+        'host' => $wireguardAddress,
+        'wireguard_address' => $wireguardAddress,
         'status' => 'active',
     ]);
 

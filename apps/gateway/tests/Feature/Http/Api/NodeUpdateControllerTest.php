@@ -852,7 +852,11 @@ describe('NodeUpdateController', function (): void {
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
         createApiUpdateNode(['tld' => 'app-one'], 'app-dev');
-        createApiUpdateNode(['name' => 'app-2', 'tld' => 'test'], 'app-dev');
+        createApiUpdateNode([
+            'name' => 'app-2',
+            'wireguard_address' => '10.6.0.8',
+            'tld' => 'test',
+        ], 'app-dev');
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 

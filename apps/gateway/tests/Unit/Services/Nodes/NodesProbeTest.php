@@ -1564,7 +1564,7 @@ describe('adoption', function (): void {
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.9',
+            'wireguard_address' => '10.6.0.10',
         ]);
         assignNodesProbeGatewayRole($otherNode);
         WireGuardPeer::factory()->create([
@@ -1579,7 +1579,7 @@ describe('adoption', function (): void {
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.8',
+            'wireguard_address' => '10.6.0.9',
         ]);
         assignNodesProbeAppHostRole($node);
 
@@ -1637,7 +1637,7 @@ describe('adoption', function (): void {
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.8',
+            'wireguard_address' => '10.6.0.9',
         ]);
         assignNodesProbeAppHostRole($otherNode);
         WireGuardPeer::factory()->create([

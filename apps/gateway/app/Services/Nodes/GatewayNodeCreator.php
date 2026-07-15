@@ -113,9 +113,12 @@ final class GatewayNodeCreator
         $node = $name !== '' ? Node::query()->where('name', $name)->first() : null;
 
         if (! $node instanceof Node) {
+            /** @var array<string, mixed> $payload */
+            $payload = JsonEnvelope::success(['preflight_required' => true]);
+
             return new GatewayActionResult(
                 exitCode: self::SUCCESS,
-                payload: JsonEnvelope::success(['preflight_required' => true]),
+                payload: $payload,
             );
         }
 
@@ -160,16 +163,19 @@ final class GatewayNodeCreator
             return $this->resumedBootstrapResult($bootstrap, 'pending');
         }
 
+        /** @var array<string, mixed> $payload */
+        $payload = JsonEnvelope::success([
+            'preflight_required' => true,
+            'bootstrap' => [
+                'id' => $bootstrap->id,
+                'status' => 'pending',
+                'ssh_required' => true,
+            ],
+        ]);
+
         return new GatewayActionResult(
             exitCode: self::SUCCESS,
-            payload: JsonEnvelope::success([
-                'preflight_required' => true,
-                'bootstrap' => [
-                    'id' => $bootstrap->id,
-                    'status' => 'pending',
-                    'ssh_required' => true,
-                ],
-            ]),
+            payload: $payload,
         );
     }
 
@@ -1429,16 +1435,19 @@ final class GatewayNodeCreator
 
     private function resumedBootstrapResult(NodeBootstrap $bootstrap, string $status): GatewayActionResult
     {
+        /** @var array<string, mixed> $payload */
+        $payload = JsonEnvelope::success([
+            'preflight_required' => false,
+            'bootstrap' => [
+                'id' => $bootstrap->id,
+                'status' => $status,
+                'ssh_required' => false,
+            ],
+        ]);
+
         return new GatewayActionResult(
             exitCode: self::SUCCESS,
-            payload: JsonEnvelope::success([
-                'preflight_required' => false,
-                'bootstrap' => [
-                    'id' => $bootstrap->id,
-                    'status' => $status,
-                    'ssh_required' => false,
-                ],
-            ]),
+            payload: $payload,
         );
     }
 

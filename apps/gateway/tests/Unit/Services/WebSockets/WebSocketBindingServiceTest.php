@@ -21,13 +21,14 @@ uses(RefreshDatabase::class);
 function websocketBindingServiceApp(?string $domain = 'docs.test', bool $withIngress = true): App
 {
     $slug = str_replace('.', '-', $domain ?? 'private-app');
+    $addressOffset = $domain === 'docs.test' ? 0 : 1;
 
     $ingress = $withIngress
         ? Node::factory()
             ->ingress()
             ->create([
                 'name' => "edge-{$slug}",
-                'wireguard_address' => '10.6.0.10',
+                'wireguard_address' => '10.6.0.'.(10 + $addressOffset),
             ])
         : null;
 
@@ -35,7 +36,7 @@ function websocketBindingServiceApp(?string $domain = 'docs.test', bool $withIng
         ->appProd()
         ->create([
             'name' => "app-prod-{$slug}",
-            'wireguard_address' => '10.6.0.21',
+            'wireguard_address' => '10.6.0.'.(21 + $addressOffset),
         ]);
 
     if ($ingress instanceof Node) {
