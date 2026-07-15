@@ -307,8 +307,8 @@ it('binds a compact receipt to the branch and accepted candidate identity', func
             # Orbit Feature Loop
 
             - Scratchpad: solo://proj/4/scratchpad/example--1
-            - Worktree: {$paths['cwd']}
-            - Branch: feature
+            - Worktree: `{$paths['cwd']}`
+            - Branch: `feature`
 
             ## Goal
 
