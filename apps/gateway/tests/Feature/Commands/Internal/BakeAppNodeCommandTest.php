@@ -100,7 +100,7 @@ describe('orbit:internal:bake-app-node', function (): void {
                 'php-cli',
             ])->and(File::exists(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf'))->toBeTrue()->and(
                 $shell->probeScripts(),
-            )->toHaveCount(2)->and($shell->repairScripts())->toHaveCount(6);
+            )->toHaveCount(2)->and($shell->repairScripts())->toHaveCount(7);
     });
 
     it('uses setup convergence when baking app-dev role intent', function (): void {
@@ -128,6 +128,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             )->toMatchArray([
                 'caddy' => 'installed',
                 'composer' => 'installed',
+                'docker' => 'installed',
                 'gh' => 'installed',
                 'git' => 'installed',
                 'laravel-installer' => 'installed',
@@ -383,6 +384,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
     /** @var array<string, bool> */
     private array $installed = [
         'caddy' => false,
+        'docker' => false,
         'php-cli' => false,
         'composer' => false,
         'gh' => false,
@@ -479,6 +481,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
                 'composer',
                 "/usr/local/bin/composer\tComposer version 2.9.0\n",
             ),
+            'docker' => $this->installedProbe('docker', "/usr/bin/docker\tDocker version 27.0.0\n"),
             'gh' => $this->installedProbe('gh', "/usr/bin/gh\tgh version 2.60.0\n"),
             'git' => $this->installedProbe('git', "/usr/bin/git\tgit version 2.53.0\n"),
             '/usr/local/bin/laravel' => $this->installedProbe(
@@ -534,6 +537,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
 
         $installedPayloads = [
             'composer' => ['/usr/local/bin/composer', 'Composer version 2.9.0'],
+            'docker' => ['/usr/bin/docker', 'Docker version 27.0.0'],
             'gh' => ['/usr/bin/gh', 'gh version 2.60.0'],
             'git' => ['/usr/bin/git', 'git version 2.53.0'],
             'laravel-installer' => ['/usr/local/bin/laravel', 'Laravel Installer 5.0.0'],
@@ -581,6 +585,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
                 => 'caddy',
             str_contains($script, '# orbit install php-cli') => 'php-cli',
             str_contains($script, '# orbit install composer') => 'composer',
+            str_contains($script, '# orbit install docker') => 'docker',
             str_contains($script, '# orbit install gh') => 'gh',
             str_contains($script, '# orbit install git') => 'git',
             str_contains($script, '# orbit install laravel-installer') => 'laravel-installer',
