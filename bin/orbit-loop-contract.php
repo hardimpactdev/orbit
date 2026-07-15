@@ -307,9 +307,9 @@ function orbitLoopProofReferences(string $markdown): array
 
         $markerOffset = $marker[1];
 
-        if (! orbitLoopProofReferenceHasSafeLeftBoundary($markdown, $markerOffset)) {
+        if ($markerOffset === 0 || substr($markdown, $markerOffset - 1, 1) !== '`') {
             throw new RuntimeException(
-                'Compact cited proof has an unsafe or malformed path: '
+                'Compact cited proof must be one exact inline-code path: '
                 .orbitLoopProofReferenceContainingToken($markdown, $markerOffset),
             );
         }
@@ -329,12 +329,11 @@ function orbitLoopProofReferences(string $markdown): array
 
         $reference = $match[0];
         $token = orbitLoopProofReferenceToken($candidate);
-        $suffix = substr($token, strlen($reference));
-        $insideCodeSpan = $markerOffset > 0 && substr($markdown, $markerOffset - 1, 1) === '`';
+        $following = substr($candidate, strlen($reference), 1);
 
-        if ($suffix !== '' && ($insideCodeSpan || preg_match('~^[)}\],;:.]$~u', $suffix) !== 1)) {
+        if ($following !== '`') {
             throw new RuntimeException(
-                'Compact cited proof has an unsafe or malformed path: '.$token,
+                'Compact cited proof must be one exact inline-code path: '.$token,
             );
         }
 
@@ -345,21 +344,6 @@ function orbitLoopProofReferences(string $markdown): array
     sort($references, SORT_STRING);
 
     return $references;
-}
-
-function orbitLoopProofReferenceHasSafeLeftBoundary(string $markdown, int $offset): bool
-{
-    if ($offset === 0) {
-        return true;
-    }
-
-    $preceding = substr($markdown, $offset - 1, 1);
-
-    if (preg_match('~^\s$~u', $preceding) === 1) {
-        return true;
-    }
-
-    return in_array($preceding, ['`', '\'', '"', '<', '(', '[', '{'], true);
 }
 
 function orbitLoopProofReferenceContainingToken(string $markdown, int $offset): string

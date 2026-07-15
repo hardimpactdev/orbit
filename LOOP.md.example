@@ -48,3 +48,6 @@ review PASS must record `human-judgment=required|not-required` and the exact
 committed HEAD in `Reviewed feature tip`. Blast radius must be `not-required -
 <reason>` or `complete - evidence=<repository-wide search, inventory, or
 lintable check>; result=<summary>` before acceptance; `gaps` returns to BUILD.
+Proof files retained by the compact archive must be cited as one exact
+inline-code path, for example `.orbit/evidence/runtime-proof.txt`; prose,
+directories, padded code spans, and partial paths are not proof citations.

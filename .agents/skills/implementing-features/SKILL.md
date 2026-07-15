@@ -228,6 +228,8 @@ message rather than accepting a bare `source=user` claim.
    After `FINALIZATION: PASS`, execute that exact command separately.
 5. After merge, keep the accepted feature worktree open and run its now-landed
    `bin/orbit-session-archive` with the feature worktree as cwd, never cwd main.
+   Cite each retained evidence or quality-gate file in `.orbit/loop.md` as one
+   exact inline-code path; do not cite directories, prose, or padded spans.
    Use `--full` only for failure, escalation, security/release scope, or explicit
    request.
 6. Commit the archive/index.

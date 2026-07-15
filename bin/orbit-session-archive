@@ -65,7 +65,8 @@ if (array_key_exists('help', $options)) {
           --cwd=<path>                  Feature checkout cwd. Defaults to the current directory.
           --full                       Preserve the complete active .orbit state and provider captures.
                                        The default archive is compact: loop.md, feedback.jsonl when present,
-                                       explicitly cited evidence/quality-gate files, and a versioned archive receipt.
+                                       evidence/quality-gate files cited as exact inline-code paths, and a
+                                       versioned archive receipt.
 
         In --full mode, provider session options are forwarded to bin/orbit-agent-session-archive:
           --processes-json, --solo-process-id, --solo-project-id, --discover-by-cwd,

@@ -221,10 +221,11 @@ passes.
 5. After merge, keep the accepted feature worktree open and run its now-landed
    `bin/orbit-session-archive` with the feature worktree as cwd. Do not run the
    compact archive from main. Archives are compact by default: `loop.md`,
-   optional `feedback.jsonl`, regular files explicitly cited by the loop below
-   `.orbit/evidence/` or `.orbit/quality-gates/`, and a versioned receipt bound
-   to the landed feature branch and every archived byte. Cite files, never
-   proof directories; missing or unsafe citations block archival.
+   optional `feedback.jsonl`, regular files cited by the loop as one exact
+   inline-code path below `.orbit/evidence/` or `.orbit/quality-gates/`, and a
+   versioned receipt bound to the landed feature branch and every archived
+   byte. Cite files, never proof directories; missing, malformed, or unsafe
+   citations block archival.
 6. Use `bin/orbit-session-archive --full` only for failure diagnosis,
    escalation, security or release scope, or an explicit request.
 7. Update the session index and commit the archive/index.
