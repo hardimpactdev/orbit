@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Process;
 use Orbit\Core\Http\JsonEnvelope;
 
 it('prepares bootstrap streams it through client local SSH and then completes over the gateway', function (): void {
+    $prepareTimeout = null;
+
     fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', [
         'exit_code' => 0,
         'data' => JsonEnvelope::success([
@@ -17,8 +19,10 @@ it('prepares bootstrap streams it through client local SSH and then completes ov
         ]),
     ]));
 
-    Http::fake([
-        'https://gateway.test/api/nodes/bootstrap' => Http::response(JsonEnvelope::success([
+    Http::fake(function (Request $request, array $options) use (&$prepareTimeout) {
+        $prepareTimeout = $options['timeout'] ?? null;
+
+        return Http::response(JsonEnvelope::success([
             'bootstrap' => [
                 'id' => 'bootstrap-123',
                 'status' => 'pending',
@@ -27,8 +31,8 @@ it('prepares bootstrap streams it through client local SSH and then completes ov
                 'wireguard_address' => '10.6.0.4',
                 'script' => "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' bootstrapped\n",
             ],
-        ])),
-    ]);
+        ]));
+    });
 
     Process::fake([
         '*' => Process::result(output: "bootstrapped\n"),
@@ -80,7 +84,9 @@ it('prepares bootstrap streams it through client local SSH and then completes ov
     expect($exitCode)
         ->toBe(0)
         ->and($decoded['event'])
-        ->toBe('complete');
+        ->toBe('complete')
+        ->and($prepareTimeout)
+        ->toBe(900);
 });
 
 it('does not ask the gateway to complete when client local SSH fails', function (): void {

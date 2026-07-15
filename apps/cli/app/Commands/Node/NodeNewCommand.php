@@ -24,6 +24,8 @@ final class NodeNewCommand extends BootstrapGatewayCommand
 {
     use StreamsGatewayProgress;
 
+    private const int BootstrapTimeoutSeconds = 900;
+
     #[\Override]
     protected $signature = 'node:new
         {name? : Registry name for the node}
@@ -168,7 +170,9 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         unset($preparePayload['host_key_fingerprint']);
 
         try {
-            $response = $gatewayClient->post('/api/nodes/bootstrap', $preparePayload);
+            $response = $gatewayClient
+                ->withMinimumTimeout(self::BootstrapTimeoutSeconds)
+                ->post('/api/nodes/bootstrap', $preparePayload);
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
