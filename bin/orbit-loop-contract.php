@@ -403,7 +403,7 @@ function orbitLoopReviewedIdentityProblem(string $markdown, string $featureTip):
 
 function orbitLoopTopLabel(string $markdown, string $label): ?string
 {
-    if (preg_match('/^-\s+'.preg_quote($label, '/').':\s*(.+)$/mi', $markdown, $match) !== 1) {
+    if (preg_match('/^-[ \t]+'.preg_quote($label, '/').':[ \t]*(.+)$/mi', $markdown, $match) !== 1) {
         return null;
     }
 
