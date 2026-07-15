@@ -2306,7 +2306,7 @@ it('rejects a compact receipt that binds only a truncated proof citation', funct
         $loopPath,
         str_replace(
             '## Status',
-            "- Broader proof: `.orbit/quality-gates/proof?.json`\n\n## Status",
+            "- Broader proof: `.orbit/quality-gates/proof.?json`\n\n## Status",
             $loop,
         ),
     );

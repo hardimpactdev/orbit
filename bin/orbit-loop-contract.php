@@ -319,11 +319,12 @@ function orbitLoopProofReferences(string $markdown): array
         }
 
         $reference = $match[0];
-        $following = substr($candidate, strlen($reference), 1);
+        $token = orbitLoopProofReferenceToken($candidate);
+        $suffix = substr($token, strlen($reference));
 
-        if ($following !== '' && preg_match('~^[\s`\'"<>)}\],;:.]$~u', $following) !== 1) {
+        if ($suffix !== '' && preg_match('~^[)}\],;:.]$~u', $suffix) !== 1) {
             throw new RuntimeException(
-                'Compact cited proof has an unsafe or malformed path: '.orbitLoopProofReferenceToken($candidate),
+                'Compact cited proof has an unsafe or malformed path: '.$token,
             );
         }
 
@@ -338,7 +339,7 @@ function orbitLoopProofReferences(string $markdown): array
 
 function orbitLoopProofReferenceToken(string $candidate): string
 {
-    if (preg_match('~^[^\s`\'"<>)}\],;]+~u', $candidate, $match) === 1) {
+    if (preg_match('~^[^\s`\'"<>]+~u', $candidate, $match) === 1) {
         return $match[0];
     }
 

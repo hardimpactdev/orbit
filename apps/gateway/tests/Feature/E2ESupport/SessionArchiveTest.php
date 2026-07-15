@@ -189,7 +189,7 @@ it('refuses unsafe compact proof citations: :dataset', function (string $kind, s
             file_put_contents("{$paths['sourceOrbitDir']}/outside-proof.txt", "must remain outside proof roots\n");
         }
 
-        if ($kind === 'truncated-invalid-character') {
+        if (str_starts_with($kind, 'truncated-')) {
             file_put_contents(
                 "{$paths['sourceOrbitDir']}/evidence/proof",
                 "must not be substituted for the malformed citation\n",
@@ -227,6 +227,18 @@ it('refuses unsafe compact proof citations: :dataset', function (string $kind, s
     'truncated invalid character' => [
         'truncated-invalid-character',
         '.orbit/evidence/proof?.txt',
+    ],
+    'truncated after accepted punctuation' => [
+        'truncated-after-punctuation',
+        '.orbit/evidence/proof.?txt',
+    ],
+    'truncated after colon punctuation' => [
+        'truncated-after-colon',
+        '.orbit/evidence/proof:?txt',
+    ],
+    'repeated trailing punctuation' => [
+        'truncated-repeated-punctuation',
+        '.orbit/evidence/proof..',
     ],
 ]);
 
