@@ -26,6 +26,9 @@ inferred for other Docker-backed tools.
 
 `tool:install caddy` and `tool:remove caddy` are not supported for host package
 management. Orbit converges `orbit-caddy` as part of node role baseline.
+When the declared container image is absent, that convergence pulls exactly
+the image from gateway intent before creating the container with image pulling
+disabled for the final run command.
 
 ## Credentials
 

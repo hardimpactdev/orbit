@@ -352,6 +352,32 @@ describe('internal caddy config command', function (): void {
             ->toContain('docker start orbit-caddy');
     });
 
+    it('pulls a missing declared Caddy image before applying the container', function (): void {
+        $bin = install_caddy_config_fake_bin(imageMissing: true);
+        $expectedHash = str_repeat(string: 'a', times: 64);
+
+        [$exitCode] = run_internal_caddy_config_command(
+            [
+                'action' => 'apply-container',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.apply-container'),
+                '--json' => true,
+            ],
+            json_encode([
+                'container' => caddy_config_container_spec($expectedHash),
+                'global_config' => "import /etc/caddy/sites/*.caddy\n",
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($calls)
+            ->toContain('docker image inspect caddy:2-alpine')
+            ->toContain('docker pull caddy:2-alpine')
+            ->toContain('docker run -d --pull never --name orbit-caddy');
+    });
+
     it('treats an existing Docker network as converged while applying the Caddy container', function (): void {
         $bin = install_caddy_config_fake_bin(networkAlreadyExists: true);
         $expectedHash = str_repeat(string: 'f', times: 64);
@@ -644,8 +670,11 @@ function run_internal_caddy_config_command(array $parameters = [], string $stdin
     return [$exitCode, trim($output->fetch())];
 }
 
-function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool $networkAlreadyExists = false): string
-{
+function install_caddy_config_fake_bin(
+    ?string $requiredDockerHost = null,
+    bool $networkAlreadyExists = false,
+    bool $imageMissing = false,
+): string {
     $realUtilities = [
         '__REAL_CAT__' => escapeshellarg(caddy_config_real_utility_path('cat')),
         '__REAL_RM__' => escapeshellarg(caddy_config_real_utility_path('rm')),
@@ -656,6 +685,9 @@ function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool 
 
     if ($networkAlreadyExists) {
         touch("{$dir}/network-already-exists");
+    }
+    if ($imageMissing) {
+        touch("{$dir}/image-missing");
     }
     file_put_contents("{$dir}/sudo", strtr(<<<'BASH'
         #!/usr/bin/env bash
@@ -727,6 +759,15 @@ function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool 
         if [ "${1:-}" = network ] && [ "${2:-}" = create ] && [ -f "$dir/network-already-exists" ]; then
             printf 'Error response from daemon: network with name orbit-network already exists' >&2
             exit 1
+        fi
+
+        if [ "${1:-}" = image ] && [ "${2:-}" = inspect ] && [ -f "$dir/image-missing" ] && [ ! -f "$dir/image-pulled" ]; then
+            printf 'image not found' >&2
+            exit 1
+        fi
+
+        if [ "${1:-}" = pull ]; then
+            touch "$dir/image-pulled"
         fi
 
         if [ "${1:-}" = container ] && [ "${2:-}" = inspect ] && [ -f "$dir/container-inspect.json" ]; then
@@ -837,6 +878,8 @@ function delete_caddy_config_fake_bin(string $path): void
     delete_caddy_config_file("{$path}/read-global.txt");
     delete_caddy_config_file("{$path}/required-docker-host.txt");
     delete_caddy_config_file("{$path}/network-already-exists");
+    delete_caddy_config_file("{$path}/image-missing");
+    delete_caddy_config_file("{$path}/image-pulled");
 
     if (is_dir($path)) {
         rmdir($path);

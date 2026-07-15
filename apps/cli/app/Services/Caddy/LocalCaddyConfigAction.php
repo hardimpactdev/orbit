@@ -584,13 +584,19 @@ final readonly class LocalCaddyConfigAction
             return;
         }
 
+        $pull = $this->runProcess(['docker', 'pull', $spec['image']]);
+
+        if ($pull['exit_code'] === 0) {
+            return;
+        }
+
         throw new LocalCaddyConfigFailure(
             errorCode: 'caddy_container.image_missing',
-            message: "Caddy container image {$spec['image']} is missing.",
+            message: "Caddy container image {$spec['image']} is missing and could not be pulled.",
             meta: [
                 'image' => $spec['image'],
-                'exit_code' => $result['exit_code'],
-                'output' => $result['output'],
+                'exit_code' => $pull['exit_code'],
+                'output' => $pull['output'],
             ],
         );
     }
