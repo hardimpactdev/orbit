@@ -2236,6 +2236,11 @@ it('allows cleanup with a valid compact archive receipt and no agent manifests',
     commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
     write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
     write_compact_feature_loop_for_fixture($repo, $worktree);
+    $loopPath = "{$worktree}/.orbit/loop.md";
+    file_put_contents(
+        $loopPath,
+        str_replace('- Branch: feature', '- Branch: `feature`', (string) file_get_contents($loopPath)),
+    );
     land_finalization_gate_feature($repo);
     write_compact_finalization_gate_session_archive($repo, $worktree, 'feature');
 

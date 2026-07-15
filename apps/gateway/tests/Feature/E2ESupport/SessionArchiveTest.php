@@ -384,6 +384,10 @@ it('refuses compact archive activation outside the exact accepted landed feature
 
         if ($mutation === 'branch') {
             $loop = str_replace('- Branch: feature', '- Branch: different', $loop);
+        } elseif ($mutation === 'branch-value-newline') {
+            $loop = str_replace('- Branch: feature', "- Branch:\n  `feature`", $loop);
+        } elseif ($mutation === 'branch-label-newline') {
+            $loop = str_replace('- Branch: feature', "-\n Branch: `feature`", $loop);
         } elseif ($mutation === 'accepted') {
             $loop = str_replace(
                 '- Accepted feature tip: '.$identity['featureTip'],
@@ -424,6 +428,8 @@ it('refuses compact archive activation outside the exact accepted landed feature
 })->with([
     'unlanded feature' => ['unlanded', 'not landed on main'],
     'wrong loop branch' => ['branch', 'loop branch does not equal current branch'],
+    'newline before loop branch value' => ['branch-value-newline', 'loop branch does not equal current branch'],
+    'newline inside loop branch label' => ['branch-label-newline', 'loop branch does not equal current branch'],
     'wrong accepted tip' => ['accepted', 'accepted feature tip does not equal candidate HEAD'],
     'wrong reviewed tip' => ['reviewed', 'reviewed feature tip does not equal candidate HEAD'],
     'main checkout cwd' => ['main-cwd', 'feature branch'],

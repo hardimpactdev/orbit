@@ -401,6 +401,21 @@ function orbitLoopReviewedIdentityProblem(string $markdown, string $featureTip):
     return null;
 }
 
+function orbitLoopTopLabel(string $markdown, string $label): ?string
+{
+    if (preg_match('/^-[ \t]+'.preg_quote($label, '/').':[ \t]*(.+)$/mi', $markdown, $match) !== 1) {
+        return null;
+    }
+
+    $value = trim($match[1]);
+
+    if (preg_match('/^`([^`\r\n]+)`$/D', $value, $inlineCode) === 1) {
+        return $inlineCode[1];
+    }
+
+    return $value;
+}
+
 function orbitLoopVenueSatisfies(string $actual, string $required): bool
 {
     return in_array($actual, ORBIT_LOOP_ACCEPTANCE_VENUES, true)
