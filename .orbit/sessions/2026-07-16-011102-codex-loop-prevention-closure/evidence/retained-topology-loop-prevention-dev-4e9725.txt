@@ -1,0 +1,46 @@
+Retained topology proof: loop prevention closure
+
+Candidate
+- feature tip: cc3dc30c918ff06f63521c1cb45f35d95d677bb8
+- topology id: dev-4e9725
+- topology kind: operator
+- provider: incus
+- host: beast
+- role: operator
+- instance: orbit-e2e-dev-4e9725-operator
+- runtime checkout: /home/orbit/orbit-run
+- Solo terminal: loop-prevention-proof-dev-4e9725, process 1080
+
+Acquisition
+composer e2e:incus -- --start --topology=operator --checkout-roles=operator --json
+
+The source sync originated from the clean candidate worktree at the feature tip
+above. The retained overlay intentionally excludes archive history below
+.orbit/sessions and local Codex configuration below .codex.
+
+Runtime identity probe
+ssh beast "incus exec orbit-e2e-dev-4e9725-operator -- sudo -u orbit bash -lc 'set -euo pipefail; cd /home/orbit/orbit-run; pwd; php -v | head -n 1; sha256sum bin/orbit-codex-pre-tool-use-hook bin/orbit-loop-contract.php bin/orbit-session-index'"
+
+Result
+/home/orbit/orbit-run
+PHP 8.5.6 (cli) (built: Jun  4 2026 06:30:58) (NTS gcc 14.2.0)
+b89b8b165b964ae26bbecda9d8ca7eb5a784b309706b81a442da09eb376e9ca4  bin/orbit-codex-pre-tool-use-hook
+9c4812c82d36c65f31f00cc60964c960a595d0cc51d04f03478812bc5ca843b7  bin/orbit-loop-contract.php
+194fba24db809f958634612d1ac0ce6b7e70d54397afe61811b814cf83621b6b  bin/orbit-session-index
+
+Those three hashes exactly match the reviewed local candidate.
+
+Portable retained checks
+ssh beast "incus exec orbit-e2e-dev-4e9725-operator -- sudo -u orbit bash -lc 'set -euo pipefail; cd /home/orbit/orbit-run; bin/orbit-codex-pre-tool-use-hook-test; bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/FeatureAcceptanceTest.php tests/Feature/E2ESupport/FeatureFinalizationGateTest.php tests/Feature/E2ESupport/SessionArchiveTest.php tests/Feature/E2ESupport/SessionIndexTest.php'"
+
+Result
+orbit-codex-pre-tool-use-hook tests passed
+Tests: 258 passed (1274 assertions)
+Duration: 169.85s
+
+Substrate note
+An earlier superset probe also ran Architecture/McpConfigurationTest.php. It
+passed 280 tests and failed only the two pre-existing assertions that read
+.codex/config.toml, which the retained source overlay intentionally excludes.
+The exact-tip local quality gate covered that host-only configuration surface;
+it is not part of the retained result claimed above.
