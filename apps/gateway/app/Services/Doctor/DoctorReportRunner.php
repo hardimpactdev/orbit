@@ -3163,6 +3163,7 @@ final readonly class DoctorReportRunner
             return null;
         }
 
+        /** @var Collection<int, Process> $processes */
         $processes = Process::query()
             ->with(['owner', 'appInstance.app'])
             ->where('node_id', $node->id)
@@ -4397,7 +4398,10 @@ final readonly class DoctorReportRunner
      */
     private function expectedSchedulesTargetingNode(Node $node): Builder
     {
-        return Schedule::query()
+        /** @var Builder<Schedule> $query */
+        $query = Schedule::query();
+
+        return $query
             ->where('enabled', true)
             ->where('status', 'expected')
             ->where(function (Builder $query) use ($node): void {

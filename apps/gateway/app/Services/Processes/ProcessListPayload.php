@@ -9,7 +9,6 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
 use App\Models\Workspace;
-use Illuminate\Database\Eloquent\Builder;
 
 class ProcessListPayload
 {
@@ -37,8 +36,8 @@ class ProcessListPayload
 
         return [
             'context' => $context->payloadContext(),
-            'processes' => $processes
-                ->map(function (Process $process) use ($context, $app): array {
+            'processes' => array_values(
+                $processes->map(function (Process $process) use ($context, $app): array {
                     $workspace = $context->runtimeWorkspaceFor($process);
                     $driver = $this->runtimeDrivers->forProcess($process);
 
@@ -58,8 +57,8 @@ class ProcessListPayload
                         'last_event' => $this->lastEvent($process, $workspace, $context->appInstance),
                     ];
                 })
-                ->values()
-                ->all(),
+                    ->all(),
+            ),
         ];
     }
 
@@ -68,14 +67,19 @@ class ProcessListPayload
      */
     private function lastEvent(Process $process, ?Workspace $workspace, ?AppInstance $appInstance): ?array
     {
-        $event = ProcessEvent::query()
+        $query = ProcessEvent::query()
             ->where('process_id', $process->id)
-            ->where('app_instance_id', $appInstance?->id)
-            ->when(
-                $workspace instanceof Workspace,
-                fn (Builder $query): Builder => $query->where('workspace_id', $workspace?->id),
-                fn (Builder $query): Builder => $query->whereNull('workspace_id'),
-            )
+            ->where('app_instance_id', $appInstance?->id);
+
+        if ($workspace instanceof Workspace) {
+            $query->where('workspace_id', $workspace->id);
+        }
+
+        if ($workspace === null) {
+            $query->whereNull('workspace_id');
+        }
+
+        $event = $query
             ->latest('recorded_at')
             ->latest('id')
             ->first();

@@ -134,8 +134,8 @@ class ProcessFactory extends Factory
 
         $servingNode = $node ?? $owner->node;
 
-        return AppInstance::factory()->for($owner)->create([
-            'name' => is_string($owner->environment) && $owner->environment !== ''
+        return AppInstance::factory()->for($owner)->createOne([
+            'name' => $owner->environment !== ''
                 ? $owner->environment
                 : 'development',
             'driver_config' => new OrbitAppInstanceDriverConfigData(

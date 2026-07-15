@@ -831,8 +831,9 @@ final readonly class ProcessesProbe
         }
 
         $this->loadProcessApp($process);
+        $app = $process->app;
 
-        if (! $process->app instanceof App) {
+        if (! $app instanceof App) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -848,7 +849,7 @@ final readonly class ProcessesProbe
 
         if (
             ! $instance instanceof AppInstance
-            || $instance->app_id !== $process->app->id
+            || $instance->app_id !== $app->id
             || ! $node instanceof Node
             || ! $node->isActive()
             || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)
@@ -1786,7 +1787,10 @@ final readonly class ProcessesProbe
             ? $process->app->workspaces
             : $process->app->workspaces->where('app_instance_id', $process->app_instance_id);
 
-        return [null, ...$workspaces->all()];
+        /** @var list<Workspace> $workspaceModels */
+        $workspaceModels = array_values($workspaces->all());
+
+        return [null, ...$workspaceModels];
     }
 
     private function dockerRuntimeUnitExtraCommand(Process $process): string
@@ -1991,14 +1995,21 @@ final readonly class ProcessesProbe
     {
         $app = $process->ownerApp();
         $process->loadMissing('appInstance');
+        /** @var array<string, string> $detail */
+        $detail = [];
+        $appName = $app?->name;
+        $appInstance = $process->appInstance;
+        $appInstanceName = $appInstance?->name;
 
-        return array_filter(
-            [
-                'app' => $app?->name,
-                'app_instance' => $process->appInstance?->name,
-            ],
-            static fn (?string $value): bool => is_string($value) && $value !== '',
-        );
+        if (is_string($appName) && $appName !== '') {
+            $detail['app'] = $appName;
+        }
+
+        if (is_string($appInstanceName) && $appInstanceName !== '') {
+            $detail['app_instance'] = $appInstanceName;
+        }
+
+        return $detail;
     }
 
     private function systemdUnitRenderer(): SystemdUnitRenderer

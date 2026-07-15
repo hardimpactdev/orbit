@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -73,6 +74,7 @@ return new class extends Migration {
     private function processAssignments(): array
     {
         $assignments = [];
+        /** @var list<string> $ambiguous */
         $ambiguous = [];
 
         DB::table('processes')
@@ -119,10 +121,11 @@ return new class extends Migration {
     private function eventAssignments(array $processAssignments): array
     {
         $assignments = [];
+        /** @var list<string> $ambiguous */
         $ambiguous = [];
 
         DB::table('process_events')
-            ->where(static function ($query): void {
+            ->where(static function (Builder $query): void {
                 $query
                     ->whereNotNull('process_id')
                     ->orWhereNotNull('workspace_id')
@@ -265,7 +268,7 @@ return new class extends Migration {
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<array-key, mixed>
      */
     private function decodeJson(mixed $value): array
     {

@@ -21,7 +21,7 @@ final class PublicCommandOptionParser
         }
 
         $lines = array_values(array_filter(
-            array_map('trim', explode("\n", trim($matches['body']))),
+            array_map(trim(...), explode("\n", trim($matches['body']))),
             static fn (string $line): bool => $line !== '' && ! str_starts_with($line, '#'),
         ));
 

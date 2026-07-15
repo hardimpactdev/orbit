@@ -80,21 +80,33 @@ final class AppShowController implements Loggable
      */
     private function detailsPayload(App $app): array
     {
-        $app->loadMissing('dependencyAuditSummaries');
-        $processes = $app
-            ->processes()
-            ->with('appInstance')
-            ->orderBy('app_instance_id')
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get()
-            ->map(static fn (Process $process): array => [
+        $app->loadMissing(['dependencyAuditSummaries', 'processes.appInstance']);
+
+        $processModels = $app->processes->all();
+        usort(
+            $processModels,
+            static fn (Process $left, Process $right): int => (
+                [
+                    $left->app_instance_id,
+                    $left->sort_order,
+                    $left->id,
+                ] <=> [
+                    $right->app_instance_id,
+                    $right->sort_order,
+                    $right->id,
+                ]
+            ),
+        );
+
+        $processes = [];
+
+        foreach ($processModels as $process) {
+            $processes[] = [
                 'name' => $process->name,
                 'app_instance' => $process->appInstance?->name,
                 'runtime' => $process->runtime->value,
-            ])
-            ->values()
-            ->all();
+            ];
+        }
 
         return [
             'domain' => $this->domain($app),

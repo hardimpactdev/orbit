@@ -7,7 +7,6 @@ namespace App\Actions\Apps;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
-use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProxyRoute;
@@ -20,6 +19,7 @@ use App\Services\Processes\ProcessRuntimeUnitPayload;
 use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Tools\CaddyTool;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -227,53 +227,66 @@ final readonly class RemoveApp
      */
     private function cleanupTargets(App $app): array
     {
-        $targets = $app
-            ->instances
-            ->map(function (AppInstance $instance) use ($app): ?array {
-                $node = $this->placement->nodeForInstance($instance);
+        $targets = [];
+        $instances = $app->instances;
+        $appProcesses = $app->processes;
+        $appWorkspaces = $app->workspaces;
 
-                if (! $node instanceof Node) {
-                    return null;
+        foreach ($instances as $instance) {
+            $node = $this->placement->nodeForInstance($instance);
+
+            if (! $node instanceof Node) {
+                continue;
+            }
+
+            $runtimeApp = ProcessRuntimeApp::make($app, $node, $instance);
+            $runtimeApp->setRelation('node', $node);
+            $workspaces = [];
+
+            foreach ($appWorkspaces as $workspace) {
+                if ($workspace->app_instance_id === $instance->id) {
+                    $workspaces[] = $workspace;
+                }
+            }
+
+            $runtimeApp->setRelation('workspaces', new Collection($workspaces));
+            $scripts = [];
+
+            foreach ($appProcesses as $process) {
+                if ($process->app_instance_id !== $instance->id) {
+                    continue;
                 }
 
-                $runtimeApp = ProcessRuntimeApp::make($app, $node, $instance);
-                $runtimeApp->setRelation('node', $node);
-                $workspaces = $app->workspaces->where('app_instance_id', $instance->id)->values();
-                $runtimeApp->setRelation('workspaces', $workspaces);
-                $scripts = [];
+                foreach ($this->runtimeUnits->forProcess($runtimeApp, $process) as $runtimeUnit) {
+                    $scripts[] = $this->runtimeDrivers
+                        ->forProcess($process)
+                        ->cleanupScript($runtimeUnit['name']);
+                }
+            }
 
-                foreach ($app->processes->where('app_instance_id', $instance->id) as $process) {
-                    foreach ($this->runtimeUnits->forProcess($runtimeApp, $process) as $runtimeUnit) {
-                        $scripts[] = $this->runtimeDrivers
-                            ->forProcess($process)
-                            ->cleanupScript($runtimeUnit['name']);
+            foreach ($workspaces as $workspace) {
+                $workspaceProcesses = $workspace->processes;
+
+                foreach ($workspaceProcesses as $process) {
+                    if ($process->app_instance_id !== $instance->id) {
+                        continue;
                     }
+
+                    $driver = $this->runtimeDrivers->forProcess($process);
+                    $scripts[] = $driver->cleanupScript(
+                        $driver->runtimeUnitName($runtimeApp, $process, $workspace),
+                    );
                 }
+            }
 
-                foreach ($workspaces as $workspace) {
-                    foreach ($workspace->processes as $process) {
-                        if (! $process instanceof Process || $process->app_instance_id !== $instance->id) {
-                            continue;
-                        }
-
-                        $driver = $this->runtimeDrivers->forProcess($process);
-                        $scripts[] = $driver->cleanupScript(
-                            $driver->runtimeUnitName($runtimeApp, $process, $workspace),
-                        );
-                    }
-                }
-
-                return [
-                    'app' => $runtimeApp,
-                    'identity' => "{$app->name}.{$instance->name}",
-                    'node' => $node,
-                    'process_cleanup_scripts' => array_values(array_unique($scripts)),
-                    'runtime_slug' => "{$app->name}-{$instance->name}",
-                ];
-            })
-            ->filter(static fn (mixed $target): bool => is_array($target))
-            ->values()
-            ->all();
+            $targets[] = [
+                'app' => $runtimeApp,
+                'identity' => "{$app->name}.{$instance->name}",
+                'node' => $node,
+                'process_cleanup_scripts' => array_values(array_unique($scripts)),
+                'runtime_slug' => "{$app->name}-{$instance->name}",
+            ];
+        }
 
         if ($targets !== [] || ! $app->node instanceof Node) {
             return $targets;

@@ -8,7 +8,6 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\Workspaces\WorkspaceRuntimeArtifactRemovalOutcome;
 use App\Models\App;
-use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Apps\AppCommandRouter;
@@ -207,19 +206,20 @@ final readonly class RemoveWorkspace
             return [];
         }
 
-        return $app
-            ->processes()
-            ->where('app_instance_id', $workspace->app_instance_id)
-            ->orderBy('sort_order')
-            ->get()
-            ->map(function (Process $process) use ($app, $workspace): string {
-                $driver = $this->runtimeDrivers->forProcess($process);
-                $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
+        $app->loadMissing('processes');
+        $cleanupScripts = [];
 
-                return $driver->cleanupScript($runtimeUnit);
-            })
-            ->values()
-            ->all();
+        foreach ($app->processes as $process) {
+            if ($process->app_instance_id !== $workspace->app_instance_id) {
+                continue;
+            }
+
+            $driver = $this->runtimeDrivers->forProcess($process);
+            $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
+            $cleanupScripts[] = $driver->cleanupScript($runtimeUnit);
+        }
+
+        return $cleanupScripts;
     }
 
     /**
