@@ -210,25 +210,20 @@ final readonly class RemoveWorkspace
 
         $app->loadMissing('processes');
         $workspace->loadMissing('processes');
-        $cleanupScripts = [];
 
-        foreach ($app->processes as $process) {
-            if ($process->app_instance_id !== $workspace->app_instance_id) {
-                continue;
-            }
+        $inheritedProcesses = array_filter(
+            $app->processes->all(),
+            static fn (Process $process): bool => $process->app_instance_id === $workspace->app_instance_id,
+        );
+        $workspaceProcesses = array_filter(
+            $workspace->processes->all(),
+            fn (Process $process): bool => ! $this->isManagedWorkspaceRuntimeProcess($process),
+        );
 
-            $cleanupScripts[] = $this->processCleanupScript($app, $workspace, $process);
-        }
-
-        foreach ($workspace->processes as $process) {
-            if ($this->isManagedWorkspaceRuntimeProcess($process)) {
-                continue;
-            }
-
-            $cleanupScripts[] = $this->processCleanupScript($app, $workspace, $process);
-        }
-
-        return $cleanupScripts;
+        return array_map(
+            fn (Process $process): string => $this->processCleanupScript($app, $workspace, $process),
+            [...$inheritedProcesses, ...$workspaceProcesses],
+        );
     }
 
     private function processCleanupScript(App $app, Workspace $workspace, Process $process): string

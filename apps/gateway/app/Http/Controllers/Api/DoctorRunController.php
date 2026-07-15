@@ -23,12 +23,15 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class DoctorRunController implements Loggable
 {
+    public function __construct(
+        private readonly NodeAccessAuthorizer $authorizer,
+    ) {}
+
     public function __invoke(
         Request $request,
         DoctorReportRunner $runner,
         DoctorScopeValidator $validator,
         DoctorProgressReportFactory $progressReports,
-        NodeAccessAuthorizer $authorizer,
         ProgressEventStreamResponseFactory $streams,
     ): JsonResponse|StreamedResponse {
         /** @var mixed $caller */
@@ -54,12 +57,18 @@ final class DoctorRunController implements Loggable
         }
 
         if ($this->usesFleetScope($request)) {
-            foreach ($runner->fleetTargetsForFamilies($families) as $target) {
-                $authorization = $this->authorizeDoctorVerify($authorizer, $caller, $target);
+            $unauthorizedTarget = $runner
+                ->fleetTargetsForFamilies($families)
+                ->first(
+                    fn (Node $target): bool => ! $this->authorizer->allows($caller, $target, 'doctor:verify'),
+                );
 
-                if ($authorization instanceof JsonResponse) {
-                    return $authorization;
-                }
+            if ($unauthorizedTarget instanceof Node) {
+                return $this->authorizationFailed(
+                    $unauthorizedTarget,
+                    'doctor:verify',
+                    $this->authorizer->authorize($caller, $unauthorizedTarget, 'doctor:verify'),
+                );
             }
 
             $failure = $validator->validate($families, $runner);
@@ -101,10 +110,10 @@ final class DoctorRunController implements Loggable
             ], 422);
         }
 
-        $authorization = $this->authorizeDoctorVerify($authorizer, $caller, $target);
+        $authorization = $this->authorizer->authorize($caller, $target, 'doctor:verify');
 
-        if ($authorization instanceof JsonResponse) {
-            return $authorization;
+        if (! $authorization->allowed) {
+            return $this->authorizationFailed($target, 'doctor:verify', $authorization);
         }
 
         $failure = $validator->validate($families, $runner, $target);
@@ -397,21 +406,6 @@ final class DoctorRunController implements Loggable
         }
 
         return $caller;
-    }
-
-    private function authorizeDoctorVerify(
-        NodeAccessAuthorizer $authorizer,
-        Node $caller,
-        Node $target,
-    ): ?JsonResponse {
-        $permission = 'doctor:verify';
-        $result = $authorizer->authorize($caller, $target, $permission);
-
-        if ($result->allowed) {
-            return null;
-        }
-
-        return $this->authorizationFailed($target, $permission, $result);
     }
 
     private function authorizationFailed(
