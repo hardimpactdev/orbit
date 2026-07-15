@@ -199,6 +199,64 @@ it('routes peer persistence through the local executor when resolved from the co
     }
 });
 
+it('binds the gateway container working directory for gateway-local state commands', function (): void {
+    NodeRoleAssignment::factory()->for($this->vpnNode)->create([
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    $executor = new class implements RunsInternalCommands {
+        /** @var list<array<string, mixed>> */
+        public array $calls = [];
+
+        #[Override]
+        public function runInternal(
+            Node $node,
+            string $commandName,
+            array $arguments = [],
+            array $commandOptions = [],
+            array $transportOptions = [],
+        ): RemoteShellResult {
+            $this->calls[] = [
+                'node' => $node,
+                'command_name' => $commandName,
+                'arguments' => $arguments,
+                'command_options' => $commandOptions,
+                'transport_options' => $transportOptions,
+            ];
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(JsonEnvelope::success(['updated' => true]), JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+    };
+
+    Process::fake();
+
+    new WgEasyServiceInstaller(
+        rootPath: $this->workdir,
+        statePath: $this->statePath,
+        localExecutor: $executor,
+    )->configurePeers([
+        [
+            'name' => 'app-dev-1',
+            'private_key' => 'app-dev-private',
+            'public_key' => 'app-dev-public',
+            'pre_shared_key' => 'app-dev-psk',
+            'address' => '10.6.0.4',
+        ],
+    ]);
+
+    expect($executor->calls)->toHaveCount(2);
+
+    foreach ($executor->calls as $call) {
+        expect($call['transport_options']['cwd'] ?? null)->toBe('/srv/orbit/apps/gateway');
+    }
+});
+
 it('uses the default runtime values when install inputs are omitted', function (): void {
     Process::fake();
 

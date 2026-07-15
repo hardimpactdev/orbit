@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Vpn;
 
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Support\Facades\File;
@@ -16,6 +17,8 @@ use RuntimeException;
 class WgEasyServiceInstaller
 {
     public const string Image = 'ghcr.io/wg-easy/wg-easy:15';
+
+    private const string GatewayContainerWorkingDirectory = '/srv/orbit/apps/gateway';
 
     private const string WG_EASY_STATE_COMMAND = 'internal:wg-easy:state';
 
@@ -430,24 +433,31 @@ class WgEasyServiceInstaller
             return;
         }
 
+        $vpnNode = $this->vpnNode();
+        $executorOptions = [
+            'timeout' => 30,
+            'environment' => [
+                'ORBIT_WG_EASY_DB_PATH' => $this->statePath().'/wg-easy.db',
+            ],
+            'metadata' => [
+                'ORBIT_OPERATION_ID' => (string) Str::uuid(),
+            ],
+            ...$transportOptions,
+        ];
+
+        if ($vpnNode->hasActiveRole(NodeRoleName::Gateway->value)) {
+            $executorOptions['cwd'] = self::GatewayContainerWorkingDirectory;
+        }
+
         $result = $this->localExecutor()->runInternal(
-            node: $this->vpnNode(),
+            node: $vpnNode,
             commandName: self::WG_EASY_STATE_COMMAND,
             arguments: [],
             commandOptions: [
                 'action' => $action,
                 ...$commandOptions,
             ],
-            transportOptions: [
-                'timeout' => 30,
-                'environment' => [
-                    'ORBIT_WG_EASY_DB_PATH' => $this->statePath().'/wg-easy.db',
-                ],
-                'metadata' => [
-                    'ORBIT_OPERATION_ID' => (string) Str::uuid(),
-                ],
-                ...$transportOptions,
-            ],
+            transportOptions: $executorOptions,
         );
 
         $this->assertWgEasyStateSucceeded($result, $failureMessage, $successfulErrorCodes);
