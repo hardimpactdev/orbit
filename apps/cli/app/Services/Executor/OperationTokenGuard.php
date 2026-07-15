@@ -129,7 +129,13 @@ final readonly class OperationTokenGuard
     {
         $environment = [];
 
-        foreach (['APP_KEY', 'HOME', 'ORBIT_CONFIG_PATH', 'ORBIT_INSTALL_METADATA_PATH'] as $key) {
+        foreach ([
+            'APP_KEY',
+            'HOME',
+            'ORBIT_CONFIG_PATH',
+            'ORBIT_INSTALL_METADATA_PATH',
+            'ORBIT_WG_EASY_DB_PATH',
+        ] as $key) {
             $value = getenv($key);
 
             if (! is_string($value) || $value === '') {

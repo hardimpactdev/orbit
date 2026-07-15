@@ -187,6 +187,39 @@ describe('InternalExecutorCommand base', function (): void {
         }
     });
 
+    it('includes the wg-easy database path in the gateway verifier environment', function (): void {
+        $previousDatabasePath = getenv('ORBIT_WG_EASY_DB_PATH');
+        $databasePath = '/home/orbit/.config/orbit/wg-easy/wg-easy.db';
+
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
+
+        putenv("ORBIT_WG_EASY_DB_PATH={$databasePath}");
+
+        try {
+            [$exitCode] = runTestInternalExecutorCommand($this, [
+                '--operation-token' => signInternalExecutorToken(),
+                '--json' => true,
+            ]);
+
+            expect($exitCode)->toBe(0);
+
+            Http::assertSent(function (Request $request) use ($databasePath): bool {
+                return (
+                    $request->url() === 'https://gateway.test/api/internal-executor/token/verify'
+                    && ($request['environment']['ORBIT_WG_EASY_DB_PATH'] ?? null) === $databasePath
+                );
+            });
+        } finally {
+            if ($previousDatabasePath === false) {
+                putenv('ORBIT_WG_EASY_DB_PATH');
+            } else {
+                putenv("ORBIT_WG_EASY_DB_PATH={$previousDatabasePath}");
+            }
+        }
+    });
+
     it('accepts a valid operation token and emits success', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,
