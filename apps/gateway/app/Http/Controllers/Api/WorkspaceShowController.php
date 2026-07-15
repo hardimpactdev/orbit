@@ -72,17 +72,15 @@ final readonly class WorkspaceShowController implements Loggable
 
         if ($app !== null) {
             try {
-                $selection = $this->appSelectorResolver->resolveRequired($app);
-            } catch (AppSelectionResolutionFailed) {
-                return response()->json([
-                    'error' => [
-                        'code' => 'workspace.not_found',
-                        'message' => "Workspace '{$name}' not found or not visible.",
-                        'meta' => [
-                            'name' => $name,
-                        ],
-                    ],
-                ], 404);
+                $selection = $this->appSelectorResolver->requireInstance(
+                    $this->appSelectorResolver->resolveRequired($app),
+                );
+            } catch (AppSelectionResolutionFailed $exception) {
+                return $this->appSelectionFailed(
+                    exception: $exception,
+                    notFoundMessage: "Workspace '{$name}' not found or not visible.",
+                    notFoundMeta: ['name' => $name],
+                );
             }
         }
 
@@ -157,17 +155,15 @@ final readonly class WorkspaceShowController implements Loggable
 
         if ($app !== null) {
             try {
-                $selection = $this->appSelectorResolver->resolveRequired($app);
-            } catch (AppSelectionResolutionFailed) {
-                return response()->json([
-                    'error' => [
-                        'code' => 'workspace.not_found',
-                        'message' => "Workspace for path '{$path}' not found or not visible.",
-                        'meta' => [
-                            'path' => $path,
-                        ],
-                    ],
-                ], 404);
+                $selection = $this->appSelectorResolver->requireInstance(
+                    $this->appSelectorResolver->resolveRequired($app),
+                );
+            } catch (AppSelectionResolutionFailed $exception) {
+                return $this->appSelectionFailed(
+                    exception: $exception,
+                    notFoundMessage: "Workspace for path '{$path}' not found or not visible.",
+                    notFoundMeta: ['path' => $path],
+                );
             }
         }
 
@@ -351,6 +347,33 @@ final readonly class WorkspaceShowController implements Loggable
         $value = $request->query($key);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $notFoundMeta
+     */
+    private function appSelectionFailed(
+        AppSelectionResolutionFailed $exception,
+        string $notFoundMessage,
+        array $notFoundMeta,
+    ): JsonResponse {
+        if (($exception->meta['reason'] ?? null) === 'app_instance_required') {
+            return response()->json([
+                'error' => [
+                    'code' => $exception->errorCode,
+                    'message' => $exception->getMessage(),
+                    'meta' => $exception->meta,
+                ],
+            ], 400);
+        }
+
+        return response()->json([
+            'error' => [
+                'code' => 'workspace.not_found',
+                'message' => $notFoundMessage,
+                'meta' => $notFoundMeta,
+            ],
+        ], 404);
     }
 
     /**

@@ -10,6 +10,7 @@ return [
     'shared' => [
         'authorization_failed',
         'gateway_unavailable',
+        'gateway_unreachable_wireguard',
         'local_context_invalid',
         'validation_failed',
     ],

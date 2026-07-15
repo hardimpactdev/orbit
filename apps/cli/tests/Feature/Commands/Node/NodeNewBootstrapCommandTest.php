@@ -440,3 +440,76 @@ it('resumes a completed bootstrap without touching SSH after the target is harde
 
     expect($exitCode)->toBe(0);
 });
+
+it('uses the node gateway API error code for an incomplete bootstrap resume response', function (): void {
+    config()->set('orbit.gateway.url', 'https://gateway.test');
+    Http::fake([
+        'https://gateway.test/api/nodes/bootstrap/resume' => Http::response(JsonEnvelope::success([])),
+    ]);
+    Process::fake();
+    Process::preventStrayProcesses();
+
+    [$exitCode, $output] = runCommand($this, 'node:new', [
+        'name' => 'database-1',
+        '--roles' => 'database',
+        '--host' => '192.0.2.30',
+        '--tld' => 'database-test',
+        '--json' => true,
+    ]);
+
+    $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($decoded['error']['code'])
+        ->toBe('node.gateway_api_error');
+    Process::assertNothingRan();
+});
+
+it('uses the node gateway API error code for an incomplete bootstrap prepare response', function (): void {
+    config()->set('orbit.gateway.url', 'https://gateway.test');
+    Http::fake([
+        'https://gateway.test/api/nodes/bootstrap/resume' => Http::response(JsonEnvelope::success([
+            'preflight_required' => true,
+        ])),
+        'https://gateway.test/api/nodes/bootstrap' => Http::response(JsonEnvelope::success([])),
+    ]);
+    Process::fake([
+        '*' => Process::result(output: "ubuntu_24-04\namd64\n"),
+    ]);
+    Process::preventStrayProcesses();
+
+    [$exitCode, $output] = runCommand($this, 'node:new', [
+        'name' => 'database-1',
+        '--roles' => 'database',
+        '--host' => '192.0.2.30',
+        '--tld' => 'database-test',
+        '--json' => true,
+    ]);
+
+    $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($decoded['error']['code'])
+        ->toBe('node.gateway_api_error');
+});
+
+it('surfaces WireGuard gateway reachability failures during bootstrap preparation', function (): void {
+    fakeGatewayDown('No route to host');
+
+    [$exitCode, $output] = runCommand($this, 'node:new', [
+        'name' => 'database-1',
+        '--roles' => 'database',
+        '--host' => '192.0.2.30',
+        '--tld' => 'database-test',
+        '--json' => true,
+    ]);
+
+    $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($decoded['error']['code'])
+        ->toBe('gateway_unreachable_wireguard');
+});

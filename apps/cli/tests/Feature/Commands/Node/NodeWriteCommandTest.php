@@ -296,7 +296,7 @@ describe('node write commands', function (): void {
         @unlink($store->path());
     });
 
-    it('returns the gateway_bootstrap_unavailable envelope when orbit-gateway is not available', function (): void {
+    it('returns the registered gateway unavailable envelope when orbit-gateway is not available', function (): void {
         config()->set('orbit.gateway.url', null);
         app()->forgetInstance(GatewayApiClient::class);
         $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-node-new-unavailable-config.json'));
@@ -326,7 +326,7 @@ describe('node write commands', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and($decoded['error']['code'])
-            ->toBe('gateway_bootstrap_unavailable')
+            ->toBe('gateway_unavailable')
             ->and($decoded['error']['meta']['container'])
             ->toBe('orbit-gateway');
 

@@ -19,7 +19,7 @@ class NodeGatewayBootstrapper
                 'exit_code' => 1,
                 'output' => json_encode([
                     'error' => [
-                        'code' => 'gateway_bootstrap_unavailable',
+                        'code' => 'gateway_unavailable',
                         'message' => 'Gateway artisan entry point is not available.',
                         'meta' => ['container' => 'orbit-gateway'],
                     ],

@@ -1254,7 +1254,9 @@ it('keeps caller role denial out of the shared error code registry', function ()
     /** @var array{shared: list<string>} $registry */
     $registry = require base_path('config/librarian-command-docs/error_codes.php');
 
-    expect($registry['shared'])->toContain('authorization_failed')->not->toContain('caller_role_not_allowed');
+    expect($registry['shared'])
+        ->toContain('authorization_failed', 'gateway_unreachable_wireguard')
+        ->not->toContain('caller_role_not_allowed');
 });
 
 it('registers client bootstrap failures without the retired ssh unreachable code', function (): void {

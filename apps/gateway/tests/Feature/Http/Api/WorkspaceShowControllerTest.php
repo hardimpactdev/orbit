@@ -206,6 +206,93 @@ describe('WorkspaceShowController', function (): void {
             ->assertJsonPath('success.data.node.host', 'nmbp');
     });
 
+    it('requires an explicit bare app selector to resolve one instance by workspace name', function (): void {
+        $gateway = createWorkspaceShowCallerNode();
+        assignWorkspaceShowRole($gateway, 'gateway');
+        $node = Node::factory()->create(['name' => 'app-1']);
+        assignWorkspaceShowRole($node);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        AppInstance::factory()->for($app)->create(['name' => 'production']);
+
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/feature-docs?app=docs',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'app')
+            ->assertJsonPath('error.meta.reason', 'app_instance_required')
+            ->assertJsonPath('error.meta.app', 'docs')
+            ->assertJsonPath('error.meta.instances', ['development', 'production']);
+    });
+
+    it('requires an explicit bare app selector to resolve one instance by workspace path', function (): void {
+        $gateway = createWorkspaceShowCallerNode();
+        assignWorkspaceShowRole($gateway, 'gateway');
+        $node = Node::factory()->create(['name' => 'app-1']);
+        assignWorkspaceShowRole($node);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'path' => '/srv/docs/.worktrees/feature-docs',
+        ]);
+        AppInstance::factory()->for($app)->create(['name' => 'production']);
+
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app&app=docs',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'app')
+            ->assertJsonPath('error.meta.reason', 'app_instance_required')
+            ->assertJsonPath('error.meta.app', 'docs')
+            ->assertJsonPath('error.meta.instances', ['development', 'production']);
+    });
+
+    it('resolves a workspace path through an explicit app instance selector', function (): void {
+        $gateway = createWorkspaceShowCallerNode();
+        assignWorkspaceShowRole($gateway, 'gateway');
+        $node = Node::factory()->create(['name' => 'app-1']);
+        assignWorkspaceShowRole($node);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $workspace = Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'path' => '/srv/docs/.worktrees/feature-docs',
+        ]);
+        AppInstance::factory()->for($app)->create(['name' => 'production']);
+
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app&app=docs.development',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.workspace.name', 'feature-docs')
+            ->assertJsonPath('success.data.workspace.app', 'docs')
+            ->assertJsonPath('success.data.workspace.app_instance', $workspace->appInstance?->name);
+    });
+
     it('resolves a visible workspace by path prefix', function (): void {
         $caller = createWorkspaceShowCallerNode();
         $node = Node::factory()->create(['name' => 'app-1']);

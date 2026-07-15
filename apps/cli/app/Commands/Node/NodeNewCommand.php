@@ -207,7 +207,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
 
         if (! $this->bootstrapPreflightRequired($resumeResponse)) {
             return $this->renderFailure(
-                'gateway_invalid_response',
+                'node.gateway_api_error',
                 'Gateway node bootstrap resume response is incomplete.',
             );
         }
@@ -268,7 +268,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
 
         if ($bootstrap === null) {
             return $this->renderFailure(
-                'gateway_invalid_response',
+                'node.gateway_api_error',
                 'Gateway node bootstrap response is incomplete.',
             );
         }

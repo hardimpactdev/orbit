@@ -135,4 +135,32 @@ describe('NodeNewStream command', function (): void {
                 ],
             ]);
     });
+
+    it('preserves registered gateway-authored node failure codes', function (string $code): void {
+        $error = [
+            'exit_code' => 1,
+            'message' => 'Node creation failed.',
+            'data' => [
+                'code' => $code,
+                'message' => 'Node creation failed.',
+                'meta' => [],
+            ],
+        ];
+        fakeGatewayProgressStreamClient(gatewayProgressFrame('error', $error));
+
+        [$exitCode, $output] = runCommand($this, 'node:new', [
+            'name' => 'app-1',
+            '--tld' => 'test',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['event'])
+            ->toBe('error')
+            ->and($decoded['data']['data']['code'])
+            ->toBe($code);
+    })->with(['node.not_found', 'node.tld_in_use']);
 });
