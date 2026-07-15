@@ -170,6 +170,52 @@ describe('ProcessDestroyController', function (): void {
         expect($workspace->processes()->where('name', 'worker')->exists())->toBeFalse();
     });
 
+    it('rejects an unknown app before resolving an existing workspace', function (): void {
+        $caller = createProcessDestroyCallerNode();
+        $appNode = createTestAppHostNode();
+        grantProcessDestroyAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $workspace = Workspace::factory()->for($app)->create([
+            'name' => 'feature-docs',
+            'path' => '/srv/docs-feature',
+        ]);
+        Process::factory()
+            ->forOwner($workspace)
+            ->create([
+                'name' => 'worker',
+                'runtime' => 'systemd',
+            ]);
+        $remoteShell = new ProcessDestroyRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'DELETE',
+            '/api/processes/worker',
+            [
+                'app' => 'missing',
+                'workspace' => 'feature-docs',
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.message', "App 'missing' not found or not visible.")
+            ->assertJsonPath('error.meta.field', 'app')
+            ->assertJsonPath('error.meta.value', 'missing');
+
+        expect($workspace->processes()->where('name', 'worker')->exists())
+            ->toBeTrue()
+            ->and($remoteShell->runCount)
+            ->toBe(0);
+    });
+
     it('requires authorization and destructive consent before deleting intent', function (
         array $payload,
         bool $grantAccess,
@@ -312,6 +358,8 @@ describe('ProcessDestroyController', function (): void {
 
 final class ProcessDestroyRemoteShell implements RemoteShell
 {
+    public int $runCount = 0;
+
     /**
      * @param  list<RemoteShellResult>  $results
      */
@@ -321,6 +369,8 @@ final class ProcessDestroyRemoteShell implements RemoteShell
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->runCount++;
+
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }

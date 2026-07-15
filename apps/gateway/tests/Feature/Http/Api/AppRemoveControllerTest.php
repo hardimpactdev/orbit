@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppInstanceDriver;
@@ -193,6 +194,100 @@ describe('AppRemoveController', function (): void {
             ->toBeFalse()
             ->and($shell->scripts)
             ->toHaveCount(1);
+    });
+
+    it('does not fall back to legacy host cleanup for a Laravel Cloud-only app', function (): void {
+        $caller = createAppRemoveCallerNode();
+        $legacyNode = Node::factory()->create([
+            'name' => 'legacy-app-node',
+            'status' => 'active',
+        ]);
+        grantAppRemoveAccess($caller, $legacyNode);
+
+        $app = App::factory()
+            ->static()
+            ->create([
+                'name' => 'docs',
+                'node_id' => $legacyNode->id,
+                'path' => '/legacy/apps/docs',
+            ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver' => AppInstanceDriver::LaravelCloud,
+            'driver_config' => new LaravelCloudAppInstanceDriverConfigData(
+                application_id: 'app_123',
+                environment_id: 'env_123',
+            ),
+        ]);
+
+        $shell = new AppRemoveApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
+
+        $response = $this->call(
+            'DELETE',
+            '/api/apps/docs',
+            ['destructive_consent' => true],
+            [],
+            [],
+            appRemoveRemoteShellFallbackHeader(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.meta.warnings.0.code', 'app.cleanup_failed')
+            ->assertJsonPath('success.meta.warnings.0.family', 'app')
+            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=app --restore')
+            ->assertJsonCount(1, 'success.meta.warnings');
+
+        expect($shell->scripts)->toBeEmpty();
+    });
+
+    it('does not fall back to legacy host cleanup for an unresolved Orbit instance placement', function (): void {
+        $caller = createAppRemoveCallerNode();
+        $legacyNode = Node::factory()->create([
+            'name' => 'legacy-app-node',
+            'status' => 'active',
+        ]);
+        grantAppRemoveAccess($caller, $legacyNode);
+
+        $app = App::factory()
+            ->static()
+            ->create([
+                'name' => 'docs',
+                'node_id' => $legacyNode->id,
+                'path' => '/legacy/apps/docs',
+            ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node: 'missing-app-node',
+                path: '/srv/apps/docs',
+            ),
+        ]);
+
+        $shell = new AppRemoveApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
+
+        $response = $this->call(
+            'DELETE',
+            '/api/apps/docs',
+            ['destructive_consent' => true],
+            [],
+            [],
+            appRemoveRemoteShellFallbackHeader(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.meta.warnings.0.code', 'app.cleanup_failed')
+            ->assertJsonPath('success.meta.warnings.0.family', 'app')
+            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=app --restore')
+            ->assertJsonCount(1, 'success.meta.warnings');
+
+        expect($shell->scripts)->toBeEmpty();
     });
 
     it('isolates process cleanup by concrete app instance and node', function (): void {

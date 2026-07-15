@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\Apps\AppRuntimeContainer;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -332,6 +333,109 @@ describe('WorkspaceRemoveController', function (): void {
                     ),
                 ))
             ->toBeFalse();
+    });
+
+    it('preserves single-context main app containers while cleaning inherited workspace units', function (): void {
+        $caller = createWorkspaceRemoveCallerNode();
+        $appNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'status' => 'active',
+        ]);
+        grantWorkspaceRemoveAccess($caller, $appNode);
+
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+            'path' => '/srv/docs-development',
+            'runtime' => 'php',
+        ]);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: $appNode->name,
+                path: '/srv/docs-development',
+                document_root: 'public',
+                domain: 'docs.test',
+            ),
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'name' => 'feature-api',
+            'path' => '/srv/docs-development-feature-api',
+        ]);
+
+        OrbitProcess::factory()
+            ->forOwner($app, $appNode)
+            ->create([
+                'name' => 'frankenphp-docs',
+                'command' => 'frankenphp',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'container_name' => 'orbit-app-docs-development',
+                    'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
+                ],
+            ]);
+        OrbitProcess::factory()
+            ->forOwner($app, $appNode)
+            ->create([
+                'name' => 'queue',
+                'runtime' => ProcessRuntime::Systemd,
+            ]);
+
+        $shell = new WorkspaceRemoveApiSequencedRemoteShell([
+            new RemoteShellResult(
+                exitCode: 1,
+                stdout: '',
+                stderr: 'No such container',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: 'orbit-container-config-probe:absent',
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
+
+        $this
+            ->call(
+                'DELETE',
+                '/api/workspaces/feature-api?app=docs.development',
+                [
+                    'keep_files' => true,
+                    'destructive_consent' => true,
+                ],
+                [],
+                [],
+                workspaceRemoveRemoteShellFallbackHeader(),
+            )
+            ->assertOk()
+            ->assertJsonPath('success.data.processes_removed', 1);
+
+        expect(Workspace::query()->whereKey($workspace->id)->exists())
+            ->toBeFalse()
+            ->and(collect($shell->scripts)
+                ->contains(
+                    fn (string $script): bool => str_contains(
+                        $script,
+                        "docker rm -f 'orbit-app-docs-development'",
+                    ),
+                ))
+            ->toBeFalse()
+            ->and(collect($shell->scripts)
+                ->contains(
+                    fn (string $script): bool => str_contains(
+                        $script,
+                        'orbit_docs_development_feature-api_queue.service',
+                    ),
+                ))
+            ->toBeTrue();
     });
 
     it('removes workspace-owned systemd units before deleting their process definitions', function (): void {

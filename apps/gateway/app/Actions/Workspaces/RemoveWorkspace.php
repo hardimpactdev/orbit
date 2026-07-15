@@ -13,6 +13,7 @@ use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use App\Services\Processes\ProcessRuntimeUnitPayload;
 use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
@@ -213,7 +214,10 @@ final readonly class RemoveWorkspace
 
         $inheritedProcesses = array_filter(
             $app->processes->all(),
-            static fn (Process $process): bool => $process->app_instance_id === $workspace->app_instance_id,
+            fn (Process $process): bool => (
+                $process->app_instance_id === $workspace->app_instance_id
+                && $this->hasWorkspaceRuntimeUnit($app, $workspace, $process)
+            ),
         );
         $workspaceProcesses = array_filter(
             $workspace->processes->all(),
@@ -239,6 +243,14 @@ final readonly class RemoveWorkspace
         return (
             ($process->runtime_config['container_spec_hash_label'] ?? null) === WorkspaceRuntimeContainer::SpecHashLabel
         );
+    }
+
+    private function hasWorkspaceRuntimeUnit(App $app, Workspace $workspace, Process $process): bool
+    {
+        return collect(app(ProcessRuntimeUnitPayload::class)->forProcess($app, $process))
+            ->contains(
+                static fn (array $runtimeUnit): bool => $runtimeUnit['context'] === $workspace->name,
+            );
     }
 
     /**

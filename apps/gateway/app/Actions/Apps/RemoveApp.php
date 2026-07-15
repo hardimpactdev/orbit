@@ -104,7 +104,14 @@ final readonly class RemoveApp
 
         $containerOutcomes = [];
         $configOutcomes = [];
-        $warnings = [];
+        $warnings = $cleanupTargets === [] && $app->instances->isNotEmpty()
+            ? [[
+                'code' => 'app.cleanup_failed',
+                'family' => 'app',
+                'message' => "Local cleanup for app '{$app->name}' was skipped because none of its concrete instances resolved to an Orbit node.",
+                'next_command' => 'doctor --family=app --restore',
+            ]]
+            : [];
 
         foreach ($cleanupTargets as $target) {
             $node = $target['node'];
@@ -223,6 +230,7 @@ final readonly class RemoveApp
     {
         $targets = [];
         $instances = $app->instances;
+        $hasInstances = $instances->isNotEmpty();
         $appProcesses = $app->processes;
         $appWorkspaces = $app->workspaces;
 
@@ -282,7 +290,7 @@ final readonly class RemoveApp
             ];
         }
 
-        if ($targets !== [] || ! $app->node instanceof Node) {
+        if ($targets !== [] || $hasInstances || ! $app->node instanceof Node) {
             return $targets;
         }
 

@@ -166,14 +166,7 @@ final readonly class ProcessOwnerContextResolver
     private function resolveApp(string $appName, ?array $visibleNodeIds): ProcessOwnerContext
     {
         $selection = $this->resolveRequiredAppInstance($appName);
-        $app = $selection?->app;
-
-        if (! $selection instanceof AppSelection || ! $app instanceof App) {
-            throw new GatewayApiException("App '{$appName}' not found or not visible.", 'validation_failed', [
-                'field' => 'app',
-                'value' => $appName,
-            ]);
-        }
+        $app = $selection->app;
 
         $instance = $selection->instance;
         $node = $instance !== null
@@ -320,14 +313,19 @@ final readonly class ProcessOwnerContextResolver
         );
     }
 
-    private function resolveRequiredAppInstance(string $appName): ?AppSelection
+    private function resolveRequiredAppInstance(string $appName): AppSelection
     {
         try {
             $selection = $this->appSelectorResolver->resolve($appName);
 
-            return $selection instanceof AppSelection
-                ? $this->appSelectorResolver->requireInstance($selection)
-                : null;
+            if (! $selection instanceof AppSelection) {
+                throw new GatewayApiException("App '{$appName}' not found or not visible.", 'validation_failed', [
+                    'field' => 'app',
+                    'value' => $appName,
+                ]);
+            }
+
+            return $this->appSelectorResolver->requireInstance($selection);
         } catch (AppSelectionResolutionFailed $exception) {
             throw new GatewayApiException(
                 $exception->getMessage(),
