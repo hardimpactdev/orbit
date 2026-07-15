@@ -1,0 +1,21 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-15T11:33:36+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-docs-drift-alignment/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-15-133336-codex-docs-drift-alignment",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "061cd87373985af976a989c0f767bfd229859d88f749f837f494d12b85845db3"
+    },
+    "branch": "codex/docs-drift-alignment",
+    "candidate_commit": "73679f48aa8111a6fecc209c38ded1f3a6158659",
+    "accepted_feature_tip": "73679f48aa8111a6fecc209c38ded1f3a6158659",
+    "accepted_main_tip": "727d2486ba1a2d9a70d608b8dc2ab6dd0a82189d",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
