@@ -284,6 +284,85 @@ describe('AppRemoveController', function (): void {
             ->toBeFalse();
     });
 
+    it('preserves an instance path shared by another app instance on the same effective node', function (): void {
+        $caller = createAppRemoveCallerNode();
+        $developmentNode = Node::factory()->create([
+            'name' => 'development-node',
+            'status' => 'active',
+        ]);
+        $productionNode = Node::factory()->create([
+            'name' => 'production-node',
+            'status' => 'active',
+        ]);
+        grantAppRemoveAccess($caller, $developmentNode);
+
+        $app = App::factory()
+            ->static()
+            ->create([
+                'name' => 'docs',
+                'node_id' => $developmentNode->id,
+                'path' => '/legacy/docs',
+            ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $developmentNode->id,
+                node: $developmentNode->name,
+                path: '/srv/docs-development',
+            ),
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node: $productionNode->name,
+                path: '/srv/shared-production',
+            ),
+        ]);
+
+        $otherApp = App::factory()
+            ->static()
+            ->create([
+                'name' => 'admin',
+                'path' => '/legacy/admin',
+            ]);
+        AppInstance::factory()->for($otherApp)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $productionNode->id,
+                node: $productionNode->name,
+                path: '/srv/shared-production',
+            ),
+        ]);
+
+        $shell = new AppRemoveApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
+
+        $this->call(
+            'DELETE',
+            '/api/apps/docs',
+            ['destructive_consent' => true],
+            [],
+            [],
+            appRemoveRemoteShellFallbackHeader(),
+        )->assertOk();
+
+        $developmentScripts = collect($shell->scriptsForNode($developmentNode));
+        $productionScripts = collect($shell->scriptsForNode($productionNode));
+
+        expect($developmentScripts->contains(
+            fn (string $script): bool => str_contains($script, "sudo rm -rf '/srv/docs-development'"),
+        ))
+            ->toBeTrue()
+            ->and($productionScripts)
+            ->not
+            ->toBeEmpty()
+            ->and($productionScripts->contains(
+                fn (string $script): bool => str_contains($script, "sudo rm -rf '/srv/shared-production'"),
+            ))
+            ->toBeFalse();
+    });
+
     it('reports concrete runtime cleanup through process doctor while app config stays app-owned', function (): void {
         $caller = createAppRemoveCallerNode();
         $targetNode = Node::factory()->create([

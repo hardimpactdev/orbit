@@ -357,18 +357,14 @@ final readonly class ProcessOwnerContextResolver
     private function visibleAppSelections(?array $visibleNodeIds): SupportCollection
     {
         /** @var Collection<int, AppSelection> $selections */
-        $selections = App::query()
-            ->with(['node', 'instances'])
+        $selections = AppInstance::query()
+            ->with('app')
             ->get()
-            ->map(function (App $app): ?AppSelection {
-                $instances = $app->instances->values();
-                $instance = $instances->first();
-
-                return $instances->count() === 1 && $instance instanceof AppInstance
-                    ? new AppSelection(app: $app, instance: $instance, instanceSelector: $instance->name)
-                    : null;
-            })
-            ->filter(fn (mixed $selection): bool => $selection instanceof AppSelection)
+            ->map(fn (AppInstance $instance): AppSelection => new AppSelection(
+                app: $instance->app,
+                instance: $instance,
+                instanceSelector: $instance->name,
+            ))
             ->filter(function (AppSelection $selection) use ($visibleNodeIds): bool {
                 $node = $selection->instance instanceof AppInstance
                     ? $this->placement->nodeForInstance($selection->instance)

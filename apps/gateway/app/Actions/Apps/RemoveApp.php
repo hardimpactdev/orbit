@@ -64,9 +64,9 @@ final readonly class RemoveApp
         ]);
 
         $appPayload = $this->appPayload($app);
-        $appName = $app->name;
         $isPhpApp = $app->runtimeKind() === AppRuntimeKind::Php;
         $cleanupTargets = $this->cleanupTargets($app);
+        $occupiedAppPlacements = $this->occupiedAppPlacements($app);
         $proxyRouteIds = ProxyRoute::query()
             ->where('app_id', $app->id)
             ->pluck('id')
@@ -78,12 +78,6 @@ final readonly class RemoveApp
             ->where('app_id', $app->id)
             ->count();
         $processesRemoved = $app->processes()->count();
-        $removeAppPath = ! $app->adopted && App::query()
-            ->where('id', '!=', $app->id)
-            ->where('node_id', $app->node_id)
-            ->where('path', $app->path)
-            ->doesntExist();
-
         DB::transaction(function () use ($app, $proxyRouteIds): void {
             $workspaceIds = Workspace::query()
                 ->where('app_id', $app->id)
@@ -162,7 +156,7 @@ final readonly class RemoveApp
                 $this->renderNonRuntimeCleanupScript(
                     $target['app'],
                     $target['process_cleanup_scripts'],
-                    $removeAppPath,
+                    $this->shouldRemoveAppPath($app, $target['app'], $node, $occupiedAppPlacements),
                 ),
             );
 
@@ -299,6 +293,64 @@ final readonly class RemoveApp
             'process_cleanup_scripts' => [],
             'runtime_slug' => $app->name,
         ]];
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private function occupiedAppPlacements(App $removedApp): array
+    {
+        $occupiedPlacements = [];
+        $otherApps = App::query()
+            ->whereKeyNot($removedApp->id)
+            ->with(['node', 'instances'])
+            ->get();
+
+        foreach ($otherApps as $app) {
+            if ($app->instances->isEmpty()) {
+                if ($app->node instanceof Node) {
+                    $occupiedPlacements[$this->appPathKey($app->node, $app->path)] = true;
+                }
+
+                continue;
+            }
+
+            foreach ($app->instances as $instance) {
+                $node = $this->placement->nodeForInstance($instance);
+
+                if (! $node instanceof Node) {
+                    continue;
+                }
+
+                $runtimeApp = ProcessRuntimeApp::make($app, $node, $instance);
+                $occupiedPlacements[$this->appPathKey($node, $runtimeApp->path)] = true;
+            }
+        }
+
+        return $occupiedPlacements;
+    }
+
+    /**
+     * @param  array<string, true>  $occupiedAppPlacements
+     */
+    private function shouldRemoveAppPath(
+        App $removedApp,
+        App $runtimeApp,
+        Node $node,
+        array $occupiedAppPlacements,
+    ): bool {
+        if ($removedApp->adopted) {
+            return false;
+        }
+
+        return ! array_key_exists($this->appPathKey($node, $runtimeApp->path), $occupiedAppPlacements);
+    }
+
+    private function appPathKey(Node $node, string $path): string
+    {
+        $normalizedPath = rtrim($path, characters: '/');
+
+        return "{$node->id}:".($normalizedPath === '' ? '/' : $normalizedPath);
     }
 
     /**

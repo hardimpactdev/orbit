@@ -388,6 +388,33 @@ describe('ProcessListController', function (): void {
             ->assertJsonPath('success.data.context.app_instance', 'production');
     });
 
+    it('does not default when multiple concrete instances are visible across mixed apps', function (): void {
+        createProcessListCallerNode(role: 'gateway');
+        $singleNode = createTestAppHostNode(['name' => 'single-node']);
+        $developmentNode = createTestAppHostNode(['name' => 'development-node']);
+        $productionNode = createTestAppHostNode(['name' => 'production-node']);
+        $singleApp = App::factory()->for($singleNode, 'node')->create(['name' => 'single']);
+        $multiApp = App::factory()->for($developmentNode, 'node')->create(['name' => 'multi']);
+        AppInstance::factory()->for($singleApp)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $singleNode->id),
+        ]);
+        AppInstance::factory()->for($multiApp)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $developmentNode->id),
+        ]);
+        AppInstance::factory()->for($multiApp)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $productionNode->id),
+        ]);
+
+        $this
+            ->call('GET', '/api/processes', [], [], [], ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP])
+            ->assertBadRequest()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'app');
+    });
+
     it('does not authorize a concrete app instance through legacy app placement', function (): void {
         $caller = createProcessListCallerNode();
         $legacyNode = createTestAppHostNode(['name' => 'legacy-app-node']);
