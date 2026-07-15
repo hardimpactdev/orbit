@@ -1857,13 +1857,7 @@ function run_lint(string $path): int
 
 function branch_name_from_loop(string $contents): ?string
 {
-    if (preg_match('/^-\s*Branch:\s*(.+)$/im', $contents, $match) !== 1) {
-        return null;
-    }
-
-    $branch = trim($match[1]);
-
-    return $branch === '' ? null : $branch;
+    return orbitLoopTopLabel($contents, 'Branch');
 }
 
 function markdown_section(string $contents, string $heading): ?string

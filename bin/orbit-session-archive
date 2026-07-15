@@ -459,11 +459,11 @@ function assertCompactArchiveIdentity(string $cwd, string $sourceOrbitDir, strin
         throw new RuntimeException('Compact archive must run from the still-open accepted feature branch, not main.');
     }
 
-    if (archiveLoopTopLabel($loop, 'Branch') !== $branch) {
+    if (orbitLoopTopLabel($loop, 'Branch') !== $branch) {
         throw new RuntimeException('Compact archive loop branch does not equal current branch.');
     }
 
-    $loopWorktree = archiveLoopTopLabel($loop, 'Worktree');
+    $loopWorktree = orbitLoopTopLabel($loop, 'Worktree');
 
     if ($loopWorktree === null || (realpath($loopWorktree) ?: $loopWorktree) !== $canonicalCwd) {
         throw new RuntimeException('Compact archive loop worktree does not equal the current feature worktree.');
@@ -517,21 +517,6 @@ function assertCompactArchiveIdentity(string $cwd, string $sourceOrbitDir, strin
     if ($statusExit !== 0 || trim($status) !== '') {
         throw new RuntimeException('Compact archive feature worktree must be clean.');
     }
-}
-
-function archiveLoopTopLabel(string $loop, string $label): ?string
-{
-    if (preg_match('/^-\s+'.preg_quote($label, '/').':\s*(.+)$/mi', $loop, $match) !== 1) {
-        return null;
-    }
-
-    $value = trim($match[1]);
-
-    if (preg_match('/^`([^`\r\n]+)`$/D', $value, $inlineCode) === 1) {
-        return $inlineCode[1];
-    }
-
-    return $value;
 }
 
 /** @param list<string> $arguments */
