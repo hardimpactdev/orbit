@@ -5703,12 +5703,22 @@
                 "stream_json": true
             },
             "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Node/NodeNewBootstrapCommandTest.php",
                 "apps/cli/tests/Feature/Commands/Node/NodeNewStreamCommandTest.php",
                 "apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/NodeBootstrapControllerTest.php",
                 "apps/gateway/tests/Feature/Http/Api/NodeStoreControllerTest.php",
-                "apps/gateway/tests/Feature/Http/Api/NodeStoreStreamControllerTest.php"
+                "apps/gateway/tests/Feature/Http/Api/NodeStoreStreamControllerTest.php",
+                "apps/gateway/tests/Feature/Services/Nodes/NodeBootstrapBundleBuilderTest.php"
             ],
             "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Node/NodeNewBootstrapCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Node/NodeNewBootstrapCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Node/NodeNewBootstrapCommandTest.php"
+                },
                 {
                     "repo_test_path": "apps/cli/tests/Feature/Commands/Node/NodeNewStreamCommandTest.php",
                     "working_directory": "apps/cli",
@@ -5724,6 +5734,13 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Node/NodeWriteCommandTest.php"
                 },
                 {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/NodeBootstrapControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/NodeBootstrapControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/NodeBootstrapControllerTest.php"
+                },
+                {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/NodeStoreControllerTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
@@ -5736,6 +5753,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/NodeStoreStreamControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/NodeStoreStreamControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Services/Nodes/NodeBootstrapBundleBuilderTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Services/Nodes/NodeBootstrapBundleBuilderTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Services/Nodes/NodeBootstrapBundleBuilderTest.php"
                 }
             ],
             "p4_mapping": {

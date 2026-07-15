@@ -28,24 +28,6 @@
     },
     "provisioning_ssh": [
         {
-            "path": "apps/gateway/app/Services/Nodes/GatewayNodeCreator.php",
-            "call_line": 925,
-            "marker_line": 924,
-            "edge": "remote-shell.run"
-        },
-        {
-            "path": "apps/gateway/app/Services/Nodes/GatewayNodeCreator.php",
-            "call_line": 3413,
-            "marker_line": 3412,
-            "edge": "ssh-builder.enforce-for-node"
-        },
-        {
-            "path": "apps/gateway/app/Services/Nodes/GatewayNodeCreator.php",
-            "call_line": 3425,
-            "marker_line": 3424,
-            "edge": "ssh-builder.ssh"
-        },
-        {
             "path": "apps/gateway/app/Services/Operations/ProvisioningAgentInstaller.php",
             "call_line": 45,
             "marker_line": 44,
@@ -95,8 +77,8 @@
         },
         {
             "path": "apps/gateway/app/Services/Security/SecurityInstallerTransport.php",
-            "call_line": 27,
-            "marker_line": 26,
+            "call_line": 31,
+            "marker_line": 30,
             "edge": "remote-shell.run"
         }
     ],

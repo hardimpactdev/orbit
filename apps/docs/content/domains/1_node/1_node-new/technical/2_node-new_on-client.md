@@ -21,7 +21,9 @@ bootstrap path where the gateway does not exist yet.
   - a gateway is configured locally;
   - the CLI has an active gateway-issued WireGuard identity;
   - the CLI can reach the gateway API over HTTPS through WireGuard;
-  - the gateway authorizes the caller for `node:new` on the active gateway node.
+  - the gateway authorizes the caller for `node:new` on the active gateway node;
+  - for a host-provisioned workload, the target is reachable from the initiating
+    client over SSH as `node_new.user`.
 
 Evaluate each path eligibility rule as soon as the fields needed for that rule
 are known. For example, a client with an operator identity and no configured
@@ -82,7 +84,8 @@ flow succeeds, the initiating client is already onboarded and must not run
 
 When a gateway is configured:
 
-- Forward `node:new` to the gateway.
+- Send the resolved request to the authenticated gateway bootstrap-prepare
+  endpoint.
 - Preserve all resolved role-specific inputs in the forwarded request,
   including:
   - `node_new.host` and `node_new.user` for gateway convergence or adoption;
@@ -93,7 +96,26 @@ When a gateway is configured:
   - host and user fields for metrics role provisioning.
 - Use the CLI's WireGuard identity for gateway API authorization.
 - Do not write durable node records locally.
-- Do not SSH directly to nodes from the CLI.
+- For a host-provisioned workload, receive the node-specific bootstrap bundle
+  over that authenticated connection and stream it to `node_new.user` at
+  `node_new.host` through a client-local SSH process.
+- After the target starts WireGuard and its WireGuard-bound Agent, call the
+  gateway bootstrap-complete endpoint and follow gateway-authored provisioning
+  progress. The gateway finishes role, tool, runtime, and security convergence
+  through Agent push.
+- Never send an SSH private key or SSH agent socket to the gateway. The target
+  SSH connection originates from the initiating client.
+
+The prepare response is the only place the secret bootstrap bundle appears. It
+must not be written to command output, operation results, or logs. The bundle
+is idempotent and installs only the substrate required to establish the normal
+managed transport: the Orbit runtime user, WireGuard, the Orbit CLI, and Orbit
+Agent. The target may download release artifacts from their manifest URLs; the
+gateway itself is not a pre-WireGuard artifact or enrollment endpoint.
+
+There is no manual no-SSH fallback. If the initiating client cannot SSH to the
+target, `node:new` fails and leaves the compatible pending gateway reservation
+available for an idempotent retry.
 
 ## Failure Semantics
 
@@ -101,6 +123,11 @@ When a gateway is configured:
   fail before side effects.
 - If the gateway rejects the caller's identity or node access policy, fail
   before provisioning.
+- If client-local host-key verification, SSH authentication, or bootstrap
+  execution fails, report the local bootstrap step and do not call completion.
+- If the target starts WireGuard but Agent does not become reachable, retain
+  the pending node/bootstrap identity and report Agent readiness as the failed
+  step so the same request can retry safely.
 - If first-gateway SSH bootstrap fails before gateway configuration and gateway API
   access exist, report the failed step and the manual retry or cleanup path.
   Doctor cannot own that failure yet because there is no usable gateway view to
@@ -117,6 +144,7 @@ When a gateway is configured:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | Client-context node:new forwarding and validation before gateway contact. |
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | Client-context node:new input and prepare payload validation before gateway contact. |
+| `apps/cli/tests/Feature/Commands/Node/NodeNewBootstrapCommandTest.php` | Authenticated prepare, client-local SSH bundle streaming, failure behavior, and completion ordering. |
 
 There is no gateway-side coverage for this command-local mapping: input handling and renderer behavior live in `apps/cli`. Gateway API behavior is mapped in the command contract file when a gateway-side surface exists.

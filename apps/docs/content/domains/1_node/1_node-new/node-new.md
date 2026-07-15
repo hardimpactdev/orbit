@@ -5,9 +5,11 @@
 Register a new node identity in the Orbit fleet and optionally assign its
 initial roles.
 
-Use `node:new` when adding capacity to the fleet. Gateway and nodes are
-provisioned over SSH when needed. Clients are enrolled by the gateway so
-they can join the Orbit WireGuard network and then run `gateway:add`.
+Use `node:new` when adding capacity to the fleet. A configured client uses its
+own SSH access to install the minimal WireGuard, Orbit CLI, and Agent bootstrap
+on a new workload node; the gateway then finishes provisioning through Agent
+push. The gateway never opens target SSH. Clients are enrolled by the gateway
+so they can join the Orbit WireGuard network and then run `gateway:add`.
 The first gateway bootstrap is the exception: when a client with no
 configured gateway creates the first gateway, the command also onboards that
 initiating client and stores the local gateway configuration.
@@ -86,9 +88,11 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=al
   default. Agent and development role features consume this node-owned field
   for their DNS mappings. Must be a single lowercase DNS label without a
   leading dot.
-- `--user`: Bootstrap SSH user for provisioning. Defaults to `root`, but
+- `--user`: Bootstrap SSH user used by the initiating CLI. Defaults to `root`, but
   users from cloud images, such as `ubuntu`, remain valid. This value is only
-  used for the first SSH path that creates or verifies Orbit's managed user.
+  used only for the client-to-target SSH path that creates or verifies Orbit's
+  managed user. SSH keys remain on the initiating client and are never sent to
+  the gateway.
   After provisioning, `nodes.user` is normally `orbit`, the owner/runtime user
   used when the Agent executes work on that node. Root SSH login and password
   login are disabled. Break-glass access belongs to the operator and remains
@@ -342,11 +346,12 @@ or writing the node identity. If an initial role is persisted but its
 first convergence fails, the command fails and leaves that role assignment in
 `error` for later doctor recovery.
 
-During provisioning, `provisioning` is a transient node status: the node row
-exists in the gateway database, but the first node convergence run for its
-assigned roles has not completed. If that first convergence fails, Orbit
-deletes the provisional node row instead of leaving a permanent failed node
-identity. Later re-convergence happens through doctor restore.
+During provisioning, `provisioning` is a transient node status: the pending
+node and WireGuard peer exist in the gateway database, but client-local
+bootstrap and the first Agent-push convergence have not completed. A compatible
+retry reuses that pending identity and address. Readiness or convergence
+failure remains inspectable until the bootstrap is retried or explicitly
+removed.
 
 `node:new` does not detect, infer, or store public IPv4/IPv6 metadata. The
 provided `--host` is treated as the operator-supplied SSH/bootstrap endpoint;
@@ -416,8 +421,11 @@ when already present.
 
 ## Requirements
 
-- Gateway and app provisioning require SSH access to a target host whose
-  platform is supported by the requested role. See the node-family
+- Workload provisioning requires SSH access from the initiating client to a
+  target host whose platform is supported by the requested role. The target
+  must also be able to send WireGuard UDP to the gateway endpoint and reach the
+  configured operating-system package repositories and release artifact host.
+  The gateway does not need and must not have target SSH access. See the node-family
   [role platform support](../node-concepts.md#role-platform-support) matrix.
 
 For first-gateway bootstrap:
@@ -434,8 +442,10 @@ For first-gateway bootstrap:
 
 For app-role creation:
 
-- Requires an existing gateway and a resolved SSH/bootstrap endpoint.
+- Requires an existing gateway and a resolved SSH/bootstrap endpoint reachable
+  from the initiating client.
 - Every node identity requires an explicit unique node TLD.
+- There is no manual no-SSH or public pre-WireGuard enrollment fallback.
 
 For client enrollment:
 

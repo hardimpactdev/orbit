@@ -6,7 +6,6 @@ namespace App\Services\Nodes\Roles;
 
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
-use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Analytics\AnalyticsDatabaseResolver;
@@ -124,6 +123,39 @@ class NodeRoleAssignmentService
         ])->save();
 
         return $this->converge($node, $assignment->fresh() ?? $assignment);
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    public function retryDuringCreation(Node $node, string $role, array $settings): NodeRoleAssignment
+    {
+        $definition = $this->registry->definition($role);
+
+        if (! $definition->assignableByNodeNew) {
+            throw new InvalidArgumentException("Role '{$role}' cannot be assigned during node creation.");
+        }
+
+        $assignment = $this->assignments->find($node, $role);
+
+        if (! $assignment instanceof NodeRoleAssignment) {
+            throw new InvalidArgumentException("Role '{$role}' is not assigned to node '{$node->name}'.");
+        }
+
+        $this->guardSupportedPlatform($node, $definition);
+        $settingsData = $definition->settingsFromArray($settings)->toArray();
+
+        $assignment->forceFill([
+            'settings' => $settingsData,
+            'status' => NodeRoleStatus::Pending->value,
+            'last_error' => null,
+            'converged_at' => null,
+        ])->save();
+
+        return $this->clearManagedOptInAfterActiveRole(
+            $node,
+            $this->converge($node, $assignment->fresh() ?? $assignment),
+        );
     }
 
     public function remove(Node $node, string $role, bool $force = false, bool $purgeData = false): void

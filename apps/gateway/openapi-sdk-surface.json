@@ -346,6 +346,22 @@
       "reason": "Metrics status belongs to the optional metrics role and is outside the first SDK promotion set."
     },
     {
+      "operation": "POST /nodes/bootstrap",
+      "operation_id": "nodeBootstrap",
+      "classification": "public_sdk",
+      "group": "node_bootstrap",
+      "reason": "Configured Orbit clients use this authenticated endpoint to reserve a node and obtain its one-time bootstrap script.",
+      "follow_up": "Add a dedicated PHP SDK request class for preparing a client-side node bootstrap."
+    },
+    {
+      "operation": "POST /nodes/bootstrap/{nodeBootstrap}/complete",
+      "operation_id": "nodeBootstrapComplete",
+      "classification": "public_sdk",
+      "group": "node_bootstrap",
+      "reason": "Configured Orbit clients use this authenticated endpoint after local SSH installation to complete Agent-based provisioning.",
+      "follow_up": "Add a dedicated PHP SDK streaming request for completing a client-side node bootstrap."
+    },
+    {
       "operation": "POST /nodes/self/manage",
       "operation_id": "nodeManage.manage",
       "classification": "public_sdk",

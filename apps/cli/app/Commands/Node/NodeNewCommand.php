@@ -9,10 +9,14 @@ use App\Commands\Concerns\StreamsGatewayProgress;
 use App\Exceptions\GatewayApiException;
 use App\Exceptions\NodeWriteInputException;
 use App\Exceptions\OrbitConfigStoreException;
+use App\Services\GatewayApiClient;
+use App\Services\Node\NodeBootstrapHostKeyMismatch;
+use App\Services\Node\NodeBootstrapSshRunner;
 use App\Services\Node\NodeGatewayBootstrapper;
 use App\Services\Node\NodeNewPayloadBuilder;
 use App\Services\OrbitConfigStore;
 use Orbit\Core\Progress\ProgressEventType;
+use RuntimeException;
 
 use function Laravel\Prompts\text;
 
@@ -56,7 +60,9 @@ final class NodeNewCommand extends BootstrapGatewayCommand
     public function handle(
         NodeNewPayloadBuilder $payloadBuilder,
         NodeGatewayBootstrapper $bootstrapper,
+        NodeBootstrapSshRunner $bootstrapSsh,
         OrbitConfigStore $configStore,
+        GatewayApiClient $gatewayClient,
     ): int {
         $template = $this->stringOption('template');
         $firstGatewayBootstrap = $template === 'gateway' && ! $this->hasConfiguredGateway($configStore);
@@ -120,10 +126,135 @@ final class NodeNewCommand extends BootstrapGatewayCommand
             return $result['exit_code'] === self::SUCCESS ? self::SUCCESS : self::FAILURE;
         }
 
+        if ($this->requiresClientBootstrap($payload)) {
+            return $this->bootstrapWorkloadNode($payload, $bootstrapSsh, $gatewayClient);
+        }
+
         return $this->streamProgress('/api/nodes', $payload, fn (
             ProgressEventType $type,
             array $payload,
         ): int => $this->renderProgressTerminalFrame($type, $payload));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function requiresClientBootstrap(array $payload): bool
+    {
+        return (
+            is_string($payload['host'] ?? null)
+            && $payload['host'] !== ''
+            && ($payload['template'] ?? null) !== 'gateway'
+            && is_array($payload['roles'] ?? null)
+            && $payload['roles'] !== []
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function bootstrapWorkloadNode(
+        array $payload,
+        NodeBootstrapSshRunner $bootstrapSsh,
+        GatewayApiClient $gatewayClient,
+    ): int {
+        $outputModeValidation = $this->validateProgressOutputMode();
+
+        if ($outputModeValidation !== null) {
+            return $outputModeValidation;
+        }
+
+        $preparePayload = $payload;
+        unset($preparePayload['host_key_fingerprint']);
+
+        try {
+            $response = $gatewayClient->post('/api/nodes/bootstrap', $preparePayload);
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
+        }
+
+        $bootstrap = $this->bootstrapPayload($response);
+
+        if ($bootstrap === null) {
+            return $this->renderFailure(
+                'gateway_invalid_response',
+                'Gateway node bootstrap response is incomplete.',
+            );
+        }
+
+        try {
+            $result = $bootstrapSsh->run(
+                host: $bootstrap['host'],
+                user: $bootstrap['user'],
+                script: $bootstrap['script'],
+                expectedFingerprint: $this->stringOption('host-key-fingerprint'),
+            );
+        } catch (NodeBootstrapHostKeyMismatch $exception) {
+            return $this->renderFailure(
+                'node.host_key_mismatch',
+                $exception->getMessage(),
+                [
+                    'host' => $bootstrap['host'],
+                    'step' => 'client_ssh_host_key',
+                ],
+            );
+        } catch (RuntimeException $exception) {
+            return $this->renderFailure(
+                'node.bootstrap_ssh_failed',
+                $exception->getMessage(),
+                [
+                    'host' => $bootstrap['host'],
+                    'user' => $bootstrap['user'],
+                    'step' => 'client_ssh_bootstrap',
+                ],
+            );
+        }
+
+        if (! $result->successful()) {
+            return $this->renderFailure(
+                'node.bootstrap_ssh_failed',
+                "Client-local SSH bootstrap failed for {$bootstrap['user']}@{$bootstrap['host']}.",
+                [
+                    'host' => $bootstrap['host'],
+                    'user' => $bootstrap['user'],
+                    'step' => 'client_ssh_bootstrap',
+                    'exit_code' => $result->exitCode(),
+                    'error' => trim($result->errorOutput()) ?: trim($result->output()) ?: null,
+                ],
+            );
+        }
+
+        return $this->streamProgress(
+            '/api/nodes/bootstrap/'.rawurlencode($bootstrap['id']).'/complete',
+            [],
+            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array{id: string, host: string, user: string, script: string}|null
+     */
+    private function bootstrapPayload(array $response): ?array
+    {
+        $bootstrap = $response['success']['data']['bootstrap'] ?? null;
+
+        if (! is_array($bootstrap)) {
+            return null;
+        }
+
+        foreach (['id', 'host', 'user', 'script'] as $key) {
+            if (! is_string($bootstrap[$key] ?? null) || $bootstrap[$key] === '') {
+                return null;
+            }
+        }
+
+        return [
+            'id' => $bootstrap['id'],
+            'host' => $bootstrap['host'],
+            'user' => $bootstrap['user'],
+            'script' => $bootstrap['script'],
+        ];
     }
 
     private function renderGatewayFailure(GatewayApiException $exception): int

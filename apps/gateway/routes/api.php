@@ -56,6 +56,8 @@ use App\Http\Controllers\Api\MetricsCredentialsController;
 use App\Http\Controllers\Api\MetricsCredentialsResetController;
 use App\Http\Controllers\Api\MetricsStatusController;
 use App\Http\Controllers\Api\NodeAgentIdeController;
+use App\Http\Controllers\Api\NodeBootstrapCompleteController;
+use App\Http\Controllers\Api\NodeBootstrapController;
 use App\Http\Controllers\Api\NodeGrantController;
 use App\Http\Controllers\Api\NodeListController;
 use App\Http\Controllers\Api\NodeManageController;
@@ -327,6 +329,8 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::delete('/vpn/clients/{name}', VpnClientRemoveController::class);
         Route::post('/vpn/web-ui/password', VpnWebUiChangePasswordController::class);
         Route::get('/nodes', NodeListController::class);
+        Route::post('/nodes/bootstrap', NodeBootstrapController::class);
+        Route::post('/nodes/bootstrap/{nodeBootstrap}/complete', NodeBootstrapCompleteController::class);
         Route::post('/nodes', NodeStoreController::class);
         Route::post('/nodes/self/manage', [NodeManageController::class, 'manage']);
         Route::post('/nodes/grant', NodeGrantController::class);

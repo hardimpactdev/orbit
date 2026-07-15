@@ -208,8 +208,10 @@ These rules apply to all node commands and define the invariants the family enfo
   [node-concepts.md](node-concepts.md#role-platform-support). Commands that
   provision a host or apply node-side artifacts must validate the observed host
   platform against that matrix before side effects.
-- Initial provisioning of the gateway and other nodes is always performed over
-  SSH. This is Orbit's sole permanent SSH lane.
+- First-gateway bootstrap and new workload bootstrap use initiating-client SSH.
+  For workloads the client installs only the minimal WireGuard/CLI/Agent
+  substrate, after which the gateway completes provisioning through Agent push.
+  The gateway never opens target SSH.
 - After bootstrap, CLI callers communicate with the gateway over HTTPS through
   WireGuard; the gateway applies node changes through its node execution
   primitive.
@@ -307,9 +309,13 @@ remain non-prerequisites and non-fallbacks.
 
 Node transport has different rules before and after bootstrap:
 
-- Initial provisioning of the gateway and other nodes uses SSH because the target host
-  does not yet have enough Orbit identity, certificates, network trust, or
-  gateway registration to participate in Orbit HTTPS calls.
+- First-gateway bootstrap uses its dedicated client-owned SSH path before a
+  gateway API exists. Adding another managed workload node uses client-owned
+  SSH only for the minimal bootstrap substrate because the target does not yet
+  have WireGuard or an Agent listener. The configured client obtains a
+  node-specific bundle from the gateway over existing WireGuard, streams it to
+  the target, and then the gateway completes provisioning through Agent push.
+  The gateway never opens target SSH.
 - CLI callers use HTTPS over WireGuard to communicate with the gateway after
   local gateway configuration. This lets clients and CLI clients on nodes
   operate without owning fleet state.
@@ -321,8 +327,8 @@ Node transport has different rules before and after bootstrap:
   verifies a typed Agent runtime probe over the node's WireGuard identity.
   Failed verification retains that intent and reports Agent drift for
   `doctor --family=node` to surface for repair.
-- Provisioning is the sole managed SSH lane.
-- Provisioning uses SSH to establish a node's managed substrate.
+- Bootstrap is the sole managed SSH lane and is owned by the initiating client.
+- Bootstrap uses client-local SSH to establish the minimal managed substrate.
   After bootstrap, the gateway sends typed `binary + argv` envelopes to the
   Orbit Agent for work on that node. Work for the gateway executes locally.
 - The Orbit Agent lane is reserved for supported nodes, starting with macOS
@@ -346,7 +352,7 @@ The current steady-state paths are therefore:
 2. gateway-local execution for gateway work, or gateway-pushed Agent HTTP for
    non-gateway node-local execution.
 
-Provisioning is the sole permanent Orbit SSH lane. `node:manage` verifies the
+Client-owned bootstrap is the sole Orbit SSH lane. `node:manage` verifies the
 authenticated Agent-push path and never selects SSH. Break-glass SSH belongs to
 the operator and remains outside Orbit commands.
 

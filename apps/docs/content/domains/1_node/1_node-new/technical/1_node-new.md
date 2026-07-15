@@ -38,14 +38,14 @@ This command follows the shared
 | `operator_name` | `--operator-name` | First-gateway bootstrap. | Outside first-gateway bootstrap. | None. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
 | `operator_tld` | `--operator-tld` | First-gateway bootstrap. | Outside first-gateway bootstrap. | None. | Single lowercase DNS label; unique among active node TLDs and different from the gateway TLD. |
 | `tld` | `--tld` | Always. | Never. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. |
-| `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Client identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
+| `user` | `--user` | Never required from the operator; resolved when SSH bootstrap is used. | Client identity with no host provisioning. | `root`. | Bootstrap SSH user used by the initiating CLI. The gateway never receives or uses that user's private key and stores the steady-state runtime user after provisioning. |
 | `gateway_endpoint` | `--gateway-endpoint` | Never required. | Client identity with no roles or `--operator`. | Gateway VPN public endpoint. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `ingress_node` | `--ingress` | Private `app-prod` placement. | Every path other than private `app-prod` placement. | None. | Must match an active node with the `ingress` role. |
 | `redis_node` | `--redis-node` | `websocket`. | Every path that does not include `websocket`. | None. | Must match an active node with the `database` role and Redis expected or installed. |
 | `postgres_node` | `--postgres-node` | `analytics`. | Every path that does not include `analytics`. | None. | Must match an active node with the `database` role and PostgreSQL expected or installed. |
 | `clickhouse_node` | `--clickhouse-node` | `analytics`. | Every path that does not include `analytics`. | None. | Must match an active node with the `database` role and ClickHouse expected or installed. |
 | `s3_data_path` | `--s3-data-path` | Never. | Every path that does not include `s3`. | `/srv/orbit/s3/data`. | Absolute host path mounted into SeaweedFS as `/data`. |
-| `host_key_fingerprint` | `--host-key-fingerprint` | Optional. | Never. | None. | Expected SSH host key SHA256 fingerprint for verification during provisioning. |
+| `host_key_fingerprint` | `--host-key-fingerprint` | Optional. | Never. | None. | Expected SSH host key SHA256 fingerprint verified by the initiating CLI during bootstrap. |
 | `self_grant` | `--self-grant` | Optional. | Never. | None. | Self-grant mode applied to this node identity. |
 | `self_grant_permissions` | `--self-grant-permissions` | Optional. | Never. | None. | Custom permission set for the self-grant. Requires `--self-grant`. |
 | `grant_to` | `--grant-to` | Optional. | Never. | None. | Grant this node access to another node. Multiple values allowed. |
@@ -169,8 +169,9 @@ Caller-path behavior is split out into:
 
 ### Gateway bootstrap and convergence
 
-- Provision the target host over SSH only when the host has not already been
-  provisioned for the requested identity.
+- First-gateway bootstrap may provision the gateway target over the initiating
+  client's dedicated SSH path before a gateway API exists. Existing-gateway
+  workload bootstrap follows the separate client-owned flow below.
 - First-gateway bootstrap stores the resolved `node_new.host` as the initial
   gateway endpoint used in generated WireGuard peer configs. The endpoint is a
   connectivity fact and must be an IP address or dotted DNS name reachable by
@@ -196,8 +197,9 @@ Caller-path behavior is split out into:
 
 ## Workload Role Provisioning
 
-- Provision host-capable identities over SSH before initial role
-  assignments are created.
+- Ask the gateway to reserve a pending host-capable identity and WireGuard peer,
+  then stream the returned minimal bootstrap bundle through initiating-client
+  SSH before initial role assignments converge through Agent push.
 - Validate conflicts before side effects where possible. For example,
   `app-dev` plus `app-prod` must fail before node creation or
   provisioning.
@@ -264,17 +266,28 @@ routes.
 
 ## Shared Provisioning Details
 
-- The `node_new.user` value is the bootstrap SSH credential. Successful
-  gateway and app-role provisioning creates or verifies the Orbit owner/runtime
+- The `node_new.user` value selects the bootstrap SSH account used by the
+  initiating client. SSH authentication material remains client-local and is
+  never sent to or used by the gateway. Successful workload provisioning
+  creates or verifies the Orbit owner/runtime
   user, normally `orbit`, and stores that user in gateway node configuration as
   `nodes.user`. Later gateway work executes locally and non-gateway node-local
   work uses Agent push with the stored user context.
-- Successful SSH provisioning copies the bootstrap user's authorized SSH keys
+- The gateway first reserves the pending node and WireGuard peer, then returns
+  a node-specific bootstrap bundle over the initiating client's existing
+  WireGuard-authenticated connection. The initiating CLI streams that bundle
+  over its own SSH connection. The bundle starts WireGuard, installs the Orbit
+  CLI and Agent, and binds the Agent listener only to the reserved WireGuard
+  address. The gateway completes all remaining provisioning through Agent push.
+- Successful client-owned SSH bootstrap copies the bootstrap user's authorized SSH keys
   to the Orbit-managed runtime user before lock-down, installs an Orbit-owned
   sshd drop-in that disables password and root SSH login, and validates the
   sshd configuration. It limits retained key-only access to break-glass use
   that belongs to the operator and sits outside Orbit commands, reloads sshd,
   locks the root password, and removes `/root/.ssh/authorized_keys`.
+- A compatible pending bootstrap is retryable and reuses its node identity and
+  WireGuard address. Orbit offers no public bootstrap URL and no manual no-SSH
+  fallback for adding managed workload nodes.
 
 ## Adoption and Drift Boundaries
 
@@ -341,7 +354,7 @@ contract.
 ## Failure Semantics
 
 - Exit `0` on success or compatible idempotent convergence.
-- Exit `1` on validation, authorization, network, SSH, platform, or
+- Exit `1` on validation, authorization, network, client-local SSH, platform, or
   provisioning failure.
 - Exit `2` only for invalid command usage before command execution.
 - Input contract violations fail before side effects through the selected input
@@ -350,7 +363,8 @@ contract.
 - Fail before provisioning when the observed target host platform is not
   supported for the requested role. Supported role/platform pairs are defined in
   [`node-concepts.md`](../../node-concepts.md#role-platform-support).
-- Fail when SSH bootstrap cannot reach the host or loses access mid-run.
+- Fail when client-local SSH bootstrap cannot reach the host or loses access
+  mid-run. Do not call gateway completion after that failure.
 - Report partial provisioning when gateway configuration was written and a
   usable gateway exists, but host applying did not complete. That node appears
   as drift until provisioning is repaired by `doctor --family=node --restore`,

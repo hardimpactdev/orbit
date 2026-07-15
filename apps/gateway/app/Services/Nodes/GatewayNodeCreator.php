@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Nodes;
 
 use App\Contracts\RemoteShell;
-use App\Data\Nodes\NodeIdentityArtifact;
-use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\AdoptAction;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
@@ -15,6 +12,7 @@ use App\Enums\Nodes\NodeStatus;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\NodeBootstrap;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
@@ -22,15 +20,9 @@ use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\RoleSelfGrantMaterializer;
-use App\Services\Operations\ProvisioningAgentInstaller;
-use App\Services\OrbitHostInstaller;
-use App\Services\RemoteShell\Exceptions\HostKeyMismatch;
-use App\Services\RemoteShell\Exceptions\HostKeyPinningFailed;
-use App\Services\RemoteShell\SshCommandBuilder;
 use App\Services\Security\PublicSshDenyInstaller;
 use App\Services\Security\SecurityInstaller;
 use App\Services\Security\SshdHardenedInstaller;
-use App\Services\Security\SshHostKeyPinner;
 use App\Services\Support\GatewayActionResult;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolInstaller;
@@ -38,12 +30,8 @@ use App\Services\Tools\ToolRegistryFailure;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
 use App\Services\Vpn\WgEasyAddressReservationProbe;
 use App\Services\WireGuard\WireGuardKeyGenerator;
-use App\Services\WireGuard\WireGuardPeerRealityProbe;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Process;
-use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 use Orbit\Core\Http\JsonEnvelope;
 use RuntimeException;
@@ -55,6 +43,12 @@ use function Laravel\Prompts\text;
 
 final class GatewayNodeCreator
 {
+    private const string BOOTSTRAP_PHASE_NONE = 'none';
+
+    private const string BOOTSTRAP_PHASE_PREPARE = 'prepare';
+
+    private const string BOOTSTRAP_PHASE_COMPLETE = 'complete';
+
     private const string DEFAULT_RUNTIME_USER = 'orbit';
 
     private const int SUCCESS = 0;
@@ -66,20 +60,116 @@ final class GatewayNodeCreator
 
     private ?string $output = null;
 
+    private string $bootstrapPhase = self::BOOTSTRAP_PHASE_NONE;
+
+    private ?Node $bootstrapCaller = null;
+
+    private ?NodeBootstrap $bootstrap = null;
+
     /**
      * @param  array<string, mixed>  $arguments
      */
     public function create(array $arguments): GatewayActionResult
     {
+        $this->bootstrapPhase = self::BOOTSTRAP_PHASE_NONE;
+        $this->bootstrapCaller = null;
+        $this->bootstrap = null;
+
+        return $this->execute($arguments);
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
+    public function prepareBootstrap(array $arguments, Node $caller): GatewayActionResult
+    {
+        $this->bootstrapPhase = self::BOOTSTRAP_PHASE_PREPARE;
+        $this->bootstrapCaller = $caller;
+        $this->bootstrap = null;
+        $arguments['--json'] = true;
+
+        return $this->execute($arguments);
+    }
+
+    public function completeBootstrap(NodeBootstrap $bootstrap, Node $caller): GatewayActionResult
+    {
+        $bootstrap->refresh();
+        $node = $bootstrap->node()->first();
+
+        if ($bootstrap->initiating_node_id !== $caller->id) {
+            return GatewayActionResult::error(
+                code: 'authorization_failed',
+                message: 'Only the initiating node can complete this bootstrap.',
+                meta: ['bootstrap_id' => $bootstrap->id],
+            );
+        }
+
+        if ($bootstrap->status === 'completed' && $node instanceof Node && $node->isActive()) {
+            return $this->completedBootstrapResult($bootstrap, $node);
+        }
+
+        if ($bootstrap->status !== 'pending' || ! $node instanceof Node || ! $node->isProvisioning()) {
+            return GatewayActionResult::error(
+                code: 'node.incompatible',
+                message: 'Node bootstrap is not in a compatible pending state.',
+                meta: ['bootstrap_id' => $bootstrap->id],
+            );
+        }
+
+        $this->bootstrapPhase = self::BOOTSTRAP_PHASE_COMPLETE;
+        $this->bootstrapCaller = $caller;
+        $this->bootstrap = $bootstrap;
+
+        try {
+            $result = $this->execute([...$bootstrap->request, '--json' => true]);
+        } catch (Throwable $exception) {
+            $bootstrap->forceFill([
+                'status' => 'pending',
+                'last_error' => [
+                    'code' => 'node.provisioning_incomplete',
+                    'message' => $exception->getMessage(),
+                ],
+            ])->save();
+
+            return GatewayActionResult::error(
+                code: 'node.provisioning_incomplete',
+                message: 'Node bootstrap completion failed.',
+                meta: [
+                    'bootstrap_id' => $bootstrap->id,
+                    'error' => $exception->getMessage(),
+                ],
+            );
+        }
+
+        if ($result->successful()) {
+            $bootstrap->forceFill([
+                'status' => 'completed',
+                'last_error' => null,
+            ])->save();
+
+            return $result;
+        }
+
+        $bootstrap->forceFill([
+            'status' => 'pending',
+            'last_error' => is_array($result->payload['error'] ?? null) ? $result->payload['error'] : null,
+        ])->save();
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
+    private function execute(array $arguments): GatewayActionResult
+    {
         $this->arguments = $arguments;
         $this->output = null;
 
         $exitCode = $this->handle(
-            app(OrbitHostInstaller::class),
             app(NodeRegistryWriter::class),
             app(NodeRoleAssignmentService::class),
             app(WireGuardKeyGenerator::class),
-            app(NodesProbe::class),
             app(NodeConverger::class),
         );
 
@@ -87,11 +177,9 @@ final class GatewayNodeCreator
     }
 
     private function handle(
-        OrbitHostInstaller $installer,
         NodeRegistryWriter $registryWriter,
         NodeRoleAssignmentService $nodeRoleAssignmentService,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
-        NodesProbe $nodesProbe,
         NodeConverger $nodeConverger,
     ): int {
         $name = $this->resolveName();
@@ -161,9 +249,7 @@ final class GatewayNodeCreator
 
             if ($this->containsAppWorkloadRole($placement['roles'])) {
                 return $this->provisionAppNode(
-                    installer: $installer,
                     registryWriter: $registryWriter,
-                    nodesProbe: $nodesProbe,
                     roleAssignmentService: $nodeRoleAssignmentService,
                     wireGuardKeyGenerator: $wireGuardKeyGenerator,
                     nodeConverger: $nodeConverger,
@@ -181,10 +267,10 @@ final class GatewayNodeCreator
             }
 
             return $this->provisionWorkloadRoleNode(
-                installer: $installer,
                 registryWriter: $registryWriter,
                 roleAssignmentService: $nodeRoleAssignmentService,
                 wireGuardKeyGenerator: $wireGuardKeyGenerator,
+                nodeConverger: $nodeConverger,
                 name: $name,
                 roles: $placement['roles'],
                 inputs: $inputs,
@@ -221,10 +307,10 @@ final class GatewayNodeCreator
      * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
      */
     private function provisionWorkloadRoleNode(
-        OrbitHostInstaller $installer,
         NodeRegistryWriter $registryWriter,
         NodeRoleAssignmentService $roleAssignmentService,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
+        NodeConverger $nodeConverger,
         string $name,
         array $roles,
         array $inputs,
@@ -268,7 +354,32 @@ final class GatewayNodeCreator
             return $preflight;
         }
 
-        $runtimeUser = self::DEFAULT_RUNTIME_USER;
+        if ($requiresHostProvisioning && $this->bootstrapPhase === self::BOOTSTRAP_PHASE_PREPARE) {
+            return $this->prepareHostBootstrap(
+                registryWriter: $registryWriter,
+                wireGuardKeyGenerator: $wireGuardKeyGenerator,
+                name: $name,
+                roles: $roles,
+                inputs: $inputs,
+            );
+        }
+
+        if ($requiresHostProvisioning && $this->bootstrapPhase === self::BOOTSTRAP_PHASE_COMPLETE) {
+            return $this->completePreparedWorkloadNode(
+                registryWriter: $registryWriter,
+                roleAssignmentService: $roleAssignmentService,
+                nodeConverger: $nodeConverger,
+                name: $name,
+                roles: $roles,
+                inputs: $inputs,
+                appProductionIngressNodeId: $appProductionIngressNodeId,
+            );
+        }
+
+        if ($requiresHostProvisioning && $this->bootstrapPhase === self::BOOTSTRAP_PHASE_NONE) {
+            return $this->clientBootstrapRequired($name, $inputs['host']);
+        }
+
         $wireguardAddress = $this->resolveProvisionedNodeWireguardAddress();
 
         if (is_int($wireguardAddress)) {
@@ -277,139 +388,16 @@ final class GatewayNodeCreator
 
         $gatewayEndpoint = $inputs['gatewayEndpoint'] ?? $this->gatewayEndpoint();
         $platform = 'ubuntu';
-        $host = $requiresHostProvisioning ? $inputs['host'] : '';
-        $user = $requiresHostProvisioning ? $runtimeUser : self::DEFAULT_RUNTIME_USER;
-        $orbitPath = "/home/{$runtimeUser}/orbit";
-        $node = null;
-
-        if ($requiresHostProvisioning) {
-            $sshUser = $inputs['sshUser'] ?? 'root';
-
-            try {
-                $pinnedHostKey = app(SshHostKeyPinner::class)->pin($inputs['host'], $inputs['hostKeyFingerprint']);
-            } catch (HostKeyMismatch $exception) {
-                return $this->failCommand(
-                    code: 'node.host_key_mismatch',
-                    message: $exception->getMessage(),
-                    meta: ['host' => $inputs['host']],
-                );
-            } catch (HostKeyPinningFailed $exception) {
-                return $this->failCommand(
-                    code: 'node.host_key_pin_failed',
-                    message: $exception->getMessage(),
-                    meta: ['host' => $inputs['host']],
-                );
-            }
-
-            $node = $registryWriter->writeNodeIdentity(
-                name: $name,
-                tld: $inputs['tld'],
-                platform: $platform,
-                host: $host,
-                wireguardAddress: $wireguardAddress,
-                gatewayEndpoint: $gatewayEndpoint,
-                user: $user,
-                orbitPath: $orbitPath,
-                status: NodeStatus::Provisioning,
-                hostKey: $pinnedHostKey,
-            );
-
-            $installer->usePinnedNode($node);
-            $installation = $installer->install($inputs['host'], $sshUser, $runtimeUser);
-
-            if (! $installation->successful) {
-                $failure = $this->installerFailure(
-                    role: $this->firstRole($roles),
-                    host: $inputs['host'],
-                    sshUser: $sshUser,
-                    errorOutput: $installation->errorOutput,
-                );
-
-                $this->rollbackProvisioningNode($node, 'host_installer_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'host_install',
-                    'error' => trim($installation->errorOutput) ?: null,
-                ]);
-
-                return $failure;
-            }
-
-            $sshAuthorization = $this->authorizeProvisioningRuntimeUser($node, $runtimeUser, $runtimeUser);
-
-            if (is_int($sshAuthorization)) {
-                $this->rollbackProvisioningNode($node, 'runtime_ssh_authorization_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'steady_state_ssh_authorization',
-                ]);
-
-                return $sshAuthorization;
-            }
-
-            $sshHardening = $this->hardenProvisioningSshAccess($node, $runtimeUser);
-
-            if (is_int($sshHardening)) {
-                $this->rollbackProvisioningNode($node, 'ssh_hardening_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'ssh_hardening',
-                ]);
-
-                return $sshHardening;
-            }
-
-            $wireGuardProvisioning = $this->configureProvisionedNodeWireGuard(
-                $node,
-                $wireGuardKeyGenerator,
-                gatewayEndpointOverride: $inputs['gatewayEndpoint'],
-            );
-
-            if (is_int($wireGuardProvisioning)) {
-                $this->rollbackProvisioningNode($node, 'wireguard_install_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'node_wireguard_install',
-                ]);
-
-                return $wireGuardProvisioning;
-            }
-        }
-
-        if (! $node instanceof Node) {
-            $node = $registryWriter->writeNodeIdentity(
-                name: $name,
-                tld: $inputs['tld'],
-                platform: $platform,
-                host: $host,
-                wireguardAddress: $wireguardAddress,
-                gatewayEndpoint: $gatewayEndpoint,
-                user: $user,
-                orbitPath: $orbitPath,
-            );
-        }
-
-        $wireGuardPeerFailure = $this->ensureAgentWireGuardPeer($node, $roles, $wireGuardKeyGenerator);
-
-        if (is_int($wireGuardPeerFailure)) {
-            if ($requiresHostProvisioning) {
-                $this->rollbackProvisioningNode($node, 'wireguard_peer_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'wireguard_identity',
-                ]);
-            }
-
-            return $wireGuardPeerFailure;
-        }
-
-        if ($requiresHostProvisioning) {
-            $agentBootstrap = $this->bootstrapProvisionedAgent($node);
-
-            if (is_int($agentBootstrap)) {
-                $this->rollbackProvisioningNode($node, 'agent_bootstrap_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'agent_bootstrap',
-                ]);
-
-                return $agentBootstrap;
-            }
-        }
+        $node = $registryWriter->writeNodeIdentity(
+            name: $name,
+            tld: $inputs['tld'],
+            platform: $platform,
+            host: '',
+            wireguardAddress: $wireguardAddress,
+            gatewayEndpoint: $gatewayEndpoint,
+            user: self::DEFAULT_RUNTIME_USER,
+            orbitPath: '/home/'.self::DEFAULT_RUNTIME_USER.'/orbit',
+        );
 
         $failedAssignment = null;
 
@@ -434,7 +422,7 @@ final class GatewayNodeCreator
         }
 
         if ($failedAssignment instanceof NodeRoleAssignment) {
-            $failure = $this->failCommand(
+            return $this->failCommand(
                 code: 'node.provisioning_incomplete',
                 message: "Node '{$name}' created but workload role '{$failedAssignment->role}' failed to converge.",
                 meta: [
@@ -445,77 +433,6 @@ final class GatewayNodeCreator
                     'last_error' => $failedAssignment->last_error,
                 ],
             );
-
-            if ($requiresHostProvisioning) {
-                $this->rollbackProvisioningNode($node, 'role_assignment_failed', [
-                    'host' => $inputs['host'],
-                    'role' => $failedAssignment->role,
-                    'step' => 'role_assignment',
-                    'error' => $failedAssignment->last_error,
-                ]);
-            }
-
-            return $failure;
-        }
-
-        $warnings = [];
-
-        if (in_array(NodeRoleName::Agent->value, $roles, true)) {
-            $selfGrantResult = $this->setupAgentSelfGrant($node);
-            if (is_int($selfGrantResult)) {
-                $this->rollbackProvisioningNode($node, 'agent_self_grant_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'agent_self_grant',
-                ]);
-
-                return $selfGrantResult;
-            }
-
-            $grantToResult = $this->setupGrantTo($node);
-            if (is_int($grantToResult)) {
-                $this->rollbackProvisioningNode($node, 'agent_grant_to_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'agent_grant_to',
-                ]);
-
-                return $grantToResult;
-            }
-
-            $grantFromResult = $this->setupGrantFrom($node);
-            if (is_int($grantFromResult)) {
-                $this->rollbackProvisioningNode($node, 'agent_grant_from_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'agent_grant_from',
-                ]);
-
-                return $grantFromResult;
-            }
-
-            $agentToolResult = $this->setupAgentTools($node, $warnings);
-            if (is_int($agentToolResult)) {
-                $this->rollbackProvisioningNode($node, 'agent_tool_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'agent_tool',
-                ]);
-
-                return $agentToolResult;
-            }
-        }
-
-        if ($requiresHostProvisioning) {
-            $securityBaseline = $this->finalizeNodeSecurityBaseline($node);
-
-            if (is_int($securityBaseline)) {
-                $this->rollbackProvisioningNode($node, 'security_baseline_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'security_baseline',
-                ]);
-
-                return $securityBaseline;
-            }
-
-            $registryWriter->markActive($node);
-            $node->refresh();
         }
 
         $payload = [
@@ -543,202 +460,20 @@ final class GatewayNodeCreator
                 ->values()
                 ->all(),
             'provisioning' => [
-                'transport' => $requiresHostProvisioning ? 'ssh' : 'none',
-                'host' => $requiresHostProvisioning ? $inputs['host'] : null,
-                'status' => $requiresHostProvisioning ? 'complete' : 'created',
+                'transport' => 'none',
+                'host' => null,
+                'status' => 'created',
             ],
             'next_steps' => [],
         ];
 
-        if (in_array(NodeRoleName::AppDevelopment->value, $roles, true)) {
-            $payload['development_tld'] = [
-                'tld' => $inputs['tld'],
-                'gateway_dns' => [
-                    'domain' => "*.{$inputs['tld']}",
-                    'target' => $wireguardAddress,
-                    'status' => 'configured',
-                ],
-            ];
-        }
-
         if ($this->wantsJson()) {
-            return $this->jsonSuccess(
-                $payload,
-                $warnings !== [] ? ['warnings' => $warnings] : [],
-            );
+            return $this->jsonSuccess($payload);
         }
 
         $this->info("Created node {$name}.");
 
         return self::SUCCESS;
-    }
-
-    /**
-     * @param  list<string>  $roles
-     */
-    private function ensureAgentWireGuardPeer(
-        Node $node,
-        array $roles,
-        WireGuardKeyGenerator $wireGuardKeyGenerator,
-    ): ?int {
-        if (! in_array(NodeRoleName::Agent->value, $roles, true)) {
-            return null;
-        }
-
-        if (WireGuardPeer::query()->where('node_id', $node->id)->exists()) {
-            return null;
-        }
-
-        $wireGuardAddress = is_string($node->wireguard_address) ? trim($node->wireguard_address) : '';
-
-        if ($wireGuardAddress === '') {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "Node '{$node->name}' created but agent WireGuard identity could not be stored.",
-                meta: [
-                    'node' => $node->name,
-                    'step' => 'wireguard_identity',
-                    'error' => 'Node WireGuard address is missing.',
-                ],
-            );
-        }
-
-        try {
-            $keys = $wireGuardKeyGenerator->generateKeyPair();
-        } catch (RuntimeException $exception) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: 'Failed to generate WireGuard identity material.',
-                meta: [
-                    'node' => $node->name,
-                    'step' => 'wireguard_identity',
-                    'error' => $exception->getMessage(),
-                ],
-            );
-        }
-
-        WireGuardPeer::query()->create([
-            'node_id' => $node->id,
-            'public_key' => $keys['public_key'],
-            'private_key' => $keys['private_key'],
-            'allowed_ips' => "{$wireGuardAddress}/32",
-        ]);
-
-        return null;
-    }
-
-    private function bootstrapProvisionedAgent(Node $node): ?int
-    {
-        try {
-            $result = app(ProvisioningAgentInstaller::class)->install($node);
-        } catch (Throwable $exception) {
-            return $this->agentBootstrapFailure($node, $exception->getMessage());
-        }
-
-        if ($result->successful()) {
-            return null;
-        }
-
-        $errorOutput = trim($result->errorOutput());
-        $output = trim($result->output());
-
-        $error = match (true) {
-            $errorOutput !== '' => $errorOutput,
-            $output !== '' => $output,
-            default => null,
-        };
-
-        return $this->agentBootstrapFailure($node, $error);
-    }
-
-    private function agentBootstrapFailure(Node $node, ?string $error): int
-    {
-        return $this->failCommand(
-            code: 'node.provisioning_incomplete',
-            message: "Node '{$node->name}' created but the initial Orbit Agent could not be installed.",
-            meta: [
-                'node' => $node->name,
-                'step' => 'agent_bootstrap',
-                'error' => $error,
-            ],
-        );
-    }
-
-    private function configureProvisionedNodeWireGuard(
-        Node $node,
-        WireGuardKeyGenerator $wireGuardKeyGenerator,
-        ?string $gatewayEndpointOverride = null,
-    ): ?int {
-        $wireguardAddress = is_string($node->wireguard_address) ? trim($node->wireguard_address) : '';
-
-        if ($wireguardAddress === '') {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: "Node '{$node->name}' created but WireGuard could not be configured.",
-                meta: [
-                    'node' => $node->name,
-                    'step' => 'wireguard_identity',
-                    'error' => 'Node WireGuard address is missing.',
-                ],
-            );
-        }
-
-        $gateway = $this->gatewayQuery()->first();
-
-        if (! $gateway instanceof Node) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: 'Gateway identity is missing locally.',
-                meta: [
-                    'node' => $node->name,
-                    'step' => 'gateway_identity',
-                    'error' => 'No active gateway node record exists.',
-                ],
-            );
-        }
-
-        $gatewayEndpoint = $gatewayEndpointOverride ?? $this->gatewayPublicEndpoint($gateway);
-
-        if ($gatewayEndpoint === null) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: 'Gateway public WireGuard endpoint is missing locally.',
-                meta: [
-                    'node' => $gateway->name,
-                    'step' => 'gateway_wireguard_endpoint',
-                ],
-            );
-        }
-
-        $peer = $this->ensureProvisionedNodeWireGuardPeer($node, $wireGuardKeyGenerator, $wireguardAddress);
-
-        if (is_int($peer)) {
-            return $peer;
-        }
-
-        $wireguardServerPublicKey = $this->configureGatewayWireGuardServerPeer($node, $peer, $wireguardAddress);
-
-        if (is_int($wireguardServerPublicKey)) {
-            return $wireguardServerPublicKey;
-        }
-
-        $wireguardConfig = $this->controlWireGuardConfig(
-            controlPrivateKey: $peer->private_key,
-            controlWireguardAddress: $wireguardAddress,
-            gatewayPublicKey: $wireguardServerPublicKey,
-            gatewayWireguardAddress: (string) $gateway->wireguard_address,
-            gatewayEndpoint: $gatewayEndpoint,
-            preSharedKey: $peer->pre_shared_key,
-            allowedIps: '10.6.0.0/24',
-        );
-
-        $nodeWireGuardInstall = $this->installProvisionedNodeWireGuard($node, $wireguardConfig);
-
-        if (is_int($nodeWireGuardInstall)) {
-            return $nodeWireGuardInstall;
-        }
-
-        return $this->waitForProvisionedNodeWireGuard($node, $wireguardAddress);
     }
 
     private function ensureProvisionedNodeWireGuardPeer(
@@ -825,128 +560,6 @@ final class GatewayNodeCreator
                 ],
             );
         }
-    }
-
-    private function installProvisionedNodeWireGuard(Node $node, string $wireguardConfig): ?int
-    {
-        $runtimeUser = $node->user ?: self::DEFAULT_RUNTIME_USER;
-        $host = $node->host;
-        $script = <<<'SH'
-            set -euo pipefail
-            CONFIG_FILE="$(mktemp)"
-            trap 'rm -f "$CONFIG_FILE"' EXIT
-            cat > "$CONFIG_FILE"
-            if ! command -v wg >/dev/null 2>&1 || ! command -v wg-quick >/dev/null 2>&1; then
-                sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
-                sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq wireguard wireguard-tools
-            fi
-            sudo install -d -m 0700 /etc/wireguard
-            sudo install -m 0600 -o root -g root "$CONFIG_FILE" /etc/wireguard/wg-orbit.conf
-            sudo systemctl enable wg-quick@wg-orbit >/dev/null
-            sudo systemctl restart wg-quick@wg-orbit
-            SH;
-
-        $result = Process::timeout(240)
-            ->input($wireguardConfig)
-            ->run($this->ssh(
-                user: $runtimeUser,
-                host: $host,
-                command: $script,
-                node: $node,
-            ));
-
-        if ($result->successful()) {
-            return null;
-        }
-
-        return $this->failCommand(
-            code: 'node.provisioning_incomplete',
-            message: "Host '{$host}' could not install WireGuard.",
-            meta: [
-                'host' => $host,
-                'step' => 'node_wireguard_install',
-                'error' => trim($result->errorOutput()."\n".$result->output()) ?: null,
-            ],
-        );
-    }
-
-    private function waitForProvisionedNodeWireGuard(Node $node, string $wireguardAddress): ?int
-    {
-        $lastOutput = null;
-
-        for ($attempt = 0; $attempt < 12; $attempt++) {
-            $probe = $this->probeProvisionedNodeWireGuard($wireguardAddress);
-
-            if ($probe->successful()) {
-                return null;
-            }
-
-            $lastOutput = trim($probe->errorOutput()."\n".$probe->output()) ?: null;
-
-            $e2e = getenv('ORBIT_E2E');
-
-            if (! app()->runningUnitTests() || is_string($e2e) && $e2e !== '' && $e2e !== '0') {
-                sleep(2);
-            }
-        }
-
-        return $this->failCommand(
-            code: 'node.provisioning_incomplete',
-            message: "Gateway could not reach node '{$node->name}' over WireGuard.",
-            meta: [
-                'node' => $node->name,
-                'step' => 'node_wireguard_reachability',
-                'wireguard_address' => $wireguardAddress,
-                'error' => $lastOutput,
-            ],
-        );
-    }
-
-    private function probeProvisionedNodeWireGuard(string $wireguardAddress): RemoteShellResult
-    {
-        $command = sprintf('ping -c 1 -W 2 %s', escapeshellarg($wireguardAddress));
-
-        if ($this->runningInsideOrbitGateway()) {
-            $gateway = app(NodeRoleAssignments::class)
-                ->activeGatewayNodeQuery()
-                ->orderBy('id')
-                ->first();
-
-            if (! $gateway instanceof Node) {
-                return new RemoteShellResult(
-                    exitCode: 1,
-                    stdout: '',
-                    stderr: 'No active gateway node record exists.',
-                    durationMs: 0,
-                );
-            }
-
-            // @orbit-ssh-lane provisioning-ssh
-            return app(RemoteShell::class)->run($gateway, $command, ['timeout' => 5]);
-        }
-
-        $startedAt = hrtime(true);
-        $probe = Process::timeout(5)->run($command);
-
-        return new RemoteShellResult(
-            exitCode: $probe->successful() ? 0 : 1,
-            stdout: $probe->output(),
-            stderr: $probe->errorOutput(),
-            durationMs: (int) ((hrtime(true) - $startedAt) / 1_000_000),
-        );
-    }
-
-    private function runningInsideOrbitGateway(): bool
-    {
-        $hostPath = getenv('ORBIT_HOST_PATH');
-
-        if (is_string($hostPath) && trim($hostPath) !== '') {
-            return true;
-        }
-
-        $sourcePath = getenv('ORBIT_SOURCE_PATH');
-
-        return is_string($sourcePath) && trim($sourcePath) === '/opt/orbit';
     }
 
     private function gatewayPublicEndpoint(Node $gateway): ?string
@@ -1225,9 +838,7 @@ final class GatewayNodeCreator
      * @param  list<string>  $initialWorkloadRoles
      */
     private function provisionAppNode(
-        OrbitHostInstaller $installer,
         NodeRegistryWriter $registryWriter,
-        NodesProbe $nodesProbe,
         NodeRoleAssignmentService $roleAssignmentService,
         WireGuardKeyGenerator $wireGuardKeyGenerator,
         NodeConverger $nodeConverger,
@@ -1236,537 +847,350 @@ final class GatewayNodeCreator
         array $initialWorkloadRoles = [],
         ?int $appProductionIngressNodeId = null,
     ): int {
-        $existing = Node::query()->where('name', $name)->first();
-
-        if (
-            $existing instanceof Node
-            && $existing->isActive()
-            && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($existing)
-            && ! WireGuardPeer::query()->where('node_id', $existing->id)->exists()
-        ) {
-            return $this->adoptExistingAppNode(
-                $nodesProbe,
-                $nodeConverger,
-                $existing,
-                $inputs,
-                $roleAssignmentService,
-                $initialWorkloadRoles,
-                $appProductionIngressNodeId,
+        if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_PREPARE) {
+            return $this->prepareHostBootstrap(
+                registryWriter: $registryWriter,
+                wireGuardKeyGenerator: $wireGuardKeyGenerator,
+                name: $name,
+                roles: $initialWorkloadRoles,
+                inputs: $inputs,
             );
         }
 
-        if ($existing instanceof Node && $existing->isActive()) {
+        if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_COMPLETE) {
+            return $this->completePreparedWorkloadNode(
+                registryWriter: $registryWriter,
+                roleAssignmentService: $roleAssignmentService,
+                nodeConverger: $nodeConverger,
+                name: $name,
+                roles: $initialWorkloadRoles,
+                inputs: $inputs,
+                appProductionIngressNodeId: $appProductionIngressNodeId,
+            );
+        }
+
+        return $this->clientBootstrapRequired($name, $inputs['host']);
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
+     */
+    private function prepareHostBootstrap(
+        NodeRegistryWriter $registryWriter,
+        WireGuardKeyGenerator $wireGuardKeyGenerator,
+        string $name,
+        array $roles,
+        array $inputs,
+    ): int {
+        $caller = $this->bootstrapCaller;
+
+        if (! $caller instanceof Node) {
+            return $this->failCommand(
+                code: 'authorization_failed',
+                message: 'An authenticated initiating node is required to prepare workload bootstrap.',
+                meta: [],
+            );
+        }
+
+        $preflight = $this->preflightAgentSetup($roles);
+
+        if (is_int($preflight)) {
+            return $preflight;
+        }
+
+        $request = $this->resumableBootstrapRequest();
+        $existing = Node::query()->where('name', $name)->first();
+        $bootstrap = $existing instanceof Node
+            ? NodeBootstrap::query()->where('node_id', $existing->id)->first()
+            : null;
+
+        if (
+            $existing instanceof Node
+            && ! $this->pendingBootstrapIsCompatible(
+                node: $existing,
+                bootstrap: $bootstrap,
+                caller: $caller,
+                request: $request,
+                inputs: $inputs,
+            )
+        ) {
             return $this->failCommand(
                 code: 'node.incompatible',
-                message: "Node '{$name}' already exists.",
+                message: "Node '{$name}' already exists with incompatible bootstrap state.",
                 meta: ['name' => $name],
             );
         }
 
-        if ($existing instanceof Node) {
-            return $this->adoptExistingAppNode(
-                $nodesProbe,
-                $nodeConverger,
-                $existing,
-                $inputs,
-                $roleAssignmentService,
-                $initialWorkloadRoles,
-                $appProductionIngressNodeId,
-            );
-        }
+        $tld = $inputs['tld'];
 
         if (
-            $inputs['tld'] !== null
-            && Node::query()->where('tld', $inputs['tld'])->where('status', NodeStatus::Active->value)->exists()
+            is_string($tld)
+            && Node::query()->where('tld', $tld)->where('name', '!=', $name)->exists()
         ) {
             return $this->failCommand(
                 code: 'node.incompatible',
-                message: "Node TLD '{$inputs['tld']}' is already assigned to another node.",
+                message: "Node TLD '{$tld}' is already assigned to another node.",
                 meta: [
                     'field' => 'tld',
-                    'value' => $inputs['tld'],
+                    'value' => $tld,
                 ],
             );
         }
 
-        $adoption = $this->materializeUnknownAppNode(
-            $nodesProbe,
-            $registryWriter,
-            $nodeConverger,
-            $name,
-            $inputs,
-            $roleAssignmentService,
-            $initialWorkloadRoles,
-            $appProductionIngressNodeId,
-        );
+        $wireguardAddress = $existing?->wireguard_address;
 
-        if (is_int($adoption)) {
-            return $adoption;
+        if (! is_string($wireguardAddress) || trim($wireguardAddress) === '') {
+            $wireguardAddress = $this->resolveProvisionedNodeWireguardAddress();
         }
-
-        $wireguardAddress = $this->resolveProvisionedNodeWireguardAddress();
 
         if (is_int($wireguardAddress)) {
             return $wireguardAddress;
         }
 
-        $developmentDnsMappingFailure = $this->guardDevelopmentDnsMappingAvailable($inputs['tld'], $wireguardAddress);
-
-        if (is_int($developmentDnsMappingFailure)) {
-            return $developmentDnsMappingFailure;
-        }
-
-        $runtimeUser = self::DEFAULT_RUNTIME_USER;
-        $gatewayEndpoint = $inputs['gatewayEndpoint'] ?? $this->gatewayEndpoint();
-
-        try {
-            $pinnedHostKey = app(SshHostKeyPinner::class)->pin($inputs['host'], $inputs['hostKeyFingerprint']);
-        } catch (HostKeyMismatch $exception) {
-            return $this->failCommand(
-                code: 'node.host_key_mismatch',
-                message: $exception->getMessage(),
-                meta: ['host' => $inputs['host']],
-            );
-        } catch (HostKeyPinningFailed $exception) {
-            return $this->failCommand(
-                code: 'node.host_key_pin_failed',
-                message: $exception->getMessage(),
-                meta: ['host' => $inputs['host']],
-            );
-        }
-
-        $node = $registryWriter->writeAppNode(
-            name: $name,
-            tld: $inputs['tld'],
-            host: $inputs['host'],
-            wireguardAddress: $wireguardAddress,
-            gatewayEndpoint: $gatewayEndpoint,
-            sshUser: $inputs['sshUser'],
-            user: $runtimeUser,
-            status: NodeStatus::Provisioning,
-            hostKey: $pinnedHostKey,
-        );
-
-        try {
-            $installer->usePinnedNode($node);
-            $installation = $installer->install($inputs['host'], $inputs['sshUser'], $runtimeUser);
-
-            if (! $installation->successful) {
-                $failure = $this->installerFailure(
-                    role: $this->firstRole($initialWorkloadRoles),
-                    host: $inputs['host'],
-                    sshUser: $inputs['sshUser'],
-                    errorOutput: $installation->errorOutput,
-                );
-
-                $this->rollbackProvisioningNode($node, 'host_installer_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'host_install',
-                    'error' => trim($installation->errorOutput) ?: null,
-                ]);
-
-                return $failure;
-            }
-
-            $sshAuthorization = $this->authorizeProvisioningRuntimeUser($node, $runtimeUser, $runtimeUser);
-
-            if (is_int($sshAuthorization)) {
-                $this->rollbackProvisioningNode($node, 'runtime_ssh_authorization_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'steady_state_ssh_authorization',
-                ]);
-
-                return $sshAuthorization;
-            }
-
-            $sshHardening = $this->hardenProvisioningSshAccess($node, $runtimeUser);
-
-            if (is_int($sshHardening)) {
-                $this->rollbackProvisioningNode($node, 'ssh_hardening_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'ssh_hardening',
-                ]);
-
-                return $sshHardening;
-            }
-
-            $wireGuardProvisioning = $this->configureProvisionedNodeWireGuard(
-                $node,
-                $wireGuardKeyGenerator,
-                gatewayEndpointOverride: $inputs['gatewayEndpoint'],
-            );
-
-            if (is_int($wireGuardProvisioning)) {
-                $this->rollbackProvisioningNode($node, 'wireguard_install_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'node_wireguard_install',
-                ]);
-
-                return $wireGuardProvisioning;
-            }
-
-            $agentBootstrap = $this->bootstrapProvisionedAgent($node);
-
-            if (is_int($agentBootstrap)) {
-                $this->rollbackProvisioningNode($node, 'agent_bootstrap_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'agent_bootstrap',
-                ]);
-
-                return $agentBootstrap;
-            }
-
-            $roleAssignmentFailure = $this->ensureInitialWorkloadRoles(
-                $node,
-                $roleAssignmentService,
-                $initialWorkloadRoles,
-                $appProductionIngressNodeId,
-            );
-
-            if (is_int($roleAssignmentFailure)) {
-                $this->rollbackProvisioningNode($node, 'role_assignment_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'role_assignment',
-                ]);
-
-                return $roleAssignmentFailure;
-            }
-
-            $nodeSetup = $this->setupManagedNode($nodeConverger, $node, $initialWorkloadRoles);
-
-            if (is_int($nodeSetup)) {
-                $this->rollbackProvisioningNode($node, 'node_setup_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'node_setup',
-                ]);
-
-                return $nodeSetup;
-            }
-
-            $securityBaseline = $this->finalizeNodeSecurityBaseline($node);
-
-            if (is_int($securityBaseline)) {
-                $this->rollbackProvisioningNode($node, 'security_baseline_failed', [
-                    'host' => $inputs['host'],
-                    'step' => 'security_baseline',
-                ]);
-
-                return $securityBaseline;
-            }
-
-            $developmentDns = app(DevelopmentDnsMappingEnactor::class)->converge($node);
-
-            $registryWriter->markActive($node);
-            $node->refresh();
-        } catch (Throwable $exception) {
-            $this->rollbackProvisioningNode($node, 'exception', [
-                'host' => $inputs['host'],
-                'error' => $exception->getMessage(),
-            ]);
-
-            throw $exception;
-        }
-
-        if ($initialWorkloadRoles !== [] && ($developmentDns['status'] ?? null) === 'already_configured') {
-            $developmentDns['status'] = 'configured';
-        }
-
-        $payload = [
-            'result' => [
-                'action' => 'created',
-            ],
-            'node' => [
-                'name' => $name,
-                'tld' => $inputs['tld'],
-                'platform' => 'unknown',
-                'addresses' => [
-                    'wireguard' => $wireguardAddress,
-                ],
-                'status' => 'active',
-            ],
-            'provisioning' => [
-                'transport' => 'ssh',
-                'host' => $inputs['host'],
-                'status' => 'complete',
-            ],
-            'next_steps' => [],
-        ];
-
-        if ($this->containsDevelopmentAppRole($initialWorkloadRoles)) {
-            $payload['development_tld'] = [
-                'tld' => $inputs['tld'],
-                'gateway_dns' => [
-                    'domain' => "*.{$inputs['tld']}",
-                    'target' => $wireguardAddress,
-                    'status' => $developmentDns['status'],
-                ],
-            ];
-        }
-
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess($payload);
-        }
-
-        $this->info("Created app node {$name}.");
-        $this->line("Endpoint: {$inputs['host']}");
-
-        return self::SUCCESS;
-    }
-
-    /**
-     * @param  array{host: string, tld: ?string, sshUser: string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string}  $inputs
-     * @param  list<string>  $initialWorkloadRoles
-     */
-    private function materializeUnknownAppNode(
-        NodesProbe $nodesProbe,
-        NodeRegistryWriter $registryWriter,
-        NodeConverger $nodeConverger,
-        string $name,
-        array $inputs,
-        NodeRoleAssignmentService $roleAssignmentService,
-        array $initialWorkloadRoles = [],
-        ?int $appProductionIngressNodeId = null,
-    ): ?int {
-        $candidate = new Node([
-            'name' => $name,
-            'tld' => $inputs['tld'],
-            'platform' => 'unknown',
-            'host' => $inputs['host'],
-            'wireguard_address' => '',
-            'gateway_endpoint' => $inputs['gatewayEndpoint'] ?? $this->gatewayEndpoint(),
-            'user' => $inputs['sshUser'],
-            'orbit_path' => '/home/'.self::DEFAULT_RUNTIME_USER.'/orbit',
-            'status' => 'active',
-        ]);
-
-        try {
-            $artifact = app(NodeIdentityArtifactProbe::class)->read($candidate);
-        } catch (Throwable) {
-            return null;
-        }
-
-        if (! $this->identityArtifactMatchesAppRequest($artifact, $name, $initialWorkloadRoles)) {
-            return $this->failCommand(
-                code: 'node.incompatible',
-                message: "Host '{$inputs['host']}' has an incompatible Orbit node identity.",
-                meta: [
-                    'name' => $name,
-                    'requested_role' => $this->firstRole($initialWorkloadRoles),
-                    'observed_name' => $artifact->name,
-                    'observed_role' => $artifact->role,
-                    'observed_local_role' => $artifact->localRole,
-                    'observed_status' => $artifact->status,
-                    'observed_platform' => $artifact->platform,
-                ],
-            );
-        }
-
-        $publicKey = $artifact->interfacePublicKey;
-        $wireguardAddress = $artifact->wireguardAddress;
-
-        if (is_string($wireguardAddress) && $wireguardAddress !== '') {
-            $developmentDnsMappingFailure = $this->guardDevelopmentDnsMappingAvailable(
-                $inputs['tld'],
-                $wireguardAddress,
-            );
+        if ($this->containsDevelopmentAppRole($roles)) {
+            $developmentDnsMappingFailure = $this->guardDevelopmentDnsMappingAvailable($tld, $wireguardAddress);
 
             if (is_int($developmentDnsMappingFailure)) {
                 return $developmentDnsMappingFailure;
             }
         }
 
-        try {
-            $peerReality = is_string($publicKey) && $publicKey !== ''
-                ? app(WireGuardPeerRealityProbe::class)->peers()[$publicKey] ?? null
-                : null;
-        } catch (Throwable) {
-            $peerReality = null;
-        }
+        $gateway = $this->gatewayQuery()->first();
 
-        if (
-            ! is_string($publicKey)
-            || $publicKey === ''
-            || ! is_string($wireguardAddress)
-            || $wireguardAddress === ''
-            || $peerReality === null
-            || count($peerReality->allowedAddresses) !== 1
-            || $peerReality->allowedAddresses[0] !== $wireguardAddress
-        ) {
+        if (! $gateway instanceof Node) {
             return $this->failCommand(
                 code: 'node.provisioning_incomplete',
-                message: "App host '{$inputs['host']}' could not prove compatible WireGuard identity.",
+                message: 'Gateway identity is missing locally.',
                 meta: [
-                    'host' => $inputs['host'],
-                    'step' => 'node_identity_adoption',
-                    'error' => 'Identity artifact and live WireGuard peer reality did not match.',
+                    'node' => $name,
+                    'step' => 'gateway_identity',
                 ],
             );
         }
 
-        $node = $registryWriter->writeAppNode(
+        $gatewayEndpoint = $inputs['gatewayEndpoint'] ?? $this->gatewayPublicEndpoint($gateway);
+
+        if ($gatewayEndpoint === null) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Gateway public WireGuard endpoint is missing locally.',
+                meta: [
+                    'node' => $gateway->name,
+                    'step' => 'gateway_wireguard_endpoint',
+                ],
+            );
+        }
+
+        $node = $existing ?? $registryWriter->writeNodeIdentity(
             name: $name,
-            tld: $inputs['tld'],
+            tld: $tld,
+            platform: 'ubuntu_24-04',
             host: $inputs['host'],
             wireguardAddress: $wireguardAddress,
-            gatewayEndpoint: $inputs['gatewayEndpoint'] ?? $this->gatewayEndpoint(),
-            sshUser: $inputs['sshUser'],
+            gatewayEndpoint: $gatewayEndpoint,
             user: self::DEFAULT_RUNTIME_USER,
-            status: NodeStatus::Active,
+            orbitPath: '/home/'.self::DEFAULT_RUNTIME_USER.'/orbit',
+            status: NodeStatus::Provisioning,
         );
+        $node->forceFill([
+            'managed' => true,
+            'status' => NodeStatus::Provisioning,
+        ])->save();
 
-        $node->update([
-            'platform' => $artifact->platform,
+        $peer = $this->ensureProvisionedNodeWireGuardPeer($node, $wireGuardKeyGenerator, $wireguardAddress);
+
+        if (is_int($peer)) {
+            return $peer;
+        }
+
+        $bootstrap ??= NodeBootstrap::query()->create([
+            'node_id' => $node->id,
+            'initiating_node_id' => $caller->id,
+            'request' => $request,
+            'status' => 'pending',
+            'last_error' => null,
         ]);
 
-        return $this->adoptExistingAppNode(
-            $nodesProbe,
-            $nodeConverger,
-            $node->refresh(),
-            $inputs,
-            $roleAssignmentService,
-            $initialWorkloadRoles,
-            $appProductionIngressNodeId,
+        $wireguardServerPublicKey = $this->configureGatewayWireGuardServerPeer($node, $peer, $wireguardAddress);
+
+        if (is_int($wireguardServerPublicKey)) {
+            return $wireguardServerPublicKey;
+        }
+
+        $wireguardConfig = $this->controlWireGuardConfig(
+            controlPrivateKey: $peer->private_key,
+            controlWireguardAddress: $wireguardAddress,
+            gatewayPublicKey: $wireguardServerPublicKey,
+            gatewayWireguardAddress: (string) $gateway->wireguard_address,
+            gatewayEndpoint: $gatewayEndpoint,
+            preSharedKey: $peer->pre_shared_key,
+            allowedIps: '10.6.0.0/24',
         );
-    }
 
-    /**
-     * @param  list<string>  $initialWorkloadRoles
-     */
-    private function identityArtifactMatchesAppRequest(
-        NodeIdentityArtifact $artifact,
-        string $name,
-        array $initialWorkloadRoles,
-    ): bool {
-        $requestedAppRoles = array_values(array_intersect($initialWorkloadRoles, [
-            NodeRoleName::AppDevelopment->value,
-            NodeRoleName::AppProduction->value,
-        ]));
-
-        return (
-            $artifact->name === $name
-            && in_array($artifact->role, $requestedAppRoles, true)
-            && in_array($artifact->localRole, $requestedAppRoles, true)
-            && $artifact->status === 'active'
-            && is_string($artifact->platform)
-            && str_starts_with($artifact->platform, 'ubuntu_')
-        );
-    }
-
-    /**
-     * @param  array{host: string, tld: ?string, sshUser: string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string}  $inputs
-     * @param  list<string>  $initialWorkloadRoles
-     */
-    private function adoptExistingAppNode(
-        NodesProbe $nodesProbe,
-        NodeConverger $nodeConverger,
-        Node $node,
-        array $inputs,
-        NodeRoleAssignmentService $roleAssignmentService,
-        array $initialWorkloadRoles = [],
-        ?int $appProductionIngressNodeId = null,
-    ): int {
-        $incompatibleFields = [];
-
-        if (! $this->nodeCanAdoptAppWorkloadRole($node, $initialWorkloadRoles)) {
-            $incompatibleFields['role'] = $node->displayRole();
-        }
-
-        if ($node->host !== $inputs['host']) {
-            $incompatibleFields['host'] = $node->host;
-        }
-
-        if ($node->tld !== $inputs['tld']) {
-            $incompatibleFields['tld'] = $node->tld;
-        }
-
-        if ($incompatibleFields !== []) {
+        try {
+            $script = app(NodeBootstrapBundleBuilder::class)->build(
+                node: $node,
+                gateway: $gateway,
+                peer: $peer,
+                wireguardConfig: $wireguardConfig,
+            );
+        } catch (Throwable $exception) {
             return $this->failCommand(
-                code: 'node.incompatible',
-                message: "Node '{$node->name}' is not compatible with this adoption request.",
+                code: 'node.provisioning_incomplete',
+                message: "Node '{$name}' bootstrap bundle could not be rendered.",
                 meta: [
-                    'name' => $node->name,
-                    'requested_role' => $this->firstRole($initialWorkloadRoles),
-                    'incompatible_fields' => $incompatibleFields,
+                    'node' => $name,
+                    'step' => 'bootstrap_bundle',
+                    'error' => $exception->getMessage(),
                 ],
             );
         }
 
-        if ($node->isActive()) {
-            $roleAssignmentFailure = $this->ensureInitialWorkloadRoles(
-                $node,
-                $roleAssignmentService,
-                $initialWorkloadRoles,
-                $appProductionIngressNodeId,
+        $bootstrap->forceFill([
+            'status' => 'pending',
+            'last_error' => null,
+        ])->save();
+
+        return $this->jsonSuccess([
+            'bootstrap' => [
+                'id' => $bootstrap->id,
+                'status' => 'pending',
+                'host' => $inputs['host'],
+                'user' => $inputs['sshUser'] ?? 'root',
+                'wireguard_address' => $wireguardAddress,
+                'script' => $script,
+            ],
+        ]);
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
+     */
+    private function completePreparedWorkloadNode(
+        NodeRegistryWriter $registryWriter,
+        NodeRoleAssignmentService $roleAssignmentService,
+        NodeConverger $nodeConverger,
+        string $name,
+        array $roles,
+        array $inputs,
+        ?int $appProductionIngressNodeId,
+    ): int {
+        $bootstrap = $this->bootstrap;
+        $node = $bootstrap?->node()->first();
+
+        if (! $bootstrap instanceof NodeBootstrap || ! $node instanceof Node || $node->name !== $name) {
+            return $this->failCommand(
+                code: 'node.incompatible',
+                message: 'Pending bootstrap identity does not match the requested node.',
+                meta: ['name' => $name],
             );
-
-            if (is_int($roleAssignmentFailure)) {
-                return $roleAssignmentFailure;
-            }
-
-            $node->refresh();
         }
 
-        $results = $nodesProbe->adopt($node, $nodesProbe->snapshotForAdopt($node));
-        $hasConflict = false;
-        $activated = false;
-
-        foreach ($results as $result) {
-            if ($result->action === AdoptAction::Conflict) {
-                $hasConflict = true;
-            }
-
-            if (
-                in_array($result->key, ['node.wireguard_peer_missing', 'node.wireguard_peer_extra'], true)
-                && $result->action === AdoptAction::Updated
-            ) {
-                $activated = true;
-            }
-        }
-
-        $node->refresh();
-
-        if ($hasConflict || ! $activated || ! $node->isActive()) {
+        try {
+            app(ProvisioningAgentReadinessProbe::class)->waitUntilReady($node);
+        } catch (RuntimeException $exception) {
             return $this->failCommand(
                 code: 'node.provisioning_incomplete',
-                message: "App node '{$node->name}' could not be safely adopted.",
+                message: "Node '{$name}' Agent is not ready through WireGuard.",
                 meta: [
-                    'node' => $node->name,
-                    'step' => 'node_adoption',
-                    'error' =>
-                        'Run `orbit doctor --family=node --adopt --node='
-                            .$node->name
-                            .'` after resolving the reported node drift.',
-                    'adoption_results' => array_map(fn ($result): array => $result->toArray(), $results),
+                    'node' => $name,
+                    'step' => 'agent_readiness',
+                    'error' => $exception->getMessage(),
                 ],
             );
         }
 
         $roleAssignmentFailure = $this->ensureInitialWorkloadRoles(
-            $node,
-            $roleAssignmentService,
-            $initialWorkloadRoles,
-            $appProductionIngressNodeId,
+            node: $node,
+            roleAssignmentService: $roleAssignmentService,
+            roles: $roles,
+            appProductionIngressNodeId: $appProductionIngressNodeId,
+            backingNodeIds: [
+                'postgres' => $inputs['postgresNodeId'] ?? null,
+                'clickhouse' => $inputs['clickhouseNodeId'] ?? null,
+            ],
         );
 
         if (is_int($roleAssignmentFailure)) {
             return $roleAssignmentFailure;
         }
 
-        $developmentDns = app(DevelopmentDnsMappingEnactor::class)->converge($node);
+        $warnings = [];
 
-        $nodeSetup = $this->setupManagedNode($nodeConverger, $node, $initialWorkloadRoles);
+        if (in_array(NodeRoleName::Agent->value, $roles, true)) {
+            $selfGrantFailure = $this->setupAgentSelfGrant($node);
+
+            if (is_int($selfGrantFailure)) {
+                return $selfGrantFailure;
+            }
+
+            $grantToFailure = $this->setupGrantTo($node);
+
+            if (is_int($grantToFailure)) {
+                return $grantToFailure;
+            }
+
+            $grantFromFailure = $this->setupGrantFrom($node);
+
+            if (is_int($grantFromFailure)) {
+                return $grantFromFailure;
+            }
+
+            $agentToolFailure = $this->setupAgentTools($node, $warnings);
+
+            if (is_int($agentToolFailure)) {
+                return $agentToolFailure;
+            }
+        }
+
+        $nodeSetup = $this->setupManagedNode($nodeConverger, $node, $roles);
 
         if (is_int($nodeSetup)) {
             return $nodeSetup;
         }
 
-        if ($initialWorkloadRoles !== [] && ($developmentDns['status'] ?? null) === 'already_configured') {
-            $developmentDns['status'] = 'configured';
+        $securityBaseline = $this->finalizeNodeSecurityBaseline($node);
+
+        if (is_int($securityBaseline)) {
+            return $securityBaseline;
         }
 
+        $developmentDns = $this->containsAppWorkloadRole($roles)
+            ? app(DevelopmentDnsMappingEnactor::class)->converge($node)
+            : null;
+
+        $registryWriter->markActive($node);
+        $node->refresh();
+
+        $payload = $this->completedNodePayload(
+            node: $node,
+            host: $inputs['host'],
+            roles: $roles,
+            developmentDns: $developmentDns,
+        );
+
+        return $this->jsonSuccess(
+            $payload,
+            $warnings !== [] ? ['warnings' => $warnings] : [],
+        );
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @param  array<string, mixed>|null  $developmentDns
+     * @return array<string, mixed>
+     */
+    private function completedNodePayload(
+        Node $node,
+        string $host,
+        array $roles,
+        ?array $developmentDns = null,
+    ): array {
         $payload = [
             'result' => [
-                'action' => 'adopted',
+                'action' => 'created',
             ],
             'node' => [
                 'name' => $node->name,
@@ -1774,61 +1198,100 @@ final class GatewayNodeCreator
                 'platform' => $node->platform ?? 'unknown',
                 'addresses' => [
                     'wireguard' => $node->wireguard_address,
-                    'gateway_endpoint' => $node->gateway_endpoint,
                 ],
                 'status' => 'active',
             ],
+            'roles' => $node
+                ->roleAssignments()
+                ->get()
+                ->map(fn (NodeRoleAssignment $assignment): array => [
+                    'role' => $assignment->role,
+                    'status' => $assignment->status->value,
+                    'settings' => $assignment->settings ?? [],
+                    'last_error' => $assignment->last_error,
+                ])
+                ->values()
+                ->all(),
             'provisioning' => [
-                'transport' => 'none',
-                'host' => $inputs['host'],
-                'status' => 'adopted',
+                'transport' => 'client-ssh',
+                'host' => $host,
+                'status' => 'complete',
             ],
             'next_steps' => [],
         ];
 
-        if ($this->nodeHasActiveRole($node, NodeRoleName::AppDevelopment->value)) {
+        if ($this->containsDevelopmentAppRole($roles)) {
             $payload['development_tld'] = [
                 'tld' => $node->tld,
                 'gateway_dns' => [
                     'domain' => "*.{$node->tld}",
                     'target' => $node->wireguard_address,
-                    'status' => $developmentDns['status'],
+                    'status' => is_string($developmentDns['status'] ?? null)
+                        ? $developmentDns['status']
+                        : 'configured',
                 ],
             ];
         }
 
-        if ($this->wantsJson()) {
-            return $this->jsonSuccess($payload);
-        }
+        return $payload;
+    }
 
-        $this->info("Adopted app node {$node->name}.");
+    private function completedBootstrapResult(NodeBootstrap $bootstrap, Node $node): GatewayActionResult
+    {
+        $roles = array_values(array_filter(
+            $node->roleAssignments()->pluck('role')->all(),
+            is_string(...),
+        ));
+        $requestHost = $bootstrap->request['--host'] ?? $node->host;
+        $host = is_string($requestHost) && $requestHost !== '' ? $requestHost : $node->host;
 
-        return self::SUCCESS;
+        return new GatewayActionResult(
+            exitCode: self::SUCCESS,
+            payload: JsonEnvelope::success($this->completedNodePayload($node, $host, $roles)),
+        );
+    }
+
+    private function clientBootstrapRequired(string $name, string $host): int
+    {
+        return $this->failCommand(
+            code: 'node.bootstrap_required',
+            message: "Node '{$name}' must be bootstrapped over SSH by the initiating client.",
+            meta: [
+                'node' => $name,
+                'host' => $host,
+                'prepare_endpoint' => '/api/nodes/bootstrap',
+            ],
+        );
     }
 
     /**
-     * @param  list<string>  $initialWorkloadRoles
+     * @param  array<string, mixed>  $request
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
      */
-    private function nodeCanAdoptAppWorkloadRole(Node $node, array $initialWorkloadRoles): bool
+    private function pendingBootstrapIsCompatible(
+        Node $node,
+        ?NodeBootstrap $bootstrap,
+        Node $caller,
+        array $request,
+        array $inputs,
+    ): bool {
+        return (
+            $node->isProvisioning()
+            && $node->host === $inputs['host']
+            && $node->tld === $inputs['tld']
+            && $bootstrap instanceof NodeBootstrap
+            && $bootstrap->initiating_node_id === $caller->id
+            && $bootstrap->request === $request
+            && $bootstrap->status === 'pending'
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resumableBootstrapRequest(): array
     {
-        if (app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
-            return $this->nodeHasAnyActiveRole(
-                $node,
-                array_values(array_intersect($initialWorkloadRoles, [
-                    NodeRoleName::AppDevelopment->value,
-                    NodeRoleName::AppProduction->value,
-                ])),
-            );
-        }
-
-        if (! $this->containsAppWorkloadRole($initialWorkloadRoles)) {
-            return false;
-        }
-
-        return ! $node
-            ->roleAssignments()
-            ->where('status', NodeRoleStatus::Active->value)
-            ->exists();
+        return array_diff_key($this->arguments, ['--json' => true]);
     }
 
     /**
@@ -1837,119 +1300,6 @@ final class GatewayNodeCreator
     private function containsDevelopmentAppRole(array $roles): bool
     {
         return in_array(NodeRoleName::AppDevelopment->value, $roles, true);
-    }
-
-    /**
-     * @param  list<string>  $roles
-     */
-    private function nodeHasAnyActiveRole(Node $node, array $roles): bool
-    {
-        if ($roles === []) {
-            return false;
-        }
-
-        return $node
-            ->roleAssignments()
-            ->whereIn('role', $roles)
-            ->where('status', NodeRoleStatus::Active->value)
-            ->exists();
-    }
-
-    private function nodeHasActiveRole(Node $node, string $role): bool
-    {
-        return $node
-            ->roleAssignments()
-            ->where('role', $role)
-            ->where('status', NodeRoleStatus::Active->value)
-            ->exists();
-    }
-
-    private function authorizeProvisioningRuntimeUser(Node $node, string $sshUser, string $runtimeUser): ?int
-    {
-        $publicKey = $this->gatewaySshPublicKey();
-
-        if (is_int($publicKey)) {
-            return $publicKey;
-        }
-
-        $home = $runtimeUser === 'root' ? '/root' : "/home/{$runtimeUser}";
-        $authorizedKeys = "{$home}/.ssh/authorized_keys";
-        $script = sprintf(
-            'sudo install -d -m 700 -o %1$s -g %1$s %2$s && sudo touch %3$s && sudo chown %1$s:%1$s %3$s && sudo chmod 600 %3$s && (sudo grep -qxF %4$s %3$s || printf "%%s\n" %4$s | sudo tee -a %3$s >/dev/null)',
-            escapeshellarg($runtimeUser),
-            escapeshellarg("{$home}/.ssh"),
-            escapeshellarg($authorizedKeys),
-            escapeshellarg($publicKey),
-        );
-
-        $authorization = Process::timeout(30)->run($this->ssh(
-            user: $sshUser,
-            host: $node->host,
-            command: $script,
-            node: $node,
-        ));
-
-        if ($authorization->successful()) {
-            return null;
-        }
-
-        return $this->failCommand(
-            code: 'node.provisioning_incomplete',
-            message: "Host '{$node->host}' could not authorize the provisioning runtime user.",
-            meta: [
-                'host' => $node->host,
-                'step' => 'provisioning_runtime_user_authorization',
-                'error' => trim($authorization->errorOutput()) ?: trim($authorization->output()) ?: null,
-            ],
-        );
-    }
-
-    private function hardenProvisioningSshAccess(Node $node, string $runtimeUser): ?int
-    {
-        $script = sprintf(
-            <<<'SCRIPT'
-                set -e
-                RUNTIME_USER=%s
-                sudo install -d -m 0755 /etc/ssh/sshd_config.d
-                sudo tee /etc/ssh/sshd_config.d/99-orbit-hardening.conf > /dev/null <<EOF
-                # Managed by Orbit.
-                # Provisioned nodes accept operator SSH only through the orbit system user.
-                PermitRootLogin no
-                PasswordAuthentication no
-                KbdInteractiveAuthentication no
-                ChallengeResponseAuthentication no
-                PubkeyAuthentication yes
-                AllowUsers ${RUNTIME_USER}
-                EOF
-                sudo chmod 0644 /etc/ssh/sshd_config.d/99-orbit-hardening.conf
-                sudo sshd -t
-                sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd
-                sudo passwd -l root > /dev/null 2>&1 || true
-                sudo rm -f /root/.ssh/authorized_keys
-                SCRIPT,
-            escapeshellarg($runtimeUser),
-        );
-
-        $hardening = Process::timeout(60)->run($this->ssh(
-            user: $runtimeUser,
-            host: $node->host,
-            command: $script,
-            node: $node,
-        ));
-
-        if ($hardening->successful()) {
-            return null;
-        }
-
-        return $this->failCommand(
-            code: 'node.provisioning_incomplete',
-            message: "Host '{$node->host}' could not harden provisioning SSH access.",
-            meta: [
-                'host' => $node->host,
-                'step' => 'ssh_hardening',
-                'error' => trim($hardening->errorOutput()."\n".$hardening->output()) ?: null,
-            ],
-        );
     }
 
     private function finalizeNodeSecurityBaseline(Node $node): ?int
@@ -1983,22 +1333,7 @@ final class GatewayNodeCreator
         return null;
     }
 
-    private function gatewaySshPublicKey(): string|int
-    {
-        try {
-            return app(GatewayManagementSshKey::class)->publicKey();
-        } catch (RuntimeException $exception) {
-            return $this->failCommand(
-                code: 'node.provisioning_incomplete',
-                message: 'Gateway SSH identity is not available for steady-state access.',
-                meta: [
-                    'step' => 'steady_state_ssh_authorization',
-                    'error' => $exception->getMessage(),
-                ],
-            );
-        }
-    }
-
+    /** @mago-expect lint:excessive-parameter-list */
     private function controlWireGuardConfig(
         string $controlPrivateKey,
         string $controlWireguardAddress,
@@ -2037,43 +1372,6 @@ final class GatewayNodeCreator
         } catch (Throwable $exception) {
             throw new RuntimeException('WireGuard pre-shared key generation failed.', previous: $exception);
         }
-    }
-
-    private function installerFailure(string $role, string $host, string $sshUser, string $errorOutput): int
-    {
-        $error = trim($errorOutput);
-
-        if ($this->isSshAuthorizationFailure($error)) {
-            return $this->failCommand(
-                code: 'authorization_failed',
-                message: "Gateway cannot SSH to {$sshUser}@{$host}.",
-                meta: [
-                    'host' => $host,
-                    'user' => $sshUser,
-                    'step' => 'ssh_authorization',
-                    'error' => $error !== '' ? $error : null,
-                ],
-            );
-        }
-
-        return $this->failCommand(
-            code: 'node.provisioning_incomplete',
-            message: ucfirst($role)." host '{$host}' could not complete Orbit installation.",
-            meta: [
-                'host' => $host,
-                'step' => 'install_orbit',
-                'error' => $error !== '' ? $error : null,
-            ],
-        );
-    }
-
-    private function isSshAuthorizationFailure(string $error): bool
-    {
-        return (
-            str_contains($error, 'Permission denied')
-            || str_contains($error, 'publickey')
-            || str_contains($error, 'Authentication failed')
-        );
     }
 
     private function gatewayConfigured(): bool
@@ -2420,18 +1718,6 @@ final class GatewayNodeCreator
     }
 
     /**
-     * @param  list<string>  $roles
-     */
-    private function firstRole(array $roles): string
-    {
-        if ($roles === []) {
-            throw new RuntimeException('Expected at least one workload role.');
-        }
-
-        return $roles[0];
-    }
-
-    /**
      * @return array<string, mixed>
      */
     private function settingsForRole(
@@ -2451,21 +1737,27 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
+     * @param  array{postgres?: int|null, clickhouse?: int|null}  $backingNodeIds
      */
     private function ensureInitialWorkloadRoles(
         Node $node,
         NodeRoleAssignmentService $roleAssignmentService,
         array $roles,
         ?int $appProductionIngressNodeId = null,
+        array $backingNodeIds = [],
     ): ?int {
         foreach ($this->orderWorkloadRoles($roles) as $role) {
             $existingAssignment = $node->roleAssignments()->where('role', $role)->first();
             $settings = $role === NodeRoleName::AppProduction->value
                 ? ['ingress_node_id' => $appProductionIngressNodeId ?? $node->id]
-                : $this->settingsForRole($role);
+                : $this->settingsForRole(
+                    $role,
+                    $backingNodeIds['postgres'] ?? null,
+                    $backingNodeIds['clickhouse'] ?? null,
+                );
 
             $assignment = $existingAssignment instanceof NodeRoleAssignment
-                ? $roleAssignmentService->update($node, $role, $settings)
+                ? $roleAssignmentService->retryDuringCreation($node, $role, $settings)
                 : $roleAssignmentService->addDuringCreation($node, $role, $settings);
 
             if ($assignment->status !== NodeRoleStatus::Error) {
@@ -3264,41 +2556,6 @@ final class GatewayNodeCreator
         );
     }
 
-    /**
-     * @param  array<string, mixed>  $properties
-     */
-    private function rollbackProvisioningNode(Node $node, string $reason, array $properties = []): void
-    {
-        $name = $node->name;
-
-        DB::transaction(function () use ($node): void {
-            $node->firewallRules()->delete();
-            $node->roleAssignments()->delete();
-            $node->nodeTools()->delete();
-            WireGuardPeer::query()->where('node_id', $node->id)->delete();
-            NodeAccess::query()
-                ->where('consumer_node_id', $node->id)
-                ->orWhere('serving_node_id', $node->id)
-                ->delete();
-
-            $node->delete();
-        });
-
-        if (! Schema::hasTable('activity_log')) {
-            return;
-        }
-
-        activity('node')
-            ->event('node.provisioning.failed')
-            ->withProperties([
-                'type' => 'write',
-                'node' => $name,
-                'reason' => $reason,
-                ...$properties,
-            ])
-            ->log('node.provisioning.failed');
-    }
-
     private function guardDevelopmentDnsMappingAvailable(?string $tld, string $target): ?int
     {
         if ($tld === null) {
@@ -3404,29 +2661,5 @@ final class GatewayNodeCreator
     private function warn(string $message): void
     {
         $this->line($message);
-    }
-
-    private function ssh(string $user, string $host, string $command, ?Node $node = null): string
-    {
-        if ($node instanceof Node) {
-            // @orbit-ssh-lane provisioning-ssh
-            return app(SshCommandBuilder::class)->enforceForNode(
-                node: $node,
-                remoteCommand: $command,
-                loginUser: $user,
-                options: [
-                    'batch_mode' => true,
-                    'prefer_public_host' => true,
-                ],
-            );
-        }
-
-        // @orbit-ssh-lane provisioning-ssh
-        return app(SshCommandBuilder::class)->ssh(
-            user: $user,
-            host: $host,
-            remoteCommand: $command,
-            options: ['batch_mode' => true],
-        );
     }
 }

@@ -140,6 +140,7 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **WireGuard service address**
 - **First-gateway bootstrap**
 - **Client enrollment**
+- **Workload bootstrap**
 - **Compatible existing node**
 - **CLI-to-gateway edge**
 - **Gateway maintenance edge**

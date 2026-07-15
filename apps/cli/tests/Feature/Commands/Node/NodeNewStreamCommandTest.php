@@ -2,9 +2,31 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process;
+use Orbit\Core\Http\JsonEnvelope;
+
+function fakeNodeBootstrapStreamPrepare(string $id = 'bootstrap-stream'): void
+{
+    Http::fake([
+        'https://gateway.test/api/nodes/bootstrap' => Http::response(JsonEnvelope::success([
+            'bootstrap' => [
+                'id' => $id,
+                'status' => 'pending',
+                'host' => '192.0.2.20',
+                'user' => 'root',
+                'wireguard_address' => '10.6.0.4',
+                'script' => "#!/usr/bin/env bash\nset -euo pipefail\n",
+            ],
+        ])),
+    ]);
+    Process::fake(['*' => Process::result()]);
+    Process::preventStrayProcesses();
+}
+
 describe('NodeNewStream command', function (): void {
     it('renders gateway-authored node:new progress in human mode', function (): void {
-        fakeGatewayProgressStream(
+        fakeGatewayProgressStreamClient(
             gatewayProgressFrame('tree', [
                 'title' => 'Creating Node',
                 'steps' => [
@@ -17,6 +39,7 @@ describe('NodeNewStream command', function (): void {
                     'data' => ['footer' => "Node 'app-1' created."],
                 ]),
         );
+        fakeNodeBootstrapStreamPrepare();
 
         [$exitCode, $output] = runCommand($this, 'node:new', [
             'name' => 'app-1',
@@ -27,7 +50,7 @@ describe('NodeNewStream command', function (): void {
 
         assertGatewayStreamSent(
             fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/nodes'
+            && $request->url() === 'https://gateway.test/api/nodes/bootstrap/bootstrap-stream/complete'
             && $request->hasHeader('Accept', 'text/event-stream'),
         );
 
@@ -44,7 +67,8 @@ describe('NodeNewStream command', function (): void {
     });
 
     it('fails when the NodeNewStream closes without a terminal frame', function (): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('step', ['key' => 'node', 'status' => 'running']));
+        fakeGatewayProgressStreamClient(gatewayProgressFrame('step', ['key' => 'node', 'status' => 'running']));
+        fakeNodeBootstrapStreamPrepare();
 
         [$exitCode, $output] = runCommand($this, 'node:new', [
             'name' => 'app-1',
@@ -57,5 +81,53 @@ describe('NodeNewStream command', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
+    });
+
+    it('streams JSON progress from the gateway completion phase', function (): void {
+        fakeGatewayProgressStreamClient(
+            gatewayProgressFrame('tree', ['title' => 'Completing Node'])
+                .gatewayProgressFrame('step', ['key' => 'agent', 'status' => 'running'])
+                .gatewayProgressFrame('complete', [
+                    'exit_code' => 0,
+                    'data' => ['result' => ['transport' => 'client-ssh']],
+                ]),
+        );
+        fakeNodeBootstrapStreamPrepare('bootstrap-stream-json');
+
+        [$exitCode, $output] = runCommand($this, 'node:new', [
+            'name' => 'app-1',
+            '--roles' => 'app-dev',
+            '--host' => '192.0.2.20',
+            '--tld' => 'test',
+            '--stream-json' => true,
+        ]);
+
+        $frames = array_map(
+            fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR),
+            array_filter(explode("\n", $output)),
+        );
+
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/nodes/bootstrap/bootstrap-stream-json/complete'
+            && $request->hasHeader('Accept', 'text/event-stream'),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($frames)
+            ->toHaveCount(3)
+            ->and($frames[0]['event'])
+            ->toBe('tree')
+            ->and($frames[1]['event'])
+            ->toBe('step')
+            ->and($frames[2])
+            ->toBe([
+                'event' => 'complete',
+                'success' => [
+                    'data' => ['result' => ['transport' => 'client-ssh']],
+                    'meta' => [],
+                ],
+            ]);
     });
 });

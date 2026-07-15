@@ -18,6 +18,10 @@ final readonly class SecurityInstallerTransport
 
     public function run(Node $node, ?RemoteShell $provisioningShell, string $script, int $timeout): RemoteShellResult
     {
+        if ($node->isAgentEligible()) {
+            return $this->scripts->run($node, 'orbit-security', 'reconfigure', $script);
+        }
+
         if ($node->isProvisioning()) {
             if (! $provisioningShell instanceof RemoteShell) {
                 throw new RuntimeException('Provisioning security convergence requires its SSH bootstrap shell.');
@@ -30,10 +34,6 @@ final readonly class SecurityInstallerTransport
             ]);
         }
 
-        if (! $node->isAgentEligible()) {
-            throw new RuntimeException('Security convergence requires an Agent-eligible node.');
-        }
-
-        return $this->scripts->run($node, 'orbit-security', 'reconfigure', $script);
+        throw new RuntimeException('Security convergence requires an Agent-eligible node.');
     }
 }

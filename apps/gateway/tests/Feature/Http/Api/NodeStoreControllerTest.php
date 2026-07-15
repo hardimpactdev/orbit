@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Security\PinnedHostKey;
-use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -19,7 +18,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
-use Spatie\Activitylog\Models\Activity;
 use Tests\Fakes\NodeStoreProvisioningAgentInstaller;
 
 uses(RefreshDatabase::class);
@@ -291,7 +289,7 @@ describe('NodeStoreController', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
-    it('provisions an app node for an authenticated control caller', function (): void {
+    it('requires authenticated control callers to use client-side bootstrap for an app node', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
         assignStoreNodeRole($gatewayId, 'gateway');
         assignStoreNodeRole($gatewayId, 'vpn');
@@ -347,9 +345,6 @@ describe('NodeStoreController', function (): void {
             return Process::result();
         });
         Process::preventStrayProcesses();
-        $shell = new NodeStoreConvergenceRemoteShell;
-        app()->instance(RemoteShell::class, $shell);
-
         $response = $this
             ->withServerVariables(['REMOTE_ADDR' => '10.6.0.3'])
             ->postJson('/api/nodes', [
@@ -360,87 +355,15 @@ describe('NodeStoreController', function (): void {
             ]);
 
         $response
-            ->assertOk()
-            ->assertJsonPath('success.data.node.name', 'app-dev-1')
-            ->assertJsonPath('success.data.development_tld.gateway_dns.domain', '*.test');
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.bootstrap_required')
+            ->assertJsonPath('error.meta.prepare_endpoint', '/api/nodes/bootstrap');
 
-        $node = DB::table('nodes')->where('name', 'app-dev-1')->first();
-
-        expect($node)
-            ->not
-            ->toBeNull()
-            ->and($node->tld)
-            ->toBe('test')
-            ->and($node->wireguard_address)
-            ->toBe('10.6.0.4');
-
-        expect(
-            NodeRoleAssignment::query()
-                ->where('node_id', $node->id)
-                ->where('role', 'app-dev')
-                ->where('status', NodeRoleStatus::Active->value)
-                ->exists(),
-        )->toBeTrue();
-
-        expect(
-            DB::table('node_tools')
-                ->where('node_id', $node->id)
-                ->pluck('name')
-                ->sort()
-                ->values()
-                ->all(),
-        )->toBe([
-            'caddy',
-            'composer',
-            'docker',
-            'gh',
-            'git',
-            'laravel-installer',
-            'php-cli',
-        ]);
-
-        expect($shell->toolNodeStatuses)
-            ->toHaveCount(1)
-            ->and(array_values(array_unique($shell->toolNodeStatuses)))
-            ->toBe([NodeStatus::Provisioning->value]);
-
-        $agentInstaller = app(ProvisioningAgentInstaller::class);
-
-        expect($agentInstaller)
-            ->toBeInstanceOf(NodeStoreProvisioningAgentInstaller::class)
-            ->and($agentInstaller->provisioningSnapshots)
-            ->toBe([[
-                'node' => 'app-dev-1',
-                'status' => NodeStatus::Provisioning->value,
-                'role_count' => 0,
-            ]]);
-
-        $entry = Activity::query()
-            ->where('event', 'node.created')
-            ->first();
-
-        expect($entry)->not->toBeNull();
-        expect($entry->log_name)->toBe('api');
-        expect($entry->properties->get('type'))->toBe('write');
-        expect($entry->subject?->name)->toBe('app-dev-1');
-        expect($entry->properties->get('name'))->toBe('app-dev-1');
-        expect($entry->properties->get('roles'))->toBe(['app-dev']);
-        expect($entry->properties->get('tld'))->toBe('test');
-
-        Process::assertRan(
-            fn ($process): bool => (
-                ! str_contains($process->command, '--role=') && str_contains($process->command, '--source-archive=')
-            ),
-        );
-        Process::assertRan(
-            fn ($process): bool => (
-                str_contains($process->command, 'authorized_keys')
-                && str_contains($process->command, 'ssh-ed25519 AAAATEST gateway')
-            ),
-        );
+        expect(DB::table('nodes')->where('name', 'app-dev-1')->exists())->toBeFalse();
+        Process::assertRanTimes(fn (): bool => true, 0);
     });
 
-    it('skips WireGuard addresses already present in wg-easy runtime state when provisioning', function (): void {
+    it('does not inspect WireGuard reservations before directing legacy app creation to bootstrap', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
         assignStoreNodeRole($gatewayId, 'gateway');
         assignStoreNodeRole($gatewayId, 'vpn');
@@ -518,14 +441,14 @@ describe('NodeStoreController', function (): void {
             ]);
 
         $response
-            ->assertOk()
-            ->assertJsonPath('success.data.node.name', 'app-dev-2')
-            ->assertJsonPath('success.data.node.addresses.wireguard', '10.6.0.6');
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.bootstrap_required');
 
-        expect(DB::table('nodes')->where('name', 'app-dev-2')->value('wireguard_address'))->toBe('10.6.0.6');
+        expect(DB::table('nodes')->where('name', 'app-dev-2')->exists())->toBeFalse();
+        Process::assertRanTimes(fn (): bool => true, 0);
     });
 
-    it('provisions a database host with a custom WireGuard endpoint', function (): void {
+    it('requires client-side bootstrap for a database host with a custom WireGuard endpoint', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'gateway_endpoint' => '188.245.156.201',
         ]));
@@ -604,59 +527,15 @@ describe('NodeStoreController', function (): void {
             ]);
 
         $response
-            ->assertOk()
-            ->assertJsonPath('success.data.node.name', 'database1')
-            ->assertJsonPath('success.data.provisioning.transport', 'ssh')
-            ->assertJsonPath('success.data.provisioning.host', '116.203.220.206');
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.bootstrap_required')
+            ->assertJsonPath('error.meta.host', '116.203.220.206');
 
-        $node = DB::table('nodes')->where('name', 'database1')->first();
-
-        expect($node)
-            ->not
-            ->toBeNull()
-            ->and($node->tld)
-            ->toBe('db1')
-            ->and($node->host)
-            ->toBe('116.203.220.206')
-            ->and($node->gateway_endpoint)
-            ->toBe('10.3.0.2')
-            ->and($node->user)
-            ->toBe('orbit')
-            ->and($node->status)
-            ->toBe(NodeStatus::Active->value)
+        expect(DB::table('nodes')->where('name', 'database1')->exists())
+            ->toBeFalse()
             ->and($wireGuardConfigs)
-            ->toHaveCount(1)
-            ->and($wireGuardConfigs[0])
-            ->toContain('Endpoint = 10.3.0.2:51820');
-
-        expect(
-            NodeRoleAssignment::query()
-                ->where('node_id', $node->id)
-                ->where('role', 'database')
-                ->where('status', NodeRoleStatus::Active->value)
-                ->exists(),
-        )->toBeTrue();
-
-        expect(
-            DB::table('node_tools')
-                ->where('node_id', $node->id)
-                ->pluck('name')
-                ->all(),
-        )->toBe(['docker']);
-
-        Process::assertRan(
-            fn ($process): bool => (
-                str_contains($process->command, 'ssh-ed25519 AAAATEST gateway')
-                && str_contains($process->command, "'orbit'@'116.203.220.206'")
-            ),
-        );
-        Process::assertRanTimes(
-            fn ($process): bool => (
-                str_contains($process->command, 'ssh-ed25519 AAAATEST gateway')
-                && str_contains($process->command, "'root'@'116.203.220.206'")
-            ),
-            0,
-        );
+            ->toBe([]);
+        Process::assertRanTimes(fn (): bool => true, 0);
     });
 
     it('rejects app callers before provisioning', function (): void {
@@ -695,7 +574,7 @@ describe('NodeStoreController', function (): void {
         Process::assertRanTimes(fn (): bool => true, 0);
     });
 
-    it('adopts a compatible app node for an authenticated control caller', function (): void {
+    it('does not use the legacy gateway path to adopt a compatible app node', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
         assignStoreNodeRole($gatewayId, 'gateway');
 
@@ -745,10 +624,8 @@ describe('NodeStoreController', function (): void {
             ]);
 
         $response
-            ->assertOk()
-            ->assertJsonPath('success.data.result.action', 'adopted')
-            ->assertJsonPath('success.data.provisioning.status', 'adopted')
-            ->assertJsonPath('success.data.node.addresses.wireguard', '10.6.0.9');
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.bootstrap_required');
 
         $node = DB::table('nodes')->where('name', 'app-adopt-1')->first();
 
@@ -756,22 +633,14 @@ describe('NodeStoreController', function (): void {
             ->not
             ->toBeNull()
             ->and($node->status)
-            ->toBe(NodeStatus::Active->value)
+            ->toBe(NodeStatus::Decommissioned->value)
             ->and($node->wireguard_address)
-            ->toBe('10.6.0.9');
+            ->toBe('10.6.0.8');
 
-        $entry = Activity::query()
-            ->where('event', 'node.created')
-            ->first();
-
-        expect($entry)->not->toBeNull();
-        expect($entry->subject?->name)->toBe('app-adopt-1');
-
-        Process::assertRan(fn ($process): bool => $process->command === 'sudo wg show wg-orbit allowed-ips');
-        Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
+        Process::assertRanTimes(fn (): bool => true, 0);
     });
 
-    it('materializes a compatible unknown app host for an authenticated control caller', function (): void {
+    it('does not probe or materialize an unknown app host through the legacy gateway path', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
         assignStoreNodeRole($gatewayId, 'gateway');
         assignStoreNodeRole($gatewayId, 'vpn');
@@ -902,34 +771,14 @@ describe('NodeStoreController', function (): void {
             ]);
 
         $response
-            ->assertOk()
-            ->assertJsonPath('success.data.result.action', 'created')
-            ->assertJsonPath('success.data.provisioning.status', 'complete')
-            ->assertJsonPath('success.data.node.addresses.wireguard', '10.6.0.4')
-            ->assertJsonPath('success.data.node.platform', 'unknown');
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.bootstrap_required');
 
-        $node = DB::table('nodes')->where('name', 'app-unknown-1')->first();
-        $peer = $node === null ? null : DB::table('wireguard_peers')->where('node_id', $node->id)->first();
-
-        expect($node)
-            ->not->toBeNull()->and($node->host)->toBe(
-                '192.0.2.33',
-            )->and($node->status)->toBe(NodeStatus::Active->value)->and($peer)
-            ->not->toBeNull()->and($peer->public_key)->toBeString()
-            ->not->toBe('')->and($peer->private_key)->toBeString()
-            ->not->toBe('')->and($peer->allowed_ips)->toBe('10.6.0.4/32');
-
-        $entry = Activity::query()
-            ->where('event', 'node.created')
-            ->first();
-
-        expect($entry)->not->toBeNull();
-        expect($entry->subject?->name)->toBe('app-unknown-1');
-        expect($vpnInstaller->configuredPeers)->toHaveCount(1);
-
-        Process::assertRan(
-            fn ($process): bool => $process->command === "docker exec 'vpn-container-id' wg show wg0 allowed-ips",
-        );
+        expect(DB::table('nodes')->where('name', 'app-unknown-1')->exists())
+            ->toBeFalse()
+            ->and($vpnInstaller->configuredPeers)
+            ->toBe([]);
+        Process::assertRanTimes(fn (): bool => true, 0);
     });
 });
 

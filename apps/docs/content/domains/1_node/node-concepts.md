@@ -394,6 +394,13 @@ These terms describe how nodes join the fleet and prove their identity to the ga
 - **Client enrollment:** A two-machine path: the gateway mints the client
   identity, the client machine installs that WireGuard identity, and then runs
   `gateway:add`.
+- **Workload bootstrap:** A three-party path initiated by a configured client.
+  The gateway reserves a pending node and WireGuard peer and returns a
+  node-specific bundle over the client's existing WireGuard-authenticated
+  connection. The client streams that bundle over its own SSH connection to
+  the target. Once the target starts WireGuard and its WireGuard-bound Agent,
+  the gateway finishes provisioning through Agent push. The gateway never
+  opens target SSH and no public pre-WireGuard enrollment endpoint exists.
 - **Compatible existing node:** An active node whose role assignments are known
   to the gateway and whose role assignments, identity, host, and
   assignment-local settings match the resolved command input for the requested
@@ -421,8 +428,9 @@ These terms describe how nodes communicate and how authority is enforced.
   selection. `gateway-only` covers gateway-owned reads/writes; `agent-push` is
   available for Agent-eligible nodes when the gateway can reach the node's
   listener over Orbit/WireGuard and the envelope opts in. `auto` selects
-  agent-push for eligible envelopes and fails clearly otherwise. SSH remains
-  only on the provisioning path. Break-glass SSH belongs to the operator and
+  agent-push for eligible envelopes and fails clearly otherwise. Workload
+  bootstrap SSH is a client-to-target edge and is not a gateway transport.
+  Break-glass SSH belongs to the operator and
   remains outside normal Orbit command execution. The Agent lane executes
   gateway-built `binary + argv` requests with scoped operation tokens and a
   node-local binary allowlist, never arbitrary shell.

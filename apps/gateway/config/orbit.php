@@ -45,6 +45,11 @@ return [
         'retention_days' => env('ORBIT_OPERATION_RUNS_RETENTION_DAYS', 90),
     ],
 
+    'node_bootstrap' => [
+        'readiness_attempts' => (int) env('ORBIT_NODE_BOOTSTRAP_READINESS_ATTEMPTS', 30),
+        'readiness_delay_milliseconds' => (int) env('ORBIT_NODE_BOOTSTRAP_READINESS_DELAY_MILLISECONDS', 1000),
+    ],
+
     'operations' => [
         'stream_auth_ttl_seconds' => (int) env('ORBIT_OPERATIONS_STREAM_AUTH_TTL_SECONDS', 300),
         'publisher_token_ttl_seconds' => (int) env(key: 'ORBIT_OPERATIONS_PUBLISHER_TOKEN_TTL_SECONDS', default: 120),

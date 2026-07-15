@@ -86,7 +86,7 @@ function grantNodeStoreStreamAccess(int $consumerId, int $servingId): void
     ]);
 }
 
-it('streams node creation from an operation_run source', function (): void {
+it('streams the client-bootstrap requirement from an operation_run source', function (): void {
     $gatewayId = (int) DB::table('nodes')->insertGetId(nodeStoreStreamRow());
     assignNodeStoreStreamRole($gatewayId, 'gateway');
     assignNodeStoreStreamRole($gatewayId, 'vpn');
@@ -171,15 +171,17 @@ it('streams node creation from an operation_run source', function (): void {
         ->and($content)
         ->toContain('Run node creation')
         ->and($content)
-        ->toContain('event: complete')
+        ->toContain('event: error')
+        ->and($content)
+        ->toContain('node.bootstrap_required')
         ->and($content)
         ->toContain($operationRun->id)
         ->and($operationRun->status->value)
-        ->toBe('succeeded')
+        ->toBe('failed')
         ->and($operationRun->caller_node_id)
         ->toBe($callerId)
-        ->and($operationRun->result['success']['data']['node']['name'])
-        ->toBe('app-dev-1');
+        ->and($operationRun->error['code'])
+        ->toBe('node.bootstrap_required');
 });
 
 final class NodeStoreStreamConvergenceRemoteShell implements RemoteShell

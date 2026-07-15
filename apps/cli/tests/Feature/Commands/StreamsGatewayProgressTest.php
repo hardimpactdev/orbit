@@ -349,12 +349,6 @@ describe('StreamsGatewayProgress', function (): void {
             'POST',
             '/api/workspaces/setup',
         ],
-        'node:new' => [
-            'node:new',
-            ['name' => 'app-1', '--roles' => 'app-dev', '--host' => '192.0.2.20', '--tld' => 'test'],
-            'POST',
-            '/api/nodes',
-        ],
         'tool:install' => [
             'tool:install',
             ['tool' => 'composer', '--node' => 'app-1'],

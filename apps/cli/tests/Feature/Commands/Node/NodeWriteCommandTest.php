@@ -10,6 +10,24 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Orbit\Core\Http\JsonEnvelope;
 
+function fakeNodeBootstrapPrepare(string $host, string $id = 'bootstrap-123'): void
+{
+    Http::fake([
+        'https://gateway.test/api/nodes/bootstrap' => Http::response(JsonEnvelope::success([
+            'bootstrap' => [
+                'id' => $id,
+                'status' => 'pending',
+                'host' => $host,
+                'user' => 'root',
+                'wireguard_address' => '10.6.0.4',
+                'script' => "#!/usr/bin/env bash\nset -euo pipefail\n",
+            ],
+        ])),
+    ]);
+    Process::fake(['*' => Process::result()]);
+    Process::preventStrayProcesses();
+}
+
 describe('node write commands', function (): void {
     it('posts node:new payloads to the typed gateway API', function (): void {
         $complete = [
@@ -20,7 +38,8 @@ describe('node write commands', function (): void {
             ]),
         ];
 
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
+        fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', $complete));
+        fakeNodeBootstrapPrepare('192.0.2.20');
 
         [$exitCode, $output] = runCommand($this, 'node:new', [
             'name' => 'app-1',
@@ -35,11 +54,9 @@ describe('node write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        assertGatewayStreamSent(
-            fn (FakeGatewayStreamRequest $request): bool => (
-                $request->method() === 'POST'
-                && str_contains($request->url(), '/api/nodes')
-                && $request->hasHeader('Accept', 'text/event-stream')
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->url() === 'https://gateway.test/api/nodes/bootstrap'
                 && $request['name'] === 'app-1'
                 && $request['roles'] === ['app-dev', 'database']
                 && $request['host'] === '192.0.2.20'
@@ -49,6 +66,13 @@ describe('node write commands', function (): void {
                 && $request['agent_tools'] === ['openclaw']
                 && ! isset($request['template'])
                 && ! isset($request['operator'])
+            ),
+        );
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && str_ends_with($request->url(), '/api/nodes/bootstrap/bootstrap-123/complete')
+                && $request->hasHeader('Accept', 'text/event-stream')
             ),
         );
 
@@ -61,13 +85,14 @@ describe('node write commands', function (): void {
     });
 
     it('normalizes comma-separated node:new roles for programmatic callers', function (): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+        fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', [
             'exit_code' => 0,
             'data' => fakeSuccessEnvelope([
                 'node' => ['name' => 'app-1'],
                 'action' => 'created',
             ]),
         ]));
+        fakeNodeBootstrapPrepare('192.0.2.20');
 
         [$exitCode] = runCommand($this, 'node:new', [
             'name' => 'app-1',
@@ -77,10 +102,9 @@ describe('node write commands', function (): void {
             '--json' => true,
         ]);
 
-        assertGatewayStreamSent(
-            fn (FakeGatewayStreamRequest $request): bool => (
-                $request->method() === 'POST'
-                && str_contains($request->url(), '/api/nodes')
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->url() === 'https://gateway.test/api/nodes/bootstrap'
                 && $request['roles'] === ['app-dev', 'database']
                 && ! isset($request['template'])
             ),
@@ -90,13 +114,14 @@ describe('node write commands', function (): void {
     });
 
     it('accepts metrics role node:new payloads for programmatic callers', function (): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+        fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', [
             'exit_code' => 0,
             'data' => fakeSuccessEnvelope([
                 'node' => ['name' => 'metrics-1'],
                 'action' => 'created',
             ]),
         ]));
+        fakeNodeBootstrapPrepare('192.0.2.55');
 
         [$exitCode] = runCommand($this, 'node:new', [
             'name' => 'metrics-1',
@@ -106,10 +131,9 @@ describe('node write commands', function (): void {
             '--json' => true,
         ]);
 
-        assertGatewayStreamSent(
-            fn (FakeGatewayStreamRequest $request): bool => (
-                $request->method() === 'POST'
-                && str_contains($request->url(), '/api/nodes')
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->url() === 'https://gateway.test/api/nodes/bootstrap'
                 && $request['roles'] === ['metrics']
                 && ! isset($request['template'])
             ),
@@ -1087,13 +1111,14 @@ describe('node write commands', function (): void {
     });
 
     it('posts analytics node:new backing node selectors to the typed gateway API', function (): void {
-        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+        fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', [
             'exit_code' => 0,
             'data' => fakeSuccessEnvelope([
                 'node' => ['name' => 'analytics-1'],
                 'action' => 'created',
             ]),
         ]));
+        fakeNodeBootstrapPrepare('192.0.2.30');
 
         [$exitCode] = runCommand($this, 'node:new', [
             'name' => 'analytics-1',
@@ -1105,10 +1130,9 @@ describe('node write commands', function (): void {
             '--json' => true,
         ]);
 
-        assertGatewayStreamSent(
-            fn (FakeGatewayStreamRequest $request): bool => (
-                $request->method() === 'POST'
-                && str_contains($request->url(), '/api/nodes')
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->url() === 'https://gateway.test/api/nodes/bootstrap'
                 && $request['roles'] === ['analytics']
                 && $request['postgres_node'] === 'database-1'
                 && $request['clickhouse_node'] === 'database-2'
