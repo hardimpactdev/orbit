@@ -1,0 +1,21 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-15T20:13:41+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-docs-audit-drift/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-15-221341-fix-docs-audit-drift",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "fc9b14cf16ac0ad8a1954c4ce8da93e6464d9a49ce130f248e1d91cd960f85e1"
+    },
+    "branch": "fix-docs-audit-drift",
+    "candidate_commit": "22695f3e640e54ec87779a1f0b66449a66346db2",
+    "accepted_feature_tip": "22695f3e640e54ec87779a1f0b66449a66346db2",
+    "accepted_main_tip": "d0d84b1649777a338982fa9ee241d49722845c33",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
