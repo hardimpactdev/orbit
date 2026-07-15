@@ -525,7 +525,13 @@ function archiveLoopTopLabel(string $loop, string $label): ?string
         return null;
     }
 
-    return trim($match[1]);
+    $value = trim($match[1]);
+
+    if (preg_match('/^`([^`\r\n]+)`$/D', $value, $inlineCode) === 1) {
+        return $inlineCode[1];
+    }
+
+    return $value;
 }
 
 /** @param list<string> $arguments */
