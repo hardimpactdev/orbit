@@ -8,6 +8,8 @@ use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
+use App\Models\AppInstance;
+use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeContainer;
@@ -16,6 +18,7 @@ use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use InvalidArgumentException;
+use RuntimeException;
 
 final readonly class EnsureFrankenPhpRuntimeProcess
 {
@@ -27,14 +30,28 @@ final readonly class EnsureFrankenPhpRuntimeProcess
         private WorkspacePlacement $placement,
     ) {}
 
-    public function forApp(App $app): Process
+    public function forApp(App $app, ?AppInstance $appInstance = null): Process
     {
-        $container = $this->appRuntimeContainerRenderer->render($app);
+        $app->loadMissing('instances');
+        $appInstance ??= $this->soleInstance($app);
+        $node = $this->placement->nodeForInstance($appInstance);
+
+        if (! $node instanceof Node || $appInstance->app_id !== $app->id) {
+            throw new InvalidArgumentException(
+                "App instance '{$app->name}.{$appInstance->name}' has no valid app owner placement.",
+            );
+        }
+
+        $runtimeApp = $this->appRuntimeContainerRenderer->runtimeAppForInstance($app, $appInstance);
+        $container = $this->appRuntimeContainerRenderer->renderForInstance($app, $appInstance);
 
         return $app->processes()->updateOrCreate(
-            ['name' => $this->appProcessName($app)],
             [
-                'node_id' => $app->node_id,
+                'app_instance_id' => $appInstance->id,
+                'name' => $this->appProcessName($app),
+            ],
+            [
+                'node_id' => $node->id,
                 'command' => self::Command,
                 'restart_policy' => ProcessRestartPolicy::Always,
                 'crash_notification' => ProcessCrashNotification::None,
@@ -44,10 +61,13 @@ final readonly class EnsureFrankenPhpRuntimeProcess
                     'container_name' => $container->name(),
                     'container_spec_hash' => $container->specHash(),
                     'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
-                    'document_root' => $app->document_root,
-                    'php_ini_path' => $this->appRuntimeContainerRenderer->phpIniHostPath($app),
-                    'php_version' => $app->php_version,
-                    'source_path' => $app->path,
+                    'document_root' => $runtimeApp->document_root,
+                    'php_ini_path' => $this->appRuntimeContainerRenderer->phpIniHostPathForInstance(
+                        $app,
+                        $appInstance,
+                    ),
+                    'php_version' => $runtimeApp->php_version,
+                    'source_path' => $runtimeApp->path,
                 ],
                 'sort_order' => 0,
             ],
@@ -69,7 +89,10 @@ final readonly class EnsureFrankenPhpRuntimeProcess
         $node = $this->placement->nodeForWorkspace($workspace);
 
         return $workspace->processes()->updateOrCreate(
-            ['name' => $this->workspaceProcessName($workspace)],
+            [
+                'app_instance_id' => $workspace->app_instance_id,
+                'name' => $this->workspaceProcessName($workspace),
+            ],
             [
                 'node_id' => $node?->id ?? $app->node_id,
                 'command' => self::Command,
@@ -107,5 +130,17 @@ final readonly class EnsureFrankenPhpRuntimeProcess
         }
 
         return "frankenphp-{$workspace->app->name}-{$workspace->name}";
+    }
+
+    private function soleInstance(App $app): AppInstance
+    {
+        $instances = $app->instances->values();
+        $instance = $instances->first();
+
+        if ($instances->count() === 1 && $instance instanceof AppInstance) {
+            return $instance;
+        }
+
+        throw new RuntimeException("App '{$app->name}' requires one concrete app instance for runtime seeding.");
     }
 }

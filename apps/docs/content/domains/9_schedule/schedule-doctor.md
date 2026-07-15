@@ -18,12 +18,20 @@ The schedule family owns these facts:
 
 App source, app runtime containers, process units, proxy routes, tools, firewall rules, and node reachability belong to their own families. The schedule family verifies the gateway-resident scheduler and per-target dispatch reachability, not application health.
 
+The family is eligible at gateway scope and on every node targeted by at least
+one gateway schedule definition, independent of workload role. Singleton
+scheduler service, heartbeat, and lock checks run only at gateway scope.
+Target-node scope runs dispatch-reachability and recent-run checks without
+expecting a scheduler service on that workload node.
+
 ## Probe Layers
 
 The schedule probe reads gateway schedule configuration and checks these layers:
 
 1. **Registry configuration:** every selected schedule has valid scope, target, interval, timezone, execution source, and enabled state.
-2. **Target eligibility:** the app, node, or Orbit maintenance target resolves and is visible to the caller.
+2. **Target eligibility:** the app, node, or Orbit maintenance target resolves
+   to a valid active target. Caller authorization is resolved before the probe
+   and is not schedule drift.
 
 **Gateway scheduler layers** (verified once per doctor run, not per schedule):
 
@@ -49,7 +57,7 @@ The table below lists every issue code the schedule probe may emit and the condi
 | Code | Detected when |
 | --- | --- |
 | `schedule.record_incomplete` | A selected gateway schedule lacks scope, target, interval, timezone, execution source, or enabled state. |
-| `schedule.target_invalid` | The schedule points at a missing, unauthorized, inactive, unsupported, or role-incompatible target. |
+| `schedule.target_invalid` | The schedule points at a missing, inactive, unsupported, or role-incompatible target. |
 | `schedule.runtime_backend_unavailable` | The gateway Swarm runtime or gateway image cannot run the scheduler daemon. |
 | `schedule.scheduler_missing` | The `orbit_orbit-scheduler` Swarm service has no desired scheduler replica. |
 | `schedule.scheduler_stopped` | The `orbit_orbit-scheduler` Swarm service is configured but not running. |

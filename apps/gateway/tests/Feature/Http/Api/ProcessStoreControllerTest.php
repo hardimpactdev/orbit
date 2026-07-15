@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
@@ -54,12 +56,159 @@ function grantProcessStoreAccess(Node $caller, Node $appNode, array $permissions
     ]);
 }
 
+function create_process_store_app_instance(App $app, Node $node, string $name = 'development'): AppInstance
+{
+    return AppInstance::factory()->for($app)->create([
+        'name' => $name,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+}
+
 describe('ProcessStoreController', function (): void {
+    it('requires an app instance when a bare app selector is ambiguous', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $developmentNode = createTestAppHostNode(['name' => 'app-development']);
+        $productionNode = createTestAppHostNode(['name' => 'app-production']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
+
+        AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $developmentNode->id),
+        ]);
+        AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $productionNode->id),
+        ]);
+        app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
+
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'vite',
+                'command' => 'npm run dev',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'app')
+            ->assertJsonPath('error.meta.reason', 'app_instance_required');
+
+        expect(Process::query()->exists())->toBeFalse();
+    });
+
+    it('persists and returns the selected app instance for app process intent', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $developmentNode = createTestAppHostNode(['name' => 'app-development']);
+        $productionNode = createTestAppHostNode(['name' => 'app-production']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
+
+        AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $developmentNode->id),
+        ]);
+        $production = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $productionNode->id),
+        ]);
+        app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs.production',
+                'name' => 'vite',
+                'command' => 'npm run dev',
+                'no_start' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.process.app', 'docs')
+            ->assertJsonPath('success.data.process.app_instance', 'production')
+            ->assertJsonPath('success.data.process.workspace', null);
+
+        $process = Process::query()->where('name', 'vite')->firstOrFail();
+
+        expect($process->app_instance_id)
+            ->toBe($production->id)
+            ->and($process->node_id)
+            ->toBe($productionNode->id);
+    });
+
+    it('allows the same process name on separate app instances', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $developmentNode = createTestAppHostNode(['name' => 'app-development']);
+        $productionNode = createTestAppHostNode(['name' => 'app-production']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
+        $development = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $developmentNode->id),
+        ]);
+        $production = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $productionNode->id),
+        ]);
+        app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        foreach (['development', 'production'] as $instance) {
+            $this->call(
+                'POST',
+                '/api/processes',
+                [
+                    'app' => "docs.{$instance}",
+                    'name' => 'vite',
+                    'command' => 'npm run dev',
+                    'no_start' => true,
+                ],
+                [],
+                [],
+                ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+            )->assertOk();
+        }
+
+        expect(Process::query()->where('name', 'vite')->count())
+            ->toBe(2)
+            ->and(Process::query()->where('app_instance_id', $development->id)->exists())
+            ->toBeTrue()
+            ->and(Process::query()->where('app_instance_id', $production->id)->exists())
+            ->toBeTrue();
+    });
+
     it('creates process intent for authorized control callers', function (): void {
         $caller = createProcessStoreCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessStoreAccess($caller, $appNode);
-        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        create_process_store_app_instance($app, $appNode);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
@@ -83,7 +232,7 @@ describe('ProcessStoreController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.process.name', 'vite')
             ->assertJsonPath('success.data.process.runtime', 'systemd')
-            ->assertJsonPath('success.data.runtime_units.0.name', 'orbit_docs_main_vite')
+            ->assertJsonPath('success.data.runtime_units.0.name', 'orbit_docs_development_main_vite')
             ->assertJsonPath('success.meta.warnings', []);
 
         expect(Process::query()->where('name', 'vite')->value('runtime'))->toBe(ProcessRuntime::Systemd);
@@ -97,7 +246,11 @@ describe('ProcessStoreController', function (): void {
             'node_id' => $appNode->id,
             'runtime' => AppRuntimeKind::Php,
         ]);
-        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs']);
+        $instance = create_process_store_app_instance($app, $appNode);
+        $workspace = Workspace::factory()->for($app)->create([
+            'app_instance_id' => $instance->id,
+            'name' => 'feature-docs',
+        ]);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
@@ -121,7 +274,7 @@ describe('ProcessStoreController', function (): void {
             ->assertJsonPath('success.data.process.name', 'horizon')
             ->assertJsonPath('success.data.process.workspace', 'feature-docs')
             ->assertJsonPath('success.data.process.runtime', 'systemd')
-            ->assertJsonPath('success.data.runtime_units.0.name', 'orbit_docs_feature-docs_horizon');
+            ->assertJsonPath('success.data.runtime_units.0.name', 'orbit_docs_development_feature-docs_horizon');
 
         $process = Process::query()->where('name', 'horizon')->firstOrFail();
 
@@ -141,7 +294,8 @@ describe('ProcessStoreController', function (): void {
             'user' => 'nckrtl',
         ]);
         grantProcessStoreAccess($caller, $appNode);
-        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        create_process_store_app_instance($app, $appNode);
         $remoteShell = new ProcessStoreRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
@@ -162,7 +316,7 @@ describe('ProcessStoreController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.process.name', 'vite')
             ->assertJsonPath('success.data.process.runtime', 'launchd')
-            ->assertJsonPath('success.data.runtime_units.0.name', 'orbit_docs_main_vite');
+            ->assertJsonPath('success.data.runtime_units.0.name', 'orbit_docs_development_main_vite');
 
         expect(Process::query()->where('name', 'vite')->value('runtime'))
             ->toBe(ProcessRuntime::Launchd)
@@ -170,7 +324,7 @@ describe('ProcessStoreController', function (): void {
                 ->contains(
                     fn (string $script): bool => str_contains(
                         $script,
-                        "internal:process-launchd-service 'apply' 'dev.hardimpact.orbit.orbit_docs_main_vite'",
+                        "internal:process-launchd-service 'apply' 'dev.hardimpact.orbit.orbit_docs_development_main_vite'",
                     ),
                 ))
             ->toBeTrue();
@@ -232,8 +386,10 @@ describe('ProcessStoreController', function (): void {
     it('lets app-dev self grants create app-owned process intent on their own node only', function (): void {
         $caller = createProcessStoreCallerNode(role: 'app-dev');
         $otherNode = createTestAppHostNode(['name' => 'app-2']);
-        App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
-        App::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        $hiddenApp = App::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
+        create_process_store_app_instance($app, $caller);
+        create_process_store_app_instance($hiddenApp, $otherNode);
         grantProcessStoreAccess(
             caller: $caller,
             appNode: $caller,
@@ -323,7 +479,8 @@ describe('ProcessStoreController', function (): void {
     it('persists and returns an explicit systemd runtime when supplied', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        create_process_store_app_instance($app, $appNode);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
@@ -1260,7 +1417,8 @@ describe('ProcessStoreController', function (): void {
         $caller = createProcessStoreCallerNode();
         $appNode = createTestAppHostNode(['platform' => 'darwin']);
         grantProcessStoreAccess($caller, $appNode);
-        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        create_process_store_app_instance($app, $appNode);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
@@ -1316,7 +1474,8 @@ describe('ProcessStoreController', function (): void {
         $caller = createProcessStoreCallerNode();
         $appNode = createTestAppHostNode(['platform' => 'ubuntu_24-04']);
         grantProcessStoreAccess($caller, $appNode);
-        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        create_process_store_app_instance($app, $appNode);
 
         $response = $this->call(
             'POST',

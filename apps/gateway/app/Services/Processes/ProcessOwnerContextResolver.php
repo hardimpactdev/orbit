@@ -5,17 +5,20 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Data\Apps\AppSelection;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspacePlacement;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection as SupportCollection;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
+/** @mago-expect lint:too-many-methods */
 final readonly class ProcessOwnerContextResolver
 {
     public function __construct(
@@ -112,13 +115,14 @@ final readonly class ProcessOwnerContextResolver
         }
 
         if ($allowSingleVisibleAppDefault) {
-            $apps = $this->visibleApps($visibleNodeIds)->get();
+            $selections = $this->visibleAppSelections($visibleNodeIds);
 
-            if ($apps->count() === 1) {
-                $app = $apps->firstOrFail();
-                $app->loadMissing('node');
+            if ($selections->count() === 1) {
+                $selection = $selections->first();
 
-                return $this->contextForApp($app);
+                if ($selection instanceof AppSelection) {
+                    return $this->contextForApp($selection->app, $selection);
+                }
             }
         }
 
@@ -161,15 +165,8 @@ final readonly class ProcessOwnerContextResolver
      */
     private function resolveApp(string $appName, ?array $visibleNodeIds): ProcessOwnerContext
     {
-        $selection = $this->appSelectorResolver->resolve($appName);
-        $app = $selection?->app;
-
-        if (! $selection instanceof AppSelection || ! $app instanceof App) {
-            throw new GatewayApiException("App '{$appName}' not found or not visible.", 'validation_failed', [
-                'field' => 'app',
-                'value' => $appName,
-            ]);
-        }
+        $selection = $this->resolveRequiredAppInstance($appName);
+        $app = $selection->app;
 
         $instance = $selection->instance;
         $node = $instance !== null
@@ -194,7 +191,7 @@ final readonly class ProcessOwnerContextResolver
         ?string $appName,
         ?array $visibleNodeIds,
     ): ProcessOwnerContext {
-        $selection = $appName !== null ? $this->appSelectorResolver->resolve($appName) : null;
+        $selection = $appName !== null ? $this->resolveRequiredAppInstance($appName) : null;
         $query = Workspace::query()
             ->with(['app.node', 'app.instances', 'appInstance'])
             ->where('name', $workspaceName);
@@ -248,6 +245,7 @@ final readonly class ProcessOwnerContextResolver
 
         $workspace = $matches->firstOrFail();
         $app = $workspace->app;
+        $appInstance = $workspace->appInstance;
 
         if (! $app instanceof App) {
             throw new GatewayApiException(
@@ -256,6 +254,18 @@ final readonly class ProcessOwnerContextResolver
                 [
                     'field' => 'workspace',
                     'value' => $workspaceName,
+                ],
+            );
+        }
+
+        if (! $appInstance instanceof AppInstance) {
+            throw new GatewayApiException(
+                "Workspace '{$workspaceName}' is not attached to an app instance.",
+                'validation_failed',
+                [
+                    'field' => 'app',
+                    'reason' => 'app_instance_required',
+                    'app' => $app->name,
                 ],
             );
         }
@@ -274,13 +284,15 @@ final readonly class ProcessOwnerContextResolver
             app: $app,
             workspace: $workspace,
             owner: $workspace,
+            appInstance: $appInstance,
         );
     }
 
     private function contextForApp(App $app, ?AppSelection $selection = null): ProcessOwnerContext
     {
         $app->loadMissing('node');
-        $instance = $selection?->instance;
+        $selection ??= $this->requireAppInstance(new AppSelection(app: $app));
+        $instance = $selection->instance;
         $node = $instance !== null
             ? $this->placement->nodeForInstance($instance)
             : $app->node;
@@ -301,21 +313,69 @@ final readonly class ProcessOwnerContextResolver
         );
     }
 
+    private function resolveRequiredAppInstance(string $appName): AppSelection
+    {
+        try {
+            $selection = $this->appSelectorResolver->resolve($appName);
+
+            if (! $selection instanceof AppSelection) {
+                throw new GatewayApiException("App '{$appName}' not found or not visible.", 'validation_failed', [
+                    'field' => 'app',
+                    'value' => $appName,
+                ]);
+            }
+
+            return $this->appSelectorResolver->requireInstance($selection);
+        } catch (AppSelectionResolutionFailed $exception) {
+            throw new GatewayApiException(
+                $exception->getMessage(),
+                $exception->errorCode,
+                $exception->meta,
+            );
+        }
+    }
+
+    private function requireAppInstance(AppSelection $selection): AppSelection
+    {
+        try {
+            return $this->appSelectorResolver->requireInstance($selection);
+        } catch (AppSelectionResolutionFailed $exception) {
+            throw new GatewayApiException(
+                $exception->getMessage(),
+                $exception->errorCode,
+                $exception->meta,
+            );
+        }
+    }
+
     /**
      * @param  list<int>|null  $visibleNodeIds
-     * @return Builder<App>
+     * @return SupportCollection<int, AppSelection>
      */
-    private function visibleApps(?array $visibleNodeIds): Builder
+    private function visibleAppSelections(?array $visibleNodeIds): SupportCollection
     {
-        /** @var Builder<App> $query */
-        $query = App::query()
-            ->with(['node', 'processes']);
+        /** @var Collection<int, AppSelection> $selections */
+        $selections = AppInstance::query()
+            ->with('app')
+            ->get()
+            ->map(fn (AppInstance $instance): AppSelection => new AppSelection(
+                app: $instance->app,
+                instance: $instance,
+                instanceSelector: $instance->name,
+            ))
+            ->filter(function (AppSelection $selection) use ($visibleNodeIds): bool {
+                $node = $selection->instance instanceof AppInstance
+                    ? $this->placement->nodeForInstance($selection->instance)
+                    : null;
 
-        if ($visibleNodeIds !== null) {
-            $query->whereIn('node_id', $visibleNodeIds);
-        }
+                return (
+                    $node instanceof Node
+                    && ($visibleNodeIds === null || in_array($node->id, $visibleNodeIds, true))
+                );
+            })
+            ->values();
 
-        return $query;
+        return new SupportCollection($selections->all());
     }
 
     /**

@@ -393,19 +393,19 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('success.data.process.name', 'dev-server')
             ->assertJsonPath('success.data.old_name', 'vite')
             ->assertJsonPath('success.data.runtime_units.0', [
-                'name' => 'orbit_docs_main_dev-server',
+                'name' => 'orbit_docs_development_main_dev-server',
                 'context' => 'main',
             ])
             ->assertJsonPath('success.data.runtime_units.1', [
-                'name' => 'orbit_docs_feature-docs_dev-server',
+                'name' => 'orbit_docs_development_feature-docs_dev-server',
                 'context' => 'feature-docs',
             ]);
 
         $scripts = implode("\n---\n", $remoteShell->scripts);
 
         expect($scripts)
-            ->toContain("internal:process-systemd-service 'remove' 'orbit_docs_main_vite.service'")
-            ->toContain("internal:process-systemd-service 'remove' 'orbit_docs_feature-docs_vite.service'");
+            ->toContain("internal:process-systemd-service 'remove' 'orbit_docs_development_main_vite.service'")
+            ->toContain("internal:process-systemd-service 'remove' 'orbit_docs_development_feature-docs_vite.service'");
     });
 
     it('rejects same-name process rename requests without runtime side effects', function (): void {
@@ -558,7 +558,7 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('success.data.process.workspace', 'feature-docs')
             ->assertJsonPath('success.data.process.command', 'php artisan horizon')
             ->assertJsonPath('success.data.runtime_units.0', [
-                'name' => 'orbit_docs_feature-docs_worker',
+                'name' => 'orbit_docs_development_feature-docs_worker',
                 'context' => 'feature-docs',
             ]);
 

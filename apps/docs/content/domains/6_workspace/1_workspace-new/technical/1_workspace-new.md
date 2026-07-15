@@ -87,8 +87,8 @@ for this default.
      (`{workspace}.{app}.{tld}`), so the workspace identity limit is
      independent of the parent app slug. Backend artifact renderers must
      still validate final generated names such as runtime containers, Docker
-     process units, explicit systemd process units, and certificate paths
-     before writing them.
+     process services, systemd process units on supported Linux nodes, launchd
+     process jobs on macOS, and certificate paths before writing them.
    - Per-app uniqueness: the workspace name must not already exist for the
      resolved parent app. Workspace identity is unique within an app, not
      globally - unlike the `app` slug, which is globally unique. An instance
@@ -154,8 +154,10 @@ register an existing path use
    - **Setup steps:** execute configured workspace setup steps in the
      workspace path with the lifecycle environment defined in
      [Workspaces README](../../README.md#lifecycle-step-environment).
-   - **Inherited runtime units:** render and (re)install systemd process units
-     derived from the parent app's process definitions.
+   - **Inherited runtime units:** render and (re)install process runtime units
+     derived from the selected app instance's process definitions through the
+     serving node's supported backend: systemd on supported Linux and launchd
+     on macOS.
    - **HTTP probe:** perform the same HTTP probe that `workspace:setup`
      performs at setup time. Probe failures are command warnings, not durable
      workspace state and not doctor issue codes.
@@ -164,10 +166,11 @@ register an existing path use
    non-fatal entries in `success.meta.warnings[]` with the canonical
    `{code, family, message, next_command}` shape (codes drawn from the
    `workspace` family, primarily `workspace.path_missing`,
-   `workspace.runtime_container_missing`, `workspace.runtime_container_mismatch`,
-   `workspace.runtime_config_missing`, `workspace.runtime_config_mismatch`, plus
-   `proxy` handoffs for workspace route drift). The operator repairs drift via
-   `doctor --family=workspace --restore`. This matches the
+   `workspace.runtime_config_missing`, and `workspace.runtime_config_mismatch`;
+   the `process` family for `process.runtime_unit_missing` or
+   `process.runtime_unit_mismatch`; plus `proxy` handoffs for workspace route
+   drift). The operator repairs each warning through its owning family doctor.
+   This matches the
    `app:new`/`app:register` pattern: once configuration is durable, apply drift
    is convergence work, not a hard failure.
    HTTP probe failures that occur at setup time use the command-owned

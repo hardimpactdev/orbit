@@ -16,6 +16,7 @@ use App\Librarian\Rules\ConceptIndexRule;
 use App\Librarian\Rules\ConvertedFamilyStructureRule;
 use App\Librarian\Rules\DestructiveConsentRule;
 use App\Librarian\Rules\DoctorIssueCodePrefixRule;
+use App\Librarian\Rules\DoctorIssueVisibilityPredicateRule;
 use App\Librarian\Rules\DoctorRelationshipReferenceRule;
 use App\Librarian\Rules\DoctorWarningCoherenceRule;
 use App\Librarian\Rules\DriftIssueSuffixRule;
@@ -36,6 +37,7 @@ use App\Librarian\Rules\NoPerCommandAuthorizationSectionRule;
 use App\Librarian\Rules\ProductCodeNamespaceRule;
 use App\Librarian\Rules\PublicCommandPageBoundaryRule;
 use App\Librarian\Rules\PublicJsonOptionContractRule;
+use App\Librarian\Rules\PublicUsageOptionCoverageRule;
 use App\Librarian\Rules\ReadCommandNoLiveProbeRule;
 use App\Librarian\Rules\ReaderAddressRule;
 use App\Librarian\Rules\RendererPrimitiveReferenceRule;
@@ -43,10 +45,13 @@ use App\Librarian\Rules\RoleCompanionCoverageRule;
 use App\Librarian\Rules\SharedFailureVocabularyRule;
 use App\Librarian\Rules\SignatureArgumentOrderRule;
 use App\Librarian\Rules\SignatureOptionConsistencyRule;
+use App\Librarian\Rules\TechnicalCompanionCommandNameRule;
 use App\Librarian\Rules\TechnicalSlotSemanticsRule;
 use App\Librarian\Rules\TechnicalTestMappingRule;
 use App\Librarian\Rules\TestMappingFormatRule;
 use App\Librarian\Rules\TestMappingPathExistsRule;
+use App\Librarian\Rules\TransitionalSseContractRule;
+use App\Librarian\Rules\WorkspaceLifecycleInstanceScopeRule;
 use HardImpact\Librarian\Docs\DocsConfig;
 use HardImpact\Librarian\Linting\Rules\BulletComplexityRule;
 use HardImpact\Librarian\Linting\Rules\CompoundNounStackRule;
@@ -81,10 +86,12 @@ beforeEach(function (): void {
         MarkdownLinkIntegrityRule::class,
         ProductCodeNamespaceRule::class,
         PublicJsonOptionContractRule::class,
+        PublicUsageOptionCoverageRule::class,
         JsonRendererEnvelopeRule::class,
         ExitStatusPolicyRule::class,
         NoPerCommandAuthorizationSectionRule::class,
         DoctorIssueCodePrefixRule::class,
+        DoctorIssueVisibilityPredicateRule::class,
         InputModeContractRule::class,
         DestructiveConsentRule::class,
         JsonRendererExampleRule::class,
@@ -116,6 +123,9 @@ beforeEach(function (): void {
         ReaderAddressRule::class,
         CommandContractComplexityRule::class,
         NoLegacyNarrativeRule::class,
+        TechnicalCompanionCommandNameRule::class,
+        TransitionalSseContractRule::class,
+        WorkspaceLifecycleInstanceScopeRule::class,
     ]);
 
     app()->forgetInstance(DocsConfig::class);
@@ -1666,6 +1676,560 @@ it('still requires a gateway test row when no coverage declaration exists', func
         ->toBeEmpty()
         ->and($matchingFindings[0]['message'])
         ->toContain('no gateway-side coverage');
+});
+
+it('reports technical companion headings that name a different command than the canonical signature', function (): void {
+    config()->set('librarian.rules', [TechnicalCompanionCommandNameRule::class]);
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        canonicalContract: validOrbitCanonicalContract(signature: 'orbit node:new [--json]'),
+        humanRendererContract: "# Human Renderer: `orbit node-new`\n",
+        jsonRendererContract: "# JSON Renderer: `orbit node:new`\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $findings = findingsForRule($payload, 'command_docs.technical_companion_command_name');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0])
+        ->toMatchArray([
+            'path' => 'docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md',
+            'line' => 1,
+            'severity' => 'error',
+            'message' => 'Technical companion H1 names `node-new`, but the canonical signature names `node:new`.',
+        ]);
+});
+
+it('reports canonical public options omitted from a normative public Usage signature', function (): void {
+    config()->set('librarian.rules', [PublicUsageOptionCoverageRule::class]);
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        publicCommandPage: <<<'MARKDOWN'
+            # `orbit node:new`
+
+            ## Usage
+
+            ```bash
+            orbit node:new [--json]
+            ```
+            MARKDOWN,
+        canonicalContract: validOrbitCanonicalContract(signature: 'orbit node:new [--project=<project>] [--json]'),
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $findings = findingsForRule($payload, 'command_docs.public_usage_option_coverage');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0])
+        ->toMatchArray([
+            'path' => 'docs/domains/1_node/1_node-new/node-new.md',
+            'severity' => 'error',
+            'message' => 'Public Usage signature omits canonical public option `--project`.',
+        ]);
+});
+
+it('allows canonical options explicitly documented as non-public renderer or internal controls', function (): void {
+    config()->set('librarian.rules', [PublicUsageOptionCoverageRule::class]);
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        publicCommandPage: <<<'MARKDOWN'
+            # `orbit node:new`
+
+            ## Usage
+
+            ```bash
+            orbit node:new [--json]
+            ```
+            MARKDOWN,
+        canonicalContract: validOrbitCanonicalContract(
+            signature: 'orbit node:new [--renderer-debug] [--internal-timeout=<seconds>] [--json]',
+            inputContract: <<<'MARKDOWN'
+                | Field | Option | Contract |
+                | --- | --- | --- |
+                | `renderer_debug` | `--renderer-debug` | Renderer-only control; not part of public Usage. |
+                | `internal_timeout` | `--internal-timeout` | Internal-only safety control; not part of public Usage. |
+                | `json` | `--json` | Public JSON renderer. |
+                MARKDOWN,
+        ),
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(findingsForRule($payload, 'command_docs.public_usage_option_coverage'))
+        ->toBeEmpty();
+});
+
+it('validates warning-code tables against doctor families', function (): void {
+    config()->set('librarian.rules', [DoctorWarningCoherenceRule::class]);
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        jsonRendererContract: <<<'MARKDOWN'
+            # JSON Renderer: `orbit node:new`
+
+            ## Common Warning Codes
+
+            | Code | Family | Meaning |
+            | --- | --- | --- |
+            | `app.drift` | `node` | Node drift exists. `doctor --family=node --fix` repairs it. |
+            MARKDOWN,
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $findings = findingsForRule($payload, 'command_docs.doctor_warning_coherence');
+    $prefixFinding = collect($findings)->first(
+        fn (array $finding): bool => str_contains($finding['message'], 'must use singular product prefix'),
+    );
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($prefixFinding)
+        ->toMatchArray([
+            'path' => 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md',
+            'line' => 7,
+            'severity' => 'error',
+            'message' => 'Warning code `app.drift` with family `node` must use singular product prefix `node.`.',
+        ]);
+});
+
+it('reports duplicate warning codes in warning-code tables', function (): void {
+    config()->set('librarian.rules', [DoctorWarningCoherenceRule::class]);
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        jsonRendererContract: <<<'MARKDOWN'
+            # JSON Renderer: `orbit node:new`
+
+            ## Common Warning Codes
+
+            | Code | Family | Meaning |
+            | --- | --- | --- |
+            | `node.runtime_missing` | `node` | The runtime is missing. |
+            | `node.runtime_missing` | `node` | The runtime could not be loaded. |
+            MARKDOWN,
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $findings = findingsForRule($payload, 'command_docs.doctor_warning_coherence');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0])
+        ->toMatchArray([
+            'path' => 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md',
+            'line' => 8,
+            'severity' => 'error',
+            'message' => 'Warning code `node.runtime_missing` is duplicated in this warning-code table; the first declaration is on line 7.',
+        ]);
+});
+
+it('honors registered family-null command handoffs in warning-code tables', function (): void {
+    config()->set('librarian.rules', [DoctorWarningCoherenceRule::class]);
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        jsonRendererContract: <<<'MARKDOWN'
+            # JSON Renderer: `orbit node:new`
+
+            ## Common Warning Codes
+
+            | Code | Family | Meaning |
+            | --- | --- | --- |
+            | `workspace.http_probe_unhealthy` | `null` | Fix application health, then rerun `workspace:setup`. |
+            MARKDOWN,
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(findingsForRule($payload, 'command_docs.doctor_warning_coherence'))
+        ->toBeEmpty();
+});
+
+it('reports unregistered family-null command handoffs in warning-code tables', function (): void {
+    config()->set('librarian.rules', [DoctorWarningCoherenceRule::class]);
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        jsonRendererContract: <<<'MARKDOWN'
+            # JSON Renderer: `orbit node:new`
+
+            ## Common Warning Codes
+
+            | Code | Family | Meaning |
+            | --- | --- | --- |
+            | `workspace.unregistered_probe_warning` | `null` | Fix application health, then rerun `workspace:setup`. |
+            MARKDOWN,
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $findings = findingsForRule($payload, 'command_docs.doctor_warning_coherence');
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0])
+        ->toMatchArray([
+            'line' => 7,
+            'severity' => 'warning',
+            'message' => 'Warning code `workspace.unregistered_probe_warning` uses a null-family command handoff that is not registered for `workspace:setup`.',
+        ]);
+});
+
+it('does not interpret ordinary field tables as warning-code tables', function (): void {
+    config()->set('librarian.rules', [DoctorWarningCoherenceRule::class]);
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        jsonRendererContract: <<<'MARKDOWN'
+            # JSON Renderer: `orbit node:new`
+
+            ## Fields
+
+            | Path | Value | Meaning |
+            | --- | --- | --- |
+            | `success.data.origin` | `caller` | Origin of the result. |
+            MARKDOWN,
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(findingsForRule($payload, 'command_docs.doctor_warning_coherence'))
+        ->toBeEmpty();
+});
+
+it('reports caller-visibility predicates as doctor drift except caller-local self preferences', function (): void {
+    config()->set('librarian.rules', [DoctorIssueVisibilityPredicateRule::class]);
+    writeOrbitCommandDocsFamily($this->docsRoot);
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/1_node/node-doctor.md',
+        <<<'MARKDOWN'
+            # Node Doctor
+
+            ## Node Issue Codes
+
+            | Code | Detected when |
+            | --- | --- |
+            | `node.target_invalid` | The target node is missing or unauthorized for the caller. |
+            | `node.local_default_invalid` | During `doctor --self`, the caller-local `node:default` preference points at a missing or unauthorized node. |
+            MARKDOWN,
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $findings = findingsForRule($payload, 'command_docs.doctor_issue_visibility_predicate');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0])
+        ->toMatchArray([
+            'path' => 'docs/domains/1_node/node-doctor.md',
+            'line' => 7,
+            'severity' => 'error',
+            'message' => 'Doctor issue predicates must describe authoritative state drift, not caller authorization or visibility.',
+        ]);
+});
+
+it('requires transitional wording in each operation section that mentions SSE transport', function (): void {
+    config()->set('librarian.rules', [TransitionalSseContractRule::class]);
+    writeOrbitDocsFile($this->docsRoot, 'docs/domains/11_operation/README.md', "# Operation Commands\n");
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/11_operation/1_update-all/update-all.md',
+        <<<'MARKDOWN'
+            # `orbit update:all`
+
+            ## Event following
+
+            The CLI follows SSE and reconnects with `Last-Event-ID`.
+
+            ## Migration status
+
+            The adapter is transitional.
+            MARKDOWN,
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $findings = findingsForRule($payload, 'command_docs.transitional_sse_contract');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0])
+        ->toMatchArray([
+            'path' => 'docs/domains/11_operation/1_update-all/update-all.md',
+            'line' => 5,
+            'severity' => 'error',
+            'message' => 'Operation sections that mention SSE or `Last-Event-ID` must explicitly mark that transport as transitional in the same section.',
+        ]);
+});
+
+it('reports bare app selectors and parent-app ownership in instance-required lifecycle companions', function (): void {
+    config()->set('librarian.rules', [WorkspaceLifecycleInstanceScopeRule::class]);
+    writeOrbitDocsFile($this->docsRoot, 'docs/domains/6_workspace/README.md', "# Workspace Commands\n");
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/8_workspace-setup-step-add/technical/1_workspace-setup-step-add.md',
+        <<<'MARKDOWN'
+            # Technical Contract: `orbit workspace-setup-step:add`
+
+            **Effects:** `write`.
+
+            ## Signature
+
+            ```text
+            orbit workspace-setup-step:add --command=<command> [--app=<app.instance>]
+            ```
+
+            ## Failure Semantics
+
+            Bare logical-app selectors fail with `error.meta.reason=app_instance_required`.
+            MARKDOWN,
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/8_workspace-setup-step-add/workspace-setup-step-add.md',
+        "# `orbit workspace-setup-step:add`\n\n## Usage\n\n```bash\norbit workspace-setup-step:add --command=<command> [--app=<app>]\n```\n",
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/8_workspace-setup-step-add/technical/6.1_workspace-setup-step-add_output-render_human.md',
+        "# Human Renderer\n\nThe output reports parent app ownership.\n",
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/8_workspace-setup-step-add/technical/6.2_workspace-setup-step-add_output-render_json.md',
+        "# JSON Renderer\n\nThe payload reports the concrete app instance.\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $findings = findingsForRule($payload, 'command_docs.workspace_lifecycle_instance_scope');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($findings)
+        ->toHaveCount(2)
+        ->and(array_column($findings, 'path'))
+        ->toBe([
+            'docs/domains/6_workspace/8_workspace-setup-step-add/technical/6.1_workspace-setup-step-add_output-render_human.md',
+            'docs/domains/6_workspace/8_workspace-setup-step-add/workspace-setup-step-add.md',
+        ]);
+});
+
+it('reports bare app selectors in instance-required lifecycle list companions', function (): void {
+    config()->set('librarian.rules', [WorkspaceLifecycleInstanceScopeRule::class]);
+    writeOrbitDocsFile($this->docsRoot, 'docs/domains/6_workspace/README.md', "# Workspace Commands\n");
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/9_workspace-setup-step-list/technical/1_workspace-setup-step-list.md',
+        <<<'MARKDOWN'
+            # Technical Contract: `orbit workspace-setup-step:list`
+
+            **Effects:** `read`.
+
+            ## Signature
+
+            ```text
+            orbit workspace-setup-step:list [--app=<app.instance>]
+            ```
+
+            ## Failure Semantics
+
+            Bare logical-app selectors fail with `error.meta.reason=app_instance_required`.
+            MARKDOWN,
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/9_workspace-setup-step-list/workspace-setup-step-list.md',
+        "# `orbit workspace-setup-step:list`\n\n## Usage\n\n```bash\norbit workspace-setup-step:list [--app=<app>]\n```\n",
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/9_workspace-setup-step-list/technical/6.1_workspace-setup-step-list_output-render_human.md',
+        "# Human Renderer\n\nThe output names the concrete app instance.\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $findings = findingsForRule($payload, 'command_docs.workspace_lifecycle_instance_scope');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0]['path'])
+        ->toBe('docs/domains/6_workspace/9_workspace-setup-step-list/workspace-setup-step-list.md');
+});
+
+it('accepts concrete app-instance selectors in lifecycle list companions', function (): void {
+    config()->set('librarian.rules', [WorkspaceLifecycleInstanceScopeRule::class]);
+    writeOrbitDocsFile($this->docsRoot, 'docs/domains/6_workspace/README.md', "# Workspace Commands\n");
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/9_workspace-setup-step-list/technical/1_workspace-setup-step-list.md',
+        <<<'MARKDOWN'
+            # Technical Contract: `orbit workspace-setup-step:list`
+
+            **Effects:** `read`.
+
+            ## Signature
+
+            ```text
+            orbit workspace-setup-step:list [--app=<app.instance>]
+            ```
+
+            ## Failure Semantics
+
+            Bare logical-app selectors fail with `error.meta.reason=app_instance_required`.
+            MARKDOWN,
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/9_workspace-setup-step-list/workspace-setup-step-list.md',
+        "# `orbit workspace-setup-step:list`\n\n## Usage\n\n```bash\norbit workspace-setup-step:list [--app=<app.instance>]\n```\n",
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/9_workspace-setup-step-list/technical/6.1_workspace-setup-step-list_output-render_human.md',
+        "# Human Renderer\n\nPass `--app=<app.instance>` or use caller context that resolves one concrete app instance.\n",
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/9_workspace-setup-step-list/technical/6.2_workspace-setup-step-list_output-render_json.md',
+        "# JSON Renderer\n\nThe payload reports concrete app-instance ownership.\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(findingsForRule($payload, 'command_docs.workspace_lifecycle_instance_scope'))
+        ->toBeEmpty();
+});
+
+it('reports bare app selectors in canonical and input-mode lifecycle contracts without sentinel prose', function (): void {
+    config()->set('librarian.rules', [WorkspaceLifecycleInstanceScopeRule::class]);
+    writeOrbitDocsFile($this->docsRoot, 'docs/domains/6_workspace/README.md', "# Workspace Commands\n");
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/8_workspace-setup-step-add/technical/1_workspace-setup-step-add.md',
+        <<<'MARKDOWN'
+            # Technical Contract: `orbit workspace-setup-step:add`
+
+            **Effects:** `write`.
+
+            ## Signature
+
+            ```text
+            orbit workspace-setup-step:add --command=<command> [--app=<app>]
+            ```
+            MARKDOWN,
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/8_workspace-setup-step-add/technical/5.1_workspace-setup-step-add_input-mode_interactive.md',
+        "# Interactive Input\n\nPass `--app=<app>` to select the owner.\n",
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/6_workspace/8_workspace-setup-step-add/technical/5.2_workspace-setup-step-add_input-mode_non-interactive.md',
+        "# Non-interactive Input\n\nPass `--app=<app>` to select the owner.\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $findings = findingsForRule($payload, 'command_docs.workspace_lifecycle_instance_scope');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($findings)
+        ->toHaveCount(3)
+        ->and(array_column($findings, 'path'))
+        ->toBe([
+            'docs/domains/6_workspace/8_workspace-setup-step-add/technical/1_workspace-setup-step-add.md',
+            'docs/domains/6_workspace/8_workspace-setup-step-add/technical/5.1_workspace-setup-step-add_input-mode_interactive.md',
+            'docs/domains/6_workspace/8_workspace-setup-step-add/technical/5.2_workspace-setup-step-add_input-mode_non-interactive.md',
+        ]);
 });
 
 function makeOrbitLibrarianDocsFixture(): string

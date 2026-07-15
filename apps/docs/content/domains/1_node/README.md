@@ -127,8 +127,8 @@ Roles materialize baseline tool intent when a role assignment converges.
 | `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, gateway config root, SQLite database, and Orbit CA/certificate material |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
 | `router` | Private `orbit-caddy` router for private `.orbit` DNS/service names, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
-| `app-dev` | App runtime baseline, development DNS mapping, `orbit-caddy` app/workspace routes, and systemd process units where configured |
-| `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and systemd process units where configured |
+| `app-dev` | App runtime baseline, development DNS mapping, `orbit-caddy` app/workspace routes, and process-backed runtime units using the platform-supported backend where configured |
+| `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and process-backed runtime units using the platform-supported backend where configured |
 | `database` | Docker running as the substrate for managed database service processes |
 | `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping derived from the node's `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |

@@ -74,8 +74,8 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | Code | Detected when |
 | --- | --- |
 | `proxy.record_incomplete` | A selected gateway route lacks domain, kind, owner, serving node, target, redirect code, TLS policy, or backend identity metadata required for comparison. |
-| `proxy.owner_invalid` | An app, app-websocket binding, workspace, gateway, router service, S3 publication, or tool owner reference cannot be resolved or is not visible to the caller. |
-| `proxy.node_invalid` | The route points at a missing, unauthorized, inactive, unsupported, or role-incompatible serving node. |
+| `proxy.owner_invalid` | An app, app-websocket binding, workspace, gateway, router service, S3 publication, or tool owner reference does not resolve to a valid gateway-owned record. |
+| `proxy.node_invalid` | The route points at a missing, inactive, unsupported, or role-incompatible serving node. |
 | `proxy.domain_conflict` | A custom route claims a domain owned by an app, app WebSocket binding, workspace, gateway, router service, S3 publication, or tool route. |
 | `proxy.docker_runtime_unavailable` | The serving node's Docker CLI is missing or the Docker daemon is unreachable, so `orbit-caddy` container readiness cannot be probed. Repair the node runtime through `doctor --family=node --restore` first. |
 | `proxy.caddy_container_missing` | The `orbit-caddy` container is absent on a serving node that still owns proxy routes. |

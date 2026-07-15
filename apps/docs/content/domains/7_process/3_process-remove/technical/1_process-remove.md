@@ -8,13 +8,13 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for `process:remove` on the resolved owning node.
-- Runtime artifact cleanup requires gateway reachability to the owning node.
+- The gateway authorizes the authenticated peer for `process:remove` on the resolved node or app instance serving node.
+- Runtime artifact cleanup requires gateway reachability to that serving node.
 
 ## Signature
 
 ```bash
-orbit process:remove [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--force] [--json]
+orbit process:remove [name] [--app=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -25,8 +25,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owner scope. |
 | `node` | `--node` | Required when removing a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:remove`. |
-| `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:remove`. |
-| `workspace` | `--workspace` or workspace context | Required when removing a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:remove`; pass `--app` when the workspace name is ambiguous. |
+| `app` | `--app` or app-instance context | Required unless `node` is supplied or `workspace` resolves the app instance. | `node` is present. | Local app instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare logical-app slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:remove`. |
+| `workspace` | `--workspace` or workspace context | Required when removing a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its app instance whose serving node grants `process:remove`; pass `--app=<app.instance>` when the workspace name is ambiguous. |
 | `force` | `--force` | Required in non-interactive input mode. | Never. | `false`. | Boolean flag. Bypasses the interactive confirmation prompt when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. It never grants destructive consent. |
 
@@ -41,10 +41,10 @@ Destructive consent is required before side effects. In interactive input mode, 
 
 ### Process Removal Rules
 
-1. Resolve target node, app, or workspace context from supplied input or local context, and resolve the existing process definition within that owner scope.
+1. Resolve a target node, concrete app instance, or workspace context from supplied input or local context, and resolve the existing process definition within that owner scope. Reject a bare logical-app selector with `validation_failed`, `field=app`, and `reason=app_instance_required` unless that app has exactly one instance.
 2. Resolve destructive consent.
 3. Send the request to the gateway, which validates the authenticated peer's authorization.
-4. Stop and remove runtime units derived from the selected process definition. Node-owned and workspace-owned processes normally derive one unit; app-owned processes derive one main-app unit plus one unit for each active workspace.
+4. Stop and remove runtime units on the resolved node or app instance serving node. Node-owned and workspace-owned processes normally derive one unit; app-instance-owned processes derive one main-instance unit plus one unit for each active workspace belonging to that same instance.
 5. Remove gateway-owned process configuration.
 6. Render the selected output.
 
@@ -64,7 +64,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 | Process not found | The named process does not exist for the resolved owner scope. | Failure (`error.code=process.not_found`). |
-| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app-instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| App instance required | A bare logical-app selector resolves to more than one app instance. | Failure (`error.code=validation_failed`; `error.meta.field=app`; `error.meta.reason=app_instance_required`). |
 | Cancelled | The operator declines the interactive confirmation prompt. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 
 ## Doctor Relationship
@@ -79,8 +80,8 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:DELETE /processes/{name}` |
 | Effect | `destructive` |
-| Subject | Resolved `Node` for node-owned processes or `App` for app/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
-| Properties | `node` (string or null), `app` (string or null), and `workspace` (string or null). No raw process command text, runtime output, cleanup logs, or secrets. |
+| Subject | Resolved `Node` for node-owned processes or `AppInstance` for app-instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Properties | `node` (string or null), `app` (string or null), `app_instance` (string or null), and `workspace` (string or null). No raw process command text, runtime output, cleanup logs, or secrets. |
 | Description | derived |
 
 ## Test Mapping

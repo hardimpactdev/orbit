@@ -61,6 +61,7 @@ describe('ToolShowController', function (): void {
             ->assertJsonPath('success.data.tool.node', 'app-1')
             ->assertJsonPath('success.data.tool.expected_state', 'installed')
             ->assertJsonPath('success.data.tool.observed_state', null)
+            ->assertJsonPath('success.data.tool.observed_version', null)
             ->assertJsonPath('success.data.tool.version', '2.8')
             ->assertJsonPath('success.data.tool.managed', true);
     });

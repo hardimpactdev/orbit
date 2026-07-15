@@ -68,6 +68,10 @@ describe('FirewallRuleQuery', function (): void {
             'node_id' => $aNode->id,
             'name' => 'https',
             'port' => '443',
+            'address_family' => 'v4',
+            'interface' => 'public',
+            'owner' => 'node-security',
+            'protected' => true,
             'reason' => null,
         ]);
 
@@ -93,9 +97,15 @@ describe('FirewallRuleQuery', function (): void {
                 'destination' => null,
                 'port' => 443,
                 'protocol' => 'tcp',
+                'address_family' => 'v4',
+                'interface_scope' => 'public',
+                'owner' => 'node-security',
+                'protected' => true,
                 'reason' => null,
                 'status' => 'expected',
-            ]);
+            ])
+            ->and($result['rules'][0])
+            ->not->toHaveKey('interface');
     });
 
     it('filters by visible eligible node and rejects unsupported node scopes', function (): void {

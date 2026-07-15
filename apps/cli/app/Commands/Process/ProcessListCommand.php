@@ -27,7 +27,7 @@ final class ProcessListCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'process:list
         {--node= : Owning node name}
-        {--app= : Parent app slug}
+        {--app= : App or app-instance selector}
         {--workspace= : Workspace name}
         {--json}';
 
@@ -123,16 +123,24 @@ final class ProcessListCommand extends GatewayCommand
         }
 
         $app = $context['app'] ?? null;
+        $appInstance = $context['app_instance'] ?? null;
         $workspace = $context['workspace'] ?? null;
+        $appLabel = is_scalar($app) && (string) $app !== ''
+            ? (string) $app
+            : null;
+
+        if ($appLabel !== null && is_scalar($appInstance) && (string) $appInstance !== '') {
+            $appLabel .= '.'.(string) $appInstance;
+        }
 
         if (is_scalar($workspace) && (string) $workspace !== '') {
-            return is_scalar($app) && (string) $app !== ''
-                ? (string) $app.' / '.(string) $workspace
+            return $appLabel !== null
+                ? $appLabel.' / '.(string) $workspace
                 : (string) $workspace;
         }
 
-        if (is_scalar($app) && (string) $app !== '') {
-            return (string) $app;
+        if ($appLabel !== null) {
+            return $appLabel;
         }
 
         $node = $context['node'] ?? null;

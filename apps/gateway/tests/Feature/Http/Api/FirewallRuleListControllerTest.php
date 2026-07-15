@@ -44,7 +44,14 @@ describe('FirewallRuleListController', function (): void {
         $hiddenNode = createTestAppHostNode(['name' => 'app-2', 'platform' => 'ubuntu']);
         grantFirewallRuleListAccess($caller, $visibleNode);
 
-        FirewallRule::factory()->create(['node_id' => $visibleNode->id, 'name' => 'vite']);
+        FirewallRule::factory()->create([
+            'node_id' => $visibleNode->id,
+            'name' => 'vite',
+            'address_family' => 'v4',
+            'interface' => 'public',
+            'owner' => 'node-security',
+            'protected' => true,
+        ]);
         FirewallRule::factory()->create(['node_id' => $hiddenNode->id, 'name' => 'hidden']);
 
         $response = $this->call(
@@ -60,6 +67,11 @@ describe('FirewallRuleListController', function (): void {
             ->assertOk()
             ->assertJsonCount(1, 'success.data.rules')
             ->assertJsonPath('success.data.rules.0.name', 'vite')
+            ->assertJsonPath('success.data.rules.0.address_family', 'v4')
+            ->assertJsonPath('success.data.rules.0.interface_scope', 'public')
+            ->assertJsonPath('success.data.rules.0.owner', 'node-security')
+            ->assertJsonPath('success.data.rules.0.protected', true)
+            ->assertJsonMissingPath('success.data.rules.0.interface')
             ->assertJsonPath('success.meta.node', null)
             ->assertJsonPath('success.meta.count', 1);
     });

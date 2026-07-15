@@ -5,10 +5,12 @@ declare(strict_types=1);
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Services\Processes\SystemdUnitRenderer;
@@ -76,7 +78,7 @@ it('renders and enacts systemd units for app process definitions', function (): 
         ->and($remoteShell->scripts)
         ->toHaveCount(1)
         ->and($remoteShell->scripts[0])
-        ->toContain("internal:process-systemd-service 'apply' 'orbit_docs_main_vite.service'")
+        ->toContain("internal:process-systemd-service 'apply' 'orbit_docs_development_main_vite.service'")
         ->and($certificates->hosts)
         ->toBe(['docs.test'])
         ->and($remoteShell->scripts[0])
@@ -204,11 +206,15 @@ it('does not enact runtime units when an app has no process definitions', functi
         'node_id' => $node->id,
     ]);
     $app->setRelation('node', $node);
+    $appInstance = AppInstance::factory()->for($app)->create([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+    ]);
 
     $remoteShell = new ProcessRuntimeRecordingRemoteShell;
 
     $warnings = makeEnsureRuntimeUnitsAction($remoteShell, new ProcessRuntimeRecordingSiteCertificateInstaller)->handle(
         $app,
+        $appInstance,
     );
 
     expect($warnings)->toBe([])->and($remoteShell->scripts)->toBe([]);
@@ -266,7 +272,10 @@ describe('runtime dispatcher', function (): void {
             ->toBeFalse()
             ->and(collect($remoteShell->scripts)
                 ->contains(
-                    fn (string $s): bool => str_contains($s, '/etc/systemd/system/orbit_docs_main_queue.service'),
+                    fn (string $s): bool => str_contains(
+                        $s,
+                        '/etc/systemd/system/orbit_docs_development_main_queue.service',
+                    ),
                 ))
             ->toBeFalse()
             ->and(collect($remoteShell->scripts)
@@ -338,7 +347,7 @@ describe('runtime dispatcher', function (): void {
                 ->contains(
                     fn (string $s): bool => str_contains(
                         $s,
-                        "internal:process-systemd-service 'apply' 'orbit_marketing_main_watch.service'",
+                        "internal:process-systemd-service 'apply' 'orbit_marketing_development_main_watch.service'",
                     ),
                 ))
             ->toBeTrue();

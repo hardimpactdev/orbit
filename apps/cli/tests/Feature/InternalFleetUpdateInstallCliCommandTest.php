@@ -408,7 +408,10 @@ describe('internal fleet update install cli command', function (): void {
     });
 });
 
-describe('systemd Orbit Agent adoption during fleet update install', function (): void {
+/**
+ * @mago-expect lint:halstead
+ */
+describe('managed Orbit Agent service boundary during fleet update install', function (): void {
     beforeEach(function (): void {
         app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
         fakeGateway(fakeSuccessEnvelope([
@@ -426,7 +429,7 @@ describe('systemd Orbit Agent adoption during fleet update install', function ()
         $_SERVER['PATH'] = $path;
     });
 
-    it('adopts a missing systemd Orbit Agent service from the install payload', function (): void {
+    it('fails closed when the managed systemd Orbit Agent service is missing', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $systemdBin = make_fleet_update_install_cli_fake_missing_agent_systemd_bin($workspace);
         $artifactPath = "{$workspace}/artifact/orbit";
@@ -481,38 +484,33 @@ describe('systemd Orbit Agent adoption during fleet update install', function ()
             ], JSON_THROW_ON_ERROR),
         );
 
-        $data = fleet_update_install_cli_success_data($output);
-        $stdout = is_string($data['stdout'] ?? null) ? $data['stdout'] : '';
+        /** @var array{error?: array{code?: string, meta?: array{stdout?: string, stderr?: string}}} $payload */
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        $error = $payload['error'] ?? [];
+        $meta = $error['meta'] ?? [];
         $calls = file_get_contents("{$workspace}/missing-systemd-calls.log");
-        $unit = file_get_contents("{$workspace}/adopted-orbit-agent.service");
-        $config = file_get_contents($agentConfigPath);
-        $caPem = file_get_contents($agentCaPath);
 
-        expect($exitCode)->toBe(0);
-        expect($stdout)
+        if (! is_string($calls)) {
+            $calls = '';
+        }
+
+        expect($exitCode)
+            ->toBe(1, $output)
+            ->and($error['code'] ?? null)
+            ->toBe('fleet_update.cli_install_failed')
+            ->and($meta['stdout'] ?? '')
             ->toContain('probe_agent_unit')
-            ->toContain('kill_agent_port_owner')
-            ->toContain('adopt_agent_unit');
-        expect(str_contains($stdout, 'skip_agent_restart_no_unit'))->toBeFalse();
+            ->and($meta['stderr'] ?? '')
+            ->toContain('agent_service_missing_bootstrap_required');
         expect($calls)
             ->toContain('systemctl status orbit-agent')
-            ->toContain('systemctl is-enabled orbit-agent')
-            ->toContain('install -m 0644')
-            ->toContain('/etc/systemd/system/orbit-agent.service')
-            ->toContain('systemctl daemon-reload')
-            ->toContain('systemctl enable orbit-agent.service')
-            ->toContain('systemctl restart orbit-agent.service')
-            ->toContain('ss -ltnp');
-        expect($unit)
-            ->toContain('User=orbit')
-            ->toContain("Environment=ORBIT_AGENT_CONFIG={$agentConfigPath}")
-            ->toContain('Environment=ORBIT_AGENT_HTTP_BIND=10.6.0.2:9477')
-            ->toContain("ExecStart={$workspace}/bin/orbit-agent");
-        expect($config)
-            ->toContain('platform = "ubuntu_24-04"')
-            ->toContain('managed = true')
-            ->toContain('wireguard_address = "10.6.0.2"');
-        expect($caPem)->toBe($agentCaPem);
+            ->toContain('systemctl is-enabled orbit-agent');
+        expect(str_contains($calls, '/etc/systemd/system/orbit-agent.service'))->toBeFalse();
+        expect(str_contains($calls, 'systemctl daemon-reload'))->toBeFalse();
+        expect(str_contains($calls, 'systemctl enable'))->toBeFalse();
+        expect(str_contains($calls, 'systemctl restart'))->toBeFalse();
+        expect(str_contains($calls, 'ss -ltnp'))->toBeFalse();
+        expect(file_exists("{$workspace}/unexpected-orbit-agent.service"))->toBeFalse();
     });
 
     it('preserves live Agent trust files and does not restart when staging fails', function (): void {
@@ -693,6 +691,148 @@ describe('internal fleet update install cli launcher isolation', function (): vo
             ->toBeFalse()
             ->and(file_get_contents($shadowLauncher))
             ->toContain('Orbit shadow');
+    });
+});
+
+describe('Orbit Agent restart failure during fleet update install', function (): void {
+    beforeEach(function (): void {
+        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
+        fleet_update_install_cli_store_environment();
+    });
+
+    afterEach(function (): void {
+        fleet_update_install_cli_restore_environment();
+    });
+
+    it('fails closed when an unmanaged Orbit Agent listener has no discoverable config', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $agentRuntimeBin = make_fleet_update_install_cli_fake_unmanaged_agent_bin($workspace);
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
+        $home = "{$workspace}/home";
+        file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
+        chmod(filename: $agentArtifactPath, permissions: 0o755);
+        mkdir($home, recursive: true);
+
+        $path = $agentRuntimeBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+        $originalAgentConfig = getenv('ORBIT_AGENT_CONFIG');
+        $originalAgentHttpBind = getenv('ORBIT_AGENT_HTTP_BIND');
+        $originalAgentLogPath = getenv('ORBIT_AGENT_LOG_PATH');
+        $originalHome = getenv('HOME');
+
+        putenv("PATH={$path}");
+        putenv('ORBIT_AGENT_CONFIG');
+        putenv('ORBIT_AGENT_HTTP_BIND');
+        putenv('ORBIT_AGENT_LOG_PATH');
+        putenv("HOME={$home}");
+        unset(
+            $_ENV['ORBIT_AGENT_CONFIG'],
+            $_SERVER['ORBIT_AGENT_CONFIG'],
+            $_ENV['ORBIT_AGENT_HTTP_BIND'],
+            $_SERVER['ORBIT_AGENT_HTTP_BIND'],
+            $_ENV['ORBIT_AGENT_LOG_PATH'],
+            $_SERVER['ORBIT_AGENT_LOG_PATH'],
+        );
+        $_ENV['HOME'] = $home;
+        $_SERVER['HOME'] = $home;
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
+
+        try {
+            [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+                [
+                    '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                    '--json' => true,
+                ],
+                stdin: json_encode([
+                    'artifact_url' => "file://{$artifactPath}",
+                    'sha256' => fleet_update_install_cli_sha256($artifactPath),
+                    'install_root' => "{$workspace}/install-root",
+                    'bin_path' => "{$workspace}/bin/orbit",
+                    'shared_binary_path' => null,
+                    'agent_artifact' => [
+                        'artifact_url' => "file://{$agentArtifactPath}",
+                        'sha256' => fleet_update_install_cli_sha256($agentArtifactPath),
+                        'bin_path' => "{$workspace}/bin/orbit-agent",
+                    ],
+                    'role_images' => [],
+                ], JSON_THROW_ON_ERROR),
+            );
+        } finally {
+            fleet_update_install_cli_restore_env_var('ORBIT_AGENT_CONFIG', $originalAgentConfig);
+            fleet_update_install_cli_restore_env_var('ORBIT_AGENT_HTTP_BIND', $originalAgentHttpBind);
+            fleet_update_install_cli_restore_env_var('ORBIT_AGENT_LOG_PATH', $originalAgentLogPath);
+            fleet_update_install_cli_restore_env_var('HOME', $originalHome);
+        }
+
+        /** @var array{error?: array{code?: string, meta?: array{stdout?: string, stderr?: string}}} $payload */
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        $error = $payload['error'] ?? [];
+        $meta = $error['meta'] ?? [];
+        $calls = file_get_contents("{$workspace}/agent-runtime-calls.log");
+
+        expect($exitCode)
+            ->toBe(1, $output)
+            ->and($error['code'] ?? null)
+            ->toBe('fleet_update.cli_install_failed')
+            ->and($meta['stderr'] ?? '')
+            ->toContain('skip_agent_restart_no_config')
+            ->and($calls)
+            ->not->toContain('nohup');
+    });
+
+    it('fails closed when a loaded launchd service cannot be restarted', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $launchctlBin = make_fleet_update_install_cli_fake_launchctl_bin($workspace, kickstartExitCode: 42);
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
+        file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
+        chmod(filename: $agentArtifactPath, permissions: 0o755);
+        $path = $launchctlBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+
+        putenv("PATH={$path}");
+        putenv("ORBIT_AGENT_LAUNCHCTL_BIN={$launchctlBin}/launchctl");
+        $_ENV['PATH'] = $path;
+        $_ENV['ORBIT_AGENT_LAUNCHCTL_BIN'] = "{$launchctlBin}/launchctl";
+        $_SERVER['PATH'] = $path;
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => fleet_update_install_cli_sha256($artifactPath),
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'agent_artifact' => [
+                    'artifact_url' => "file://{$agentArtifactPath}",
+                    'sha256' => fleet_update_install_cli_sha256($agentArtifactPath),
+                    'bin_path' => "{$workspace}/bin/orbit-agent",
+                ],
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        /** @var array{error?: array{code?: string, meta?: array{stdout?: string, stderr?: string}}} $payload */
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        $error = $payload['error'] ?? [];
+        $meta = $error['meta'] ?? [];
+        $calls = file_get_contents("{$workspace}/launchctl-calls.log");
+
+        expect($exitCode)
+            ->toBe(1, $output)
+            ->and($error['code'] ?? null)
+            ->toBe('fleet_update.cli_install_failed')
+            ->and($meta['stderr'] ?? '')
+            ->toContain('restart_agent_launchd_failed')
+            ->and($calls)
+            ->toContain('launchctl kickstart -k gui/');
     });
 });
 
@@ -1003,7 +1143,7 @@ function make_fleet_update_install_cli_fake_missing_agent_systemd_bin(string $wo
 {
     $bin = "{$workspace}/missing-systemd-bin";
     $log = "{$workspace}/missing-systemd-calls.log";
-    $unit = "{$workspace}/adopted-orbit-agent.service";
+    $unit = "{$workspace}/unexpected-orbit-agent.service";
     $realInstall = trim((string) shell_exec('command -v install'));
 
     mkdir($bin, recursive: true);
@@ -1018,6 +1158,15 @@ function make_fleet_update_install_cli_fake_missing_agent_systemd_bin(string $wo
         exit 0
         SH);
     chmod(filename: "{$bin}/systemctl", permissions: 0o755);
+
+    foreach (['launchctl', 'pgrep', 'ps'] as $command) {
+        file_put_contents("{$bin}/{$command}", <<<SH
+            #!/usr/bin/env sh
+            echo "{$command} \$*" >> {$log}
+            exit 1
+            SH);
+        chmod(filename: "{$bin}/{$command}", permissions: 0o755);
+    }
 
     file_put_contents("{$bin}/install", <<<SH
         #!/usr/bin/env sh
@@ -1139,13 +1288,13 @@ function make_fleet_update_install_cli_fake_unmanaged_agent_bin(string $workspac
     return $bin;
 }
 
-function make_fleet_update_install_cli_fake_launchctl_bin(string $workspace): string
+function make_fleet_update_install_cli_fake_launchctl_bin(string $workspace, int $kickstartExitCode = 0): string
 {
     $bin = "{$workspace}/launchctl-bin";
     $log = "{$workspace}/launchctl-calls.log";
 
     mkdir($bin, recursive: true);
-    file_put_contents($log, '');
+    file_put_contents(filename: $log, data: '');
 
     file_put_contents("{$bin}/systemctl", <<<'SH'
         #!/usr/bin/env sh
@@ -1162,7 +1311,7 @@ function make_fleet_update_install_cli_fake_launchctl_bin(string $workspace): st
           esac
         fi
         if [ "\$1" = "kickstart" ]; then
-          exit 0
+          exit {$kickstartExitCode}
         fi
         exit 1
         SH);

@@ -14,6 +14,10 @@ describe('tool:show', function (): void {
                 'node' => 'app-1',
                 'expected_state' => 'installed',
                 'observed_state' => null,
+                'observed_version' => null,
+                'version' => '2.8',
+                'managed' => true,
+                'endpoints' => [],
             ],
         ], ['live' => false]));
 
@@ -36,7 +40,19 @@ describe('tool:show', function (): void {
             );
         });
 
-        expect($exitCode)->toBe(0)->and($decoded['success']['data']['tool']['name'])->toBe('composer');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['tool'])
+            ->toBe([
+                'name' => 'composer',
+                'node' => 'app-1',
+                'expected_state' => 'installed',
+                'observed_state' => null,
+                'observed_version' => null,
+                'version' => '2.8',
+                'managed' => true,
+                'endpoints' => [],
+            ]);
     });
 
     it('forwards the live query flag when requested', function (): void {
@@ -46,10 +62,11 @@ describe('tool:show', function (): void {
                 'node' => 'app-1',
                 'expected_state' => 'installed',
                 'observed_state' => 'installed',
+                'observed_version' => '2.8.1',
             ],
         ], ['live' => true]));
 
-        [$exitCode] = runCommand($this, 'tool:show', [
+        [$exitCode, $output] = runCommand($this, 'tool:show', [
             'tool' => 'composer',
             '--node' => 'app-1',
             '--live' => true,
@@ -67,7 +84,12 @@ describe('tool:show', function (): void {
             );
         });
 
-        expect($exitCode)->toBe(0);
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['tool']['observed_version'])
+            ->toBe('2.8.1');
     });
 
     it('renders human output as a tool detail view', function (): void {
@@ -77,6 +99,7 @@ describe('tool:show', function (): void {
                 'node' => 'app-1',
                 'expected_state' => 'installed',
                 'observed_state' => null,
+                'observed_version' => null,
                 'version' => '2.8',
                 'managed' => true,
                 'endpoints' => [],

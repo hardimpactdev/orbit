@@ -36,15 +36,16 @@ These terms describe the update workflow and its components.
   The caller-local CLI and selected active workload Orbit installations then
   update as fan-out targets through a durable gateway-owned operation.
 - **Operation event journal:** Durable ordered event log for a gateway-owned
-  operation. Events carry a per-run sequence. The SSE event id is that sequence,
-  `Last-Event-ID` replays only events with a greater sequence, and live
-  followers stay connected with heartbeat comments until a terminal `complete`
-  or `error` event is persisted.
+  operation. Each persisted event carries a monotonic journal cursor.
+  Subscribers replay events after that cursor before following live frames
+  through the private operations WebSocket/Reverb plane until a terminal
+  `complete` or `error` event is persisted.
 - **Immutable update plan:** Persisted plan keyed by `operation_run_id`.
   Captures target version, gateway image digest, manifest snapshot, CLI artifact
-  hashes, Orbit Agent artifact hashes for agent-capable Linux nodes, and
-  required role images so CLI and Orbit Agent artifacts update from one
-  immutable source of truth.
+  hashes, platform/architecture-specific Orbit Agent artifact hashes for
+  supported Agent-eligible Linux and macOS/Darwin nodes, and required role
+  images so CLI and Orbit Agent artifacts update from one immutable source of
+  truth.
 - **Update lease:** Expiring lease row for mutually exclusive update work, such
   as `fleet:update-all`, `gateway`, `scheduler`, or an individual node update.
 - **Update target:** One selected Orbit installation in an update workflow.
@@ -52,7 +53,8 @@ These terms describe the update workflow and its components.
 - **Target result:** Per-update-target outcome preserved for renderers.
 
 Fleet update runs through gateway-owned authority. The CLI starts a gateway
-operation, follows its event journal over SSE, and updates the caller-local CLI
+operation, replays its event journal by cursor, follows live frames through the
+private operations WebSocket/Reverb plane, and updates the caller-local CLI
 after the gateway phase succeeds. The gateway persists the immutable update
 plan, starts a one-shot runner from the target `orbit-gateway` image, and the
 runner owns the read-only fleet-version probe, finalized-release all-current
@@ -62,8 +64,9 @@ update targets. A target succeeds only when all required update steps succeed;
 target results include both successful and failed targets when a fleet update
 partially fails.
 
-The update plan selects both the Orbit CLI artifact and Orbit Agent artifact for
-agent-capable nodes. The current Orbit Agent bootstrap still owns first install
+The update plan selects both the Orbit CLI artifact and the matching
+platform/architecture Orbit Agent artifact for supported Agent-eligible nodes.
+The current Orbit Agent bootstrap still owns first install
 and managed service creation; fleet update replaces and restarts an existing
 node-local Agent binary but does not sign, notarize, or produce platform-native
 packages.

@@ -55,10 +55,13 @@ This command follows the shared
 - Interactive prompt must list major dependent artifacts (proxy routes, workspaces, processes).
 
 ### 3. Execution Sequence
-- **Step 1: Gateway App Configuration:** Delete the gateway app record. This is the point of no return.
+- **Step 1: Gateway App Configuration:** In one gateway transaction, delete the
+  app record and its gateway-owned dependent rows, including schedule
+  definitions. This is the point of no return. Failure rolls the transaction
+  back and returns `app.removal_failed`; there is no per-app scheduler runtime
+  unit that can remain as Doctor drift.
 - **Step 2: Dependent Configuration Cleanup:**
     - Delete app-owned proxy route records.
-    - Delete app-owned `schedule`.
     - Delete app-owned `workspace` rows.
     - Stop and delete app-owned `process`.
 - **Step 3: Node Artifact Cleanup:**
@@ -105,8 +108,9 @@ not a removal failure.
 - Removed apps disappear from `app:list` and `app:show`.
 - App-owned artifacts remaining after a failed cleanup are detected as orphaned
   app drift by [`app-doctor.md`](../../app-doctor.md). Related-family artifacts
-  are detected by the affected family doctors (`proxy`, `workspace`,
-  `process`, `schedule`).
+  are detected by the affected family doctors (`proxy`, `workspace`, and
+  `process`). Gateway schedule-row deletion is part of the Step 1 transaction,
+  not a Schedule Doctor handoff.
 - `app:remove` does not duplicate drift item shapes for each family; it points operators at the affected `doctor --family=<family> --restore` via the warning's `next_command`.
 
 ## Activity Logging

@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
@@ -30,6 +32,56 @@ function createProcessEventIngestNode(array $overrides = [], string $role = 'app
 }
 
 describe('ProcessEventIngestController', function (): void {
+    it('links process events to the concrete app instance on the reporting node', function (): void {
+        $productionNode = createProcessEventIngestNode(['name' => 'app-production']);
+        $developmentNode = createTestAppHostNode(['name' => 'app-development']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
+
+        AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $developmentNode->id),
+        ]);
+        $production = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $productionNode->id),
+        ]);
+        $process = Process::factory()
+            ->forOwner($app, $productionNode)
+            ->create([
+                'app_instance_id' => $production->id,
+                'name' => 'vite',
+            ]);
+
+        $response = $this->call(
+            'POST',
+            '/api/events/process',
+            [
+                'event_id' => 'evt-production-crash',
+                'event' => 'crashed',
+                'unit' => 'orbit_docs_production_main_vite',
+                'exit_code' => 1,
+                'exit_status' => 'exited',
+                'at' => '2026-07-15T12:00:00+00:00',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP],
+        );
+
+        $response
+            ->assertCreated()
+            ->assertJsonPath('success.meta.matched', true);
+
+        $event = ProcessEvent::query()->where('event_id', 'evt-production-crash')->firstOrFail();
+
+        expect($event->process_id)
+            ->toBe($process->id)
+            ->and($event->app_instance_id)
+            ->toBe($production->id);
+    });
+
     it('records a crashed process event from an active app node and links runtime intent', function (): void {
         $node = createProcessEventIngestNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
@@ -41,7 +93,7 @@ describe('ProcessEventIngestController', function (): void {
             [
                 'event_id' => 'evt-crash-1',
                 'event' => 'crashed',
-                'unit' => 'orbit_docs_main_vite',
+                'unit' => 'orbit_docs_development_main_vite',
                 'exit_code' => 1,
                 'exit_status' => 'exited',
                 'at' => '2026-04-21T12:00:00+00:00',
@@ -61,7 +113,7 @@ describe('ProcessEventIngestController', function (): void {
             'app_id' => $app->id,
             'process_id' => $process->id,
             'workspace_id' => null,
-            'unit_name' => 'orbit_docs_main_vite',
+            'unit_name' => 'orbit_docs_development_main_vite',
             'exit_code' => 1,
             'exit_status' => 'exited',
         ]);
@@ -79,7 +131,7 @@ describe('ProcessEventIngestController', function (): void {
             [
                 'event_id' => 'evt-crash-workspace-1',
                 'event' => 'crashed',
-                'unit' => 'orbit_docs_feature-docs_vite',
+                'unit' => 'orbit_docs_development_feature-docs_vite',
                 'exit_code' => 1,
                 'exit_status' => 'exited',
                 'at' => '2026-04-21T12:00:00+00:00',
@@ -95,6 +147,57 @@ describe('ProcessEventIngestController', function (): void {
             'workspace_id' => $workspace->id,
             'process_id' => $process->id,
         ]);
+    });
+
+    it('resolves co-located app instances through instance-qualified runtime identities', function (): void {
+        $node = createProcessEventIngestNode();
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $development = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+        ]);
+        $production = AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+        ]);
+        $developmentProcess = Process::factory()
+            ->forOwner($app, $node)
+            ->create([
+                'app_instance_id' => $development->id,
+                'name' => 'vite',
+            ]);
+        $productionProcess = Process::factory()
+            ->forOwner($app, $node)
+            ->create([
+                'app_instance_id' => $production->id,
+                'name' => 'vite',
+            ]);
+
+        foreach (['development', 'production'] as $instanceName) {
+            $this
+                ->call(
+                    'POST',
+                    '/api/events/process',
+                    [
+                        'event_id' => "evt-{$instanceName}",
+                        'event' => 'crashed',
+                        'unit' => "orbit_docs_{$instanceName}_main_vite",
+                        'exit_code' => 1,
+                        'exit_status' => 'exited',
+                        'at' => '2026-07-15T12:00:00+00:00',
+                    ],
+                    [],
+                    [],
+                    ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP],
+                )
+                ->assertCreated()
+                ->assertJsonPath('success.meta.matched', true);
+        }
+
+        expect(ProcessEvent::query()->where('event_id', 'evt-development')->value('process_id'))
+            ->toBe($developmentProcess->id)
+            ->and(ProcessEvent::query()->where('event_id', 'evt-production')->value('process_id'))
+            ->toBe($productionProcess->id);
     });
 
     it('records unmatched crash events without intent foreign keys', function (): void {

@@ -61,6 +61,10 @@ Firewall JSON renderers that return one rule entity embed this shape under `succ
   "destination": null,
   "port": 5173,
   "protocol": "tcp",
+  "address_family": "v4",
+  "interface_scope": null,
+  "owner": "user",
+  "protected": false,
   "reason": "local development server",
   "status": "enacted"
 }
@@ -76,6 +80,10 @@ Firewall JSON renderers that return one rule entity embed this shape under `succ
 | `destination` | string \| null | Destination CIDR when the backend supports it. |
 | `port` | integer \| string | Destination port or documented port range. |
 | `protocol` | `tcp` or `udp` | Traffic protocol. |
+| `address_family` | `v4`, `v6`, or `both` | Address family the rule owns. |
+| `interface_scope` | string \| null | Backend interface scope, such as `public`, or `null` when the rule is not interface-limited. |
+| `owner` | string | Stable Orbit owner identity, such as `user`, `node-security`, or another owning subsystem. |
+| `protected` | boolean | Whether the rule is protected from ordinary mutation/removal. |
 | `reason` | string \| null | Operator note. |
 | `status` | string | Command-specific outcome, such as `expected`, `enacted`, `removed`, or `already_absent`. |
 

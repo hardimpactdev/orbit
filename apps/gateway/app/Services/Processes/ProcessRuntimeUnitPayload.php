@@ -56,7 +56,14 @@ class ProcessRuntimeUnitPayload
             return [null];
         }
 
-        return [null, ...$app->workspaces->all()];
+        $workspaces = $process->app_instance_id === null
+            ? $app->workspaces
+            : $app->workspaces->where('app_instance_id', $process->app_instance_id);
+
+        /** @var list<Workspace> $workspaceModels */
+        $workspaceModels = array_values($workspaces->all());
+
+        return [null, ...$workspaceModels];
     }
 
     private function contextName(Process $process, ?Workspace $workspace): string

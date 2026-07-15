@@ -8,12 +8,12 @@
 
 **Prerequisites:**
 - The CLI or API caller can reach the Orbit gateway.
-- The current node identity is authorized to inspect the selected app, workspace, node, or process scope.
+- The current node identity is authorized on the selected node or app instance serving node to inspect the app-instance, workspace, node, or process scope.
 
 ## Signature
 
 ```bash
-orbit process-event:stream [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--process=<name>] [--after-id=<id>] [--json]
+orbit process-event:stream [--app=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--process=<name>] [--after-id=<id>] [--json]
 ```
 
 ## Input Contract
@@ -22,8 +22,8 @@ This command follows the shared [Invocation Model](../../../../README.md#invocat
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `--app` | Optional. | Never. | None. | Must resolve to an app the caller may inspect. |
-| `workspace` | `--workspace` | Optional. | Never. | None. | Must resolve to a workspace the caller may inspect. |
+| `app` | `--app` | Optional. | Never. | None. | Prefer `<app.instance>`. A bare logical-app slug is valid only when it has exactly one instance. The selected instance's serving node must authorize inspection. |
+| `workspace` | `--workspace` | Optional. | Never. | None. | Must resolve to a workspace, its app instance, and a serving node the caller may inspect. |
 | `node` | `--node` | Optional. | Never. | None. | Must resolve to a node whose process events are visible to the caller. |
 | `process` | `--process` | Optional. | Never. | None. | Process slug filter. |
 | `after_id` | `--after-id` | Optional. | Never. | None. | Positive event id used to resume a stream. |
@@ -43,7 +43,10 @@ Every stream frame is one JSON object with a `type` discriminator:
 | `event` | `id`, `event`, `scope`, `process`, `occurred_at` | Durable lifecycle event read from `process_events`. `event` is one of `started`, `stopped`, or `crashed`. |
 | `error` | `code`, `message`, `meta` | Terminal stream failure after the stream has opened. |
 
-`scope` contains the stable filters applied to the stream: `app`, `workspace`, `node`, and `process`, with absent filters omitted. Stream frames do not include top-level `success` or `error` keys.
+`scope` contains the stable filters applied to the stream: `app`,
+`app_instance`, `workspace`, `node`, and `process`, with absent filters omitted.
+App/workspace frames include both `app` and `app_instance`. Stream frames do
+not include top-level `success` or `error` keys.
 
 ## Behavior Contract
 
@@ -60,6 +63,7 @@ Standard failures defined in [Common Failures](../../../../README.md#common-fail
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
+| App instance required | A bare logical-app selector resolves to more than one app instance. | Failure (`error.code=validation_failed`; `error.meta.field=app`; `error.meta.reason=app_instance_required`). |
 | Stream failed | The event stream cannot be opened or resumed. | Failure (`error.code=process.event_stream_failed`). |
 
 If the live snapshot cannot probe one runtime unit, the stream emits an unverifiable snapshot item for that unit when possible instead of dropping the whole stream.

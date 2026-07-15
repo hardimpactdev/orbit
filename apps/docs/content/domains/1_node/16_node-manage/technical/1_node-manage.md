@@ -10,7 +10,9 @@
 - The CLI caller can reach the Orbit gateway.
 - The authenticated peer is an active node with no active role assignments.
 - The caller is running on the local machine represented by that node identity.
-- The node Agent is reachable over the recorded WireGuard identity.
+- The node has a recorded WireGuard address. Agent reachability is probed only
+  after the selected user, platform, and managed intent are persisted; failure
+  retains that intent for later Doctor convergence.
 
 ## Signature
 

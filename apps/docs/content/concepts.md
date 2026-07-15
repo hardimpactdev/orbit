@@ -51,7 +51,7 @@ owning family concept document.
 - **Orbit gateway image** — first-party `ghcr.io/hardimpactdev/orbit-gateway:<version>` FrankenPHP image that bundles the gateway application code and is used by both gateway Swarm services. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit gateway service** — Swarm-managed `orbit-gateway` service that serves the typed gateway API and mounts `ORBIT_CONFIG_ROOT` for mutable gateway state. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Execution lane** — gateway-to-node workload classification for managed nodes. Host substrate work uses `RemoteHostExecutor`; gateway container work uses the gateway service or one-shot runner; packaged node-local helper logic uses `RemoteLocalExecutor`. See [Runtime Execution Lanes](execution-lanes.md).
-- **RemoteHostExecutor** — execution lane for host bootstrap, Docker, WireGuard, Caddy, security, filesystem, git, and container-control work. See [Runtime Execution Lanes](execution-lanes.md).
+- **RemoteHostExecutor** — provisioning/bootstrap-only SSH execution lane for establishing host substrate such as Docker, WireGuard, Caddy, security, filesystem, and Git. Steady-state node-local work uses Agent push through `RemoteLocalExecutor`; gateway state stays gateway-local. See [Runtime Execution Lanes](execution-lanes.md).
 - **RemoteGatewayRuntimeExecutor** — execution lane for gateway Laravel/artisan/PDO work that must run inside the gateway container boundary. See [Runtime Execution Lanes](execution-lanes.md).
 - **RemoteLocalExecutor** — execution lane where the gateway sends a typed Agent envelope to a node and invokes the node-local Orbit CLI entry point's internal executor command for packaged node-local helper logic that needs host file access and PHP/PDO. Internal executor commands verify operation tokens through the gateway API, and nodes do not store executor token signing material. See [Runtime Execution Lanes](execution-lanes.md).
 - **Local executor** — hidden internal CLI command surface used by `RemoteLocalExecutor`; it validates a gateway-issued operation token before reading or mutating node-local state and is not a normal user command surface. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
@@ -286,6 +286,8 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Process definition**
 - **Process identity slug**
 - **Process scope**
+- **App-instance selector**
+- **Canonical app identity**
 - **Process tool dependency**
 - **External macOS runtime provider**
 - **Managed service**

@@ -466,17 +466,22 @@ minimal loopback health and status endpoints for local UI/readiness checks.
 
 The macOS UI can show service or gateway status, node/gateway identity,
 Refresh, Restart, and Quit. When no local service is reachable, the UI starts an
-embedded headless service in the app process. Embedded mode binds the listener
-on all interfaces so the gateway can reach the node over the Orbit network.
-Quitting the UI stops that embedded instance. If a separately installed service
-is already reachable, the UI uses it without managing its lifetime.
+embedded headless service in the app process. Embedded mode follows the same
+fail-closed listener contract as the standalone service: the command listener
+binds only to the configured WireGuard address, while `/health` and `/status`
+remain loopback-only. No command listener starts when a valid WireGuard bind is
+unavailable. Quitting the UI stops that embedded instance. If a separately
+installed service is already reachable, the UI uses it without managing its
+lifetime.
 
 V1 has no WebSocket requirement, no arbitrary shell-over-agent transport, no
-menu job history, no production packaging or autostart installer, no
-self-update, and no separate approval UI. Agent execution is limited to
-explicitly supported binary argv envelopes with node-local binary allowlisting.
-App-dev convergence uses direct command envelopes that the gateway constructs,
-authorizes, and sends through Agent push.
+menu job history, no native platform installer packaging, signing, notarization,
+or separate approval UI. Orbit still installs and updates the owner-user Agent
+artifact and restarts an existing managed service; bootstrap owns first service
+creation and updates do not create a missing service. Agent execution is
+limited to explicitly supported binary argv envelopes with node-local binary
+allowlisting. App-dev convergence uses direct command envelopes that the
+gateway constructs, authorizes, and sends through Agent push.
 
 ## Access Policy
 

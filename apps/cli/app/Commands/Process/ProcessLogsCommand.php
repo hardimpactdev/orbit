@@ -18,7 +18,7 @@ final class ProcessLogsCommand extends GatewayCommand
     protected $signature = 'process:logs
         {name? : Process name}
         {--node= : Owning node name}
-        {--app= : Parent app slug}
+        {--app= : App or app-instance selector}
         {--workspace= : Workspace name}
         {--follow : Follow log output}
         {--lines=100 : Number of historical lines}

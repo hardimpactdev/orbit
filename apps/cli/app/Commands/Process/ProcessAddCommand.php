@@ -15,7 +15,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {name? : Process name}
         {process_command? : Command to run}
         {--node= : Owning node name}
-        {--app= : Parent app slug}
+        {--app= : App or app-instance selector}
         {--workspace= : Workspace name}
         {--tool= : Tool capability this process uses}
         {--service= : Managed service identifier to materialize}

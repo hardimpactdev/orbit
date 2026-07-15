@@ -38,6 +38,12 @@ This command follows the shared
 - If the gateway request fails, continue with local state and mark gateway state
   as unknown.
 
+## API Surface
+
+| Method | Path | Permission | Action |
+| --- | --- | --- | --- |
+| `GET` | `/api/extensions` | `extension:read` | Read gateway extension enablement. |
+
 ### Side-Effect Boundary
 
 - Never enable, disable, install, or download an extension.

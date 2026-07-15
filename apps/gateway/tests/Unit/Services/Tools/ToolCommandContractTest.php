@@ -48,6 +48,7 @@ describe('tool command shared contract', function (): void {
                 'node',
                 'expected_state',
                 'observed_state',
+                'observed_version',
                 'version',
                 'managed',
                 'endpoints',
@@ -58,6 +59,7 @@ describe('tool command shared contract', function (): void {
                 'node' => 'app-contract-1',
                 'expected_state' => 'installed',
                 'observed_state' => null,
+                'observed_version' => null,
                 'version' => '8.5',
                 'managed' => true,
                 'endpoints' => [],
@@ -106,10 +108,13 @@ describe('tool command shared contract', function (): void {
         $payload = app(ToolPayloadMapper::class)->toArray($tool);
         $live = app(ToolShowLiveInspector::class)->inspect($tool);
 
-        expect([...$payload, ...$live])->toMatchArray([
-            'observed_state' => 'installed',
-            'observed_version' => '8.5.1',
-        ]);
+        expect($payload['observed_version'])
+            ->toBeNull()
+            ->and([...$payload, ...$live])
+            ->toMatchArray([
+                'observed_state' => 'installed',
+                'observed_version' => '8.5.1',
+            ]);
     });
 
     it('filters registry lists to visible app hosts by node selector and app selector', function (): void {

@@ -115,14 +115,13 @@ final readonly class AppsFixer
             return null;
         }
 
-        if ($instance instanceof AppInstance) {
-            $container = $this->appRuntimeContainerRenderer->renderForInstance($app, $instance);
-            $path = $this->appRuntimeContainerRenderer->phpIniHostPathForInstance($app, $instance);
-        } else {
-            $this->ensureFrankenPhpRuntimeProcess->forApp($app);
-            $container = $this->appRuntimeContainerRenderer->render($app);
-            $path = $this->appRuntimeContainerManager->runtimeConfigPath($node, $app->name);
-        }
+        $this->ensureFrankenPhpRuntimeProcess->forApp($app, $instance);
+        $container = $instance instanceof AppInstance
+            ? $this->appRuntimeContainerRenderer->renderForInstance($app, $instance)
+            : $this->appRuntimeContainerRenderer->render($app);
+        $path = $instance instanceof AppInstance
+            ? $this->appRuntimeContainerRenderer->phpIniHostPathForInstance($app, $instance)
+            : $this->appRuntimeContainerManager->runtimeConfigPath($node, $app->name);
 
         $this->appRuntimeContainerManager->writeRuntimeConfigFile($node, $container);
 

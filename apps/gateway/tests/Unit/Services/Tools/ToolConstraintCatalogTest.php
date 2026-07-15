@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\Tools\ToolCatalog;
+use App\Services\Tools\ToolDefinitionRegistry;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -28,6 +29,10 @@ it('does not infer a generic Linux platform when node platform metadata is missi
         ->toBeFalse();
 });
 
+it('does not expose the websocket Reverb runtime as a generic tool definition', function (): void {
+    expect(app(ToolDefinitionRegistry::class)->names())->not->toContain('reverb');
+});
+
 it('declares Docker-compatible provider requirements for container-backed tools', function (
     string $tool,
     ?string $provider,
@@ -44,7 +49,6 @@ it('declares Docker-compatible provider requirements for container-backed tools'
     'dns' => ['dns', 'docker-compatible', 'docker-network-namespace'],
     'mailpit' => ['mailpit', 'docker-compatible', 'docker'],
     'php image inventory' => ['php', 'docker-compatible', 'docker'],
-    'reverb' => ['reverb', 'docker-compatible', 'docker'],
     'seaweedfs' => ['seaweedfs', 'docker-compatible', 'docker'],
     'docker provider itself' => ['docker', null, null],
     'openclaw host runtime' => ['openclaw', null, 'unprivileged-user'],

@@ -27,7 +27,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `family` | `--family` | Never. | Never. | The full category set derived from the target node's active roles. | Repeatable product family key: `node`, `app`, `database_connection`, `firewall_rule`, `process`, `proxy`, `schedule`, `tool`, or `workspace`. `security` is not a valid family; security-section findings live under the owning family key. Must intersect with the target's role-assignment category set. |
+| `family` | `--family` | Never. | Never. | The target node's resolved eligibility set: its role-derived base plus owned-fact and platform overlays. | Repeatable product family key: `node`, `app`, `database_connection`, `firewall_rule`, `process`, `proxy`, `schedule`, `tool`, or `workspace`. `security` is not a valid family; security-section findings live under the owning family key. Must intersect with the target's resolved eligibility set. |
 | `key` | `--key` | Never. | Never. | All issue keys from the selected family/families. | Single exact doctor issue-key filter. Filters reported drift after probes and before action planning. Does not imply or select a family. |
 | `node` | `--node` | Never. | `--self` or `--all` is present. | The locally configured default node when one is selected; otherwise omitted with `self=true` so the caller node is selected. | Gateway-known node name. Selects the single target node. The literal value `all` is invalid; use `--all` for fleet verification. |
 | `self` | `--self` | Never. | `--node` or `--all` is present. | `false`. | Forwarded to the gateway; the gateway resolves it to the calling peer's identified node. |
@@ -41,30 +41,43 @@ This command follows the shared
 | `json` | `--json` | Optional. | `--stream-json` is present. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 | `stream_json` | `--stream-json` | Optional. | `--json` or `--fix` is present. | `false`. | Selects the stream JSON renderer and non-interactive input mode. |
 
-## Target Roles and Category Set
+## Target Eligibility and Category Set
 
-The rendered category set is derived from the target node's active role
-assignments. The compatibility node role field is a shadow for identity and
-output only; workload-family doctor eligibility comes from `node_role`. Every
-node with at least one active role assignment includes `Processes`. A
-client/operator identity with no active role assignment renders only `Node`.
+The rendered category set starts with the target node's active role
+assignments, then adds families from gateway-owned facts and platform
+eligibility. A displayed role label is derived output and grants nothing.
 
-| Target role assignment state | Categories |
+| Target role assignment state | Role-derived base categories |
 | --- | --- |
 | client with no active role | `Node` |
-| active `gateway` role | `Node`, `Processes`, `Scheduling` |
+| active `gateway` role | `Node`, `Processes` |
 | active `database` role only | `Node`, `Tools`, `Processes` |
 | active `agent` role | `Node`, `Tools`, `Processes` |
 | active `router` role | `Node`, `Proxy routes`, `Processes` |
-| active `app-dev` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
-| active `app-prod` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Firewall`, `Tools`, `Scheduling`, `Databases` |
-| active `ingress` role | `Node`, `Proxy routes`, `Firewall`, `Tools`, `Processes` |
+| active `app-dev` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Tools`, `Databases` |
+| active `app-prod` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Tools`, `Databases` |
+| active `ingress` role | `Node`, `Proxy routes`, `Tools`, `Processes` |
 | active `websocket` role | `Node`, `Tools`, `Processes` |
 | active `s3` role | `Node`, `Tools`, `Proxy routes`, `Processes` |
 | active `metrics` role | `Node`, `Tools`, `Processes`, `Proxy routes` |
 | active `vpn` or `analytics` role without another role-specific category | `Node`, `Processes` |
 
-Families outside the target's role-assignment set are rejected before probes. A narrow `--family` filter intersects with that set. The renderer never shows placeholder rows for families that are not in the target's set.
+The gateway then adds these fact-derived overlays:
+
+- `Tools` for owned tool rows or baseline tool capabilities, including VPN DNS
+  on an active gateway+VPN node;
+- `Firewall` for any active Ubuntu target eligible to own Orbit-protected
+  rules, including exporter rules; macOS is excluded;
+- `Scheduling` for the gateway and every node targeted by at least one schedule
+  definition, independent of workload role; gateway singleton checks run only
+  at gateway scope, while target reachability and recent-run checks run at each
+  selected workload target; and
+- any other family admitted by valid gateway-owned facts for that selected
+  node.
+
+A narrow `--family` filter intersects with this resolved eligibility set.
+Families outside it are rejected before probes; the renderer shows no
+placeholder rows for ineligible families.
 
 A future `DNS/TLD` row is reserved for operator/app targets and a `DNS` row for gateway targets. They will render as a slice of the `node` family once a DNS diagnostic source exists. Until then the renderer keeps DNS/TLD facts inside the `Node` row and produces no separate row.
 
@@ -83,9 +96,9 @@ A future `DNS/TLD` row is reserved for operator/app targets and a `DNS` row for 
      is selected. When no default node is configured, the CLI sends `self=true`
      so the caller's identified node is selected.
    - `--self` combined with `--node` is rejected before forwarding.
-4. Call the gateway to authorize the scope, derive the target-role category set, and dispatch family probes.
+4. Call the gateway to authorize the scope, derive the target's resolved eligibility set, and dispatch family probes.
    - In resolution modes, the gateway also attempts actions.
-   - Family filters intersect with the target-role category set.
+   - Family filters intersect with the resolved eligibility set. Active roles establish its base categories; owned facts and platform support add overlays.
    - Families outside the set are rejected by the gateway.
    - `--key` filters the resulting issue list to the exact key before action planning.
 5. Render the gateway's diagnostic.
@@ -127,6 +140,12 @@ Cross-peer scope-resolution and grant requirements are owned by
 Peer-specific authorization remains in the on-node companion contracts:
 [`2_doctor_on-client.md`](2_doctor_on-client.md),
 and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
+
+Denial of the selected Doctor scope returns `authorization_failed` before any
+family probe runs and is never represented as a Doctor issue. Once scope is
+authorized, family probes validate persisted references against gateway state
+independently of caller-visible row filtering. A record hidden from a caller is
+an authorization concern, not repairable drift in that record.
 
 ### Result Classification Rules
 

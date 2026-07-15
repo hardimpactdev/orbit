@@ -90,7 +90,6 @@ use App\Tools\OrbStackTool;
 use App\Tools\PhpCliTool;
 use App\Tools\PhpTool;
 use App\Tools\PolyscopeServerTool;
-use App\Tools\ReverbTool;
 use App\Tools\SeaweedfsTool;
 use App\Tools\VitePlusTool;
 use Illuminate\Contracts\Foundation\Application;
@@ -228,7 +227,6 @@ class AppServiceProvider extends ServiceProvider
                     $app->make(DnsTool::class),
                     $app->make(PhpTool::class),
                     $app->make(MailpitTool::class),
-                    $app->make(ReverbTool::class),
                     $app->make(SeaweedfsTool::class),
                     $app->make(NodeExporterTool::class),
                     $app->make(PolyscopeServerTool::class),

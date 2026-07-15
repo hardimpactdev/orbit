@@ -6,9 +6,13 @@ namespace App\Actions\Apps;
 
 use App\Contracts\SiteCertificateInstaller;
 use App\Models\App;
+use App\Models\AppInstance;
+use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Processes\ProcessRuntimeApp;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use App\Services\Workspaces\WorkspacePlacement;
 use RuntimeException;
 use Throwable;
 
@@ -17,18 +21,32 @@ final readonly class EnsureAppProcessRuntimeUnits
     public function __construct(
         private SiteCertificateInstaller $siteCertificateInstaller,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
+        private WorkspacePlacement $placement,
     ) {}
 
     /**
      * @return list<array<string, string>>
      */
-    public function handle(App $app): array
+    public function handle(App $app, ?AppInstance $appInstance = null): array
     {
-        $app->loadMissing(['node', 'processes', 'workspaces']);
+        $app->loadMissing(['node', 'instances']);
+        $appInstance ??= $this->soleInstance($app);
+        $node = $this->placement->nodeForInstance($appInstance);
 
-        if ($app->node === null) {
-            throw new RuntimeException("App '{$app->name}' has no owning node.");
+        if (! $node instanceof Node) {
+            throw new RuntimeException("App instance '{$app->name}.{$appInstance->name}' has no owning node.");
         }
+
+        $app = ProcessRuntimeApp::make($app, $node, $appInstance);
+        $app->setRelation('node', $node);
+        $app->setRelation(
+            'processes',
+            $app->processes()->where('app_instance_id', $appInstance->id)->orderBy('sort_order')->get(),
+        );
+        $app->setRelation(
+            'workspaces',
+            $app->workspaces()->where('app_instance_id', $appInstance->id)->orderBy('name')->get(),
+        );
 
         if ($app->processes->isEmpty()) {
             return [];
@@ -64,6 +82,18 @@ final readonly class EnsureAppProcessRuntimeUnits
         }
 
         return $warnings;
+    }
+
+    private function soleInstance(App $app): AppInstance
+    {
+        $instances = $app->instances->values();
+        $instance = $instances->first();
+
+        if ($instances->count() === 1 && $instance instanceof AppInstance) {
+            return $instance;
+        }
+
+        throw new RuntimeException("App '{$app->name}' requires one concrete app instance for process enactment.");
     }
 
     /**

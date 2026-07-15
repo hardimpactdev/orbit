@@ -38,6 +38,12 @@ Schedules may target an app, a node, or Orbit-owned maintenance work. The scope 
 
 When the target is not the gateway itself, the gateway dispatches the run through `internal:schedule:run` over agent-push. The scheduled command executes on the target node, but the gateway records every result centrally.
 
+Doctor eligibility follows schedule ownership rather than a workload-role
+allowlist. `Scheduling` is available for the gateway and for every node targeted
+by at least one gateway schedule definition. Singleton scheduler
+service/heartbeat/lock checks run only at gateway scope; target reachability and
+recent-run checks run for each selected scheduled node.
+
 #### Execution source and intervals
 
 - Scheduled work has exactly one execution source: an inline command or a managed script path.

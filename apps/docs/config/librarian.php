@@ -18,6 +18,7 @@ use App\Librarian\Rules\ConceptIndexRule;
 use App\Librarian\Rules\ConvertedFamilyStructureRule;
 use App\Librarian\Rules\DestructiveConsentRule;
 use App\Librarian\Rules\DoctorIssueCodePrefixRule;
+use App\Librarian\Rules\DoctorIssueVisibilityPredicateRule;
 use App\Librarian\Rules\DoctorRelationshipReferenceRule;
 use App\Librarian\Rules\DoctorWarningCoherenceRule;
 use App\Librarian\Rules\DriftIssueSuffixRule;
@@ -40,6 +41,7 @@ use App\Librarian\Rules\ProductCodeNamespaceRule;
 use App\Librarian\Rules\PublicCommandPageBoundaryRule;
 use App\Librarian\Rules\PublicJsonOptionContractRule;
 use App\Librarian\Rules\PublicStreamJsonOptionContractRule;
+use App\Librarian\Rules\PublicUsageOptionCoverageRule;
 use App\Librarian\Rules\ReadCommandNoLiveProbeRule;
 use App\Librarian\Rules\ReaderAddressRule;
 use App\Librarian\Rules\RendererPrimitiveReferenceRule;
@@ -48,10 +50,13 @@ use App\Librarian\Rules\SharedFailureVocabularyRule;
 use App\Librarian\Rules\SignatureArgumentOrderRule;
 use App\Librarian\Rules\SignatureLiveSurfaceRule;
 use App\Librarian\Rules\SignatureOptionConsistencyRule;
+use App\Librarian\Rules\TechnicalCompanionCommandNameRule;
 use App\Librarian\Rules\TechnicalSlotSemanticsRule;
 use App\Librarian\Rules\TechnicalTestMappingRule;
 use App\Librarian\Rules\TestMappingFormatRule;
 use App\Librarian\Rules\TestMappingPathExistsRule;
+use App\Librarian\Rules\TransitionalSseContractRule;
+use App\Librarian\Rules\WorkspaceLifecycleInstanceScopeRule;
 use HardImpact\Librarian\Linting\Rules\BulletComplexityRule;
 use HardImpact\Librarian\Linting\Rules\CompoundNounStackRule;
 use HardImpact\Librarian\Linting\Rules\DocumentComplexityRule;
@@ -95,10 +100,12 @@ return [
         ProductCodeNamespaceRule::class,
         PublicJsonOptionContractRule::class,
         PublicStreamJsonOptionContractRule::class,
+        PublicUsageOptionCoverageRule::class,
         JsonRendererEnvelopeRule::class,
         ExitStatusPolicyRule::class,
         NoPerCommandAuthorizationSectionRule::class,
         DoctorIssueCodePrefixRule::class,
+        DoctorIssueVisibilityPredicateRule::class,
         InputModeContractRule::class,
         DestructiveConsentRule::class,
         JsonRendererExampleRule::class,
@@ -111,6 +118,7 @@ return [
         PublicCommandPageBoundaryRule::class,
         SignatureArgumentOrderRule::class,
         SignatureOptionConsistencyRule::class,
+        TechnicalCompanionCommandNameRule::class,
         ActivityLoggingContractRule::class,
         ErrorCodeRegistryRule::class,
         DoctorWarningCoherenceRule::class,
@@ -133,6 +141,8 @@ return [
         NoLegacyNarrativeRule::class,
         CommandSurfaceCoverageRule::class,
         SignatureLiveSurfaceRule::class,
+        TransitionalSseContractRule::class,
+        WorkspaceLifecycleInstanceScopeRule::class,
         BannedTermsRule::class,
     ],
 
@@ -173,6 +183,12 @@ return [
             'decision' => '2026-06-28 Codex App registration moved to the codex extension command family',
             'replacement' => '`codex:app`',
             'allow_paths' => ['domains/23_codex/README.md'],
+        ],
+        [
+            'terms' => ['caller-role authorization'],
+            'decision' => '2026-07-15 doctor drift is authoritative-state based, not caller-role visibility based',
+            'replacement' => 'caller eligibility or explicit permission checks',
+            'allow_paths' => [],
         ],
     ],
 ];

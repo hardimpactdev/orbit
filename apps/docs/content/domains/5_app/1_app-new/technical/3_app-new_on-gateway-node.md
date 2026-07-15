@@ -23,5 +23,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php` | Gateway API path writes registry and applies via mocked `RemoteShell`. |
+| `apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php` | Gateway API path writes registry and applies through the mocked node-execution/Agent-push boundary. |
 | `apps/gateway/tests/Feature/Http/Api/AppStoreStreamControllerTest.php` | Gateway stream tree and source-command forwarding for clone and template branches. |

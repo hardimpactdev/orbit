@@ -52,7 +52,7 @@ These rules describe how `schedule:add` resolves scope and writes the gateway sc
 - Accepts exactly one execution source: `--command` or `--script`.
 - Stores inline commands as execution type `command`.
 - Stores managed script paths as execution type `script`.
-- Does not create app process definitions, persistent services, or other runtime units.
+- Does not create app-instance process definitions, persistent services, or other runtime units.
 - The Orbit Scheduler executes the schedule each minute it is due.
 - No per-schedule node-side artifact is applied.
 

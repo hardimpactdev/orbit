@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
+use App\Models\Process;
 use App\Services\Apps\AppAgentIdeDefaults;
 use App\Services\Apps\AppResponsePayload;
 use App\Services\Apps\DependencyAudit\AppDependencyAuditAggregatePayload;
@@ -79,7 +80,33 @@ final class AppShowController implements Loggable
      */
     private function detailsPayload(App $app): array
     {
-        $app->loadMissing('dependencyAuditSummaries');
+        $app->loadMissing(['dependencyAuditSummaries', 'processes.appInstance']);
+
+        $processModels = $app->processes->all();
+        usort(
+            $processModels,
+            static fn (Process $left, Process $right): int => (
+                [
+                    $left->app_instance_id,
+                    $left->sort_order,
+                    $left->id,
+                ] <=> [
+                    $right->app_instance_id,
+                    $right->sort_order,
+                    $right->id,
+                ]
+            ),
+        );
+
+        $processes = [];
+
+        foreach ($processModels as $process) {
+            $processes[] = [
+                'name' => $process->name,
+                'app_instance' => $process->appInstance?->name,
+                'runtime' => $process->runtime->value,
+            ];
+        }
 
         return [
             'domain' => $this->domain($app),
@@ -91,7 +118,7 @@ final class AppShowController implements Loggable
             'agent_ide' => $this->agentIdePayload($app),
             'dependency_audits' => app(AppDependencyAuditAggregatePayload::class)->managerDetailsFor($app),
             'workspaces' => [],
-            'processes' => [],
+            'processes' => $processes,
             'routes' => [
                 [
                     'host' => $this->domain($app),

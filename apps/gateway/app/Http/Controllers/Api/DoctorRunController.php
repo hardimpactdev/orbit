@@ -12,6 +12,8 @@ use App\Services\Doctor\DoctorProgressReportFactory;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Doctor\DoctorValidationFailure;
+use App\Services\Nodes\Access\AuthorizationResult;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Support\Streaming\ProgressEventStreamEmitter;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -19,8 +21,12 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
-final class DoctorRunController implements Loggable
+final readonly class DoctorRunController implements Loggable
 {
+    public function __construct(
+        private NodeAccessAuthorizer $authorizer,
+    ) {}
+
     public function __invoke(
         Request $request,
         DoctorReportRunner $runner,
@@ -51,6 +57,20 @@ final class DoctorRunController implements Loggable
         }
 
         if ($this->usesFleetScope($request)) {
+            $unauthorizedTarget = $runner
+                ->fleetTargetsForFamilies($families)
+                ->first(
+                    fn (Node $target): bool => ! $this->authorizer->allows($caller, $target, 'doctor:verify'),
+                );
+
+            if ($unauthorizedTarget instanceof Node) {
+                return $this->authorizationFailed(
+                    $unauthorizedTarget,
+                    'doctor:verify',
+                    $this->authorizer->authorize($caller, $unauthorizedTarget, 'doctor:verify'),
+                );
+            }
+
             $failure = $validator->validate($families, $runner);
 
             if ($failure instanceof DoctorValidationFailure) {
@@ -88,6 +108,12 @@ final class DoctorRunController implements Loggable
                     'meta' => ['node' => $request->input('node')],
                 ],
             ], 422);
+        }
+
+        $authorization = $this->authorizer->authorize($caller, $target, 'doctor:verify');
+
+        if (! $authorization->allowed) {
+            return $this->authorizationFailed($target, 'doctor:verify', $authorization);
         }
 
         $failure = $validator->validate($families, $runner, $target);
@@ -380,6 +406,25 @@ final class DoctorRunController implements Loggable
         }
 
         return $caller;
+    }
+
+    private function authorizationFailed(
+        Node $target,
+        string $permission,
+        AuthorizationResult $result,
+    ): JsonResponse {
+        return response()->json([
+            'error' => [
+                'code' => 'authorization_failed',
+                'message' => "This node is not authorized for '{$permission}' on '{$target->name}'.",
+                'meta' => [
+                    'reason' => $result->reason,
+                    'missing_permission' => $result->missingPermission,
+                    'serving_node' => $target->name,
+                    'mode' => 'verify',
+                ],
+            ],
+        ], 403);
     }
 
     private function validateScope(Request $request): ?JsonResponse

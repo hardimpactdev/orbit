@@ -1,6 +1,6 @@
-# Technical Contract: `orbit solo:process:clear:output`
+# Technical Contract: `orbit solo:process:clear-output`
 
-[Back to public `solo:process:clear:output` documentation.](../solo-process-clear-output.md)
+[Back to public `solo:process:clear-output` documentation.](../solo-process-clear-output.md)
 
 **Owner:** `solo`.
 

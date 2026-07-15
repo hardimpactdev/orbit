@@ -50,8 +50,10 @@ envelope (`meta.fields = ["json", "stream-json"]`,
    When the request omits an inline manifest, the gateway defers release-manifest
    resolution to the runner's `Checking for updates` step so the CLI can keep
    visible progress while the latest version is resolved.
-4. Follow the operation event stream, reconnecting with `Last-Event-ID` when the
-   gateway service is replaced.
+4. Follow the operation event journal by monotonic cursor. The current command
+   uses an exact-marked transitional SSE adapter, where `Last-Event-ID`
+   temporarily carries the cursor across gateway-service replacement. The
+   target transport is the private operations WebSocket/Reverb plane.
 5. After the gateway phase succeeds, update the caller-local CLI as a fan-out
    target alongside the remote workload nodes. The gateway is the version
    ceiling, so the local CLI is never updated ahead of the gateway; if the
@@ -177,9 +179,12 @@ The expected target shape per calling context:
   and Docker socket are mounted.
   The runner survives replacement of the long-running `orbit-gateway` service
   and owns the rest of the fleet update.
-- Followers read events through the gateway SSE API. A follower may replay from
-  the beginning or continue from `Last-Event-ID`. Duplicate events after
-  reconnect must not be rendered twice.
+- Followers replay persisted events after a monotonic journal cursor, then
+  follow live frames. `update:all` currently reaches this contract through an
+  exact-marked transitional gateway SSE adapter, where `Last-Event-ID` carries
+  the cursor. Duplicate events after reconnect must not be rendered twice. The
+  adapter is removed when this command migrates to the operations
+  WebSocket/Reverb plane.
 
 ## Lease Rules
 
@@ -334,6 +339,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Update lease conflict | Another active update lease owns the same fleet, gateway, scheduler, or node resource. | Failure before conflicting side effects |
 | Gateway update failed | The gateway service update, migration, or health verification fails. | Terminal operation failure; local and workload-role targets are not started |
 | Scheduler recovery failed | The scheduler could not be restored after failed migrations or gateway health. | Terminal operation failure with explicit recovery metadata |
+| Agent service missing | An Agent artifact is selected, but the target has neither an existing managed Agent service nor an unmanaged Agent listener to replace. | The target fails closed and requires bootstrap to create the first Agent service; `update:all` does not create it. |
 | Workload update failed | One or more selected role-bearing workload installations fail to update. | Failure with partial target results |
 | Final verification failed | Gateway, scheduler, CLI, or required image verification fails after updates. | Terminal operation failure with partial target results |
 
@@ -383,7 +389,7 @@ Primary existing test owners:
 | `apps/cli/tests/Feature/Commands/Operation/UpdateAllCommandTest.php` | CLI fleet update contract: local update preflight, durable operation start, event-stream following and reconnects, terminal operation errors, and JSON/human rendering. |
 | `apps/gateway/tests/Feature/Http/Api/UpdateAllStartControllerTest.php` | Gateway start API contract: authorization, durable operation creation, and attempt activity logging via route middleware. |
 | `apps/gateway/tests/Feature/Http/Api/UpdateAllControllerTest.php` | Gateway operation read/event API contract for durable fleet updates. |
-| `apps/cli/tests/Feature/Services/GatewayOperationEventStreamClientTest.php` | Gateway operation event-stream decoding, Last-Event-ID resume, idle callback cadence, TLS CA verification, and no-terminal-event handling. |
+| `apps/cli/tests/Feature/Services/GatewayOperationEventStreamClientTest.php` | Exact transitional SSE adapter decoding, journal-cursor resume through `Last-Event-ID`, idle callback cadence, TLS CA verification, and no-terminal-event handling. |
 | `apps/cli/tests/Feature/Commands/Operation/UpdateAllCommandTest.php` | CLI `update:all` command-path following through reconnects and gateway start failure handling. |
 | `apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php` | Workload node update fan-out, per-node doctor issue counts, advisory doctor failures, candidate artifact updates, and installed artifact tracking. |
 | `apps/gateway/tests/Feature/Services/Operations/UpdateRunnerActivityTest.php` | Durable runner outcome activity entries for completed and failed fleet updates, including best-effort logging-failure handling. |

@@ -306,6 +306,35 @@ it('reports banned terms outside their allow paths', function (): void {
         ->toContain('process:start');
 });
 
+it('forbids the retired caller-role authorization term', function (): void {
+    config()->set('librarian.rules', [BannedTermsRule::class]);
+    config()->set('librarian.banned_terms', [
+        [
+            'terms' => ['caller-role authorization'],
+            'decision' => '2026-07-15 doctor drift is authoritative-state based, not caller-role visibility based',
+            'replacement' => 'caller eligibility or explicit permission checks',
+            'allow_paths' => [],
+        ],
+    ]);
+    bindLiveSurfaceFake([]);
+    writeLiveSurfaceFile(
+        $this->fixtureRoot,
+        'content/domains/11_operation/doctor.md',
+        "# Doctor\n\nDrift uses caller-role authorization to decide which rows exist.\n",
+    );
+
+    $payload = runLiveSurfaceLint();
+    $findings = liveSurfaceFindings($payload, 'command_docs.banned_terms');
+
+    expect($payload['result'])
+        ->toBe('failed')
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0]['message'])
+        ->toContain('caller-role authorization')
+        ->toContain('caller eligibility or explicit permission checks');
+});
+
 it('allows declared tool lifecycle verbs while flagging configured non-surface verbs', function (): void {
     config()->set('librarian.rules', [BannedTermsRule::class]);
     config()->set('librarian.banned_terms', [

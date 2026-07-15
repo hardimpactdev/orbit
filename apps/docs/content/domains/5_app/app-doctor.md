@@ -93,7 +93,7 @@ Each code below corresponds to a specific layer in the apps probe.
 | Code | Detected when |
 | --- | --- |
 | `app.record_incomplete` | A selected app record lacks name, owning node reference, app path, document root, PHP version, or required lifecycle fields. |
-| `app.owner_node_invalid` | The app record points at a missing node, unauthorized node, or node that is not an active node. |
+| `app.owner_node_invalid` | The app record points at a missing node or a node that is not active. |
 | `app.path_missing` | The configured app path does not exist on the owning node. |
 | `app.path_unusable` | The configured app path exists but cannot be read, entered, or managed by Orbit. |
 | `app.root_missing` | The configured document root does not exist inside the app path. |

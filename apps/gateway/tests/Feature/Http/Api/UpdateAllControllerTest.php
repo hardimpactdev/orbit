@@ -41,6 +41,21 @@ it('updates the local checkout for a gateway caller', function (): void {
     Http::assertNothingSent();
 });
 
+it('keeps checkout wording for source-mounted gateway update failures', function (): void {
+    Process::fake([
+        'git pull --ff-only' => Process::result(exitCode: 1, errorOutput: 'source checkout update failed'),
+    ]);
+    Process::preventStrayProcesses();
+
+    $this
+        ->call('POST', '/api/update/all', server: ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP])
+        ->assertStatus(422)
+        ->assertJsonPath('error.code', 'local_update_failed')
+        ->assertJsonPath('error.message', 'Failed to update local Orbit checkout.')
+        ->assertJsonPath('error.meta.failed_step', 'local_checkout')
+        ->assertJsonPath('error.data.output', 'source checkout update failed');
+});
+
 it('updates workload nodes with three sequential Agent-pushed stages', function (): void {
     update_all_agent_node();
     Process::fake(['*' => Process::result()]);

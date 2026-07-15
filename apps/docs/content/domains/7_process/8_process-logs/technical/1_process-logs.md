@@ -8,14 +8,14 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for `process:logs` on the process owning node.
-- The owning node is active, Agent eligible, and reachable through its Agent
+- The gateway authorizes the authenticated peer for `process:logs` on the resolved node or app instance serving node.
+- That serving node is active, Agent eligible, and reachable through its Agent
   listener.
 
 ## Signature
 
 ```bash
-orbit process:logs [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--follow] [--lines=<count>] [--json]
+orbit process:logs [name] [--app=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--follow] [--lines=<count>] [--json]
 ```
 
 ## Input Contract
@@ -26,8 +26,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owning scope. |
 | `node` | `--node` | Required when reading logs for a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:logs`. |
-| `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:logs`. |
-| `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:logs`; pass `--app` when the workspace name is ambiguous. |
+| `app` | `--app` or app-instance context | Required unless `node` is supplied or `workspace` resolves the app instance. | `node` is present. | Local app instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare logical-app slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:logs`. |
+| `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its app instance whose serving node grants `process:logs`; pass `--app=<app.instance>` when the workspace name is ambiguous. |
 | `follow` | `--follow` | Optional. | Never. | `false`. | Boolean flag. Keeps the human log stream open when true. |
 | `lines` | `--lines` | Optional. | Never. | `100`. | Positive integer. How many prior log lines to read before streaming or returning. |
 | `json` | `--json` | Optional. | When `follow=true`. | `false`. | Selects the JSON renderer and non-interactive input mode. JSON output is only defined for bounded, non-follow log reads. |
@@ -41,11 +41,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Log Streaming Rules
 
-1. Resolve target node, app, or workspace context from supplied input or local context, and resolve the process definition.
+1. Resolve a target node, concrete app instance, or workspace context from supplied input or local context, and resolve the process definition. Reject a bare logical-app selector with `validation_failed`, `field=app`, and `reason=app_instance_required` unless that app has exactly one instance.
 2. Send the request to the gateway, which validates the authenticated peer's authorization.
 3. Derive the runtime-unit identity for the selected context.
 4. Open a typed `internal:process-logs` local-executor request through the
-   gateway on the owning node.
+   gateway on the resolved node or app instance serving node.
 5. Read up to `lines` prior log lines.
 6. For bounded service process log reads, include process-owned connection metadata: definition name, version, service name, endpoint, and credential field names. Credential values are excluded.
 7. Keep `GET /api/processes/{name}/log` bounded. It never opens a follow
@@ -69,8 +69,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Process not found | The named process does not exist for the resolved context. | Failure (`error.code=process.not_found`). |
-| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
-| Log read failed | The gateway cannot read logs from the owning node process manager. | Failure (`error.code=process.log_read_failed`). |
+| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app-instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| App instance required | A bare logical-app selector resolves to more than one app instance. | Failure (`error.code=validation_failed`; `error.meta.field=app`; `error.meta.reason=app_instance_required`). |
+| Log read failed | The gateway cannot read logs from the resolved node or app instance serving node process manager. | Failure (`error.code=process.log_read_failed`). |
 
 ## Doctor Relationship
 
@@ -87,8 +88,8 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:GET /processes/{name}/log` for bounded reads; `api:POST /processes/{name}/log-stream` for follow operation creation |
 | Effect | `read` |
-| Subject | Resolved `Node` for node-owned processes or `App` for app/workspace contexts; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
-| Properties | `node` (string or null), `app` (string or null), and `workspace` (string or null). No captured stdout, stderr, log payload, backend command text, or secrets. |
+| Subject | Resolved `Node` for node-owned processes or `AppInstance` for app-instance/workspace contexts; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Properties | `node` (string or null), `app` (string or null), `app_instance` (string or null), and `workspace` (string or null). No captured stdout, stderr, log payload, backend command text, or secrets. |
 | Description | derived |
 
 ## Test Mapping

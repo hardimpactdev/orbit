@@ -1,19 +1,19 @@
 # `orbit workspace-teardown-step:add`
 
-Add a workspace teardown step for an app.
+Add a workspace teardown step for one concrete app instance.
 
 ## Usage
 
 ```bash
-orbit workspace-teardown-step:add --command="dropdb my_app_feature" [--app=<app>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
+orbit workspace-teardown-step:add --command="dropdb my_app_feature" --app=<app.instance> [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
 ```
 
 ## Description
 
 The `workspace-teardown-step:add` command registers a shell command that
-runs whenever Orbit removes a workspace for the app
+runs whenever Orbit removes a workspace for the selected app instance
 ([`workspace:remove`](../5_workspace-remove/workspace-remove.md)) or prunes
-stale workspaces for the app
+stale workspaces for the selected app instance
 ([`app:prune`](../../5_app/7_app-prune/app-prune.md)). These steps are used
 for app-specific cleanup that needs the workspace path intact, such as
 dropping feature-specific databases or notifying external services.
@@ -25,13 +25,17 @@ artifact removal.
 ## Arguments
 
 - `--command=<command>`: The shell command to execute. Required.
-- `--app=<app>`: The parent app slug. When omitted, Orbit infers the app
+- `--app=<app.instance>`: Concrete dotted app-instance selector, such as
+  `my-app.production`. A caller context may supply the same concrete instance
   using the same precedence chain as
   [`workspace:new`](../1_workspace-new/workspace-new.md): explicit flag →
   `.orbit/config` marker on the caller filesystem → gateway path-ownership
   lookup keyed on `(caller node identity, absolute cwd)` → interactive
-  prompt or non-interactive failure. Project files such as
-  `composer.json`, `package.json`, and `.php-version` are never inspected.
+  prompt or non-interactive failure. Bare logical-app slugs return an
+  app-instance-required validation error. The exact error shape is defined by
+  the [JSON renderer contract](technical/6.2_workspace-teardown-step-add_output-render_json.md).
+  Project files such as `composer.json`, `package.json`, and `.php-version` are
+  never inspected.
 - `--before=<id>`: Insert the new step before the teardown step with the
   given ID.
 - `--after=<id>`: Insert the new step after the teardown step with the
@@ -104,7 +108,7 @@ teardown pipeline run that begins after the gateway commit.
 Run this to append a step to the end of the teardown list.
 
 ```bash
-orbit workspace-teardown-step:add --command="dropdb docs_feature"
+orbit workspace-teardown-step:add --command="dropdb docs_feature" --app=docs.production
 ```
 
 ### Insert a step before an existing one
@@ -112,7 +116,7 @@ orbit workspace-teardown-step:add --command="dropdb docs_feature"
 Use `--before` to position the step relative to an existing step ID.
 
 ```bash
-orbit workspace-teardown-step:add --command="pkill -f 'my-app-worker'" --before=18
+orbit workspace-teardown-step:add --command="pkill -f 'my-app-worker'" --app=my-app.production --before=18
 ```
 
 ## Requirements
@@ -120,8 +124,9 @@ orbit workspace-teardown-step:add --command="pkill -f 'my-app-worker'" --before=
 These conditions must hold before `workspace-teardown-step:add` will succeed.
 
 - The CLI caller can reach the Orbit gateway.
-- The caller is authorized to manage workspace policy for the target app.
-- The target app exists.
+- The caller is authorized to manage workspace policy on the selected app
+  instance's serving node.
+- The target app instance exists.
 
 ## Related
 

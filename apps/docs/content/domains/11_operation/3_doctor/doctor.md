@@ -14,27 +14,41 @@ owns scope resolution, mode selection, authorization, result handling, and
 output selection. Family doctor contracts own concrete probe facts, issue
 codes, and safe restore/adopt maps.
 
-The categories rendered for a run are derived from the target node's active
-role assignments. The compatibility node role field is only a shadow value
-and does not by itself grant workload-family probes:
+The categories rendered for a run start with the target node's active role
+assignments, then add families derived from gateway-owned facts and platform
+eligibility. A displayed role label is derived output and grants nothing. The
+role-derived base set is:
 
 - client target (no active role): `Node`.
-- `gateway` target: `Node`, `Processes`, `Scheduling`.
+- `gateway` target: `Node`, `Processes`.
 - `database` target: `Node`, `Tools`, `Processes`.
 - `agent` target: `Node`, `Tools`, `Processes`.
 - `router` target: `Node`, `Proxy routes`, `Processes`.
 - `app-dev` target: `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`,
-  `Firewall`, `Tools`, `Scheduling`, `Databases`.
-- `app-prod` target: `Node`, `Apps`, `Processes`, `Proxy routes`,
-  `Firewall`, `Tools`, `Scheduling`, `Databases`.
-- `ingress` target: `Node`, `Proxy routes`, `Firewall`, `Tools`, `Processes`.
+  `Tools`, `Databases`.
+- `app-prod` target: `Node`, `Apps`, `Processes`, `Proxy routes`, `Tools`,
+  `Databases`.
+- `ingress` target: `Node`, `Proxy routes`, `Tools`, `Processes`.
 - `websocket` target: `Node`, `Tools`, `Processes`.
 - `s3` target: `Node`, `Tools`, `Proxy routes`, `Processes`.
 - `metrics` target: `Node`, `Tools`, `Processes`, `Proxy routes`.
 - `vpn` or `analytics` target (no other role-specific category): `Node`, `Processes`.
 
+Owned-fact/platform overlays then add:
+
+- `Tools` when the node owns tool rows or a role baseline owns a tool
+  capability, including the VPN DNS capability on an active gateway+VPN node;
+- `Firewall` for every active Ubuntu target eligible to own Orbit-protected
+  firewall rules, including exporter rules on workload nodes; macOS is
+  excluded;
+- `Scheduling` for the gateway and for every node targeted by at least one
+  gateway schedule definition, independent of workload role; and
+- other families when the selected node owns their valid gateway facts, rather
+  than because of a caller role.
+
 Every node with at least one active role assignment includes `Processes`; a
-client or operator identity with no active role renders only `Node`.
+roleless client/operator includes only `Node` unless an owned-fact overlay
+admits another family.
 
 On macOS workload nodes, the `Firewall` category is skipped: macOS nodes are
 not eligible firewall targets and macOS firewall mutation is unsupported in
@@ -42,10 +56,10 @@ v1. Tool checks on macOS report the Docker capability through the node's
 reachable Docker-compatible container provider and recommend Colima when no
 provider is reachable.
 
-`Scheduling` on a `gateway` target surfaces the scheduler daemon's health
-(presence, heartbeat, stuck locks) plus per-target dispatch reachability.
-`Scheduling` on an `app-dev` or `app-prod` target surfaces the
-run health of schedules targeting that node.
+`Scheduling` on the gateway surfaces the singleton scheduler daemon's health
+(presence, heartbeat, and stuck locks) plus gateway-target run health. On every
+other scheduled target it surfaces target dispatch reachability and recent-run
+health only; no workload node is expected to run a scheduler singleton.
 
 A separate `DNS/TLD` row (operator/app targets) and `DNS` row (gateway target)
 is planned as a slice of the `node` family. It will render once a DNS
@@ -117,7 +131,7 @@ The gateway authorizes each run against the resolved target node. Verify mode
 requires `doctor:verify`; resolution actions require `doctor:restore` or
 `doctor:adopt` for the selected direction.
 
-On future macOS Orbit Agent-capable nodes, a restore or adopt action that needs
+On supported macOS Agent-eligible nodes, a restore or adopt action that needs
 protected local work may trigger the OS privilege prompt through the
 node-local Orbit Agent. V1 has no separate Orbit approval UI or pending/approve
 flow; the prompt is the operating system prompt, and agent-push results remain
@@ -169,7 +183,7 @@ own concrete issue codes and action maps:
 
 Use these commands together with `orbit doctor` for update and convergence workflows.
 
-- [`update`](../1_update/update.md) - update only the local Orbit checkout
+- [`update`](../1_update/update.md) - update only the local Orbit installation
 - [`update:all`](../2_update-all/update-all.md) - update Orbit installations
   before running convergence checks
 

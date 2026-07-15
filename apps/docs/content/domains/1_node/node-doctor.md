@@ -147,9 +147,11 @@ The node probe reads gateway node records and checks these layers:
 
    For `s3`, assignments have a valid absolute `data_path` setting, a supported
    platform, WireGuard identity, and role convergence status. The node family
-   verifies the role assignment and the data path for that role only. SeaweedFS tool
-   rows, service credentials, and containers belong to the tool family; S3
-   service routes and backend pools belong to the proxy family.
+   verifies the role assignment and the data path for that role only. SeaweedFS
+   tool rows, service credentials, and capability inventory belong to the tool
+   family. Its process row, runtime container, lifecycle, and logs belong to the
+   process family. S3 service routes and backend pools belong to the proxy
+   family.
 
    `database` and `gateway` assignments have no role settings in v1.
 14. **Node-related defaults:** local `node:default` preferences point at

@@ -35,7 +35,7 @@ final readonly class UpdateOutputRenderer
             LocalUpdateResult::STATUS_SKIPPED_ALREADY,
             LocalUpdateResult::STATUS_SKIPPED_GATEWAY_BEHIND,
                 => $this->finishHumanSkip($progress, $result),
-            LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE => $this->finishHumanCheckoutUnavailable($progress),
+            LocalUpdateResult::STATUS_INSTALLATION_UNAVAILABLE => $this->finishHumanInstallationUnavailable($progress),
             default => $this->finishHumanFailure($progress, $result),
         };
     }
@@ -54,9 +54,9 @@ final readonly class UpdateOutputRenderer
         return 0;
     }
 
-    private function finishHumanCheckoutUnavailable(UpdateHumanProgressRenderer $progress): int
+    private function finishHumanInstallationUnavailable(UpdateHumanProgressRenderer $progress): int
     {
-        $progress->renderCheckoutUnavailable();
+        $progress->renderInstallationUnavailable();
 
         return 1;
     }
@@ -78,12 +78,12 @@ final readonly class UpdateOutputRenderer
             LocalUpdateResult::STATUS_SKIPPED_ALREADY,
             LocalUpdateResult::STATUS_SKIPPED_GATEWAY_BEHIND,
                 => $this->writeJson($output, UpdateEnvelopeBuilder::success($result), 0),
-            LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE => $this->writeJson(
+            LocalUpdateResult::STATUS_INSTALLATION_UNAVAILABLE => $this->writeJson(
                 $output,
                 UpdateEnvelopeBuilder::failure(
-                    'local_checkout_unavailable',
-                    'Local Orbit checkout cannot be updated.',
-                    meta: ['path' => $result->checkoutPath ?? ''],
+                    'local_installation_unavailable',
+                    'Local Orbit installation cannot be updated.',
+                    meta: ['path' => $result->installationPath ?? ''],
                 ),
                 1,
             ),
@@ -101,7 +101,7 @@ final readonly class UpdateOutputRenderer
                 $output,
                 UpdateEnvelopeBuilder::failure(
                     'local_update_failed',
-                    'Failed to update local Orbit checkout.',
+                    'Failed to update local Orbit installation.',
                     $result->output !== '' ? ['output' => $result->output] : [],
                     ['failed_step' => $result->failedStep ?? 'unknown'],
                 ),

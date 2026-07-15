@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace-teardown-step:list [--app=<app>] [--json]
+orbit workspace-teardown-step:list [--app=<app.instance>] [--json]
 ```
 
 ## Input Contract
@@ -44,7 +44,7 @@ to read.
 
 ## Input Resolution
 
-1. **Resolve parent app.** Apply the precedence chain in order:
+1. **Resolve app instance.** Apply the precedence chain in order:
    1. `--app=<app.instance>` flag, using a dotted app-instance selector such
       as `happie.nmbp`.
    2. `.orbit/config` marker on the caller filesystem (installed by
@@ -57,7 +57,7 @@ to read.
       does not prompt because it has no required interactive inputs.
    - **Forbidden**: `workspace-teardown-step:list` must not read
      `composer.json`, `package.json`, `.php-version`, or any other project
-     file content during parent-app inference. This matches the
+     file content during app-instance inference. This matches the
      `workspace:new` and `workspace-teardown-step:add` contracts and the
      `architecture.md` "Workspaces" project-file inspection prohibition.
 2. **Validate resolved app.** Confirm the app exists in gateway configuration.

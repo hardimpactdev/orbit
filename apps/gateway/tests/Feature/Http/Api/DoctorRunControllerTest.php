@@ -148,7 +148,7 @@ describe('DoctorRunController', function (): void {
     });
 
     it('keeps roleless caller nodes limited to the node family by default', function (): void {
-        Node::factory()
+        $caller = Node::factory()
             ->operator()
             ->create([
                 'name' => 'operator-1',
@@ -157,6 +157,16 @@ describe('DoctorRunController', function (): void {
                 'status' => 'active',
                 'platform' => 'ubuntu',
             ]);
+        NodeAccess::query()->updateOrCreate(
+            [
+                'consumer_node_id' => $caller->id,
+                'serving_node_id' => $caller->id,
+            ],
+            [
+                'permissions' => ['doctor:verify'],
+                'custom_permissions' => ['doctor:verify'],
+            ],
+        );
 
         $response = $this->call(
             'POST',
@@ -278,6 +288,77 @@ describe('DoctorRunController', function (): void {
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
+    });
+
+    it('rejects verify mode without authority on the resolved target before probing', function (): void {
+        createDoctorRunCallerNode(['platform' => 'linux'], role: 'app-dev');
+        createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+        $shell = new DoctorRunRemoteShell(perRouteStdout: '');
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/doctor/run',
+            [
+                'families' => ['proxy'],
+                'mode' => 'verify',
+                'node' => 'app-1',
+            ],
+            [],
+            [],
+            doctor_run_explicit_fallback_server(),
+        );
+
+        $response
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'doctor:verify')
+            ->assertJsonPath('error.meta.serving_node', 'app-1')
+            ->assertJsonPath('error.meta.mode', 'verify');
+
+        expect($shell->runs)->toBe(0);
+    });
+
+    it('rejects fleet verify when authority is missing on any target before probing', function (): void {
+        $caller = createDoctorRunCallerNode(['platform' => 'linux'], role: 'app-dev');
+        $authorizedTarget = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-2', 'status' => 'active']);
+        NodeAccess::query()->updateOrCreate(
+            [
+                'consumer_node_id' => $caller->id,
+                'serving_node_id' => $authorizedTarget->id,
+            ],
+            [
+                'permissions' => ['doctor:verify'],
+                'custom_permissions' => ['doctor:verify'],
+            ],
+        );
+        $shell = new DoctorRunRemoteShell(perRouteStdout: '');
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/doctor/run',
+            [
+                'families' => ['proxy'],
+                'mode' => 'verify',
+                'all' => true,
+            ],
+            [],
+            [],
+            doctor_run_explicit_fallback_server(),
+        );
+
+        $response
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'doctor:verify')
+            ->assertJsonPath('error.meta.serving_node', 'app-2')
+            ->assertJsonPath('error.meta.mode', 'verify');
+
+        expect($shell->runs)->toBe(0);
     });
 
     it('restores firewall drift through the doctor fix endpoint', function (): void {
@@ -777,6 +858,8 @@ describe('DoctorRunController', function (): void {
 
     it('requires doctor write authority for fix mode requests', function (): void {
         createDoctorRunCallerNode(role: 'app-dev');
+        $shell = new DoctorRunRemoteShell('');
+        app()->instance(RemoteShell::class, $shell);
 
         $response = $this->call(
             'POST',
@@ -795,6 +878,8 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'doctor:adopt')
             ->assertJsonPath('error.meta.mode', 'adopt');
+
+        expect($shell->runs)->toBe(0);
     });
 
     it('allows app-node fix mode requests with explicit doctor authority', function (): void {
@@ -1306,6 +1391,8 @@ final readonly class DoctorRunFleetRemoteShell implements RemoteShell
 
 final class DoctorRunRemoteShell implements RemoteShell
 {
+    public int $runs = 0;
+
     /** @var list<string> */
     private array $perRouteStdouts;
 
@@ -1326,6 +1413,8 @@ final class DoctorRunRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->runs++;
+
         if (str_contains($script, 'docker container ls')) {
             return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
         }

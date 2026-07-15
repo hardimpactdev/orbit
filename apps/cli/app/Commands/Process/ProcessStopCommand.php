@@ -10,7 +10,7 @@ final class ProcessStopCommand extends ProcessRuntimeActionCommand
     protected $signature = 'process:stop
         {name? : Existing process name}
         {--node= : Owning node name}
-        {--app= : Parent app slug}
+        {--app= : App or app-instance selector}
         {--workspace= : Workspace name}
         {--json : Output JSON}';
 

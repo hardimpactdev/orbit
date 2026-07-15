@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
+/** @mago-expect lint:kan-defect */
 final readonly class ProcessOwnerContext
 {
     public function __construct(
@@ -143,7 +144,25 @@ final readonly class ProcessOwnerContext
     public function ownerProcesses(): MorphMany
     {
         if ($this->owner instanceof Node || $this->owner instanceof App || $this->owner instanceof Workspace) {
-            return $this->owner->processes();
+            $processes = $this->owner->processes();
+
+            if ($this->app instanceof App) {
+                if (! $this->appInstance instanceof AppInstance) {
+                    throw new GatewayApiException(
+                        'A concrete app instance is required for app and workspace process ownership.',
+                        'validation_failed',
+                        [
+                            'field' => 'app',
+                            'reason' => 'app_instance_required',
+                            'app' => $this->app->name,
+                        ],
+                    );
+                }
+
+                $processes->getQuery()->where('app_instance_id', $this->appInstance->id);
+            }
+
+            return $processes;
         }
 
         throw new GatewayApiException('Process owner is not lifecycle-addressable.', 'validation_failed', [
@@ -160,12 +179,14 @@ final readonly class ProcessOwnerContext
             /** @var Collection<int, Process> $appProcesses */
             $appProcesses = $this->app
                 ->processes()
+                ->where('app_instance_id', $this->appInstance?->id)
                 ->when($name !== null, fn ($query) => $query->where('name', $name))
                 ->get();
 
             /** @var Collection<int, Process> $workspaceProcesses */
             $workspaceProcesses = $this->workspace
                 ->processes()
+                ->where('app_instance_id', $this->appInstance?->id)
                 ->when($name !== null, fn ($query) => $query->where('name', $name))
                 ->get();
 
@@ -211,17 +232,18 @@ final readonly class ProcessOwnerContext
 
     public function subject(): Model
     {
-        return $this->app ?? $this->node;
+        return $this->appInstance ?? $this->node;
     }
 
     /**
-     * @return array{node: string, app: string|null, workspace: string|null}
+     * @return array{node: string, app: string|null, app_instance: string|null, workspace: string|null}
      */
     public function payloadContext(): array
     {
         return [
             'node' => $this->node->name,
             'app' => $this->app?->name,
+            'app_instance' => $this->appInstance?->name,
             'workspace' => $this->workspace?->name,
         ];
     }
@@ -251,6 +273,7 @@ final readonly class ProcessOwnerContext
             [
                 'node' => $this->node->name,
                 'app' => $this->app?->name,
+                'app_instance' => $this->appInstance?->name,
                 'workspace' => $this->workspace?->name,
                 'name' => $name,
             ],
@@ -261,13 +284,24 @@ final readonly class ProcessOwnerContext
     public function label(): string
     {
         if ($this->workspace instanceof Workspace && $this->app instanceof App) {
-            return "workspace '{$this->workspace->name}' on app '{$this->app->name}'";
+            return "workspace '{$this->workspace->name}' on app instance '{$this->appIdentity()}'";
         }
 
         if ($this->app instanceof App) {
-            return "app '{$this->app->name}'";
+            return "app instance '{$this->appIdentity()}'";
         }
 
         return "node '{$this->node->name}'";
+    }
+
+    private function appIdentity(): string
+    {
+        if (! $this->app instanceof App) {
+            return '';
+        }
+
+        return $this->appInstance instanceof AppInstance
+            ? "{$this->app->name}.{$this->appInstance->name}"
+            : $this->app->name;
     }
 }

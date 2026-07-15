@@ -1,6 +1,6 @@
-# Technical Contract: `orbit solo:scratchpad:append:section`
+# Technical Contract: `orbit solo:scratchpad:append-section`
 
-[Back to public `solo:scratchpad:append:section` documentation.](../solo-scratchpad-append-section.md)
+[Back to public `solo:scratchpad:append-section` documentation.](../solo-scratchpad-append-section.md)
 
 **Owner:** `solo`.
 

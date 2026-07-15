@@ -12,6 +12,7 @@ use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
@@ -771,14 +772,18 @@ final readonly class ProcessesProbe
      */
     private function checkRecordCompleteness(Process $process): array
     {
+        $process->loadMissing('owner');
         $restartPolicy = $process->getRawOriginal('restart_policy');
         $crashNotification = $process->getRawOriginal('crash_notification');
+        $requiresAppInstance = $process->owner instanceof App || $process->owner instanceof Workspace;
 
         if (
             ! is_int($process->node_id)
             || ! is_string($process->owner_type)
             || $process->owner_type === ''
             || ! is_int($process->owner_id)
+            || $requiresAppInstance
+            && ! is_int($process->app_instance_id)
             || ! is_string($process->name)
             || $process->name === ''
             || ! is_string($process->command)
@@ -795,6 +800,7 @@ final readonly class ProcessesProbe
                     key: 'process.record_incomplete',
                     kind: DriftKind::Missing,
                     summary: "Process record for {$process->name} is missing required fields.",
+                    detail: $this->processOwnershipDetail($process),
                 ),
             ];
         }
@@ -825,8 +831,9 @@ final readonly class ProcessesProbe
         }
 
         $this->loadProcessApp($process);
+        $app = $process->app;
 
-        if (! $process->app instanceof App) {
+        if (! $app instanceof App) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -837,17 +844,23 @@ final readonly class ProcessesProbe
             ];
         }
 
+        $node = $this->processNode($process);
+        $instance = $process->appInstance;
+
         if (
-            ! $process->app->node instanceof Node
-            || ! $process->app->node->isActive()
-            || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($process->app->node)
+            ! $instance instanceof AppInstance
+            || $instance->app_id !== $app->id
+            || ! $node instanceof Node
+            || ! $node->isActive()
+            || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)
         ) {
             return [
                 new DriftEntry(
                     family: $this->key(),
                     key: 'process.owner_app_invalid',
                     kind: DriftKind::Divergent,
-                    summary: "Process {$process->name} owner app {$process->app->name} is not on an active app node.",
+                    summary: "Process {$process->name} owner app instance is not on an active app node.",
+                    detail: $this->processOwnershipDetail($process),
                 ),
             ];
         }
@@ -974,6 +987,7 @@ final readonly class ProcessesProbe
         Process::query()
             ->with('owner')
             ->where('node_id', $node->id)
+            ->where('app_instance_id', $process->app_instance_id)
             ->each(function (Process $candidate) use ($app, &$runtimeUnits): void {
                 $candidateApp = $candidate->ownerApp();
 
@@ -1002,7 +1016,11 @@ final readonly class ProcessesProbe
             return null;
         }
 
-        return "orbit_{$app->name}_";
+        $process->loadMissing('appInstance');
+
+        return $process->appInstance instanceof AppInstance
+            ? "orbit_{$app->name}_{$process->appInstance->name}_"
+            : "orbit_{$app->name}_";
     }
 
     /**
@@ -1037,6 +1055,8 @@ final readonly class ProcessesProbe
                     kind: DriftKind::Missing,
                     summary: "Process {$process->name} crash event notifier material is missing.",
                     detail: [
+                        'process' => $process->name,
+                        ...$this->processOwnershipDetail($process),
                         'script' => $this->processEventNotifierRenderer()->installPath(),
                         'gateway_endpoint' => $this->processEventNotifierRenderer()->gatewayEndpointPath(),
                     ],
@@ -1056,6 +1076,8 @@ final readonly class ProcessesProbe
                     kind: DriftKind::Divergent,
                     summary: "Process {$process->name} crash event notifier material differs from gateway intent.",
                     detail: [
+                        'process' => $process->name,
+                        ...$this->processOwnershipDetail($process),
                         'script' => $this->processEventNotifierRenderer()->installPath(),
                         'gateway_endpoint' => $this->processEventNotifierRenderer()->gatewayEndpointPath(),
                     ],
@@ -1242,6 +1264,7 @@ final readonly class ProcessesProbe
                     summary: "{$backendName} runtime backend is unavailable for process {$process->name} on node {$node->name}.",
                     detail: [
                         'process' => $process->name,
+                        ...$this->processOwnershipDetail($process),
                         'node' => $node->name,
                         'runtime' => $this->runtimeFor($process)->value,
                         ...$this->serviceRuntimeDetail($process),
@@ -1278,6 +1301,7 @@ final readonly class ProcessesProbe
                 detail: array_filter(
                     [
                         'process' => $process->name,
+                        ...$this->processOwnershipDetail($process),
                         'runtime' => $this->runtimeFor($process)->value,
                         ...$this->serviceRuntimeDetail($process),
                         'reason' => $observed['runtime_unit_render_error'] ?? null,
@@ -1315,6 +1339,7 @@ final readonly class ProcessesProbe
                     kind: DriftKind::Unverifiable,
                     summary: "Process {$process->name} runtime contexts cannot be derived from gateway intent.",
                     detail: [
+                        ...$this->processOwnershipDetail($process),
                         'reason' => $exception->getMessage(),
                     ],
                 ),
@@ -1328,6 +1353,7 @@ final readonly class ProcessesProbe
                     key: 'process.runtime_context_unresolved',
                     kind: DriftKind::Unverifiable,
                     summary: "Process {$process->name} has no derived runtime contexts.",
+                    detail: $this->processOwnershipDetail($process),
                 ),
             ];
         }
@@ -1341,12 +1367,6 @@ final readonly class ProcessesProbe
 
         if ($process->owner instanceof Node) {
             return $process->owner;
-        }
-
-        $this->loadProcessApp($process);
-
-        if ($process->app instanceof App && $process->app->node instanceof Node) {
-            return $process->app->node;
         }
 
         return $process->node;
@@ -1763,7 +1783,14 @@ final readonly class ProcessesProbe
 
         $process->app->loadMissing('workspaces');
 
-        return [null, ...$process->app->workspaces->all()];
+        $workspaces = $process->app_instance_id === null
+            ? $process->app->workspaces
+            : $process->app->workspaces->where('app_instance_id', $process->app_instance_id);
+
+        /** @var list<Workspace> $workspaceModels */
+        $workspaceModels = array_values($workspaces->all());
+
+        return [null, ...$workspaceModels];
     }
 
     private function dockerRuntimeUnitExtraCommand(Process $process): string
@@ -1810,6 +1837,7 @@ final readonly class ProcessesProbe
         return array_filter(
             [
                 'process' => $process->name,
+                ...$this->processOwnershipDetail($process),
                 'runtime' => $this->runtimeFor($process)->value,
                 'runtime_unit' => $unit['name'] ?? null,
                 'expected' => $unit['config_path'] ?? null,
@@ -1925,17 +1953,63 @@ final readonly class ProcessesProbe
 
     private function loadProcessApp(Process $process, bool $withWorkspaces = false): void
     {
-        $process->loadMissing('owner');
+        $process->loadMissing(['owner', 'node', 'appInstance']);
+        $logicalApp = $process->ownerApp();
+        $instance = $process->appInstance;
+        $node = $process->node;
+
+        if (
+            ! $logicalApp instanceof App
+            || ! $instance instanceof AppInstance
+            || ! $node instanceof Node
+            || $instance->app_id !== $logicalApp->id
+        ) {
+            return;
+        }
+
+        $runtimeApp = ProcessRuntimeApp::make($logicalApp, $node, $instance);
+        $runtimeApp->setRelation('node', $node);
+
+        if ($withWorkspaces) {
+            $runtimeApp->setRelation(
+                'workspaces',
+                $logicalApp->workspaces()->where('app_instance_id', $instance->id)->get(),
+            );
+        }
 
         if ($process->owner instanceof App) {
-            $process->owner->loadMissing($withWorkspaces ? ['node', 'workspaces'] : ['node']);
+            $process->setRelation('owner', $runtimeApp);
 
             return;
         }
 
         if ($process->owner instanceof Workspace) {
-            $process->owner->loadMissing($withWorkspaces ? ['app.node', 'app.workspaces'] : ['app.node']);
+            $process->owner->setRelation('app', $runtimeApp);
         }
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function processOwnershipDetail(Process $process): array
+    {
+        $app = $process->ownerApp();
+        $process->loadMissing('appInstance');
+        /** @var array<string, string> $detail */
+        $detail = [];
+        $appName = $app?->name;
+        $appInstance = $process->appInstance;
+        $appInstanceName = $appInstance?->name;
+
+        if (is_string($appName) && $appName !== '') {
+            $detail['app'] = $appName;
+        }
+
+        if (is_string($appInstanceName) && $appInstanceName !== '') {
+            $detail['app_instance'] = $appInstanceName;
+        }
+
+        return $detail;
     }
 
     private function systemdUnitRenderer(): SystemdUnitRenderer

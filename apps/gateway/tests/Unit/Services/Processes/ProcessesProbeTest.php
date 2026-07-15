@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Processes;
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
@@ -14,6 +15,7 @@ use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\Process;
@@ -147,7 +149,7 @@ describe('runtime backend availability', function (): void {
             ),
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n__extra\torbit_docs_old_queue\n",
+                stdout: "orbit_{$app->name}_development_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n__extra\torbit_docs_development_old_queue\n",
                 stderr: '',
                 durationMs: 1,
             ),
@@ -166,20 +168,20 @@ describe('runtime backend availability', function (): void {
             ->not
             ->toContain('php -r')
             ->toContain('probe_unit')
-            ->toContain("probe_unit 'orbit_{$app->name}_main_vite'")
+            ->toContain("probe_unit 'orbit_{$app->name}_development_main_vite'")
             ->toContain("printf '%s\\t%s\\t%s\\t%s\\t%s\\n'");
         expect($shell->options[1])
             ->toHaveKey('input')
             ->and($shell->options[1]['bind_input'])
             ->toBeTrue();
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
-        expect($snapshot->get('vite')['runtime_units']["orbit_{$app->name}_main_vite"])->toMatchArray([
+        expect($snapshot->get('vite')['runtime_units']["orbit_{$app->name}_development_main_vite"])->toMatchArray([
             'config_exists' => true,
             'config_matches' => true,
             'restart_policy_matches' => true,
             'environment_matches' => true,
         ]);
-        expect($snapshot->get('vite')['runtime_unit_extras'])->toBe(['orbit_docs_old_queue']);
+        expect($snapshot->get('vite')['runtime_unit_extras'])->toBe(['orbit_docs_development_old_queue']);
     });
 
     it('detects unavailable systemd runtime backends and leaves downstream checks to later layers', function (): void {
@@ -379,7 +381,7 @@ describe('lifecycle event notifier reality', function (): void {
             ),
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n",
+                stdout: "orbit_{$app->name}_development_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n",
                 stderr: '',
                 durationMs: 1,
             ),
@@ -478,7 +480,7 @@ describe('stale systemd unit reality', function (): void {
         $snapshot = new ProbeSnapshot([
             'vite' => [
                 'runtime_backend_available' => true,
-                'runtime_unit_extras' => ['orbit_docs_old_queue'],
+                'runtime_unit_extras' => ['orbit_docs_development_old_queue'],
             ],
         ]);
 
@@ -486,8 +488,8 @@ describe('stale systemd unit reality', function (): void {
 
         expect(issue($drift, 'process.runtime_unit_extra')?->kind)->toBe(DriftKind::Extra);
         expect(issue($drift, 'process.runtime_unit_extra')?->detail)->toMatchArray([
-            'runtime_unit' => 'orbit_docs_old_queue',
-            'expected_path' => '/etc/systemd/system/orbit_docs_old_queue.service',
+            'runtime_unit' => 'orbit_docs_development_old_queue',
+            'expected_path' => '/etc/systemd/system/orbit_docs_development_old_queue.service',
         ]);
     });
 
@@ -571,7 +573,7 @@ describe('stale systemd unit reality', function (): void {
         $snapshot = new ProbeSnapshot([
             'node-exporter' => [
                 'runtime_backend_available' => true,
-                'runtime_unit_extras' => ['orbit_docs_main_vite'],
+                'runtime_unit_extras' => ['orbit_docs_development_main_vite'],
             ],
         ]);
 
@@ -587,7 +589,7 @@ describe('stale systemd unit reality', function (): void {
         $snapshot = new ProbeSnapshot([
             'vite' => [
                 'runtime_backend_available' => false,
-                'runtime_unit_extras' => ['orbit_docs_old_queue'],
+                'runtime_unit_extras' => ['orbit_docs_development_old_queue'],
             ],
         ]);
 
@@ -598,6 +600,57 @@ describe('stale systemd unit reality', function (): void {
 });
 
 describe('systemd unit reality', function (): void {
+    it('probes inherited runtime units only for workspaces on the process app instance', function (): void {
+        $developmentNode = createTestAppHostNode(['name' => 'app-development']);
+        $productionNode = createTestAppHostNode(['name' => 'app-production']);
+        $app = App::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
+        $development = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $developmentNode->id),
+        ]);
+        $production = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $productionNode->id),
+        ]);
+        Workspace::factory()->for($app, 'app')->create([
+            'app_instance_id' => $development->id,
+            'name' => 'feature-dev',
+        ]);
+        Workspace::factory()->for($app, 'app')->create([
+            'app_instance_id' => $production->id,
+            'name' => 'feature-prod',
+        ]);
+        $process = Process::factory()
+            ->forOwner($app, $developmentNode)
+            ->create([
+                'app_instance_id' => $development->id,
+                'name' => 'vite',
+                'runtime' => ProcessRuntime::Systemd,
+            ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: processesProbeSuccessData([
+                    'available' => true,
+                    'exit_code' => 0,
+                    'output' => 'systemd OK',
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+
+        processesProbeWithShell($shell)->introspect($process);
+
+        expect($shell->scripts[1])
+            ->toContain("probe_unit 'orbit_docs_development_main_vite'")
+            ->toContain("probe_unit 'orbit_docs_development_feature-dev_vite'")
+            ->not->toContain("probe_unit 'orbit_docs_development_feature-prod_vite'");
+    });
+
     it('detects missing systemd units for expected runtime contexts', function (): void {
         $app = processableApp(['name' => 'docs']);
         Workspace::factory()
@@ -612,13 +665,13 @@ describe('systemd unit reality', function (): void {
             'vite' => [
                 'runtime_backend_available' => true,
                 'runtime_units' => [
-                    'orbit_docs_main_vite' => [
+                    'orbit_docs_development_main_vite' => [
                         'config_exists' => true,
                         'config_matches' => true,
                         'restart_policy_matches' => true,
                         'environment_matches' => true,
                     ],
-                    'orbit_docs_feature-docs_vite' => [
+                    'orbit_docs_development_feature-docs_vite' => [
                         'config_exists' => false,
                         'config_matches' => false,
                         'restart_policy_matches' => false,
@@ -632,8 +685,8 @@ describe('systemd unit reality', function (): void {
 
         expect(issue($drift, 'process.runtime_unit_missing')?->kind)->toBe(DriftKind::Missing);
         expect(issue($drift, 'process.runtime_unit_missing')?->detail)->toMatchArray([
-            'runtime_unit' => 'orbit_docs_feature-docs_vite',
-            'expected' => '/etc/systemd/system/orbit_docs_feature-docs_vite.service',
+            'runtime_unit' => 'orbit_docs_development_feature-docs_vite',
+            'expected' => '/etc/systemd/system/orbit_docs_development_feature-docs_vite.service',
         ]);
     });
 
@@ -645,7 +698,7 @@ describe('systemd unit reality', function (): void {
             'vite' => [
                 'runtime_backend_available' => true,
                 'runtime_units' => [
-                    'orbit_docs_main_vite' => [
+                    'orbit_docs_development_main_vite' => [
                         'config_exists' => true,
                         'config_matches' => false,
                         'restart_policy_matches' => true,
@@ -668,7 +721,7 @@ describe('systemd unit reality', function (): void {
             'vite' => [
                 'runtime_backend_available' => false,
                 'runtime_units' => [
-                    'orbit_docs_main_vite' => [
+                    'orbit_docs_development_main_vite' => [
                         'config_exists' => false,
                         'config_matches' => false,
                         'restart_policy_matches' => false,
@@ -694,7 +747,7 @@ describe('systemd unit restart and environment reality', function (): void {
             'vite' => [
                 'runtime_backend_available' => true,
                 'runtime_units' => [
-                    'orbit_docs_main_vite' => [
+                    'orbit_docs_development_main_vite' => [
                         'config_exists' => true,
                         'config_matches' => false,
                         'restart_policy_matches' => false,
@@ -718,7 +771,7 @@ describe('systemd unit restart and environment reality', function (): void {
             'vite' => [
                 'runtime_backend_available' => true,
                 'runtime_units' => [
-                    'orbit_docs_main_vite' => [
+                    'orbit_docs_development_main_vite' => [
                         'config_exists' => true,
                         'config_matches' => false,
                         'restart_policy_matches' => true,
@@ -758,6 +811,7 @@ describe('registry intent', function (): void {
             'node_id' => $app->node_id,
             'owner_type' => $app->getMorphClass(),
             'owner_id' => $app->id,
+            'app_instance_id' => $app->instances()->value('id'),
             'name' => 'vite',
             'command' => '',
             'restart_policy' => ProcessRestartPolicy::Never->value,
@@ -1223,7 +1277,7 @@ describe('docker runtime probe scope', function (): void {
             ->toMatchArray([
                 'runtime_backend_available' => true,
                 'runtime_units' => [
-                    'orbit_docs_main_queue' => [
+                    'orbit_docs_development_main_queue' => [
                         'config_exists' => true,
                         'config_matches' => true,
                         'container_state' => 'running',
@@ -1247,7 +1301,7 @@ describe('docker runtime probe scope', function (): void {
 
         expect(issue($drift, 'process.runtime_unit_missing')?->kind)->toBe(DriftKind::Missing);
         expect(issue($drift, 'process.runtime_unit_missing')?->detail)->toMatchArray([
-            'runtime_unit' => 'orbit_docs_main_queue',
+            'runtime_unit' => 'orbit_docs_development_main_queue',
         ]);
     });
 
@@ -1295,7 +1349,12 @@ describe('docker runtime probe scope', function (): void {
                 stderr: '',
                 durationMs: 1,
             ),
-            new RemoteShellResult(exitCode: 0, stdout: "orbit_docs_main_oldqueue\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "orbit_docs_development_main_oldqueue\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
@@ -1303,7 +1362,7 @@ describe('docker runtime probe scope', function (): void {
 
         $extra = issue($drift, key: 'process.runtime_unit_extra');
         expect($extra?->kind)->toBe(DriftKind::Extra);
-        expect($extra?->detail)->toMatchArray(['runtime_unit' => 'orbit_docs_main_oldqueue']);
+        expect($extra?->detail)->toMatchArray(['runtime_unit' => 'orbit_docs_development_main_oldqueue']);
     });
 
     it('does not flag created container state as drift', function (): void {
@@ -1442,9 +1501,22 @@ function processableApp(array $overrides = []): App
 {
     $node = createTestAppHostNode();
 
-    return App::factory()
+    $app = App::factory()
         ->for($node, 'node')
         ->create($overrides);
+
+    AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+
+    return $app;
 }
 
 function processFor(App $app, array $overrides = []): Process
@@ -1578,7 +1650,7 @@ it('introspects launchd runtime units through user LaunchAgent plist checks', fu
         ),
         new RemoteShellResult(
             exitCode: 0,
-            stdout: "orbit_docs_main_vite\t1\t1\t1\n",
+            stdout: "orbit_docs_development_main_vite\t1\t1\t1\n",
             stderr: '',
             durationMs: 1,
         ),
@@ -1601,11 +1673,11 @@ it('introspects launchd runtime units through user LaunchAgent plist checks', fu
     expect($script)
         ->toStartWith('set -eu')
         ->toContain('probe_launchd_unit')
-        ->toContain("probe_launchd_unit 'orbit_docs_main_vite'")
-        ->toContain('/Users/orbit/Library/LaunchAgents/dev.hardimpact.orbit.orbit_docs_main_vite.plist')
-        ->toContain('dev.hardimpact.orbit.orbit_docs_main_vite');
+        ->toContain("probe_launchd_unit 'orbit_docs_development_main_vite'")
+        ->toContain('/Users/orbit/Library/LaunchAgents/dev.hardimpact.orbit.orbit_docs_development_main_vite.plist')
+        ->toContain('dev.hardimpact.orbit.orbit_docs_development_main_vite');
     expect(str_contains($script, 'systemctl'))->toBeFalse();
-    expect($runtimeUnits['orbit_docs_main_vite'] ?? [])->toMatchArray([
+    expect($runtimeUnits['orbit_docs_development_main_vite'] ?? [])->toMatchArray([
         'config_exists' => true,
         'config_matches' => true,
         'loaded' => true,

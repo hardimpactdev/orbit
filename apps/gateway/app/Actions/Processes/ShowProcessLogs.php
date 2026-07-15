@@ -22,9 +22,6 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use RuntimeException;
 
-/**
- * @mago-expect lint:cyclomatic-complexity
- */
 final readonly class ShowProcessLogs
 {
     /**
@@ -74,6 +71,7 @@ final readonly class ShowProcessLogs
                     'process' => $target['process']->name,
                     'node' => $target['node']->name,
                     'app' => $context->app?->name,
+                    'app_instance' => $context->appInstance?->name,
                     'workspace' => $target['workspace'],
                     'runtime_unit' => $target['runtime_unit'],
                     'service' => $this->serviceMetadata->forProcess($target['process']),

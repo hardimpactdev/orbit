@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -51,11 +53,14 @@ describe('AppRootController', function (): void {
         ]);
         grantAppRootAccess($caller, $targetNode);
 
-        App::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
             'path' => '/home/orbit/apps/docs',
             'document_root' => 'public',
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $targetNode->id),
         ]);
 
         app()->instance(RemoteShell::class, new AppRootApiSequencedRemoteShell([
@@ -96,9 +101,12 @@ describe('AppRootController', function (): void {
         ]);
         grantAppRootAccess($caller, $targetNode, ['app:read']);
 
-        App::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $targetNode->id),
         ]);
 
         app()->instance(RemoteShell::class, new AppRootApiSequencedRemoteShell([]));
@@ -135,13 +143,6 @@ final class AppRootApiSequencedRemoteShell implements RemoteShell
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        return (
-            array_shift($this->results) ?? new RemoteShellResult(
-                exitCode: 0,
-                stdout: '',
-                stderr: '',
-                durationMs: 1,
-            )
-        );
+        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }

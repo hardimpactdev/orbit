@@ -162,7 +162,11 @@ final class AppShowCommand extends GatewayCommand
             }
 
             if (is_array($item) && is_string($item['name'] ?? null) && $item['name'] !== '') {
-                $labels[] = $item['name'];
+                $instance = is_string($item['app_instance'] ?? null) ? $item['app_instance'] : null;
+                $labels[] =
+                    $instance === null || $instance === ''
+                        ? $item['name']
+                        : "{$item['name']} ({$instance})";
             }
         }
 

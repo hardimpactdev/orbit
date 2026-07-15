@@ -224,6 +224,7 @@ describe('ToolListController', function (): void {
                 'node' => 'app-1',
                 'expected_state' => 'installed',
                 'observed_state' => null,
+                'observed_version' => null,
                 'version' => '2.8',
                 'managed' => true,
                 'endpoints' => [

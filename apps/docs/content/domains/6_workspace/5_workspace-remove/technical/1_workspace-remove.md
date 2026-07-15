@@ -114,7 +114,7 @@ worktree deletion use Agent push.
 - **Step 3: Stop traffic.** Re-render the proxy backend so the workspace
   hostname stops serving requests.
 - **Step 4: Stop processes.** Stop and remove inherited runtime units for this
-  workspace. Parent app process definitions are not modified.
+  workspace. The selected app instance's process definitions are not modified.
 - **Step 5: Run teardown steps.** Execute configured workspace teardown steps
   on the node. The worktree is still present and processes are stopped at
   this point so teardown scripts see a stable workspace lifecycle environment.

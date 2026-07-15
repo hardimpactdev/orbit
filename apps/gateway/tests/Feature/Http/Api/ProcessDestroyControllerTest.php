@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
@@ -75,9 +77,10 @@ describe('ProcessDestroyController', function (): void {
                 'name' => 'vite',
                 'node' => $appNode->name,
                 'app' => 'docs',
+                'app_instance' => 'development',
                 'workspace' => null,
             ])
-            ->assertJsonPath('success.data.removed_runtime_units', ['orbit_docs_main_vite'])
+            ->assertJsonPath('success.data.removed_runtime_units', ['orbit_docs_development_main_vite'])
             ->assertJsonPath('success.meta.warnings', []);
 
         expect(Process::query()->where('name', 'vite')->exists())->toBeFalse();
@@ -116,6 +119,7 @@ describe('ProcessDestroyController', function (): void {
                 'name' => 'opencode-server',
                 'node' => 'app-1',
                 'app' => null,
+                'app_instance' => null,
                 'workspace' => null,
             ])
             ->assertJsonPath('success.data.removed_runtime_units', ['opencode-server']);
@@ -158,11 +162,58 @@ describe('ProcessDestroyController', function (): void {
                 'name' => 'worker',
                 'node' => $appNode->name,
                 'app' => 'docs',
+                'app_instance' => 'development',
                 'workspace' => 'feature-docs',
             ])
-            ->assertJsonPath('success.data.removed_runtime_units', ['orbit_docs_feature-docs_worker']);
+            ->assertJsonPath('success.data.removed_runtime_units', ['orbit_docs_development_feature-docs_worker']);
 
         expect($workspace->processes()->where('name', 'worker')->exists())->toBeFalse();
+    });
+
+    it('rejects an unknown app before resolving an existing workspace', function (): void {
+        $caller = createProcessDestroyCallerNode();
+        $appNode = createTestAppHostNode();
+        grantProcessDestroyAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $workspace = Workspace::factory()->for($app)->create([
+            'name' => 'feature-docs',
+            'path' => '/srv/docs-feature',
+        ]);
+        Process::factory()
+            ->forOwner($workspace)
+            ->create([
+                'name' => 'worker',
+                'runtime' => 'systemd',
+            ]);
+        $remoteShell = new ProcessDestroyRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'DELETE',
+            '/api/processes/worker',
+            [
+                'app' => 'missing',
+                'workspace' => 'feature-docs',
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.message', "App 'missing' not found or not visible.")
+            ->assertJsonPath('error.meta.field', 'app')
+            ->assertJsonPath('error.meta.value', 'missing');
+
+        expect($workspace->processes()->where('name', 'worker')->exists())
+            ->toBeTrue()
+            ->and($remoteShell->runCount)
+            ->toBe(0);
     });
 
     it('requires authorization and destructive consent before deleting intent', function (
@@ -282,7 +333,10 @@ describe('ProcessDestroyController', function (): void {
     it('returns process not found without cleanup', function (): void {
         createProcessDestroyCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        AppInstance::factory()->for($app)->create([
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 
         $response = $this->call(
@@ -304,6 +358,8 @@ describe('ProcessDestroyController', function (): void {
 
 final class ProcessDestroyRemoteShell implements RemoteShell
 {
+    public int $runCount = 0;
+
     /**
      * @param  list<RemoteShellResult>  $results
      */
@@ -313,6 +369,8 @@ final class ProcessDestroyRemoteShell implements RemoteShell
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->runCount++;
+
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }

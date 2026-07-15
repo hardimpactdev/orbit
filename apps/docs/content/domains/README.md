@@ -163,9 +163,10 @@ Command groups with hidden or internal machinery commands include an `Internal C
 Flat numbered command files are not valid in converted command families. If a
 command family is being ported, each public command must be converted into the
 directory shape with at least a public command page, canonical technical
-contract, and renderer contracts. Add companion technical files for caller-role
-authorization, topology, input-mode, destructive consent, cross-node, or E2E
-behavior when those contracts need separate ownership.
+contract, and renderer contracts. Add companion technical files for
+serving-node resolution, a named exceptional authorization class, topology,
+input-mode, destructive consent, cross-node, or E2E behavior when those
+contracts need separate ownership.
 
 ### Domains and state families
 
@@ -177,9 +178,9 @@ Stable state families are `node`, `app`, `workspace`, `process`,
 These are the keys accepted by `doctor --family=<family>` and the values
 carried by warning or doctor `family` fields. Machine-readable issue and
 warning codes use singular product prefixes, such as `node.wireguard_peer_missing`,
-`app.runtime_container_missing`, `workspace.path_missing`,
-`process.runtime_unit_missing`, `proxy.route_extra`, `schedule.unit_extra`, and
-`database_connection.env_missing`.
+`app.runtime_config_missing`, `workspace.path_missing`,
+`process.runtime_unit_missing`, `proxy.route_extra`,
+`schedule.scheduler_missing`, and `database_connection.env_missing`.
 
 Security is a cross-family section pattern, not a command domain or state
 family. Do not add a `security` command domain or `doctor --family=security`.
@@ -612,10 +613,10 @@ If path eligibility depends on resolved command input, document the
 post-input path eligibility rules and apply each one as soon as the fields
 needed for that rule are known, and always before side effects. Do not keep
 prompting after a blocker is already knowable. In interactive input mode,
-correctable blockers should show a validation message at the current
-corrective prompt so the user can change course or cancel. Caller-role
-authorization is evaluated by the gateway, not by the CLI's input resolution
-flow.
+correctable blockers should show a validation message at the current corrective
+prompt so the user can change course or cancel. After required inputs resolve
+the serving node, the gateway authorizes against that node. The CLI never
+branches on a caller role during input resolution.
 
 ## Input Mode Contracts
 
@@ -731,3 +732,15 @@ surfaces:
 19. [S3](19_s3/README.md)
 20. [Metrics](20_metrics/README.md)
 21. [Analytics](21_analytics/README.md)
+
+### Optional extension and integration domains
+
+These domains describe optional command/API enablement and integrations that
+build on the core fleet authority model:
+
+22. [Extension](22_extension/README.md) — optional command and gateway API
+    surface enablement.
+23. [Codex](23_codex/README.md) — Codex App integration commands.
+24. [Solo](24_solo/README.md) — optional target-local Solo proxy command
+    catalog.
+25. [Skill](25_skill/README.md) — skill discovery and management commands.

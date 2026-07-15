@@ -146,7 +146,8 @@ Execute the convergent behavior shared with `app:register`:
   the target node.
 - **Proxy Routes:** Create a gateway-owned proxy route for the app.
 - **Process Artifacts:** Render and install process runtime units for
-  any app-owned process definitions already present in gateway configuration.
+  any process definitions already owned by the newly selected app instance in
+  gateway configuration.
   `app:new` does not invent undocumented default process definitions.
 - **Apply Verification:** Verify that command-owned setup and artifact
   writes completed. This does not assert application HTTP readiness; a new app

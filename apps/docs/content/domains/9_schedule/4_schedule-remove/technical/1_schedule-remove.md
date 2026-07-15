@@ -54,7 +54,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`schedule-remove` must not remove app code, app process definitions, nodes,
+`schedule-remove` must not remove app code, app-instance process definitions, nodes,
 proxy routes, firewall rules, DNS records, target-node artifacts, or scripts.
 An optional reachability warning may describe node state after the write, but
 must not imply remote cleanup.

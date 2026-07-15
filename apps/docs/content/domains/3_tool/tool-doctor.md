@@ -77,7 +77,7 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | Code | Detected when |
 | --- | --- |
 | `tool.record_incomplete` | A selected gateway tool row lacks node, name, expected state, managed flag, or definition-specific required fields. |
-| `tool.node_invalid` | The tool row points at a missing, unauthorized, inactive, or gateway node. |
+| `tool.node_invalid` | The tool row points at a missing, inactive, or gateway node. |
 | `tool.definition_missing` | The tool row references a tool name that is not present in Orbit's tool catalog. |
 | `tool.unsupported_on_node` | The tool definition exists but does not support the selected node operating system. |
 | `tool.capability_missing` | The expected package, binary, container, service, or observational capability is absent. |

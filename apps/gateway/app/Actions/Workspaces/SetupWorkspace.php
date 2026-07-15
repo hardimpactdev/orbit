@@ -311,6 +311,7 @@ final readonly class SetupWorkspace
     {
         $appProcesses = $app
             ->processes()
+            ->where('app_instance_id', $workspace->app_instance_id)
             ->orderBy('sort_order')
             ->get();
 

@@ -13,8 +13,10 @@ use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use App\Services\Processes\ProcessRuntimeUnitPayload;
 use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspacePlacement;
+use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceStepPolicyService;
 use Illuminate\Support\Facades\DB;
@@ -22,9 +24,6 @@ use Throwable;
 
 final readonly class RemoveWorkspace
 {
-    /**
-     * @mago-expect lint:excessive-parameter-list
-     */
     public function __construct(
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private WorkspaceRuntimeContainerManager $workspaceRuntimeContainerManager,
@@ -107,10 +106,10 @@ final readonly class RemoveWorkspace
 
                 if ($containerOutcome === WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining) {
                     $warnings[] = [
-                        'code' => 'workspace.runtime_container_extra',
-                        'family' => 'workspace',
-                        'message' => "Workspace runtime container for '{$name}' could not be removed during cleanup.",
-                        'next_command' => 'doctor --family=workspace --restore',
+                        'code' => 'process.runtime_unit_extra',
+                        'family' => 'process',
+                        'message' => "Workspace runtime unit for '{$name}' could not be removed during cleanup.",
+                        'next_command' => 'doctor --family=process --restore',
                     ];
                 }
 
@@ -210,16 +209,48 @@ final readonly class RemoveWorkspace
             return [];
         }
 
-        return $app
-            ->processes
-            ->map(function (Process $process) use ($app, $workspace): string {
-                $driver = $this->runtimeDrivers->forProcess($process);
-                $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
+        $app->loadMissing('processes');
+        $workspace->loadMissing('processes');
 
-                return $driver->cleanupScript($runtimeUnit);
-            })
-            ->values()
-            ->all();
+        $inheritedProcesses = array_filter(
+            $app->processes->all(),
+            fn (Process $process): bool => (
+                $process->app_instance_id === $workspace->app_instance_id
+                && $this->hasWorkspaceRuntimeUnit($app, $workspace, $process)
+            ),
+        );
+        $workspaceProcesses = array_filter(
+            $workspace->processes->all(),
+            fn (Process $process): bool => ! $this->isManagedWorkspaceRuntimeProcess($process),
+        );
+
+        return array_map(
+            fn (Process $process): string => $this->processCleanupScript($app, $workspace, $process),
+            [...$inheritedProcesses, ...$workspaceProcesses],
+        );
+    }
+
+    private function processCleanupScript(App $app, Workspace $workspace, Process $process): string
+    {
+        $driver = $this->runtimeDrivers->forProcess($process);
+        $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
+
+        return $driver->cleanupScript($runtimeUnit);
+    }
+
+    private function isManagedWorkspaceRuntimeProcess(Process $process): bool
+    {
+        return (
+            ($process->runtime_config['container_spec_hash_label'] ?? null) === WorkspaceRuntimeContainer::SpecHashLabel
+        );
+    }
+
+    private function hasWorkspaceRuntimeUnit(App $app, Workspace $workspace, Process $process): bool
+    {
+        return collect(app(ProcessRuntimeUnitPayload::class)->forProcess($app, $process))
+            ->contains(
+                static fn (array $runtimeUnit): bool => $runtimeUnit['context'] === $workspace->name,
+            );
     }
 
     /**

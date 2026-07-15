@@ -8,13 +8,13 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for `process:start` on the resolved owning node.
-- Runtime lifecycle actions require gateway reachability to the owning node.
+- The gateway authorizes the authenticated peer for `process:start` on the resolved node or app instance serving node.
+- Runtime lifecycle actions require gateway reachability to that serving node.
 
 ## Signature
 
 ```bash
-orbit process:start [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--json]
+orbit process:start [name] [--app=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -25,8 +25,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Optional. | Never. | None. | Existing process slug within the resolved runtime context when supplied. Omit to start all process definitions in process order. |
 | `node` | `--node` | Required when starting node-owned processes. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:start`. |
-| `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:start`. |
-| `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:start`; pass `--app` when the workspace name is ambiguous. |
+| `app` | `--app` or app-instance context | Required unless `node` is supplied or `workspace` resolves the app instance. | `node` is present. | Local app instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare logical-app slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:start`. |
+| `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its app instance whose serving node grants `process:start`; pass `--app=<app.instance>` when the workspace name is ambiguous. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Mode Contracts
@@ -38,13 +38,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Start Rules
 
-1. Resolve target node, app, or workspace context from supplied input or local context.
+1. Resolve a target node, concrete app instance, or workspace context from supplied input or local context. Reject a bare logical-app selector with `validation_failed`, `field=app`, and `reason=app_instance_required` unless that app has exactly one instance.
 2. Resolve the selected process set:
    - when `[name]` is supplied, select exactly that process definition;
    - when `[name]` is omitted, select every process definition for the resolved context in process order.
 3. Send the request to the gateway, which validates the authenticated peer's authorization.
 4. Derive runtime-unit identities for the selected context.
-5. Start each runtime unit through the gateway on the owning node.
+5. Start each runtime unit through the gateway on the resolved node or app instance serving node.
 6. Record and publish a durable `started` process event after each successful start.
 7. Render the selected output.
 
@@ -62,8 +62,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Process not found | `[name]` is supplied and the named process does not exist for the resolved context. | Failure (`error.code=process.not_found`). |
 | No processes configured | `[name]` is omitted and the resolved context has no process definitions. | Failure (`error.code=process.none_configured`). |
-| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
-| Runtime action failed | The gateway cannot start the runtime unit on the owning node. | Failure (`error.code=process.runtime_action_failed`). |
+| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app-instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| App instance required | A bare logical-app selector resolves to more than one app instance. | Failure (`error.code=validation_failed`; `error.meta.field=app`; `error.meta.reason=app_instance_required`). |
+| Runtime action failed | The gateway cannot start the runtime unit on the resolved node or app instance serving node. | Failure (`error.code=process.runtime_action_failed`). |
 
 ## Doctor Relationship
 
@@ -77,8 +78,8 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:POST /processes/start` |
 | Effect | `write` |
-| Subject | Resolved `Node` for node-owned processes or `App` for app/workspace contexts; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
-| Properties | `node` (string or null), `app` (string or null), `workspace` (string or null), and `name` (string or null). No runtime output, backend command text, or secrets. |
+| Subject | Resolved `Node` for node-owned processes or `AppInstance` for app-instance/workspace contexts; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Properties | `node` (string or null), `app` (string or null), `app_instance` (string or null), `workspace` (string or null), and `name` (string or null). No runtime output, backend command text, or secrets. |
 | Description | derived |
 
 ## Test Mapping

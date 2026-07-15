@@ -93,14 +93,11 @@ final readonly class ProcessDockerContainerRenderer
         $this->assertIdentitySlug($app->name);
         $this->assertIdentitySlug($process->name);
 
-        $scope = 'main';
-
         if ($workspace instanceof Workspace) {
             $this->assertIdentitySlug($workspace->name);
-            $scope = $workspace->name;
         }
 
-        return "orbit_{$app->name}_{$scope}_{$process->name}";
+        return ProcessRuntimeUnitName::for($app, $process, $workspace);
     }
 
     private function configuredContainerName(Process $process): ?string

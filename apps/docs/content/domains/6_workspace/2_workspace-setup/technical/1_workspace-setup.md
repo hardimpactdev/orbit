@@ -183,7 +183,8 @@ authorization decision.
    - Steps receive the lifecycle environment defined in the
      [Workspaces README](../../README.md#lifecycle-step-environment).
 5. **Processes** (`phase=processes`):
-   - Starts inherited app processes if they are configured to start on setup.
+   - Starts processes inherited from the selected app instance if they are
+     configured to start on setup.
 6. **HTTP Probe** (`phase=http_probe`):
    - Performs an HTTP request to the workspace URL.
    - Passes if status `< 500` within a 10s budget.

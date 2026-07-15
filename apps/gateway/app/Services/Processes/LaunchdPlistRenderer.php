@@ -34,11 +34,9 @@ final readonly class LaunchdPlistRenderer
 
         if ($workspace instanceof Workspace) {
             $this->assertIdentitySlug($workspace->name);
-
-            return "orbit_{$app->name}_{$workspace->name}_{$process->name}";
         }
 
-        return "orbit_{$app->name}_main_{$process->name}";
+        return ProcessRuntimeUnitName::for($app, $process, $workspace);
     }
 
     public function label(string $runtimeUnit): string

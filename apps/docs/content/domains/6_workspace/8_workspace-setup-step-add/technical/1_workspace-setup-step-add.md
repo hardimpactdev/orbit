@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace-setup-step:add --command=<command> [--app=<app>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
+orbit workspace-setup-step:add --command=<command> [--app=<app.instance>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `--command` | `text` | Always. | n/a | Non-empty shell command. |
-| `--app` | `text` | Unless the shared workspace selector chain resolves to a concrete app instance. | Resolved through the shared workspace selector chain when omitted. | Dotted app-instance selectors such as `happie.nmbp` are the explicit safe write path. Bare parent app slugs are rejected with `error.meta.reason=app_instance_required`. |
+| `--app` | `text` | Unless the shared workspace selector chain resolves to a concrete app instance. | Resolved through the shared workspace selector chain when omitted. | Dotted app-instance selectors such as `happie.nmbp` are the explicit safe write path. Bare logical-app slugs are rejected with `error.meta.reason=app_instance_required`. |
 | `--before` | `integer` | Optional. Mutually exclusive with `--after`. | n/a | Positive integer. Must reference an existing setup step belonging to the same app and `phase=setup`. |
 | `--after` | `integer` | Optional. Mutually exclusive with `--before`. | n/a | Positive integer. Must reference an existing setup step belonging to the same app and `phase=setup`. |
 | `--timeout` | `integer` | Optional. | `600` | Strict positive integer (`>= 1`). `0` is rejected before side effects with `error.code=validation_failed`, `error.meta.field=timeout`. |
@@ -39,9 +39,9 @@ instance in `workspace_steps`, keyed by `(app_instance_id, phase, sort_order)`.
 ## Input Resolution
 
 1. **Resolve Command**: Resolve `--command` from flag or interactive prompt.
-2. **Resolve Parent App**: Mirror the `workspace:new` precedence chain:
-   - Explicit `--app=<app>`, where `<app>` must be a dotted app-instance
-     selector such as `happie.nmbp` for gateway writes. Bare parent app
+2. **Resolve App Instance**: Mirror the `workspace:new` precedence chain:
+   - Explicit `--app=<app.instance>`, which must be a dotted app-instance
+     selector such as `happie.nmbp` for gateway writes. Bare logical-app
      slugs are rejected with `error.meta.reason=app_instance_required`.
    - `.orbit/config` marker on the caller filesystem (installed by `app:new` /
      `app:register` and any workspace-installed marker) that names the owning
@@ -53,7 +53,7 @@ instance in `workspace_steps`, keyed by `(app_instance_id, phase, sort_order)`.
      `error.code=validation_failed`, `error.meta.field=app`.
    - **Forbidden**: `workspace-setup-step:add` must not read `composer.json`,
      `package.json`, `.php-version`, or any other project file content during
-     parent-app inference. This matches the `workspace:new` contract and
+     app-instance inference. This matches the `workspace:new` contract and
      `architecture.md` "Workspaces" project-file inspection prohibition.
 3. **Validate Position**:
    - `--before` and `--after` are mutually exclusive. Supplying both fails
