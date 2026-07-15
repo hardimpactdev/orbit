@@ -171,31 +171,32 @@ caller role locally.
 
 Orbit uses the
 [hub-and-spoke topology](../../architecture.md#components) defined by the
-architecture. The gateway is the hub. Clients and nodes are spokes
-connected to the gateway; they do not coordinate Orbit work with each other
-directly.
+architecture. The gateway is the hub. Clients and nodes are spokes connected to
+the gateway; they do not coordinate steady-state Orbit work with each other.
+The one bootstrap exception is an initiating client's direct SSH edge to a
+target before that target can accept Agent push.
 
 ```text
-                              +--------------+
-                              |    client    |
-                              +------+-------+
-                                     |
-                                     | HTTPS over WireGuard
-                                     v
-+-----------+     Agent push     +-----------+     Agent push     +-----------+
-| workload  | <----------------- |  gateway  | -----------------> | workload  |
-| node      |                    +-----+-----+                    | node      |
-+-----------+                          ^                          +-----------+
-                                       | event callbacks only
-                                       |
-                                  node hooks
++--------------+     HTTPS over WireGuard     +-----------+
+|    client    | ---------------------------> |  gateway  |
++------+-------+                              +-----+-----+
+       |                                            |
+       | client-local SSH, bootstrap only           | Agent push
+       v                                            v
++--------------+                              +-----------+
+| bootstrap    |                              | workload  |
+| target       |                              | node      |
++--------------+                              +-----------+
 ```
 
-Clients consume the gateway API. Nodes serve workloads and receive typed Agent
-push over Orbit/WireGuard. Gateway-owned work executes locally on the gateway.
-CLI calls from nodes also consume the gateway API and may infer local app or
-workspace context. Non-CLI node-to-gateway traffic is limited to Agent responses
-and narrow event callbacks such as process lifecycle hooks.
+Clients consume the gateway API. Before Agent readiness, the initiating client
+may open SSH to a bootstrap target only to install the managed user, WireGuard,
+CLI, and Agent substrate from the gateway-authored bundle. Nodes then serve
+workloads and receive typed Agent push over Orbit/WireGuard. Gateway-owned work
+executes locally on the gateway. CLI calls from nodes also consume the gateway
+API and may infer local app or workspace context. Non-CLI node-to-gateway
+traffic is limited to Agent responses and narrow event callbacks such as
+process lifecycle hooks.
 
 ## Domain Rules
 

@@ -51,7 +51,7 @@ requested filters:
 3. Filters by app, app instance, or node when options are supplied (combined
    with AND).
 4. Returns a list of workspaces with their names, parent apps, selected app
-   instances when present, effective host nodes, canonical URLs, and registry
+   instances, effective host nodes, canonical URLs, and registry
    lifecycle statuses.
 
 `workspace:list` does not:

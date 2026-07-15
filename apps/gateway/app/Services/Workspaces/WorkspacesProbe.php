@@ -10,6 +10,7 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -210,6 +211,7 @@ final readonly class WorkspacesProbe
 
         $drift = array_merge($drift, $this->checkRecordCompleteness($workspace));
         $drift = array_merge($drift, $this->checkParentApp($workspace));
+        $drift = array_merge($drift, $this->checkAppInstance($workspace));
         $drift = array_merge($drift, $this->checkSourcePath($workspace, $snapshot));
         $drift = array_merge($drift, $this->checkPhpRuntime($workspace, $snapshot));
         $drift = array_merge($drift, $this->checkDevelopmentSecurity($workspace, $snapshot));
@@ -226,6 +228,7 @@ final readonly class WorkspacesProbe
             ! is_string($workspace->name)
             || $workspace->name === ''
             || ! is_int($workspace->app_id)
+            || ! is_int($workspace->app_instance_id)
             || ! is_string($workspace->path)
             || $workspace->path === ''
             || ! is_string($workspace->effectivePhpVersion())
@@ -399,8 +402,7 @@ final readonly class WorkspacesProbe
      */
     private function checkParentApp(Workspace $workspace): array
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
-        $node = $this->placement()->nodeForWorkspace($workspace);
+        $workspace->loadMissing('app');
 
         if (! $workspace->app instanceof App) {
             return [
@@ -413,22 +415,57 @@ final readonly class WorkspacesProbe
             ];
         }
 
+        return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkAppInstance(Workspace $workspace): array
+    {
+        $workspace->loadMissing(['appInstance']);
+        $instance = $workspace->appInstance;
+
+        if (! $instance instanceof AppInstance) {
+            return [$this->invalidAppInstanceEntry($workspace, 'missing')];
+        }
+
+        if ($instance->app_id !== $workspace->app_id) {
+            return [$this->invalidAppInstanceEntry($workspace, 'app_mismatch', $instance)];
+        }
+
+        $node = $this->placement()->nodeForInstance($instance);
+
         if (
             ! $node instanceof Node
             || ! $node->isActive()
             || ! $this->nodeRoleAssignments()->nodeHasActiveAppHostRole($node)
         ) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'workspace.parent_app_invalid',
-                    kind: DriftKind::Divergent,
-                    summary: "Workspace {$workspace->name} parent app {$workspace->app->name} is not on an active app node.",
-                ),
-            ];
+            return [$this->invalidAppInstanceEntry($workspace, 'node_not_workspaceable', $instance, $node)];
         }
 
         return [];
+    }
+
+    private function invalidAppInstanceEntry(
+        Workspace $workspace,
+        string $reason,
+        ?AppInstance $instance = null,
+        ?Node $node = null,
+    ): DriftEntry {
+        return new DriftEntry(
+            family: $this->key(),
+            key: 'workspace.app_instance_invalid',
+            kind: DriftKind::Divergent,
+            summary: "Workspace {$workspace->name} does not resolve to a valid app instance on an active app node.",
+            detail: [
+                'reason' => $reason,
+                'app_id' => $workspace->app_id,
+                'app_instance_id' => $workspace->app_instance_id,
+                'resolved_app_id' => $instance?->app_id,
+                'node_id' => $node?->id,
+            ],
+        );
     }
 
     /**

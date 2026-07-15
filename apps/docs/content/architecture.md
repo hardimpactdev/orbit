@@ -16,7 +16,14 @@ Client
   -> gateway HTTPS exposure
   -> orbit-gateway
   -> node execution lane
-     (gateway-only for gateway work, Agent push for node work, provisioning SSH for bootstrap)
+     (gateway-only for gateway work, Agent push for node work)
+
+Bootstrap exception before Agent readiness:
+
+Initiating client
+  -> client-local SSH to the bootstrap target
+  -> minimal managed user, WireGuard, CLI, and Agent substrate
+  -> gateway-authored convergence through Agent push
 
 Public production HTTP:
 
@@ -95,8 +102,9 @@ The gateway is the central store of everything Orbit knows: apps, nodes, workspa
 
 The gateway exposes the typed API that the CLI talks to. The managed execution
 model has two normal paths: gateway-owned work stays gateway-only, and
-node-local execution goes through Orbit Agent. `RemoteShell` is limited to
-provisioning and bootstrap. Break-glass SSH is
+node-local execution goes through Orbit Agent. Workload bootstrap SSH is a
+client-to-target edge: the gateway authors the node-specific bundle but never
+receives target credentials or opens target SSH. Break-glass SSH is
 operator-owned recovery performed by a super admin whose SSH key is present on
 the nodes, outside normal Orbit command execution. The gateway remains the
 source of truth for intent, authorization, operation history, release manifests,
@@ -295,12 +303,13 @@ output. Commands that return structured data expose `--json`.
 
 ### Trust and transport
 
-Current Orbit has two implemented network edges.
+Current Orbit has three implemented network edges.
 
 | Edge | Transport | Purpose |
 |---|---|---|
 | CLI caller → gateway | HTTPS over the VPN | Commands, reads, streaming progress |
-| Gateway -> node | `gateway-only` or `agent-push`; SSH only while provisioning or bootstrapping | Gateway-owned work or structured node-local `binary + argv` dispatch |
+| Initiating client → bootstrap target | Client-local SSH | Observe the target and install only the managed user, WireGuard, CLI, and Agent substrate before Agent readiness |
+| Gateway → node | Authenticated Agent HTTP over WireGuard | Structured node-local `binary + argv` dispatch after bootstrap; gateway-owned work remains local and does not cross this edge |
 
 The gateway owns the first Orbit Agent protocol skeleton and the monorepo now
 contains two local Rust surfaces: `apps/agent` is the headless Axum service
@@ -308,9 +317,8 @@ binary and `apps/macos` is the macOS-only Tauri tray UI. The lane does not add
 a node-side control plane: for reachable Agent-eligible nodes, the gateway opens
 an authenticated HTTP connection to the node's Agent listener over the
 Orbit/WireGuard network, sends a typed Orbit command envelope with a scoped
-operation token, and receives stdout/stderr/status/exit frames back. SSH is
-permanent only for provisioning and bootstrap; non-provisioning execution has
-no SSH recovery transport.
+operation token, and receives stdout/stderr/status/exit frames back. The gateway
+does not have a target-SSH path or SSH recovery transport.
 Reachable Agent nodes use gateway push only; the gateway is the
 sole initiator and the Agent runs no background retrieval loop. Agent command
 delivery itself does not use WebSockets; durable long-operation progress uses
@@ -632,6 +640,6 @@ orbit_docs_feature-docs_vite
 ### Next
 
 For backend implementations — WireGuard, `orbit-caddy`, Docker runtime
-containers, the SQLite schema, provisioning `RemoteShell` infrastructure, and
-the Orbit Agent push lane — see [tech-stack.md](tech-stack.md).
+containers, the SQLite schema, client bootstrap bundles, and the Orbit Agent
+push lane — see [tech-stack.md](tech-stack.md).
 Command contracts live under [docs/domains/](domains/).

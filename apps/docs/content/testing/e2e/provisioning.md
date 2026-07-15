@@ -50,10 +50,11 @@ The Incus provision gate has one supported shape:
 1. Launch a fresh VM from `orbit-base-ubuntu-26.04-runtime`.
 2. Install Orbit from the synced source checkout on the operator.
 3. Provision the gateway through the real gateway path.
-4. After the gateway is ready and its provisioning SSH key is installed, start
-   app-dev, app-prod, and agent role provisioning in parallel. Each downstream
-   role launches from the base image, waits for agent/SSH readiness, and applies
-   its gateway-side bake independently.
+4. After the gateway is ready, use the configured operator client to start
+   app-dev, app-prod, and agent bootstrap in parallel. For each downstream role,
+   the operator opens the client-local SSH edge, streams the gateway-authored
+   minimal bundle, waits for Agent readiness, and lets the gateway complete
+   convergence through Agent push.
 5. Bake websocket against app-dev Redis as soon as the app-dev role succeeds,
    app-dev runtime services are ready, and the provisioning-owned
    gateway/app-dev WireGuard route is ready. Websocket does not wait for
@@ -115,15 +116,19 @@ links `/usr/local/bin/orbit` to the mirrored CLI shim. The operator mirrors into
 `apps/gateway` path through the FrankenPHP PHP image.
 
 After the gateway is seeded, the prepared full topology uses the explicit role
-DAG `operator -> gateway -> {dev, prod, agent}`. Dev, prod, and agent
-launch/readiness/bake tasks run as independent downstream tasks through bake
-commands that run on the gateway side. In the websocket-capable topology,
-websocket is a dev-dependent task. It starts after app-dev is baked, app-dev
-Docker, Caddy, FrankenPHP, and Redis services are ready, and the
+DAG `operator -> gateway -> {dev, prod, agent}`. Dev, prod, and agent launch and
+client-bootstrap tasks run independently from the operator; post-readiness bake
+commands are gateway-authored Agent-push convergence. In the websocket-capable
+topology, websocket is a dev-dependent task. It starts after app-dev is baked,
+app-dev Docker, Caddy, FrankenPHP, and Redis services are ready, and the
 provisioning-owned gateway/app-dev WireGuard route is ready. It does not wait
 for app-prod or agent completion. After websocket completes, the development
 app node seeds database and Redis registry state before the full source snapshot
 is taken.
+
+The prepared base image's preloaded Docker, Swarm, PHP, Composer, and container
+images are harness-only fixture acceleration. They do not redefine the public
+`node:new` bootstrap contract or authorize gateway-to-target SSH.
 
 Feature tests clone only their requested roles from that full prepared source.
 

@@ -53,13 +53,18 @@ source lands.
 
 ## Probe Orchestration
 
-The gateway owns the family dispatch loop for the single-node target. Each selected family may combine gateway-configuration reads with local or remote reality checks scoped to that one node:
+The gateway owns the family dispatch loop for each resolved target. A
+single-node run scopes every selected family to that node; explicit `--all`
+verify mode runs the same per-node loop through the bounded fleet pool. Each
+selected family may combine gateway-configuration reads with local or remote
+reality checks scoped to its current target:
 
 | Family | Gateway-owned probing behavior |
 | --- | --- |
 | `node` | Check the target node's gateway record, identity, WireGuard peer configuration, reachability, bootstrap reality, and current DNS/TLD facts. |
 | `app` | Check app configuration and app-role runtime facts on the target node, including paths, document roots, runtime configuration, and app health probes declared by the app family. |
 | `workspace` | Check workspace configuration and the target node's workspace reality, using app-suffixed workspace identifiers in human output. |
+| `database_connection` | Check gateway connection records and target mappings, then inspect selected app-instance and workspace environment facts through the database family's documented gateway-local or Agent-push path. |
 | `process` | Check process configuration and process runtime reality on the target node. |
 | `proxy` | Check proxy route configuration and `orbit-caddy` backend reality on the target node. |
 | `firewall_rule` | Check firewall rule configuration and backend firewall reality on the target node. |
@@ -89,13 +94,14 @@ deterministic serial node order.
 
 ## Resolution Boundary
 
-Gateway peers may resolve drift only when `--fix`, `--restore`, or `--adopt` is supplied. Verify-mode runs must not mutate configuration or reality. Resolution orchestration uses `doctor` (interactive), `doctor --restore` (bulk gateway-to-node), or `doctor --adopt` (bulk node-to-gateway).
+Gateway peers may resolve drift only when `--fix`, `--restore`, or `--adopt` is supplied. Verify-mode runs must not mutate configuration or reality. Resolution orchestration uses `doctor --fix` (interactive), `doctor --restore` (bulk gateway-to-node), or `doctor --adopt` (bulk node-to-gateway).
 
 Gateway peers must not:
 
 - treat backend implementation names as public families;
 - create, restore, adopt, or remove durable records from `doctor` verify-mode runs;
-- probe more than one target node per run.
+- probe more than one target node in a single-node or resolution-mode run.
+  Explicit `--all` verify mode may use the bounded fleet pool defined above.
 
 ## Progress and rendering
 

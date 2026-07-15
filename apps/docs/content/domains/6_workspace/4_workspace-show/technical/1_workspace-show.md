@@ -30,12 +30,14 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Never; resolvable through defaults or prompt. | Never. | Current workspace if the CWD is inside a known workspace path; otherwise prompt or fail (see below). | Must match an existing workspace record visible to the caller. |
-| `app` | `--app` | When the resolved `name` matches more than one workspace record. | Never. | Parent app of the uniquely resolved workspace. | Must match an existing app record or app-instance selector visible to the caller. Dot notation such as `happie.nmbp` selects one concrete app instance. |
+| `app` | `--app` | When the resolved `name` matches more than one workspace record. | Never. | Parent app and required selected instance of the uniquely resolved workspace. | Must match a visible app or app-instance selector. Dot notation such as `happie.nmbp` selects one concrete instance. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 Workspace slugs are unique within an app but not globally unique. Two apps may
 each own a workspace with the same `name`, so `--app` is the disambiguating
 coordinate of the `(app, workspace)` identity rather than a redundant flag.
+A bare app slug must resolve to exactly one concrete instance or fail with
+`error.meta.reason=app_instance_required`.
 When `--app` includes an app-instance selector, the resolved workspace must
 belong to that concrete app instance.
 
@@ -65,8 +67,8 @@ belong to that concrete app instance.
    fail before side effects.
 3. **Result Assembly.** Collect the workspace record and the durable gateway
    configuration the workspace owns or inherits:
-   - workspace registry: name, parent app, branch, workspace path, canonical
-     URL;
+   - workspace registry: name, parent app, selected app instance, branch,
+     workspace path, canonical URL;
    - owning node: name and host (from the workspace's effective node);
    - runtime expectations: effective PHP version and inheritance source,
      runtime container, derived hostname;

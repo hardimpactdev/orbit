@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `name` | `[name]` | When local workspace context, Codex metadata for an explicit `--path`, and Agent IDE adapter resolution cannot resolve it. | Local workspace context, Codex metadata for an explicit `--path`, or adapter-resolved identity when available. | Workspace slug (lowercase letters, digits, and hyphens; max 63 chars independent of the parent app slug; cannot start/end with hyphen). |
-| `--app` | `text` | No local context or default. | Local app default | Valid parent app slug or app-instance selector such as `happie.nmbp`. |
+| `--app` | `text` | No local context or default. | Local app-instance default. | Valid parent app slug or app-instance selector such as `happie.nmbp`. A bare app slug must resolve to exactly one concrete instance or fail with `error.meta.reason=app_instance_required`. |
 | `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning node. | Absolute path on the owning node. See `--path` rules below. |
 | `--json` | `flag` | Optional. | `false` | n/a |
 | `--stream-json` | `flag` | Optional. | `false` | Forces non-interactive mode and emits newline-delimited progress JSON. Mutually exclusive with `--json`. |
@@ -56,15 +56,16 @@ the parent app path, including external agent worktree directories.
      `--path` plus `--app` are supplied, Orbit first asks the selected app's
      effective Agent IDE adapter to resolve the absolute path. A successful
      match supplies the workspace name, absolute path, and adapter workspace
-     id. If `--app` is an app-instance selector such as `happie.nmbp`, the
-     adopted workspace is bound to that app instance.
+     id. An app-instance selector such as `happie.nmbp` selects the instance
+     explicitly; a bare app selector must resolve to exactly one instance
+     before the workspace may be adopted.
    - **CWD path-ownership lookup (gateway-authoritative):** when `[name]`
      is missing, Orbit asks the gateway to resolve the caller's absolute
      current directory against registered app and workspace paths for the
      caller's node identity. The lookup returns one of four outcomes:
      - `workspace` — CWD is inside a registered workspace path. The gateway
-       returns the workspace name, parent app slug, selected app instance
-       when present, and stored workspace path. The command proceeds with
+       returns the workspace name, parent app slug, required selected app
+       instance, and stored workspace path. The command proceeds with
        these values; `--app` and `--path` must agree if also supplied,
        otherwise the command fails with
        `error.code=validation_failed`/`error.meta.field=app|path` before
@@ -77,9 +78,11 @@ the parent app path, including external agent worktree directories.
        a workspace and `workspace:setup` does not promote it to one.
      - `inside_app` — CWD is under a registered app or app-instance path but
        does not match any registered workspace path under that target. The
-       parent app and app instance, when safely inferable, are resolved from
-       the lookup; the workspace name is resolved through the adapter probe
-       below, or through interactive prompts.
+       parent app and exactly one concrete app instance are resolved from the
+       lookup. Zero or multiple instance matches fail with
+       `error.meta.reason=app_instance_required`; the workspace name is
+       resolved through the adapter probe below, or through interactive
+       prompts.
      - `unregistered` — CWD does not match any known app or workspace path.
        The adapter probe below runs across all of the caller node's
        configured adapters; otherwise fall through to local-context

@@ -229,7 +229,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.platform_record_mismatch` | Live platform detection differs from the node record's platform-version identifier. |
 | `node.transport_unreachable` | Gateway-local execution is unavailable for the gateway target, or the gateway cannot reach an Agent-eligible non-gateway node through Agent push. |
 | `node.gateway_runtime_unready` | The gateway node does not expose the Orbit API or required gateway service. |
-| `node.runtime_missing` | A node lacks the minimum Orbit runtime required for gateway applying. |
+| `node.runtime_missing` | A node lacks the minimum Orbit runtime required for gateway applying. Report-only; recovery returns to the initiating client bootstrap flow. |
 | `node.vpn_runtime_missing` | The active gateway-coupled `vpn` assignment is missing WireGuard server or VPN-facing DNS runtime artifacts. |
 | `node.vpn_dns_mapping_mismatch` | The DNS runtime served through the `vpn` role does not match gateway-owned desired DNS mappings. |
 | `node.s3_data_path_invalid` | An active `s3` role assignment has a missing, relative, or otherwise invalid `data_path` setting. |
@@ -267,7 +267,6 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.managed_agent_intent_invalid` | Clear the invalid `managed` flag; workload role intent remains derived from active roles. |
 | `node.agent_expectation_stale` | Clear stale installed-Agent expectation metadata after Agent intent is absent. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway service artifacts required by Orbit API readiness. |
-| `node.runtime_missing` | Rerun the node bootstrap step that installs the minimum Orbit runtime. |
 | `node.vpn_runtime_missing` | Re-apply the active `vpn` role baseline for WireGuard server and VPN-facing DNS runtime artifacts. |
 | `node.vpn_dns_mapping_mismatch` | Rewrite the DNS runtime served through the active `vpn` role so it matches gateway-owned desired DNS mappings. |
 | `node.node_identity_artifact_missing` | Reinstall node identity material from the active node record. |
@@ -280,9 +279,15 @@ This table describes what `doctor --restore --family=node` does for each resolva
 `node.role_settings_invalid`,
 `node.identity_unresolved`, `node.platform_unsupported`,
 `node.platform_record_mismatch`, `node.transport_unreachable`,
-`node.security.runtime_user`, `node.security.home_perms`,
+`node.runtime_missing`, `node.security.runtime_user`, `node.security.home_perms`,
 `node.local_default_invalid`, or
 `node.agent_ide_default_invalid`.
+
+`node.runtime_missing` is report-only because the gateway never owns bootstrap
+SSH credentials or a client-to-target SSH session. Resume or rerun `node:new`
+from the initiating client so that client-owned bootstrap can reinstall the
+minimum runtime and establish Agent readiness; then rerun doctor through the
+normal gateway-to-Agent path.
 
 `node.vpn_runtime_missing` reports that the active gateway-coupled `vpn`
 assignment is missing WireGuard server artifacts or DNS runtime artifacts.
@@ -313,7 +318,6 @@ This table describes what `doctor --family=node --adopt` does for each adoptable
 | `node.wireguard_peer_missing` | Attach a compatible live WireGuard peer. See conditions below. |
 | `node.wireguard_peer_extra` | Attach the peer when the registry peer public key matches live WireGuard reality. See conditions below. |
 | `node.wireguard_address_mismatch` | Update the node record's WireGuard address only when the peer proves the same node identity. |
-| `node.runtime_missing` | Verify compatible app runtime readiness; report conflict when runtime readiness cannot be verified. |
 | `node.platform_record_mismatch` | Update the node record's platform-version identifier only when live detection is supported and unambiguous. |
 
 Conditions for `node.wireguard_peer_missing` adoption: the selected active
@@ -326,10 +330,15 @@ a node identity that is already provisioned and compatible, the registry peer
 public key is present in live WireGuard reality, and that live peer has
 exactly one unambiguous allowed address.
 
-`doctor --family=node --adopt` does not handle unselected hosts, unresolved caller identities,
-unknown WireGuard peers, public IPv4/IPv6 metadata, non-host-key security
-settings, or artifacts that belong to tools, firewall rules, apps, workspaces,
+`doctor --family=node --adopt` does not handle `node.runtime_missing`,
+unselected hosts, unresolved caller identities, unknown WireGuard peers,
+public IPv4/IPv6 metadata, security settings, evidence for SSH host keys, or
+artifacts that belong to tools, firewall rules, apps, workspaces,
 processes, proxy routes, schedules, or deployments.
+
+Node doctor never stores, probes, compares, restores, or adopts SSH host keys.
+Host-key trust is client-owned bootstrap state; mismatches return to the
+initiating client for explicit operator resolution.
 
 Adoption of a missing peer on an active node requires proof of non-secret node identity
 from the target host. That proof must bind the selected node name, role,

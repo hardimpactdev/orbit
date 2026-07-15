@@ -1207,7 +1207,7 @@ it('reports stale shared failure vocabulary', function (): void {
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     $matchingFindings = array_values(array_filter(
-        $payload['findings'],
+        $payload['findings'] ?? [],
         fn (array $finding): bool => $finding['rule'] === 'command_docs.shared_failure_vocabulary',
     ));
 
@@ -1222,11 +1222,48 @@ it('reports stale shared failure vocabulary', function (): void {
         ]);
 });
 
+it('reports the retired node ssh unreachable failure code', function (): void {
+    writeOrbitCommandDocsFamily(
+        $this->docsRoot,
+        publicCommandPage: "# `orbit node:new`\n\nThe command may return `node.ssh_unreachable` when client bootstrap SSH fails.\n\n## Usage\n\nUse it.\n\n## Arguments and options\n\nNone.\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    $matchingFindings = array_values(array_filter(
+        $payload['findings'] ?? [],
+        fn (array $finding): bool => $finding['rule'] === 'command_docs.shared_failure_vocabulary',
+    ));
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
+            'path' => 'docs/domains/1_node/1_node-new/node-new.md',
+            'severity' => 'error',
+            'rule' => 'command_docs.shared_failure_vocabulary',
+            'message' => 'Stale failure code `node.ssh_unreachable` is documented. Use node.bootstrap_ssh_failed with error.meta.step=client_ssh_preflight|client_ssh_bootstrap.',
+        ]);
+});
+
 it('keeps caller role denial out of the shared error code registry', function (): void {
     /** @var array{shared: list<string>} $registry */
     $registry = require base_path('config/librarian-command-docs/error_codes.php');
 
     expect($registry['shared'])->toContain('authorization_failed')->not->toContain('caller_role_not_allowed');
+});
+
+it('registers client bootstrap failures without the retired ssh unreachable code', function (): void {
+    /** @var array{products: array{node: list<string>}} $registry */
+    $registry = require base_path('config/librarian-command-docs/error_codes.php');
+
+    expect($registry['products']['node'])
+        ->toContain('bootstrap_required', 'bootstrap_ssh_failed', 'host_key_mismatch')
+        ->not->toContain('ssh_unreachable');
 });
 
 it('reports json next command fields outside recovery metadata', function (): void {

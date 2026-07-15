@@ -1109,7 +1109,6 @@ final readonly class NodesProbe
             'node.wireguard_peer_missing',
             'node.wireguard_address_mismatch',
             'node.gateway_runtime_unready',
-            'node.runtime_missing',
             'node.access_grant_invalid',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',
@@ -1135,7 +1134,6 @@ final readonly class NodesProbe
             'node.wireguard_peer_missing' => $this->reconcileWireguardPeerMissing($node),
             'node.wireguard_address_mismatch' => $this->reconcileWireguardAddressMismatch($node),
             'node.gateway_runtime_unready' => $this->reconcileGatewayService($node),
-            'node.runtime_missing' => $this->reconcileAppRuntime($node),
             'node.access_grant_invalid' => $this->reconcileAccessGrants($node),
             'node.role_convergence_failed' => $this->reconcileRoleConvergenceFailures($node, $entry),
             'node.role_baseline_mismatch' => $this->reconcileRoleBaselineMismatch($node, $entry),
@@ -1219,11 +1217,6 @@ final readonly class NodesProbe
     private function reconcileGatewayService(Node $node): void
     {
         // Gateway service reconciliation is gateway-side only
-    }
-
-    private function reconcileAppRuntime(Node $node): void
-    {
-        // App runtime reconciliation is owned by typed Agent commands.
     }
 
     private function reconcileAccessGrants(Node $node): void
@@ -1401,24 +1394,6 @@ final readonly class NodesProbe
             }
         }
 
-        if ($node->isActive() && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
-            try {
-                $runtimeBackend = $this->runtimeBackendProbe()->check($node);
-
-                $items['node.runtime_missing'] = [
-                    'available' => $runtimeBackend->available,
-                    'exit_code' => $runtimeBackend->exitCode,
-                    'output' => $runtimeBackend->output,
-                ];
-            } catch (Throwable $e) {
-                $items['node.runtime_missing'] = [
-                    'available' => false,
-                    'exception' => $e::class,
-                    'message' => $e->getMessage(),
-                ];
-            }
-        }
-
         if (app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
             try {
                 $observedPlatform = ($this->platformDetector ?? app(PlatformDetector::class))->detectLocal();
@@ -1588,33 +1563,6 @@ final readonly class NodesProbe
                     detail: $wireGuardAddressMismatch,
                 );
             }
-        }
-
-        $appRuntimeMissing = $snapshot->get('node.runtime_missing');
-
-        if ($appRuntimeMissing === null) {
-            $results[] = new AdoptResult(
-                family: $this->key(),
-                key: 'node.runtime_missing',
-                action: AdoptAction::Skipped,
-                summary: 'App runtime readiness adoption skipped.',
-            );
-        } elseif (($appRuntimeMissing['available'] ?? null) === true) {
-            $results[] = new AdoptResult(
-                family: $this->key(),
-                key: 'node.runtime_missing',
-                action: AdoptAction::Updated,
-                summary: "Verified app runtime readiness for {$node->name}.",
-                detail: $appRuntimeMissing,
-            );
-        } else {
-            $results[] = new AdoptResult(
-                family: $this->key(),
-                key: 'node.runtime_missing',
-                action: AdoptAction::Conflict,
-                summary: "App runtime readiness for {$node->name} cannot be adopted because the runtime is unavailable.",
-                detail: $appRuntimeMissing,
-            );
         }
 
         foreach ($this->nodeSecurityPostureProbe()->adopt($node, $snapshot) as $result) {

@@ -115,7 +115,7 @@ The output format depends on whether `--json` is passed.
 
 - CLI caller must reach the Orbit gateway.
 - Caller identity must have `workspace:remove` on the workspace's owning node.
-  Instance-bound workspaces use the selected app instance node for cleanup.
+  Every workspace uses its selected app instance node for cleanup.
 - Agent push handles runtime, process, teardown-step, and worktree cleanup on
   the concrete app-instance node. If cleanup
   cannot finish after workspace configuration removal,

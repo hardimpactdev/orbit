@@ -512,20 +512,52 @@ describe('registry intent', function (): void {
 
         expect(issue($drift, 'workspace.record_incomplete')?->kind)->toBe(DriftKind::Missing);
     });
+
+    it('requires an app instance identity', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app);
+        $workspace->setAttribute('app_instance_id', null);
+        $workspace->setRelation('appInstance', null);
+
+        $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'workspace.record_incomplete')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(issue($drift, 'workspace.app_instance_invalid')?->kind)
+            ->toBe(DriftKind::Divergent);
+    });
 });
 
-describe('parent app eligibility', function (): void {
-    it('requires a parent app on an active app node', function (callable $createNode): void {
+describe('app instance eligibility', function (): void {
+    it('requires a selected app instance that belongs to the parent app', function (): void {
+        $app = workspaceableApp();
+        $otherApp = workspaceableApp();
+        $workspace = workspaceFor($app, [
+            'app_instance_id' => $otherApp->instances()->value('id'),
+        ]);
+
+        $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'workspace.app_instance_invalid')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(issue($drift, 'workspace.parent_app_invalid'))
+            ->toBeNull();
+    });
+
+    it('requires the selected app instance to resolve to an active app node', function (callable $createNode): void {
         $node = $createNode();
         $app = App::factory()->for($node, 'node')->create();
         $workspace = workspaceFor($app);
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
 
-        expect(issue($drift, 'workspace.parent_app_invalid')?->kind)->toBe(DriftKind::Divergent);
+        expect(issue($drift, 'workspace.app_instance_invalid')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(issue($drift, 'workspace.parent_app_invalid'))
+            ->toBeNull();
     })->with([
-        'gateway parent node' => [fn (): Node => Node::factory()->gateway()->create(['status' => 'active'])],
-        'inactive app parent node' => [fn (): Node => Node::factory()->appDev()->create(['status' => 'inactive'])],
+        'gateway instance node' => [fn (): Node => Node::factory()->gateway()->create(['status' => 'active'])],
+        'inactive app instance node' => [fn (): Node => Node::factory()->appDev()->create(['status' => 'inactive'])],
     ]);
 });
 

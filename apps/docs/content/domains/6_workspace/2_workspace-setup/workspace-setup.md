@@ -45,8 +45,10 @@ orbit workspace:setup feature-a --app=my-app --stream-json
   IDE adapter can resolve it; can be prompted in interactive mode.
 - `--app=<app>`: The parent app slug or app-instance selector. Use dot
   notation such as `happie.nmbp` to target the `nmbp` instance of `happie`.
-  Defaults to the existing workspace's parent app, the local app context, or
-  an interactive prompt.
+  A bare app slug is shorthand only when it resolves to exactly one concrete
+  instance; zero or multiple instances fail with `app_instance_required`.
+  Defaults to the existing workspace's selected app instance, the local app
+  context when it resolves one instance, or an interactive prompt.
 - `--path=<path>`: Absolute path to the workspace on the owning node.
   Defaults to the caller's current directory resolved to an absolute path on
   that node. The path may live outside the parent app path, including external
@@ -64,7 +66,7 @@ when explicit input is not supplied. The gateway path-ownership lookup keyed
 on (caller node identity, absolute CWD) returns one of:
 
 - **A registered workspace path** — the workspace identity (`name` and
-  parent `app`, selected app instance when present, and `path` are resolved
+  parent `app`, required selected app instance, and `path` are resolved
   from gateway configuration. The
   command proceeds as a re-converge or repair of that workspace.
 - **A registered app's own root path** — the CWD is the parent app's own
@@ -75,8 +77,9 @@ on (caller node identity, absolute CWD) returns one of:
   path; the app root is never itself a workspace.
 - **A path inside a registered app** — the CWD is under a known app's path
   but not a registered workspace. The parent app is resolved from the lookup.
-  The workspace identity is filled in through the adapter probe described in
-  the next subsection, or falls through to prompts.
+  The lookup must also resolve exactly one concrete app instance or fail with
+  `app_instance_required`. The workspace identity is filled in through the
+  adapter probe described in the next subsection, or falls through to prompts.
 - **An unregistered path** — the CWD does not match any known app or
   workspace path. The agent-IDE adapter probe runs across the caller's
   configured adapters; on a single match, identity is resolved from the
@@ -106,9 +109,10 @@ Orbit consults the probe when `[name]` is missing and either the gateway lookup
 returned `inside_app`/`unregistered` or an explicit `--path` was supplied for an
 app with an effective adapter. A successful probe fills in the workspace name
 and parent app. The adapter also returns its own id for the workspace, which
-Orbit stores. Adoption then proceeds as usual (`result.action=adopted`). When
-`--app` is a dotted app-instance selector, the adapter-provided workspace is
-bound to that selected app instance.
+Orbit stores. Adoption then proceeds as usual (`result.action=adopted`). A
+dotted `--app` selects the concrete instance explicitly; a bare app selector
+must resolve to exactly one instance. Adapter-provided identity never creates
+a parent-app-only workspace row.
 
 See
 [`agent-ide-concepts.md`](../../15_agent-ide/agent-ide-concepts.md#adapter-model)
@@ -142,8 +146,8 @@ The following steps describe what the command does during a successful run.
 - **Proxy Routing**: Ensures a workspace-owned route record exists in
   `proxy`.
 - **Artifact Apply**: Applies runtime and proxy backend artifacts on the
-  selected workspace node through Agent push. Instance-bound workspaces inherit the app
-  instance node, base path, document root, and domain.
+  selected workspace node through Agent push. Every workspace inherits the
+  selected app instance's node, base path, document root, and domain.
 - **Setup Steps**: Runs setup steps when configured.
 - **HTTP Probe**: Performs a setup-time HTTP probe against the workspace URL.
   A failed probe is reported as a command warning, not as setup failure or a

@@ -1,18 +1,19 @@
 # Runtime Execution Lanes
 
-This page defines how the gateway may execute work on managed nodes. Orbit's
-managed execution target has two normal paths: `gateway-only` for gateway-owned
-reads/writes and `agent-push` for node-local execution through typed command
-envelopes. In V1, agent-push envelopes are structured `binary + argv` requests
-created by the gateway and executed by the node Agent through a node-local
-binary allowlist.
+This page defines Orbit's managed execution paths and the separate pre-Agent
+bootstrap edge. The gateway has two normal paths: `gateway-only` for
+gateway-owned reads and writes, and `agent-push` for node-local execution
+through typed command envelopes. In V1, agent-push envelopes are structured
+`binary + argv` requests created by the gateway and executed by the node Agent
+through a node-local binary allowlist.
 
 Gateway-owned work stays `gateway-only`; node-local work uses `agent-push`.
 There is no public node-transport selector. Agent delivery fails clearly when
-the resolved node is ineligible or unreachable. SSH is permanent only while
-provisioning or bootstrapping a node; normal command execution has no SSH
-fallback. See [Tech Stack](tech-stack.md#gateway-to-node). Break-glass SSH is
-operator-owned super-admin recovery outside normal Orbit command execution.
+the resolved node is ineligible or unreachable. SSH exists only as an
+initiating-client-to-target bootstrap edge before Agent readiness; the gateway
+never receives target credentials or opens target SSH. See
+[Tech Stack](tech-stack.md#gateway-to-node). Break-glass SSH is operator-owned
+super-admin recovery outside normal Orbit command execution.
 
 The generated [SSH inventory](generated/transitional-ssh-inventory.json) lists
 the provisioning/bootstrap consumers and proves that the transitional consumer
@@ -29,23 +30,25 @@ systemd units for configured Linux host command processes. Source-dev Docker
 and Incus topologies are development and E2E lanes. Artifact-prod installs use
 the native CLI binary artifact and production images.
 
-Before that baseline exists, bootstrap may use host shell commands to install
-Docker, prepare the `orbit` user, clone Orbit source, and create the first
-runtime containers. After the baseline exists, gateway Laravel/artisan/PDO work
-must not rely on host PHP, host Composer, host Python, host SQLite, or host
-database client binaries. The CLI/local-executor artifact runs in the binary's
-embedded PHP in production installs. Source-mounted Docker/Incus development
-and E2E nodes invoke `<source>/apps/cli/orbit`. Host PHP/PHP-FPM is not the
-app/workspace *web* runtime — FrankenPHP containers serve apps. App-source CLI
-(`php`, `composer`, `artisan`, the Laravel installer) does run on the app
-node's host PHP toolchain through an Agent-pushed allowlisted executor.
+Before Agent readiness, the initiating client may use SSH to observe the target
+and install only the managed user, WireGuard, CLI, and Agent substrate. Docker,
+Caddy, filesystem layout, security policy, sysctl, unattended upgrades,
+public-SSH denial, and role runtime containers converge afterward through Agent
+push. Gateway Laravel/artisan/PDO work must not rely on host PHP, host Composer,
+host Python, host SQLite, or host database client binaries. The
+CLI/local-executor artifact runs in the binary's embedded PHP in production
+installs. Source-mounted Docker/Incus development and E2E nodes invoke
+`<source>/apps/cli/orbit`. Host PHP/PHP-FPM is not the app/workspace *web*
+runtime — FrankenPHP containers serve apps. App-source CLI (`php`, `composer`,
+`artisan`, the Laravel installer) runs on the app node's host PHP toolchain
+through an Agent-pushed allowlisted executor.
 
 ## Lanes
 
 ```text
-RemoteHostExecutor:
-  Provisioning/bootstrap SSH only: establish the managed user, WireGuard,
-  required host substrate, and the initial Agent/runtime baseline.
+Client bootstrap SSH:
+  Initiating-client-to-target only: observe the platform and establish the
+  managed user, WireGuard, CLI, and initial Agent substrate.
 
 RemoteGatewayRuntimeExecutor:
   Gateway-local execution inside the orbit-gateway container boundary or a
@@ -61,28 +64,33 @@ RemoteLocalExecutor:
   <source>/apps/cli/orbit.
 ```
 
-### RemoteHostExecutor
+### Client bootstrap SSH
 
-`RemoteHostExecutor` runs over SSH on the node host only during provisioning or
-bootstrap. It establishes the steady-state lane and then leaves normal command
+For workload bootstrap, the initiating CLI opens SSH to the target only when
+the gateway resume lookup shows that Agent substrate is still required.
+First-gateway bootstrap uses its dedicated client-owned path before a gateway
+API exists. In both cases, the gateway never receives SSH credentials or opens
+the connection. After the Agent becomes ready, this edge leaves normal command
 execution.
 
 Allowed work:
 
-- Verify the host and create the managed user.
-- Install and configure WireGuard, Docker/container substrate, firewall,
-  sysctl, SSH hardening, host keys, and required directories.
-- Install the initial Orbit CLI and Agent artifacts and start the first
-  role-owned runtime baseline.
+- Observe and validate the target platform and architecture.
+- Create the managed user and install WireGuard.
+- Install the initial Orbit CLI and Agent artifacts and establish Agent
+  readiness on the reserved WireGuard address.
 
 Forbidden work:
 
+- Docker or Caddy installation, filesystem layout, security policy, sysctl,
+  unattended upgrades, public-SSH denial, or role runtime convergence; these
+  use Agent push after readiness.
 - Any steady-state app, workspace, process, tool, deploy, update, recovery, or
-  migration command after the Agent/runtime baseline exists.
+  migration command after the Agent substrate exists.
 - Gateway Laravel/artisan/PDO work or ad hoc host Python/database helpers.
 - A compatibility or break-glass transport selected by a public Orbit command.
 
-Non-provisioning callers are not admitted as `RemoteHostExecutor` work. They use
+The gateway is never admitted to this edge. Post-bootstrap work uses
 `RemoteLocalExecutor`/Agent push or gateway-local execution.
 
 ### RemoteGatewayRuntimeExecutor
@@ -304,8 +312,8 @@ Use these rules for every new or migrated gateway-to-node execution path.
   return collected stdout/stderr/status frames; stream endpoints forward raw
   stdout/stderr chunks for scoped long-running commands. Gateway-only envelopes
   stay on the gateway; every other steady-state envelope uses Agent push and
-  fails clearly when unavailable. `RemoteShell` remains only for provisioning
-  and bootstrap.
+  fails clearly when unavailable. Client bootstrap SSH is outside the gateway
+  execution lanes and ends at Agent readiness.
 - A host-lane command may control containers, including `docker exec`, but it
   must not execute Orbit's own framework PHP on the host.
 - A runtime-lane command may read/write Orbit state through Laravel/PDO inside

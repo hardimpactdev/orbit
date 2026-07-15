@@ -5,7 +5,7 @@
 Show workspace registry configuration and runtime expectations.
 
 `workspace:show` provides a detailed view of a workspace's gateway-tracked
-configuration. It reports the parent app, selected app instance when present,
+configuration. It reports the parent app, required selected app instance,
 effective owning node, branch, path, and canonical URL.
 
 It also returns runtime expectations (effective PHP version and inheritance
@@ -27,9 +27,11 @@ orbit workspace:show [name] [--app=<app>] [--json]
 - `name`: The workspace name. Optional when the current working directory
   resolves to a known workspace path.
 - `--app=<app>`: The parent app slug or app-instance selector. Use dot
-  notation such as `happie.nmbp` to target one concrete app instance. Required
-  only when `name` matches more than one workspace record. Workspace names are
-  unique within an app but not globally unique.
+  notation such as `happie.nmbp` to select one concrete app instance
+  explicitly. A bare app slug is shorthand only when it resolves to exactly one
+  instance; otherwise resolution fails with `app_instance_required`. Required
+  when `name` matches more than one workspace record. Workspace names are unique
+  within an app but not globally unique.
 - `--json`: Output structured JSON. Forces non-interactive input mode.
 
 ## Behavior Summary
@@ -64,13 +66,14 @@ orbit workspace:show feature-docs
 
 ### Show a workspace with app disambiguation
 
-Pass `--app` when the workspace name exists under more than one app.
+Pass a bare `--app` when the workspace name exists under more than one app and
+that app has exactly one concrete instance.
 
 ```bash
 orbit workspace:show feature-docs --app=docs
 ```
 
-Use dot notation when the workspace is bound to one app instance.
+Use dot notation to select the concrete app instance explicitly.
 
 ```bash
 orbit workspace:show recipes --app=happie.nmbp

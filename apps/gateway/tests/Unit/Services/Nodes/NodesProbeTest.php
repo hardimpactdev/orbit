@@ -1198,7 +1198,6 @@ describe('reconciliation', function (): void {
             'node.wireguard_peer_missing',
             'node.wireguard_address_mismatch',
             'node.gateway_runtime_unready',
-            'node.runtime_missing',
             'node.access_grant_invalid',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',
@@ -1214,6 +1213,26 @@ describe('reconciliation', function (): void {
 
             expect(fn () => $this->probe->reconcile($node, $entry))->not->toThrow(RuntimeException::class);
         }
+    });
+
+    it('keeps missing app runtime report-only', function (): void {
+        $node = nodes_probe_node([
+            'name' => 'test',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+        $entry = new DriftEntry(
+            family: 'nodes',
+            key: 'node.runtime_missing',
+            kind: DriftKind::Missing,
+            summary: 'test',
+        );
+
+        expect(fn () => $this->probe->reconcile($node, $entry))
+            ->toThrow(RuntimeException::class, "NodesProbe cannot reconcile drift key 'node.runtime_missing'.");
     });
 
     it('removes stale access grants on reconcile', function (): void {
@@ -1588,10 +1607,7 @@ describe('adoption', function (): void {
         expect($snapshot->get('node.wireguard_peer_missing'))
             ->toBeNull()
             ->and($snapshot->get('node.runtime_missing'))
-            ->toMatchArray([
-                'available' => true,
-                'exit_code' => 0,
-            ]);
+            ->toBeNull();
     });
 
     it('does not snapshot hosted app adoption for unassigned nodes', function (): void {
@@ -1661,12 +1677,11 @@ describe('adoption', function (): void {
         expect($snapshot->get('node.wireguard_peer_missing'))->toBeNull();
     });
 
-    it('snapshots available app runtime readiness for adopt', function (): void {
+    it('does not snapshot available app runtime readiness for adopt', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "systemd 255\n", stderr: '', durationMs: 1),
         ]);
         $probe = nodesProbeWithRemoteShell($remoteShell);
-
         $node = nodes_probe_node([
             'name' => 'test',
             'host' => '10.0.0.1',
@@ -1676,7 +1691,6 @@ describe('adoption', function (): void {
             'wireguard_address' => '10.6.0.5',
         ]);
         assignNodesProbeAppHostRole($node);
-
         WireGuardPeer::factory()->create([
             'node_id' => $node->id,
             'allowed_ips' => '10.6.0.5/32',
@@ -1684,20 +1698,14 @@ describe('adoption', function (): void {
 
         $snapshot = $probe->snapshotForAdopt($node);
 
-        expect($snapshot->get('node.runtime_missing'))->toBe([
-            'available' => true,
-            'exit_code' => 0,
-            'output' => 'systemd 255',
-        ]);
-        expect($remoteShell->scripts)->toHaveCount(1);
-        expect($remoteShell->scripts[0])->toContain('internal:runtime-backend:probe');
+        expect($snapshot->get('node.runtime_missing'))->toBeNull()->and($remoteShell->scripts)->toBe([]);
     });
 
-    it('snapshots unavailable app runtime readiness for adopt', function (): void {
-        $probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([
+    it('does not snapshot unavailable app runtime readiness for adopt', function (): void {
+        $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'command not found: systemctl', durationMs: 1),
-        ]));
-
+        ]);
+        $probe = nodesProbeWithRemoteShell($remoteShell);
         $node = nodes_probe_node([
             'name' => 'test',
             'host' => '10.0.0.1',
@@ -1707,7 +1715,6 @@ describe('adoption', function (): void {
             'wireguard_address' => '10.6.0.5',
         ]);
         assignNodesProbeAppHostRole($node);
-
         WireGuardPeer::factory()->create([
             'node_id' => $node->id,
             'allowed_ips' => '10.6.0.5/32',
@@ -1715,11 +1722,7 @@ describe('adoption', function (): void {
 
         $snapshot = $probe->snapshotForAdopt($node);
 
-        expect($snapshot->get('node.runtime_missing'))->toBe([
-            'available' => false,
-            'exit_code' => 127,
-            'output' => 'command not found: systemctl',
-        ]);
+        expect($snapshot->get('node.runtime_missing'))->toBeNull()->and($remoteShell->scripts)->toBe([]);
     });
 
     it('returns skipped results for adoptable keys', function (): void {
@@ -1734,13 +1737,12 @@ describe('adoption', function (): void {
 
         $results = $this->probe->adopt($node, new ProbeSnapshot([]));
 
-        expect($results)->toHaveCount(5);
+        expect($results)->toHaveCount(4);
 
         $keys = array_map(fn ($r) => $r->key, $results);
         expect($keys)->toContain('node.wireguard_peer_missing');
         expect($keys)->toContain('node.wireguard_peer_extra');
         expect($keys)->toContain('node.wireguard_address_mismatch');
-        expect($keys)->toContain('node.runtime_missing');
         expect($keys)->toContain('node.platform_record_mismatch');
 
         foreach ($results as $result) {
@@ -1888,7 +1890,7 @@ describe('adoption', function (): void {
         expect($peer->allowed_ips)->toBe('10.6.0.8/32');
     });
 
-    it('adopts available app runtime readiness', function (): void {
+    it('keeps app runtime readiness out of adoption', function (): void {
         $probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
@@ -1908,48 +1910,14 @@ describe('adoption', function (): void {
             'allowed_ips' => '10.6.0.5/32',
         ]);
 
-        $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
-        $runtime = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.runtime_missing'));
+        $snapshot = $probe->snapshotForAdopt($node);
+        $results = $probe->adopt($node, $snapshot);
+        $runtime = array_values(array_filter(
+            $results,
+            fn ($result): bool => $result->key === 'node.runtime_missing',
+        ));
 
-        expect($runtime)->toHaveCount(1);
-        expect($runtime[0]->action)->toBe(AdoptAction::Updated);
-        expect($runtime[0]->detail)->toBe([
-            'available' => true,
-            'exit_code' => 0,
-            'output' => 'systemd OK',
-        ]);
-    });
-
-    it('conflicts unavailable app runtime readiness during adopt', function (): void {
-        $probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing systemctl', durationMs: 1),
-        ]));
-
-        $node = nodes_probe_node([
-            'name' => 'test',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-        ]);
-        assignNodesProbeAppHostRole($node);
-
-        WireGuardPeer::factory()->create([
-            'node_id' => $node->id,
-            'allowed_ips' => '10.6.0.5/32',
-        ]);
-
-        $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
-        $runtime = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.runtime_missing'));
-
-        expect($runtime)->toHaveCount(1);
-        expect($runtime[0]->action)->toBe(AdoptAction::Conflict);
-        expect($runtime[0]->detail)->toBe([
-            'available' => false,
-            'exit_code' => 127,
-            'output' => 'missing systemctl',
-        ]);
+        expect($snapshot->get('node.runtime_missing'))->toBeNull()->and($runtime)->toBe([]);
     });
 });
 

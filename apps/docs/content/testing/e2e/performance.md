@@ -125,6 +125,14 @@ host invocation whose per-role durations are reported through those
 as well as single-word events, so checkout regressions should appear in the same
 timing summaries as topology acquisition and cleanup.
 
+`gateway-ssh-access.<role>` and the corresponding “gateway SSH authorization”
+description are retained compatibility labels for harness-only test fixtures.
+They are not public provisioning behavior and do not authorize the gateway to
+open SSH to workload targets. Public `node:new` uses initiating-client SSH until
+Agent readiness, followed by gateway-authored Agent push. Rename the harness
+events when the topology provider is migrated without treating their current
+names as product transport authority.
+
 Incus acquisition `incus.source-sync` skips full-tree ownership repair and
 permission normalization when rsync reports an unchanged checkout; only
 changed syncs pay the chown and chmod passes.
