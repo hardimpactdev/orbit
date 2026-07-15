@@ -21,10 +21,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
-final class DoctorRunController implements Loggable
+final readonly class DoctorRunController implements Loggable
 {
     public function __construct(
-        private readonly NodeAccessAuthorizer $authorizer,
+        private NodeAccessAuthorizer $authorizer,
     ) {}
 
     public function __invoke(
