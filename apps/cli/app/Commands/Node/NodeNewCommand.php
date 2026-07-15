@@ -243,17 +243,33 @@ final class NodeNewCommand extends BootstrapGatewayCommand
             return null;
         }
 
-        foreach (['id', 'host', 'user', 'script'] as $key) {
-            if (! is_string($bootstrap[$key] ?? null) || $bootstrap[$key] === '') {
-                return null;
-            }
+        /** @var mixed $id */
+        $id = $bootstrap['id'] ?? null;
+        /** @var mixed $host */
+        $host = $bootstrap['host'] ?? null;
+        /** @var mixed $user */
+        $user = $bootstrap['user'] ?? null;
+        /** @var mixed $script */
+        $script = $bootstrap['script'] ?? null;
+
+        if (
+            ! is_string($id)
+            || $id === ''
+            || ! is_string($host)
+            || $host === ''
+            || ! is_string($user)
+            || $user === ''
+            || ! is_string($script)
+            || $script === ''
+        ) {
+            return null;
         }
 
         return [
-            'id' => $bootstrap['id'],
-            'host' => $bootstrap['host'],
-            'user' => $bootstrap['user'],
-            'script' => $bootstrap['script'],
+            'id' => $id,
+            'host' => $host,
+            'user' => $user,
+            'script' => $script,
         ];
     }
 
@@ -272,6 +288,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
 
     private function hasConfiguredGateway(OrbitConfigStore $configStore): bool
     {
+        /** @var mixed $configured */
         $configured = config('orbit.gateway.url');
 
         if (is_string($configured) && trim($configured) !== '') {
@@ -284,6 +301,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
             return false;
         }
 
+        /** @var mixed $url */
         $url = is_array($activeGateway) ? $activeGateway['url'] ?? null : null;
 
         return is_string($url) && trim($url) !== '';

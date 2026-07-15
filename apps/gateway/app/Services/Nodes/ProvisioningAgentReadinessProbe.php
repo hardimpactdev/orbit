@@ -19,8 +19,11 @@ final readonly class ProvisioningAgentReadinessProbe
             throw new RuntimeException('Provisioning node does not have a WireGuard address.');
         }
 
-        $attempts = max(1, (int) config('orbit.node_bootstrap.readiness_attempts', 30));
-        $delayMilliseconds = max(0, (int) config('orbit.node_bootstrap.readiness_delay_milliseconds', 1000));
+        $attempts = max(1, (int) config('orbit.node_bootstrap.readiness_attempts', default: 30));
+        $delayMilliseconds = max(
+            0,
+            (int) config('orbit.node_bootstrap.readiness_delay_milliseconds', default: 1000),
+        );
         $lastStatus = null;
 
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {

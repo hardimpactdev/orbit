@@ -22,6 +22,7 @@ use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
+/** @mago-expect lint:cyclomatic-complexity */
 #[RequiresPermission('node:new', servingNode: ServingNode::Gateway)]
 final readonly class NodeBootstrapCompleteController implements Loggable
 {
@@ -32,7 +33,9 @@ final readonly class NodeBootstrapCompleteController implements Loggable
         ProgressEventStreamResponseFactory $streams,
         OperationRunRecorder $operationRuns,
     ): JsonResponse|StreamedResponse {
-        $caller = $request->user();
+        /** @var mixed $resolvedUser */
+        $resolvedUser = $request->user();
+        $caller = $resolvedUser instanceof Node ? $resolvedUser : null;
 
         if (! $caller instanceof Node) {
             return response()->json([
@@ -96,14 +99,14 @@ final readonly class NodeBootstrapCompleteController implements Loggable
                     return;
                 }
 
-                $error = is_array($result->payload['error'] ?? null) ? $result->payload['error'] : [];
-                $message = is_string($error['message'] ?? null) ? $error['message'] : 'Node bootstrap failed.';
+                $error = $this->errorFramePayload($result->payload);
+                $message = $error['message'];
                 $operationRun = $operationRuns->failed($operationRun->id, $result->exitCode, $error);
                 $events->stepEvent('agent', 'fail', $message);
                 $events->stepEvent('node', 'skip', 'Node convergence did not complete');
                 $events->error($message, 1, [
-                    'code' => is_string($error['code'] ?? null) ? $error['code'] : 'node.provisioning_incomplete',
-                    'meta' => is_array($error['meta'] ?? null) ? $error['meta'] : [],
+                    'code' => $error['code'],
+                    'meta' => $error['meta'],
                     'operation_run' => $this->operationRunPayload($operationRun),
                 ]);
             } catch (Throwable $exception) {
@@ -158,7 +161,9 @@ final readonly class NodeBootstrapCompleteController implements Loggable
      */
     public function properties(): array
     {
-        $request = $this->bootstrapFromRoute()?->request ?? [];
+        $bootstrap = $this->bootstrapFromRoute();
+        $request = $bootstrap instanceof NodeBootstrap ? $bootstrap->request : [];
+        /** @var mixed $roles */
         $roles = $request['--roles'] ?? null;
 
         return [
@@ -171,6 +176,7 @@ final readonly class NodeBootstrapCompleteController implements Loggable
 
     public function description(): ?string
     {
+        /** @var mixed $name */
         $name = $this->properties()['name'];
 
         return is_string($name) ? "Created node {$name}." : null;
@@ -181,5 +187,37 @@ final readonly class NodeBootstrapCompleteController implements Loggable
         $bootstrap = request()->route('nodeBootstrap');
 
         return $bootstrap instanceof NodeBootstrap ? $bootstrap : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{code: string, message: string, meta: array<string, mixed>}
+     */
+    private function errorFramePayload(array $payload): array
+    {
+        /** @var mixed $rawError */
+        $rawError = $payload['error'] ?? null;
+        $error = is_array($rawError) ? $rawError : [];
+        /** @var mixed $rawMeta */
+        $rawMeta = $error['meta'] ?? null;
+        $meta = [];
+
+        if (is_array($rawMeta)) {
+            foreach ($rawMeta as $key => $value) {
+                if (is_string($key)) {
+                    $meta[$key] = $value;
+                }
+            }
+        }
+
+        return [
+            'code' => is_string($error['code'] ?? null)
+                ? $error['code']
+                : 'node.provisioning_incomplete',
+            'message' => is_string($error['message'] ?? null)
+                ? $error['message']
+                : 'Node bootstrap failed.',
+            'meta' => $meta,
+        ];
     }
 }

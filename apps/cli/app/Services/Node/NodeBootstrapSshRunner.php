@@ -79,7 +79,10 @@ final class NodeBootstrapSshRunner
             throw new RuntimeException("Could not fingerprint the SSH host key for {$host}.");
         }
 
-        if (preg_match_all('/\b(SHA256:[A-Za-z0-9+\/=]+)\b/', $fingerprint->output(), $matches) < 1) {
+        $matches = [];
+        $matchCount = preg_match_all('/\b(SHA256:[A-Za-z0-9+\/=]+)\b/', $fingerprint->output(), $matches);
+
+        if ($matchCount === false || $matchCount < 1) {
             throw new RuntimeException("SSH host key fingerprint output for {$host} is invalid.");
         }
 

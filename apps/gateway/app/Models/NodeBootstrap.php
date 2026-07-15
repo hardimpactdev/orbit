@@ -22,7 +22,8 @@ final class NodeBootstrap extends Model
 {
     use HasUuids;
 
-    /** @var list<string> */
+    /** @var array<int, string> */
+    #[\Override]
     protected $fillable = [
         'node_id',
         'initiating_node_id',

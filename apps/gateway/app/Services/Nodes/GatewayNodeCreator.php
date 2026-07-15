@@ -94,7 +94,7 @@ final class GatewayNodeCreator
     public function completeBootstrap(NodeBootstrap $bootstrap, Node $caller): GatewayActionResult
     {
         $bootstrap->refresh();
-        $node = $bootstrap->node()->first();
+        $node = Node::query()->find($bootstrap->node_id);
 
         if ($bootstrap->initiating_node_id !== $caller->id) {
             return GatewayActionResult::error(
@@ -738,7 +738,7 @@ final class GatewayNodeCreator
             );
         }
 
-        if ($existing instanceof Node && is_string($existing->tld) && $existing->tld !== $tld) {
+        if ($existing instanceof Node && $existing->tld !== $tld) {
             return $this->failCommand(
                 code: 'node.incompatible',
                 message: "Node '{$name}' already exists with a different TLD.",
@@ -1078,7 +1078,7 @@ final class GatewayNodeCreator
         ?int $appProductionIngressNodeId,
     ): int {
         $bootstrap = $this->bootstrap;
-        $node = $bootstrap?->node()->first();
+        $node = $bootstrap instanceof NodeBootstrap ? Node::query()->find($bootstrap->node_id) : null;
 
         if (! $bootstrap instanceof NodeBootstrap || ! $node instanceof Node || $node->name !== $name) {
             return $this->failCommand(
@@ -1242,12 +1242,15 @@ final class GatewayNodeCreator
             $node->roleAssignments()->pluck('role')->all(),
             is_string(...),
         ));
+        /** @var mixed $requestHost */
         $requestHost = $bootstrap->request['--host'] ?? $node->host;
         $host = is_string($requestHost) && $requestHost !== '' ? $requestHost : $node->host;
+        /** @var array<string, mixed> $payload */
+        $payload = JsonEnvelope::success($this->completedNodePayload($node, $host, $roles));
 
         return new GatewayActionResult(
             exitCode: self::SUCCESS,
-            payload: JsonEnvelope::success($this->completedNodePayload($node, $host, $roles)),
+            payload: $payload,
         );
     }
 

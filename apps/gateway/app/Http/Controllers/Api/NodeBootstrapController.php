@@ -16,7 +16,9 @@ final readonly class NodeBootstrapController
 {
     public function __invoke(Request $request, GatewayNodeCreator $nodes): JsonResponse
     {
-        $caller = $request->user();
+        /** @var mixed $resolvedUser */
+        $resolvedUser = $request->user();
+        $caller = $resolvedUser instanceof Node ? $resolvedUser : null;
 
         if (! $caller instanceof Node) {
             return response()->json([
@@ -102,20 +104,27 @@ final readonly class NodeBootstrapController
      */
     private function stringList(Request $request, string $key): array
     {
+        /** @var mixed $value */
         $value = $request->input($key);
 
         if (! is_array($value)) {
             return [];
         }
 
-        return array_values(array_filter(
-            $value,
-            static fn (mixed $item): bool => is_string($item) && $item !== '',
-        ));
+        $strings = [];
+
+        foreach ($value as $item) {
+            if (is_string($item) && $item !== '') {
+                $strings[] = $item;
+            }
+        }
+
+        return $strings;
     }
 
     private function optionalString(Request $request, string $key): ?string
     {
+        /** @var mixed $value */
         $value = $request->input($key);
 
         return is_string($value) && $value !== '' ? $value : null;
