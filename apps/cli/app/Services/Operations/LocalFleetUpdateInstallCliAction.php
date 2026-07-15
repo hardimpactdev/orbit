@@ -279,13 +279,19 @@ final readonly class LocalFleetUpdateInstallCliAction
                             return
                         fi
 
-                        echo restart_agent_launchd_failed
-                        return
+                        echo restart_agent_launchd_failed >&2
+                        return 1
                     fi
                 fi
 
                 if restart_unmanaged_agent_process "$agent_bin_path"; then
                     return
+                else
+                    unmanaged_restart_rc="$?"
+                fi
+
+                if [ "$unmanaged_restart_rc" -eq 2 ]; then
+                    return 1
                 fi
 
                 echo 'agent_service_missing_bootstrap_required: bootstrap must create the Orbit Agent service before update' >&2
@@ -382,8 +388,8 @@ final readonly class LocalFleetUpdateInstallCliAction
                 fi
 
                 if [ ! -f "$agent_config" ]; then
-                    echo skip_agent_restart_no_config
-                    return 0
+                    echo skip_agent_restart_no_config >&2
+                    return 2
                 fi
 
                 echo restart_agent_unmanaged

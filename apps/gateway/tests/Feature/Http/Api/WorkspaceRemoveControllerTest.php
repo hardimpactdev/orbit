@@ -14,6 +14,7 @@ use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -90,6 +91,7 @@ describe('WorkspaceRemoveController', function (): void {
                 'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => [
                     'container_name' => 'orbit-ws-docs-feature-api',
+                    'container_spec_hash_label' => WorkspaceRuntimeContainer::SpecHashLabel,
                     'php_ini_path' => '/home/orbit/.config/orbit/workspaces/docs-feature-api.ini',
                 ],
             ]);
@@ -142,7 +144,16 @@ describe('WorkspaceRemoveController', function (): void {
             ->and(OrbitProcess::query()->where('name', 'frankenphp-docs-feature-api')->exists())
             ->toBeFalse()
             ->and($shell->scripts)
-            ->not->toBe([]);
+            ->not
+            ->toBe([])
+            ->and(collect($shell->scripts)
+                ->contains(
+                    fn (string $script): bool => str_contains(
+                        $script,
+                        "docker rm -f 'orbit-ws-docs-feature-api' 2>/dev/null || true",
+                    ),
+                ))
+            ->toBeFalse();
     });
 
     it('removes an app-instance workspace on the selected instance node', function (): void {
@@ -321,6 +332,74 @@ describe('WorkspaceRemoveController', function (): void {
                     ),
                 ))
             ->toBeFalse();
+    });
+
+    it('removes workspace-owned systemd units before deleting their process definitions', function (): void {
+        $caller = createWorkspaceRemoveCallerNode();
+        $appNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'status' => 'active',
+        ]);
+        grantWorkspaceRemoveAccess($caller, $appNode);
+
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+            'runtime' => 'static',
+        ]);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: $appNode->name,
+                path: '/srv/docs-development',
+                document_root: 'public',
+                domain: 'docs-development.test',
+            ),
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'name' => 'feature-api',
+            'path' => '/srv/docs-development-feature-api',
+        ]);
+        $process = OrbitProcess::factory()
+            ->forOwner($workspace, $appNode)
+            ->create([
+                'name' => 'worker',
+                'runtime' => ProcessRuntime::Systemd,
+            ]);
+
+        $shell = new WorkspaceRemoveApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
+
+        $this
+            ->call(
+                'DELETE',
+                '/api/workspaces/feature-api?app=docs.development',
+                [
+                    'keep_files' => true,
+                    'destructive_consent' => true,
+                ],
+                [],
+                [],
+                workspaceRemoveRemoteShellFallbackHeader(),
+            )
+            ->assertOk()
+            ->assertJsonPath('success.data.processes_removed', 1);
+
+        expect(OrbitProcess::query()->whereKey($process->id)->exists())
+            ->toBeFalse()
+            ->and(collect($shell->scripts)
+                ->contains(
+                    fn (string $script): bool => str_contains(
+                        $script,
+                        'orbit_docs_development_feature-api_worker.service',
+                    ),
+                ))
+            ->toBeTrue();
     });
 
     it('removes workspace intent through the fixed Agent-push cleanup lane', function (): void {

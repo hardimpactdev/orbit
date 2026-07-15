@@ -8,12 +8,14 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\Workspaces\WorkspaceRuntimeArtifactRemovalOutcome;
 use App\Models\App;
+use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspacePlacement;
+use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceStepPolicyService;
 use Illuminate\Support\Facades\DB;
@@ -207,6 +209,7 @@ final readonly class RemoveWorkspace
         }
 
         $app->loadMissing('processes');
+        $workspace->loadMissing('processes');
         $cleanupScripts = [];
 
         foreach ($app->processes as $process) {
@@ -214,12 +217,33 @@ final readonly class RemoveWorkspace
                 continue;
             }
 
-            $driver = $this->runtimeDrivers->forProcess($process);
-            $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
-            $cleanupScripts[] = $driver->cleanupScript($runtimeUnit);
+            $cleanupScripts[] = $this->processCleanupScript($app, $workspace, $process);
+        }
+
+        foreach ($workspace->processes as $process) {
+            if ($this->isManagedWorkspaceRuntimeProcess($process)) {
+                continue;
+            }
+
+            $cleanupScripts[] = $this->processCleanupScript($app, $workspace, $process);
         }
 
         return $cleanupScripts;
+    }
+
+    private function processCleanupScript(App $app, Workspace $workspace, Process $process): string
+    {
+        $driver = $this->runtimeDrivers->forProcess($process);
+        $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
+
+        return $driver->cleanupScript($runtimeUnit);
+    }
+
+    private function isManagedWorkspaceRuntimeProcess(Process $process): bool
+    {
+        return (
+            ($process->runtime_config['container_spec_hash_label'] ?? null) === WorkspaceRuntimeContainer::SpecHashLabel
+        );
     }
 
     /**
