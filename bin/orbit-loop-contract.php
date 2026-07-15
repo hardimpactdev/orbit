@@ -306,10 +306,13 @@ function orbitLoopProofReferences(string $markdown): array
         }
 
         $markerOffset = $marker[1];
+        $beforeOpeningDelimiter = $markerOffset > 1
+            ? substr($markdown, $markerOffset - 2, 1)
+            : '';
 
         $openingDelimiterIsExact = $markerOffset > 0
             && substr($markdown, $markerOffset - 1, 1) === '`'
-            && ($markerOffset === 1 || substr($markdown, $markerOffset - 2, 1) !== '`');
+            && ! in_array($beforeOpeningDelimiter, ['`', '\\'], true);
 
         if (! $openingDelimiterIsExact) {
             throw new RuntimeException(

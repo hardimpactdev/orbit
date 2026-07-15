@@ -164,7 +164,11 @@ it('refuses a compact archive when the loop cites missing proof', function (): v
     }
 });
 
-it('refuses unsafe compact proof citations: :dataset', function (string $kind, string $citation): void {
+it('refuses unsafe compact proof citations: :dataset', function (
+    string $kind,
+    string $citation,
+    string $openingPrefix = '',
+): void {
     $workspace = session_archive_workspace("compact-unsafe-proof-{$kind}");
 
     try {
@@ -199,7 +203,7 @@ it('refuses unsafe compact proof citations: :dataset', function (string $kind, s
         $loop = (string) file_get_contents($paths['loopPath']);
         file_put_contents(
             $paths['loopPath'],
-            str_replace('## Status', "- Runtime evidence: `{$citation}`\n\n## Status", $loop),
+            str_replace('## Status', "- Runtime evidence: {$openingPrefix}`{$citation}`\n\n## Status", $loop),
         );
 
         $process = run_session_archive([
@@ -255,6 +259,11 @@ it('refuses unsafe compact proof citations: :dataset', function (string $kind, s
     'triple-backtick code span' => [
         'truncated-triple-backtick-span',
         '``.orbit/evidence/proof``',
+    ],
+    'escaped opening delimiter' => [
+        'truncated-escaped-opening-delimiter',
+        '.orbit/evidence/proof',
+        '\\',
     ],
     'malformed leading prefix' => [
         'truncated-leading-prefix',
