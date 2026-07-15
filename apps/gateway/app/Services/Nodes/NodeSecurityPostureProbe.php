@@ -7,14 +7,12 @@ namespace App\Services\Nodes;
 use App\Data\Doctor\AdoptResult;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
-use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Security\PublicSshDenyInstaller;
 use App\Services\Security\SshdHardenedInstaller;
-use App\Services\Security\SshHostKeyPinner;
 use App\Services\Security\SysctlBaselineInstaller;
 use JsonException;
 use RuntimeException;
@@ -57,18 +55,9 @@ final readonly class NodeSecurityPostureProbe
         return $drift;
     }
 
-    public function snapshotForAdopt(Node $node, bool $includeHostKey = false): ProbeSnapshot
+    public function snapshotForAdopt(Node $node): ProbeSnapshot
     {
-        if (! $includeHostKey || ! $this->hostKeyMissing($node)) {
-            return new ProbeSnapshot([]);
-        }
-
-        return new ProbeSnapshot([
-            $this->hostKeyKey($node) => [
-                'host' => $node->host,
-                'pin_mode' => 'tofu',
-            ],
-        ]);
+        return new ProbeSnapshot([]);
     }
 
     /**
@@ -76,43 +65,11 @@ final readonly class NodeSecurityPostureProbe
      */
     public function adopt(Node $node, ProbeSnapshot $snapshot): array
     {
-        $key = $this->hostKeyKey($node);
-        $hostKey = $snapshot->get($key);
-
-        if (! is_array($hostKey) || ! $this->hostKeyMissing($node)) {
-            return [];
-        }
-
-        $pinned = app(SshHostKeyPinner::class)->pin($node->host);
-        app(SshHostKeyPinner::class)->persist($node, $pinned);
-
-        return [
-            new AdoptResult(
-                family: 'node',
-                key: $key,
-                action: AdoptAction::Updated,
-                summary: "Pinned SSH host key for {$node->name}.",
-                detail: [
-                    'fingerprint' => $pinned->fingerprint,
-                    'pin_mode' => $pinned->pinMode,
-                ],
-            ),
-        ];
+        return [];
     }
 
     public function restore(Node $node, DriftEntry $entry): void
     {
-        if ($entry->key === $this->hostKeyKey($node)) {
-            if (! $this->hostKeyMissing($node)) {
-                throw new RuntimeException('Host key is already pinned; refusing to overwrite it through restore.');
-            }
-
-            $pinned = app(SshHostKeyPinner::class)->pin($node->host);
-            app(SshHostKeyPinner::class)->persist($node, $pinned);
-
-            return;
-        }
-
         match ($entry->key) {
             'node.security.sshd_config', 'node.security.sshd_listen' => app(SshdHardenedInstaller::class)->installFor(
                 $node,
@@ -140,19 +97,6 @@ final readonly class NodeSecurityPostureProbe
     private function recordDrift(Node $node): array
     {
         $drift = [];
-
-        if ($this->hostKeyMissing($node)) {
-            $drift[] = new DriftEntry(
-                family: 'node',
-                key: $this->hostKeyKey($node),
-                kind: DriftKind::Missing,
-                summary: "Node {$node->name} is missing pinned SSH host-key material.",
-                detail: [
-                    'host' => $node->host,
-                    'adoptable' => true,
-                ],
-            );
-        }
 
         if ($this->managedUser($node) === '') {
             $drift[] = new DriftEntry(
@@ -313,22 +257,5 @@ final readonly class NodeSecurityPostureProbe
     private function managedUser(Node $node): string
     {
         return trim((string) $node->user);
-    }
-
-    private function hostKeyMissing(Node $node): bool
-    {
-        return (
-            ! is_string($node->host_key_type)
-            || $node->host_key_type === ''
-            || ! is_string($node->host_key_public)
-            || $node->host_key_public === ''
-            || ! is_string($node->host_key_fingerprint)
-            || $node->host_key_fingerprint === ''
-        );
-    }
-
-    private function hostKeyKey(Node $node): string
-    {
-        return "node.security.host_key.{$node->name}";
     }
 }

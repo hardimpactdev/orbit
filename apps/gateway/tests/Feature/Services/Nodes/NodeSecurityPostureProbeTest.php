@@ -15,7 +15,6 @@ use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
-use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -31,7 +30,7 @@ it('does not depend on host PHP for host-lane node security probes', function ()
         ->toContain('php -r');
 });
 
-it('reports missing host key material and missing runtime users under node security keys', function (): void {
+it('does not treat client-owned bootstrap SSH host keys as gateway steady-state posture', function (): void {
     $node = Node::factory()->create([
         'platform' => 'ubuntu_24-04',
         'status' => NodeStatus::Active,
@@ -44,6 +43,7 @@ it('reports missing host key material and missing runtime users under node secur
     $drift = app(NodeSecurityPostureProbe::class)->diff($node);
 
     expect(array_map(fn (DriftEntry $entry): string => $entry->key, $drift))
+        ->not
         ->toContain("node.security.host_key.{$node->name}")
         ->toContain('node.security.runtime_user')
         ->toContain('node.security.public_ssh_deny');
@@ -170,8 +170,7 @@ it('reports remote node security drift from the posture script', function (): vo
     ));
 });
 
-it('can adopt the first host key pin for previously unpinned nodes', function (): void {
-    $publicKey = 'AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests';
+it('never scans target SSH while snapshotting or adopting node security posture', function (): void {
     $node = Node::factory()->create([
         'host' => '203.0.113.44',
         'platform' => 'ubuntu_24-04',
@@ -180,20 +179,18 @@ it('can adopt the first host key pin for previously unpinned nodes', function ()
         'host_key_public' => null,
         'host_key_fingerprint' => null,
     ]);
-    Process::fake([
-        'ssh-keyscan*' => Process::result(output: "203.0.113.44 ssh-ed25519 {$publicKey}\n"),
-    ]);
+    Process::fake();
     Process::preventStrayProcesses();
 
     $probe = app(NodeSecurityPostureProbe::class);
-    $results = $probe->adopt($node, $probe->snapshotForAdopt($node, includeHostKey: true));
+    $snapshot = $probe->snapshotForAdopt($node);
+    $results = $probe->adopt($node, $snapshot);
 
-    expect($results[0]->action->value)
-        ->toBe('updated')
-        ->and($node->refresh()->host_key_type)
-        ->toBe('ssh-ed25519')
-        ->and($node->host_key_fingerprint)
-        ->toBe(SshHostKeyPinner::fingerprintForPublicKey($publicKey));
+    expect($snapshot->items)
+        ->toBe([])
+        ->and($results)
+        ->toBe([]);
+    Process::assertNothingRan();
 });
 
 /**

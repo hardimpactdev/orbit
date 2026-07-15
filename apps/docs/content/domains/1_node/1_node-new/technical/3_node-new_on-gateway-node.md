@@ -79,16 +79,18 @@ client-local SSH action.
 
 ### Prepare
 
-1. Validate the node name, explicit TLD, host metadata, requested role set,
-   role-specific settings, and caller authorization before side effects.
+1. Validate the node name, explicit TLD, host metadata, client-observed Ubuntu
+   platform and CPU architecture, requested role set, role-specific settings,
+   and caller authorization before side effects.
 2. If a compatible pending bootstrap already exists for the same request and
    initiating node, reuse it. An active or incompatible identity fails without
    destructive changes.
 3. Reserve the WireGuard address against all gateway, peer, saved, and live VPN
    reservations.
-4. Write the node with status `provisioning`, persist non-secret resumable
-   request state tied to the initiating node, create the WireGuard peer, and
-   configure the gateway VPN runtime.
+4. Atomically write the node with status `provisioning`, persist non-secret
+   resumable request state tied to the initiating node, and create the
+   WireGuard peer. If any database write or key-generation step fails, none of
+   those three records remains. Then configure the gateway VPN runtime.
 5. Resolve digest-verified CLI and Agent artifacts from the current release
    manifest and render a node-specific bootstrap bundle containing:
    - creation of the managed Orbit runtime user and sudo contract;
@@ -112,16 +114,21 @@ endpoint.
 ### Complete
 
 1. Authenticate the caller again and require it to match the bootstrap's
-   initiating node.
+   initiating node before queuing an operation run, writing activity, or
+   emitting progress.
 2. Require the pending node and request state to remain compatible.
 3. Wait for WireGuard reachability and for the Agent command endpoint at the
    reserved WireGuard address to return its readiness status.
 4. Create and converge initial role assignments through typed Agent-push
    internal commands.
-5. Apply the normal tool, runtime, development DNS, grant, and security
-   baselines through gateway-local work or Agent push as owned by each family.
-6. Mark the node and bootstrap active/complete only after required readiness
-   and convergence succeed.
+5. Apply the normal tool, runtime, development DNS, grant, and full node
+   security baselines through gateway-local work or Agent push as owned by each
+   family. The security baseline locks down the Orbit home, binds hardened SSH
+   to WireGuard and loopback, locks root and removes root authorized keys,
+   installs sysctl and unattended-upgrade policy, and denies public SSH.
+6. Atomically mark the node active and bootstrap complete only after required
+   readiness and convergence succeed. An interruption before that commit
+   leaves both pending for idempotent completion retry.
 
 The completion phase never falls back to SSH. An Agent readiness or convergence
 failure leaves inspectable pending/error state for a safe retry.
@@ -133,6 +140,9 @@ failure leaves inspectable pending/error state for a safe retry.
   equivalent bundle from the persisted identity state.
 - A repeated completion for an already completed bootstrap returns the same
   active result without rerunning destructive setup.
+- Interrupted reservation cannot leave a node without its peer/bootstrap
+  record, and interrupted terminal commit cannot leave an active node with a
+  pending bootstrap.
 - Incompatible node identity, host, TLD, roles, settings, or initiating node
   fails before mutation.
 - Client-local SSH, host-key, and installer failures are reported by the CLI;
@@ -147,6 +157,6 @@ failure leaves inspectable pending/error state for a safe retry.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI input and authenticated prepare payload mapping plus first-gateway handling. |
-| `apps/cli/tests/Feature/Commands/Node/NodeNewBootstrapCommandTest.php` | Client-local SSH bundle streaming, failure behavior, and completion ordering. |
-| `apps/gateway/tests/Feature/Http/Api/NodeBootstrapControllerTest.php` | Prepare/complete authorization, reservation, idempotence, secret response handling, readiness, and no gateway target SSH. |
+| `apps/cli/tests/Feature/Commands/Node/NodeNewBootstrapCommandTest.php` | Client-local platform/architecture preflight, template routing, SSH bundle streaming, failure behavior, and completion ordering. |
+| `apps/gateway/tests/Feature/Http/Api/NodeBootstrapControllerTest.php` | Prepare/complete authorization before side effects, atomic reservation and terminal retry, template/metrics support, platform artifact selection, full security convergence, idempotence, secret response handling, readiness, and no gateway target SSH. |
 | `apps/gateway/tests/Feature/Services/Nodes/NodeBootstrapBundleBuilderTest.php` | Minimal idempotent WireGuard/CLI/Agent bootstrap bundle and secret handling. |

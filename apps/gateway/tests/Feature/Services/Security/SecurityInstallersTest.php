@@ -110,7 +110,11 @@ describe('security installers', function (): void {
             ->and($shell->runs[0]['script'])
             ->toContain('ListenAddress 127.0.0.1')
             ->and($shell->runs[0]['script'])
-            ->toContain('sudo sshd -t');
+            ->toContain('sudo sshd -t')
+            ->and($shell->runs[0]['script'])
+            ->toContain('sudo passwd -l root')
+            ->and($shell->runs[0]['script'])
+            ->toContain('sudo rm -f /root/.ssh/authorized_keys');
     });
 
     it('renders hardened sshd configuration for a custom provisioning runtime user', function (): void {

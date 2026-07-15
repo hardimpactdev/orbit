@@ -6,7 +6,7 @@ Orbit keeps security findings under the family that owns the protected state:
 
 | Owning family | Security issue-key section |
 | --- | --- |
-| `node` | `node.security.*` for provisioned Linux host posture, SSH identity, public SSH denial, unattended upgrades, sysctl, and bake-time home permissions |
+| `node` | `node.security.*` for provisioned Linux runtime-user posture, WireGuard-bound SSH, public SSH denial, unattended upgrades, sysctl, and bake-time home permissions |
 | `app` | `app.security.*` for production app runtime isolation |
 | `workspace` | `workspace.security.*` for development workspace runtime isolation |
 | `firewall_rule` | `firewall_rule.security.*` only when the firewall family owns protected-rule representation drift |
@@ -15,7 +15,7 @@ Orbit keeps security findings under the family that owns the protected state:
 owning family, then optionally narrow to one exact key:
 
 ```bash
-orbit doctor --family=node --key=node.security.host_key.app-1
+orbit doctor --family=node --key=node.security.public_ssh_deny
 orbit doctor --family=app --key=app.security.runtime_container_isolation
 orbit doctor --family=workspace --key=workspace.security.fs_permissions
 ```

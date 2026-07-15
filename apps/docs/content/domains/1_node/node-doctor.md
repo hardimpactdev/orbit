@@ -19,7 +19,7 @@ The node family owns these facts:
 - node bootstrap artifacts: gateway service readiness, node minimum Orbit
   runtime, gateway-client endpoint and trust artifacts on the node, node identity
   artifacts, role bootstrap network policy, and WireGuard peers managed by the gateway;
-- node-owned security baseline: provisioning host-key metadata, canonical Orbit
+- node-owned security baseline: canonical Orbit
   owner/runtime user, provisioning SSH exposure policy, sysctl baseline, and
   permissions for home directories set during bake;
 - node update posture: managed Ubuntu server update readiness through a
@@ -236,7 +236,6 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.s3.wireguard_missing` | An active `s3` role node has a missing or empty WireGuard address. SeaweedFS requires a WireGuard address to bind its API endpoint. |
 | `node.node_identity_artifact_missing` | A node is missing bootstrap identity material required to prove its node record. |
 | `node.bootstrap_network_policy_mismatch` | A gateway or node's role bootstrap network policy is missing, unsafe, or inconsistent with its role assignments. |
-| `node.security.host_key.<node>` | A provisioned Linux node has missing or mismatched host-key metadata, or local/Agent inspection cannot verify it. First pin requires explicit operator consent. |
 | `node.security.runtime_user` | A persisted managed node record has no Orbit owner/runtime user, or that user is absent on the host. |
 | `node.security.public_ssh_deny` | A provisioned Linux node does not deny public SSH exposure according to node-owned bootstrap policy. |
 | `node.security.sysctl` | A provisioned Linux node is missing or diverges from the node-owned sysctl baseline. |
@@ -281,8 +280,8 @@ This table describes what `doctor --restore --family=node` does for each resolva
 `node.role_settings_invalid`,
 `node.identity_unresolved`, `node.platform_unsupported`,
 `node.platform_record_mismatch`, `node.transport_unreachable`,
-`node.security.host_key.<node>`, `node.security.runtime_user`,
-`node.security.home_perms`, `node.local_default_invalid`, or
+`node.security.runtime_user`, `node.security.home_perms`,
+`node.local_default_invalid`, or
 `node.agent_ide_default_invalid`.
 
 `node.vpn_runtime_missing` reports that the active gateway-coupled `vpn`
@@ -316,7 +315,6 @@ This table describes what `doctor --family=node --adopt` does for each adoptable
 | `node.wireguard_address_mismatch` | Update the node record's WireGuard address only when the peer proves the same node identity. |
 | `node.runtime_missing` | Verify compatible app runtime readiness; report conflict when runtime readiness cannot be verified. |
 | `node.platform_record_mismatch` | Update the node record's platform-version identifier only when live detection is supported and unambiguous. |
-| `node.security.host_key.<node>` | Pin provisioning host-key metadata observed through local or Agent inspection only when the operator selected this exact key and explicitly chose adopt. |
 
 Conditions for `node.wireguard_peer_missing` adoption: the selected active
 node has a non-secret identity artifact that matches gateway

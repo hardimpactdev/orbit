@@ -20,9 +20,12 @@ use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\RoleSelfGrantMaterializer;
+use App\Services\Security\HomeDirectoryLockdownInstaller;
 use App\Services\Security\PublicSshDenyInstaller;
 use App\Services\Security\SecurityInstaller;
 use App\Services\Security\SshdHardenedInstaller;
+use App\Services\Security\SysctlBaselineInstaller;
+use App\Services\Security\UnattendedUpgradesInstaller;
 use App\Services\Support\GatewayActionResult;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolInstaller;
@@ -31,6 +34,7 @@ use App\Services\Vpn\VpnDnsSwarmInstaller;
 use App\Services\Vpn\WgEasyAddressReservationProbe;
 use App\Services\WireGuard\WireGuardKeyGenerator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use InvalidArgumentException;
 use Orbit\Core\Http\JsonEnvelope;
@@ -142,10 +146,33 @@ final class GatewayNodeCreator
         }
 
         if ($result->successful()) {
-            $bootstrap->forceFill([
-                'status' => 'completed',
-                'last_error' => null,
-            ])->save();
+            try {
+                DB::transaction(static function () use ($bootstrap, $node): void {
+                    $node->forceFill(['status' => NodeStatus::Active])->save();
+                    $bootstrap->forceFill([
+                        'status' => 'completed',
+                        'last_error' => null,
+                    ])->save();
+                });
+            } catch (Throwable $exception) {
+                $bootstrap->refresh();
+                $bootstrap->forceFill([
+                    'status' => 'pending',
+                    'last_error' => [
+                        'code' => 'node.provisioning_incomplete',
+                        'message' => $exception->getMessage(),
+                    ],
+                ])->save();
+
+                return GatewayActionResult::error(
+                    code: 'node.provisioning_incomplete',
+                    message: 'Node bootstrap terminal state could not be committed.',
+                    meta: [
+                        'bootstrap_id' => $bootstrap->id,
+                        'error' => $exception->getMessage(),
+                    ],
+                );
+            }
 
             return $result;
         }
@@ -260,6 +287,8 @@ final class GatewayNodeCreator
                         'sshUser' => $inputs['sshUser'] ?? 'root',
                         'gatewayEndpoint' => $inputs['gatewayEndpoint'],
                         'hostKeyFingerprint' => $inputs['hostKeyFingerprint'],
+                        'platform' => $inputs['platform'],
+                        'architecture' => $inputs['architecture'],
                     ],
                     initialWorkloadRoles: $placement['roles'],
                     appProductionIngressNodeId: $placement['ingress_node_id'],
@@ -304,7 +333,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
      */
     private function provisionWorkloadRoleNode(
         NodeRegistryWriter $registryWriter,
@@ -346,6 +375,7 @@ final class GatewayNodeCreator
             NodeRoleName::Database->value,
             NodeRoleName::Ingress->value,
             NodeRoleName::Agent->value,
+            NodeRoleName::Metrics->value,
             NodeRoleName::Analytics->value,
         ]) !== [];
 
@@ -366,7 +396,6 @@ final class GatewayNodeCreator
 
         if ($requiresHostProvisioning && $this->bootstrapPhase === self::BOOTSTRAP_PHASE_COMPLETE) {
             return $this->completePreparedWorkloadNode(
-                registryWriter: $registryWriter,
                 roleAssignmentService: $roleAssignmentService,
                 nodeConverger: $nodeConverger,
                 name: $name,
@@ -834,7 +863,7 @@ final class GatewayNodeCreator
     }
 
     /**
-     * @param  array{host: string, tld: ?string, sshUser: string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string}  $inputs
      * @param  list<string>  $initialWorkloadRoles
      */
     private function provisionAppNode(
@@ -859,7 +888,6 @@ final class GatewayNodeCreator
 
         if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_COMPLETE) {
             return $this->completePreparedWorkloadNode(
-                registryWriter: $registryWriter,
                 roleAssignmentService: $roleAssignmentService,
                 nodeConverger: $nodeConverger,
                 name: $name,
@@ -874,7 +902,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
      */
     private function prepareHostBootstrap(
         NodeRegistryWriter $registryWriter,
@@ -982,35 +1010,50 @@ final class GatewayNodeCreator
             );
         }
 
-        $node = $existing ?? $registryWriter->writeNodeIdentity(
-            name: $name,
-            tld: $tld,
-            platform: 'ubuntu_24-04',
-            host: $inputs['host'],
-            wireguardAddress: $wireguardAddress,
-            gatewayEndpoint: $gatewayEndpoint,
-            user: self::DEFAULT_RUNTIME_USER,
-            orbitPath: '/home/'.self::DEFAULT_RUNTIME_USER.'/orbit',
-            status: NodeStatus::Provisioning,
-        );
-        $node->forceFill([
-            'managed' => true,
-            'status' => NodeStatus::Provisioning,
-        ])->save();
+        DB::beginTransaction();
 
-        $peer = $this->ensureProvisionedNodeWireGuardPeer($node, $wireGuardKeyGenerator, $wireguardAddress);
+        try {
+            $node = $existing ?? $registryWriter->writeNodeIdentity(
+                name: $name,
+                tld: $tld,
+                platform: $inputs['platform'],
+                host: $inputs['host'],
+                wireguardAddress: $wireguardAddress,
+                gatewayEndpoint: $gatewayEndpoint,
+                user: self::DEFAULT_RUNTIME_USER,
+                orbitPath: '/home/'.self::DEFAULT_RUNTIME_USER.'/orbit',
+                status: NodeStatus::Provisioning,
+                architecture: $inputs['architecture'],
+            );
+            $node->forceFill([
+                'platform' => $inputs['platform'],
+                'architecture' => $inputs['architecture'],
+                'managed' => true,
+                'status' => NodeStatus::Provisioning,
+            ])->save();
 
-        if (is_int($peer)) {
-            return $peer;
+            $peer = $this->ensureProvisionedNodeWireGuardPeer($node, $wireGuardKeyGenerator, $wireguardAddress);
+
+            if (is_int($peer)) {
+                DB::rollBack();
+
+                return $peer;
+            }
+
+            $bootstrap ??= NodeBootstrap::query()->create([
+                'node_id' => $node->id,
+                'initiating_node_id' => $caller->id,
+                'request' => $request,
+                'status' => 'pending',
+                'last_error' => null,
+            ]);
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+
+            throw $exception;
         }
-
-        $bootstrap ??= NodeBootstrap::query()->create([
-            'node_id' => $node->id,
-            'initiating_node_id' => $caller->id,
-            'request' => $request,
-            'status' => 'pending',
-            'last_error' => null,
-        ]);
 
         $wireguardServerPublicKey = $this->configureGatewayWireGuardServerPeer($node, $peer, $wireguardAddress);
 
@@ -1066,10 +1109,9 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
      */
     private function completePreparedWorkloadNode(
-        NodeRegistryWriter $registryWriter,
         NodeRoleAssignmentService $roleAssignmentService,
         NodeConverger $nodeConverger,
         string $name,
@@ -1160,9 +1202,6 @@ final class GatewayNodeCreator
         $developmentDns = $this->containsAppWorkloadRole($roles)
             ? app(DevelopmentDnsMappingEnactor::class)->converge($node)
             : null;
-
-        $registryWriter->markActive($node);
-        $node->refresh();
 
         $payload = $this->completedNodePayload(
             node: $node,
@@ -1269,7 +1308,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  array<string, mixed>  $request
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
      */
     private function pendingBootstrapIsCompatible(
         Node $node,
@@ -1282,6 +1321,8 @@ final class GatewayNodeCreator
             $node->isProvisioning()
             && $node->host === $inputs['host']
             && $node->tld === $inputs['tld']
+            && $node->platform === $inputs['platform']
+            && $node->architecture === $inputs['architecture']
             && $bootstrap instanceof NodeBootstrap
             && $bootstrap->initiating_node_id === $caller->id
             && $bootstrap->request === $request
@@ -1311,7 +1352,10 @@ final class GatewayNodeCreator
 
         /** @var array<string, SecurityInstaller> $installers */
         $installers = [
+            'home' => app(HomeDirectoryLockdownInstaller::class),
             'sshd' => app(SshdHardenedInstaller::class),
+            'sysctl' => app(SysctlBaselineInstaller::class),
+            'unattended_upgrades' => app(UnattendedUpgradesInstaller::class),
             'public_ssh_deny' => app(PublicSshDenyInstaller::class),
         ];
 
@@ -1459,7 +1503,11 @@ final class GatewayNodeCreator
             return null;
         }
 
-        if (! in_array($role, ['app-dev', 'app-prod', 'agent', 'ingress', 'analytics', 'gateway'], true)) {
+        if (! in_array(
+            $role,
+            ['app-dev', 'app-prod', 'database', 'agent', 'ingress', 'metrics', 'analytics', 'gateway'],
+            true,
+        )) {
             return null;
         }
 
@@ -1560,7 +1608,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @return array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, postgresNodeId: ?int, clickhouseNodeId: ?int}|int
+     * @return array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId: ?int, clickhouseNodeId: ?int}|int
      */
     private function resolveWorkloadRoleInputs(array $roles): array|int
     {
@@ -1570,27 +1618,28 @@ final class GatewayNodeCreator
             NodeRoleName::Database->value,
             NodeRoleName::Ingress->value,
             NodeRoleName::Agent->value,
+            NodeRoleName::Metrics->value,
             NodeRoleName::Analytics->value,
         ]) !== [];
 
         if (! $needsHost && $this->stringOption('host') !== null) {
             return $this->validationFailed(
                 'host',
-                'Only app-dev, app-prod, database, ingress, agent, analytics, and gateway use host provisioning.',
+                'Only app-dev, app-prod, database, ingress, agent, metrics, analytics, and gateway use host provisioning.',
             );
         }
 
         if (! $needsHost && $this->stringOption('host-key-fingerprint') !== null) {
             return $this->validationFailed(
                 'host_key_fingerprint',
-                'Only app-dev, app-prod, database, ingress, agent, analytics, and gateway use host-key fingerprint pinning.',
+                'Only app-dev, app-prod, database, ingress, agent, metrics, analytics, and gateway use host-key fingerprint pinning.',
             );
         }
 
         if (! $needsHost && $this->stringOption('gateway-endpoint') !== null) {
             return $this->validationFailed(
                 'gateway_endpoint',
-                'Only app-dev, app-prod, database, ingress, agent, analytics, and gateway use WireGuard endpoint overrides.',
+                'Only app-dev, app-prod, database, ingress, agent, metrics, analytics, and gateway use WireGuard endpoint overrides.',
             );
         }
 
@@ -1601,6 +1650,7 @@ final class GatewayNodeCreator
                 NodeRoleName::Database->value,
                 NodeRoleName::Ingress->value,
                 NodeRoleName::Agent->value,
+                NodeRoleName::Metrics->value,
                 NodeRoleName::Analytics->value,
             ])) ?? NodeRoleName::Agent->value;
 
@@ -1620,6 +1670,40 @@ final class GatewayNodeCreator
             return $this->validationFailed(
                 'gateway_endpoint',
                 'Gateway endpoint must be a valid IP address or dotted DNS name.',
+            );
+        }
+
+        $platform = $this->stringOption('platform');
+        $architecture = $this->stringOption('architecture');
+
+        if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_PREPARE && $platform === null) {
+            return $this->validationFailed(
+                'platform',
+                'Client-observed target platform is required for workload bootstrap.',
+            );
+        }
+
+        if ($this->bootstrapPhase === self::BOOTSTRAP_PHASE_PREPARE && $architecture === null) {
+            return $this->validationFailed(
+                'architecture',
+                'Client-observed target architecture is required for workload bootstrap.',
+            );
+        }
+
+        $platform ??= 'ubuntu_24-04';
+        $architecture ??= 'amd64';
+
+        if (! in_array($platform, ['ubuntu_24-04', 'ubuntu_26-04'], true)) {
+            return $this->validationFailed(
+                'platform',
+                'Workload bootstrap supports Ubuntu 24.04 and Ubuntu 26.04 targets.',
+            );
+        }
+
+        if (! in_array($architecture, ['amd64', 'arm64'], true)) {
+            return $this->validationFailed(
+                'architecture',
+                'Workload bootstrap supports amd64 and arm64 targets.',
             );
         }
 
@@ -1645,6 +1729,8 @@ final class GatewayNodeCreator
             'sshUser' => $needsHost ? $this->resolveSshUser() : null,
             'gatewayEndpoint' => $needsHost ? $gatewayEndpoint : null,
             'hostKeyFingerprint' => $needsHost ? $this->stringOption('host-key-fingerprint') : null,
+            'platform' => $platform,
+            'architecture' => $architecture,
             'postgresNodeId' => $analyticsDatabaseNodes['postgres_node_id'],
             'clickhouseNodeId' => $analyticsDatabaseNodes['clickhouse_node_id'],
         ];

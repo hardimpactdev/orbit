@@ -9,17 +9,95 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final class NodeBootstrapSshRunner
 {
     private const int CONNECT_TIMEOUT_SECONDS = 10;
 
     private const int BOOTSTRAP_TIMEOUT_SECONDS = 900;
 
+    /**
+     * @return array{platform: string, architecture: string}
+     */
+    public function inspectTarget(
+        string $host,
+        string $user,
+        ?string $expectedFingerprint = null,
+    ): array {
+        $result = $this->runScript(
+            host: $host,
+            user: $user,
+            script: <<<'BASH'
+                # ORBIT_TARGET_PLATFORM
+                set -euo pipefail
+                if [ ! -r /etc/os-release ]; then
+                    printf '%s\n' 'Target does not expose /etc/os-release.' >&2
+                    exit 1
+                fi
+                . /etc/os-release
+                PLATFORM="$(printf '%s_%s' "$ID" "$VERSION_ID" | tr '[:upper:].' '[:lower:]-')"
+                ARCHITECTURE="$(uname -m)"
+                case "$ARCHITECTURE" in
+                    x86_64|amd64)
+                        ARCHITECTURE=amd64
+                        ;;
+                    aarch64|arm64)
+                        ARCHITECTURE=arm64
+                        ;;
+                esac
+                printf '%s\n%s\n' "$PLATFORM" "$ARCHITECTURE"
+                BASH,
+            timeout: self::CONNECT_TIMEOUT_SECONDS,
+            expectedFingerprint: $expectedFingerprint,
+        );
+
+        if (! $result->successful()) {
+            throw new RuntimeException(
+                trim($result->errorOutput()) ?: "Could not inspect target platform on {$user}@{$host}.",
+            );
+        }
+
+        $lines = preg_split('/\R/', trim($result->output()));
+        $platform = is_array($lines) && is_string($lines[0] ?? null) ? trim($lines[0]) : '';
+        $architecture = is_array($lines) && is_string($lines[1] ?? null) ? trim($lines[1]) : '';
+
+        if (
+            ! in_array($platform, ['ubuntu_24-04', 'ubuntu_26-04'], true)
+            || ! in_array($architecture, ['amd64', 'arm64'], true)
+        ) {
+            throw new NodeBootstrapUnsupportedPlatform(
+                platform: $platform !== '' ? $platform : 'unknown',
+                architecture: $architecture !== '' ? $architecture : 'unknown',
+            );
+        }
+
+        return [
+            'platform' => $platform,
+            'architecture' => $architecture,
+        ];
+    }
+
     public function run(
         string $host,
         string $user,
         string $script,
         ?string $expectedFingerprint = null,
+    ): ProcessResult {
+        return $this->runScript(
+            host: $host,
+            user: $user,
+            script: $script,
+            timeout: self::BOOTSTRAP_TIMEOUT_SECONDS,
+            expectedFingerprint: $expectedFingerprint,
+        );
+    }
+
+    private function runScript(
+        string $host,
+        string $user,
+        string $script,
+        int $timeout,
+        ?string $expectedFingerprint,
     ): ProcessResult {
         $knownHostsPath = null;
 
@@ -36,7 +114,7 @@ final class NodeBootstrapSshRunner
                 ];
             }
 
-            return Process::timeout(self::BOOTSTRAP_TIMEOUT_SECONDS)
+            return Process::timeout($timeout)
                 ->input($script)
                 ->run([
                     'ssh',

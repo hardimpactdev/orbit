@@ -23,7 +23,9 @@ bootstrap path where the gateway does not exist yet.
   - the CLI can reach the gateway API over HTTPS through WireGuard;
   - the gateway authorizes the caller for `node:new` on the active gateway node;
   - for a host-provisioned workload, the target is reachable from the initiating
-    client over SSH as `node_new.user`.
+    client over SSH as `node_new.user`;
+  - that SSH preflight observes Ubuntu 24.04 or 26.04 and an `amd64` or `arm64`
+    architecture before the gateway reserves identity.
 
 Evaluate each path eligibility rule as soon as the fields needed for that rule
 are known. For example, a client with an operator identity and no configured
@@ -84,8 +86,13 @@ flow succeeds, the initiating client is already onboarded and must not run
 
 When a gateway is configured:
 
+- Connect to a host-provisioned target through client-local SSH before prepare,
+  read `/etc/os-release` and `uname -m`, normalize the result to
+  `platform=ubuntu_24-04|ubuntu_26-04` and
+  `architecture=amd64|arm64`, and reject unsupported targets before any gateway
+  reservation.
 - Send the resolved request to the authenticated gateway bootstrap-prepare
-  endpoint.
+  endpoint, including the observed platform and architecture.
 - Preserve all resolved role-specific inputs in the forwarded request,
   including:
   - `node_new.host` and `node_new.user` for gateway convergence or adoption;
@@ -130,6 +137,8 @@ available for an idempotent retry.
   before provisioning.
 - If client-local host-key verification, SSH authentication, or bootstrap
   execution fails, report the local bootstrap step and do not call completion.
+- If the target OS or architecture is unsupported, fail before prepare so no
+  gateway identity is reserved.
 - If the target starts WireGuard but Agent does not become reachable, retain
   the pending node/bootstrap identity and report Agent readiness as the failed
   step so the same request can retry safely.
@@ -150,7 +159,7 @@ available for an idempotent retry.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | Client-context node:new input and prepare payload validation before gateway contact. |
-| `apps/cli/tests/Feature/Commands/Node/NodeNewBootstrapCommandTest.php` | Authenticated prepare, client-local SSH bundle streaming, failure behavior, and completion ordering. |
+| `apps/cli/tests/Feature/Commands/Node/NodeNewBootstrapCommandTest.php` | Client-local platform and architecture preflight, authenticated prepare, template routing, SSH bundle streaming, failure behavior, and completion ordering. |
 | `apps/gateway/tests/Feature/Http/Api/InternalExecutorTokenControllerTest.php` | Provisioning Agent callbacks are accepted only from the node's reserved WireGuard address with a matching scoped token. |
 
 Input handling and renderer behavior live in `apps/cli`; the gateway-side row

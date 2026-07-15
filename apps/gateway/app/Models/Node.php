@@ -26,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string $tld
  * @property string|null $platform
+ * @property string|null $architecture
  * @property string $host
  * @property string|null $wireguard_address
  * @property string|null $gateway_endpoint
@@ -89,6 +90,7 @@ class Node extends Model
         'name',
         'tld',
         'platform',
+        'architecture',
         'host',
         'wireguard_address',
         'gateway_endpoint',

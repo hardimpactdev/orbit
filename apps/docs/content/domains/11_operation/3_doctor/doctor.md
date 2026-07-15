@@ -80,7 +80,7 @@ orbit doctor --family=node --self
 orbit doctor --fix --family=app --app=docs
 orbit doctor --restore --family=app --app=docs
 orbit doctor --adopt --family=workspace --app=docs --workspace=feature-api --json
-orbit doctor --restore --family=node --key=node.security.host_key.app-1 --dry-run --json
+orbit doctor --restore --family=node --key=node.security.public_ssh_deny --dry-run --json
 orbit doctor --node=app-1 --stream-json
 orbit doctor --all --stream-json
 ```

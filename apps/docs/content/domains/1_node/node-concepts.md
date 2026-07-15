@@ -395,11 +395,14 @@ These terms describe how nodes join the fleet and prove their identity to the ga
   identity, the client machine installs that WireGuard identity, and then runs
   `gateway:add`.
 - **Workload bootstrap:** A three-party path initiated by a configured client.
+  The client first observes a supported Ubuntu version and CPU architecture
+  through its SSH edge.
   The gateway reserves a pending node and WireGuard peer and returns a
   node-specific bundle over the client's existing WireGuard-authenticated
   connection. The client streams that bundle over its own SSH connection to
   the target. Once the target starts WireGuard and its WireGuard-bound Agent,
-  the gateway finishes provisioning through Agent push. The gateway never
+  the gateway finishes provisioning and the full node security baseline
+  through Agent push. Reservation and terminal completion are atomic. The gateway never
   opens target SSH and no public pre-WireGuard enrollment endpoint exists.
 - **Compatible existing node:** An active node whose role assignments are known
   to the gateway and whose role assignments, identity, host, and
@@ -436,7 +439,7 @@ These terms describe how nodes communicate and how authority is enforced.
   node-local binary allowlist, never arbitrary shell.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built
   lifecycle events, not node-side control-plane authority.
-- **Node reality:** Observed role assignments, assignment status, platform,
+- **Node reality:** Observed role assignments, assignment status, platform and architecture,
   WireGuard, Agent transport, provisioning SSH posture, reachability, and
   gateway service readiness for a node.
 - **VPN role settings:** Assignment-local `vpn` settings: `public_endpoint`,

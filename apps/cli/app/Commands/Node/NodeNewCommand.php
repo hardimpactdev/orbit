@@ -12,6 +12,7 @@ use App\Exceptions\OrbitConfigStoreException;
 use App\Services\GatewayApiClient;
 use App\Services\Node\NodeBootstrapHostKeyMismatch;
 use App\Services\Node\NodeBootstrapSshRunner;
+use App\Services\Node\NodeBootstrapUnsupportedPlatform;
 use App\Services\Node\NodeGatewayBootstrapper;
 use App\Services\Node\NodeNewPayloadBuilder;
 use App\Services\OrbitConfigStore;
@@ -129,6 +130,13 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         }
 
         if ($this->requiresClientBootstrap($payload)) {
+            if (! $this->hasConfiguredGateway($configStore)) {
+                return $this->renderFailure(
+                    'gateway_unavailable',
+                    'Gateway connection is required before creating workload nodes.',
+                );
+            }
+
             return $this->bootstrapWorkloadNode($payload, $bootstrapSsh, $gatewayClient);
         }
 
@@ -143,12 +151,25 @@ final class NodeNewCommand extends BootstrapGatewayCommand
      */
     private function requiresClientBootstrap(array $payload): bool
     {
+        $workloadTemplates = [
+            'app-development',
+            'app-production',
+            'database',
+            'ingress',
+            'metrics',
+            'analytics',
+            'agent',
+        ];
+
         return (
             is_string($payload['host'] ?? null)
             && $payload['host'] !== ''
             && ($payload['template'] ?? null) !== 'gateway'
-            && is_array($payload['roles'] ?? null)
-            && $payload['roles'] !== []
+            && (
+                is_string($payload['template'] ?? null) && in_array($payload['template'], $workloadTemplates, true)
+                || is_array($payload['roles'] ?? null)
+                && $payload['roles'] !== []
+            )
         );
     }
 
@@ -168,6 +189,50 @@ final class NodeNewCommand extends BootstrapGatewayCommand
 
         $preparePayload = $payload;
         unset($preparePayload['host_key_fingerprint']);
+
+        try {
+            $target = $bootstrapSsh->inspectTarget(
+                host: (string) $payload['host'],
+                user: is_string($payload['user'] ?? null) ? $payload['user'] : 'root',
+                expectedFingerprint: $this->stringOption('host-key-fingerprint'),
+            );
+        } catch (NodeBootstrapHostKeyMismatch $exception) {
+            return $this->renderFailure(
+                'node.host_key_mismatch',
+                $exception->getMessage(),
+                [
+                    'host' => $payload['host'],
+                    'step' => 'client_ssh_host_key',
+                ],
+            );
+        } catch (NodeBootstrapUnsupportedPlatform $exception) {
+            return $this->renderFailure(
+                'node.unsupported_platform',
+                $exception->getMessage(),
+                [
+                    'host' => $payload['host'],
+                    'platform' => $exception->platform,
+                    'architecture' => $exception->architecture,
+                    'step' => 'client_ssh_preflight',
+                ],
+            );
+        } catch (RuntimeException $exception) {
+            return $this->renderFailure(
+                'node.bootstrap_ssh_failed',
+                $exception->getMessage(),
+                [
+                    'host' => $payload['host'],
+                    'user' => $payload['user'] ?? 'root',
+                    'step' => 'client_ssh_preflight',
+                ],
+            );
+        }
+
+        $preparePayload = [
+            ...$preparePayload,
+            'platform' => $target['platform'],
+            'architecture' => $target['architecture'],
+        ];
 
         try {
             $response = $gatewayClient

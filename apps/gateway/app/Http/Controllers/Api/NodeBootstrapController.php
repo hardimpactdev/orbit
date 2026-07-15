@@ -56,6 +56,8 @@ final readonly class NodeBootstrapController
             '--s3-data-path' => 's3_data_path',
             '--user' => 'user',
             '--gateway-endpoint' => 'gateway_endpoint',
+            '--platform' => 'platform',
+            '--architecture' => 'architecture',
             '--self-grant' => 'self_grant',
             '--self-grant-permissions' => 'self_grant_permissions',
             '--grant-to-preset' => 'grant_to_preset',

@@ -92,7 +92,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Scheduler | One-replica `orbit-scheduler` Swarm service using the Orbit gateway image |
 | Process logs | Runtime-backend log capture for process units; journald for systemd-backed host command processes, Orbit-owned stdout/stderr files for launchd-backed host command processes, and Docker logs for containerized processes |
 | Service containers | Docker for Orbit runtime containers and backing services |
-| Node provisioning and host prerequisites | A configured client streams a gateway-authored bootstrap bundle through client-local SSH to establish the managed user, WireGuard identity, node-local Orbit config, and CLI/Agent entry points on a new managed Ubuntu node. After Agent readiness, the gateway converges service-address routing and host prerequisites through Agent push. Those are topology infrastructure, not app, process, tool, or database runtime prerequisites. Production gateway-only nodes additionally require Docker Engine/CLI, Docker Swarm, gateway config root, and the native Orbit CLI binary. `app-dev` and `app-prod` nodes additionally require host PHP and Composer for app-source workflows; the Laravel installer is required on `app-dev` only. Git and `gh` are required where cloning/deployment needs repository access, not for no-source gateway-only production. Source-dev topologies may bind-mount or copy the worktree and point `/usr/local/bin/orbit` at `<source>/apps/cli/orbit`; artifact-prod topologies use built CLI binaries and production images. |
+| Node provisioning and host prerequisites | A configured client first observes Ubuntu version and CPU architecture over client-local SSH, then streams a gateway-authored bootstrap bundle through that SSH edge to establish the managed user, WireGuard identity, node-local Orbit config, and architecture-matched CLI/Agent entry points on a new managed Ubuntu node. After Agent readiness, the gateway converges service-address routing, host prerequisites, and the full node security baseline through Agent push. Those are topology infrastructure, not app, process, tool, or database runtime prerequisites. Production gateway-only nodes additionally require Docker Engine/CLI, Docker Swarm, gateway config root, and the native Orbit CLI binary. `app-dev` and `app-prod` nodes additionally require host PHP and Composer for app-source workflows; the Laravel installer is required on `app-dev` only. Git and `gh` are required where cloning/deployment needs repository access, not for no-source gateway-only production. Source-dev topologies may bind-mount or copy the worktree and point `/usr/local/bin/orbit` at `<source>/apps/cli/orbit`; artifact-prod topologies use built CLI binaries and production images. |
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
 | Private production routing | `orbit-caddy` on the gateway-coupled `router` role selecting private HTTP/WebSocket/S3 routes, `.orbit` service names, and backend pools |
 | Production app backend | App-role-owned `orbit-caddy` on `app-prod` nodes bound to the node's WireGuard address and forwarding to per-app FrankenPHP Docker runtime containers on internal port `8080` over the node Docker network |
@@ -271,7 +271,8 @@ is a super-admin action outside Orbit commands.
 Managed node work uses three boundaries:
 
 - The initiating CLI establishes a workload host's bootstrap substrate by
-  streaming a gateway-authored, node-specific bundle through client-local SSH.
+  observing its OS/architecture and streaming a gateway-authored,
+  node-specific bundle through client-local SSH.
 - Gateway Laravel, Artisan, and PDO work runs locally inside the
   `orbit-gateway` service or a controlled one-shot gateway image.
 - `RemoteLocalExecutor` sends token-gated internal commands to the node Agent.
@@ -309,14 +310,18 @@ work locally inside the gateway boundary. VPN commands never SSH from the
 caller or from the gateway to another node.
 
 Workload bootstrap SSH is constructed and executed by the initiating CLI. The
-gateway reserves the pending node and WireGuard peer and renders the secret
+client observes and validates the target platform/architecture before prepare.
+The gateway atomically reserves the pending node, WireGuard peer, and bootstrap state and renders the secret
 bootstrap bundle, but it does not receive SSH credentials or connect to the
 target. Bootstrap establishes the managed user, WireGuard, and the initial CLI
 and Agent artifacts. After the Agent is reachable on its reserved WireGuard
 address, host prerequisites and runtime/security baselines converge through
-Agent push. Bootstrap scripts are non-interactive; prompts finish before side
-effects. Managed system-path writes use the bootstrap user's passwordless sudo
-contract.
+Agent push, including home permissions, hardened WireGuard-only SSH, root-key
+removal, sysctl, unattended upgrades, and public SSH denial. Node activation
+and bootstrap completion commit atomically. Bootstrap scripts are
+non-interactive; prompts finish before side effects. Managed system-path writes
+use the bootstrap user's passwordless sudo contract. Target SSH host keys are
+client-owned bootstrap evidence, not gateway steady-state doctor state.
 
 The generated [SSH inventory](generated/transitional-ssh-inventory.json)
 classifies every concrete SSH consumer. Only `provisioning-ssh` entries are

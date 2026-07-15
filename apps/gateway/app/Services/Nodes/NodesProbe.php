@@ -1119,7 +1119,7 @@ final readonly class NodesProbe
             'node.security.sysctl',
         ];
 
-        if (! in_array($entry->key, $fixableKeys, true) && ! str_starts_with($entry->key, 'node.security.host_key.')) {
+        if (! in_array($entry->key, $fixableKeys, true)) {
             throw new RuntimeException("NodesProbe cannot reconcile drift key '{$entry->key}'.");
         }
 

@@ -3932,18 +3932,14 @@ final readonly class DoctorReportRunner
             'database_connection.env_mismatch',
             'database_connection.target_missing',
         ];
-        $isNodeHostKey = str_starts_with($key, 'node.security.host_key.');
 
         return [
             ...$issue,
             'code' => $code,
             'restorable' =>
-                $isNodeHostKey
-                    || in_array($code, $restorableKeys, true)
-                    || $family === 'proxy' && $kind === DriftKind::Extra->value,
+                in_array($code, $restorableKeys, true) || $family === 'proxy' && $kind === DriftKind::Extra->value,
             'adoptable' =>
-                $isNodeHostKey
-                    || ($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value
+                ($family === 'proxy' || $family === 'firewall_rule') && $kind === DriftKind::Extra->value
                     || $family === 'database_connection'
                     && in_array(
                         $key,

@@ -85,6 +85,8 @@ it('keeps bootstrap pending when the WireGuard-bound Agent is not ready', functi
             'host' => '192.0.2.20',
             'user' => 'root',
             'tld' => 'agent-test',
+            'platform' => 'ubuntu_24-04',
+            'architecture' => 'amd64',
         ])
         ->assertOk();
 
@@ -153,6 +155,9 @@ it('completes through the WireGuard Agent once and then returns the active resul
     $agentPush = new class implements RunsInternalCommands {
         public int $calls = 0;
 
+        /** @var list<string> */
+        public array $scripts = [];
+
         public function runInternal(
             Node $node,
             string $commandName,
@@ -162,6 +167,15 @@ it('completes through the WireGuard Agent once and then returns the active resul
         ): RemoteShellResult {
             expect($node->isAgentEligible())->toBeTrue();
             $this->calls++;
+
+            if (is_string($transportOptions['input'] ?? null)) {
+                /** @var array{script?: mixed} $input */
+                $input = json_decode($transportOptions['input'], associative: true, flags: JSON_THROW_ON_ERROR);
+
+                if (is_string($input['script'] ?? null)) {
+                    $this->scripts[] = $input['script'];
+                }
+            }
 
             return new RemoteShellResult(
                 exitCode: 0,
@@ -187,6 +201,8 @@ it('completes through the WireGuard Agent once and then returns the active resul
             'host' => '192.0.2.20',
             'user' => 'root',
             'tld' => 'database-test',
+            'platform' => 'ubuntu_24-04',
+            'architecture' => 'amd64',
         ])
         ->assertOk();
 
@@ -237,7 +253,14 @@ it('completes through the WireGuard Agent once and then returns the active resul
         ->and($roleAssignments->convergences)
         ->toBe(1)
         ->and($agentPush->calls)
-        ->toBe(2);
+        ->toBe(5)
+        ->and(implode("\n", $agentPush->scripts))
+        ->toContain('/home/orbit/.ssh/authorized_keys')
+        ->toContain('passwd -l root')
+        ->toContain('rm -f /root/.ssh/authorized_keys')
+        ->toContain('/etc/sysctl.d/60-orbit.conf')
+        ->toContain('/etc/apt/apt.conf.d/50unattended-upgrades')
+        ->toContain('ufw deny in');
 
     Http::assertSentCount(1);
     Process::assertRanTimes(
@@ -265,6 +288,8 @@ it('allows only the initiating client to complete a pending bootstrap', function
             'host' => '192.0.2.20',
             'user' => 'root',
             'tld' => 'database-test',
+            'platform' => 'ubuntu_24-04',
+            'architecture' => 'amd64',
         ])
         ->assertOk();
 
@@ -284,15 +309,26 @@ it('allows only the initiating client to complete a pending bootstrap', function
     $bootstrapId = $prepare->json('success.data.bootstrap.id');
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $otherCaller->wireguard_address])
-        ->postJson("/api/nodes/bootstrap/{$bootstrapId}/complete")
+        ->call(
+            'POST',
+            "/api/nodes/bootstrap/{$bootstrapId}/complete",
+            [],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => $otherCaller->wireguard_address,
+            ],
+        )
         ->assertForbidden()
         ->assertJsonPath('error.code', 'authorization_failed');
 
     expect(NodeBootstrap::query()->findOrFail($bootstrapId)->status)
         ->toBe('pending')
         ->and(Node::query()->where('name', 'database-1')->firstOrFail()->isProvisioning())
-        ->toBeTrue();
+        ->toBeTrue()
+        ->and(OperationRun::query()->count())
+        ->toBe(0);
 });
 
 it('reserves one retryable bootstrap without gateway target SSH', function (): void {
@@ -312,6 +348,8 @@ it('reserves one retryable bootstrap without gateway target SSH', function (): v
         'host' => '192.0.2.20',
         'user' => 'root',
         'tld' => 'test',
+        'platform' => 'ubuntu_24-04',
+        'architecture' => 'amd64',
     ];
 
     $first = $this
@@ -349,6 +387,162 @@ it('reserves one retryable bootstrap without gateway target SSH', function (): v
         fn ($process): bool => preg_match('/(?:^|\s)(?:ssh|scp)(?:\s|$)/', (string) $process->command) === 1,
         0,
     );
+});
+
+it('supports metrics bootstrap and persists the client-observed target platform', function (): void {
+    [$gateway, $caller] = nodeBootstrapGatewayAndCaller();
+
+    WireGuardPeer::query()->create([
+        'node_id' => $gateway->id,
+        'public_key' => 'gateway-peer-public-key',
+        'private_key' => 'gateway-peer-private-key',
+        'pre_shared_key' => 'gateway-peer-preshared-key',
+        'allowed_ips' => '10.6.0.2/32',
+    ]);
+
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap', [
+            'name' => 'metrics-1',
+            'template' => 'metrics',
+            'host' => '192.0.2.50',
+            'user' => 'root',
+            'tld' => 'metrics-test',
+            'platform' => 'ubuntu_24-04',
+            'architecture' => 'arm64',
+        ])
+        ->assertOk();
+
+    $node = Node::query()->where('name', 'metrics-1')->firstOrFail();
+
+    expect($node->platform)
+        ->toBe('ubuntu_24-04')
+        ->and($node->architecture)
+        ->toBe('arm64')
+        ->and($response->json('success.data.bootstrap.script'))
+        ->toContain('orbit-linux-arm64');
+});
+
+it('rolls back an interrupted identity reservation so the same prepare can retry', function (): void {
+    [$gateway, $caller] = nodeBootstrapGatewayAndCaller();
+
+    WireGuardPeer::query()->create([
+        'node_id' => $gateway->id,
+        'public_key' => 'gateway-peer-public-key',
+        'private_key' => 'gateway-peer-private-key',
+        'pre_shared_key' => 'gateway-peer-preshared-key',
+        'allowed_ips' => '10.6.0.2/32',
+    ]);
+
+    $creatingAttempts = 0;
+    NodeBootstrap::creating(function () use (&$creatingAttempts): void {
+        $creatingAttempts++;
+
+        if ($creatingAttempts === 1) {
+            throw new RuntimeException('simulated reservation interruption');
+        }
+    });
+
+    $payload = [
+        'name' => 'database-retry',
+        'roles' => ['database'],
+        'host' => '192.0.2.60',
+        'user' => 'root',
+        'tld' => 'database-retry',
+        'platform' => 'ubuntu_24-04',
+        'architecture' => 'amd64',
+    ];
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap', $payload)
+        ->assertServerError();
+
+    expect(Node::query()->where('name', 'database-retry')->exists())
+        ->toBeFalse()
+        ->and(
+            WireGuardPeer::query()
+                ->whereHas('node', fn ($query) => $query->where('name', 'database-retry'))
+                ->exists(),
+        )
+        ->toBeFalse()
+        ->and(NodeBootstrap::query()->count())
+        ->toBe(0);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap', $payload)
+        ->assertOk()
+        ->assertJsonPath('success.data.bootstrap.status', 'pending');
+});
+
+it('keeps the node and bootstrap retryable when the terminal transition is interrupted', function (): void {
+    [$gateway, $caller] = nodeBootstrapGatewayAndCaller();
+
+    WireGuardPeer::query()->create([
+        'node_id' => $gateway->id,
+        'public_key' => 'gateway-peer-public-key',
+        'private_key' => 'gateway-peer-private-key',
+        'pre_shared_key' => 'gateway-peer-preshared-key',
+        'allowed_ips' => '10.6.0.2/32',
+    ]);
+
+    app()->instance(NodeRoleAssignmentService::class, nodeBootstrapRoleAssignments());
+    app()->instance(RunsInternalCommands::class, nodeBootstrapSuccessfulAgentExecutor());
+
+    $prepare = $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap', [
+            'name' => 'database-transition',
+            'roles' => ['database'],
+            'host' => '192.0.2.61',
+            'user' => 'root',
+            'tld' => 'database-transition',
+            'platform' => 'ubuntu_24-04',
+            'architecture' => 'amd64',
+        ])
+        ->assertOk();
+
+    Http::fake([
+        'http://10.6.0.3:9477/v1/commands' => Http::response([], 405),
+    ]);
+
+    $terminalAttempts = 0;
+    NodeBootstrap::updating(function (NodeBootstrap $bootstrap) use (&$terminalAttempts): void {
+        if ($bootstrap->status !== 'completed') {
+            return;
+        }
+
+        $terminalAttempts++;
+
+        if ($terminalAttempts === 1) {
+            throw new RuntimeException('simulated terminal transition interruption');
+        }
+    });
+
+    $bootstrapId = $prepare->json('success.data.bootstrap.id');
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson("/api/nodes/bootstrap/{$bootstrapId}/complete")
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node.provisioning_incomplete');
+
+    expect(NodeBootstrap::query()->findOrFail($bootstrapId)->status)
+        ->toBe('pending')
+        ->and(Node::query()->where('name', 'database-transition')->firstOrFail()->isProvisioning())
+        ->toBeTrue();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson("/api/nodes/bootstrap/{$bootstrapId}/complete")
+        ->assertOk()
+        ->assertJsonPath('success.data.node.status', 'active');
+
+    expect(NodeBootstrap::query()->findOrFail($bootstrapId)->status)
+        ->toBe('completed')
+        ->and(Node::query()->where('name', 'database-transition')->firstOrFail()->isActive())
+        ->toBeTrue();
 });
 
 /**
@@ -389,6 +583,55 @@ function nodeBootstrapGatewayAndCaller(): array
     return [$gateway, $caller];
 }
 
+function nodeBootstrapRoleAssignments(): NodeRoleAssignmentService
+{
+    return new class extends NodeRoleAssignmentService {
+        public function __construct() {}
+
+        public function addDuringCreation(Node $node, string $role, array $settings): NodeRoleAssignment
+        {
+            return $node->roleAssignments()->create([
+                'role' => $role,
+                'status' => NodeRoleStatus::Active,
+                'settings' => $settings,
+                'last_error' => null,
+                'converged_at' => now(),
+            ]);
+        }
+
+        public function retryDuringCreation(Node $node, string $role, array $settings): NodeRoleAssignment
+        {
+            return $node->roleAssignments()->where('role', $role)->firstOrFail();
+        }
+    };
+}
+
+function nodeBootstrapSuccessfulAgentExecutor(): RunsInternalCommands
+{
+    return new class implements RunsInternalCommands {
+        public function runInternal(
+            Node $node,
+            string $commandName,
+            array $arguments = [],
+            array $commandOptions = [],
+            array $transportOptions = [],
+        ): RemoteShellResult {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(JsonEnvelope::success([
+                    'exit_code' => 0,
+                    'stdout' => '',
+                    'stderr' => '',
+                    'duration_ms' => 1,
+                ]), JSON_THROW_ON_ERROR)
+                    ."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+    };
+}
+
 /**
  * @return array<string, mixed>
  */
@@ -406,11 +649,19 @@ function nodeBootstrapControllerReleaseManifest(): array
                 'url' => 'https://artifacts.orbit.test/orbit-linux-x64',
                 'sha256' => str_repeat('b', 64),
             ],
+            'linux-arm64' => [
+                'url' => 'https://artifacts.orbit.test/orbit-linux-arm64',
+                'sha256' => str_repeat('c', 64),
+            ],
         ],
         'agent_artifacts' => [
             'linux-amd64' => [
                 'url' => 'https://artifacts.orbit.test/orbit-agent-linux-x64',
                 'sha256' => str_repeat('d', 64),
+            ],
+            'linux-arm64' => [
+                'url' => 'https://artifacts.orbit.test/orbit-agent-linux-arm64',
+                'sha256' => str_repeat('f', 64),
             ],
         ],
         'role_images' => [

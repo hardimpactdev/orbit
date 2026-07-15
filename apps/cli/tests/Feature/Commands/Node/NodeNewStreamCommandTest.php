@@ -20,7 +20,9 @@ function fakeNodeBootstrapStreamPrepare(string $id = 'bootstrap-stream'): void
             ],
         ])),
     ]);
-    Process::fake(['*' => Process::result()]);
+    Process::fake(fn ($process) => str_contains((string) $process->input, 'ORBIT_TARGET_PLATFORM')
+        ? Process::result(output: "ubuntu_24-04\namd64\n")
+        : Process::result());
     Process::preventStrayProcesses();
 }
 

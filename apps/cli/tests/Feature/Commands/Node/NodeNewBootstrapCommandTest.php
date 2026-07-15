@@ -34,9 +34,13 @@ it('prepares bootstrap streams it through client local SSH and then completes ov
         ]));
     });
 
-    Process::fake([
-        '*' => Process::result(output: "bootstrapped\n"),
-    ]);
+    Process::fake(function ($process) {
+        if (str_contains((string) $process->input, 'ORBIT_TARGET_PLATFORM')) {
+            return Process::result(output: "ubuntu_24-04\namd64\n");
+        }
+
+        return Process::result(output: "bootstrapped\n");
+    });
     Process::preventStrayProcesses();
 
     [$exitCode, $output] = runCommand($this, 'node:new', [
@@ -57,6 +61,8 @@ it('prepares bootstrap streams it through client local SSH and then completes ov
             && $payload['roles'] === ['app-dev']
             && $payload['host'] === '192.0.2.20'
             && $payload['user'] === 'root'
+            && $payload['platform'] === 'ubuntu_24-04'
+            && $payload['architecture'] === 'amd64'
             && ! array_key_exists('host_key_fingerprint', $payload)
             && ! array_key_exists('ssh_private_key', $payload)
         );
@@ -88,6 +94,60 @@ it('prepares bootstrap streams it through client local SSH and then completes ov
         ->and($prepareTimeout)
         ->toBe(900);
 });
+
+it('routes host-provisioned templates through client SSH bootstrap', function (string $template): void {
+    fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', [
+        'exit_code' => 0,
+        'data' => JsonEnvelope::success(['node' => ['name' => "{$template}-1"]]),
+    ]));
+
+    Http::fake([
+        'https://gateway.test/api/nodes/bootstrap' => Http::response(JsonEnvelope::success([
+            'bootstrap' => [
+                'id' => "bootstrap-{$template}",
+                'status' => 'pending',
+                'host' => '192.0.2.40',
+                'user' => 'root',
+                'wireguard_address' => '10.6.0.6',
+                'script' => 'template-bootstrap-script',
+            ],
+        ])),
+    ]);
+
+    Process::fake(function ($process) {
+        if (str_contains((string) $process->input, 'ORBIT_TARGET_PLATFORM')) {
+            return Process::result(output: "ubuntu_24-04\narm64\n");
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    [$exitCode] = runCommand($this, 'node:new', [
+        'name' => "{$template}-1",
+        '--template' => $template,
+        '--host' => '192.0.2.40',
+        '--tld' => "{$template}-test",
+        '--json' => true,
+    ]);
+
+    Http::assertSent(
+        fn (Request $request): bool => (
+            $request->url() === 'https://gateway.test/api/nodes/bootstrap'
+            && $request['template'] === $template
+            && $request['platform'] === 'ubuntu_24-04'
+            && $request['architecture'] === 'arm64'
+        ),
+    );
+    assertGatewayStreamSent(
+        fn (FakeGatewayStreamRequest $request): bool => str_contains(
+            $request->url(),
+            "/api/nodes/bootstrap/bootstrap-{$template}/complete",
+        ),
+    );
+
+    expect($exitCode)->toBe(0);
+})->with(['app-development', 'database', 'ingress', 'metrics', 'agent']);
 
 it('does not ask the gateway to complete when client local SSH fails', function (): void {
     fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', [
@@ -132,6 +192,33 @@ it('does not ask the gateway to complete when client local SSH fails', function 
         ->toBe('192.0.2.20');
 });
 
+it('rejects an unsupported target platform before reserving gateway identity', function (): void {
+    Http::preventStrayRequests();
+    Process::fake([
+        '*' => Process::result(output: "debian_13\namd64\n"),
+    ]);
+    Process::preventStrayProcesses();
+
+    [$exitCode, $output] = runCommand($this, 'node:new', [
+        'name' => 'database-1',
+        '--roles' => 'database',
+        '--host' => '192.0.2.30',
+        '--tld' => 'database-test',
+        '--json' => true,
+    ]);
+
+    $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($decoded['error']['code'])
+        ->toBe('node.unsupported_platform')
+        ->and($decoded['error']['meta']['platform'])
+        ->toBe('debian_13');
+    Http::assertNothingSent();
+});
+
+/** @mago-expect lint:cyclomatic-complexity */
 it('verifies an explicit SSH host key locally before streaming the bootstrap', function (): void {
     fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', [
         'exit_code' => 0,
@@ -169,6 +256,14 @@ it('verifies an explicit SSH host key locally before streaming the bootstrap', f
                 '256 SHA256:verified 192.0.2.30 (ED25519)',
                 '',
             ]));
+        }
+
+        if (
+            is_array($command)
+            && $command[0] === 'ssh'
+            && str_contains((string) $process->input, 'ORBIT_TARGET_PLATFORM')
+        ) {
+            return Process::result(output: "ubuntu_24-04\namd64\n");
         }
 
         if (is_array($command) && $command[0] === 'ssh') {

@@ -47,6 +47,16 @@ final readonly class NodeBootstrapCompleteController implements Loggable
             ], 403);
         }
 
+        if ($nodeBootstrap->initiating_node_id !== $caller->id) {
+            return response()->json([
+                'error' => [
+                    'code' => 'authorization_failed',
+                    'message' => 'Only the initiating node can complete this bootstrap.',
+                    'meta' => ['bootstrap_id' => $nodeBootstrap->id],
+                ],
+            ], 403);
+        }
+
         if (! in_array('text/event-stream', $request->getAcceptableContentTypes(), strict: true)) {
             $result = $nodes->completeBootstrap($nodeBootstrap, $caller);
 

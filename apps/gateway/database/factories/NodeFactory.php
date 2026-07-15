@@ -26,6 +26,7 @@ class NodeFactory extends Factory
             'status' => NodeStatus::Active,
             'tld' => fake()->unique()->bothify('node-####'),
             'platform' => 'ubuntu_24-04',
+            'architecture' => 'amd64',
             'wireguard_address' => $this->wireguardAddress(),
             'managed' => false,
         ];

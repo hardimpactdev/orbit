@@ -59,6 +59,8 @@ final class SshdHardenedInstaller implements SecurityInstaller
                 sudo chmod 0644 /etc/ssh/sshd_config.d/99-orbit-hardening.conf
                 sudo sshd -t
                 sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd
+                sudo passwd -l root >/dev/null 2>&1 || true
+                sudo rm -f /root/.ssh/authorized_keys
                 SH_WRAP,
             escapeshellarg($wireguardAddress),
             escapeshellarg($managedUser),

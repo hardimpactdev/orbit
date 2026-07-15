@@ -12,9 +12,18 @@ final class CliArtifactPlatform
     public static function forNode(Node $node): string
     {
         $platform = strtolower(trim((string) $node->platform));
+        $architecture = strtolower(trim((string) $node->architecture));
 
         if (str_contains($platform, 'macos') || str_contains($platform, 'darwin')) {
             return 'darwin-arm64';
+        }
+
+        if (in_array($architecture, ['arm64', 'aarch64'], true)) {
+            return 'linux-arm64';
+        }
+
+        if (in_array($architecture, ['amd64', 'x86_64', 'x64'], true)) {
+            return 'linux-amd64';
         }
 
         if (str_contains($platform, 'arm64') || str_contains($platform, 'aarch64')) {

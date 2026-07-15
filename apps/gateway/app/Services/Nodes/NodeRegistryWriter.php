@@ -26,6 +26,7 @@ final readonly class NodeRegistryWriter
         string $orbitPath,
         NodeStatus $status = NodeStatus::Active,
         ?PinnedHostKey $hostKey = null,
+        ?string $architecture = null,
     ): Node {
         $attributes = [
             'tld' => $tld,
@@ -47,6 +48,10 @@ final readonly class NodeRegistryWriter
                 'host_key_pin_mode' => $hostKey->pinMode,
                 'host_key_pinned_at' => now(),
             ];
+        }
+
+        if ($architecture !== null) {
+            $attributes['architecture'] = $architecture;
         }
 
         return Node::query()->updateOrCreate(

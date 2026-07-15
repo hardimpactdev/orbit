@@ -332,9 +332,12 @@ bootstrap roles fails before side effects.
 
 ## What Happens
 
-`node:new` writes the node identity first, then creates each requested initial
-role assignment. Development app bootstrap includes the node TLD and the
-gateway development DNS mapping for that TLD.
+For host-provisioned workloads, `node:new` atomically reserves the pending node
+identity, WireGuard peer, and bootstrap record after the initiating client has
+observed a supported target platform and architecture. Completion creates each
+requested initial role assignment, then atomically marks the node active and
+the bootstrap complete. Development app bootstrap includes the node TLD and
+the gateway development DNS mapping for that TLD.
 
 For provisioned Linux nodes, `node:new` configures node-owned security policy
 by default. That policy belongs to the `node` family and may surface as
@@ -347,7 +350,7 @@ first convergence fails, the command fails and leaves that role assignment in
 `error` for later doctor recovery.
 
 During provisioning, `provisioning` is a transient node status: the pending
-node and WireGuard peer exist in the gateway database, but client-local
+node, WireGuard peer, and bootstrap record exist in the gateway database, but client-local
 bootstrap and the first Agent-push convergence have not completed. A compatible
 retry reuses that pending identity and address. Readiness or convergence
 failure remains inspectable until the bootstrap is retried or explicitly
