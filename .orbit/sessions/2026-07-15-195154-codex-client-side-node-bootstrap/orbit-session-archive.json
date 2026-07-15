@@ -1,0 +1,21 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-15T17:51:54+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-client-side-node-bootstrap/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-15-195154-codex-client-side-node-bootstrap",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "95359963be1a74a7a6a61f2dfea51063549d01c16c59fbb106addad12338264c"
+    },
+    "branch": "codex/client-side-node-bootstrap",
+    "candidate_commit": "a0b6854d50fecf9f6de79599afc6344dc5df2b35",
+    "accepted_feature_tip": "a0b6854d50fecf9f6de79599afc6344dc5df2b35",
+    "accepted_main_tip": "638b9920c75fb04a8ac1651c585ef1f80d0c0141",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
