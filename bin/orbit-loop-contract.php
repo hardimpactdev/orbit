@@ -307,7 +307,11 @@ function orbitLoopProofReferences(string $markdown): array
 
         $markerOffset = $marker[1];
 
-        if ($markerOffset === 0 || substr($markdown, $markerOffset - 1, 1) !== '`') {
+        $openingDelimiterIsExact = $markerOffset > 0
+            && substr($markdown, $markerOffset - 1, 1) === '`'
+            && ($markerOffset === 1 || substr($markdown, $markerOffset - 2, 1) !== '`');
+
+        if (! $openingDelimiterIsExact) {
             throw new RuntimeException(
                 'Compact cited proof must be one exact inline-code path: '
                 .orbitLoopProofReferenceContainingToken($markdown, $markerOffset),
@@ -330,8 +334,9 @@ function orbitLoopProofReferences(string $markdown): array
         $reference = $match[0];
         $token = orbitLoopProofReferenceToken($candidate);
         $following = substr($candidate, strlen($reference), 1);
+        $afterClosingDelimiter = substr($candidate, strlen($reference) + 1, 1);
 
-        if ($following !== '`') {
+        if ($following !== '`' || $afterClosingDelimiter === '`') {
             throw new RuntimeException(
                 'Compact cited proof must be one exact inline-code path: '.$token,
             );

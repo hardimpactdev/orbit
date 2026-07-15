@@ -213,7 +213,7 @@ it('refuses unsafe compact proof citations: :dataset', function (string $kind, s
         expect($process->getExitCode())
             ->toBe(2)
             ->and($process->getErrorOutput())
-            ->toContain(trim($citation))
+            ->toContain(trim($citation, " \t\n\r\0\x0B`"))
             ->and(session_archive_directories($paths['archiveRoot']))
             ->toBe([]);
     } finally {
@@ -247,6 +247,14 @@ it('refuses unsafe compact proof citations: :dataset', function (string $kind, s
     'padded code span' => [
         'truncated-padded-code-span',
         ' .orbit/evidence/proof. ',
+    ],
+    'double-backtick code span' => [
+        'truncated-double-backtick-span',
+        '`.orbit/evidence/proof`',
+    ],
+    'triple-backtick code span' => [
+        'truncated-triple-backtick-span',
+        '``.orbit/evidence/proof``',
     ],
     'malformed leading prefix' => [
         'truncated-leading-prefix',
