@@ -950,7 +950,7 @@ function copyCompactOrbitEntries(string $sourceOrbitDir, string $archiveDir): ar
     $archivedLoopPath = "{$archiveDir}/loop.md";
     $archivedLoop = is_file($archivedLoopPath) ? (string) file_get_contents($archivedLoopPath) : '';
 
-    foreach (compactOrbitProofReferences($archivedLoop) as $reference) {
+    foreach (orbitLoopProofReferences($archivedLoop) as $reference) {
         assertArchiveDirectoryIdentity($sourceOrbitDir, $sourceIdentity);
         $relative = substr($reference, strlen('.orbit/'));
         $source = compactOrbitProofSource($sourceOrbitDir, $relative, $reference);
@@ -962,21 +962,6 @@ function copyCompactOrbitEntries(string $sourceOrbitDir, string $archiveDir): ar
     assertArchiveDirectoryIdentity($sourceOrbitDir, $sourceIdentity);
 
     return $copiedEntries;
-}
-
-/** @return list<string> */
-function compactOrbitProofReferences(string $loop): array
-{
-    preg_match_all(
-        '~\.orbit/(?:evidence|quality-gates)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]~',
-        $loop,
-        $matches,
-    );
-
-    $references = array_values(array_unique($matches[0] ?? []));
-    sort($references, SORT_STRING);
-
-    return $references;
 }
 
 function compactOrbitProofSource(string $sourceOrbitDir, string $relative, string $reference): string

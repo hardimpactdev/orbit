@@ -157,6 +157,41 @@ it('requires complete blast-radius evidence before finalizing a high-authority c
     }
 });
 
+it('requires blast-radius closure when an authority source is renamed away', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        file_put_contents("{$repo}/PRODUCT_DECISIONS.md", "# Decisions\n");
+        run_fixture_command($repo, ['git', 'add', 'PRODUCT_DECISIONS.md']);
+        run_fixture_command($repo, ['git', 'commit', '-m', 'Add product decisions']);
+        run_fixture_command($worktree, ['git', 'merge', '--no-edit', 'main']);
+        mkdir("{$worktree}/docs", recursive: true);
+        run_fixture_command($worktree, [
+            'git',
+            'mv',
+            'PRODUCT_DECISIONS.md',
+            'docs/decisions-archive.md',
+        ]);
+        run_fixture_command($worktree, ['git', 'commit', '-m', 'Rename product decisions']);
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture(
+            $repo,
+            $worktree,
+            blastRadius: 'not-required - incorrectly inspected only the rename destination',
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and(strtolower($process->getErrorOutput()))
+            ->toContain('blast radius')
+            ->toContain('complete');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
 it('blocks a cwd-changing command from landing the current feature through a non-main checkout', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
 
@@ -2254,6 +2289,53 @@ it('allows cleanup when a compact receipt binds cited nested proof files', funct
         $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
 
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects a compact receipt that binds only a truncated proof citation', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    $loopPath = "{$worktree}/.orbit/loop.md";
+    $loop = (string) file_get_contents($loopPath);
+    file_put_contents(
+        $loopPath,
+        str_replace(
+            '## Status',
+            "- Broader proof: `.orbit/quality-gates/proof?.json`\n\n## Status",
+            $loop,
+        ),
+    );
+    land_finalization_gate_feature($repo);
+    $archive = write_compact_finalization_gate_session_archive($repo, $worktree, 'feature');
+    mkdir("{$archive}/quality-gates", recursive: true);
+    file_put_contents("{$archive}/quality-gates/proof", "wrong truncated proof\n");
+    $receiptPath = "{$archive}/orbit-session-archive.json";
+    $receipt = json_decode((string) file_get_contents($receiptPath), true, flags: JSON_THROW_ON_ERROR);
+    $receipt['copied_entries'][] = 'quality-gates/proof';
+    sort($receipt['copied_entries']);
+    $receipt['entry_digests']['loop.md'] = hash_file('sha256', "{$archive}/loop.md");
+    $receipt['entry_digests']['quality-gates/proof'] = hash_file(
+        'sha256',
+        "{$archive}/quality-gates/proof",
+    );
+    ksort($receipt['entry_digests']);
+    file_put_contents(
+        $receiptPath,
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('valid compact receipt');
     } finally {
         remove_finalization_gate_fixture($repo, $worktree);
     }

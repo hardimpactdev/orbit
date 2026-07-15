@@ -988,6 +988,12 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
         return false;
     }
 
+    foreach ($copiedEntries as $entry) {
+        if (! is_string($entry)) {
+            return false;
+        }
+    }
+
     $sortedEntries = $copiedEntries;
     sort($sortedEntries);
 
@@ -1000,6 +1006,25 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
         return false;
     }
 
+    try {
+        $loopProofEntries = array_map(
+            static fn (string $reference): string => substr($reference, strlen('.orbit/')),
+            orbitLoopProofReferences($loop),
+        );
+    } catch (RuntimeException) {
+        return false;
+    }
+
+    $receiptProofEntries = array_values(array_filter(
+        $copiedEntries,
+        static fn (string $entry): bool => str_starts_with($entry, 'evidence/')
+            || str_starts_with($entry, 'quality-gates/'),
+    ));
+
+    if ($receiptProofEntries !== $loopProofEntries) {
+        return false;
+    }
+
     $actualEntries = compact_archive_actual_entries($archiveDir);
 
     if ($actualEntries === null || $actualEntries !== $copiedEntries) {
@@ -1008,13 +1033,6 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
 
     foreach ($copiedEntries as $entry) {
         if (! is_string($entry) || ! compact_archive_entry_path_is_allowed($entry)) {
-            return false;
-        }
-
-        if (
-            (str_starts_with($entry, 'evidence/') || str_starts_with($entry, 'quality-gates/'))
-            && ! str_contains($loop, '.orbit/'.$entry)
-        ) {
             return false;
         }
 
@@ -2049,22 +2067,7 @@ function changed_files(string $root, string $worktree, string $subject): array
  */
 function branch_changed_files(string $cwd, string $headRef, string $baseRef = 'main'): array
 {
-    $base = trim(run_git($cwd, ['merge-base', $baseRef, $headRef])['stdout']);
-
-    if ($base === '') {
-        return [];
-    }
-
-    $diff = run_git($cwd, ['diff', '--name-only', '--diff-filter=ACDMRT', $base, $headRef]);
-
-    if ($diff['exit_code'] !== 0) {
-        return [];
-    }
-
-    return array_values(array_filter(
-        array_map('trim', preg_split('/\R/', $diff['stdout']) ?: []),
-        fn (string $path): bool => $path !== '',
-    ));
+    return orbitLoopChangedFiles($cwd, $headRef, $baseRef);
 }
 
 /**

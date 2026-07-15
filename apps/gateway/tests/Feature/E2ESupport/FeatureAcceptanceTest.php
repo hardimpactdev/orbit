@@ -261,6 +261,61 @@ it('requires high-authority changes to record complete blast-radius closure evid
     }
 });
 
+it('treats every product domain contract as high authority for blast-radius closure', function (): void {
+    $fixture = acceptance_test_workspace(
+        'domain-contract-blast-radius',
+        'apps/docs/content/domains/apps.md',
+    );
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'automated',
+            blastRadius: 'not-required - incorrectly treated as local',
+        );
+
+        $ready = acceptance_test_run($fixture, ['ready']);
+
+        expect($ready->getExitCode())
+            ->toBe(2)
+            ->and(strtolower($ready->getErrorOutput()))
+            ->toContain('blast radius')
+            ->toContain('complete');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
+it('keeps a renamed authority source in the blast-radius closure boundary', function (): void {
+    $fixture = acceptance_test_rename_workspace(
+        'renamed-authority-blast-radius',
+        'PRODUCT_DECISIONS.md',
+        'docs/decisions-archive.md',
+    );
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'automated',
+            blastRadius: 'not-required - incorrectly inspected only the rename destination',
+        );
+
+        $ready = acceptance_test_run($fixture, ['ready']);
+
+        expect($ready->getExitCode())
+            ->toBe(2)
+            ->and(strtolower($ready->getErrorOutput()))
+            ->toContain('blast radius')
+            ->toContain('complete');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
 it('blocks readiness and acceptance while blast-radius closure is unresolved', function (string $blastRadius): void {
     $status = explode(' ', $blastRadius, 2)[0];
     $fixture = acceptance_test_workspace("unresolved-blast-radius-{$status}", 'bin/orbit-example');
@@ -738,6 +793,32 @@ function acceptance_test_workspace(string $suffix, string $changedPath): string
     file_put_contents($absolute, "candidate\n");
     acceptance_test_git($workspace, ['add', $changedPath]);
     acceptance_test_git($workspace, ['commit', '-m', 'Candidate']);
+    mkdir("{$workspace}/.orbit", recursive: true);
+
+    return $workspace;
+}
+
+function acceptance_test_rename_workspace(string $suffix, string $sourcePath, string $destinationPath): string
+{
+    $workspace = sys_get_temp_dir().'/orbit-acceptance-'.$suffix.'-'.bin2hex(random_bytes(6));
+    mkdir($workspace, recursive: true);
+    acceptance_test_git($workspace, ['init', '--initial-branch=main']);
+    acceptance_test_git($workspace, ['config', 'user.email', 'orbit@example.test']);
+    acceptance_test_git($workspace, ['config', 'user.name', 'Orbit Test']);
+    file_put_contents("{$workspace}/README.md", "# Fixture\n");
+    file_put_contents("{$workspace}/.gitignore", ".orbit/\n");
+    file_put_contents("{$workspace}/{$sourcePath}", "authority\n");
+    acceptance_test_git($workspace, ['add', 'README.md', '.gitignore', $sourcePath]);
+    acceptance_test_git($workspace, ['commit', '-m', 'Initial']);
+    acceptance_test_git($workspace, ['checkout', '-b', 'feature']);
+    $destinationDirectory = dirname("{$workspace}/{$destinationPath}");
+
+    if (! is_dir($destinationDirectory)) {
+        mkdir($destinationDirectory, recursive: true);
+    }
+
+    acceptance_test_git($workspace, ['mv', $sourcePath, $destinationPath]);
+    acceptance_test_git($workspace, ['commit', '-m', 'Rename authority file']);
     mkdir("{$workspace}/.orbit", recursive: true);
 
     return $workspace;

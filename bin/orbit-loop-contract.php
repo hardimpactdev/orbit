@@ -16,6 +16,10 @@ const ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PATHS = [
     'apps/docs/content/tech-stack.md',
 ];
 
+const ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PREFIXES = [
+    'apps/docs/content/domains/',
+];
+
 function orbitLoopIsCompact(string $markdown): bool
 {
     return (
@@ -268,12 +272,77 @@ function orbitLoopBlastRadiusProblem(string $markdown, array $changedFiles = [])
 function orbitLoopBlastRadiusRequiresClosure(array $changedFiles): bool
 {
     foreach ($changedFiles as $path) {
-        if (in_array(ltrim((string) $path, './'), ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PATHS, true)) {
+        $normalizedPath = ltrim((string) $path, './');
+
+        if (in_array($normalizedPath, ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PATHS, true)) {
             return true;
+        }
+
+        foreach (ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PREFIXES as $prefix) {
+            if (str_starts_with($normalizedPath, $prefix)) {
+                return true;
+            }
         }
     }
 
     return false;
+}
+
+/** @return list<string> */
+function orbitLoopProofReferences(string $markdown): array
+{
+    preg_match_all(
+        '~\.orbit/(?:evidence|quality-gates)/~',
+        $markdown,
+        $markers,
+        PREG_OFFSET_CAPTURE,
+    );
+
+    $references = [];
+
+    foreach ($markers[0] ?? [] as $marker) {
+        if (! is_array($marker) || ! isset($marker[1]) || ! is_int($marker[1])) {
+            continue;
+        }
+
+        $candidate = substr($markdown, $marker[1]);
+        $matched = preg_match(
+            '~^\.orbit/(?:evidence|quality-gates)/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*[A-Za-z0-9_-]~',
+            $candidate,
+            $match,
+        );
+
+        if ($matched !== 1) {
+            throw new RuntimeException(
+                'Compact cited proof has an unsafe or malformed path: '.orbitLoopProofReferenceToken($candidate),
+            );
+        }
+
+        $reference = $match[0];
+        $following = substr($candidate, strlen($reference), 1);
+
+        if ($following !== '' && preg_match('~^[\s`\'"<>)}\],;:.]$~u', $following) !== 1) {
+            throw new RuntimeException(
+                'Compact cited proof has an unsafe or malformed path: '.orbitLoopProofReferenceToken($candidate),
+            );
+        }
+
+        $references[] = $reference;
+    }
+
+    $references = array_values(array_unique($references));
+    sort($references, SORT_STRING);
+
+    return $references;
+}
+
+function orbitLoopProofReferenceToken(string $candidate): string
+{
+    if (preg_match('~^[^\s`\'"<>)}\],;]+~u', $candidate, $match) === 1) {
+        return $match[0];
+    }
+
+    return substr($candidate, 0, 120);
 }
 
 function orbitLoopReviewedIdentityProblem(string $markdown, string $featureTip): ?string
@@ -420,19 +489,55 @@ function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', string $base 
         return [];
     }
 
-    $output = orbitLoopGitValue($cwd, ['diff', '--name-only', '--diff-filter=ACDMRT', $mergeBase, $head]);
+    $output = orbitLoopGitOutput($cwd, [
+        'diff',
+        '--name-status',
+        '-z',
+        '--diff-filter=ACDMRT',
+        $mergeBase,
+        $head,
+    ]);
 
     if ($output === null) {
         return [];
     }
 
-    return array_values(array_filter(
-        array_map('trim', preg_split('/\R/', $output) ?: []),
-        static fn (string $path): bool => $path !== '',
-    ));
+    $tokens = explode("\0", $output);
+    $paths = [];
+
+    for ($index = 0; $index < count($tokens);) {
+        $status = $tokens[$index++] ?? '';
+
+        if ($status === '') {
+            continue;
+        }
+
+        $source = $tokens[$index++] ?? '';
+
+        if ($source !== '') {
+            $paths[] = $source;
+        }
+
+        if (in_array($status[0] ?? '', ['C', 'R'], true)) {
+            $destination = $tokens[$index++] ?? '';
+
+            if ($destination !== '') {
+                $paths[] = $destination;
+            }
+        }
+    }
+
+    return array_values(array_unique($paths));
 }
 
 function orbitLoopGitValue(string $cwd, array $arguments): ?string
+{
+    $output = orbitLoopGitOutput($cwd, $arguments);
+
+    return $output === null ? null : trim($output);
+}
+
+function orbitLoopGitOutput(string $cwd, array $arguments): ?string
 {
     $command = ['git', ...$arguments];
     $descriptorSpec = [
@@ -451,5 +556,5 @@ function orbitLoopGitValue(string $cwd, array $arguments): ?string
     fclose($pipes[2]);
     $exitCode = proc_close($process);
 
-    return $exitCode === 0 ? trim((string) $stdout) : null;
+    return $exitCode === 0 ? (string) $stdout : null;
 }

@@ -189,6 +189,13 @@ it('refuses unsafe compact proof citations: :dataset', function (string $kind, s
             file_put_contents("{$paths['sourceOrbitDir']}/outside-proof.txt", "must remain outside proof roots\n");
         }
 
+        if ($kind === 'truncated-invalid-character') {
+            file_put_contents(
+                "{$paths['sourceOrbitDir']}/evidence/proof",
+                "must not be substituted for the malformed citation\n",
+            );
+        }
+
         $loop = (string) file_get_contents($paths['loopPath']);
         file_put_contents(
             $paths['loopPath'],
@@ -216,6 +223,11 @@ it('refuses unsafe compact proof citations: :dataset', function (string $kind, s
     'symlink' => ['symlink', '.orbit/evidence/linked-proof.txt'],
     'directory' => ['directory', '.orbit/evidence/proof-directory'],
     'traversal' => ['traversal', '.orbit/evidence/../outside-proof.txt'],
+    'empty path segment' => ['empty-path-segment', '.orbit/evidence//proof.txt'],
+    'truncated invalid character' => [
+        'truncated-invalid-character',
+        '.orbit/evidence/proof?.txt',
+    ],
 ]);
 
 it('binds a compact receipt to the branch and accepted candidate identity', function (): void {
