@@ -36,6 +36,7 @@ it('derives the minimum acceptance venue from changed files', function (array $f
     'docs only' => [['apps/docs/content/mission.md'], 'automated'],
     'test only' => [['apps/cli/tests/Feature/Commands/FooTest.php'], 'automated'],
     'repository tooling' => [['bin/orbit-example'], 'automated'],
+    'generated session index' => [['.orbit/sessions/index.json'], 'automated'],
     'cli command' => [['apps/cli/app/Commands/FooCommand.php'], 'retained-incus'],
     'node runtime' => [['apps/gateway/app/Actions/Node/RepairNode.php'], 'retained-incus'],
     'tooling and cli command' => [

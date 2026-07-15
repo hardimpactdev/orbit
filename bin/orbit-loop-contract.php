@@ -495,7 +495,15 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
         || str_starts_with($path, '.github/')
         || in_array(
             $path,
-            ['composer.json', 'composer.lock', 'LOOP.md.example', 'AGENTS.md', 'AGENT_FAST_PATH.md', 'HARNESS.md'],
+            [
+                'orbit/sessions/index.json',
+                'composer.json',
+                'composer.lock',
+                'LOOP.md.example',
+                'AGENTS.md',
+                'AGENT_FAST_PATH.md',
+                'HARNESS.md',
+            ],
             true,
         )
     );
