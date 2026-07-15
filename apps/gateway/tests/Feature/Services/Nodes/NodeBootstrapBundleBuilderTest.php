@@ -68,6 +68,8 @@ it('renders an idempotent minimal WireGuard CLI and Agent bootstrap bundle', fun
         ->toContain('wg-quick@wg-orbit')
         ->toContain('https://artifacts.orbit.test/orbit-linux-x64')
         ->toContain(str_repeat('b', 64))
+        ->toContain('sudo install -d -m 0755 -o "$RUNTIME_USER" -g "$RUNTIME_USER" "$RUNTIME_HOME/.local"')
+        ->toContain('sudo install -d -m 0755 -o "$RUNTIME_USER" -g "$RUNTIME_USER" "$RUNTIME_HOME/.config"')
         ->toContain('/home/orbit/.local/bin/orbit')
         ->toContain('https://artifacts.orbit.test/orbit-agent-linux-x64')
         ->toContain(str_repeat('d', 64))

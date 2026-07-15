@@ -116,6 +116,8 @@ final readonly class NodeBootstrapBundleBuilder
                 exit 1
             fi
 
+            sudo install -d -m 0755 -o "\$RUNTIME_USER" -g "\$RUNTIME_USER" "\$RUNTIME_HOME/.local"
+            sudo install -d -m 0755 -o "\$RUNTIME_USER" -g "\$RUNTIME_USER" "\$RUNTIME_HOME/.config"
             sudo install -d -m 0700 -o "\$RUNTIME_USER" -g "\$RUNTIME_USER" "\$RUNTIME_HOME/.ssh"
             BOOTSTRAP_KEYS="\${HOME:-}/.ssh/authorized_keys"
             if [ "\$(id -u)" -eq 0 ]; then
