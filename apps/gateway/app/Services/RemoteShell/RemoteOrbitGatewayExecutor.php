@@ -12,6 +12,7 @@ use App\Services\Runtime\OrbitGatewayContainer;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
+use RuntimeException;
 
 final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
 {
@@ -20,6 +21,8 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
     private const string DEFAULT_CONTAINER = 'orbit-gateway';
 
     private const string ARTISAN = 'php apps/gateway/artisan';
+
+    private const string EnvironmentKeyPattern = '/\A[A-Za-z_][A-Za-z0-9_]*\z/';
 
     public function __construct(
         private RemoteShellScriptComposer $scripts,
@@ -581,6 +584,17 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
 
         if (! $includeExecutorOptions) {
             return array_values($environment);
+        }
+
+        foreach ($options['environment'] ?? [] as $key => $value) {
+            if (
+                preg_match(self::EnvironmentKeyPattern, $key) !== 1
+                || str_contains($value, "\0")
+            ) {
+                throw new RuntimeException('Gateway runtime environment must contain valid string keys and values.');
+            }
+
+            $environment[$key] = "{$key}={$value}";
         }
 
         foreach ($this->scripts->metadataFromOptions($options, validate: true) as $key => $value) {

@@ -121,7 +121,7 @@ final readonly class NodeBootstrapBundleBuilder
             if [ "\$(id -u)" -eq 0 ]; then
                 BOOTSTRAP_KEYS="/root/.ssh/authorized_keys"
             fi
-            if [ -s "\$BOOTSTRAP_KEYS" ]; then
+            if [ -s "\$BOOTSTRAP_KEYS" ] && [ "\$BOOTSTRAP_KEYS" != "\$RUNTIME_HOME/.ssh/authorized_keys" ]; then
                 sudo install -m 0600 -o "\$RUNTIME_USER" -g "\$RUNTIME_USER" "\$BOOTSTRAP_KEYS" "\$RUNTIME_HOME/.ssh/authorized_keys"
             fi
             printf '%s ALL=(ALL:ALL) NOPASSWD:ALL\n' "\$RUNTIME_USER" | sudo tee /etc/sudoers.d/99-orbit >/dev/null

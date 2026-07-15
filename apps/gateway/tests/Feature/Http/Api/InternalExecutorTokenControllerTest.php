@@ -345,6 +345,36 @@ describe('InternalExecutorTokenController', function (): void {
             ->assertJsonPath('error.message', 'Peer identity unknown.');
     });
 
+    it('accepts a provisioning node token only from its reserved WireGuard address', function (): void {
+        internalExecutorCallerNode([
+            'status' => 'provisioning',
+        ]);
+
+        $operationToken = app(OperationTokenFactory::class)->mint(
+            operationId: 'operation-123',
+            targetNode: 'app-dev',
+            command: 'internal:executor:verify',
+        );
+        $payload = [
+            'operation_token' => $operationToken->toString(),
+            'command' => 'internal:executor:verify',
+        ];
+
+        internal_executor_verify_token_request_from_address($payload, remoteAddress: '10.6.0.51')
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.message', 'Peer identity unknown.');
+
+        internal_executor_verify_token_request_from_address(
+            $payload,
+            remoteAddress: INTERNAL_EXECUTOR_TOKEN_CALLER_WG_IP,
+        )
+            ->assertOk()
+            ->assertJsonPath('success.data.allowed', true)
+            ->assertJsonPath('success.data.reason', null)
+            ->assertJsonPath('success.data.operation_id', 'operation-123');
+    });
+
     it('rejects inactive peers before reaching the controller', function (): void {
         internalExecutorCallerNode([
             'status' => 'inactive',

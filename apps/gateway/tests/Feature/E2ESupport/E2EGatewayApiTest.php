@@ -952,6 +952,16 @@ it('keeps the gateway tls shim listening after transient accept failures', funct
         ->toContain('continue;');
 });
 
+it('preforks gateway tls workers so Agent callbacks can reenter the api', function (): void {
+    $script = gatewayTlsServerScript();
+
+    expect($script)
+        ->toContain('$workerCount = 4;')
+        ->toContain('$workerPid = pcntl_fork();')
+        ->toContain('if ($workerPid === 0) {')
+        ->toContain('break;');
+});
+
 /**
  * @param  array<string, string>  $peerIdentityMap
  */

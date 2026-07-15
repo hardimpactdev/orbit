@@ -103,6 +103,11 @@ When a gateway is configured:
   gateway bootstrap-complete endpoint and follow gateway-authored provisioning
   progress. The gateway finishes role, tool, runtime, and security convergence
   through Agent push.
+- During that completion window, operation-token verification may resolve the
+  pending `provisioning` node only when the callback arrives from its reserved
+  WireGuard address and the scoped token context matches. Other API routes
+  still reject provisioning-node identity. Agent access outside bootstrap
+  still requires an active node.
 - Never send an SSH private key or SSH agent socket to the gateway. The target
   SSH connection originates from the initiating client.
 
@@ -146,5 +151,7 @@ available for an idempotent retry.
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | Client-context node:new input and prepare payload validation before gateway contact. |
 | `apps/cli/tests/Feature/Commands/Node/NodeNewBootstrapCommandTest.php` | Authenticated prepare, client-local SSH bundle streaming, failure behavior, and completion ordering. |
+| `apps/gateway/tests/Feature/Http/Api/InternalExecutorTokenControllerTest.php` | Provisioning Agent callbacks are accepted only from the node's reserved WireGuard address with a matching scoped token. |
 
-There is no gateway-side coverage for this command-local mapping: input handling and renderer behavior live in `apps/cli`. Gateway API behavior is mapped in the command contract file when a gateway-side surface exists.
+Input handling and renderer behavior live in `apps/cli`; the gateway-side row
+covers the narrow provisioning identity exception used during completion.

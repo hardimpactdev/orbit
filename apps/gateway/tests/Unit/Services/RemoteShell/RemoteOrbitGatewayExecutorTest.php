@@ -255,6 +255,41 @@ it('merges unwrapped docker exec env with runtime metadata deterministically', f
     });
 });
 
+it('merges runtime environment into gateway docker exec deterministically', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "verified\n"),
+    ]);
+
+    app(RemoteOrbitGatewayExecutor::class)->run(
+        remoteRuntimeExecutorNode(),
+        'docker exec -e APP_KEY=stale orbit-gateway /usr/local/bin/orbit-cli internal:executor:verify',
+        [
+            'environment' => [
+                'APP_KEY' => 'runtime-key',
+                'ORBIT_CONFIG_PATH' => '/home/orbit/.config/orbit/config.json',
+                'ORBIT_WG_EASY_DB_PATH' => '/home/orbit/.config/orbit/wg-easy/wg-easy.db',
+            ],
+            'metadata' => [
+                'ORBIT_OPERATION_ID' => 'operation-123',
+            ],
+        ],
+    );
+
+    Process::assertRan(function (PendingProcess $process): bool {
+        $command = (string) $process->command;
+
+        return (
+            substr_count($command, '--env') === 4
+            && str_contains($command, 'APP_KEY=runtime-key')
+            && ! str_contains($command, 'APP_KEY=stale')
+            && str_contains($command, 'ORBIT_CONFIG_PATH=/home/orbit/.config/orbit/config.json')
+            && str_contains($command, 'ORBIT_WG_EASY_DB_PATH=/home/orbit/.config/orbit/wg-easy/wg-easy.db')
+            && str_contains($command, 'ORBIT_OPERATION_ID=operation-123')
+        );
+    });
+});
+
 it('does not unwrap docker exec commands for other containers', function (): void {
     Process::preventStrayProcesses();
     Process::fake([

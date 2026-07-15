@@ -62,6 +62,7 @@ it('renders an idempotent minimal WireGuard CLI and Agent bootstrap bundle', fun
         ->toContain('if ! command -v sudo')
         ->toContain('install -y -qq sudo')
         ->toContain('useradd -m -s /bin/bash')
+        ->toContain('[ "$BOOTSTRAP_KEYS" != "$RUNTIME_HOME/.ssh/authorized_keys" ]')
         ->toContain('wireguard wireguard-tools')
         ->toContain('/etc/wireguard/wg-orbit.conf')
         ->toContain('wg-quick@wg-orbit')

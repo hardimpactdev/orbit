@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Operations;
 
 use App\Enums\Nodes\NodeRoleName;
-use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use Illuminate\Http\Request;
 use Orbit\Core\Security\OperationToken;
@@ -47,10 +46,16 @@ final readonly class InternalExecutorTokenIdentityResolver
 
         $node = Node::query()
             ->where('name', $token->node)
-            ->where('status', NodeStatus::Active->value)
             ->first();
 
-        if (! $node instanceof Node || ! $node->hasActiveRole(NodeRoleName::Gateway->value)) {
+        if (! $node instanceof Node) {
+            return null;
+        }
+
+        $isActiveGateway = $node->isActive() && $node->hasActiveRole(NodeRoleName::Gateway->value);
+        $isProvisioningPeer = $node->isProvisioning() && trim((string) $node->wireguard_address) === $peerAddress;
+
+        if (! $isActiveGateway && ! $isProvisioningPeer) {
             return null;
         }
 

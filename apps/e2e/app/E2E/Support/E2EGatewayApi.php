@@ -1444,6 +1444,21 @@ final readonly class E2EGatewayApi
                     exit(1);
                 }
 
+                $workerCount = 4;
+
+                for ($worker = 1; $worker < $workerCount; $worker++) {
+                    $workerPid = pcntl_fork();
+
+                    if ($workerPid === -1) {
+                        fwrite(STDERR, "Could not fork gateway TLS worker.\n");
+                        exit(1);
+                    }
+
+                    if ($workerPid === 0) {
+                        break;
+                    }
+                }
+
                 while (true) {
                     $connection = @stream_socket_accept($server, -1);
 
