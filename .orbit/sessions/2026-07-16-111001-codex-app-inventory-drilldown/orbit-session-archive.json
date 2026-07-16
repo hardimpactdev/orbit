@@ -1,0 +1,27 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-16T09:10:01+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-app-inventory-drilldown/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-16-111001-codex-app-inventory-drilldown",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/app-inventory-drilldown/runtime-proof.md",
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-16T090916Z-717ce8d32389.json"
+    ],
+    "entry_digests": {
+        "evidence/app-inventory-drilldown/runtime-proof.md": "322f1db6df96333fe23f5fba70183a78a53328c3557a3d215759e99266476b86",
+        "feedback.jsonl": "0ebab14e095c9c9e503e9f0313cf63af0c1e426f5d9d14b81f5cc3585f036012",
+        "loop.md": "31bf2a635e769ed1ed0abda983032fb2d5a94b109ff3eb89d1267a0e657c02cb",
+        "quality-gates/quality-check-2026-07-16T090916Z-717ce8d32389.json": "2a365c10552054185bc12514967a57743a5bf7367f245cb8a713d2890644fe02"
+    },
+    "branch": "codex/app-inventory-drilldown",
+    "candidate_commit": "bbdfe5d36d1f0975e222096fa5533b48da6742b1",
+    "accepted_feature_tip": "bbdfe5d36d1f0975e222096fa5533b48da6742b1",
+    "accepted_main_tip": "c8f365f9f58ff317544bde9c70658afc790635a3",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
