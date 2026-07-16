@@ -1,0 +1,27 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-16T17:46:24+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-proxy-restore-verification/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-16-194624-codex-fix-proxy-restore-verification",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/live-hauzer-main-20260716.md",
+        "evidence/retained-incus-dev-2b9262.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-16T173148Z-f9e2c3362d38.json"
+    ],
+    "entry_digests": {
+        "evidence/live-hauzer-main-20260716.md": "4a30b0fd64824694ff4f16956f8424c6006f87ef43882a93a6eb4cd39909068b",
+        "evidence/retained-incus-dev-2b9262.md": "c906874c68960f495048a789cba5633aea60beff0e158a627daf60141e8eb5f7",
+        "loop.md": "da0b481263d193c18e0ed7c89d28d302466c493af1c4730c1606855a750eedf8",
+        "quality-gates/quality-check-2026-07-16T173148Z-f9e2c3362d38.json": "016462eb8c44def9b9e7b3da7899c20dff5cf47086ebcf8658aff310277bad01"
+    },
+    "branch": "codex/fix-proxy-restore-verification",
+    "candidate_commit": "55f76b22c1b723d6967abe09bdc5fc67a0e238e2",
+    "accepted_feature_tip": "55f76b22c1b723d6967abe09bdc5fc67a0e238e2",
+    "accepted_main_tip": "9f67ea554ab1e8a8139657c68946c9300183ec68",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
