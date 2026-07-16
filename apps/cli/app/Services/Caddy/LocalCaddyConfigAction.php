@@ -397,10 +397,12 @@ final readonly class LocalCaddyConfigAction
         $directories = $this->hostMountDirectories($spec['mounts']);
 
         foreach ($directories as $directory) {
-            $this->ensureHostDirectory($this->hostPreparationPath($directory));
+            $this->ensureHostDirectory($this->accessibleHostPath($this->hostPreparationPath($directory)));
         }
 
-        $globalCaddyfile = $this->hostPathFromDeclaredMounts(self::GLOBAL_CADDYFILE, $spec['mounts']);
+        $globalCaddyfile = $this->accessibleHostPath(
+            $this->hostPathFromDeclaredMounts(self::GLOBAL_CADDYFILE, $spec['mounts']),
+        );
         $exists = $this->runPrivilegedProcess(['test', '-f', $globalCaddyfile]);
 
         if ($exists['exit_code'] !== 0) {
@@ -670,10 +672,42 @@ final readonly class LocalCaddyConfigAction
         $inspection = $this->inspectContainer($container);
 
         if ($inspection === null) {
-            return $containerPath;
+            return $this->accessibleHostPath($containerPath);
         }
 
-        return $this->hostPathFromMounts($containerPath, $inspection['Mounts'] ?? null);
+        return $this->accessibleHostPath(
+            $this->hostPathFromMounts($containerPath, $inspection['Mounts'] ?? null),
+        );
+    }
+
+    private function accessibleHostPath(string $path): string
+    {
+        $prefix = getenv('ORBIT_HOST_PATH_PREFIX');
+
+        if (! is_string($prefix) || trim($prefix) === '') {
+            return $path;
+        }
+
+        $prefix = rtrim(trim($prefix), '/');
+
+        if (
+            ! str_starts_with($prefix, '/')
+            || str_contains($prefix, "\0")
+            || ! str_starts_with($path, '/')
+            || str_contains($path, "\0")
+        ) {
+            throw new LocalCaddyConfigFailure(
+                errorCode: 'caddy_config.host_path_invalid',
+                message: 'Caddy host path mapping is invalid.',
+                meta: [],
+            );
+        }
+
+        if ($path === $prefix || str_starts_with($path, "{$prefix}/")) {
+            return $path;
+        }
+
+        return $prefix.$path;
     }
 
     private function hostPathFromMounts(string $containerPath, mixed $mounts): string

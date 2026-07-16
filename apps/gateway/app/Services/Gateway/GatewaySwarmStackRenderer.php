@@ -75,6 +75,7 @@ final readonly class GatewaySwarmStackRenderer
             '      ORBIT_GATEWAY_EXPOSURE_MODE: '.$exposureMode->value,
             '      ORBIT_GATEWAY_CONTAINER: "{{.Task.Name}}"',
             '      ORBIT_GATEWAY_HEALTH_PORT: "8080"',
+            '      ORBIT_HOST_PATH_PREFIX: /mnt/orbit-host',
             '      ORBIT_LOCAL_EXECUTOR_BINARY: /usr/local/bin/orbit-cli',
         ];
 
@@ -100,6 +101,9 @@ final readonly class GatewaySwarmStackRenderer
             '    volumes:',
             '      - '.$configRootExpression.':'.$configRoot,
             '      - '.$installRootExpression.'/bin/orbit-binary:/usr/local/bin/orbit-cli:ro',
+            '      - /etc/caddy:/mnt/orbit-host/etc/caddy',
+            '      - /etc/orbit:/mnt/orbit-host/etc/orbit',
+            '      - /home:/mnt/orbit-host/home:ro',
         );
 
         if ($exposureMode->isGatewayDirect()) {

@@ -26,6 +26,8 @@ describe('internal caddy config command', function (): void {
         $this->originalEnvHome = $_ENV['HOME'] ?? null;
         $dockerHost = getenv('DOCKER_HOST');
         $this->originalDockerHost = is_string($dockerHost) ? $dockerHost : null;
+        $hostPathPrefix = getenv('ORBIT_HOST_PATH_PREFIX');
+        $this->originalHostPathPrefix = is_string($hostPathPrefix) ? $hostPathPrefix : null;
     });
 
     afterEach(function (): void {
@@ -36,6 +38,9 @@ describe('internal caddy config command', function (): void {
             $this->originalEnvHome,
         );
         $this->originalDockerHost === null ? putenv('DOCKER_HOST') : putenv("DOCKER_HOST={$this->originalDockerHost}");
+        $this->originalHostPathPrefix === null
+            ? putenv('ORBIT_HOST_PATH_PREFIX')
+            : putenv("ORBIT_HOST_PATH_PREFIX={$this->originalHostPathPrefix}");
         putenv('ORBIT_CADDY_CONFIG_MISSING_DIRS');
         putenv('ORBIT_CADDY_CONFIG_MISSING_FILES');
         putenv('ORBIT_CADDY_CONFIG_READ_GLOBAL');
@@ -202,6 +207,46 @@ describe('internal caddy config command', function (): void {
             ->toContain(
                 'rm -f /Users/nckrtl/.config/orbit/agent/caddy/sites/paseo.nmbp.caddy /Users/nckrtl/.config/orbit/certs/paseo.nmbp.crt /Users/nckrtl/.config/orbit/certs/paseo.nmbp.key',
             );
+    });
+
+    it('uses the mounted host path prefix for Caddy bind-mount sources', function (): void {
+        putenv('ORBIT_HOST_PATH_PREFIX=/mnt/orbit-host');
+        $bin = install_caddy_config_fake_bin();
+        caddy_config_fake_container_inspect($bin, [
+            'Mounts' => [
+                [
+                    'Source' => '/etc/caddy/sites',
+                    'Destination' => '/etc/caddy/sites',
+                ],
+                [
+                    'Source' => '/etc/orbit',
+                    'Destination' => '/etc/orbit',
+                ],
+            ],
+        ]);
+
+        [$writeExitCode, $writeOutput] = run_internal_caddy_config_command(
+            [
+                'action' => 'write-site',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.write-site'),
+                '--json' => true,
+            ],
+            json_encode([
+                'domain' => 'hauzer.app',
+                'content' => "http://hauzer.app {\n  reverse_proxy http://10.6.0.13:8081\n}\n",
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($writeOutput, associative: true, flags: JSON_THROW_ON_ERROR);
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($writeExitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['path'] ?? null)
+            ->toBe('/mnt/orbit-host/etc/caddy/sites/hauzer.app.caddy')
+            ->and($calls)
+            ->toContain('tee /mnt/orbit-host/etc/caddy/sites/hauzer.app.caddy')
+            ->not->toContain('tee /etc/caddy/sites/hauzer.app.caddy');
     });
 
     it('uses the local OrbStack socket when resolving Caddy bind mounts and reloading', function (): void {
