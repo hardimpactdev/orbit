@@ -160,11 +160,27 @@ final readonly class GatewaySwarmManager
 
     public function updateServiceImage(string $service, GatewayImageReference $image, string $order): void
     {
+        $this->runServiceImageUpdate($service, $image, $order, '');
+    }
+
+    public function forceUpdateServiceImage(string $service, GatewayImageReference $image, string $order): void
+    {
+        $this->runServiceImageUpdate($service, $image, $order, ' --force');
+    }
+
+    private function runServiceImageUpdate(
+        string $service,
+        GatewayImageReference $image,
+        string $order,
+        string $forceOption,
+    ): void {
         $service = $this->normalizeName($service, 'service');
         $order = $this->normalizeUpdateOrder($order);
 
         $this->run(
-            'docker service update --detach=true --image '
+            'docker service update --detach=true'
+                .$forceOption
+                .' --image '
                 .escapeshellarg($image->canonical())
                 .' --update-order '
                 .escapeshellarg($order)
@@ -256,12 +272,14 @@ final readonly class GatewaySwarmManager
             'install -d -m 0755 /mnt/orbit-install/bin '.escapeshellarg(dirname('/mnt/orbit-home/'.$relativeBinPath)),
             'install -m 0755 "$artifact" "$versioned_container_path"',
             'printf "%s  %s\\n" '.escapeshellarg($sha256).' "$versioned_container_path" | sha256sum -c -',
-            'ln -sfn "$versioned_host_path" /mnt/orbit-install/bin/orbit-binary',
-            'ln -sfn "$versioned_host_path" '.escapeshellarg('/mnt/orbit-home/'.$relativeBinPath),
+            'ln -sfnT "$versioned_host_path" /mnt/orbit-install/bin/orbit-binary',
+            'ln -sfnT "$versioned_host_path" '.escapeshellarg('/mnt/orbit-home/'.$relativeBinPath),
+            'test "$(readlink /mnt/orbit-install/bin/orbit-binary)" = "$versioned_host_path"',
+            'test "$(readlink '.escapeshellarg('/mnt/orbit-home/'.$relativeBinPath).')" = "$versioned_host_path"',
             '',
         ]);
         $command = implode(' ', [
-            'docker run --rm',
+            'docker run --rm --interactive',
             '--entrypoint '.escapeshellarg('bash'),
             '--mount '.escapeshellarg("type=bind,source={$installRoot},target=/mnt/orbit-install"),
             '--mount '.escapeshellarg("type=bind,source={$homeDirectory},target=/mnt/orbit-home"),

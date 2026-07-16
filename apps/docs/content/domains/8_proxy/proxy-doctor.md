@@ -8,6 +8,12 @@ The proxy family doctor implements the
 
 `doctor --family=proxy` verifies whether gateway proxy route configuration still matches node proxy and TLS reality. It covers all Orbit-owned routes — app, workspace, gateway API, websocket, S3, tool-owned, and custom proxy routes — and their TLS material.
 
+When Doctor is scoped with `--app` or `--workspace`, route-specific probing,
+planning, and restore/adopt actions are limited to that owner. Shared
+node-level Caddy container and global-config checks still run because those
+artifacts are prerequisites for the selected route, but unrelated app,
+workspace, WebSocket, or S3 routes are not enumerated or changed.
+
 The proxy family owns these facts:
 
 - gateway-owned proxy route rows: domain, kind, owner, serving node, target,
@@ -62,7 +68,10 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
    and not an app-role intermediate CA.
 9. **Extra route ownership:** Orbit-owned backend routes without matching
    gateway configuration are reported as extra route drift.
-10. **Adoption scope:** during `doctor --adopt`, explicitly selected observed backend
+10. **Enactment state:** app routes whose persisted enactment state is failed,
+    partial, or pending are reported alongside any artifact drift so one
+    restore run can repair artifacts and perform the complete ordered retry.
+11. **Adoption scope:** during `doctor --adopt`, explicitly selected observed backend
     routes may be inspected for compatible custom-route facts.
 
 Observed backend routes without Orbit ownership markers are unmanaged node reality by default. They are reported as drift only when the operator requested an explicit adoption scope.
@@ -82,6 +91,7 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.caddy_container_down` | The `orbit-caddy` container exists on the serving node but is not running. Mounted route artifacts are not served. |
 | `proxy.route_missing` | Gateway configuration expects a managed backend route, but the route is absent from node reality. |
 | `proxy.route_mismatch` | A managed backend route exists but differs from gateway configuration. |
+| `proxy.enactment_incomplete` | Persisted enactment is failed, partial, or pending. Restore reports it with artifact drift and retries backend → router → ingress. |
 | `proxy.websocket.router_route_missing` | Gateway WebSocket route intent expects the private router-owned `websocket.orbit` route row, but it is missing or differs from the canonical WebSocket service route. |
 | `proxy.websocket.public_route_missing` | An enabled app WebSocket binding expects a public ingress route, but the route row is missing or differs from the canonical app-websocket public route. |
 | `proxy.websocket.router_route_orphaned` | The private `websocket.orbit` service route row exists, but no active `websocket` role assignment remains in the topology. Service routes exist only while a matching role is active. |
@@ -103,6 +113,7 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `proxy.caddy_container_down` | Start the existing `orbit-caddy` container so mounted route artifacts are served again. |
 | `proxy.route_missing` | Recreate the backend route from gateway configuration when the node is reachable and eligible. |
 | `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when the route can be identified safely. For app primary routes that resolve to an app instance, restore also persists the concrete app-instance target, runtime upstream, and inner-TLS server name before writing the backend route. |
+| `proxy.enactment_incomplete` | Retry the app route's complete backend → router → ingress enactment. The persisted state becomes converged only after every operation succeeds; a retry failure retains partial state and reports the exact node and operation. |
 | `proxy.websocket.router_route_missing` | Re-sync the private `websocket.orbit` service route from gateway WebSocket route intent. |
 | `proxy.websocket.public_route_missing` | Re-sync public app-websocket ingress routes from the owning app WebSocket binding. |
 | `proxy.websocket.router_route_orphaned` | Remove the orphaned `websocket.orbit` service route row and its rendered artifacts. |
@@ -134,6 +145,7 @@ Required test files:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for proxy family scope, proxy drift reporting, and restore behavior. |
-| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | In-memory proxy probe diff behavior for registry configuration, owner eligibility, node eligibility, conflict boundaries, missing routes, mismatched routes, TLS drift, and selected extra routes in adoption scope. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | In-memory proxy probe diff behavior for registry configuration, owner eligibility, node eligibility, conflict boundaries, missing routes, mismatched routes, incomplete enactment, TLS drift, and selected extra routes in adoption scope. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` | Restore behavior for complete app-route re-enactment and layer-specific artifact repairs. |
 
 No current E2E test is mapped for proxy-family doctor coverage.

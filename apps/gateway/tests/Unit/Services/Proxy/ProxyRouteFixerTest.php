@@ -15,6 +15,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Proxy\ProxyRouteEnactment;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Runtime\OrbitCaddyContainer;
@@ -369,6 +370,59 @@ describe('ProxyRouteFixer', function (): void {
             ->toContain('reverse_proxy http://10.6.0.21:80')
             ->and($route->refresh()->config['router_artifact']['source_hash'])
             ->toBe(hash('sha256', $caddySite));
+    });
+
+    it('retries the complete app route enactment before clearing partial state', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'enactment' => [
+                    'status' => 'partial',
+                    'planned_operations' => [],
+                    'completed_operations' => [],
+                    'failure' => [
+                        'layer' => 'router',
+                        'node' => 'gateway-1',
+                        'operation' => 'caddy.router.install',
+                    ],
+                ],
+            ],
+        ]);
+        $reenacted = [];
+
+        $action = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+            appRouteEnactor: function (App $target) use ($route, &$reenacted): void {
+                $reenacted[] = $target->name;
+                $config = is_array($route->config) ? $route->config : [];
+                $route->forceFill(['config' => ProxyRouteEnactment::converged($config)])->save();
+            },
+        )->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.enactment_incomplete',
+            kind: DriftKind::Divergent,
+            summary: 'partial',
+        ));
+
+        expect($reenacted)
+            ->toBe(['docs'])
+            ->and($action)
+            ->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'app-1',
+                'key' => 'proxy.enactment_incomplete',
+                'status' => 'completed',
+            ])
+            ->and(ProxyRouteEnactment::status($route->refresh()->config))
+            ->toBe('converged');
     });
 
     it('installs the gateway CA trust pool and reloads the managed caddy container for websocket routes', function (): void {

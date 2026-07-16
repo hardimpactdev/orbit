@@ -526,7 +526,7 @@ describe('proxy backend and TLS reality', function (): void {
             );
     });
 
-    it('detects missing ingress route artifacts separately from backend artifacts', function (): void {
+    it('reports missing ingress artifacts alongside incomplete persisted enactment', function (): void {
         $edge = Node::factory()->create(['name' => 'edge-1', 'status' => 'active']);
         $router = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
         $backend = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
@@ -560,6 +560,16 @@ describe('proxy backend and TLS reality', function (): void {
                     'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
                     'source_hash' => str_repeat('b', 64),
                 ]],
+                'enactment' => [
+                    'status' => 'partial',
+                    'planned_operations' => [],
+                    'completed_operations' => [],
+                    'failure' => [
+                        'layer' => 'router',
+                        'node' => 'gateway-1',
+                        'operation' => 'caddy.router.install',
+                    ],
+                ],
             ],
         ]);
 
@@ -578,7 +588,86 @@ describe('proxy backend and TLS reality', function (): void {
         expect(proxyProbeIssue($drift, 'proxy.public_route_missing')?->kind)
             ->toBe(DriftKind::Missing)
             ->and(proxyProbeIssue($drift, 'proxy.backend_route_missing'))
-            ->toBeNull();
+            ->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.enactment_incomplete')?->detail)
+            ->toMatchArray([
+                'status' => 'partial',
+                'failure' => [
+                    'layer' => 'router',
+                    'node' => 'gateway-1',
+                    'operation' => 'caddy.router.install',
+                ],
+            ]);
+    });
+
+    it('reports incomplete persisted enactment after every production artifact matches', function (): void {
+        $edge = Node::factory()->create(['name' => 'edge-1', 'status' => 'active']);
+        $router = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
+        assignProxyProbeRole($edge, 'ingress');
+        assignProxyProbeRole($router, 'router');
+        assignProxyProbeRole($backend, 'app-prod');
+
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'placement' => 'ingress',
+                'router_artifact' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'source_hash' => str_repeat('c', 64),
+                ],
+                'router_backend_pool' => [[
+                    'node_id' => $backend->id,
+                    'node' => 'web-1',
+                    'url' => 'http://10.6.0.21:80',
+                ]],
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'bind' => '10.6.0.21',
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'source_hash' => str_repeat('b', 64),
+                ]],
+                'enactment' => [
+                    'status' => 'partial',
+                    'planned_operations' => [],
+                    'completed_operations' => [],
+                    'failure' => [
+                        'layer' => 'router',
+                        'node' => 'gateway-1',
+                        'operation' => 'caddy.router.install',
+                    ],
+                ],
+            ],
+        ]);
+
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([
+            'docs.test' => [
+                'public' => ['route_exists' => true, 'route_hash' => str_repeat('a', 64)],
+                'router' => ['route_exists' => true, 'route_hash' => str_repeat('c', 64)],
+                'backends' => [
+                    $backend->id => ['route_exists' => true, 'route_hash' => str_repeat('b', 64)],
+                ],
+            ],
+        ]));
+
+        expect($drift)
+            ->toHaveCount(1)
+            ->and(proxyProbeIssue($drift, 'proxy.enactment_incomplete')?->detail)
+            ->toMatchArray([
+                'status' => 'partial',
+                'failure' => [
+                    'layer' => 'router',
+                    'node' => 'gateway-1',
+                    'operation' => 'caddy.router.install',
+                ],
+            ]);
     });
 
     it('does not report managed private backend artifacts as extra node routes', function (): void {

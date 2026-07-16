@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Proxy;
 
+use App\Actions\Apps\EnsureAppProxyRoute;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
@@ -18,6 +20,7 @@ use App\Services\Gateway\CaddyGlobalSiteBlocks;
 use App\Services\Nodes\NodeContainerScope;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitContainerNames;
+use Closure;
 
 final readonly class ProxyRouteFixer
 {
@@ -26,6 +29,7 @@ final readonly class ProxyRouteFixer
         private OrbitCaService $ca,
         private SiteCertificateInstaller $siteCertificateInstaller,
         private ?RemoteCaddyConfig $caddyConfig = null,
+        private ?Closure $appRouteEnactor = null,
     ) {}
 
     /**
@@ -46,6 +50,7 @@ final readonly class ProxyRouteFixer
                 'proxy.backend_route_mismatch',
                 'proxy.tls_missing',
                 'proxy.tls_mismatch',
+                'proxy.enactment_incomplete',
             ],
             true,
         )) {
@@ -57,6 +62,10 @@ final readonly class ProxyRouteFixer
         }
 
         $route->loadMissing('node');
+
+        if ($entry->key === 'proxy.enactment_incomplete') {
+            return $this->reenactAppRoute($route, $entry);
+        }
 
         if (in_array($entry->key, ['proxy.backend_route_missing', 'proxy.backend_route_mismatch'], true)) {
             return $this->repairBackendRoute($route, $entry);
@@ -113,6 +122,69 @@ final readonly class ProxyRouteFixer
                 'route' => $route->domain,
             ],
         ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function reenactAppRoute(ProxyRoute $route, DriftEntry $entry): ?array
+    {
+        $route->loadMissing(['node', 'app']);
+        $app = $route->app;
+
+        if (! $app instanceof App) {
+            return null;
+        }
+
+        $this->executeAppRouteEnactment($app);
+
+        $route->refresh();
+        $config = is_array($route->config) ? $route->config : [];
+
+        if (ProxyRouteEnactment::status($config) !== ProxyRouteEnactment::CONVERGED) {
+            throw new \RuntimeException($this->enactmentFailureMessage($route, $config));
+        }
+
+        return [
+            'family' => 'proxy',
+            'node' => $route->node->name,
+            'code' => $entry->key,
+            'key' => $entry->key,
+            'mode' => 'fix',
+            'status' => 'completed',
+            'summary' => "Re-enacted proxy route {$route->domain} across its complete topology.",
+            'details' => [
+                'route' => $route->domain,
+            ],
+        ];
+    }
+
+    private function executeAppRouteEnactment(App $app): void
+    {
+        if ($this->appRouteEnactor instanceof Closure) {
+            ($this->appRouteEnactor)($app);
+
+            return;
+        }
+
+        app(EnsureAppProxyRoute::class)->handle($app);
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function enactmentFailureMessage(ProxyRoute $route, array $config): string
+    {
+        $enactment = is_array($config['enactment'] ?? null) ? $config['enactment'] : [];
+        $failure = is_array($enactment['failure'] ?? null) ? $enactment['failure'] : [];
+        $node = is_string($failure['node'] ?? null) ? $failure['node'] : null;
+        $operation = is_string($failure['operation'] ?? null) ? $failure['operation'] : null;
+
+        if ($node !== null && $operation !== null) {
+            return "Proxy route '{$route->domain}' failed on node '{$node}' during '{$operation}'.";
+        }
+
+        return "Proxy route '{$route->domain}' did not converge during full re-enactment.";
     }
 
     /**

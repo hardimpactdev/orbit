@@ -230,7 +230,7 @@ class GatewayServiceUpdater
 
     private function updateGatewayService(GatewayImageReference $targetImage): null
     {
-        $this->swarm()->updateServiceImage(self::GatewayService, $targetImage, 'start-first');
+        $this->swarm()->forceUpdateServiceImage(self::GatewayService, $targetImage, 'start-first');
         $this->waitForGatewayHealth($targetImage);
 
         return null;

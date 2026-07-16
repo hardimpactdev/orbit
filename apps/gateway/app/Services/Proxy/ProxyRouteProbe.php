@@ -510,13 +510,18 @@ final readonly class ProxyRouteProbe
      */
     public function diff(ProxyRoute $route, ProbeSnapshot $snapshot): array
     {
-        return [
+        $drift = [
             ...$this->checkRecordCompleteness($route),
             ...$this->checkOwnerEligibility($route),
             ...$this->checkNodeEligibility($route),
             ...$this->checkCustomDomainConflict($route),
             ...$this->checkBackendReality($route, $snapshot),
             ...$this->checkTlsReality($route, $snapshot),
+        ];
+
+        return [
+            ...$drift,
+            ...$this->checkEnactmentState($route),
         ];
     }
 
@@ -866,6 +871,47 @@ final readonly class ProxyRouteProbe
         }
 
         return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkEnactmentState(ProxyRoute $route): array
+    {
+        if ($route->owner_type !== 'app') {
+            return [];
+        }
+
+        $config = is_array($route->config) ? $route->config : [];
+        $status = ProxyRouteEnactment::status($config);
+
+        if (! in_array(
+            $status,
+            [
+                ProxyRouteEnactment::FAILED,
+                ProxyRouteEnactment::PARTIAL,
+                ProxyRouteEnactment::PENDING,
+            ],
+            true,
+        )) {
+            return [];
+        }
+
+        $enactment = is_array($config['enactment'] ?? null) ? $config['enactment'] : [];
+        $failure = is_array($enactment['failure'] ?? null) ? $enactment['failure'] : null;
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'proxy.enactment_incomplete',
+                kind: DriftKind::Divergent,
+                summary: "Proxy route {$route->domain} has incomplete persisted enactment.",
+                detail: [
+                    'status' => $status,
+                    'failure' => $failure,
+                ],
+            ),
+        ];
     }
 
     private function ownerInvalid(ProxyRoute $route, string $ownerType): DriftEntry

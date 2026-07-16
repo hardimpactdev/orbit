@@ -9,6 +9,7 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\Doctor\DriftEntry;
+use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
@@ -1272,17 +1273,20 @@ final readonly class DoctorReportRunner
 
         if (in_array('proxy', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
+            $proxyRoutes = $this->proxyRoutesForScope($node, $scope);
             $proxyCheckTotal =
-                ProxyRoute::query()->where('node_id', $node->id)->count()
+                $proxyRoutes->count()
                 + 2
                 + ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node) ? 1 : 0)
                 + ($node->isActive() && $this->canServeGatewayOrAppHost($node) ? 1 : 0);
 
             $this->runFamilyCheckPlan($onFamilyProgress, 'proxy', $proxyCheckTotal, function (callable $advance) use (
                 $node,
+                $proxyRoutes,
+                $scope,
                 &$issues,
             ): void {
-                $this->probeProxyFamily($node, $issues, $advance);
+                $this->probeProxyFamily($node, $proxyRoutes, $scope, $issues, $advance);
             });
 
             $this->reportFamilyProgress(
@@ -1726,14 +1730,40 @@ final readonly class DoctorReportRunner
     }
 
     /**
+     * @return Collection<int, ProxyRoute>
+     */
+    private function proxyRoutesForScope(Node $node, DoctorTargetScope $scope): Collection
+    {
+        $query = ProxyRoute::query()
+            ->with(['node', 'app', 'workspace'])
+            ->where('node_id', $node->id);
+
+        if ($scope->app !== null) {
+            $query->whereHas('app', static fn (Builder $appQuery): Builder => $appQuery->where('name', $scope->app));
+        }
+
+        if ($scope->workspace !== null) {
+            $query->whereHas(
+                'workspace',
+                static fn (Builder $workspaceQuery): Builder => $workspaceQuery->where('name', $scope->workspace),
+            );
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * @param  Collection<int, ProxyRoute>  $routes
      * @param  list<array<string, mixed>>  $issues
      */
-    private function probeProxyFamily(Node $node, array &$issues, callable $advance): void
-    {
-        foreach (ProxyRoute::query()
-            ->with(['node', 'app', 'workspace'])
-            ->where('node_id', $node->id)
-            ->get() as $route) {
+    private function probeProxyFamily(
+        Node $node,
+        Collection $routes,
+        DoctorTargetScope $scope,
+        array &$issues,
+        callable $advance,
+    ): void {
+        foreach ($routes as $route) {
             $snapshot = $this->proxyRouteProbe->introspect($route);
 
             foreach ($this->proxyRouteProbe->diff($route, $snapshot) as $entry) {
@@ -1743,14 +1773,18 @@ final readonly class DoctorReportRunner
             $advance();
         }
 
-        foreach ($this->webSocketProxyDoctorProbe->drift($node) as $entry) {
-            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+        if ($scope->workspace === null) {
+            foreach ($this->webSocketProxyDoctorProbe->drift($node, $scope->app) as $entry) {
+                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+            }
         }
 
         $advance();
 
-        foreach ($this->s3ProxyDoctorProbe->drift($node) as $entry) {
-            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+        if ($scope->app === null && $scope->workspace === null) {
+            foreach ($this->s3ProxyDoctorProbe->drift($node) as $entry) {
+                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+            }
         }
 
         $advance();
@@ -2141,7 +2175,7 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('proxy', $families, true) && $node->isActive() && $this->canServeGatewayOrAppHost($node)) {
-            $snapshot = $this->proxyRouteProbe->snapshotForAdopt($node);
+            $snapshot = $this->proxyAdoptSnapshotForScope($node, $scope);
 
             foreach ($this->proxyRouteAdopter->adopt($node, $snapshot) as $result) {
                 $actions[] = [
@@ -2195,6 +2229,22 @@ final readonly class DoctorReportRunner
         }
 
         return $actions;
+    }
+
+    private function proxyAdoptSnapshotForScope(Node $node, DoctorTargetScope $scope): ProbeSnapshot
+    {
+        $snapshot = $this->proxyRouteProbe->snapshotForAdopt($node);
+
+        if ($scope->app === null && $scope->workspace === null) {
+            return $snapshot;
+        }
+
+        $domains = $this
+            ->proxyRoutesForScope($node, $scope)
+            ->map(static fn (ProxyRoute $route): string => $route->domain)
+            ->all();
+
+        return new ProbeSnapshot(array_intersect_key($snapshot->items, array_fill_keys($domains, true)));
     }
 
     private function canServeGatewayOrAppHost(Node $node): bool
@@ -3872,6 +3922,7 @@ final readonly class DoctorReportRunner
             'proxy.backend_route_mismatch',
             'proxy.tls_missing',
             'proxy.tls_mismatch',
+            'proxy.enactment_incomplete',
             'proxy.caddy_container_missing',
             'proxy.caddy_container_down',
             'proxy.global_config_missing',

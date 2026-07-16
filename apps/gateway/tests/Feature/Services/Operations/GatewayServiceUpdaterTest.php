@@ -71,7 +71,7 @@ it('updates gateway and scheduler services to the plan image after target image 
             "docker service scale --detach=true 'orbit_orbit-scheduler=0'",
             gateway_service_updater_migration_command($plan),
             gateway_service_updater_host_cli_command($plan),
-            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
+            "docker service update --detach=true --force --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
             "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'",
             "docker service scale --detach=true 'orbit_orbit-scheduler=1'",
@@ -136,7 +136,7 @@ it('updates gateway and scheduler services to the plan image after target image 
 
     $hostCliIndex = array_search(gateway_service_updater_host_cli_command($plan), $operations, true);
     $gatewayServiceIndex = array_search(
-        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
+        "docker service update --detach=true --force --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
         $operations,
         true,
     );
@@ -207,7 +207,7 @@ it('runs gateway migrations through the target gateway image before replacing th
 
     $migrationIndex = array_search(gateway_service_updater_migration_command($plan), $operations, true);
     $gatewayUpdateIndex = array_search(
-        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
+        "docker service update --detach=true --force --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
         $operations,
         true,
     );
@@ -278,6 +278,44 @@ it('installs the gateway host CLI once through the local Docker helper', functio
         ->toContain('file:///tmp/orbit-linux-amd64')
         ->and($gateway->fresh()->installed_cli?->version)
         ->toBe('1.2.3');
+});
+
+it('forces gateway task replacement after refreshing an immutable CLI artifact', function (): void {
+    $run = gatewayServiceUpdaterRun();
+    $plan = gatewayServiceUpdaterPlan($run);
+    $previousImage = gatewayServiceUpdaterPreviousImage();
+    $operations = [];
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'orbit_path' => '/home/orbit/orbit',
+        ]);
+
+    Process::fake(function ($process) use ($plan, $previousImage, &$operations) {
+        $command = (string) $process->command;
+        $operations[] = $command;
+
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
+            return $result;
+        }
+
+        return match ($command) {
+            "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
+                output: "completed\n",
+            ),
+            default => throw new RuntimeException("Unexpected process command [{$command}]."),
+        };
+    });
+
+    app(GatewayServiceUpdater::class)->update($run, $plan);
+
+    expect($operations)->toContain(
+        "docker service update --detach=true --force --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
+    );
 });
 
 it('fails gateway host CLI install when the local Docker helper fails', function (): void {
@@ -452,7 +490,7 @@ it('treats a same-image gateway service update with no Docker update status as h
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'",
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'",
         gateway_service_updater_migration_command($plan),
-        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
+        "docker service update --detach=true --force --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
         "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'",
         "docker service ls --filter 'name=orbit_orbit-gateway' --format '{{.Replicas}}'",
@@ -480,7 +518,7 @@ it('restores the scheduler previous image and replica when the updated gateway f
         ),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
         gateway_service_updater_migration_command($plan) => Process::result(),
-        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" =>
+        "docker service update --detach=true --force --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" =>
             Process::result(),
         "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
             output: "rollback_completed\n",
@@ -494,7 +532,7 @@ it('restores the scheduler previous image and replica when the updated gateway f
         ->toThrow(RuntimeException::class, 'Gateway service health check failed');
 
     Process::assertRan(
-        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
+        "docker service update --detach=true --force --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
     );
     Process::assertRan("docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'");
     Process::assertRan(
@@ -672,7 +710,7 @@ function gateway_service_updater_migration_command(OperationUpdatePlan $plan): s
 function gateway_service_updater_host_cli_command(OperationUpdatePlan $plan): string
 {
     return implode(' ', [
-        'docker run --rm',
+        'docker run --rm --interactive',
         '--entrypoint '.escapeshellarg('bash'),
         '--mount '.escapeshellarg('type=bind,source=/home/orbit/orbit,target=/mnt/orbit-install'),
         '--mount '.escapeshellarg('type=bind,source=/home/orbit,target=/mnt/orbit-home'),
@@ -698,7 +736,7 @@ function gateway_service_updater_common_process_result(
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
             => Process::result(output: "{$previousImage}\n"),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
-        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'"
+        "docker service update --detach=true --force --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'"
             => Process::result(),
         "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
             => Process::result(),

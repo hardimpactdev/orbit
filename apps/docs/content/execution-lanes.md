@@ -175,6 +175,11 @@ not retry it over SSH. On Linux, the install converges an existing managed
 `orbit-agent` systemd unit to the candidate binary and service configuration
 before scheduling the deferred Agent restart, so a stale unit cannot keep an
 older transport implementation alive after a successful artifact install.
+Gateway-host CLI replacement additionally verifies both host symlinks after
+install and forces a gateway service task replacement. This is required when a
+new immutable CLI checksum shares the current semantic version or gateway image
+identity, because an already-running container keeps the bind-mounted binary
+resolved when its task was created.
 
 Gateway-only execution resolves the gateway container through
 `ORBIT_GATEWAY_CONTAINER`. The production Swarm service sets that value from

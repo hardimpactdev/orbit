@@ -11,6 +11,7 @@ use App\Models\AppWebSocketBinding;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
@@ -30,8 +31,12 @@ final readonly class WebSocketProxyDoctorProbe
     /**
      * @return list<DriftEntry>
      */
-    public function drift(Node $node): array
+    public function drift(Node $node, ?string $app = null): array
     {
+        if ($app !== null) {
+            return $this->publicRouteDrift($node, $app);
+        }
+
         return [
             ...$this->routerRouteDrift($node),
             ...$this->routerRouteOrphanedDrift($node),
@@ -194,7 +199,7 @@ final readonly class WebSocketProxyDoctorProbe
     /**
      * @return list<DriftEntry>
      */
-    private function publicRouteDrift(Node $node): array
+    private function publicRouteDrift(Node $node, ?string $app = null): array
     {
         if (! $this->nodeRoleAssignments->nodeCanServeIngress($node)) {
             return [];
@@ -205,6 +210,13 @@ final readonly class WebSocketProxyDoctorProbe
         $bindings = AppWebSocketBinding::query()
             ->with('app.node')
             ->where('enabled', true)
+            ->when(
+                $app !== null,
+                static fn (Builder $query): Builder => $query->whereHas(
+                    'app',
+                    static fn (Builder $appQuery): Builder => $appQuery->where('name', $app),
+                ),
+            )
             ->get();
 
         foreach ($bindings as $binding) {

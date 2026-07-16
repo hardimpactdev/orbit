@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
+use App\Models\App;
+use App\Models\AppWebSocketBinding;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
@@ -143,6 +145,46 @@ it('ws router_route_orphaned not emitted for non-router nodes', function (): voi
 
     $keys = array_map(fn ($e) => $e->key, $drift);
     expect($keys)->not->toContain(WebSocketProxyDoctorProbe::RouterRouteOrphanedKey);
+})->group('websocket', 'proxy-doctor');
+
+it('limits app-scoped public websocket drift to the selected app', function (): void {
+    $ingress = wsProbeIngress();
+    Node::factory()
+        ->router()
+        ->create([
+            'name' => 'router-1',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    wsProbeActiveWebSocketNode();
+    $appNode = Node::factory()
+        ->appProd()
+        ->create([
+            'name' => 'app-prod-1',
+            'wireguard_address' => '10.6.0.21',
+        ]);
+    $appNode
+        ->roleAssignments()
+        ->where('role', 'app-prod')
+        ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
+
+    foreach ([
+        ['name' => 'hauzer-production', 'host' => 'ws.hauzer.app'],
+        ['name' => 'mealou-production', 'host' => 'ws.mealou.app'],
+    ] as $definition) {
+        $app = App::factory()->create([
+            'name' => $definition['name'],
+            'node_id' => $appNode->id,
+        ]);
+        AppWebSocketBinding::factory()->create([
+            'app_id' => $app->id,
+            'public_hosts' => [$definition['host']],
+        ]);
+    }
+
+    $drift = app(WebSocketProxyDoctorProbe::class)->drift($ingress, 'hauzer-production');
+
+    expect(collect($drift)->pluck('detail.domain')->all())
+        ->toBe(['ws.hauzer.app']);
 })->group('websocket', 'proxy-doctor');
 
 // ---------------------------------------------------------------------------

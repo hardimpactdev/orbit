@@ -548,7 +548,7 @@ function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
         fleet_verifier_root_ca_subject_command() => Process::result(
             output: "subject=CN = Orbit Root CA\n",
         ),
-        "docker service update --detach=true --image '{$gatewayImage}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" =>
+        "docker service update --detach=true --force --image '{$gatewayImage}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" =>
             Process::result(),
         "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
             output: "completed\n",
@@ -582,7 +582,7 @@ function fleet_verifier_root_ca_subject_command(): string
 function fleet_verifier_gateway_host_cli_command(string $gatewayImage): string
 {
     return implode(' ', [
-        'docker run --rm',
+        'docker run --rm --interactive',
         '--entrypoint '.escapeshellarg('bash'),
         '--mount '.escapeshellarg('type=bind,source=/home/orbit/orbit,target=/mnt/orbit-install'),
         '--mount '.escapeshellarg('type=bind,source=/home/orbit,target=/mnt/orbit-home'),

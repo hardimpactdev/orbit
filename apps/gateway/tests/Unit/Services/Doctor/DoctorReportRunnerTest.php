@@ -2984,6 +2984,129 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             ->toBeFalse();
     });
 
+    it('limits an app-scoped ingress proxy probe to the selected app route', function (): void {
+        $ingress = Node::factory()->create([
+            'name' => 'ingress-1',
+            'status' => 'active',
+            'managed' => true,
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.10',
+        ]);
+
+        foreach (['gateway', 'ingress'] as $role) {
+            NodeRoleAssignment::factory()->create([
+                'node_id' => $ingress->id,
+                'role' => $role,
+                'status' => 'active',
+            ]);
+        }
+
+        $hauzer = App::factory()->create(['node_id' => $ingress->id, 'name' => 'hauzer-production']);
+        $mealou = App::factory()->create(['node_id' => $ingress->id, 'name' => 'mealou-production']);
+
+        foreach ([
+            [$hauzer, 'hauzer.app'],
+            [$mealou, 'mealou.app'],
+        ] as [$app, $domain]) {
+            ProxyRoute::factory()->create([
+                'node_id' => $ingress->id,
+                'app_id' => $app->id,
+                'domain' => $domain,
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'source_hash' => str_repeat('a', times: 64),
+                'config' => [],
+            ]);
+        }
+
+        $adoptSnapshot =
+            collect([
+                'hauzer.app',
+                'mealou.app',
+                'unrelated.example',
+            ])->map(static function (string $domain): string {
+                $body = "{$domain} {\n    reverse_proxy localhost:8080\n}\n";
+
+                return implode("\t", [$domain, hash('sha256', $body), base64_encode($body)]);
+            })->implode("\n")."\n";
+
+        app()->instance(RunsInternalCommands::class, new class($adoptSnapshot) implements RunsInternalCommands {
+            public function __construct(
+                private readonly string $adoptSnapshot,
+            ) {}
+
+            public function runInternal(
+                Node $node,
+                string $commandName,
+                array $arguments = [],
+                array $commandOptions = [],
+                array $transportOptions = [],
+            ): RemoteShellResult {
+                $input = json_decode((string) ($transportOptions['input'] ?? ''), associative: true);
+                $script = is_array($input) && is_string($input['script'] ?? null) ? $input['script'] : '';
+                $stdout = str_contains($script, 'body_b64=')
+                    ? $this->adoptSnapshot
+                    : '';
+                $result = new RemoteShellResult(exitCode: 0, stdout: $stdout, stderr: '', durationMs: 1);
+
+                return new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: doctorRunnerInternalCommandStdout($commandName, [], $result),
+                    stderr: '',
+                    durationMs: 1,
+                );
+            }
+        });
+
+        $report = app(DoctorReportRunner::class)->probe(
+            $ingress,
+            families: ['proxy'],
+            scope: DoctorTargetScope::from(app: 'hauzer-production', workspace: null),
+        );
+        $routeDomains = collect($report['issues'])
+            ->pluck('detail.domain')
+            ->filter(static fn (mixed $domain): bool => is_string($domain))
+            ->unique()
+            ->values()
+            ->all();
+
+        expect($routeDomains)
+            ->toBe(['hauzer.app']);
+
+        $restore = app(DoctorReportRunner::class)->run(
+            $ingress,
+            mode: 'restore',
+            families: ['proxy'],
+            request: new DoctorRunRequest(
+                dryRun: true,
+                scope: DoctorTargetScope::from(app: 'hauzer-production', workspace: null),
+            ),
+        );
+        $actionDomains = collect($restore['actions'])
+            ->pluck('details.domain')
+            ->filter(static fn (mixed $domain): bool => is_string($domain))
+            ->unique()
+            ->values()
+            ->all();
+
+        expect($actionDomains)
+            ->toBe(['hauzer.app']);
+
+        $adopt = app(DoctorReportRunner::class)->run(
+            $ingress,
+            mode: 'adopt',
+            families: ['proxy'],
+            request: new DoctorRunRequest(
+                scope: DoctorTargetScope::from(app: 'hauzer-production', workspace: null),
+            ),
+        );
+
+        expect(collect($adopt['actions'])->pluck('key')->all())
+            ->toBe(['hauzer.app'])
+            ->and(ProxyRoute::query()->where('domain', 'unrelated.example')->exists())
+            ->toBeFalse();
+    });
+
     it('marks node.local_executor_probe_failed as diagnostic-only in fleet probe fallback', function (): void {
         $node = createDoctorRunnerAppHostNode([
             'name' => 'app-prod-1',

@@ -176,7 +176,7 @@ it('installs the gateway host CLI through a local Docker helper', function (): v
         $command = (string) $process->command;
 
         return (
-            str_contains($command, 'docker run --rm')
+            str_contains($command, 'docker run --rm --interactive')
             && str_contains($command, "--entrypoint 'bash'")
             && str_contains($command, 'source=/home/orbit/orbit,target=/mnt/orbit-install')
             && str_contains($command, 'source=/home/orbit,target=/mnt/orbit-home')
@@ -190,12 +190,14 @@ it('installs the gateway host CLI through a local Docker helper', function (): v
         ->toContain('https://artifacts.example.test/orbit-linux-amd64')
         ->toContain(str_repeat('c', times: 64))
         ->toContain('/mnt/orbit-install/bin/orbit-binary-$sha_prefix')
-        ->toContain('ln -sfn "$versioned_host_path" /mnt/orbit-install/bin/orbit-binary')
-        ->toContain('ln -sfn "$versioned_host_path" \'/mnt/orbit-home/.local/bin/orbit\'')
+        ->toContain('ln -sfnT "$versioned_host_path" /mnt/orbit-install/bin/orbit-binary')
+        ->toContain('ln -sfnT "$versioned_host_path" \'/mnt/orbit-home/.local/bin/orbit\'')
+        ->toContain('test "$(readlink /mnt/orbit-install/bin/orbit-binary)" = "$versioned_host_path"')
+        ->toContain('test "$(readlink \'/mnt/orbit-home/.local/bin/orbit\')" = "$versioned_host_path"')
         ->not->toContain('ssh');
 
     $checksumIndex = strpos((string) $script, '"$versioned_container_path" | sha256sum -c -');
-    $linkIndex = strpos((string) $script, 'ln -sfn "$versioned_host_path"');
+    $linkIndex = strpos((string) $script, 'ln -sfnT "$versioned_host_path"');
 
     if (! is_int($checksumIndex) || ! is_int($linkIndex)) {
         throw new RuntimeException('Expected checksum verification before host CLI link replacement.');
@@ -212,6 +214,8 @@ it('updates and scales Swarm services using the planned command shapes', functio
     Process::fake([
         "docker service update --detach=true --image 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" =>
             Process::result(),
+        "docker service update --detach=true --force --image 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" =>
+            Process::result(),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
             output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
@@ -226,6 +230,7 @@ it('updates and scales Swarm services using the planned command shapes', functio
 
     $manager = new GatewaySwarmManager;
     $manager->updateServiceImage('orbit_orbit-gateway', $image, 'start-first');
+    $manager->forceUpdateServiceImage('orbit_orbit-gateway', $image, 'start-first');
     $manager->scaleService('orbit_orbit-scheduler', 0);
 
     expect($manager->serviceImage('orbit_orbit-scheduler'))
