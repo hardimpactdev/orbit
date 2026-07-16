@@ -536,7 +536,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
      */
     private function provisionWorkloadRoleNode(
         NodeRegistryWriter $registryWriter,
@@ -1107,7 +1107,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
      */
     private function prepareHostBootstrap(
         NodeRegistryWriter $registryWriter,
@@ -1153,7 +1153,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
      */
     private function prepareHostBootstrapWithReservationLock(
         NodeRegistryWriter $registryWriter,
@@ -1370,7 +1370,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
      */
     private function completePreparedWorkloadNode(
         NodeRoleAssignmentService $roleAssignmentService,
@@ -1587,7 +1587,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  array<string, mixed>  $request
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
      */
     private function pendingBootstrapIsCompatible(
         Node $node,

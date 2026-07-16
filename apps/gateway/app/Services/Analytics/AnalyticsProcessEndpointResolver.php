@@ -18,7 +18,7 @@ final class AnalyticsProcessEndpointResolver
         string $nodeIdSetting,
         string $service,
     ): array {
-        $settings = (array) $assignment->settings;
+        $settings = $this->stringKeyedArray($assignment->settings);
         $nodeId = $settings[$nodeIdSetting] ?? null;
 
         if (! is_int($nodeId) || $nodeId < 1) {
@@ -27,7 +27,7 @@ final class AnalyticsProcessEndpointResolver
 
         $process = Process::query()
             ->where('node_id', $nodeId)
-            ->withRuntimeService($service)
+            ->where('runtime_config->service', $service)
             ->first();
 
         if (! $process instanceof Process) {
@@ -36,7 +36,7 @@ final class AnalyticsProcessEndpointResolver
             );
         }
 
-        $endpoint = (array) ($process->runtime_config['endpoint'] ?? []);
+        $endpoint = $this->stringKeyedArray($process->runtime_config['endpoint'] ?? null);
         $host = $this->requiredString($endpoint, 'host', $process->name);
         $port = $endpoint['port'] ?? null;
 
@@ -56,7 +56,7 @@ final class AnalyticsProcessEndpointResolver
      */
     public function postgresCredentials(Process $process): array
     {
-        $credentials = (array) ($process->runtime_config['credentials'] ?? []);
+        $credentials = $this->stringKeyedArray($process->runtime_config['credentials'] ?? null);
 
         return [
             'username' => $this->requiredString($credentials, 'username', 'PostgreSQL'),
@@ -76,5 +76,18 @@ final class AnalyticsProcessEndpointResolver
         }
 
         return trim($value);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function stringKeyedArray(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        /** @var array<string, mixed> $value */
+        return $value;
     }
 }

@@ -76,9 +76,15 @@ class AnalyticsRoleBaseline implements RoleBaseline
             processName: self::ProcessName,
         );
         $existingProcess = Process::query()
-            ->ownedBy($node)
+            ->where('owner_type', $node->getMorphClass())
+            ->where('owner_id', $node->id)
             ->where('name', self::ProcessName)
             ->first();
+
+        if (! $existingProcess instanceof Process) {
+            $existingProcess = null;
+        }
+
         $runtimeConfig = $this->plausibleRuntimeConfig->for(
             assignment: $assignment,
             existingProcess: $existingProcess,

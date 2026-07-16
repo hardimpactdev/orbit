@@ -9,10 +9,10 @@ use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use Illuminate\Support\Str;
 
-final class PlausibleRuntimeConfig
+final readonly class PlausibleRuntimeConfig
 {
     public function __construct(
-        private readonly AnalyticsProcessEndpointResolver $endpointResolver,
+        private AnalyticsProcessEndpointResolver $endpointResolver,
     ) {}
 
     /**
@@ -27,8 +27,9 @@ final class PlausibleRuntimeConfig
         $postgres = $this->endpointResolver->resolve($assignment, 'postgres_node_id', 'postgres');
         $clickHouse = $this->endpointResolver->resolve($assignment, 'clickhouse_node_id', 'clickhouse');
         $credentials = $this->endpointResolver->postgresCredentials($postgres['process']);
-        $environment = (array) ($runtimeConfig['environment'] ?? []);
-        $existingEnvironment = (array) ($existingProcess?->runtime_config['environment'] ?? []);
+        $environment = $this->stringKeyedArray($runtimeConfig['environment'] ?? null);
+        $existingRuntimeConfig = $existingProcess?->runtime_config ?? [];
+        $existingEnvironment = $this->stringKeyedArray($existingRuntimeConfig['environment'] ?? null);
 
         $runtimeConfig['environment'] = [
             ...$environment,
@@ -91,5 +92,18 @@ final class PlausibleRuntimeConfig
         ];
 
         return $runtimeConfig;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function stringKeyedArray(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        /** @var array<string, mixed> $value */
+        return $value;
     }
 }
