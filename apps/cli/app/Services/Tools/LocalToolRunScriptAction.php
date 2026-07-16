@@ -17,7 +17,7 @@ final readonly class LocalToolRunScriptAction
         $payload = LocalToolRunScriptPayload::fromArray($payload);
         $startedAt = hrtime(true);
         $process = new Process(
-            ['bash', '-lc', $payload->script],
+            ['bash', '-c', $payload->script],
             LocalToolRunScriptPayload::FIXED_CWD,
             [],
         );
