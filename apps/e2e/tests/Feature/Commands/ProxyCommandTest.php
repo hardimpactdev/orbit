@@ -30,7 +30,7 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
                 'domain' => $domain,
                 'kind' => 'proxy',
                 'node' => 'app-dev-1',
-                'status' => 'expected',
+                'status' => 'intent_only',
             ])
             ->and($addPayload['success']['data']['route']['owner']['type'])
             ->toBe('custom')
