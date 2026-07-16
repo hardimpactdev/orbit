@@ -18,13 +18,18 @@ it('resolves to GET /api/apps', function (): void {
 
     expect($request->resolveEndpoint())->toBe('/api/apps');
     expect($request->getMethod())->toBe(Method::GET);
+    expect(
+        array_map(
+            static fn (\ReflectionParameter $parameter): string => $parameter->getName(),
+            new \ReflectionClass(ListAppsRequest::class)->getConstructor()?->getParameters() ?? [],
+        ),
+    )->toBe(['environment']);
 });
 
-it('serializes node and environment filters when provided', function (): void {
-    $request = new ListAppsRequest(node: 'app-1', environment: 'production');
+it('serializes the environment filter when provided', function (): void {
+    $request = new ListAppsRequest(environment: 'production');
 
     expect($request->query()->all())->toBe([
-        'node' => 'app-1',
         'environment' => 'production',
     ]);
 });

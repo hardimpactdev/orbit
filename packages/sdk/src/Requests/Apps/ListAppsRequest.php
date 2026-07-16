@@ -15,7 +15,6 @@ final class ListAppsRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
-        public readonly ?string $node = null,
         public readonly ?string $environment = null,
     ) {}
 
@@ -31,7 +30,6 @@ final class ListAppsRequest extends GatewayRequest
     {
         return array_filter(
             [
-                'node' => $this->node,
                 'environment' => $this->environment,
             ],
             static fn (mixed $value): bool => $value !== null,

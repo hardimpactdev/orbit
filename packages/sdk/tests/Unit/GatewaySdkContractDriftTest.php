@@ -64,10 +64,10 @@ function core_dashboard_request_contracts(): array
         [
             'name' => 'GET /apps',
             'request' => ListAppsRequest::class,
-            'arguments' => ['node' => 'app-1', 'environment' => 'production'],
+            'arguments' => ['environment' => 'production'],
             'method' => Method::GET,
             'endpoint' => '/api/apps',
-            'query' => ['node' => 'app-1', 'environment' => 'production'],
+            'query' => ['environment' => 'production'],
             'body' => [],
         ],
         [
