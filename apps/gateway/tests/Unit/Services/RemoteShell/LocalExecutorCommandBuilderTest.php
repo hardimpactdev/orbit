@@ -576,7 +576,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 'metrics',
                 'analytics',
             ],
-            'internal:site-certificate:install' => ['app-dev', 'app-prod', 'websocket'],
+            'internal:site-certificate:install' => ['app-dev', 'app-prod', 'ingress', 'websocket'],
             'internal:solo-upstream-request' => [
                 'gateway',
                 'vpn',
@@ -725,7 +725,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         'schedule run' => ['internal:schedule:run', ['app-dev'], ['operator']],
         'tool run script' => ['internal:tool:run-script', ['app-dev'], ['gateway']],
         'secret file' => ['internal:secret-file', ['app-dev'], ['gateway']],
-        'site certificate install' => ['internal:site-certificate:install', ['app-dev'], ['vpn']],
+        'site certificate install' => ['internal:site-certificate:install', ['app-dev', 'ingress'], ['vpn']],
         'solo upstream request' => ['internal:solo-upstream-request', ['agent'], []],
         'websocket runtime' => ['internal:websocket-runtime', ['websocket'], ['app-dev']],
         'unattended upgrades apply' => ['internal:unattended-upgrades:apply', ['app-dev'], ['gateway']],

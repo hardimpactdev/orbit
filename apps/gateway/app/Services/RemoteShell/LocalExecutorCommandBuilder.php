@@ -294,6 +294,7 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
         InternalCommand::SiteCertificateInstall->value => [
             NodeRoleName::AppDevelopment,
             NodeRoleName::AppProduction,
+            NodeRoleName::Ingress,
             NodeRoleName::WebSocket,
         ],
         InternalCommand::SoloUpstreamRequest->value => [
