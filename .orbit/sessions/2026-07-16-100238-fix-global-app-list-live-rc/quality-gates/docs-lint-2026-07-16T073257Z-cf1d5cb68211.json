@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "producer": "quality-gate-run",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-16T07:32:50Z",
+    "ended_at": "2026-07-16T07:32:57Z",
+    "duration_seconds": 7,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/fix-global-app-list",
+        "commit": "43625bd7b2dfef17ff905c4dd9a2cd5861665a75",
+        "dirty": false
+    },
+    "subgates": []
+}

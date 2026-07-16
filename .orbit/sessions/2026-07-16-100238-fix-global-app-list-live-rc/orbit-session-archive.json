@@ -1,0 +1,29 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-16T08:02:38+00:00",
+    "mode": "created",
+    "archive_mode": "full",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-global-app-list/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-16-100238-fix-global-app-list-live-rc",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-16-100238-fix-global-app-list-live-rc/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "evidence",
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates"
+    ],
+    "entry_digests": {
+        "agent-sessions": "a08bbd513dd0766834a3c5a9dc83d39feb4d4e44f7b05cddb02c5bcdb6cb12ab",
+        "evidence": "bf5074167dca1a56dddab351b2fc61a3c4d42792f5f1d3620bfc2e17917aff21",
+        "feedback.jsonl": "311c7361964118c99f6236d02309c9f88267a0baab3b7252799c7a32d2cd6f0e",
+        "loop.md": "33210294e1268596c944727461d7baa1637cb106dd896174d20f093634e02794",
+        "quality-gates": "c95c08df87297dbd0655e6c20aeaf4c3172c18b481acfd76cd901f9b2315eddd"
+    },
+    "branch": "codex/fix-global-app-list",
+    "candidate_commit": "b18fad7902a2a913be78cfdaa4e43d37009de82b",
+    "accepted_feature_tip": "b18fad7902a2a913be78cfdaa4e43d37009de82b",
+    "accepted_main_tip": "284b11926332176e1f8be0195c0a34f9a5166783",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
