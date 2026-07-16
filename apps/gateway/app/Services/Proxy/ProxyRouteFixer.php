@@ -15,6 +15,7 @@ use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Gateway\CaddyGlobalSiteBlocks;
+use App\Services\Nodes\NodeContainerScope;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitContainerNames;
 
@@ -696,13 +697,13 @@ final readonly class ProxyRouteFixer
 
     private function caddyContainerName(Node $node): string
     {
-        return $this->caddyContainerNameFromSpec($this->managedCaddyContainerSpec($node));
+        return $this->caddyContainerNameFromSpec($this->managedCaddyContainerSpec($node), $node);
     }
 
     /**
      * @param  array<string, mixed>|null  $spec
      */
-    private function caddyContainerNameFromSpec(?array $spec): string
+    private function caddyContainerNameFromSpec(?array $spec, Node $node): string
     {
         $name = $spec['name'] ?? null;
 
@@ -710,7 +711,7 @@ final readonly class ProxyRouteFixer
             return $name;
         }
 
-        return new OrbitContainerNames()->caddy();
+        return OrbitContainerNames::forNodeScope(NodeContainerScope::forNode($node))->caddy();
     }
 
     private function writeSiteAndReload(Node $node, string $domain, string $content, bool $backend = false): void

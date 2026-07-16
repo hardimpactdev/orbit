@@ -820,14 +820,17 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             : '';
 
         return sprintf(
-            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s%s --env %s --env %s --env %s --env %s --env %s --workdir %s %s tail -f /dev/null',
+            'docker run -d --restart unless-stopped --name %s --network %s --volume %s --mount %s%s --mount %s --env %s --env %s --env %s --env %s --env %s --env %s --env %s --workdir %s %s tail -f /dev/null',
             escapeshellarg($this->gatewayContainerName($nodeContainer)),
             escapeshellarg("container:{$nodeContainer}"),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
             escapeshellarg($this->homeVolumeMount($nodeContainer, 'orbit')),
             $sourceMount,
+            escapeshellarg($this->nodeVolumeMount($nodeContainer, 'etc-caddy', '/etc/caddy')),
             escapeshellarg("ORBIT_E2E_DOCKER_NETWORK={$network}"),
             escapeshellarg("ORBIT_NODE_CONTAINER={$nodeContainer}"),
+            escapeshellarg("ORBIT_GATEWAY_CONTAINER={$this->gatewayContainerName($nodeContainer)}"),
+            escapeshellarg("ORBIT_LOCAL_EXECUTOR_BINARY={$orbitPath}/apps/cli/orbit"),
             escapeshellarg("ORBIT_SOURCE_PATH={$orbitPath}"),
             escapeshellarg("ORBIT_GATEWAY_APP_ROOT={$orbitPath}/apps/gateway"),
             escapeshellarg('ORBIT_CONFIG_ROOT='.self::OrbitConfigRoot),
@@ -876,6 +879,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                         real_docker="/usr/bin/docker.real"
                         gateway_container="${ORBIT_GATEWAY_CONTAINER:-__GATEWAY_CONTAINER__}"
                         node_container="${ORBIT_NODE_CONTAINER:-__NODE_CONTAINER__}"
+                        caddy_container="${ORBIT_CADDY_CONTAINER:-${node_container}-orbit-caddy}"
                         gateway_image="${ORBIT_GATEWAY_IMAGE:-__GATEWAY_IMAGE__}"
                         source_path="${ORBIT_SOURCE_PATH:-__ORBIT_PATH__}"
 
@@ -1013,6 +1017,9 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                             fi
 
                             case "${argument}" in
+                                orbit-caddy)
+                                    args+=("${caddy_container}")
+                                    ;;
                                 orbit-gateway)
                                     args+=("${gateway_container}")
                                     ;;

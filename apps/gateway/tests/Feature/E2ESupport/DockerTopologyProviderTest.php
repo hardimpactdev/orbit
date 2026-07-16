@@ -1692,12 +1692,22 @@ it('maps gateway local orbit-gateway docker commands to the per-run runtime cont
                 && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
             ),
         );
+    $gatewayRuntimeStart = collect($commands)
+        ->first(
+            fn (string $command): bool => str_contains(
+                $command,
+                "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway'",
+            ),
+        );
 
     expect($shimCommand)
         ->toBeString()
         ->toContain('# ORBIT_E2E_GATEWAY_DOCKER_SHIM')
         ->toContain('gateway_container=')
         ->toContain('node_container=')
+        ->toContain('caddy_container="${ORBIT_CADDY_CONTAINER:-${node_container}-orbit-caddy}"')
+        ->toContain('orbit-caddy)')
+        ->toContain('args+=("${caddy_container}")')
         ->toContain('orbit-e2e-run123-gateway-orbit-gateway')
         ->toContain('orbit-e2e-run123-gateway')
         ->toContain('${node_container}-home-orbit')
@@ -1722,6 +1732,12 @@ it('maps gateway local orbit-gateway docker commands to the per-run runtime cont
         ->toContain('orbit-gateway)')
         ->toContain('/opt/orbit/*)')
         ->toContain('exec "${real_docker}" "${args[@]}"');
+
+    expect($gatewayRuntimeStart)
+        ->toBeString()
+        ->toContain('ORBIT_GATEWAY_CONTAINER=orbit-e2e-run123-gateway-orbit-gateway')
+        ->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/home/orbit/orbit/apps/cli/orbit')
+        ->toContain('type=volume,src=orbit-e2e-run123-gateway-etc-caddy,dst=/etc/caddy');
 });
 
 it('uses the parallel worker token to create a non-overlapping docker network', function (): void {

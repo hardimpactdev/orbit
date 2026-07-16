@@ -831,6 +831,12 @@ it('keeps the build gateway container marked without starting services before mi
     expect($gatewayRuntimeStart)
         ->toBeString()
         ->and($gatewayRuntimeStart)
+        ->toContain('ORBIT_GATEWAY_CONTAINER=orbit-e2e-prepared-build-operator_gateway-gateway-orbit-gateway')
+        ->and($gatewayRuntimeStart)
+        ->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/home/orbit/orbit/apps/cli/orbit')
+        ->and($gatewayRuntimeStart)
+        ->toContain('type=volume,src=orbit-e2e-prepared-build-operator_gateway-gateway-etc-caddy,dst=/etc/caddy')
+        ->and($gatewayRuntimeStart)
         ->toContain('ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit')
         ->and($gatewayRuntimeStart)
         ->toContain("'orbit-gateway:prepared-current' tail -f /dev/null");
@@ -1295,6 +1301,12 @@ it('builds operator_gateway prepared images through transient docker resources',
             && str_contains($process->command, 'ORBIT_E2E_GATEWAY_DOCKER_SHIM')
             && str_contains($process->command, 'ORBIT_E2E_RUNTIME_DOCKER_SHIM')
             && str_contains($process->command, 'elif [ ! -x /usr/bin/docker.real ]; then')
+            && str_contains(
+                $process->command,
+                'caddy_container="${ORBIT_CADDY_CONTAINER:-${node_container}-orbit-caddy}"',
+            )
+            && str_contains($process->command, 'orbit-caddy)')
+            && str_contains($process->command, 'args+=("${caddy_container}")')
             && str_contains($process->command, '${node_container}-home-orbit')
             && str_contains($process->command, '${node_container}-var-lib-orbit')
             && str_contains($process->command, '${node_container}-run-php')

@@ -1479,6 +1479,31 @@ describe('orbit-caddy container readiness', function (): void {
             ->not->toContain('caddy.service');
     });
 
+    it('scopes the e2e caddy container name to the serving node', function (): void {
+        $network = getenv('ORBIT_E2E_DOCKER_NETWORK');
+        $nodeContainer = getenv('ORBIT_NODE_CONTAINER');
+        putenv('ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123');
+        putenv('ORBIT_NODE_CONTAINER=orbit-e2e-run123-gateway');
+
+        try {
+            $node = createTestAppHostNode(['name' => 'app-prod-1', 'host' => 'prod']);
+            $shell = new ProxyProbeCaddyContainerShell('available', 'true', 'true');
+            $snapshot = proxyProbeWithRemoteShell($shell)->introspectCaddyContainer($node);
+
+            expect($snapshot->get('orbit-e2e-run123-prod-orbit-caddy'))
+                ->toMatchArray([
+                    'runtime_status' => 'available',
+                    'container_exists' => true,
+                    'container_running' => true,
+                ])
+                ->and($shell->scripts[0])
+                ->toContain('orbit-e2e-run123-prod-orbit-caddy');
+        } finally {
+            putenv($network === false ? 'ORBIT_E2E_DOCKER_NETWORK' : "ORBIT_E2E_DOCKER_NETWORK={$network}");
+            putenv($nodeContainer === false ? 'ORBIT_NODE_CONTAINER' : "ORBIT_NODE_CONTAINER={$nodeContainer}");
+        }
+    });
+
     it('reports proxy.caddy_container_missing when the container is absent on the serving node', function (): void {
         $node = createTestAppHostNode();
         $snapshot = new ProbeSnapshot([

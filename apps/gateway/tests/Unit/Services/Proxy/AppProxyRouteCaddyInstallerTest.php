@@ -80,10 +80,18 @@ it('applies caddy container updates on the typed agent path without fallback', f
 it('keeps route config writes and reloads on the typed agent path when no caddy tool update is needed', function (): void {
     appProxyRouteCaddyInstallerUseAgentPush();
 
+    $network = getenv('ORBIT_E2E_DOCKER_NETWORK');
+    $nodeContainer = getenv('ORBIT_NODE_CONTAINER');
+    putenv('ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123');
+    putenv('ORBIT_NODE_CONTAINER=orbit-e2e-run123-gateway');
+
     $node = Node::factory()
         ->appDev()
         ->managed()
-        ->create(['wireguard_address' => '10.47.0.42']);
+        ->create([
+            'host' => 'prod',
+            'wireguard_address' => '10.47.0.42',
+        ]);
 
     $shell = new AppProxyRouteInstallerRecordingShell;
     app()->instance(RemoteShell::class, $shell);
@@ -99,18 +107,29 @@ it('keeps route config writes and reloads on the typed agent path when no caddy 
             ])),
     ]);
 
-    $result = app(AppProxyRouteCaddyInstaller::class)->installRouteConfig(
-        node: $node,
-        domain: 'docs.test',
-        content: 'docs.test { respond "ok" }',
-    );
+    try {
+        $result = app(AppProxyRouteCaddyInstaller::class)->installRouteConfig(
+            node: $node,
+            domain: 'docs.test',
+            content: 'docs.test { respond "ok" }',
+        );
 
-    expect($result->successful())
-        ->toBeTrue()
-        ->and($shell->scripts)
-        ->toBe([])
-        ->and(app_proxy_installer_agent_requests('10.47.0.42'))
-        ->toHaveCount(2);
+        $reloadRequest = collect(app_proxy_installer_agent_requests('10.47.0.42'))
+            ->first(fn (Request $request): bool => ($request->data()['argv'][1] ?? null) === 'reload');
+        $reloadInput = json_decode((string) ($reloadRequest?->data()['input'] ?? ''), associative: true);
+
+        expect($result->successful())
+            ->toBeTrue()
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and(app_proxy_installer_agent_requests('10.47.0.42'))
+            ->toHaveCount(2)
+            ->and($reloadInput)
+            ->toMatchArray(['container' => 'orbit-e2e-run123-prod-orbit-caddy']);
+    } finally {
+        putenv($network === false ? 'ORBIT_E2E_DOCKER_NETWORK' : "ORBIT_E2E_DOCKER_NETWORK={$network}");
+        putenv($nodeContainer === false ? 'ORBIT_NODE_CONTAINER' : "ORBIT_NODE_CONTAINER={$nodeContainer}");
+    }
 });
 
 final class AppProxyRouteInstallerRecordingShell implements RemoteShell

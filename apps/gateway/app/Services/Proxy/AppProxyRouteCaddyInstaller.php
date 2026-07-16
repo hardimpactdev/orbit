@@ -8,6 +8,9 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Gateway\CaddyGlobalConfig;
+use App\Services\Nodes\NodeContainerScope;
+use App\Services\Runtime\OrbitCaddyContainer;
+use App\Services\Runtime\OrbitContainerNames;
 use RuntimeException;
 
 final readonly class AppProxyRouteCaddyInstaller
@@ -30,16 +33,19 @@ final readonly class AppProxyRouteCaddyInstaller
         }
 
         $caddyToolConfig = $this->caddyToolConfig($node);
+        $container = OrbitContainerNames::forNodeScope(NodeContainerScope::forNode($node))->caddy();
 
         if ($caddyToolConfig !== null) {
-            $update = $this->caddyConfig->applyContainer($node, $this->containerConfig($caddyToolConfig));
+            $containerConfig = $this->containerConfig($caddyToolConfig);
+            $container = OrbitCaddyContainer::fromConfig($containerConfig)->name();
+            $update = $this->caddyConfig->applyContainer($node, $containerConfig);
 
             if (! $update->successful()) {
                 return $update;
             }
         }
 
-        return $this->caddyConfig->reload($node);
+        return $this->caddyConfig->reload($node, $container);
     }
 
     public function ensureGlobalCaddyfile(Node $node): void

@@ -13,6 +13,7 @@ use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Gateway\CaddyGlobalSiteBlocks;
+use App\Services\Nodes\NodeContainerScope;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Tools\ToolScriptDispatcher;
@@ -341,7 +342,7 @@ final readonly class ProxyRouteProbe
      */
     public function introspectCaddyContainer(Node $node): ProbeSnapshot
     {
-        $caddyName = new OrbitContainerNames()->caddy();
+        $caddyName = OrbitContainerNames::forNodeScope(NodeContainerScope::forNode($node))->caddy();
 
         $script = sprintf(
             <<<'BASH'
@@ -391,7 +392,7 @@ final readonly class ProxyRouteProbe
      */
     public function diffCaddyContainer(Node $node, ProbeSnapshot $snapshot): array
     {
-        $caddyName = new OrbitContainerNames()->caddy();
+        $caddyName = OrbitContainerNames::forNodeScope(NodeContainerScope::forNode($node))->caddy();
         $observed = $snapshot->get($caddyName);
 
         if (! is_array($observed)) {

@@ -1143,6 +1143,38 @@ describe('ProxyRouteFixer', function (): void {
             ->toBeTrue();
     });
 
+    it('reloads the e2e caddy container scoped to the serving node', function (): void {
+        $network = getenv('ORBIT_E2E_DOCKER_NETWORK');
+        $nodeContainer = getenv('ORBIT_NODE_CONTAINER');
+        putenv('ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123');
+        putenv('ORBIT_NODE_CONTAINER=orbit-e2e-run123-gateway');
+
+        try {
+            $node = createTestAppHostNode(['name' => 'app-prod-1', 'host' => 'prod']);
+            $shell = new ProxyFixerRecordingRemoteShell("{\n    local_certs\n}\n");
+
+            new ProxyRouteFixer(
+                new ProxyRouteRenderer,
+                new ProxyFixerFakeCa,
+                new SiteCertificateInstallerFake,
+            )->fixGlobalConfig($node, new DriftEntry(
+                family: 'proxy',
+                key: 'proxy.global_config_mismatch',
+                kind: DriftKind::Divergent,
+                summary: 'global config mismatch',
+            ));
+
+            $reloadPayload = collect($shell->payloads)
+                ->first(fn (array $payload): bool => isset($payload['container']));
+
+            expect($reloadPayload)
+                ->toMatchArray(['container' => 'orbit-e2e-run123-prod-orbit-caddy']);
+        } finally {
+            putenv($network === false ? 'ORBIT_E2E_DOCKER_NETWORK' : "ORBIT_E2E_DOCKER_NETWORK={$network}");
+            putenv($nodeContainer === false ? 'ORBIT_NODE_CONTAINER' : "ORBIT_NODE_CONTAINER={$nodeContainer}");
+        }
+    });
+
     it('removes extra proxy routes from both site files and legacy global caddy blocks', function (): void {
         $node = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         $shell = new ProxyFixerRecordingRemoteShell(<<<'CADDY'
