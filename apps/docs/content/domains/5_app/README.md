@@ -112,7 +112,9 @@ These rules govern all app family commands.
   `composer audit --format=json` and `npm audit --json`, treats Bun as a
   separate manager status, and exposes aggregate `dependency_audit_status`,
   `dependency_warning_count`, `dependency_danger_count`, and
-  `last_dependency_audit_at` on `app:list` and `app:show` JSON. It does not
+  `last_dependency_audit_at` on `app:list` and `app:show` JSON. Human
+  `app:show` labels this aggregate as app-scoped and does not imply that the
+  status belongs to an individual instance or workspace. It does not
   store full package inventories, mutate source, read logs as dependency truth,
   or auto-remediate findings. Remote audit refresh execution, workspace
   coverage, nightly fleet refresh, and full Bun vulnerability normalization are

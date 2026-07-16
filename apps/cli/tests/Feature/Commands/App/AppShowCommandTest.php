@@ -40,7 +40,7 @@ describe('app:show', function (): void {
             ->toBe('app');
     });
 
-    it('renders human output containing app fields', function (): void {
+    it('renders human output with instance and workspace placement rows', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'app' => [
                 'name' => 'orbit-docs',
@@ -49,11 +49,41 @@ describe('app:show', function (): void {
                 'root' => 'public',
                 'repository' => 'orbit/docs',
                 'php_version' => '8.5',
+                'dependency_audit_status' => 'findings',
+                'dependency_warning_count' => 14,
+                'dependency_danger_count' => 2,
             ],
             'details' => [
                 'domain' => 'orbit-docs.test',
                 'document_root' => '/srv/orbit-docs/public',
                 'node' => ['name' => 'app-1', 'host' => '192.0.2.10'],
+                'instances' => [
+                    [
+                        'name' => 'development',
+                        'driver' => 'orbit',
+                        'node' => 'app-1',
+                        'url' => 'https://orbit-docs.test',
+                        'workspaces' => [
+                            [
+                                'name' => 'feature-a',
+                                'url' => 'https://feature-a.orbit-docs.test',
+                                'lifecycle_status' => 'active',
+                            ],
+                            [
+                                'name' => 'feature-b',
+                                'url' => 'https://feature-b.orbit-docs.test',
+                                'lifecycle_status' => 'active',
+                            ],
+                        ],
+                    ],
+                    [
+                        'name' => 'production',
+                        'driver' => 'laravel-cloud',
+                        'node' => null,
+                        'url' => 'https://orbit-docs.example.com',
+                        'workspaces' => [],
+                    ],
+                ],
                 'routes' => [['host' => 'orbit-docs.test']],
             ],
         ]));
@@ -69,9 +99,37 @@ describe('app:show', function (): void {
             ->and($output)
             ->toContain('orbit-docs.test')
             ->and($output)
-            ->toContain('Node')
+            ->toContain('Repository')
             ->and($output)
-            ->toContain('app-1 (192.0.2.10)')
+            ->toContain('NAME')
+            ->and($output)
+            ->toContain('DRIVER')
+            ->and($output)
+            ->toContain('NODE')
+            ->and($output)
+            ->toContain('URL')
+            ->and($output)
+            ->toContain('APP DEPS')
+            ->and($output)
+            ->toContain('development')
+            ->and($output)
+            ->toContain('orbit')
+            ->and($output)
+            ->toContain('app-1')
+            ->and($output)
+            ->toContain('https://orbit-docs.test')
+            ->and($output)
+            ->toContain('├─ feature-a')
+            ->and($output)
+            ->toContain('└─ feature-b')
+            ->and($output)
+            ->toContain('https://feature-a.orbit-docs.test')
+            ->and($output)
+            ->toContain('production')
+            ->and($output)
+            ->toContain('laravel-cloud')
+            ->and($output)
+            ->toContain('findings (2 danger, 14 warning)')
             ->and($output)
             ->not->toContain('app: {');
     });

@@ -99,7 +99,12 @@ describe('AppListController', function (): void {
         $response->assertOk();
 
         $apps = $response->json('success.data.apps');
-        expect(array_column($apps, 'name'))->toBe(['alpha', 'beta', 'zebra']);
+        $inventory = $response->json('success.data.inventory');
+
+        expect(array_column($apps, 'name'))
+            ->toBe(['alpha', 'beta', 'zebra'])
+            ->and(array_column($inventory, 'app'))
+            ->toBe(['alpha', 'beta', 'zebra']);
     });
 
     it('derives visibility from concrete instances instead of logical app default nodes', function (): void {
@@ -138,7 +143,10 @@ describe('AppListController', function (): void {
         $response
             ->assertOk()
             ->assertJsonCount(1, 'success.data.apps')
-            ->assertJsonPath('success.data.apps.0.name', 'docs');
+            ->assertJsonPath('success.data.apps.0.name', 'docs')
+            ->assertJsonPath('success.data.inventory.0.app', 'docs')
+            ->assertJsonPath('success.data.inventory.0.instance_count', 2)
+            ->assertJsonPath('success.data.inventory.0.workspace_count', 0);
     });
 
     it('returns only workspaces placed on visible app instances', function (): void {
@@ -166,12 +174,11 @@ describe('AppListController', function (): void {
 
         $response
             ->assertOk()
+            ->assertJsonPath('success.data.inventory.0.instance_count', 1)
+            ->assertJsonPath('success.data.inventory.0.workspace_count', 1)
             ->assertJsonCount(1, 'success.data.apps.0.workspaces')
             ->assertJsonPath('success.data.apps.0.workspaces.0.name', 'visible-workspace')
-            ->assertJsonPath(
-                'success.data.apps.0.workspaces.0.url',
-                'https://visible-workspace.docs.visible',
-            )
+            ->assertJsonPath('success.data.apps.0.workspaces.0.url', 'https://visible-workspace.docs.visible')
             ->assertJsonMissing(['name' => 'hidden-workspace']);
     });
 
@@ -218,8 +225,7 @@ describe('AppListController', function (): void {
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
-        $response->assertOk()
-            ->assertJsonCount(2, 'success.data.apps');
+        $response->assertOk()->assertJsonCount(2, 'success.data.apps');
     });
 
     it('does not treat an unassigned caller as gateway visibility', function (): void {
@@ -230,8 +236,7 @@ describe('AppListController', function (): void {
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
-        $response->assertForbidden()
-            ->assertJsonPath('error.code', 'authorization_failed');
+        $response->assertForbidden()->assertJsonPath('error.code', 'authorization_failed');
     });
 
     it('returns authorization failure when the caller has no app registry visibility', function (): void {
@@ -285,14 +290,17 @@ describe('AppListController', function (): void {
             'php_version' => '8.5',
             'adopted' => false,
         ]);
+        $instance = create_app_list_instance($app, $node);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
         ]);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.apps.0', [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -317,6 +325,11 @@ describe('AppListController', function (): void {
                         'lifecycle_status' => 'expected',
                     ],
                 ],
+            ])
+            ->assertJsonPath('success.data.inventory.0', [
+                'app' => 'docs',
+                'instance_count' => 1,
+                'workspace_count' => 1,
             ]);
     });
 

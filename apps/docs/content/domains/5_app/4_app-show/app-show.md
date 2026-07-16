@@ -4,10 +4,11 @@
 
 Show one app's gateway registry details.
 
-Use `app:show` when you need an app's gateway-owned registry record: owning
-node, repository, paths, PHP version, agent IDE configuration, and the durable
-configuration it owns in related families (`workspace`, `process`, and app-owned
-`proxy`). Live runtime drift, readiness, and repair belong to
+Use `app:show` when you need an app's gateway-owned registry record and
+placement breakdown: repository, paths, PHP version, agent IDE configuration,
+visible app instances, the workspaces owned by each instance, and durable
+configuration in related families (`process` and app-owned `proxy`). Live
+runtime drift, readiness, and repair belong to
 [`doctor --family=app`](../app-doctor.md).
 
 ## Usage
@@ -49,12 +50,12 @@ Run `app:show` to inspect a single app's gateway configuration without triggerin
 
 1. Resolves the target app from input, current directory context, or
    interactive prompt.
-2. Reads the app record from gateway-owned app configuration: name, owning node,
-   repository, paths, PHP version, agent IDE configuration.
-3. Validates that the current caller is authorized to inspect the target app
-   through gateway-owned access policy.
-4. Aggregates the durable gateway configuration the app owns: workspaces, processes,
-   and app-owned proxy routes.
+2. Validates that the current caller can inspect at least one concrete Orbit app
+   instance, unless the caller is the gateway.
+3. Reads the app record from gateway-owned app configuration: name, default
+   node metadata, repository, paths, PHP version, and agent IDE configuration.
+4. Aggregates the caller-visible app instances, the workspaces owned by each
+   visible instance, processes, and app-owned proxy routes.
 5. Returns the app detail view backed by the registry.
 
 `app:show` does not:
@@ -68,7 +69,10 @@ Run `app:show` to inspect a single app's gateway configuration without triggerin
 
 ## Output
 
-Human output is a registry detail view.
+Human output is a registry summary followed by a table of visible instances and
+their nested workspace rows. Instance and workspace URLs are shown when the
+registry can derive them. The `APP DEPS` column is the logical app's aggregate
+dependency posture; workspace rows render `—`.
 
 JSON output returns the app record under a machine-readable output. See the
 [JSON renderer contract](technical/6.2_app-show_output-render_json.md) for the
@@ -77,9 +81,9 @@ exact payload shape.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The target app is visible to the current node identity through gateway-owned
-  access policy. An `app-dev` or `app-prod` node's self grant includes
-  `app:read` for apps owned by that same node only.
+- The target app is visible to the current node identity through at least one
+  concrete Orbit app instance on a serving node where the caller has
+  `app:read`. Gateway callers can inspect every instance.
 
 ## Related Commands
 

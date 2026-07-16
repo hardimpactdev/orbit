@@ -68,11 +68,16 @@ once.
    sort by the logical app's default node metadata.
 3. **Sort results.** Apps are sorted by app name (ascending,
    case-insensitive). Every output renderer uses this single ordering.
-4. **Attach visible workspaces.** Each app list item includes only the app's
+4. **Count visible placements.** Each app list result has a parallel inventory
+   entry with the number of placement-visible instances and workspaces. Gateway
+   callers count every instance and workspace. For a non-gateway caller, the
+   count includes Orbit instances on authorized serving nodes and workspaces
+   owned by those instances.
+5. **Attach visible workspaces.** Each app list result retains the app's
    placement-visible workspaces, sorted by workspace name (ascending,
-   case-insensitive). Workspaces are registry configuration rows; no live
-   workspace probing is performed.
-5. **Render output.** Return the filtered app list through the selected output
+   case-insensitive), for machine compatibility. Workspaces are registry
+   configuration rows; no live workspace probing is performed.
+6. **Render output.** Return the filtered app list through the selected output
    renderer.
 
 ### Scope Boundaries
@@ -121,8 +126,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppListCommandTest.php` | CLI command contract: global request without node resolution, absence of node/environment filters, human output, gateway-unavailable failure, and WireGuard-specific failure mapping. |
-| `apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php` | Gateway app list API: instance-derived authorization, logical-app uniqueness, placement-scoped workspace payload, and empty result shape. |
+| `apps/cli/tests/Feature/Commands/App/AppListCommandTest.php` | CLI command contract: global request without node resolution, DataList inventory rendering, absence of workspace child rows, gateway-unavailable failure, and WireGuard-specific failure mapping. |
+| `apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php` | Gateway app list API: instance-derived authorization, logical-app uniqueness, placement-scoped instance/workspace counts, placement-scoped workspace payload, and empty result shape. |
 
 Renderer-specific test mapping lives in:
 

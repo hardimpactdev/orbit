@@ -2,13 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Models\App;
 use App\Models\AppDependencyAuditSummary;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
+use App\Models\Workspace;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -51,13 +54,27 @@ function grantAppShowAccess(Node $caller, Node $appNode, array $permissions = ['
     ]);
 }
 
+function create_app_show_instance(App $app, Node $node, string $name = 'development'): AppInstance
+{
+    return AppInstance::factory()->for($app)->create([
+        'name' => $name,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+}
+
 describe('AppShowController', function (): void {
     it('returns app registry details by name', function (): void {
         $caller = createAppShowCallerNode();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantAppShowAccess($caller, $node);
 
-        App::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'domain' => 'docs.example.com',
@@ -66,6 +83,11 @@ describe('AppShowController', function (): void {
             'repository' => 'git@github.com:orbit/docs.git',
             'php_version' => '8.5',
             'adopted' => false,
+        ]);
+        $instance = create_app_show_instance($app, $node);
+        Workspace::factory()->for($app)->create([
+            'name' => 'feature-docs',
+            'app_instance_id' => $instance->id,
         ]);
 
         $response = $this->call('GET', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
@@ -86,7 +108,17 @@ describe('AppShowController', function (): void {
             ->assertJsonPath('success.data.details.node.name', 'app-1')
             ->assertJsonPath('success.data.details.node.host', '10.6.0.7')
             ->assertJsonPath('success.data.details.dependency_audits', [])
-            ->assertJsonPath('success.data.details.workspaces', [])
+            ->assertJsonPath('success.data.details.instances.0.name', 'development')
+            ->assertJsonPath('success.data.details.instances.0.driver', 'orbit')
+            ->assertJsonPath('success.data.details.instances.0.node', 'app-1')
+            ->assertJsonPath('success.data.details.instances.0.url', 'https://docs.example.com')
+            ->assertJsonPath('success.data.details.instances.0.workspaces.0.name', 'feature-docs')
+            ->assertJsonPath(
+                'success.data.details.instances.0.workspaces.0.url',
+                'https://feature-docs.docs.example.com',
+            )
+            ->assertJsonPath('success.data.details.workspaces.0.name', 'feature-docs')
+            ->assertJsonPath('success.data.details.workspaces.0.app_instance', 'development')
             ->assertJsonPath('success.data.details.processes', [])
             ->assertJsonPath('success.data.details.routes.0.host', 'docs.example.com');
     });
@@ -100,6 +132,7 @@ describe('AppShowController', function (): void {
             'name' => 'docs',
             'node_id' => $node->id,
         ]);
+        create_app_show_instance($app, $node);
         AppDependencyAuditSummary::factory()
             ->findings()
             ->create([
@@ -173,12 +206,111 @@ describe('AppShowController', function (): void {
             ]);
     });
 
+    it('returns only instances and workspaces placed on visible serving nodes', function (): void {
+        $caller = createAppShowCallerNode();
+        $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'tld' => 'visible']);
+        $hiddenNode = createTestAppHostNode(['name' => 'hidden-node', 'tld' => 'hidden']);
+        grantAppShowAccess($caller, $visibleNode);
+
+        $app = App::factory()->for($hiddenNode, 'node')->create([
+            'name' => 'docs',
+            'domain' => null,
+        ]);
+        $visibleInstance = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $visibleNode->id,
+                node: $visibleNode->name,
+                domain: 'docs.visible',
+            ),
+        ]);
+        $hiddenInstance = AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $hiddenNode->id,
+                node: $hiddenNode->name,
+                domain: 'docs.hidden',
+            ),
+        ]);
+        Workspace::factory()->for($app)->create([
+            'name' => 'visible-workspace',
+            'app_instance_id' => $visibleInstance->id,
+        ]);
+        Workspace::factory()->for($app)->create([
+            'name' => 'hidden-workspace',
+            'app_instance_id' => $hiddenInstance->id,
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/apps/docs',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP,
+            ],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(1, 'success.data.details.instances')
+            ->assertJsonPath('success.data.details.instances.0.name', 'development')
+            ->assertJsonPath('success.data.details.instances.0.node', 'visible-node')
+            ->assertJsonPath('success.data.details.instances.0.url', 'https://docs.visible')
+            ->assertJsonPath(
+                'success.data.details.instances.0.workspaces.0.url',
+                'https://visible-workspace.docs.visible',
+            )
+            ->assertJsonCount(1, 'success.data.details.workspaces')
+            ->assertJsonMissing(['name' => 'production'])
+            ->assertJsonMissing(['name' => 'hidden-workspace']);
+    });
+
+    it('lets gateway callers inspect external instances with configured URLs', function (): void {
+        createAppShowCallerNode(role: 'gateway');
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver' => AppInstanceDriver::LaravelCloud,
+            'driver_config' => new LaravelCloudAppInstanceDriverConfigData(
+                application_name: 'docs',
+                environment_name: 'production',
+                domain: 'docs.example.com',
+            ),
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/apps/docs',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP,
+            ],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.details.instances.0.name', 'production')
+            ->assertJsonPath('success.data.details.instances.0.driver', 'laravel-cloud')
+            ->assertJsonPath('success.data.details.instances.0.node', null)
+            ->assertJsonPath('success.data.details.instances.0.url', 'https://docs.example.com');
+    });
+
     it('resolves by hostname when no app name matches', function (): void {
         $caller = createAppShowCallerNode();
         $node = createTestAppHostNode();
         grantAppShowAccess($caller, $node);
 
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+            'domain' => 'docs.example.com',
+        ]);
+        create_app_show_instance($app, $node);
 
         $response = $this->call(
             'GET',
@@ -189,8 +321,7 @@ describe('AppShowController', function (): void {
             ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP],
         );
 
-        $response->assertOk()
-            ->assertJsonPath('success.data.app.name', 'docs');
+        $response->assertOk()->assertJsonPath('success.data.app.name', 'docs');
     });
 
     it('prefers app name over hostname collisions', function (): void {
@@ -198,8 +329,18 @@ describe('AppShowController', function (): void {
         $node = createTestAppHostNode();
         grantAppShowAccess($caller, $node);
 
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
-        App::factory()->create(['name' => 'docs.example.com', 'node_id' => $node->id, 'domain' => 'other.example.com']);
+        $hostnameApp = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+            'domain' => 'docs.example.com',
+        ]);
+        $nameApp = App::factory()->create([
+            'name' => 'docs.example.com',
+            'node_id' => $node->id,
+            'domain' => 'other.example.com',
+        ]);
+        create_app_show_instance($hostnameApp, $node);
+        create_app_show_instance($nameApp, $node);
 
         $response = $this->call(
             'GET',
@@ -210,15 +351,15 @@ describe('AppShowController', function (): void {
             ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP],
         );
 
-        $response->assertOk()
-            ->assertJsonPath('success.data.app.name', 'docs.example.com');
+        $response->assertOk()->assertJsonPath('success.data.app.name', 'docs.example.com');
     });
 
     it('rejects hidden apps when the caller lacks app:read on the owning node', function (): void {
         $caller = createAppShowCallerNode();
         $node = createTestAppHostNode();
         grantAppShowAccess($caller, $node, ['node:read']);
-        App::factory()->create(['name' => 'hidden', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'hidden', 'node_id' => $node->id]);
+        create_app_show_instance($app, $node);
 
         $response = $this->call('GET', '/api/apps/hidden', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
 
@@ -233,7 +374,12 @@ describe('AppShowController', function (): void {
         $caller = createAppShowCallerNode();
         $node = createTestAppHostNode();
         grantAppShowAccess($caller, $node, ['node:read']);
-        App::factory()->create(['name' => 'hidden', 'node_id' => $node->id, 'domain' => 'hidden.example.com']);
+        $app = App::factory()->create([
+            'name' => 'hidden',
+            'node_id' => $node->id,
+            'domain' => 'hidden.example.com',
+        ]);
+        create_app_show_instance($app, $node);
 
         $response = $this->call(
             'GET',
@@ -265,14 +411,14 @@ describe('AppShowController', function (): void {
             permissions: app(NodePermissionPresets::class)->permissions('app-dev-self'),
         );
 
-        App::factory()->create(['name' => 'owned', 'node_id' => $caller->id]);
-        App::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
+        $ownedApp = App::factory()->create(['name' => 'owned', 'node_id' => $otherNode->id]);
+        $hiddenApp = App::factory()->create(['name' => 'hidden', 'node_id' => $caller->id]);
+        create_app_show_instance($ownedApp, $caller);
+        create_app_show_instance($hiddenApp, $otherNode);
 
         $response = $this->call('GET', '/api/apps/owned', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
 
-        $response
-            ->assertOk()
-            ->assertJsonPath('success.data.app.name', 'owned');
+        $response->assertOk()->assertJsonPath('success.data.app.name', 'owned');
 
         $hidden = $this->call('GET', '/api/apps/hidden', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
 
@@ -301,8 +447,7 @@ describe('AppShowController', function (): void {
 
         $response = $this->call('GET', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
 
-        $response->assertOk()
-            ->assertJsonPath('success.data.app.name', 'docs');
+        $response->assertOk()->assertJsonPath('success.data.app.name', 'docs');
     });
 
     it('rejects unauthenticated requests', function (): void {

@@ -4,10 +4,10 @@
 
 List apps registered on the gateway.
 
-`app:list` provides a high-level summary of logical application records and
-their visible workspaces. Concrete placement belongs to app instances and
-workspaces, not to the logical app list. For live app health and runtime
-verification, use
+`app:list` provides a compact inventory of logical application records.
+Concrete placement belongs to app instances and workspaces, so the list shows
+only aggregate counts and leaves placement detail to
+[`app:show`](../4_app-show/app-show.md). For live app health and runtime verification, use
 [`doctor --family=app`](../app-doctor.md).
 There is intentionally no `app:list --doctor` flag; app list output stays a
 fast registry read.
@@ -36,10 +36,10 @@ Run `app:list` to read visible logical apps from the gateway:
 1. Connects to the gateway API.
 2. Reads visible logical apps from concrete Orbit instance placement.
    Gateway callers can inspect every logical app.
-3. Attaches only workspaces whose concrete app-instance placement is visible to
-   the caller.
-4. Returns the logical apps with their names, primary URLs, and visible
-   registered workspaces.
+3. Counts only concrete app instances and workspaces whose placement is visible
+   to the caller.
+4. Returns each logical app with its repository plus a parallel inventory entry
+   containing its visible instance and workspace counts.
 
 `app:list` does not:
 - SSH into nodes.
@@ -52,13 +52,13 @@ Run `app:list` to read visible logical apps from the gateway:
 Both renderers use the same deterministic ordering: logical apps are sorted by
 app name (alphabetical, case-insensitive).
 
-Human output presents one table. Any visible workspaces registered to an app
-are shown immediately below that app as indented child rows, using the
-workspace URL and lifecycle status.
+Human output presents one DataList group. Each logical app is one item labeled
+by app name with `Repository`, `Instances`, and `Workspaces` properties.
 
 JSON output returns a flat list of apps in the same order under the standard
-machine-readable result. Each app item includes its registered workspaces as a nested
-`workspaces` array. See the
+machine-readable result. Each app retains its placement-visible registered
+workspaces as a nested `workspaces` array. A parallel `inventory` array contains
+the `instance_count` and `workspace_count` values keyed by app name. See the
 [JSON renderer contract](technical/6.2_app-list_output-render_json.md) for the
 exact payload shape.
 

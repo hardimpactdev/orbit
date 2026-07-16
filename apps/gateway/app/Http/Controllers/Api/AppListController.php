@@ -77,11 +77,13 @@ final readonly class AppListController implements Loggable
             visibleNodeIds: $visibleNodeIds,
             environment: is_string($environment) && $environment !== '' ? $environment : null,
         );
+        $payloads = $this->listPayloads($apps, $callerIsGateway, $visibleNodeIds);
 
         return response()->json([
             'success' => [
                 'data' => [
-                    'apps' => $this->appPayloads($apps, $callerIsGateway, $visibleNodeIds),
+                    'apps' => $payloads['apps'],
+                    'inventory' => $payloads['inventory'],
                 ],
             ],
         ]);
@@ -130,20 +132,18 @@ final readonly class AppListController implements Loggable
      * @param  list<int>  $visibleNodeIds
      * @return Collection<int, App>
      */
-    private function fetchApps(
-        bool $callerIsGateway,
-        array $visibleNodeIds,
-        ?string $environment,
-    ): Collection {
+    private function fetchApps(bool $callerIsGateway, array $visibleNodeIds, ?string $environment): Collection
+    {
         /** @var Builder<App> $query */
         $query = App::query();
         $query->with(['node', 'instances', 'workspaces.appInstance', 'dependencyAuditSummaries']);
 
         if (! $callerIsGateway) {
             $query->whereHas('instances', static function (Builder $query) use ($visibleNodeIds): void {
-                $query
-                    ->where('driver', AppInstanceDriver::Orbit->value)
-                    ->whereIn('driver_config->data->node_id', $visibleNodeIds);
+                $query->where('driver', AppInstanceDriver::Orbit->value)->whereIn(
+                    'driver_config->data->node_id',
+                    $visibleNodeIds,
+                );
             });
         }
 
@@ -159,21 +159,58 @@ final readonly class AppListController implements Loggable
     /**
      * @param  Collection<int, App>  $apps
      * @param  list<int>  $visibleNodeIds
-     * @return list<array<string, mixed>>
+     * @return array{
+     *     apps: list<array<string, mixed>>,
+     *     inventory: list<array{
+     *         app: string,
+     *         instance_count: int,
+     *         workspace_count: int,
+     *     }>,
+     * }
      */
-    private function appPayloads(Collection $apps, bool $callerIsGateway, array $visibleNodeIds): array
+    private function listPayloads(Collection $apps, bool $callerIsGateway, array $visibleNodeIds): array
     {
         $appPayload = app(AppResponsePayload::class);
-        $payloads = [];
+        $appPayloads = [];
+        $inventoryPayloads = [];
 
         foreach ($apps as $app) {
-            $payloads[] = [
+            $workspaces = $this->workspacePayloads($app, $callerIsGateway, $visibleNodeIds);
+
+            $appPayloads[] = [
                 ...$appPayload->forApp($app),
-                'workspaces' => $this->workspacePayloads($app, $callerIsGateway, $visibleNodeIds),
+                'workspaces' => $workspaces,
+            ];
+            $inventoryPayloads[] = [
+                'app' => $app->name,
+                'instance_count' => $this->visibleInstanceCount($app, $callerIsGateway, $visibleNodeIds),
+                'workspace_count' => count($workspaces),
             ];
         }
 
-        return $payloads;
+        return [
+            'apps' => $appPayloads,
+            'inventory' => $inventoryPayloads,
+        ];
+    }
+
+    /**
+     * @param  list<int>  $visibleNodeIds
+     */
+    private function visibleInstanceCount(App $app, bool $callerIsGateway, array $visibleNodeIds): int
+    {
+        if ($callerIsGateway) {
+            return $app->instances->count();
+        }
+
+        return $app
+            ->instances
+            ->filter(fn (AppInstance $instance): bool => in_array(
+                $this->instanceNodeId($instance),
+                $visibleNodeIds,
+                strict: true,
+            ))
+            ->count();
     }
 
     /**

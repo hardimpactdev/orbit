@@ -9,6 +9,9 @@ use App\Commands\Concerns\RendersShowDetails;
 use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
+use App\Services\Apps\AppShowPlacementRows;
+
+use function Laravel\Prompts\table;
 
 final class AppShowCommand extends GatewayCommand
 {
@@ -97,18 +100,28 @@ final class AppShowCommand extends GatewayCommand
     private function renderApp(array $app, array $details): void
     {
         $name = is_scalar($app['name'] ?? null) ? (string) $app['name'] : 'unknown';
+        $placements = app(AppShowPlacementRows::class);
 
         $this->renderShowDetails("App: {$name}", [
             'Domain' => $this->domainLabel($app, $details),
-            'Node' => $this->nodeLabel($details['node'] ?? $app['node'] ?? null),
             'Repository' => $app['repository'] ?? null,
             'PHP' => $app['php_version'] ?? null,
             'Path' => $app['path'] ?? null,
             'Root' => $details['document_root'] ?? $app['root'] ?? null,
-            'Workspaces' => $this->nameLabels($details['workspaces'] ?? []),
             'Processes' => $this->nameLabels($details['processes'] ?? []),
             'Routes' => $this->routeLabels($details['routes'] ?? []),
+            'App deps' => $placements->dependencyLabel($app),
         ]);
+
+        $rows = $placements->forApp($app, $details);
+
+        if ($rows === []) {
+            $this->line('No app instances found.');
+
+            return;
+        }
+
+        table(headers: ['NAME', 'DRIVER', 'NODE', 'URL', 'APP DEPS'], rows: $rows);
     }
 
     /**
@@ -125,22 +138,6 @@ final class AppShowCommand extends GatewayCommand
         $host = $url === null ? null : parse_url($url, PHP_URL_HOST);
 
         return is_string($host) && $host !== '' ? $host : $url;
-    }
-
-    private function nodeLabel(mixed $node): string
-    {
-        if (! is_array($node)) {
-            return is_scalar($node) && (string) $node !== '' ? (string) $node : '—';
-        }
-
-        $name = is_string($node['name'] ?? null) ? $node['name'] : null;
-        $host = is_string($node['host'] ?? null) ? $node['host'] : null;
-
-        if ($name === null || $name === '') {
-            return '—';
-        }
-
-        return $host === null || $host === '' ? $name : "{$name} ({$host})";
     }
 
     /**
@@ -163,10 +160,7 @@ final class AppShowCommand extends GatewayCommand
 
             if (is_array($item) && is_string($item['name'] ?? null) && $item['name'] !== '') {
                 $instance = is_string($item['app_instance'] ?? null) ? $item['app_instance'] : null;
-                $labels[] =
-                    $instance === null || $instance === ''
-                        ? $item['name']
-                        : "{$item['name']} ({$instance})";
+                $labels[] = $instance === null || $instance === '' ? $item['name'] : "{$item['name']} ({$instance})";
             }
         }
 

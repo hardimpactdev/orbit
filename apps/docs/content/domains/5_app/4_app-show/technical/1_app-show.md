@@ -10,9 +10,8 @@
 - The CLI caller can reach the Orbit gateway.
 - The target app is visible to the authenticated WireGuard peer through
   gateway-owned access policy.
-- The self grants for app roles include `app:read` for apps owned by that same
-  `app-dev` or `app-prod` node only. Inspecting an app on another node still
-  requires an explicit grant on the target app's owning node.
+- A non-gateway caller has `app:read` on at least one concrete Orbit app
+  instance's serving node. Gateway callers have implicit global visibility.
 
 **Post-input path eligibility:**
 - The resolved app must match an existing app record visible to the caller.
@@ -66,16 +65,22 @@ Supplying an unknown option fails with `error.code=validation_failed`.
 
 1. **Lookup.** Read the app record from gateway-owned app configuration by the
    resolved name. If no visible app record matches, fail before side effects.
-2. **Authorization.** Verify the caller is authorized to inspect the target
-   app through gateway-owned access policy. If not authorized, fail before
-   side effects.
+2. **Authorization.** Verify the caller is the gateway or is authorized to
+   inspect at least one concrete Orbit instance through its serving node. If
+   not authorized, fail before side effects.
 3. **Result assembly.** Return the app record and the durable gateway configuration
    the app owns:
-   - app registry: name, owning node, repository, app path,
+   - app registry: name, default node metadata, repository, app path,
      document root, PHP version, primary domain;
    - agent IDE configuration: effective adapter and resolution source;
-   - related configuration owned by the app: workspaces, processes, and app-owned
-     proxy routes (registry-shaped, not live status).
+   - caller-visible app instances, ordered by instance name;
+   - workspaces nested under their visible app instance and also retained in
+     the flat `details.workspaces` compatibility inventory;
+   - processes and app-owned proxy routes (registry-shaped, not live status).
+
+   Non-gateway callers receive only Orbit instances whose serving node grants
+   `app:read` and workspaces owned by those instances. External driver-backed
+   instances have no Orbit serving node and are visible only to gateway callers.
 
    Default `app:show` is a registry read, not a live readiness command.
 
@@ -139,8 +144,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppShowCommandTest.php` | CLI JSON/human output and gateway error pass-through. |
-| `apps/gateway/tests/Feature/Http/Api/AppShowControllerTest.php` | Gateway registry details and authorization. |
+| `apps/cli/tests/Feature/Commands/App/AppShowCommandTest.php` | CLI JSON pass-through, human summary plus instance/workspace table, app-scoped dependency labeling, and gateway error pass-through. |
+| `apps/gateway/tests/Feature/Http/Api/AppShowControllerTest.php` | Gateway registry details, instance-derived authorization, placement-scoped instance/workspace payloads, URLs, and app-level dependency posture. |
 
 Input-mode-specific test mapping lives in:
 
