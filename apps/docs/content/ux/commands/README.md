@@ -14,12 +14,12 @@ primitives are explicitly called out below.
 
 These rules apply to all renderer and input-mode docs in this tree.
 
-- Lists default to read-only [`table`](lists/table.md). Use
-  [`data-list`](lists/data-list.md) when each item needs a compact grouped
-  property view instead of a columnar row, and use
-  [`datatable`](lists/data-table-prompt.md) whenever the operator must choose an
-  existing Orbit entity from finite registry state before a command action, such
-  as an app, node, workspace, process, schedule, or tool target.
+- Lists default to read-only [`table`](lists/table.md). The term
+  [`data-list`](lists/data-list.md) always means
+  `Laravel\Prompts\datatable`: a columnar interactive list for choosing an
+  existing Orbit entity before a detail or action surface. Use
+  [`property-list`](lists/property-list.md) for read-only grouped labeled
+  properties.
 - Show commands use [`show-detail`](details/show-detail.md): a single
   tree-shaped detail view with a title and aligned property rows.
 - Open `text` and `number` prompts are only for values that are not knowable as
@@ -65,6 +65,6 @@ Each family links to a selection guide and individual primitive pages.
 | Family | Pages |
 | --- | --- |
 | [Details](details/show-detail.md) | `show-detail` |
-| [Lists](lists/README.md) | `table`, `data-table-prompt` |
+| [Lists](lists/README.md) | `table`, `data-list`, `property-list` |
 | [Inputs](inputs/README.md) | `text`, `password`, `confirm`, `select`, `multi-select`, `search`, `multi-search`, `suggest` |
 | [Progress](progress/README.md) | `progress-tree`, `spinner` |

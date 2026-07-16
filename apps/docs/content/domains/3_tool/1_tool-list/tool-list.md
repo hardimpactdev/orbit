@@ -53,7 +53,7 @@ tools on nodes.
 ## Output
 
 Use `--json` to get machine-readable tool entities; omit it for a grouped node
-data list.
+property list.
 
 Human output is grouped by node and shows each tool's name, expected lifecycle
 state, managed flag, and known version when available.

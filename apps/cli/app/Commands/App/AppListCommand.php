@@ -6,7 +6,9 @@ namespace App\Commands\App;
 
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
-use App\Support\Prompts\DataList;
+use Throwable;
+
+use function Laravel\Prompts\datatable;
 
 final class AppListCommand extends GatewayCommand
 {
@@ -19,6 +21,14 @@ final class AppListCommand extends GatewayCommand
 
     public function handle(): int
     {
+        if (! $this->wantsJson() && ! $this->input->isInteractive()) {
+            return $this->renderFailure(
+                'validation_failed',
+                'Interactive app selection requires a terminal. Use --json for non-interactive output.',
+                ['field' => 'app'],
+            );
+        }
+
         try {
             $response = $this->gatewayGet('/api/apps');
         } catch (GatewayApiException $exception) {
@@ -38,14 +48,25 @@ final class AppListCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        new DataList([
-            [
-                'heading' => 'Apps',
-                'items' => $this->dataListItems($apps, $inventory),
-            ],
-        ])->display();
+        $rows = $this->dataTableRows($apps, $inventory);
 
-        return self::SUCCESS;
+        try {
+            $selected = datatable(
+                headers: ['Name', 'Repository', 'Instances', 'Workspaces'],
+                rows: $rows,
+                label: 'Select an app',
+                hint: 'Press / to search',
+                required: true,
+            );
+        } catch (Throwable) {
+            return $this->renderFailure('validation_failed', 'Operation cancelled.', ['field' => 'app']);
+        }
+
+        if (! is_string($selected) || ! array_key_exists($selected, $rows)) {
+            return $this->renderFailure('validation_failed', 'Operation cancelled.', ['field' => 'app']);
+        }
+
+        return $this->call('app:show', ['app' => $selected]);
     }
 
     /**
@@ -81,14 +102,11 @@ final class AppListCommand extends GatewayCommand
     /**
      * @param  list<array<array-key, mixed>>  $apps
      * @param  list<array<array-key, mixed>>  $inventory
-     * @return list<array{
-     *     label: string,
-     *     properties: array<string, string>,
-     * }>
+     * @return array<string, array<int, string>>
      */
-    private function dataListItems(array $apps, array $inventory): array
+    private function dataTableRows(array $apps, array $inventory): array
     {
-        $items = [];
+        $rows = [];
         $inventoryByApp = [];
 
         foreach ($inventory as $entry) {
@@ -101,19 +119,22 @@ final class AppListCommand extends GatewayCommand
 
         foreach ($apps as $app) {
             $appName = $this->appString($app, 'name');
+
+            if ($appName === '—') {
+                continue;
+            }
+
             $placement = $inventoryByApp[$appName] ?? [];
 
-            $items[] = [
-                'label' => $appName,
-                'properties' => [
-                    'Repository' => $this->appString($app, 'repository'),
-                    'Instances' => $this->countString($placement, 'instance_count'),
-                    'Workspaces' => $this->countString($placement, 'workspace_count'),
-                ],
+            $rows[$appName] = [
+                $appName,
+                $this->appString($app, 'repository'),
+                $this->countString($placement, 'instance_count'),
+                $this->countString($placement, 'workspace_count'),
             ];
         }
 
-        return $items;
+        return $rows;
     }
 
     /**

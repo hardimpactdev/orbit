@@ -1,5 +1,9 @@
 # Data Table Prompt
 
+> Terminology: Orbit calls this component a
+> [`data-list`](data-list.md). Both names refer to
+> `Laravel\Prompts\datatable`; they are not separate primitives.
+
 Interactive row-selection table. The user picks one row and the command
 acts on the selection.
 

@@ -29,6 +29,10 @@ Inspect the exact assigned diff and evidence against the goal and relevant
 product authority. Check correctness, missing behavior, security, failure
 handling, idempotency, performance risk, maintainable extraction, extension
 points, docs alignment, test strength, operator UX, and acceptance routing.
+For CLI human-output changes, verify the concrete implementation symbol and
+whole rendered frame against the selected UX primitive and raw user-provided
+column names or interaction examples. Do not accept a self-authored component
+name or word-presence assertions as proof of the requested primitive.
 
 Classify `BLAST_RADIUS: complete` when the change affects a product decision, ownership boundary, transport, shared vocabulary, or shared schema. Before that
 classification, inspect beyond the candidate diff with one bounded

@@ -98,8 +98,17 @@ review into a full project audit unless the user explicitly asks for one.
 ### Human Output
 
 - Human output uses the documented Orbit primitive: progress tree for
-  long-running commands, spinner only for a short single wait, table for lists,
-  and show-detail for single-entity details.
+  long-running commands, spinner only for a short single wait, table for
+  read-only lists, data list for interactive row selection, and show-detail for
+  single-entity details.
+- In Orbit vocabulary, data list means `Laravel\Prompts\datatable`. The reviewer
+  must verify the concrete implementation symbol and the full active prompt
+  frame; `App\Support\Prompts\DataList`, a renamed lookalike, or indented
+  `Label: value` prose is not equivalent.
+- Compare raw user-provided column names and click-through behavior against the
+  actual headers, row keys, selection result, and follow-up command. A test that
+  only finds the requested words somewhere in the output does not prove the
+  requested component.
 - For bordered panels, box drawings, progress trees, and retained terminal
   frames, strip ANSI and verify the whole visible frame, not only the rows that
   changed. No content may overflow the expected panel width, collide with the

@@ -193,7 +193,7 @@ describe('tool:list', function (): void {
         remove_tool_list_config_store($store);
     });
 
-    it('renders human output with the Prompts data-list component', function (): void {
+    it('renders human output with the Prompts-backed property-list component', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'tools' => [
                 [

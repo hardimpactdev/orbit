@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Support\Prompts\Themes\Default;
 
-use App\Support\Prompts\DataList;
+use App\Support\Prompts\PropertyList;
 use Laravel\Prompts\Themes\Default\Renderer;
 
-final class DataListRenderer extends Renderer
+final class PropertyListRenderer extends Renderer
 {
-    public function __invoke(DataList $dataList): string
+    public function __invoke(PropertyList $propertyList): string
     {
-        foreach ($dataList->groups as $index => $group) {
+        foreach ($propertyList->groups as $index => $group) {
             if ($index > 0) {
                 $this->newLine();
             }

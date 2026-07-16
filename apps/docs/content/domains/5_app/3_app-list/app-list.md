@@ -40,6 +40,8 @@ Run `app:list` to read visible logical apps from the gateway:
    to the caller.
 4. Returns each logical app with its repository plus a parallel inventory entry
    containing its visible instance and workspace counts.
+5. In interactive human mode, presents those rows in the Laravel Prompts data
+   list and opens the selected app's `app:show` drill-down.
 
 `app:list` does not:
 - SSH into nodes.
@@ -52,8 +54,11 @@ Run `app:list` to read visible logical apps from the gateway:
 Both renderers use the same deterministic ordering: logical apps are sorted by
 app name (alphabetical, case-insensitive).
 
-Human output presents one DataList group. Each logical app is one item labeled
-by app name with `Repository`, `Instances`, and `Workspaces` properties.
+Human output presents the Laravel Prompts data list with `Name`, `Repository`,
+`Instances`, and `Workspaces` columns. Selecting a row opens the same instance
+and workspace placement detail as `app:show <app>`.
+Human output requires an interactive terminal. Scripts and other
+non-interactive callers use `orbit app:list --json`.
 
 JSON output returns a flat list of apps in the same order under the standard
 machine-readable result. Each app retains its placement-visible registered

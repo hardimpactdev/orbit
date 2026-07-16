@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Services\GatewayApiClient;
 use App\Services\OrbitConfigStore;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Laravel\Prompts\Key;
+use Laravel\Prompts\Prompt;
 
 function create_app_list_config_store(string $filename, ?string $defaultNode = null): OrbitConfigStore
 {
@@ -30,7 +33,7 @@ function remove_app_list_config_store(OrbitConfigStore $store): void
 
 function strip_app_list_ansi(string $value): string
 {
-    return preg_replace('/\e\[[0-9;?]*[a-zA-Z]/', '', $value) ?? $value;
+    return preg_replace(pattern: '/\e\[[0-9;?]*[a-zA-Z]/', replacement: '', subject: $value) ?? $value;
 }
 
 describe('app:list', function (): void {
@@ -86,44 +89,69 @@ describe('app:list', function (): void {
             ->toBeFalse();
     });
 
-    it('renders logical apps as a data list with placement counts', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'apps' => [
-                [
-                    'name' => 'docs',
-                    'repository' => 'git@github.com:orbit/docs.git',
-                    'workspaces' => [
+    it('renders the Laravel Prompts datatable columns and opens the selected app', function (): void {
+        config()->set('orbit.gateway.url', 'https://gateway.test');
+        config()->set('orbit.gateway.timeout', 30);
+        app()->forgetInstance(GatewayApiClient::class);
+
+        Http::fake(function (Request $request) {
+            $path = parse_url($request->url(), PHP_URL_PATH);
+
+            if ($request->method() === 'GET' && $path === '/api/apps') {
+                return Http::response(fakeSuccessEnvelope([
+                    'apps' => [
                         [
-                            'name' => 'feature-a',
-                            'url' => 'https://feature-a.docs.test',
-                            'lifecycle_status' => 'active',
+                            'name' => 'docs',
+                            'repository' => 'git@github.com:orbit/docs.git',
                         ],
                         [
-                            'name' => 'feature-b',
-                            'url' => 'https://feature-b.docs.test',
-                            'lifecycle_status' => 'setting_up',
+                            'name' => 'blog',
+                            'repository' => null,
                         ],
                     ],
-                ],
-                [
-                    'name' => 'blog',
-                    'repository' => null,
-                    'workspaces' => [],
-                ],
-            ],
-            'inventory' => [
-                [
-                    'app' => 'docs',
-                    'instance_count' => 2,
-                    'workspace_count' => 2,
-                ],
-                [
-                    'app' => 'blog',
-                    'instance_count' => 1,
-                    'workspace_count' => 0,
-                ],
-            ],
-        ]));
+                    'inventory' => [
+                        [
+                            'app' => 'docs',
+                            'instance_count' => 2,
+                            'workspace_count' => 2,
+                        ],
+                        [
+                            'app' => 'blog',
+                            'instance_count' => 1,
+                            'workspace_count' => 0,
+                        ],
+                    ],
+                ]));
+            }
+
+            if ($request->method() === 'GET' && $path === '/api/apps/docs') {
+                return Http::response(fakeSuccessEnvelope([
+                    'app' => [
+                        'name' => 'docs',
+                        'repository' => 'git@github.com:orbit/docs.git',
+                    ],
+                    'details' => [
+                        'domain' => 'docs.test',
+                        'instances' => [
+                            [
+                                'name' => 'development',
+                                'driver' => 'orbit',
+                                'node' => 'app-1',
+                                'url' => 'https://docs.test',
+                                'workspaces' => [],
+                            ],
+                        ],
+                    ],
+                ]));
+            }
+
+            return Http::response(
+                fakeErrorEnvelope(code: 'unexpected_request', message: 'Unexpected gateway request.'),
+                500,
+            );
+        });
+
+        Prompt::fake([Key::ENTER]);
 
         [$exitCode, $output] = runCommand($this, 'app:list');
         $plain = strip_app_list_ansi($output);
@@ -131,30 +159,48 @@ describe('app:list', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($plain)
-            ->toContain('Apps')
+            ->toContain('Select an app')
             ->and($plain)
-            ->toContain('docs')
+            ->toContain('Name')
             ->and($plain)
-            ->toContain('Repository:')
+            ->toContain('Repository')
+            ->and($plain)
+            ->toContain('Instances')
+            ->and($plain)
+            ->toContain('Workspaces')
             ->and($plain)
             ->toContain('git@github.com:orbit/docs.git')
             ->and($plain)
-            ->toContain('Instances: 2')
+            ->toContain('App: docs')
             ->and($plain)
-            ->toContain('Workspaces: 2')
+            ->toContain('development')
             ->and($plain)
-            ->toContain('blog')
+            ->toContain('https://docs.test')
             ->and($plain)
-            ->toContain('Instances: 1')
-            ->and($plain)
-            ->toContain('Workspaces: 0')
-            ->and($plain)
-            ->not->toContain('NAME')->and($plain)
-            ->not->toContain('STATUS')->and($plain)
-            ->not->toContain('feature-a')->and($plain)
-            ->not->toContain('feature-b')->and($plain)
+            ->not->toContain('Repository:')->and($plain)
+            ->not->toContain('Instances:')->and($plain)
+            ->not->toContain('Workspaces:')
             ->not->toContain('apps: [')->and($output)
             ->not->toContain('"lifecycle_status"');
+
+        Http::assertSentCount(2);
+    });
+
+    it('requires json mode when app selection is non-interactive', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:list', [
+            '--no-interaction' => true,
+        ]);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('Interactive app selection requires a terminal.')
+            ->and($output)
+            ->toContain('Use --json for non-interactive output.');
+
+        Http::assertNothingSent();
     });
 
     it('renders human empty output when no apps are visible', function (): void {

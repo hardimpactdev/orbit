@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Support\Prompts;
 
-use App\Support\Prompts\Themes\Default\DataListRenderer;
+use App\Support\Prompts\Themes\Default\PropertyListRenderer;
 use Laravel\Prompts\Prompt;
 
-final class DataList extends Prompt
+final class PropertyList extends Prompt
 {
     /**
      * @param  list<array{
@@ -47,6 +47,6 @@ final class DataList extends Prompt
     #[\Override]
     protected function getRenderer(): callable
     {
-        return new DataListRenderer($this);
+        return new PropertyListRenderer($this);
     }
 }

@@ -9,7 +9,7 @@ use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 use App\Exceptions\OrbitConfigStoreException;
 use App\Services\OrbitConfigStore;
-use App\Support\Prompts\DataList;
+use App\Support\Prompts\PropertyList;
 
 final class ToolListCommand extends GatewayCommand
 {
@@ -86,7 +86,7 @@ final class ToolListCommand extends GatewayCommand
      */
     private function renderTools(array $tools): void
     {
-        new DataList($this->toolDataListGroups($tools))->display();
+        new PropertyList($this->toolPropertyListGroups($tools))->display();
     }
 
     /**
@@ -99,7 +99,7 @@ final class ToolListCommand extends GatewayCommand
      *     }>,
      * }>
      */
-    private function toolDataListGroups(array $tools): array
+    private function toolPropertyListGroups(array $tools): array
     {
         $grouped = [];
 

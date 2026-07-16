@@ -78,6 +78,10 @@ Read only the reference files needed for the task:
   gateway-executed work).
 - Mapped tests must assert observable command contracts, not private
   implementation details.
+- In Orbit command vocabulary, data list means `Laravel\Prompts\datatable`.
+  Never substitute a custom grouped property renderer merely because its class
+  or documentation uses similar words; resolve the concrete primitive and
+  literal requested columns from the command UX authority.
 
 ## Fast Routing
 

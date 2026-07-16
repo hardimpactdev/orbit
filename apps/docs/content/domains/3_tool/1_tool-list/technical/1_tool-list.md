@@ -73,6 +73,6 @@ tool registry reads.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Tool/ToolListCommandTest.php` | CLI `tool:list` JSON envelope, default-node and self-scope filter forwarding, human data-list output, and gateway/WireGuard failure passthrough. |
+| `apps/cli/tests/Feature/Commands/Tool/ToolListCommandTest.php` | CLI `tool:list` JSON envelope, default-node and self-scope filter forwarding, human property-list output, and gateway/WireGuard failure passthrough. |
 | `apps/gateway/tests/Feature/Http/Api/ToolListControllerTest.php` | Gateway tool registry listing, caller-node/node/app filtering, visibility rules, canonical entity shape, and authorization failures. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | `ToolPayloadMapper` canonical entity mapping, `ToolRegistry` target/filter behavior, and registry model shape for non-live tool-list output. |

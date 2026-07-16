@@ -21,11 +21,13 @@ orbit app:list [--json]
 This command follows the shared
 [Invocation Model](../../../README.md#invocation-model).
 
-No required inputs exist; the command takes no positional arguments and all
-options are optional.
+No positional input is required. Human interactive mode resolves an app by
+selecting a row from the data list. JSON mode returns the inventory directly
+without prompting.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
+| `app` | Laravel Prompts data-list row key | Human interactive output has at least one visible app. | `--json`. | First row is highlighted. | Must be one returned visible logical app name. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 The command has no node input. Logical apps are gateway records; concrete node
@@ -56,6 +58,9 @@ once.
 
 1. Select the output renderer.
 2. Query the gateway for visible logical app registry configuration.
+3. In human interactive mode, render the data list and resolve its selected app
+   row key.
+4. Open the selected app through the existing `app:show` command.
 
 ## Behavior Contract
 
@@ -77,8 +82,11 @@ once.
    placement-visible workspaces, sorted by workspace name (ascending,
    case-insensitive), for machine compatibility. Workspaces are registry
    configuration rows; no live workspace probing is performed.
-6. **Render output.** Return the filtered app list through the selected output
-   renderer.
+6. **Render output.** JSON returns the filtered app inventory. Human interactive
+   output renders `Laravel\Prompts\datatable` with `Name`, `Repository`,
+   `Instances`, and `Workspaces` columns, then opens the selected app's
+   `app:show` placement drill-down. Non-interactive human mode fails before
+   gateway I/O and directs the caller to `--json`.
 
 ### Scope Boundaries
 
@@ -97,7 +105,11 @@ once.
 ## Failure Semantics
 
 Standard failures defined in [Common Failures](../../../README.md#common-failures)
-apply. `app:list` has no command-specific input failures.
+apply. Cancelling the human data-list selection returns
+`validation_failed` with `error.meta.field=app`.
+Requesting human output without an interactive terminal also returns
+`validation_failed` with `error.meta.field=app` and directs the caller to
+`--json`.
 
 ## Doctor Relationship
 
@@ -126,7 +138,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppListCommandTest.php` | CLI command contract: global request without node resolution, DataList inventory rendering, absence of workspace child rows, gateway-unavailable failure, and WireGuard-specific failure mapping. |
+| `apps/cli/tests/Feature/Commands/App/AppListCommandTest.php` | CLI command contract: global request without node resolution, Laravel Prompts datatable headers and selection, selected-app drill-down, gateway-unavailable failure, and WireGuard-specific failure mapping. |
 | `apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php` | Gateway app list API: instance-derived authorization, logical-app uniqueness, placement-scoped instance/workspace counts, placement-scoped workspace payload, and empty result shape. |
 
 Renderer-specific test mapping lives in:

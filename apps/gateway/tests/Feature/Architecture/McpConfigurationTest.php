@@ -387,6 +387,46 @@ it('documents immutable feedback promotion and deterministic protection first', 
         ->toContain('bin/quality-check-progress-frame-check');
 });
 
+it('binds data list vocabulary to Laravel Prompts datatable across docs and review', function (): void {
+    $dataList = file_get_contents(repo_path('apps/docs/content/ux/commands/lists/data-list.md')) ?: '';
+    $lists = file_get_contents(repo_path('apps/docs/content/ux/commands/lists/README.md')) ?: '';
+    $commandDesigner = file_get_contents(repo_path('.agents/skills/command-designer/SKILL.md')) ?: '';
+    $cliReviewer = file_get_contents(repo_path('.agents/review-personas/cli-command.md')) ?: '';
+    $generalReviewer = file_get_contents(repo_path('.agents/review-personas/general.md')) ?: '';
+    $appListCommand = file_get_contents(repo_path('apps/cli/app/Commands/App/AppListCommand.php')) ?: '';
+    $toolListCommand = file_get_contents(repo_path('apps/cli/app/Commands/Tool/ToolListCommand.php')) ?: '';
+    $normalizedCliReviewer = preg_replace('/\s+/', ' ', $cliReviewer) ?: '';
+    $normalizedGeneralReviewer = preg_replace('/\s+/', ' ', $generalReviewer) ?: '';
+
+    expect($dataList)
+        ->toContain('Laravel\\Prompts\\datatable')
+        ->toContain('Name')
+        ->toContain('Repository')
+        ->toContain('Instances')
+        ->toContain('Workspaces')
+        ->toContain('App\\Support\\Prompts\\DataList')
+        ->and($lists)
+        ->toContain('data list')
+        ->toContain('Laravel\\Prompts\\datatable')
+        ->and($commandDesigner)
+        ->toContain('data list means `Laravel\\Prompts\\datatable`')
+        ->and($normalizedCliReviewer)
+        ->toContain('data list means `Laravel\\Prompts\\datatable`')
+        ->toContain('verify the concrete implementation symbol')
+        ->toContain('raw user-provided column names')
+        ->and($normalizedGeneralReviewer)
+        ->toContain('verify the concrete implementation symbol')
+        ->toContain('raw user-provided column names')
+        ->and($appListCommand)
+        ->toContain('use function Laravel\\Prompts\\datatable;')
+        ->not
+        ->toContain('App\\Support\\Prompts\\DataList')
+        ->and($toolListCommand)
+        ->toContain('App\\Support\\Prompts\\PropertyList')
+        ->and(is_file(repo_path('apps/cli/app/Support/Prompts/DataList.php')))
+        ->toBeFalse();
+});
+
 it('keeps loop improvement trigger-only and bounded', function (): void {
     $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
     $loopReview = file_get_contents(repo_path('.agents/skills/loop-review/SKILL.md')) ?: '';
