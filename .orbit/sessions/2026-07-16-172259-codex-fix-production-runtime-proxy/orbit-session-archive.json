@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-16T15:22:59+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-production-runtime-proxy/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-16-172259-codex-fix-production-runtime-proxy",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proxy-incus.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-16T151044Z-ef7bdf3d3f4f.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proxy-incus.txt": "5e872262f23c9dd186a067d2c0a6176a7ff62d359450c41fc4b6000008063eef",
+        "loop.md": "9887c2e0aa5ab2109d74e4e21f67a8fe5835811ffec8af748065d7f7dc210a01",
+        "quality-gates/quality-check-2026-07-16T151044Z-ef7bdf3d3f4f.json": "4197d25b675ac56dbfbc932d05dc9bd72ed993a4ddc3d2c40c474e0b5d0a77d1"
+    },
+    "branch": "codex/fix-production-runtime-proxy",
+    "candidate_commit": "8da4d45c3b4cd8c26ce9d178d5f32226ce09a34a",
+    "accepted_feature_tip": "8da4d45c3b4cd8c26ce9d178d5f32226ce09a34a",
+    "accepted_main_tip": "4770546ab538d27bbe1a5ce68e703c8e5b71be03",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
