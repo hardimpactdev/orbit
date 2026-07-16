@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-16T22:48:13+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-workspace-env-ownership/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-17-004812-codex-workspace-env-ownership",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-16T224617Z-195bfd9cafd6.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "872adf82275a2294b8b48bc4e2bbd748fcc55297d6ce50fcb183b47efa23e4cb",
+        "loop.md": "4302220d5b9c162ceb9801619b20f6953c7cfeb36e45017801edd33c16b6a143",
+        "quality-gates/quality-check-2026-07-16T224617Z-195bfd9cafd6.json": "a61c55a9b2a8f90824aa06c1a0773192bb76e788f6b75cc25b6f7e9bea0f21ca"
+    },
+    "branch": "codex/workspace-env-ownership",
+    "candidate_commit": "4cd2b3a2555b44ca1b92165aa730a9b3e66deeec",
+    "accepted_feature_tip": "4cd2b3a2555b44ca1b92165aa730a9b3e66deeec",
+    "accepted_main_tip": "748905e31a393cd267d720ccff3fbd40b569750c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

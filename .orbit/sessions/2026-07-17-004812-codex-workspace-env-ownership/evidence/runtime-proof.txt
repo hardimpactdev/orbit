@@ -1,0 +1,100 @@
+Workspace env ownership retained-topology proof
+Date: 2026-07-16
+Venue: retained-incus
+Feature tip: 4cd2b3a2555b44ca1b92165aa730a9b3e66deeec
+Runtime code tip: 3eb3cfdab3781c00e74e44b22fecae43683c26f8
+Tip note: 4cd2b3a2555b44ca1b92165aa730a9b3e66deeec differs from the runtime
+code tip only by replacing a literal test fixture password with generated data
+and preventing a low-CPU-budget quality-check scheduler deadlock.
+
+Topology:
+- id: dev-b9aadf
+- kind: operator_gateway_app-dev
+- provider: incus
+- host: beast
+- manifest: apps/e2e/var/dev-topology/dev-b9aadf.json
+- operator: orbit-e2e-dev-b9aadf-operator
+- gateway: orbit-e2e-dev-b9aadf-gateway
+- dev: orbit-e2e-dev-b9aadf-dev
+- runtime checkout: /home/orbit/orbit-run
+- Solo terminal: solo://proj/11/process/retained-incus-final-proof--1083
+
+Fresh acquisition from the final candidate:
+- source-mounted-launchers: 0.172s
+- gateway-api.start: 1.392s
+- retarget.bake.dev: 5.393s
+- retarget: 14.235s
+- checkout gateway-api.restart: 2.356s
+- checkout.overlay: 10.564s
+- result: passed
+
+Fixture:
+- app: env-proof-app
+- instance: development
+- parent path: /home/orbit/env-proof-app
+- workspace: env-proof-workspace
+- workspace path: /home/orbit/env-proof-app/.worktrees/env-proof-workspace
+
+Commands and results:
+
+1. App registration:
+   ./apps/cli/orbit app:register env-proof-app --node=app-dev-1 --path=/home/orbit/env-proof-app --json
+   Result: success; adopted app with development instance on app-dev-1.
+
+2. Parent-owned apply:
+   ./apps/cli/orbit app:env set env-proof-app --instance=development --key=OWNER_SCOPE --value=parent-owned --apply --json
+   Result: success; path=/home/orbit/env-proof-app/.env, stored=true,
+   applied=true, cache_cleared=true.
+
+3. Workspace creation:
+   ./apps/cli/orbit workspace:new env-proof-workspace --app=env-proof-app.development --base=main --json
+   Result: complete, exit_code=0, action=created. The minimal fixture's
+   generated test hostname did not resolve, so the unrelated HTTP probe emitted
+   workspace.http_probe_unhealthy.
+
+4. Preserve a second workspace-owned value, then apply the owner value:
+   ./apps/cli/orbit workspace:env set env-proof-workspace --app=env-proof-app.development --key=SECOND_VALUE --value=preserved --json
+   ./apps/cli/orbit workspace:env set env-proof-workspace --app=env-proof-app.development --key=OWNER_SCOPE --value=workspace-final --apply --json
+   Result: success; path=/home/orbit/env-proof-app/.worktrees/env-proof-workspace/.env,
+   stored=true, applied=true, cache_cleared=true.
+
+5. Direct node boundary and complete-map check:
+   PARENT_ENV
+   OWNER_SCOPE=parent-owned
+   WORKSPACE_ENV
+   OWNER_SCOPE=workspace-final
+   APP_URL=https://env-proof-workspace.env-proof-app.test
+   SECOND_VALUE=preserved
+   VITE_APP_URL=https://env-proof-workspace.env-proof-app.test
+   VITE_DEV_SERVER_CERT=/home/orbit/.config/orbit/certs/env-proof-workspace.env-proof-app.test.crt
+   VITE_DEV_SERVER_KEY=/home/orbit/.config/orbit/certs/env-proof-workspace.env-proof-app.test.key
+   VITE_VALET_HOST=env-proof-workspace.env-proof-app.test
+
+6. Workspace render:
+   ./apps/cli/orbit workspace:env render env-proof-workspace --app=env-proof-app.development --json
+   Result: success; OWNER_SCOPE=workspace-final and SECOND_VALUE=preserved with
+   source=workspace; derived URL and Vite values with source=orbit.
+
+7. Setup convergence:
+   ./apps/cli/orbit workspace:setup env-proof-workspace --app=env-proof-app.development --json
+   Result: complete, exit_code=0, action=converged.
+
+8. Quoted parent-env inheritance rejection:
+   ./apps/cli/orbit workspace-setup-step:add --app=env-proof-app.development --command='cp "$ORBIT_APP_PATH"/.env .env' --json
+   Result: validation_failed; field=command,
+   reason=parent_env_inheritance_forbidden.
+
+9. Idempotent repeat:
+   ./apps/cli/orbit workspace:env set env-proof-workspace --app=env-proof-app.development --key=OWNER_SCOPE --value=workspace-final --apply --json
+   Result: success; stored=true, applied=true, cache_cleared=true.
+
+10. Final direct node boundary check:
+    PARENT_FINAL=OWNER_SCOPE=parent-owned
+    OWNER_SCOPE=workspace-final
+    SECOND_VALUE=preserved
+
+Conclusion:
+The fresh retained Incus runtime lane passed from the final candidate. The
+workspace apply wrote the complete applicable map without changing the parent
+.env, setup preserved workspace-owned state, a repeated apply was idempotent,
+and the quoted parent-env inheritance form was rejected.
