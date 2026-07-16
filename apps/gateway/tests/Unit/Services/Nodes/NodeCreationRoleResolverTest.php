@@ -54,7 +54,9 @@ it('expands node templates to canonical stored roles', function (
     'app production' => ['app-production', ['app-prod'], false, false],
     'ingress' => ['ingress', ['ingress'], false, false],
     'database' => ['database', ['database'], false, false],
+    's3' => ['s3', ['s3'], false, false],
     'metrics' => ['metrics', ['metrics'], false, false],
+    'analytics' => ['analytics', ['analytics'], false, false],
     'agent' => ['agent', ['agent'], false, false],
 ]);
 
@@ -77,6 +79,7 @@ it('resolves comma-separated programmatic roles without template expansion', fun
         ->toBe($requestedRole);
 })->with([
     'app dev with database' => ['app-dev,database', ['app-dev', 'database'], 'app-dev'],
+    'analytics with s3' => ['analytics,s3', ['analytics', 's3'], 'analytics'],
     'metrics' => ['metrics', ['metrics'], 'metrics'],
 ]);
 
@@ -138,7 +141,7 @@ it('uses registered validation failures for pending node templates', function (s
     }
 
     $this->fail('Expected the pending template to fail validation.');
-})->with(['s3', 'websocket']);
+})->with(['websocket']);
 
 it('uses registered validation failures for pending explicit node roles', function (string $role): void {
     try {
@@ -161,4 +164,4 @@ it('uses registered validation failures for pending explicit node roles', functi
     }
 
     $this->fail('Expected the pending role to fail validation.');
-})->with(['s3', 'websocket']);
+})->with(['websocket']);

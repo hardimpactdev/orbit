@@ -22,8 +22,8 @@ a workload target.
 | --- | --- |
 | `--template=gateway` | Converge the existing gateway node record. Missing gateway-row materialization is outside this command path. First-gateway creation uses the separate client bootstrap flow. |
 | omitted `--template`, `--operator`, and `--roles` | Enroll a client identity by minting a WireGuard peer and active node record. No target SSH is involved. |
-| `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `metrics`, `analytics`, or compatible multi-role set | Prepare a pending managed workload bootstrap, let the initiating client install the bootstrap bundle over its local SSH connection, then complete role and runtime convergence through Agent push. |
-| `websocket` or `s3` role set | Reserved stable input surface; returns the documented not-implemented error before side effects until its implementation lands. |
+| `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `s3`, `metrics`, `analytics`, or compatible multi-role set | Prepare a pending managed workload bootstrap, let the initiating client install the bootstrap bundle over its local SSH connection, then complete role and runtime convergence through Agent push. |
+| `websocket` role set | Reserved stable input surface; returns the documented not-implemented error before side effects until its implementation lands. |
 
 ## Gateway Authority Rules
 

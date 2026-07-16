@@ -78,15 +78,15 @@ before role validation:
 | `gateway` | `gateway`, `vpn`, `router` |
 | `ingress` | `ingress` |
 | `database` | `database` |
-| `s3` | `s3` (implementation pending) |
+| `s3` | `s3` |
 | `websocket` | `websocket` (implementation pending) |
 | `metrics` | `metrics` |
 | `analytics` | `analytics` |
 | `agent` | `agent` |
 
-Templates `s3` and `websocket` fail with `validation_failed`,
-`error.meta.field=template`, and `error.meta.reason=not_implemented` until
-their implementations land.
+The `websocket` template fails with `validation_failed`,
+`error.meta.field=template`, and `error.meta.reason=not_implemented` until its
+implementation lands.
 
 ## Input Resolution
 

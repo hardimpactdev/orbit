@@ -10,6 +10,7 @@ use App\Enums\ProcessRestartPolicy;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
+use App\Services\Analytics\PlausibleRuntimeConfig;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\ProcessServiceCatalog;
 use App\Services\Tools\ToolCatalog;
@@ -21,10 +22,11 @@ class AnalyticsRoleBaseline implements RoleBaseline
 
     private const string ProcessName = 'plausible';
 
-    private const string DefaultVersion = '3.2.2';
+    private const string DefaultVersion = '3.2.1';
 
     public function __construct(
         private readonly ProcessServiceCatalog $serviceCatalog,
+        private readonly PlausibleRuntimeConfig $plausibleRuntimeConfig,
         private readonly ?ToolCatalog $toolCatalog = null,
         private readonly ?NodeRoleAssignments $nodeRoleAssignments = null,
     ) {}
@@ -40,7 +42,7 @@ class AnalyticsRoleBaseline implements RoleBaseline
         }
 
         $this->convergeTools($node, ['docker']);
-        $this->convergePlausibleProcess($node);
+        $this->convergePlausibleProcess($node, $assignment);
     }
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
@@ -64,7 +66,7 @@ class AnalyticsRoleBaseline implements RoleBaseline
         return $this->nodeRoleAssignments ?? app(NodeRoleAssignments::class);
     }
 
-    private function convergePlausibleProcess(Node $node): void
+    private function convergePlausibleProcess(Node $node, NodeRoleAssignment $assignment): void
     {
         $descriptor = $this->serviceCatalog->resolve(
             service: 'plausible',
@@ -72,6 +74,15 @@ class AnalyticsRoleBaseline implements RoleBaseline
             runtime: ProcessRuntime::DockerSwarm,
             node: $node,
             processName: self::ProcessName,
+        );
+        $existingProcess = Process::query()
+            ->ownedBy($node)
+            ->where('name', self::ProcessName)
+            ->first();
+        $runtimeConfig = $this->plausibleRuntimeConfig->for(
+            assignment: $assignment,
+            existingProcess: $existingProcess,
+            runtimeConfig: $descriptor->runtimeConfig,
         );
 
         Process::query()->updateOrCreate(
@@ -87,7 +98,7 @@ class AnalyticsRoleBaseline implements RoleBaseline
                 'crash_notification' => ProcessCrashNotification::AgentIde,
                 'runtime' => ProcessRuntime::DockerSwarm,
                 'tool' => null,
-                'runtime_config' => $descriptor->runtimeConfig,
+                'runtime_config' => $runtimeConfig,
                 'sort_order' => 10,
             ],
         );

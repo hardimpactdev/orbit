@@ -23,6 +23,11 @@ These rules define the analytics command domain and its role boundary.
 - PostgreSQL and ClickHouse are service processes on active `database` role
   nodes. The analytics role selects those backing nodes by role settings and
   does not install or own either database.
+- The default deployment follows the official Plausible CE 3.2.1 composition:
+  `postgres:16-alpine` and
+  `clickhouse/clickhouse-server:24.12-alpine`. Plausible reads the selected
+  process endpoints over their WireGuard addresses; Docker-local service
+  aliases are not cross-node dependency addresses.
 - The analytics command family coordinates node, process, proxy, and app-owned
   binding state. It does not own an independent `doctor --family=analytics`
   state family in v1.

@@ -36,7 +36,6 @@ final class NodeCreationRoleResolver
 
     private const array IMPLEMENTATION_PENDING_ROLES = [
         NodeRoleName::WebSocket->value,
-        's3',
     ];
 
     public function resolve(?string $template, bool $operator, ?string $roles): NodeCreationRoleSelection
@@ -212,6 +211,16 @@ final class NodeCreationRoleResolver
                 ],
                 $template,
                 NodeRoleName::Database->value,
+            ),
+            's3' => new NodeCreationRoleSelection(
+                false,
+                false,
+                false,
+                [
+                    NodeRoleName::S3->value,
+                ],
+                $template,
+                NodeRoleName::S3->value,
             ),
             'metrics' => new NodeCreationRoleSelection(
                 false,

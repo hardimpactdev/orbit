@@ -123,11 +123,35 @@ describe('NodeStoreController', function (): void {
             ->assertJsonPath("error.meta.{$valueKey}", $value);
         Process::assertRanTimes(fn (): bool => true, 0);
     })->with([
-        'template s3' => [['template' => 's3'], 'template', 'template', 's3'],
         'template websocket' => [['template' => 'websocket'], 'template', 'template', 'websocket'],
-        'role s3' => [['roles' => ['s3']], 'roles', 'role', 's3'],
         'role websocket' => [['roles' => ['websocket']], 'roles', 'role', 'websocket'],
     ]);
+
+    it('directs an s3 workload through client-owned host bootstrap', function (): void {
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
+        assignStoreNodeRole($gatewayId, 'gateway');
+        assignStoreNodeRole($gatewayId, 'vpn');
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $response = $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.2'])
+            ->postJson('/api/nodes', [
+                'name' => 'storage-1',
+                'roles' => ['s3'],
+                'host' => '192.0.2.31',
+                'tld' => 'storage',
+            ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.bootstrap_required')
+            ->assertJsonPath('error.meta.prepare_endpoint', '/api/nodes/bootstrap');
+
+        expect(DB::table('nodes')->where('name', 'storage-1')->exists())->toBeFalse();
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
 
     it('rejects gateway-named callers without an active gateway assignment', function (): void {
         DB::table('nodes')->insert([

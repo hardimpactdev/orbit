@@ -178,7 +178,7 @@ final class NodeBootstrapSshRunner
         $splitRows = preg_split('/\R/', trim($scan));
         $rows = array_values(array_filter(
             is_array($splitRows) ? $splitRows : [],
-            static fn (string $row): bool => trim($row) !== '',
+            static fn (string $row): bool => trim($row) !== '' && ! str_starts_with(ltrim($row), '#'),
         ));
         $approved = [];
 

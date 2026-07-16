@@ -145,15 +145,15 @@ Each template pre-selects a role set and provisioning path. Use a template when 
 | `gateway` | `gateway` + `vpn` + `router` | — | yes | live |
 | `ingress` | `ingress` | — | yes | live |
 | `database` | `database` | `s3`, `websocket`, `analytics` | yes | live |
-| `s3` | `s3` | — | yes | implementation pending |
+| `s3` | `s3` | — | yes | live |
 | `websocket` | `websocket` | — | yes | implementation pending |
 | `metrics` | `metrics` | — | yes | live |
 | `analytics` | `analytics` | — | yes | live |
 | `agent` | `agent` | agent tools via `--agent-tool=` | yes | live |
 
-> **Status:** Templates `s3` and `websocket` are documented so the CLI surface
-> stays stable, but current behavior fails before side effects with
-> `validation_failed` until the S3 and WebSocket implementations land. See the
+> **Status:** The `websocket` template is documented so the CLI surface stays
+> stable, but current behavior fails before side effects with
+> `validation_failed` until the WebSocket implementation lands. See the
 > [JSON renderer contract](technical/6.2_node-new_output-render_json.md#validation-error)
 > for the exact machine-readable failure shape.
 
@@ -208,7 +208,8 @@ Requires `--host` and `--redis-node`. Implementation pending.
 Provisions a private object-storage node and creates an active `s3` role
 assignment whose settings include the SeaweedFS data path.
 
-Requires `--host`. Implementation pending.
+Requires `--host`. The initiating client installs the managed-node bootstrap
+over SSH before the gateway converges the SeaweedFS process and credentials.
 
 **`metrics` template**
 

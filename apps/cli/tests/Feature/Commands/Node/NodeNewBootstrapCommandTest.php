@@ -267,13 +267,19 @@ it('verifies an explicit SSH host key locally before streaming the bootstrap', f
 
         if (is_array($command) && $command[0] === 'ssh-keyscan') {
             return Process::result(output: implode("\n", [
+                '# 192.0.2.30:22 SSH-2.0-OpenSSH_10.2',
                 '192.0.2.30 ssh-rsa AAAARSA',
+                '# 192.0.2.30:22 SSH-2.0-OpenSSH_10.2',
                 '192.0.2.30 ssh-ed25519 AAAATEST',
                 '',
             ]));
         }
 
         if (is_array($command) && $command[0] === 'ssh-keygen') {
+            if (str_starts_with((string) $process->input, '#')) {
+                return Process::result(exitCode: 1);
+            }
+
             return str_contains((string) $process->input, 'AAAATEST')
                 ? Process::result(output: "256 SHA256:verified 192.0.2.30 (ED25519)\n")
                 : Process::result(output: "3072 SHA256:other 192.0.2.30 (RSA)\n");

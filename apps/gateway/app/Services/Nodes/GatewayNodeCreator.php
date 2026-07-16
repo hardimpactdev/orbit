@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Nodes;
 
 use App\Contracts\RemoteShell;
+use App\Data\Nodes\RoleSettings\S3RoleSettings;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
@@ -579,6 +580,7 @@ final class GatewayNodeCreator
             NodeRoleName::Agent->value,
             NodeRoleName::Metrics->value,
             NodeRoleName::Analytics->value,
+            NodeRoleName::S3->value,
         ]) !== [];
 
         $preflight = $this->preflightAgentSetup($roles);
@@ -639,6 +641,7 @@ final class GatewayNodeCreator
                     role: $role,
                     postgresNodeId: $inputs['postgresNodeId'] ?? null,
                     clickhouseNodeId: $inputs['clickhouseNodeId'] ?? null,
+                    s3DataPath: $inputs['s3DataPath'] ?? null,
                 );
 
             $assignment = $roleAssignmentService->addDuringCreation($node, $role, $settings);
@@ -1781,7 +1784,7 @@ final class GatewayNodeCreator
 
         if (! in_array(
             $role,
-            ['app-dev', 'app-prod', 'database', 'agent', 'ingress', 'metrics', 'analytics', 'gateway'],
+            ['app-dev', 'app-prod', 'database', 'agent', 'ingress', 's3', 'metrics', 'analytics', 'gateway'],
             true,
         )) {
             return null;
@@ -1884,7 +1887,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @return array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId: ?int, clickhouseNodeId: ?int}|int
+     * @return array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId: ?int, clickhouseNodeId: ?int, s3DataPath: ?string}|int
      */
     private function resolveWorkloadRoleInputs(array $roles): array|int
     {
@@ -1896,26 +1899,27 @@ final class GatewayNodeCreator
             NodeRoleName::Agent->value,
             NodeRoleName::Metrics->value,
             NodeRoleName::Analytics->value,
+            NodeRoleName::S3->value,
         ]) !== [];
 
         if (! $needsHost && $this->stringOption('host') !== null) {
             return $this->validationFailed(
                 'host',
-                'Only app-dev, app-prod, database, ingress, agent, metrics, analytics, and gateway use host provisioning.',
+                'Only app-dev, app-prod, database, ingress, agent, s3, metrics, analytics, and gateway use host provisioning.',
             );
         }
 
         if (! $needsHost && $this->stringOption('host-key-fingerprint') !== null) {
             return $this->validationFailed(
                 'host_key_fingerprint',
-                'Only app-dev, app-prod, database, ingress, agent, metrics, analytics, and gateway use host-key fingerprint pinning.',
+                'Only app-dev, app-prod, database, ingress, agent, s3, metrics, analytics, and gateway use host-key fingerprint pinning.',
             );
         }
 
         if (! $needsHost && $this->stringOption('gateway-endpoint') !== null) {
             return $this->validationFailed(
                 'gateway_endpoint',
-                'Only app-dev, app-prod, database, ingress, agent, metrics, analytics, and gateway use WireGuard endpoint overrides.',
+                'Only app-dev, app-prod, database, ingress, agent, s3, metrics, analytics, and gateway use WireGuard endpoint overrides.',
             );
         }
 
@@ -1928,6 +1932,7 @@ final class GatewayNodeCreator
                 NodeRoleName::Agent->value,
                 NodeRoleName::Metrics->value,
                 NodeRoleName::Analytics->value,
+                NodeRoleName::S3->value,
             ])) ?? NodeRoleName::Agent->value;
 
         $host = $needsHost ? $this->resolveHost($hostRole) : null;
@@ -1993,6 +1998,12 @@ final class GatewayNodeCreator
             return $this->validationFailed('tld', 'TLD must be a lowercase DNS label without a leading dot.');
         }
 
+        $s3DataPath = $this->resolveS3DataPath($roles);
+
+        if (is_int($s3DataPath)) {
+            return $s3DataPath;
+        }
+
         $analyticsDatabaseNodes = $this->resolveAnalyticsDatabaseNodes($roles);
 
         if (is_int($analyticsDatabaseNodes)) {
@@ -2009,7 +2020,31 @@ final class GatewayNodeCreator
             'architecture' => $architecture,
             'postgresNodeId' => $analyticsDatabaseNodes['postgres_node_id'],
             'clickhouseNodeId' => $analyticsDatabaseNodes['clickhouse_node_id'],
+            's3DataPath' => $s3DataPath,
         ];
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    private function resolveS3DataPath(array $roles): string|int|null
+    {
+        $hasS3 = in_array(NodeRoleName::S3->value, $roles, true);
+        $dataPath = $this->stringOption('s3-data-path');
+
+        if (! $hasS3) {
+            return $dataPath === null
+                ? null
+                : $this->validationFailed('s3_data_path', 'Only s3 nodes use --s3-data-path.');
+        }
+
+        $dataPath ??= S3RoleSettings::DefaultDataPath;
+
+        if (! str_starts_with($dataPath, '/')) {
+            return $this->validationFailed('s3_data_path', 'The s3 data path must be absolute.');
+        }
+
+        return $dataPath;
     }
 
     /**
@@ -2089,11 +2124,18 @@ final class GatewayNodeCreator
         string $role,
         ?int $postgresNodeId = null,
         ?int $clickhouseNodeId = null,
+        ?string $s3DataPath = null,
     ): array {
         if ($role === NodeRoleName::Analytics->value) {
             return [
                 'postgres_node_id' => $postgresNodeId,
                 'clickhouse_node_id' => $clickhouseNodeId,
+            ];
+        }
+
+        if ($role === NodeRoleName::S3->value) {
+            return [
+                'data_path' => $s3DataPath ?? S3RoleSettings::DefaultDataPath,
             ];
         }
 
@@ -2119,6 +2161,7 @@ final class GatewayNodeCreator
                     $role,
                     $backingNodeIds['postgres'] ?? null,
                     $backingNodeIds['clickhouse'] ?? null,
+                    $this->stringOption('s3-data-path') ?? S3RoleSettings::DefaultDataPath,
                 );
 
             $assignment = $existingAssignment instanceof NodeRoleAssignment

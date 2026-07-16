@@ -337,8 +337,8 @@ final readonly class ProcessServiceCatalog
                 ],
                 'versions' => [
                     '16' => [
-                        'default' => '16',
-                        'versions' => ['16'],
+                        'default' => '16-alpine',
+                        'versions' => ['16-alpine'],
                         'port' => 5432,
                     ],
                 ],
@@ -349,16 +349,18 @@ final readonly class ProcessServiceCatalog
                 'command' => 'clickhouse-server',
                 'target_port' => 8123,
                 'data_path' => '/var/lib/clickhouse',
-                'environment' => [],
+                'environment' => [
+                    'CLICKHOUSE_SKIP_USER_SETUP' => '1',
+                ],
                 'credentials' => [],
                 'healthcheck' => [
                     'command' => 'wget --spider -q http://127.0.0.1:8123/ping || exit 1',
                     'kind' => 'command',
                 ],
                 'versions' => [
-                    '24' => [
-                        'default' => '24',
-                        'versions' => ['24'],
+                    '24.12' => [
+                        'default' => '24.12-alpine',
+                        'versions' => ['24.12-alpine'],
                         'port' => 8123,
                     ],
                 ],
@@ -366,14 +368,10 @@ final readonly class ProcessServiceCatalog
             'plausible' => [
                 'runtimes' => [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
                 'image' => 'ghcr.io/plausible/community-edition',
-                'command' => 'plausible start',
+                'command' => 'sh -c "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"',
                 'target_port' => 8000,
-                'data_path' => '/var/lib/plausible',
                 'environment' => [
                     'BASE_URL' => 'https://analytics.orbit',
-                    'CLICKHOUSE_DATABASE_URL' => 'http://clickhouse:8123/plausible',
-                    'DATABASE_URL' => 'postgres://orbit:orbit@postgres:5432/plausible',
-                    'SECRET_KEY_BASE' => 'change-me',
                 ],
                 'credentials' => [],
                 'healthcheck' => [
@@ -381,9 +379,9 @@ final readonly class ProcessServiceCatalog
                     'kind' => 'command',
                 ],
                 'versions' => [
-                    '3.2.2' => [
-                        'default' => '3.2.2',
-                        'versions' => ['3.2.2'],
+                    '3.2.1' => [
+                        'default' => '3.2.1',
+                        'versions' => ['3.2.1'],
                         'port' => 8000,
                     ],
                 ],

@@ -206,8 +206,8 @@ it('resolves PostgreSQL, ClickHouse, and Plausible managed services into process
     $registry = app(ProcessServiceCatalog::class);
 
     $postgres = $registry->resolve('postgres', '16', ProcessRuntime::DockerSwarm, $node, 'postgres16');
-    $clickhouse = $registry->resolve('clickhouse', '24', ProcessRuntime::DockerSwarm, $node, 'clickhouse24');
-    $plausible = $registry->resolve('plausible', '3.2.2', ProcessRuntime::DockerSwarm, $node, 'plausible');
+    $clickhouse = $registry->resolve('clickhouse', '24.12', ProcessRuntime::DockerSwarm, $node, 'clickhouse24');
+    $plausible = $registry->resolve('plausible', '3.2.1', ProcessRuntime::DockerSwarm, $node, 'plausible');
 
     expect($registry->names())
         ->toContain('postgres', 'clickhouse', 'plausible')
@@ -215,27 +215,33 @@ it('resolves PostgreSQL, ClickHouse, and Plausible managed services into process
         ->toMatchArray([
             'service' => 'postgres',
             'version_family' => '16',
-            'version' => '16',
-            'image' => 'postgres:16',
+            'version' => '16-alpine',
+            'image' => 'postgres:16-alpine',
         ])
         ->and($postgres->runtimeConfig['endpoint']['port'])
         ->toBe(5432)
         ->and($clickhouse->runtimeConfig)
         ->toMatchArray([
             'service' => 'clickhouse',
-            'version_family' => '24',
-            'version' => '24',
-            'image' => 'clickhouse/clickhouse-server:24',
+            'version_family' => '24.12',
+            'version' => '24.12-alpine',
+            'image' => 'clickhouse/clickhouse-server:24.12-alpine',
         ])
         ->and($clickhouse->runtimeConfig['endpoint']['port'])
         ->toBe(8123)
+        ->and($clickhouse->runtimeConfig['environment'])
+        ->toMatchArray([
+            'CLICKHOUSE_SKIP_USER_SETUP' => '1',
+        ])
         ->and($plausible->runtimeConfig)
         ->toMatchArray([
             'service' => 'plausible',
-            'version_family' => '3.2.2',
-            'version' => '3.2.2',
-            'image' => 'ghcr.io/plausible/community-edition:3.2.2',
+            'version_family' => '3.2.1',
+            'version' => '3.2.1',
+            'image' => 'ghcr.io/plausible/community-edition:3.2.1',
         ])
+        ->and($plausible->command)
+        ->toBe('sh -c "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"')
         ->and($plausible->runtimeConfig['endpoint']['port'])
         ->toBe(8000)
         ->and($plausible->runtimeConfig['environment'])
@@ -245,7 +251,7 @@ it('resolves PostgreSQL, ClickHouse, and Plausible managed services into process
         ->and($plausible->runtimeConfig['labels']['orbit.process.service'])
         ->toBe('plausible')
         ->and($plausible->runtimeConfig['labels']['orbit.process.version'])
-        ->toBe('3.2.2');
+        ->toBe('3.2.1');
 });
 
 it('requires service process endpoints to use the owner node WireGuard address', function (): void {
