@@ -94,6 +94,36 @@ it('authorizes app instance env against the selected instance node', function ()
         ->assertJsonPath('success.data.instance', 'development');
 });
 
+it('authorizes hostname app selectors against the selected instance node', function (): void {
+    $caller = createAppInstanceEnvApiCaller();
+    $logicalNode = Node::factory()->appDev()->create(['name' => 'hostname-logical-node']);
+    $instanceNode = Node::factory()->appDev()->create(['name' => 'hostname-instance-node']);
+    $app = App::factory()->for($logicalNode, 'node')->create([
+        'name' => 'billing',
+        'domain' => 'billing.test',
+    ]);
+    AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $instanceNode->id,
+            path: '/srv/billing-development',
+            document_root: 'public',
+            domain: 'billing-development.test',
+        ),
+    ]);
+    grantAppInstanceEnvApiAccess($caller, $logicalNode, ['app:read']);
+
+    appInstanceEnvApiJson('GET', '/api/apps/billing.test/instances/development/env')
+        ->assertForbidden();
+
+    grantAppInstanceEnvApiAccess($caller, $instanceNode, ['app:read']);
+
+    appInstanceEnvApiJson('GET', '/api/apps/billing.test/instances/development/env')
+        ->assertOk()
+        ->assertJsonPath('success.data.app', 'billing')
+        ->assertJsonPath('success.data.instance', 'development');
+});
+
 it('sets lists and renders non-secret app instance env values with database attachments', function (): void {
     $caller = createAppInstanceEnvApiCaller();
     $node = Node::factory()

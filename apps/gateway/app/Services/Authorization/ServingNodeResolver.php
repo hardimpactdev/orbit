@@ -11,6 +11,7 @@ use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\ServingNode;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\Workspace;
@@ -155,16 +156,34 @@ final class ServingNodeResolver
 
     private function appInstanceSelectionFromValues(mixed $appSelector, mixed $instanceSelector): ?AppSelection
     {
+        $selection = $this->appSelectionFromValue($appSelector);
+
         if (
-            is_string($appSelector)
-            && trim($appSelector) !== ''
-            && is_string($instanceSelector)
-            && trim($instanceSelector) !== ''
+            ! $selection instanceof AppSelection
+            || ! is_string($instanceSelector)
+            || trim($instanceSelector) === ''
         ) {
-            return $this->appSelectionFromValue(trim($appSelector).'.'.trim($instanceSelector));
+            return $selection;
         }
 
-        return $this->appSelectionFromValue($appSelector);
+        $instanceName = trim($instanceSelector);
+        $instance = $selection
+            ->app
+            ->instances
+            ->first(
+                static fn (AppInstance $candidate): bool => $candidate->name === $instanceName,
+            );
+
+        if (! $instance instanceof AppInstance) {
+            return null;
+        }
+
+        return new AppSelection(
+            app: $selection->app,
+            instance: $instance,
+            selector: $selection->selector,
+            instanceSelector: $instanceName,
+        );
     }
 
     private function resolveCaller(Request $request): ?Node
