@@ -5,9 +5,11 @@ declare(strict_types=1);
 use App\Actions\Apps\EnsureAppProxyRoute;
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
@@ -381,6 +383,7 @@ it('converges production proxy artifacts in backend router ingress order', funct
 
     $warnings = app(EnsureAppProxyRoute::class)->handle($app);
     $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
+    $backendContent = $executor->calls[1]['payload']['content'] ?? null;
 
     expect(array_column($executor->calls, 'node'))
         ->toBe([
@@ -394,6 +397,23 @@ it('converges production proxy artifacts in backend router ingress order', funct
             'public-ingress',
             'public-ingress',
         ])
+        ->and($route->config['target'])
+        ->toBe([
+            'type' => 'app_instance',
+            'value' => 'hauzer.production',
+        ])
+        ->and($route->config['app_instance'])
+        ->toMatchArray([
+            'name' => 'production',
+            'selector' => 'hauzer.production',
+            'domain' => 'hauzer.app',
+            'node' => 'main1',
+            'node_id' => $backend->id,
+        ])
+        ->and($route->config['backend_artifacts'][0]['runtime_upstream'])
+        ->toBe('http://orbit-app-hauzer-production:8080')
+        ->and($backendContent)
+        ->toContain('reverse_proxy http://orbit-app-hauzer-production:8080')
         ->and($route->config['enactment']['status'] ?? null)
         ->toBe('converged')
         ->and($route->config['enactment']['failure'])
@@ -521,6 +541,16 @@ function ensure_app_proxy_route_production_topology(): array
         'environment' => 'production',
         'document_root' => 'public',
         'runtime' => AppRuntimeKind::Php,
+    ]);
+    AppInstance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $backend->id,
+            node: $backend->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
     ]);
 
     return [$app, $backend, $router, $ingress];
