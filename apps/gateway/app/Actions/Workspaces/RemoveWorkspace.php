@@ -31,7 +31,6 @@ final readonly class RemoveWorkspace
         private ToolScriptDispatcher $scripts,
         private WorkspacePlacement $placement,
         private WorkspaceStepPolicyService $stepPolicy,
-        private WorkspaceEnvInheritanceGuard $envInheritanceGuard,
     ) {}
 
     /**
@@ -143,7 +142,7 @@ final readonly class RemoveWorkspace
             }
 
             foreach ($teardownSteps as $teardownStep) {
-                if ($this->envInheritanceGuard->consumesParentEnv($teardownStep->command)) {
+                if (app(WorkspaceEnvInheritanceGuard::class)->consumesParentEnv($teardownStep->command)) {
                     $warnings[] = [
                         'code' => 'workspace.teardown_step_unsafe',
                         'family' => 'workspace',
