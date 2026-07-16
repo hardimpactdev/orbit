@@ -51,7 +51,9 @@ database values are redacted from responses.
 | `GET` | `/api/workspaces/env/resolve-by-path?path=<absolute>` | `workspace:read` | Resolve the workspace containing caller CWD. |
 
 The workspace routes accept optional `app` and `instance` query parameters for
-disambiguation.
+disambiguation. An `instance` query parameter is valid only when `app` is also
+present, so authorization and target selection resolve the same concrete app
+instance.
 
 ## Behavior Contract
 
@@ -80,6 +82,7 @@ disambiguation.
 | --- | --- | --- |
 | Workspace not found | No visible workspace matches. | `error.code=workspace.not_found`. |
 | Workspace ambiguous | Name matches more than one visible target. | `error.code=validation_failed`, `error.meta.field=workspace`. |
+| Instance without app | The raw API supplies `instance` without `app`. | `error.code=validation_failed`, `error.meta.field=app`. |
 | Runtime apply failed | Gateway state saved but workspace file/cache/runtime application failed. | `error.code=workspace.env_apply_failed`. |
 
 ## Doctor Relationship

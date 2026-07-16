@@ -58,7 +58,7 @@ function create_workspace_step_store_instance(App $app, Node $node, string $inst
 }
 
 describe('WorkspaceStepStoreController', function (): void {
-    it('rejects setup steps that directly consume the parent app env file', function (): void {
+    it('rejects setup steps that directly consume the parent app env file', function (string $command): void {
         $caller = createWorkspaceStepStoreCallerNode();
         $node = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepStoreAccess($caller, $node);
@@ -81,7 +81,7 @@ describe('WorkspaceStepStoreController', function (): void {
             ],
             json_encode([
                 'app' => 'hauser.nmbp',
-                'command' => 'cp "$ORBIT_APP_PATH/.env" .env',
+                'command' => $command,
             ], JSON_THROW_ON_ERROR),
         );
 
@@ -92,7 +92,11 @@ describe('WorkspaceStepStoreController', function (): void {
             ->assertJsonPath('error.meta.reason', 'parent_env_inheritance_forbidden');
 
         expect(WorkspaceStep::query()->count())->toBe(0);
-    });
+    })->with([
+        'quoted path' => 'cp "$ORBIT_APP_PATH/.env" .env',
+        'quoted variable' => 'cp "$ORBIT_APP_PATH"/.env .env',
+        'quoted braced variable' => 'cp "${ORBIT_APP_PATH}"/.env .env',
+    ]);
 
     it('stores instance-specific setup steps for dotted selectors without exposing them to sibling instances', function (): void {
         $caller = createWorkspaceStepStoreCallerNode();

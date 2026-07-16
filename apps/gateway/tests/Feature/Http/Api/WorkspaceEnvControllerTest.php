@@ -7,6 +7,8 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\AppInstance;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -81,6 +83,26 @@ it('stores renders and applies env only to the selected workspace', function ():
             'name' => 'feature-mail',
             'path' => '/worktrees/feature-mail',
         ]);
+    $workspace
+        ->envVariables()
+        ->create([
+            'key' => 'EXISTING_VALUE',
+            'value' => 'preserved',
+            'secret' => false,
+        ]);
+    $connection = DatabaseConnection::factory()->for($node)->create([
+        'slug' => 'billing-db',
+        'driver' => 'pgsql',
+        'host' => 'postgres.internal',
+        'port' => 5432,
+        'database' => 'billing',
+        'username' => 'billing',
+        'credentials' => ['password' => 'secret-password'],
+    ]);
+    DatabaseConnectionTarget::factory()
+        ->for($connection, 'connection')
+        ->forWorkspace($workspace)
+        ->create(['env_prefix' => 'DB']);
     Workspace::factory()
         ->for($app)
         ->for($instance, 'appInstance')
@@ -140,17 +162,108 @@ it('stores renders and applies env only to the selected workspace', function ():
         ),
         fn (?array $payload): bool => ($payload['path'] ?? null) !== null,
     ));
+    $writtenEnvPayload =
+        array_values(array_filter(
+            $envPayloads,
+            static fn (array $payload): bool => ($payload['action'] ?? null) === 'write',
+        ))[0] ?? null;
 
     expect($workspace->fresh()->envVariables()->where('key', 'APP_ENV')->value('value'))
         ->toBe('production')
-        ->and(array_column($envPayloads, 'path'))
+        ->and($writtenEnvPayload)
+        ->toBeArray()
+        ->and($writtenEnvPayload['contents'] ?? null)
+        ->toContain('APP_ENV=production')
+        ->toContain('EXISTING_VALUE=preserved')
+        ->toContain('APP_URL=https://feature-mail.billing-development.test')
+        ->toContain('DB_HOST=postgres.internal')
+        ->not->toContain('secret-password');
+
+    expect(array_column($envPayloads, 'path'))
         ->toContain('/worktrees/feature-mail/.env')
         ->not->toContain('/home/orbit/apps/billing/.env')
         ->not->toContain('/home/orbit/apps/billing-development/.env')
-        ->not->toContain('/worktrees/feature-billing/.env')->and($shell->nodeIds)
-        ->each->toBe($node->id)->and(
-            $stagingInstance->fresh()->envVariables()->where('key', 'APP_ENV')->value('value'),
-        )->toBe('staging');
+        ->not->toContain('/worktrees/feature-billing/.env');
+
+    expect($shell->nodeIds)->each->toBe($node->id);
+    expect($stagingInstance->fresh()->envVariables()->where('key', 'APP_ENV')->value('value'))
+        ->toBe('staging');
+});
+
+it('rejects instance-only workspace disambiguation before an unauthorized cross-node write', function (): void {
+    $caller = Node::factory()->create([
+        'host' => '10.6.0.121',
+        'wireguard_address' => '10.6.0.121',
+    ]);
+    $targetNode = Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'name' => 'target-node',
+            'wireguard_address' => '10.44.0.91',
+        ]);
+    $otherNode = Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'name' => 'other-node',
+            'wireguard_address' => '10.44.0.92',
+        ]);
+    $targetApp = App::factory()->for($targetNode, 'node')->create(['name' => 'billing']);
+    $otherApp = App::factory()->for($otherNode, 'node')->create(['name' => 'docs']);
+    $targetInstance = AppInstance::factory()->for($targetApp)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $targetNode->id,
+            path: '/srv/billing',
+            document_root: 'public',
+            domain: 'billing.test',
+        ),
+    ]);
+    $otherInstance = AppInstance::factory()->for($otherApp)->create([
+        'name' => 'staging',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $otherNode->id,
+            path: '/srv/docs',
+            document_root: 'public',
+            domain: 'docs.test',
+        ),
+    ]);
+    $targetWorkspace = Workspace::factory()
+        ->for($targetApp)
+        ->for($targetInstance, 'appInstance')
+        ->create(['name' => 'shared-name']);
+    Workspace::factory()
+        ->for($otherApp)
+        ->for($otherInstance, 'appInstance')
+        ->create(['name' => 'shared-name']);
+
+    $response = test()->call(
+        'POST',
+        '/api/workspaces/shared-name/env?instance=development',
+        [
+            'key' => 'OWNER_SCOPE',
+            'value' => 'unauthorized',
+        ],
+        [],
+        [],
+        [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+            'REMOTE_ADDR' => '10.6.0.121',
+        ],
+        json_encode([
+            'key' => 'OWNER_SCOPE',
+            'value' => 'unauthorized',
+        ], JSON_THROW_ON_ERROR),
+    );
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath('error.meta.field', 'app');
+
+    expect($targetWorkspace->fresh()->envVariables)->toBeEmpty();
 });
 
 /**

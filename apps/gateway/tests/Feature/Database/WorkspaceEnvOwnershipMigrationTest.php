@@ -26,6 +26,18 @@ it('removes legacy setup and teardown steps that consume the parent env', functi
         'phase' => WorkspaceLifecyclePhase::Teardown,
         'command' => 'cp "${ORBIT_APP_PATH}/.env" .env.backup',
     ]);
+    $unsafeQuotedVariable = WorkspaceStep::factory()->create([
+        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'command' => 'cp "$ORBIT_APP_PATH"/.env .env',
+    ]);
+    $unsafeQuotedBracedVariable = WorkspaceStep::factory()->create([
+        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
+        'phase' => WorkspaceLifecyclePhase::Teardown,
+        'command' => 'cp "${ORBIT_APP_PATH}"/.env .env.backup',
+    ]);
     $safe = WorkspaceStep::factory()->create([
         'app_id' => $app->id,
         'app_instance_id' => $instance->id,
@@ -38,6 +50,10 @@ it('removes legacy setup and teardown steps that consume the parent env', functi
     expect(WorkspaceStep::query()->whereKey($unsafeSetup->id)->exists())
         ->toBeFalse()
         ->and(WorkspaceStep::query()->whereKey($unsafeTeardown->id)->exists())
+        ->toBeFalse()
+        ->and(WorkspaceStep::query()->whereKey($unsafeQuotedVariable->id)->exists())
+        ->toBeFalse()
+        ->and(WorkspaceStep::query()->whereKey($unsafeQuotedBracedVariable->id)->exists())
         ->toBeFalse()
         ->and(WorkspaceStep::query()->whereKey($safe->id)->exists())
         ->toBeTrue();

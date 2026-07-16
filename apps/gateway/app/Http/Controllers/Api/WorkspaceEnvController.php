@@ -88,7 +88,9 @@ final class WorkspaceEnvController implements Loggable
 
         if ($request->boolean('apply')) {
             try {
-                $payload['apply'] = $this->applier->apply($resolved, [$key => $value])->toArray();
+                $payload['apply'] = $this->applier
+                    ->apply($resolved, $this->env->applicableValues($resolved))
+                    ->toArray();
                 $payload['applied'] = true;
                 $payload['runtime_restarted'] = in_array(
                     $payload['apply']['runtime_outcome'],
@@ -124,6 +126,12 @@ final class WorkspaceEnvController implements Loggable
     #[RequiresPermission('workspace:read', servingNode: ServingNode::WorkspaceOwning)]
     public function resolveByPath(Request $request): JsonResponse
     {
+        $selectionFailure = $this->selectionFailure($request);
+
+        if ($selectionFailure instanceof JsonResponse) {
+            return $selectionFailure;
+        }
+
         $path = $this->stringInput($request, 'path');
 
         if ($path === null || ! str_starts_with($path, '/')) {
@@ -161,6 +169,12 @@ final class WorkspaceEnvController implements Loggable
 
     private function resolve(string $name, Request $request): Workspace|JsonResponse
     {
+        $selectionFailure = $this->selectionFailure($request);
+
+        if ($selectionFailure instanceof JsonResponse) {
+            return $selectionFailure;
+        }
+
         $matches = $this
             ->queryForRequest($request)
             ->where('name', $name)
@@ -185,6 +199,18 @@ final class WorkspaceEnvController implements Loggable
         }
 
         return $matches->firstOrFail();
+    }
+
+    private function selectionFailure(Request $request): ?JsonResponse
+    {
+        if ($this->stringInput($request, 'instance') === null || $this->stringInput($request, 'app') !== null) {
+            return null;
+        }
+
+        return $this->validationFailed(
+            'app',
+            'An app selector is required when an instance selector is supplied.',
+        );
     }
 
     /**

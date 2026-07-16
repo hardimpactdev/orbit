@@ -422,7 +422,9 @@ it('runs setup steps through the local executor by default for agent capable nod
         ->toBe("created\n");
 });
 
-it('rejects legacy setup steps that directly consume the parent app env before execution', function (): void {
+it('rejects legacy setup steps that directly consume the parent app env before execution', function (
+    string $command,
+): void {
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::factory()
         ->appDev()
@@ -443,7 +445,7 @@ it('rejects legacy setup steps that directly consume the parent app env before e
     $steps = [
         new WorkspaceStep([
             'id' => 1,
-            'command' => 'cp "$ORBIT_APP_PATH/.env" .env',
+            'command' => $command,
             'timeout_seconds' => 60,
         ]),
     ];
@@ -466,7 +468,11 @@ it('rejects legacy setup steps that directly consume the parent app env before e
         ->toBe('failed')
         ->and($run->runSteps()->sole()->output)
         ->toContain('parent app .env');
-});
+})->with([
+    'quoted path' => 'cp "$ORBIT_APP_PATH/.env" .env',
+    'quoted variable' => 'cp "$ORBIT_APP_PATH"/.env .env',
+    'quoted braced variable' => 'cp "${ORBIT_APP_PATH}"/.env .env',
+]);
 
 it('routes php setup commands before dispatching through the local executor', function (): void {
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
