@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-16T09:02:31+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-app-runtime-vite-ssr-host-routing/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-16-110231-codex-app-runtime-vite-ssr-host-routing",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-07-16T085459Z-a70299a86858.json"
+    ],
+    "entry_digests": {
+        "loop.md": "b5c0ad46bd348c168f24794c51f2c752c43db8f915b9285788b8960a5cb7cea4",
+        "quality-gates/quality-check-2026-07-16T085459Z-a70299a86858.json": "35cbf450bdca779cefb7c80075b6228062519eb37aced8afd81aaa75adcb4b21"
+    },
+    "branch": "codex/app-runtime-vite-ssr-host-routing",
+    "candidate_commit": "3c78d154e73341b516caab0ad3b4bf1fabe50589",
+    "accepted_feature_tip": "3c78d154e73341b516caab0ad3b4bf1fabe50589",
+    "accepted_main_tip": "7980f197da5624260622e326f358139389c554d6",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
