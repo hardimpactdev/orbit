@@ -469,14 +469,21 @@ it('starts the gateway api before acquisition retarget bakes downstream roles', 
 
     $joined = implode("\n", $commands());
     $gatewayApiStart = strpos($joined, 'orbit-gateway-e2e-topology-lease-http');
+    $sourceMountedLauncher = strpos($joined, '/home/orbit/.local/bin/orbit');
     $downstreamBake = strpos($joined, 'orbit:internal:bake-app-node app-dev-1');
 
     expect($gatewayApiStart)
         ->toBeInt()
+        ->and($sourceMountedLauncher)
+        ->toBeInt()
         ->and($downstreamBake)
         ->toBeInt()
         ->and($gatewayApiStart)
-        ->toBeLessThan($downstreamBake);
+        ->toBeLessThan($downstreamBake)
+        ->and($sourceMountedLauncher)
+        ->toBeLessThan($downstreamBake)
+        ->and($joined)
+        ->toContain('/home/orbit/orbit/bin/orbit');
 });
 
 it('starts the gateway api before snapshot reset retarget bakes downstream roles', function (): void {
@@ -503,14 +510,21 @@ it('starts the gateway api before snapshot reset retarget bakes downstream roles
 
     $joined = implode("\n", $commands());
     $gatewayApiStart = strpos($joined, 'orbit-gateway-e2e-topology-reset-http');
+    $sourceMountedLauncher = strpos($joined, '/home/orbit/.local/bin/orbit');
     $downstreamBake = strpos($joined, 'orbit:internal:bake-app-node app-dev-1');
 
     expect($gatewayApiStart)
         ->toBeInt()
+        ->and($sourceMountedLauncher)
+        ->toBeInt()
         ->and($downstreamBake)
         ->toBeInt()
         ->and($gatewayApiStart)
-        ->toBeLessThan($downstreamBake);
+        ->toBeLessThan($downstreamBake)
+        ->and($sourceMountedLauncher)
+        ->toBeLessThan($downstreamBake)
+        ->and($joined)
+        ->toContain('/home/orbit/orbit/bin/orbit');
 });
 
 it('clears known hosts on every clone through one parallel host call', function (): void {

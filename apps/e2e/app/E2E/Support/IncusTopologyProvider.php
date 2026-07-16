@@ -830,6 +830,15 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         $timer->measure('command-ready', fn () => $this->awaitCommandReady($instances, $primaryUsers, $timer));
         $timer->measure('known-hosts', fn () => $this->clearKnownHosts($instances));
+
+        if ($options->sourceMountedCheckout) {
+            $timer->measure('source-mounted-launchers', fn () => $this->activateSourceMountedLaunchers(
+                $instances,
+                $config,
+                $timer,
+            ));
+        }
+
         $timer->measure('wireguard', fn () => $this->retargetRealWireGuard($instances, $timer));
         $timer->measure('gateway-ssh-access', fn () => $this->seedGatewaySshAccess($instances, $timer));
         $startGatewayApiBeforeBake = $options->startGatewayApi && isset($instances['gateway'])
@@ -993,6 +1002,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         return is_string($resetMode) && $resetMode !== '' ? $resetMode : 'fresh-clone';
     }
 
+    /**
+     * @param  array<string, IncusInstance>  $instances
+     * @param  array<string, string>  $primaryUsers
+     */
     private function snapshotResetFor(
         array $instances,
         array $primaryUsers,
@@ -1017,6 +1030,13 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
             foreach ($instances as $role => $instance) {
                 $cycleTimer->measure("reset.agent-ready.{$role}", fn () => $instance->waitForAgent());
+            }
+
+            if ($sourceMountedCheckout) {
+                $cycleTimer->measure(
+                    'reset.source-mounted-launchers',
+                    fn () => $this->activateSourceMountedLaunchers($instances, $this->config, $cycleTimer),
+                );
             }
 
             $cycleTimer->measure('reset.wireguard', fn () => $this->retargetRealWireGuard($instances, $cycleTimer));
@@ -1242,7 +1262,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         E2EGatewayApi::seedOperatorIdentity($gateway, self::OperatorWireGuardIp, $config->operatorUser);
 
         $this->retargetOperator($operator, $config, $sshKeyPair, $sourceMountedCheckout);
-        $beforeDownstreamBake?->__invoke();
+
+        if ($beforeDownstreamBake !== null) {
+            $beforeDownstreamBake();
+        }
 
         $bakeTasks = $this->retargetBakeTasks($instances, $gateway, $kind, $sourceMountedCheckout);
 
@@ -1819,6 +1842,52 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             'known-hosts',
             timeoutSeconds: 60,
             failureMessage: 'Could not clear known hosts on prepared clones',
+        );
+    }
+
+    /**
+     * @param  array<string, IncusInstance>  $instances
+     */
+    private function activateSourceMountedLaunchers(
+        array $instances,
+        E2EConfig $config,
+        ?E2EPhaseTimer $timer = null,
+    ): void {
+        $sourceLauncher = '/home/orbit/orbit/bin/orbit';
+        $tasks = [];
+
+        foreach ($instances as $role => $instance) {
+            $user = $role === 'operator' ? $config->operatorUser : 'orbit';
+            $localBinDirectory = "/home/{$user}/.local/bin";
+            $localLauncher = "{$localBinDirectory}/orbit";
+
+            $tasks[$role] = sprintf(
+                'incus exec %s -- sh -lc %s',
+                escapeshellarg($instance->name()),
+                escapeshellarg(implode(' && ', [
+                    'test -x '.escapeshellarg($sourceLauncher),
+                    sprintf(
+                        'install -d -m 0755 -o %1$s -g %1$s %2$s',
+                        escapeshellarg($user),
+                        escapeshellarg($localBinDirectory),
+                    ),
+                    'ln -sfn '.escapeshellarg($sourceLauncher).' '.escapeshellarg($localLauncher),
+                    sprintf(
+                        'chown -h %1$s:%1$s %2$s',
+                        escapeshellarg($user),
+                        escapeshellarg($localLauncher),
+                    ),
+                ])),
+            );
+        }
+
+        IncusParallelHostTasks::run(
+            $this->hostFor($instances),
+            $tasks,
+            $timer ?? new E2EPhaseTimer,
+            'source-mounted-launcher',
+            timeoutSeconds: 60,
+            failureMessage: 'Could not activate source-mounted Orbit launchers',
         );
     }
 
