@@ -14,6 +14,7 @@ use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeMountService;
 use App\Services\Apps\FrankenPhpRuntimeConfigRenderer;
 use App\Services\Apps\RuntimeClientTrustPolicy;
+use App\Services\Apps\RuntimeHostRoutingPolicy;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\OrbitContainerNames;
@@ -33,6 +34,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
         private FrankenPhpRuntimeConfigRenderer $frankenPhpConfig = new FrankenPhpRuntimeConfigRenderer,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private RuntimeClientTrustPolicy $runtimeClientTrust = new RuntimeClientTrustPolicy,
+        private RuntimeHostRoutingPolicy $runtimeHostRouting = new RuntimeHostRoutingPolicy,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
@@ -135,6 +137,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
                 $policy->phpIni,
                 $this->runtimeClientTrust->phpIniForWorkspace($workspace),
             ),
+            extraHosts: $this->runtimeHostRouting->forWorkspace($workspace),
         );
     }
 

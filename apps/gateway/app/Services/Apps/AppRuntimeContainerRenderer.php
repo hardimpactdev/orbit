@@ -46,6 +46,7 @@ final readonly class AppRuntimeContainerRenderer
         private FrankenPhpRuntimeConfigRenderer $frankenPhpConfig = new FrankenPhpRuntimeConfigRenderer,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private RuntimeClientTrustPolicy $runtimeClientTrust = new RuntimeClientTrustPolicy,
+        private RuntimeHostRoutingPolicy $runtimeHostRouting = new RuntimeHostRoutingPolicy,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
@@ -157,6 +158,7 @@ final readonly class AppRuntimeContainerRenderer
                 $policy->phpIni,
                 $this->runtimeClientTrust->phpIniForApp($app),
             ),
+            extraHosts: $this->runtimeHostRouting->forApp($app),
         );
     }
 

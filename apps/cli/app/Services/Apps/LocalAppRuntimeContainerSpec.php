@@ -20,6 +20,7 @@ final readonly class LocalAppRuntimeContainerSpec
      * @param  array<string, string>  $environment
      * @param  list<array{source: string, target: string, read_only: bool}>  $mounts
      * @param  list<string>  $networkAliases
+     * @param  array<string, string>  $extraHosts
      */
     private function __construct(
         public string $kind,
@@ -34,6 +35,7 @@ final readonly class LocalAppRuntimeContainerSpec
         public array $environment,
         public array $mounts,
         public array $networkAliases,
+        public array $extraHosts,
         public string $expectedHash,
     ) {}
 
@@ -58,6 +60,7 @@ final readonly class LocalAppRuntimeContainerSpec
             environment: self::environment($value['environment'] ?? null),
             mounts: self::mounts($value['mounts'] ?? null),
             networkAliases: self::networkAliases($value['network_aliases'] ?? []),
+            extraHosts: self::extraHosts($value['extra_hosts'] ?? []),
             expectedHash: self::hash($value['expected_hash'] ?? null),
         );
     }
@@ -95,6 +98,13 @@ final readonly class LocalAppRuntimeContainerSpec
             $command[] = $dockerUser;
         }
 
+        if ($this->e2eDockerNetwork() === null) {
+            foreach ($this->extraHosts as $host => $address) {
+                $command[] = '--add-host';
+                $command[] = "{$host}:{$address}";
+            }
+        }
+
         foreach ($this->networkAliases as $alias) {
             $command[] = '--network-alias';
             $command[] = $alias;
@@ -118,6 +128,17 @@ final readonly class LocalAppRuntimeContainerSpec
         $command[] = $this->image;
 
         return $command;
+    }
+
+    private function e2eDockerNetwork(): ?string
+    {
+        $network = getenv('ORBIT_E2E_DOCKER_NETWORK');
+
+        if (! is_string($network) || trim($network) === '') {
+            return null;
+        }
+
+        return trim($network);
     }
 
     /**
@@ -356,6 +377,36 @@ final readonly class LocalAppRuntimeContainerSpec
         sort($aliases);
 
         return array_values(array_unique($aliases));
+    }
+
+    /**
+     * @return array<string, string>
+     *
+     * @mago-expect analysis:mixed-assignment
+     */
+    private static function extraHosts(mixed $value): array
+    {
+        if (! is_array($value) || $value !== [] && array_is_list($value)) {
+            throw self::validationFailure('extra_hosts');
+        }
+
+        $extraHosts = [];
+
+        foreach ($value as $host => $address) {
+            if (! is_string($host) || preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/', $host) !== 1) {
+                throw self::validationFailure('extra_hosts');
+            }
+
+            if (! is_string($address) || preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/', $address) !== 1) {
+                throw self::validationFailure('extra_hosts');
+            }
+
+            $extraHosts[$host] = $address;
+        }
+
+        ksort($extraHosts);
+
+        return $extraHosts;
     }
 
     private static function hash(mixed $value): string

@@ -26,6 +26,8 @@ describe('internal app runtime command', function (): void {
         $this->originalPath = is_string($path) ? $path : null;
         $dockerHost = getenv('DOCKER_HOST');
         $this->originalDockerHost = is_string($dockerHost) ? $dockerHost : null;
+        $e2eDockerNetwork = getenv('ORBIT_E2E_DOCKER_NETWORK');
+        $this->originalE2eDockerNetwork = is_string($e2eDockerNetwork) ? $e2eDockerNetwork : null;
     });
 
     afterEach(function (): void {
@@ -36,6 +38,9 @@ describe('internal app runtime command', function (): void {
         );
         $this->originalPath === null ? putenv('PATH') : putenv("PATH={$this->originalPath}");
         $this->originalDockerHost === null ? putenv('DOCKER_HOST') : putenv("DOCKER_HOST={$this->originalDockerHost}");
+        $this->originalE2eDockerNetwork === null
+            ? putenv('ORBIT_E2E_DOCKER_NETWORK')
+            : putenv("ORBIT_E2E_DOCKER_NETWORK={$this->originalE2eDockerNetwork}");
 
         $homeDirectories = glob(sys_get_temp_dir().'/orbit-app-runtime-home-*');
 
@@ -386,7 +391,62 @@ describe('internal app runtime command', function (): void {
                     "DOCKER_HOST=unix://{$socket} docker network create --label orbit.managed=true --label orbit.network.kind=runtime orbit-network",
                 )
                 ->toContain("DOCKER_HOST=unix://{$socket} docker run -d --pull never --name orbit-ws-happie-smoke")
+                ->toContain('--add-host smoke.happie.nmbp:host-gateway')
                 ->not->toContain('/var/run/docker.sock');
+        } finally {
+            delete_app_runtime_fake_docker_bin($bin);
+        }
+    });
+
+    it('omits host gateway mappings inside the nested E2E Docker network', function (): void {
+        $home = app_runtime_command_home();
+        $socket = app_runtime_command_fake_orbstack_socket($home);
+        putenv('DOCKER_HOST');
+        putenv('ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123');
+        $bin = install_app_runtime_fake_docker_bin(requiredDockerHost: "unix://{$socket}", networkAlreadyExists: true);
+        $spec = app_runtime_container_spec_payload($home);
+        $spec['network'] = 'orbit-e2e-run123';
+
+        try {
+            [$exitCode, $output] = run_internal_app_runtime_command(
+                'container:apply',
+                [
+                    '--operation-token' => app_runtime_signed_operation_token(),
+                    '--json' => true,
+                ],
+                stdin: json_encode([
+                    'spec' => $spec,
+                    'runtime_config' => [
+                        'path' => "{$home}/.config/orbit/apps/happie-smoke.ini",
+                        'content_base64' => base64_encode("memory_limit=512M\n"),
+                        'directories' => [
+                            [
+                                'path' => "{$home}/.config/orbit/apps",
+                                'mode' => '0755',
+                                'owner' => null,
+                                'group' => null,
+                            ],
+                        ],
+                        'trust_pool' => null,
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            expect($exitCode)
+                ->toBe(0, $output)
+                ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR)['success']['data'] ?? null)
+                ->toMatchArray([
+                    'action' => 'container:apply',
+                    'container' => 'orbit-ws-happie-smoke',
+                    'outcome' => 'created',
+                    'changed' => true,
+                ]);
+
+            $calls = file_get_contents("{$bin}/calls.log");
+
+            expect($calls)
+                ->toContain('--network orbit-e2e-run123')
+                ->not->toContain('--add-host');
         } finally {
             delete_app_runtime_fake_docker_bin($bin);
         }
@@ -495,6 +555,7 @@ function app_runtime_container_spec_payload(string $home): array
             ],
         ],
         'network_aliases' => ['smoke.happie.nmbp'],
+        'extra_hosts' => ['smoke.happie.nmbp' => 'host-gateway'],
         'expected_hash' => str_repeat('b', times: 64),
     ];
 }

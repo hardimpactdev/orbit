@@ -619,7 +619,7 @@ it('uses the internal app-dev runtime upstream on HTTP port 8080 by default', fu
 });
 
 it('renders app-dev PHP runtimes with Orbit CA trust pool mount and PHP client trust ini', function (): void {
-    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
     $app = makeRuntimeRendererApp($node, [
         'name' => 'craft-starterkit-react',
         'path' => '/home/nckrtl/apps/craft-starterkit-react',
@@ -645,6 +645,10 @@ it('renders app-dev PHP runtimes with Orbit CA trust pool mount and PHP client t
         ->toMatchArray([
             'openssl.cafile' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
             'curl.cainfo' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+        ])
+        ->and($container->extraHosts())
+        ->toBe([
+            'craft-starterkit-react.test' => 'host-gateway',
         ]);
 });
 
@@ -671,6 +675,10 @@ it('does not render runtime client trust for app-prod PHP runtimes', function ()
         ->and(array_key_exists('openssl.cafile', $container->phpIni()))
         ->toBeFalse()
         ->and(array_key_exists('curl.cainfo', $container->phpIni()))
+        ->toBeFalse()
+        ->and($container->extraHosts())
+        ->toBeEmpty()
+        ->and(array_key_exists('extra_hosts', $container->spec()))
         ->toBeFalse();
 });
 

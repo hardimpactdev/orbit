@@ -601,7 +601,7 @@ it('exposes ORBIT_APP, ORBIT_WORKSPACE, and ORBIT_PHP_VERSION env to the contain
 });
 
 it('renders app-dev workspace runtimes with Orbit CA trust pool mount and PHP client trust ini', function (): void {
-    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
     $app = makeWorkspaceRendererApp($node, [
         'name' => 'demo',
         'path' => '/home/nckrtl/apps/demo',
@@ -632,6 +632,10 @@ it('renders app-dev workspace runtimes with Orbit CA trust pool mount and PHP cl
         ->toMatchArray([
             'openssl.cafile' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
             'curl.cainfo' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+        ])
+        ->and($container->extraHosts())
+        ->toBe([
+            'feature-a.demo.test' => 'host-gateway',
         ]);
 });
 
@@ -663,6 +667,10 @@ it('does not render runtime client trust for app-prod workspace runtimes', funct
         ->and(array_key_exists('openssl.cafile', $container->phpIni()))
         ->toBeFalse()
         ->and(array_key_exists('curl.cainfo', $container->phpIni()))
+        ->toBeFalse()
+        ->and($container->extraHosts())
+        ->toBeEmpty()
+        ->and(array_key_exists('extra_hosts', $container->spec()))
         ->toBeFalse();
 });
 

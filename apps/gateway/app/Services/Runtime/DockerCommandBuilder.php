@@ -104,6 +104,17 @@ class DockerCommandBuilder
             }
         }
 
+        if (
+            ($container instanceof AppRuntimeContainer
+            || $container instanceof WorkspaceRuntimeContainer)
+            && $this->e2eDockerNetwork() === null
+        ) {
+            foreach ($container->extraHosts() as $host => $address) {
+                $parts[] = '--add-host';
+                $parts[] = $this->quote("{$host}:{$address}");
+            }
+        }
+
         if ($this->usesShellEntrypoint($container)) {
             $parts[] = '--workdir';
             $parts[] = $this->quote($container->workingDirectory());

@@ -60,6 +60,7 @@ it('applies app runtime containers through the agent-push local executor', funct
                 'container_name' => 'orbit-app-docs',
                 'expected_hash' => $container->specHash(),
                 'config_path' => '/home/orbit/.config/orbit/apps/docs.ini',
+                'extra_hosts' => ['docs.test' => 'host-gateway'],
             ],
         ),
     );
@@ -150,6 +151,7 @@ it('applies workspace runtime containers through the agent-push local executor',
                 'expected_hash' => $container->specHash(),
                 'config_path' => '/home/orbit/.config/orbit/workspaces/docs-feature-a.ini',
                 'workspace_slug' => 'feature-a',
+                'extra_hosts' => ['feature.docs.test' => 'host-gateway'],
             ],
         ),
     );
@@ -268,6 +270,7 @@ function app_runtime_manager_macos_node(): Node
  *     expected_hash: string,
  *     config_path: string,
  *     workspace_slug?: string,
+ *     extra_hosts?: array<string, string>,
  *     environment?: array<string, string>
  * }  $expected
  */
@@ -294,6 +297,7 @@ function app_runtime_manager_request_matches(Request $request, array $expected):
 
     $checks[] = app_runtime_manager_environment_matches($payload, $expected);
     $checks[] = app_runtime_manager_workspace_slug_matches($spec, $expected);
+    $checks[] = app_runtime_manager_extra_hosts_match($spec, $expected);
 
     return ! in_array(needle: false, haystack: $checks, strict: true);
 }
@@ -322,6 +326,19 @@ function app_runtime_manager_workspace_slug_matches(array $spec, array $expected
     }
 
     return ($spec['workspace_slug'] ?? null) === $expected['workspace_slug'];
+}
+
+/**
+ * @param  array<string, mixed>  $spec
+ * @param  array{extra_hosts?: array<string, string>}  $expected
+ */
+function app_runtime_manager_extra_hosts_match(array $spec, array $expected): bool
+{
+    if (! array_key_exists('extra_hosts', $expected)) {
+        return true;
+    }
+
+    return ($spec['extra_hosts'] ?? null) === $expected['extra_hosts'];
 }
 
 /**
@@ -410,6 +427,7 @@ function app_runtime_manager_app_container(): AppRuntimeContainer
         phpIni: [
             'memory_limit' => '512M',
         ],
+        extraHosts: ['docs.test' => 'host-gateway'],
     );
 }
 
@@ -455,6 +473,7 @@ function app_runtime_manager_workspace_container(): WorkspaceRuntimeContainer
         phpIni: [
             'memory_limit' => '512M',
         ],
+        extraHosts: ['feature.docs.test' => 'host-gateway'],
     );
 }
 

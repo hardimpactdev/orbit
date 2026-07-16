@@ -461,8 +461,10 @@ and bind-mount Orbit's runtime trust pool from the node at
 managed `php.ini` directives `openssl.cafile` and `curl.cainfo` to that path.
 This gives outbound HTTPS clients inside the runtime container default trust
 for Orbit-issued development certificates, such as Vite dev-server and Inertia
-SSR endpoints, without per-project CA files or checkout-local `php.ini`
-ceremony. `app-prod` runtimes do not receive this client-trust configuration.
+SSR endpoints. Orbit also maps the exact app or workspace development hostname
+to Docker's host gateway inside these containers, so the trusted HTTPS endpoint
+remains reachable when Vite runs as a host process. Neither mapping nor
+client-trust configuration is rendered for `app-prod` runtimes.
 
 `app-dev` PHP app and workspace containers render a small native
 `FRANKENPHP_CONFIG` snippet in classic mode: `max_threads auto` and

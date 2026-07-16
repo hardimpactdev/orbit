@@ -24,6 +24,9 @@ class WorkspaceRuntimeContainer
     private readonly array $networkAliases;
 
     /** @var array<string, string> */
+    private readonly array $extraHosts;
+
+    /** @var array<string, string> */
     private readonly array $phpIni;
 
     /**
@@ -31,6 +34,7 @@ class WorkspaceRuntimeContainer
      * @param  list<array{source: string, target: string, read_only?: bool}>  $mounts
      * @param  list<string>  $networkAliases
      * @param  array<string, string>  $phpIni
+     * @param  array<string, string>  $extraHosts
      */
     public function __construct(
         private readonly string $name,
@@ -43,11 +47,14 @@ class WorkspaceRuntimeContainer
         array $mounts,
         array $networkAliases,
         array $phpIni,
+        array $extraHosts = [],
     ) {
         $this->environment = $this->normalizeEnvironment($environment);
         $this->mounts = $this->normalizeMounts($mounts);
         $this->networkAliases = $this->normalizeNetworkAliases($networkAliases);
         $this->phpIni = $this->normalizePhpIni($phpIni);
+        ksort($extraHosts);
+        $this->extraHosts = $extraHosts;
     }
 
     public function name(): string
@@ -99,6 +106,12 @@ class WorkspaceRuntimeContainer
     }
 
     /** @return array<string, string> */
+    public function extraHosts(): array
+    {
+        return $this->extraHosts;
+    }
+
+    /** @return array<string, string> */
     public function phpIni(): array
     {
         return $this->phpIni;
@@ -143,12 +156,13 @@ class WorkspaceRuntimeContainer
      *     environment: array<string, string>,
      *     mounts: list<array{source: string, target: string, read_only: bool}>,
      *     network_aliases: list<string>,
+     *     extra_hosts?: array<string, string>,
      *     php_ini: array<string, string>
      * }
      */
     public function spec(): array
     {
-        return [
+        $spec = [
             'name' => $this->name,
             'image' => $this->image,
             'network' => $this->network,
@@ -160,6 +174,12 @@ class WorkspaceRuntimeContainer
             'network_aliases' => $this->networkAliases,
             'php_ini' => $this->phpIni,
         ];
+
+        if ($this->extraHosts !== []) {
+            $spec['extra_hosts'] = $this->extraHosts;
+        }
+
+        return $spec;
     }
 
     /**

@@ -106,10 +106,46 @@ it('rejects non-numeric docker users for app runtime containers', function (): v
         mounts: [],
         networkAliases: ['orbit-app-docs'],
         phpIni: [],
+        extraHosts: ['docs.test' => 'host-gateway'],
     )->withDockerUser('docs');
 
     expect(fn () => new DockerCommandBuilder()->runDetached($container))
         ->toThrow(InvalidArgumentException::class, 'numeric UID:GID');
+});
+
+it('emits development hostname mappings for app and workspace runtime containers', function (): void {
+    $app = new AppRuntimeContainer(
+        name: 'orbit-app-docs',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        network: 'orbit-network',
+        restartPolicy: 'unless-stopped',
+        appSlug: 'docs',
+        runtimeUser: null,
+        environment: [],
+        mounts: [],
+        networkAliases: ['orbit-app-docs'],
+        phpIni: [],
+        extraHosts: ['docs.test' => 'host-gateway'],
+    );
+    $workspace = new WorkspaceRuntimeContainer(
+        name: 'orbit-ws-docs-feature',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        network: 'orbit-network',
+        restartPolicy: 'unless-stopped',
+        appSlug: 'docs',
+        workspaceSlug: 'feature',
+        environment: [],
+        mounts: [],
+        networkAliases: ['orbit-ws-docs-feature'],
+        phpIni: [],
+        extraHosts: ['feature.docs.test' => 'host-gateway'],
+    );
+    $builder = new DockerCommandBuilder;
+
+    expect($builder->runDetached($app))
+        ->toContain('--add-host '.escapeshellarg('docs.test:host-gateway'))
+        ->and($builder->runDetached($workspace))
+        ->toContain('--add-host '.escapeshellarg('feature.docs.test:host-gateway'));
 });
 
 it('emits route-artifact mounts, port publishing, and extra hosts for orbit-caddy containers', function (): void {
@@ -199,6 +235,7 @@ it('keeps app and workspace runtime containers on the Docker E2E network with al
             mounts: [],
             networkAliases: ['orbit-app-docs', 'app-docs'],
             phpIni: [],
+            extraHosts: ['docs.test' => 'host-gateway'],
         );
         $workspace = new WorkspaceRuntimeContainer(
             name: 'orbit-ws-docs-feature',
@@ -211,23 +248,24 @@ it('keeps app and workspace runtime containers on the Docker E2E network with al
             mounts: [],
             networkAliases: ['orbit-ws-docs-feature', 'ws-docs-feature'],
             phpIni: [],
+            extraHosts: ['feature.docs.test' => 'host-gateway'],
         );
 
         $builder = new DockerCommandBuilder;
 
         expect($builder->runDetached($app))
             ->toContain('--network '.escapeshellarg('orbit-e2e-run123'))
-            ->not
-            ->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-gateway'))
-            ->toContain('--network-alias '.escapeshellarg('orbit-app-docs'))
-            ->toContain('--network-alias '.escapeshellarg('app-docs'));
+            ->not->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-gateway'))->toContain(
+                '--network-alias '.escapeshellarg('orbit-app-docs'),
+            )->toContain('--network-alias '.escapeshellarg('app-docs'))
+            ->not->toContain('--add-host');
 
         expect($builder->runDetached($workspace))
             ->toContain('--network '.escapeshellarg('orbit-e2e-run123'))
-            ->not
-            ->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-gateway'))
-            ->toContain('--network-alias '.escapeshellarg('orbit-ws-docs-feature'))
-            ->toContain('--network-alias '.escapeshellarg('ws-docs-feature'));
+            ->not->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-gateway'))->toContain(
+                '--network-alias '.escapeshellarg('orbit-ws-docs-feature'),
+            )->toContain('--network-alias '.escapeshellarg('ws-docs-feature'))
+            ->not->toContain('--add-host');
     } finally {
         if ($previousNetwork === false) {
             putenv('ORBIT_E2E_DOCKER_NETWORK');
