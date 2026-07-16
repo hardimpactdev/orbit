@@ -80,6 +80,7 @@ final readonly class LocalManagedFileAction
             $directoryMode,
             $directory,
         ], 'managed_file.directory_failed');
+        $this->removeEmptyDirectoryAtPath($path, $privilege);
         $this->mustRunWithInput([...$privilege, 'tee', $path], $content, 'managed_file.write_failed');
         $this->mustRun([...$privilege, 'chmod', $mode, $path], 'managed_file.chmod_failed');
 
@@ -88,6 +89,21 @@ final readonly class LocalManagedFileAction
             'hash' => hash('sha256', $content),
             'mode' => $mode,
         ];
+    }
+
+    /**
+     * @param  list<string>  $privilege
+     */
+    private function removeEmptyDirectoryAtPath(string $path, array $privilege): void
+    {
+        if ($this->runProcess([...$privilege, 'test', '-d', $path])['exit_code'] !== 0) {
+            return;
+        }
+
+        $this->mustRun(
+            [...$privilege, 'rmdir', '--', $path],
+            'managed_file.path_type_conflict',
+        );
     }
 
     private function action(mixed $value): string

@@ -78,7 +78,7 @@ describe('internal managed file command', function (): void {
     });
 
     it('allows user orbit roots after token validation', function (string $path): void {
-        fake_managed_file_sudo_binary(fileExists: false);
+        fake_managed_file_sudo_binary(pathType: 'missing');
 
         [$exitCode, $output] = run_internal_managed_file_command(
             [
@@ -102,7 +102,7 @@ describe('internal managed file command', function (): void {
 
     it('probes managed file state through fixed argv commands', function (): void {
         $path = '/etc/orbit/managed-file-probe-'.bin2hex(random_bytes(8));
-        $log = fake_managed_file_sudo_binary(fileExists: true, path: $path);
+        $log = fake_managed_file_sudo_binary(path: $path);
 
         [$exitCode, $output] = run_internal_managed_file_command(
             [
@@ -162,6 +162,37 @@ describe('internal managed file command', function (): void {
             ->toContain('-n tee /etc/apt/apt.conf.d/20auto-upgrades')
             ->and($commands)
             ->toContain('-n chmod 0644 /etc/apt/apt.conf.d/20auto-upgrades');
+    });
+
+    it('replaces an existing empty directory at the managed file path', function (): void {
+        $path = '/srv/orbit/s3/config/s3.json';
+        $log = fake_managed_file_sudo_binary(path: $path, pathType: 'directory');
+
+        [$exitCode] = run_internal_managed_file_command(
+            [
+                'action' => 'write',
+                '--operation-token' => managed_file_signed_operation_token(),
+                '--json' => true,
+            ],
+            json_encode([
+                'path' => $path,
+                'content' => "{\n  \"identities\": []\n}\n",
+                'mode' => '0600',
+                'directory_mode' => '0750',
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $commands = file($log, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        expect(is_array($commands))->toBeTrue();
+        /** @var list<string> $commands */
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($commands)
+            ->toContain("-n test -d {$path}")
+            ->toContain("-n rmdir -- {$path}")
+            ->toContain("-n tee {$path}")
+            ->toContain("-n chmod 0600 {$path}");
     });
 
     it('writes user orbit files without sudo', function (): void {
@@ -247,13 +278,14 @@ function run_internal_managed_file_command(array $parameters = [], string $stdin
 }
 
 function fake_managed_file_sudo_binary(
-    bool $fileExists = true,
     string $path = '/etc/apt/apt.conf.d/20auto-upgrades',
+    string $pathType = 'file',
 ): string {
     $directory = sys_get_temp_dir().'/orbit-managed-file-'.bin2hex(random_bytes(8));
     mkdir("{$directory}/bin", recursive: true);
     $log = "{$directory}/commands.log";
-    $exists = $fileExists ? '1' : '0';
+    $fileExists = $pathType === 'file' ? '1' : '0';
+    $directoryExists = $pathType === 'directory' ? '1' : '0';
 
     $script = <<<SH
         #!/bin/sh
@@ -264,7 +296,8 @@ function fake_managed_file_sudo_binary(
         fi
 
         if [ "\$1" = "test" ]; then
-          [ '$exists' = '1' ] && exit 0
+          [ "\$2" = "-f" ] && [ '$fileExists' = '1' ] && exit 0
+          [ "\$2" = "-d" ] && [ '$directoryExists' = '1' ] && exit 0
           exit 1
         fi
 
@@ -278,7 +311,7 @@ function fake_managed_file_sudo_binary(
           exit 0
         fi
 
-        if [ "\$1" = "install" ] || [ "\$1" = "chmod" ]; then
+        if [ "\$1" = "install" ] || [ "\$1" = "chmod" ] || [ "\$1" = "rmdir" ]; then
           exit 0
         fi
 
