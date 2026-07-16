@@ -90,6 +90,7 @@ it('stores renders and applies env only to the selected workspace', function ():
             'value' => 'preserved',
             'secret' => false,
         ]);
+    $databasePassword = fake()->sha256();
     $connection = DatabaseConnection::factory()->for($node)->create([
         'slug' => 'billing-db',
         'driver' => 'pgsql',
@@ -97,7 +98,7 @@ it('stores renders and applies env only to the selected workspace', function ():
         'port' => 5432,
         'database' => 'billing',
         'username' => 'billing',
-        'credentials' => ['password' => 'secret-password'],
+        'credentials' => ['password' => $databasePassword],
     ]);
     DatabaseConnectionTarget::factory()
         ->for($connection, 'connection')
@@ -177,7 +178,7 @@ it('stores renders and applies env only to the selected workspace', function ():
         ->toContain('EXISTING_VALUE=preserved')
         ->toContain('APP_URL=https://feature-mail.billing-development.test')
         ->toContain('DB_HOST=postgres.internal')
-        ->not->toContain('secret-password');
+        ->not->toContain($databasePassword);
 
     expect(array_column($envPayloads, 'path'))
         ->toContain('/worktrees/feature-mail/.env')
