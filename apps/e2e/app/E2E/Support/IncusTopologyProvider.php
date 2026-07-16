@@ -832,6 +832,13 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $timer->measure('known-hosts', fn () => $this->clearKnownHosts($instances));
         $timer->measure('wireguard', fn () => $this->retargetRealWireGuard($instances, $timer));
         $timer->measure('gateway-ssh-access', fn () => $this->seedGatewaySshAccess($instances, $timer));
+        $startGatewayApiBeforeBake = $options->startGatewayApi && isset($instances['gateway'])
+            ? fn () => $timer->measure('gateway-api.start', fn () => E2EGatewayApi::start(
+                $instances['gateway'],
+                'topology-lease',
+                gatewayIp: self::GatewayWireGuardIp,
+            ))
+            : null;
         $timer->measure('retarget', fn () => $this->retargetTopology(
             $instances,
             $config,
@@ -839,16 +846,9 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             $kind,
             $options->sourceMountedCheckout,
             $timer,
+            $startGatewayApiBeforeBake,
         ));
         $timer->measure('network-ready', fn () => $this->waitForPeerRoutes($instances, $config, $timer));
-
-        if ($options->startGatewayApi && isset($instances['gateway'])) {
-            $timer->measure('gateway-api.start', fn () => E2EGatewayApi::start(
-                $instances['gateway'],
-                'topology-lease',
-                gatewayIp: self::GatewayWireGuardIp,
-            ));
-        }
 
         return $primaryUsers;
     }
@@ -1024,6 +1024,13 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $instances,
                 $cycleTimer,
             ));
+            $startGatewayApiBeforeBake = $startGatewayApi && isset($instances['gateway'])
+                ? fn () => $cycleTimer->measure('reset.gateway-api.start', fn () => E2EGatewayApi::start(
+                    $instances['gateway'],
+                    'topology-reset',
+                    gatewayIp: self::GatewayWireGuardIp,
+                ))
+                : null;
             $cycleTimer->measure('reset.retarget', fn () => $this->retargetTopology(
                 $instances,
                 $this->config,
@@ -1031,20 +1038,13 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $kind,
                 $sourceMountedCheckout,
                 $cycleTimer,
+                $startGatewayApiBeforeBake,
             ));
             $cycleTimer->measure('reset.network-ready', fn () => $this->waitForPeerRoutes(
                 $instances,
                 $this->config,
                 $cycleTimer,
             ));
-
-            if ($startGatewayApi && isset($instances['gateway'])) {
-                $cycleTimer->measure('reset.gateway-api.start', fn () => E2EGatewayApi::start(
-                    $instances['gateway'],
-                    'topology-reset',
-                    gatewayIp: self::GatewayWireGuardIp,
-                ));
-            }
 
             foreach ($primaryUsers as $role => $primaryUser) {
                 $instance = $instances[$role] ?? null;
@@ -1203,6 +1203,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         E2ETopologyKind $kind,
         bool $sourceMountedCheckout = false,
         ?E2EPhaseTimer $timer = null,
+        ?\Closure $beforeDownstreamBake = null,
     ): void {
         $operator = $instances['operator'] ?? null;
         $gateway = $instances['gateway'] ?? null;
@@ -1241,6 +1242,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         E2EGatewayApi::seedOperatorIdentity($gateway, self::OperatorWireGuardIp, $config->operatorUser);
 
         $this->retargetOperator($operator, $config, $sshKeyPair, $sourceMountedCheckout);
+        $beforeDownstreamBake?->__invoke();
 
         $bakeTasks = $this->retargetBakeTasks($instances, $gateway, $kind, $sourceMountedCheckout);
 
