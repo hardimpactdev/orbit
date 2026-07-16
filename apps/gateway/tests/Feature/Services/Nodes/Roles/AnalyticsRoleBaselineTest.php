@@ -10,10 +10,19 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
+use App\Services\Nodes\Roles\RoleBaselines\RoleRuntimeConverger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(RoleRuntimeConverger::class, new class extends RoleRuntimeConverger {
+        public function convergeTool(Node $node, string $toolName): void {}
+
+        public function convergeProcess(Node $node, Process $process, string $role): void {}
+    });
+});
 
 it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard endpoints', function (): void {
     $databaseNode = Node::factory()->create([

@@ -670,19 +670,24 @@ final readonly class ToolsProbe
             ];
         }
 
-        $allowedStatus = $tool->node->isActive() || $allowProvisioning && $tool->node->isProvisioning();
+        $node = $tool->node;
+        $allowedStatus = $node->isActive() || $allowProvisioning && $node->isProvisioning();
 
-        if (! $allowedStatus || ! $this->isToolNode($tool)) {
+        $allowedRole =
+            $this->isToolNode($tool)
+            || $allowProvisioning && app(NodeRoleAssignments::class)->nodeHasConvergingToolHostRole($node);
+
+        if (! $allowedStatus || ! $allowedRole) {
             return [
                 new DriftEntry(
                     family: $this->key(),
                     key: 'tool.node_invalid',
                     kind: DriftKind::Divergent,
-                    summary: "Tool {$tool->name} targets node {$tool->node->name}, which is not an active managed-tool node.",
+                    summary: "Tool {$tool->name} targets node {$node->name}, which is not an active managed-tool node.",
                     detail: [
-                        'node' => $tool->node->name,
-                        'role' => $tool->node->displayRole(),
-                        'status' => $tool->node->status->value,
+                        'node' => $node->name,
+                        'role' => $node->displayRole(),
+                        'status' => $node->status->value,
                     ],
                 ),
             ];

@@ -53,7 +53,7 @@ final readonly class S3ServiceConfigurator
         $runtimeContainer = $this->containerRenderer->render($node, $settings, serviceConfig: $serviceConfig);
 
         $seaweedfsTool = $this->persistSeaweedfsTool($node, $serviceConfig);
-        $this->persistSeaweedfsProcess($node, $runtimeContainer);
+        $process = $this->persistSeaweedfsProcess($node, $runtimeContainer);
 
         if (! $credentialsAlreadyStored) {
             $this->writeCredentials($seaweedfsTool, $serviceConfig);
@@ -63,6 +63,7 @@ final readonly class S3ServiceConfigurator
             serviceConfig: $serviceConfig,
             runtimeContainer: $runtimeContainer,
             seaweedfsTool: $seaweedfsTool,
+            process: $process,
         );
     }
 
@@ -149,7 +150,6 @@ final readonly class S3ServiceConfigurator
 
     private function persistSeaweedfsProcess(Node $node, S3RuntimeContainer $runtimeContainer): Process
     {
-        /** @var Process */
         return $node->processes()->updateOrCreate(
             ['name' => 'seaweedfs'],
             [

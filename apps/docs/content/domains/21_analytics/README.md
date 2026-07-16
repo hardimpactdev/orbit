@@ -28,6 +28,10 @@ These rules define the analytics command domain and its role boundary.
   `clickhouse/clickhouse-server:24.12-alpine`. Plausible reads the selected
   process endpoints over their WireGuard addresses; Docker-local service
   aliases are not cross-node dependency addresses.
+- Analytics role convergence installs and verifies Docker, applies the
+  Plausible service owned by the node through Docker Swarm, and starts it
+  before the role assignment becomes active. Apply or start failure keeps
+  provisioning incomplete.
 - The analytics command family coordinates node, process, proxy, and app-owned
   binding state. It does not own an independent `doctor --family=analytics`
   state family in v1.

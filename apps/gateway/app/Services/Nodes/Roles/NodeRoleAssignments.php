@@ -180,6 +180,18 @@ class NodeRoleAssignments
         return $this->nodeHasAnyActiveRole($node, $this->toolHostRoles());
     }
 
+    public function nodeHasConvergingToolHostRole(Node $node): bool
+    {
+        return $node
+            ->roleAssignments()
+            ->whereIn('role', $this->toolHostRoles())
+            ->whereIn('status', [
+                NodeRoleStatus::Pending->value,
+                NodeRoleStatus::Error->value,
+            ])
+            ->exists();
+    }
+
     public function activeAppHostEnvironment(Node $node): ?string
     {
         if ($this->nodeHasActiveRole($node, NodeRoleName::AppDevelopment->value)) {

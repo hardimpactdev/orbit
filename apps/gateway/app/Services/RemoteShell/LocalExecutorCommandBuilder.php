@@ -188,12 +188,14 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
             NodeRoleName::AppDevelopment,
             NodeRoleName::AppProduction,
             NodeRoleName::Database,
+            NodeRoleName::S3,
         ],
         InternalCommand::ProcessDockerSwarmService->value => [
             NodeRoleName::AppDevelopment,
             NodeRoleName::AppProduction,
             NodeRoleName::Database,
             NodeRoleName::Metrics,
+            NodeRoleName::Analytics,
         ],
         InternalCommand::ProcessLogs->value => [
             NodeRoleName::Gateway,
@@ -577,7 +579,10 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
         return $targetNode
             ->roleAssignments()
             ->where('role', $role)
-            ->where('status', NodeRoleStatus::Pending->value)
+            ->whereIn('status', [
+                NodeRoleStatus::Pending->value,
+                NodeRoleStatus::Error->value,
+            ])
             ->exists();
     }
 

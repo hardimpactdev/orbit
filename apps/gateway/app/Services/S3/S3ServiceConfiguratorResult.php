@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\S3;
 
 use App\Models\NodeTool;
+use App\Models\Process;
 
 /**
  * Result of S3ServiceConfigurator::configure().
@@ -19,5 +20,6 @@ final readonly class S3ServiceConfiguratorResult
         public S3ServiceConfig $serviceConfig,
         public S3RuntimeContainer $runtimeContainer,
         public NodeTool $seaweedfsTool,
+        public Process $process,
     ) {}
 }

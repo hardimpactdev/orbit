@@ -133,9 +133,9 @@ Roles materialize baseline tool intent when a role assignment converges.
 | `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping derived from the node's `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
-| `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
+| `s3` | Docker installation and verification, SeaweedFS Docker runtime apply/start, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
 | `metrics` | Docker substrate, node-exporter binary, Prometheus/Grafana Swarm processes, node-exporter systemd processes on metrics/workload nodes, `metrics.orbit`, and Grafana credentials |
-| `analytics` | Plausible CE in a process-owned Docker/Swarm service, private `analytics.orbit` router route, per-app public tracking route support, analytics backend pool registration, and runtime configuration derived from PostgreSQL and ClickHouse process endpoints |
+| `analytics` | Docker verification, Plausible CE Swarm apply/start, private routing, public tracking route support, backend pool registration, and PostgreSQL/ClickHouse endpoint configuration |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the
@@ -270,6 +270,10 @@ These rules apply to all node commands and define the invariants the family enfo
 - Role add and role update converge synchronously. Failed convergence makes the
   mutating command fail, while leaving the role assignment in `error` for a
   later `doctor --family=node --restore` retry.
+- Service roles that own process runtimes are activated only after their
+  required Docker capability is present and the persisted runtime unit has
+  applied and started. A runtime transport, render, or start failure leaves
+  `node:new` incomplete instead of returning an active role.
 - Role removal blocks while dependents managed by Orbit still require the role.
   `--force` removes Orbit-owned dependents and configuration but preserves data.
   `--force --purge-data` deletes role-owned data only where an explicit command

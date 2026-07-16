@@ -29,6 +29,7 @@ class AnalyticsRoleBaseline implements RoleBaseline
         private readonly PlausibleRuntimeConfig $plausibleRuntimeConfig,
         private readonly ?ToolCatalog $toolCatalog = null,
         private readonly ?NodeRoleAssignments $nodeRoleAssignments = null,
+        private readonly ?RoleRuntimeConverger $runtimeConverger = null,
     ) {}
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
@@ -42,7 +43,12 @@ class AnalyticsRoleBaseline implements RoleBaseline
         }
 
         $this->convergeTools($node, ['docker']);
-        $this->convergePlausibleProcess($node, $assignment);
+        $this->runtimeConverger()->convergeTool($node, 'docker');
+        $this->runtimeConverger()->convergeProcess(
+            $node,
+            $this->convergePlausibleProcess($node, $assignment),
+            'analytics',
+        );
     }
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
@@ -66,7 +72,7 @@ class AnalyticsRoleBaseline implements RoleBaseline
         return $this->nodeRoleAssignments ?? app(NodeRoleAssignments::class);
     }
 
-    private function convergePlausibleProcess(Node $node, NodeRoleAssignment $assignment): void
+    private function convergePlausibleProcess(Node $node, NodeRoleAssignment $assignment): Process
     {
         $descriptor = $this->serviceCatalog->resolve(
             service: 'plausible',
@@ -91,7 +97,8 @@ class AnalyticsRoleBaseline implements RoleBaseline
             runtimeConfig: $descriptor->runtimeConfig,
         );
 
-        Process::query()->updateOrCreate(
+        /** @var Process */
+        return Process::query()->updateOrCreate(
             [
                 'owner_type' => $node->getMorphClass(),
                 'owner_id' => $node->id,
@@ -108,5 +115,10 @@ class AnalyticsRoleBaseline implements RoleBaseline
                 'sort_order' => 10,
             ],
         );
+    }
+
+    private function runtimeConverger(): RoleRuntimeConverger
+    {
+        return $this->runtimeConverger ?? app(RoleRuntimeConverger::class);
     }
 }

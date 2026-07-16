@@ -23,6 +23,9 @@ These rules govern what the S3 command family owns and what it may not touch.
   settings, and private router-to-SeaweedFS routing.
 - SeaweedFS runtime uses one canonical node-owned Docker process row. The s3
   role does not own role-local Docker Compose.
+- S3 role convergence installs and verifies Docker, applies the canonical
+  SeaweedFS process runtime, and starts it before the role assignment becomes
+  active. Apply or start failure keeps provisioning incomplete.
 - S3 service credentials are service-level SeaweedFS credentials stored on the
   `seaweedfs` tool row. They are visible through `tool:credentials seaweedfs` and
   `s3:credentials`.

@@ -107,13 +107,13 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         'analytics',
     ]);
 
-    it('allows internal commands for pending role convergence', function (): void {
+    it('allows internal commands for pending and failed role convergence', function (NodeRoleStatus $status): void {
         /** @var Node $node */
         $node = Node::factory()->create(['name' => 'target']);
 
         NodeRoleAssignment::factory()->for($node)->create([
             'role' => 'metrics',
-            'status' => NodeRoleStatus::Pending,
+            'status' => $status,
         ]);
 
         expect(localExecutorCommandBuilder()->buildArgv(
@@ -123,7 +123,10 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             options: [],
             operationToken: local_executor_test_operation_token(),
         ))->toContain('internal:managed-file');
-    });
+    })->with([
+        NodeRoleStatus::Pending,
+        NodeRoleStatus::Error,
+    ]);
 
     it('allows gateway host CLI installs on gateway-only nodes', function (): void {
         $operationToken = local_executor_test_operation_token();
@@ -478,8 +481,8 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             'internal:database-add-user' => ['app-dev', 'app-prod', 'database'],
             'internal:database-query-local' => ['app-dev', 'app-prod', 'database'],
             'internal:deploy:run-step' => ['app-prod'],
-            'internal:process-docker-container' => ['app-dev', 'app-prod', 'database'],
-            'internal:process-docker-swarm-service' => ['app-dev', 'app-prod', 'database', 'metrics'],
+            'internal:process-docker-container' => ['app-dev', 'app-prod', 'database', 's3'],
+            'internal:process-docker-swarm-service' => ['app-dev', 'app-prod', 'database', 'metrics', 'analytics'],
             'internal:process-logs' => [
                 'gateway',
                 'vpn',
@@ -716,8 +719,8 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         'database add user' => ['internal:database-add-user', ['database'], ['vpn']],
         'database query local' => ['internal:database-query-local', ['database'], ['vpn']],
         'deploy run step' => ['internal:deploy:run-step', ['app-prod'], ['app-dev']],
-        'process docker container' => ['internal:process-docker-container', ['app-dev'], ['vpn']],
-        'process docker swarm service' => ['internal:process-docker-swarm-service', ['database'], ['vpn']],
+        'process docker container' => ['internal:process-docker-container', ['app-dev', 's3'], ['vpn']],
+        'process docker swarm service' => ['internal:process-docker-swarm-service', ['database', 'analytics'], ['vpn']],
         'process logs' => ['internal:process-logs', ['ingress'], []],
         'process systemd service' => ['internal:process-systemd-service', ['app-dev'], []],
         'runtime backend probe' => ['internal:runtime-backend:probe', ['ingress'], ['gateway']],
