@@ -40,10 +40,24 @@ final class PlausibleRuntimeConfig
                 $postgres['port'],
             ),
             'CLICKHOUSE_DATABASE_URL' => "http://{$clickHouse['host']}:{$clickHouse['port']}/plausible",
-            'SECRET_KEY_BASE' => $existingEnvironment['SECRET_KEY_BASE'] ?? Str::random(64),
+            'SECRET_KEY_BASE' => $this->secretKeyBase($existingEnvironment),
         ];
 
         return $this->withRefreshedSpecHash($runtimeConfig);
+    }
+
+    /**
+     * @param  array<string, mixed>  $environment
+     */
+    private function secretKeyBase(array $environment): string
+    {
+        $secret = $environment['SECRET_KEY_BASE'] ?? null;
+
+        if (is_string($secret) && strlen($secret) >= 64) {
+            return $secret;
+        }
+
+        return Str::random(64);
     }
 
     /**

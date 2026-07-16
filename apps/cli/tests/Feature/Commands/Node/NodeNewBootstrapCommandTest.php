@@ -155,7 +155,7 @@ it('routes host-provisioned templates through client SSH bootstrap', function (s
     );
 
     expect($exitCode)->toBe(0);
-})->with(['app-development', 'database', 'ingress', 'metrics', 'agent']);
+})->with(['app-development', 'database', 'ingress', 's3', 'metrics', 'agent']);
 
 it('does not ask the gateway to complete when client local SSH fails', function (): void {
     fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', [

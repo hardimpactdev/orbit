@@ -157,6 +157,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
             'app-production',
             'database',
             'ingress',
+            's3',
             'metrics',
             'analytics',
             'agent',

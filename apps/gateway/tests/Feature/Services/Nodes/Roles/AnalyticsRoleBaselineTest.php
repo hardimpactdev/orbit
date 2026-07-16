@@ -70,6 +70,18 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
             'clickhouse_node_id' => $databaseNode->id,
         ],
     ]);
+    Process::factory()
+        ->forOwner($analyticsNode)
+        ->create([
+            'name' => 'plausible',
+            'runtime' => ProcessRuntime::DockerSwarm,
+            'runtime_config' => [
+                'service' => 'plausible',
+                'environment' => [
+                    'SECRET_KEY_BASE' => 'change-me',
+                ],
+            ],
+        ]);
 
     $converger = app(NodeRoleBaselineConverger::class);
     $converger->converge($analyticsNode, $assignment);
