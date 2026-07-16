@@ -85,9 +85,11 @@ final class AppEnvCommand extends AppGatewayCommand
         }
 
         $variables = $this->variablesFromGatewayResponse($response);
+        $data = $this->successData($response);
 
         if ($variables === []) {
             $this->line('No environment values found.');
+            $this->renderTargetOutcome($data);
 
             return self::SUCCESS;
         }
@@ -99,6 +101,7 @@ final class AppEnvCommand extends AppGatewayCommand
                 $this->variableString($variable, 'value'),
             ], $variables),
         );
+        $this->renderTargetOutcome($data);
 
         return self::SUCCESS;
     }
@@ -167,8 +170,11 @@ final class AppEnvCommand extends AppGatewayCommand
 
         $savedKey = $this->savedKey($response, $key);
         $savedInstance = $this->savedInstance($response, $instance);
+        $data = $this->successData($response);
+        $savedApp = is_string($data['app'] ?? null) ? $data['app'] : $app;
 
-        $this->line("Saved '{$savedKey}' for instance '{$savedInstance}'.");
+        $this->line("Saved '{$savedKey}' for app instance '{$savedApp}.{$savedInstance}'.");
+        $this->renderTargetOutcome($data);
 
         return self::SUCCESS;
     }
@@ -279,6 +285,30 @@ final class AppEnvCommand extends AppGatewayCommand
         if (is_string($runtimeOutcome) && $runtimeOutcome !== '') {
             $this->line("  Runtime container outcome: {$runtimeOutcome}.");
         }
+
+        $this->renderTargetOutcome($this->successData($response), prefix: '  ');
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function renderTargetOutcome(array $data, string $prefix = ''): void
+    {
+        $path = is_string($data['path'] ?? null) ? $data['path'] : '—';
+
+        $this->line("{$prefix}Scope: app-instance");
+        $this->line("{$prefix}App: ".(is_string($data['app'] ?? null) ? $data['app'] : '—'));
+        $this->line("{$prefix}Instance: ".(is_string($data['instance'] ?? null) ? $data['instance'] : '—'));
+        $this->line("{$prefix}Workspace: —");
+        $this->line("{$prefix}Path: {$path}");
+        $this->line("{$prefix}Stored: ".$this->yesNo($data['stored'] ?? false));
+        $this->line("{$prefix}Applied: ".$this->yesNo($data['applied'] ?? false));
+        $this->line("{$prefix}Runtime restarted: ".$this->yesNo($data['runtime_restarted'] ?? false));
+    }
+
+    private function yesNo(mixed $value): string
+    {
+        return $value === true ? 'yes' : 'no';
     }
 
     private function renderEnv(string $app, string $instance): int
@@ -294,9 +324,11 @@ final class AppEnvCommand extends AppGatewayCommand
         }
 
         $variables = $this->renderedVariables($response);
+        $data = $this->successData($response);
 
         if ($variables === []) {
             $this->line('No environment values found.');
+            $this->renderTargetOutcome($data);
 
             return self::SUCCESS;
         }
@@ -304,6 +336,7 @@ final class AppEnvCommand extends AppGatewayCommand
         foreach ($variables as $key => $value) {
             $this->line("{$key}={$value}");
         }
+        $this->renderTargetOutcome($data);
 
         return self::SUCCESS;
     }

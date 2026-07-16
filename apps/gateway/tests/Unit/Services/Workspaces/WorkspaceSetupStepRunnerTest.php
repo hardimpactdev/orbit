@@ -8,18 +8,11 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
-use App\Services\ActivityLogCorrelation;
-use App\Services\ActivityLogger;
-use App\Services\Operations\OperationRunRecorder;
-use App\Services\Operations\OperationTokenFactory;
-use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Workspaces\WorkspaceSetupStepRunner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Orbit\Core\Http\JsonEnvelope;
-use Orbit\Core\Security\OperationTokenSigner;
 use Tests\Fakes\WorkspaceSetupStepRunnerExecutorTransport;
 use Tests\TestCase;
 
@@ -429,6 +422,52 @@ it('runs setup steps through the local executor by default for agent capable nod
         ->toBe("created\n");
 });
 
+it('rejects legacy setup steps that directly consume the parent app env before execution', function (): void {
+    $run = WorkspaceRun::factory()->create(['status' => 'pending']);
+    $node = Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'name' => 'agent-node',
+            'host' => 'agent-node',
+        ]);
+    $transport = new WorkspaceSetupStepRunnerExecutorTransport(new RemoteShellResult(
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        durationMs: 1,
+    ));
+    $runner = new WorkspaceSetupStepRunner(
+        localExecutor: workspace_setup_step_runner_local_executor($transport),
+    );
+    $steps = [
+        new WorkspaceStep([
+            'id' => 1,
+            'command' => 'cp "$ORBIT_APP_PATH/.env" .env',
+            'timeout_seconds' => 60,
+        ]),
+    ];
+
+    $result = $runner->run(
+        $run,
+        $steps,
+        '/worktrees/feature-mail',
+        [
+            'ORBIT_APP_PATH' => '/home/orbit/apps/billing',
+        ],
+        $node,
+    );
+
+    expect($result)
+        ->toBeFalse()
+        ->and($transport->runs)
+        ->toBeEmpty()
+        ->and($run->fresh()->status)
+        ->toBe('failed')
+        ->and($run->runSteps()->sole()->output)
+        ->toContain('parent app .env');
+});
+
 it('routes php setup commands before dispatching through the local executor', function (): void {
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::factory()
@@ -582,7 +621,11 @@ final class WorkspaceSetupStepRunnerTestShell implements RemoteShell, RunsIntern
 
     private function runFromTransport(Node $node, array $transportOptions): RemoteShellResult
     {
-        $payload = json_decode((string) $transportOptions['input'], true, flags: JSON_THROW_ON_ERROR);
+        $payload = json_decode(
+            (string) $transportOptions['input'],
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
 
         return $this->run($node, (string) $payload['command'], [
             'cwd' => $payload['cwd'],
@@ -622,7 +665,11 @@ final class WorkspaceSetupStepRunnerFailingShell implements RemoteShell, RunsInt
         array $commandOptions = [],
         array $transportOptions = [],
     ): RemoteShellResult {
-        $payload = json_decode((string) $transportOptions['input'], true, flags: JSON_THROW_ON_ERROR);
+        $payload = json_decode(
+            (string) $transportOptions['input'],
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
 
         return workspace_setup_step_result_envelope($this->run($node, (string) $payload['command'], [
             'cwd' => $payload['cwd'],

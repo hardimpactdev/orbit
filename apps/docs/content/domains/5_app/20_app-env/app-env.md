@@ -29,8 +29,8 @@ orbit app:env render billing --instance=development --json
 - `--key`: env key. Required for `set`.
 - `--value`: env value. Required for `set`.
 - `--apply`: for `set` only. Persist the value in gateway state and apply it to
-  the owning app's live `.env`, clear Laravel config/bootstrap cache, and
-  reapply the app runtime container.
+  the selected app instance's live `.env`, clear Laravel config/bootstrap
+  cache at that instance path, and reapply that instance's runtime container.
 - `--secret`: rejected in this slice; secret storage is not designed yet.
 - `--json`: output JSON.
 
@@ -43,9 +43,13 @@ Orbit-derived app URL and Laravel Vite development-server fields, explicit
 instance env values, and database connections attached to that same instance.
 Secret database values are redacted in API and CLI responses.
 
-`set` without `--apply` stores gateway intent only. `set --apply` also writes the
-app's live `.env` on the owning node, clears Laravel config/bootstrap cache, and
-reapplies the FrankenPHP runtime container for PHP apps.
+`set` without `--apply` stores gateway intent only. `set --apply` also writes
+the selected instance's live `.env` on its owning node, clears Laravel
+config/bootstrap cache at that instance path, and reapplies that instance's
+FrankenPHP runtime container for PHP apps. It never targets the logical app's
+default path or a sibling instance. Running from inside a workspace does not
+infer its parent app: `app:env` still requires explicit app and instance
+selectors; use `workspace:env` for the active workspace.
 
 ## Output
 
@@ -53,6 +57,10 @@ Use `list` for explicit non-secret env variables. Use `render` for the effective
 env map for the instance, including Orbit-derived `APP_URL`, `VITE_APP_URL`,
 `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, `VITE_DEV_SERVER_CERT`, and
 database-derived keys.
+
+Every response identifies the concrete target with `scope`, `app`, `instance`,
+`workspace`, and `path`, plus `stored`, `applied`, and `runtime_restarted`
+outcome booleans.
 
 ## Requirements
 

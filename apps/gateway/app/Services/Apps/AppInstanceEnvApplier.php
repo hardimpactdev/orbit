@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\DatabaseConnections\EnvFileEditor;
 use App\Services\RemoteShell\RemoteEnvFile;
+use App\Services\Workspaces\WorkspacePlacement;
 use RuntimeException;
 
 final readonly class AppInstanceEnvApplier
@@ -17,43 +20,63 @@ final readonly class AppInstanceEnvApplier
         private AppRuntimeContainerRenderer $containerRenderer,
         private AppRuntimeContainerManager $containerManager,
         private RemoteAppCacheClear $cacheClear,
+        private WorkspacePlacement $placement,
     ) {}
 
-    public function apply(App $app, string $key, string $value): AppInstanceEnvApplyResult
+    public function apply(App $app, AppInstance $instance, string $key, string $value): AppInstanceEnvApplyResult
     {
-        $app->loadMissing('node');
-        $node = $app->node;
+        $node = $this->placement->nodeForInstance($instance);
 
         if (! $node instanceof Node) {
-            throw new RuntimeException("App '{$app->name}' has no owning node.");
+            throw new RuntimeException(
+                "App instance '{$app->name}.{$instance->name}' has no Orbit-managed owning node.",
+            );
         }
 
-        $envPath = $this->envPath($app);
-        $contents = $this->readContents($node, $app, $envPath);
+        $envPath = $this->envPath($instance);
+
+        if ($envPath === null) {
+            throw new RuntimeException(
+                "App instance '{$app->name}.{$instance->name}' has no Orbit-managed source path.",
+            );
+        }
+
+        $runtimeApp = $this->containerRenderer->runtimeAppForInstance($app, $instance);
+        $contents = $this->readContents($node, $envPath);
         $updated = $this->envFileEditor->update($contents, [$key => $value]);
-        $this->writeContents($node, $app, $envPath, $updated);
+        $this->writeContents($node, $envPath, $updated);
 
         $cacheCleared = false;
         $runtimeOutcome = null;
 
         if ($app->runtimeKind()->usesPhpRuntimeContainer()) {
-            $this->clearCaches($node, $app);
+            $this->clearCaches($node, $runtimeApp);
             $cacheCleared = true;
             $runtimeOutcome = $this->containerManager->apply(
                 $node,
-                $this->containerRenderer->render($app),
+                $this->containerRenderer->renderForInstance($app, $instance),
             );
         }
 
         return new AppInstanceEnvApplyResult($envPath, $cacheCleared, $runtimeOutcome);
     }
 
-    private function envPath(App $app): string
+    public function envPath(AppInstance $instance): ?string
     {
-        return rtrim($app->path, '/').'/.env';
+        $config = $instance->driver_config;
+
+        if (
+            ! $config instanceof OrbitAppInstanceDriverConfigData
+            || ! is_string($config->path)
+            || trim($config->path) === ''
+        ) {
+            return null;
+        }
+
+        return rtrim($config->path, '/').'/.env';
     }
 
-    private function readContents(Node $node, App $app, string $path): string
+    private function readContents(Node $node, string $path): string
     {
         if ($this->shouldUseLocalFilesystem($node) && is_file($path)) {
             return (string) file_get_contents($path);
@@ -62,7 +85,7 @@ final readonly class AppInstanceEnvApplier
         return app(RemoteEnvFile::class)->read($node, $path) ?? '';
     }
 
-    private function writeContents(Node $node, App $app, string $path, string $contents): void
+    private function writeContents(Node $node, string $path, string $contents): void
     {
         if ($this->shouldUseLocalFilesystem($node)) {
             if (! is_dir(dirname($path))) {

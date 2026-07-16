@@ -7,20 +7,14 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Apps\AppInstanceEnvApplier;
-use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerManager;
-use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Ca\OrbitCaService;
-use App\Services\Php\PhpRuntimeCatalog;
-use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\DockerCommandBuilder;
-use App\Services\Runtime\OrbitContainerNames;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -55,8 +49,17 @@ describe('AppInstanceEnvApplier', function (): void {
             'path' => $path,
             'runtime' => AppRuntimeKind::Static,
         ]);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new \App\Data\Apps\OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                path: $path,
+                document_root: null,
+                domain: 'docs.test',
+            ),
+        ]);
 
-        $result = app(AppInstanceEnvApplier::class)->apply($app, 'MAIL_MAILER', 'smtp');
+        $result = app(AppInstanceEnvApplier::class)->apply($app, $instance, 'MAIL_MAILER', 'smtp');
 
         expect($result->envPath)
             ->toBe($path.'/.env')
@@ -75,8 +78,7 @@ describe('AppInstanceEnvApplier', function (): void {
      * @mago-expect lint:halstead
      */
     it('clears Laravel caches and reapplies the runtime container for PHP apps', function (): void {
-        [$app, $node] = appAndNodeForEnvApplierTest();
-        $container = renderEnvApplierTestContainer($app);
+        [$app, $instance, $node] = appAndNodeForEnvApplierTest();
         $shell = new AppInstanceEnvApplierRecordingRemoteShell(
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -86,7 +88,7 @@ describe('AppInstanceEnvApplier', function (): void {
         );
         app()->instance(RemoteShell::class, $shell);
 
-        $result = app(AppInstanceEnvApplier::class)->apply($app, 'MAIL_MAILER', 'smtp');
+        $result = app(AppInstanceEnvApplier::class)->apply($app, $instance, 'MAIL_MAILER', 'smtp');
 
         expect($result->cacheCleared)
             ->toBeTrue()
@@ -98,7 +100,22 @@ describe('AppInstanceEnvApplier', function (): void {
 
         expect(implode("\n", $shell->scripts))
             ->toContain('internal:env-file')
-            ->toContain('internal:app-cache:clear');
+            ->toContain('internal:app-cache:clear')
+            ->toContain('/home/orbit/apps/billing-development')
+            ->not->toContain('/home/orbit/apps/billing/.env');
+        $envPayloads = array_values(array_filter(
+            array_map(
+                fn (array $options): ?array => ($options['input'] ?? null) !== null
+                    ? json_decode((string) $options['input'], associative: true, flags: JSON_THROW_ON_ERROR)
+                    : null,
+                $shell->options,
+            ),
+            fn (?array $payload): bool => ($payload['path'] ?? null) !== null,
+        ));
+
+        expect(array_column($envPayloads, 'path'))
+            ->toContain('/home/orbit/apps/billing-development/.env')
+            ->not->toContain('/home/orbit/apps/billing/.env');
     });
 });
 
@@ -119,8 +136,17 @@ function appAndNodeForEnvApplierTest(): array
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new \App\Data\Apps\OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            path: '/home/orbit/apps/billing-development',
+            document_root: null,
+            domain: 'billing-development.test',
+        ),
+    ]);
 
-    return [$app, $node];
+    return [$app, $instance, $node];
 }
 
 /**
@@ -204,20 +230,17 @@ function app_instance_env_applier_cache_clear_response(): array
     ];
 }
 
-function renderEnvApplierTestContainer(App $app): AppRuntimeContainer
-{
-    return new AppRuntimeContainerRenderer(
-        new PhpRuntimePolicy(new PhpRuntimeCatalog),
-        new OrbitContainerNames,
-    )->render($app);
-}
-
 final class AppInstanceEnvApplierRecordingRemoteShell implements RemoteShell
 {
     /**
      * @var list<string>
      */
     public array $scripts = [];
+
+    /**
+     * @var list<array<string, mixed>>
+     */
+    public array $options = [];
 
     /**
      * @param  RemoteShellResult|list<RemoteShellResult>  $results
@@ -233,6 +256,7 @@ final class AppInstanceEnvApplierRecordingRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
+        $this->options[] = $options;
 
         if (str_contains($script, 'id -u')) {
             return new RemoteShellResult(exitCode: 0, stdout: "1000\n1000\n", stderr: '', durationMs: 1);

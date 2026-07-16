@@ -20,6 +20,7 @@ use App\Models\WorkspaceStep;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Workspaces\WorkspaceEnvInheritanceGuard;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use App\Services\Workspaces\WorkspaceStepListPayload;
@@ -46,6 +47,7 @@ final class WorkspaceStepStoreController implements Loggable
         private readonly AppSelectorResolver $appSelectorResolver,
         private readonly WorkspacePlacement $workspacePlacement,
         private readonly WorkspaceStepPolicyService $stepPolicy,
+        private readonly WorkspaceEnvInheritanceGuard $envInheritanceGuard,
     ) {}
 
     public function __invoke(string $phase, Request $request, WorkspaceStepListPayload $payload): JsonResponse
@@ -68,6 +70,14 @@ final class WorkspaceStepStoreController implements Loggable
 
         if ($command === null) {
             return $this->validationFailed('command', 'Command is required.');
+        }
+
+        if ($this->envInheritanceGuard->consumesParentEnv($command)) {
+            return $this->validationFailed(
+                'command',
+                'Workspace lifecycle steps cannot read or copy the parent app .env file.',
+                ['reason' => 'parent_env_inheritance_forbidden'],
+            );
         }
 
         $timeout = $this->positiveIntValue($input, 'timeout', WorkspaceStep::DEFAULT_TIMEOUT_SECONDS);

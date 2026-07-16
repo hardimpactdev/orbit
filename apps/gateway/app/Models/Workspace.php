@@ -31,8 +31,10 @@ use Illuminate\Support\Carbon;
  * @property-read AppInstance $appInstance
  * @property-read Collection<int, DatabaseConnection> $databaseConnections
  * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
+ * @property-read Collection<int, WorkspaceEnvVariable> $envVariables
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, WorkspaceRun> $runs
+ * @mago-expect lint:too-many-methods
  */
 class Workspace extends Model
 {
@@ -104,6 +106,17 @@ class Workspace extends Model
     public function databaseConnectionTargets(): HasMany
     {
         return $this->hasMany(DatabaseConnectionTarget::class);
+    }
+
+    /**
+     * @return HasMany<WorkspaceEnvVariable, $this>
+     */
+    public function envVariables(): HasMany
+    {
+        $relation = $this->hasMany(WorkspaceEnvVariable::class);
+        $relation->orderBy('key');
+
+        return $relation;
     }
 
     /**

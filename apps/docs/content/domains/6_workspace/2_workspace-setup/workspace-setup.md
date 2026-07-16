@@ -148,6 +148,10 @@ The following steps describe what the command does during a successful run.
 - **Artifact Apply**: Applies runtime and proxy backend artifacts on the
   selected workspace node through Agent push. Every workspace inherits the
   selected app instance's node, base path, document root, and domain.
+- **Environment Initialization**: Preserves an existing workspace `.env`.
+  When missing, initializes it from the workspace's own `.env.example` when
+  present, then overlays the effective `workspace:env` values. The parent app
+  `.env` is never copied.
 - **Setup Steps**: Runs setup steps when configured.
 - **HTTP Probe**: Performs a setup-time HTTP probe against the workspace URL.
   A failed probe is reported as a command warning, not as setup failure or a

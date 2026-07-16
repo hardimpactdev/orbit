@@ -42,8 +42,14 @@ describe('app:env', function (): void {
 
     it('renders human set output naming the saved key and instance', function (): void {
         fakeGateway(fakeSuccessEnvelope([
+            'scope' => 'app-instance',
             'app' => 'billing',
             'instance' => 'development',
+            'workspace' => null,
+            'path' => '/home/orbit/apps/billing-development/.env',
+            'stored' => true,
+            'applied' => false,
+            'runtime_restarted' => false,
             'variable' => [
                 'key' => 'APP_DEBUG',
                 'value' => 'false',
@@ -62,7 +68,15 @@ describe('app:env', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toBe("Saved 'APP_DEBUG' for instance 'development'.")
+            ->toContain("Saved 'APP_DEBUG' for app instance 'billing.development'.")
+            ->and($output)
+            ->toContain('Path: /home/orbit/apps/billing-development/.env')
+            ->and($output)
+            ->toContain('Stored: yes')
+            ->and($output)
+            ->toContain('Applied: no')
+            ->and($output)
+            ->toContain('Runtime restarted: no')
             ->and($output)
             ->not->toContain('{')->and($output)
             ->not->toContain('variable:');
@@ -70,8 +84,14 @@ describe('app:env', function (): void {
 
     it('renders human render output as an aligned effective env map', function (): void {
         fakeGateway(fakeSuccessEnvelope([
+            'scope' => 'app-instance',
             'app' => 'billing',
             'instance' => 'production',
+            'workspace' => null,
+            'path' => '/home/orbit/apps/billing-production/.env',
+            'stored' => false,
+            'applied' => false,
+            'runtime_restarted' => false,
             'variables' => [
                 'APP_ENV' => ['value' => 'production', 'secret' => false, 'source' => 'instance'],
                 'DB_PASSWORD' => ['value' => null, 'secret' => true, 'source' => 'database'],
@@ -91,6 +111,10 @@ describe('app:env', function (): void {
             ->and($output)
             ->toContain('DB_PASSWORD=')
             ->and($output)
+            ->toContain('Scope: app-instance')
+            ->and($output)
+            ->toContain('Path: /home/orbit/apps/billing-production/.env')
+            ->and($output)
             ->not->toContain('{')->and($output)
             ->not->toContain('variables:')->and($output)
             ->not->toContain('"secret"')->and($output)
@@ -99,8 +123,14 @@ describe('app:env', function (): void {
 
     it('renders human render output with an empty effective env map', function (): void {
         fakeGateway(fakeSuccessEnvelope([
+            'scope' => 'app-instance',
             'app' => 'billing',
             'instance' => 'production',
+            'workspace' => null,
+            'path' => '/home/orbit/apps/billing-production/.env',
+            'stored' => false,
+            'applied' => false,
+            'runtime_restarted' => false,
             'variables' => [],
         ]));
 
@@ -113,7 +143,11 @@ describe('app:env', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toBe('No environment values found.')
+            ->toContain('No environment values found.')
+            ->and($output)
+            ->toContain('Scope: app-instance')
+            ->and($output)
+            ->toContain('Path: /home/orbit/apps/billing-production/.env')
             ->and($output)
             ->not->toContain('{');
     });
@@ -144,8 +178,14 @@ describe('app:env', function (): void {
 
     it('renders human list output as a table of non-secret env variables', function (): void {
         fakeGateway(fakeSuccessEnvelope([
+            'scope' => 'app-instance',
             'app' => 'billing',
             'instance' => 'production',
+            'workspace' => null,
+            'path' => '/home/orbit/apps/billing-production/.env',
+            'stored' => false,
+            'applied' => false,
+            'runtime_restarted' => false,
             'variables' => [
                 ['key' => 'APP_ENV', 'value' => 'production', 'secret' => false],
                 ['key' => 'APP_DEBUG', 'value' => 'false', 'secret' => false],
@@ -173,14 +213,24 @@ describe('app:env', function (): void {
             ->and($output)
             ->toContain('false')
             ->and($output)
+            ->toContain('Scope: app-instance')
+            ->and($output)
+            ->toContain('Path: /home/orbit/apps/billing-production/.env')
+            ->and($output)
             ->not->toContain('variables: [')->and($output)
             ->not->toContain('"secret"');
     });
 
     it('renders human empty list output when no env variables exist', function (): void {
         fakeGateway(fakeSuccessEnvelope([
+            'scope' => 'app-instance',
             'app' => 'billing',
             'instance' => 'production',
+            'workspace' => null,
+            'path' => '/home/orbit/apps/billing-production/.env',
+            'stored' => false,
+            'applied' => false,
+            'runtime_restarted' => false,
             'variables' => [],
         ]));
 
@@ -190,7 +240,14 @@ describe('app:env', function (): void {
             '--instance' => 'production',
         ]);
 
-        expect($exitCode)->toBe(0)->and($output)->toBe('No environment values found.');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('No environment values found.')
+            ->and($output)
+            ->toContain('Scope: app-instance')
+            ->and($output)
+            ->toContain('Path: /home/orbit/apps/billing-production/.env');
     });
 
     it('fails before gateway io when app selectors conflict', function (): void {
@@ -278,6 +335,37 @@ describe('app:env', function (): void {
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
             ->toBe('apply');
+    });
+
+    it('does not infer a parent app apply target from workspace cwd', function (): void {
+        Http::fake();
+        $previous = getenv('ORBIT_HOST_CWD');
+        putenv('ORBIT_HOST_CWD=/home/orbit/apps/billing/.worktrees/feature-mail');
+
+        try {
+            [$exitCode, $output] = runCommand(test: $this, command: 'app:env', params: [
+                'action' => 'set',
+                '--key' => 'APP_DEBUG',
+                '--value' => 'true',
+                '--apply' => true,
+                '--json' => true,
+            ]);
+        } finally {
+            $previous === false
+                ? putenv('ORBIT_HOST_CWD')
+                : putenv("ORBIT_HOST_CWD={$previous}");
+        }
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 
     it('does not allow secret writes in the first slice', function (): void {

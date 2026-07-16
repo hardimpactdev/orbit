@@ -188,6 +188,7 @@ use App\Commands\Vpn\VpnClientListCommand;
 use App\Commands\Vpn\VpnClientNewCommand;
 use App\Commands\Vpn\VpnClientRemoveCommand;
 use App\Commands\Vpn\VpnWebUiChangePasswordCommand;
+use App\Commands\Workspace\WorkspaceEnvCommand;
 use App\Commands\Workspace\WorkspaceHistoryCommand;
 use App\Commands\Workspace\WorkspaceListCommand;
 use App\Commands\Workspace\WorkspaceLogCommand;
@@ -359,6 +360,7 @@ return [
         UpdateCommand::class,
         VersionCommand::class,
         WorkspaceHistoryCommand::class,
+        WorkspaceEnvCommand::class,
         WorkspaceListCommand::class,
         WorkspaceLogCommand::class,
         WorkspaceNewCommand::class,

@@ -260,6 +260,7 @@ Source: [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 - **Workspace identity slug**
 - **Workspace hostname**
 - **Workspace path**
+- **Workspace env**
 - **Workspace lifecycle status**
 - **Workspace runtime container**
 - **Host cwd context**

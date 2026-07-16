@@ -42,8 +42,7 @@ final class AppInstanceEnvController implements Loggable
         $this->activitySubject = $targetApp;
 
         return $this->success([
-            'app' => $targetApp->name,
-            'instance' => $targetInstance->name,
+            ...$this->targetPayload($targetApp, $targetInstance),
             'variables' => $this->env->variables($targetInstance),
         ]);
     }
@@ -82,16 +81,21 @@ final class AppInstanceEnvController implements Loggable
         $variable = $this->env->set($targetInstance, $key, $value);
 
         $payload = [
-            'app' => $targetApp->name,
-            'instance' => $targetInstance->name,
+            ...$this->targetPayload($targetApp, $targetInstance, stored: true),
             'variable' => $this->env->variablePayload($variable),
         ];
 
         if ($request->boolean('apply')) {
             try {
                 $payload['apply'] = $this->applier
-                    ->apply($targetApp, $key, $value)
+                    ->apply($targetApp, $targetInstance, $key, $value)
                     ->toArray();
+                $payload['applied'] = true;
+                $payload['runtime_restarted'] = in_array(
+                    $payload['apply']['runtime_outcome'],
+                    ['created', 'recreated', 'started'],
+                    strict: true,
+                );
             } catch (Throwable $exception) {
                 return $this->applyFailed($targetApp, $targetInstance, $key, $exception);
             }
@@ -114,10 +118,35 @@ final class AppInstanceEnvController implements Loggable
         $this->activitySubject = $targetApp;
 
         return $this->success([
-            'app' => $targetApp->name,
-            'instance' => $targetInstance->name,
+            ...$this->targetPayload($targetApp, $targetInstance),
             'variables' => $this->env->render($targetInstance),
         ]);
+    }
+
+    /**
+     * @return array{
+     *     scope: string,
+     *     app: string,
+     *     instance: string,
+     *     workspace: null,
+     *     path: string|null,
+     *     stored: bool,
+     *     applied: bool,
+     *     runtime_restarted: bool
+     * }
+     */
+    private function targetPayload(App $app, AppInstance $instance, bool $stored = false): array
+    {
+        return [
+            'scope' => 'app-instance',
+            'app' => $app->name,
+            'instance' => $instance->name,
+            'workspace' => null,
+            'path' => $this->applier->envPath($instance),
+            'stored' => $stored,
+            'applied' => false,
+            'runtime_restarted' => false,
+        ];
     }
 
     /**

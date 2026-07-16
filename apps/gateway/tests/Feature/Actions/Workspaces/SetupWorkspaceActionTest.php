@@ -755,6 +755,15 @@ it('starts configured app processes for the workspace after rendering runtime un
             ->push(setup_workspace_agent_response('caddy-config.reload', [
                 'container' => 'orbit-caddy',
             ]))
+            ->push(setup_workspace_agent_response('env-file.read', [
+                'contents' => null,
+            ]))
+            ->push(setup_workspace_agent_response('env-file.read', [
+                'contents' => null,
+            ]))
+            ->push(setup_workspace_agent_response('env-file.write', [
+                'bytes' => 0,
+            ]))
             ->push(setup_workspace_agent_response('workspace-runtime-container-apply', [
                 'outcome' => 'created',
             ]))
@@ -777,10 +786,10 @@ it('starts configured app processes for the workspace after rendering runtime un
             'names' => ['vite'],
         ])
         ->and($requests)
-        ->toHaveCount(6)
-        ->and(array_slice($requests[4]['argv'] ?? [], offset: 0, length: 3))
+        ->toHaveCount(9)
+        ->and(array_slice($requests[7]['argv'] ?? [], offset: 0, length: 3))
         ->toBe(['internal:process-systemd-service', 'apply', 'orbit_demo_development_feature-a_vite.service'])
-        ->and(array_slice($requests[5]['argv'] ?? [], offset: 0, length: 3))
+        ->and(array_slice($requests[8]['argv'] ?? [], offset: 0, length: 3))
         ->toBe(['internal:process-systemd-service', 'start', 'orbit_demo_development_feature-a_vite.service'])
         ->and($shell->scripts)
         ->not

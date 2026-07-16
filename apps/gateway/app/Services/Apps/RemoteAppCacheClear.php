@@ -18,13 +18,27 @@ final readonly class RemoteAppCacheClear
 
     public function clear(Node $node, App $app): RemoteShellResult
     {
+        return $this->clearPath(
+            node: $node,
+            path: $app->path,
+            phpVersion: $app->php_version,
+            runtimeUser: $this->runtimeUser->forApp($app),
+        );
+    }
+
+    public function clearPath(
+        Node $node,
+        string $path,
+        string $phpVersion,
+        string $runtimeUser,
+    ): RemoteShellResult {
         return $this->localExecutor->runInternal(
             node: $node,
             commandName: 'internal:app-cache:clear',
             arguments: [
-                rtrim(string: $app->path, characters: '/'),
-                $app->php_version,
-                $this->runtimeUser->forApp($app),
+                rtrim(string: $path, characters: '/'),
+                $phpVersion,
+                $runtimeUser,
             ],
             transportOptions: [
                 'metadata' => [

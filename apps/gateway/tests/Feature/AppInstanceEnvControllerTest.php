@@ -175,9 +175,9 @@ it('applies set env values to the remote app runtime when apply is requested', f
         'name' => 'development',
         'driver_config' => new OrbitAppInstanceDriverConfigData(
             node_id: $node->id,
-            path: $app->path,
+            path: '/home/orbit/apps/billing-development',
             document_root: $app->document_root,
-            domain: $app->domain,
+            domain: 'billing-development.test',
         ),
     ]);
 
@@ -204,7 +204,15 @@ it('applies set env values to the remote app runtime when apply is requested', f
         ->assertOk()
         ->assertJsonPath('success.data.variable.key', 'MAIL_MAILER')
         ->assertJsonPath('success.data.variable.value', 'smtp')
-        ->assertJsonPath('success.data.apply.env_path', '/home/orbit/apps/billing/.env')
+        ->assertJsonPath('success.data.scope', 'app-instance')
+        ->assertJsonPath('success.data.app', 'billing')
+        ->assertJsonPath('success.data.instance', 'development')
+        ->assertJsonPath('success.data.workspace', null)
+        ->assertJsonPath('success.data.path', '/home/orbit/apps/billing-development/.env')
+        ->assertJsonPath('success.data.stored', true)
+        ->assertJsonPath('success.data.applied', true)
+        ->assertJsonPath('success.data.runtime_restarted', true)
+        ->assertJsonPath('success.data.apply.env_path', '/home/orbit/apps/billing-development/.env')
         ->assertJsonPath('success.data.apply.cache_cleared', true)
         ->assertJsonPath('success.data.apply.runtime_outcome', 'created');
 });

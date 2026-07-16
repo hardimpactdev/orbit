@@ -13644,6 +13644,84 @@
                 "response_dto": null
             }
         },
+        "workspace:env": {
+            "name": "workspace:env",
+            "slug": "workspace-env",
+            "family": "workspace",
+            "arguments": [
+                "action",
+                "name"
+            ],
+            "options": [
+                "app",
+                "key",
+                "value",
+                "apply",
+                "secret",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/6_workspace/14_workspace-env",
+                "public": "domains/6_workspace/14_workspace-env/workspace-env.md",
+                "technical": "domains/6_workspace/14_workspace-env/technical/1_workspace-env.md",
+                "repo_directory": "apps/docs/content/domains/6_workspace/14_workspace-env",
+                "repo_public": "apps/docs/content/domains/6_workspace/14_workspace-env/workspace-env.md",
+                "repo_technical": "apps/docs/content/domains/6_workspace/14_workspace-env/technical/1_workspace-env.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Workspace/WorkspaceEnvCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/WorkspaceEnvControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceEnvApplierTest.php",
+                "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceEnvInitializerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Workspace/WorkspaceEnvCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Workspace/WorkspaceEnvCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Workspace/WorkspaceEnvCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/WorkspaceEnvControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/WorkspaceEnvControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/WorkspaceEnvControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceEnvApplierTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Workspaces/WorkspaceEnvApplierTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Workspaces/WorkspaceEnvApplierTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceEnvInitializerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Workspaces/WorkspaceEnvInitializerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Workspaces/WorkspaceEnvInitializerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
         "workspace:history": {
             "name": "workspace:history",
             "slug": "workspace-history",
