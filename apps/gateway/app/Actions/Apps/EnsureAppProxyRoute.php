@@ -5,16 +5,18 @@ declare(strict_types=1);
 namespace App\Actions\Apps;
 
 use App\Contracts\SiteCertificateInstaller;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppOwningNodeResolver;
-use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
 use App\Services\Proxy\AppProxyRouteCaddyInstaller;
+use App\Services\Proxy\AppProxyRouteRuntimeTargets;
 use App\Services\Proxy\CaddyContainerHostPathResolver;
 use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\ProxyRouteEnactment;
@@ -33,7 +35,7 @@ final readonly class EnsureAppProxyRoute
         private AppProxyRouteCaddyInstaller $caddyInstaller,
         private IngressResolver $ingressResolver,
         private ProxyRouteRenderer $proxyRouteRenderer,
-        private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
+        private AppProxyRouteRuntimeTargets $appRouteRuntimeTargets,
         private OrbitCaService $ca,
         private AppOwningNodeResolver $appOwningNodeResolver,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
@@ -620,11 +622,25 @@ final readonly class EnsureAppProxyRoute
     private function routeArtifact(App $app, Node $owningNode, string $domain): array
     {
         $isPhp = $app->runtimeKind() === AppRuntimeKind::Php;
-        $runtimeUpstream = $isPhp ? $this->appRuntimeContainerRenderer->upstreamUrl($app) : null;
+        $instance = $this->routeInstance($app);
+        $runtimeUpstream = $isPhp ? $this->runtimeUpstream($app, $instance) : null;
+        $appInstanceConfig = $instance instanceof AppInstance
+            ? $this->appRouteRuntimeTargets->appInstanceConfig($app, $instance, $domain)
+            : null;
+        $instanceConfig = is_array($appInstanceConfig)
+            ? [
+                'target' => [
+                    'type' => 'app_instance',
+                    'value' => $appInstanceConfig['selector'],
+                ],
+                'app_instance' => $appInstanceConfig,
+            ]
+            : [];
 
         if ($app->environment !== 'production') {
             $certificatePaths = $this->siteCertificatePaths($owningNode, $domain);
             $config = [
+                ...$instanceConfig,
                 'document_root' => $app->documentRootPath(),
                 'runtime_upstream' => $runtimeUpstream,
                 'php_socket' => null,
@@ -653,6 +669,7 @@ final readonly class EnsureAppProxyRoute
             'php_socket' => null,
         ];
         $config = [
+            ...$instanceConfig,
             'placement' => 'ingress',
             'ingress_node_id' => $ingressNode->id,
             'router_upstream' => [
@@ -710,6 +727,28 @@ final readonly class EnsureAppProxyRoute
         $config['backend_artifacts'] = [$backendArtifact];
 
         return [$ingressNode, $config, $content];
+    }
+
+    private function routeInstance(App $app): ?AppInstance
+    {
+        $app->loadMissing('instances');
+        $instance = $app->instances->first(
+            fn (AppInstance $instance): bool => (
+                $instance->name === $app->environment
+                && $instance->driver === AppInstanceDriver::Orbit
+            ),
+        );
+
+        return $instance instanceof AppInstance ? $instance : null;
+    }
+
+    private function runtimeUpstream(App $app, ?AppInstance $instance): string
+    {
+        if ($this->innerTlsPolicy->appliesToApp($app)) {
+            return $this->appRouteRuntimeTargets->httpsRuntimeUpstream($app, $instance);
+        }
+
+        return $this->appRouteRuntimeTargets->httpRuntimeUpstream($app, $instance);
     }
 
     /**

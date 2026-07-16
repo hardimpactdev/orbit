@@ -1,0 +1,44 @@
+Orbit production app-instance proxy acceptance
+
+Candidate:
+  8da4d45c3b4cd8c26ce9d178d5f32226ce09a34a
+
+Retained topology:
+  id=dev-f1a183
+  kind=operator_gateway_app-prod_ingress
+  provider=incus
+  gateway checkout=/home/orbit/orbit-run
+  Solo terminal process=1081
+
+App:
+  name=runtime-proxy-live
+  domain=runtime-proxy-live.prod
+  instance selector=runtime-proxy-live.production
+
+Persisted route intent:
+  target.type=app_instance
+  target.value=runtime-proxy-live.production
+  app_instance.name=production
+  app_instance.node=app-prod-1
+  backend runtime_upstream=http://orbit-app-runtime-proxy-live-production:8080
+
+Rendered backend route:
+  reverse_proxy http://orbit-app-runtime-proxy-live-production:8080
+
+Runtime proof:
+  expected container=orbit-app-runtime-proxy-live-production
+  direct app-prod Caddy response=HTTP/1.1 200 OK
+  direct app-prod Caddy body=runtime-proxy-live-ok
+  router -> app-prod Caddy -> instance container response=HTTP/1.1 200 OK
+  router -> app-prod Caddy -> instance container body=runtime-proxy-live-ok
+  response included two Via: 1.1 Caddy headers
+
+Prepared-topology caveats outside this candidate:
+  - The app-prod image had a broken /usr/local/bin/orbit symlink. The retained
+    VM-only agent override pointed at /home/orbit/orbit/apps/cli/orbit.
+  - The prepared app-prod and gateway roles did not include their expected
+    orbit-caddy containers. VM-only proof containers were started from the
+    prepared caddy:2-alpine image.
+  - Automatic proxy Doctor restore still targeted a missing orbit-gateway
+    container. That is the separately coordinated gateway-host/Doctor task,
+    not the instance-specific runtime upstream change reviewed here.

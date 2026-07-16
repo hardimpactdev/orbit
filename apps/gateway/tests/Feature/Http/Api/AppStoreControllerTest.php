@@ -657,11 +657,24 @@ describe('AppStoreController', function (): void {
             ->and($route->config['backend_artifacts'][0]['document_root'])
             ->toBe('/home/docs/app/public')
             ->and($route->config['backend_artifacts'][0]['runtime_upstream'])
-            ->toBe('http://orbit-app-docs:8080')
+            ->toBe('http://orbit-app-docs-production:8080')
             ->and($route->config['backend_artifacts'][0]['php_socket'])
             ->toBeNull()
             ->and($route->config['backend_artifacts'][0]['source_hash'])
             ->toHaveLength(64)
+            ->and($route->config['target'])
+            ->toBe([
+                'type' => 'app_instance',
+                'value' => 'docs.production',
+            ])
+            ->and($route->config['app_instance'])
+            ->toMatchArray([
+                'name' => 'production',
+                'selector' => 'docs.production',
+                'domain' => 'docs.example.com',
+                'node' => 'app-1',
+                'node_id' => $targetNode->id,
+            ])
             ->and($route->source_hash)
             ->toHaveLength(64)
             ->and(collect($remoteShell->runs)->pluck('node')->all())
