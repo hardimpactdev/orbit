@@ -1,0 +1,84 @@
+Orbit app:list Laravel Prompts datatable retained-terminal proof
+Recorded: 2026-07-16
+
+Topology:
+- id: dev-dcb298
+- kind: operator_gateway
+- provider: incus
+- host: beast
+- operator instance: orbit-e2e-dev-dcb298-operator
+- gateway instance: orbit-e2e-dev-dcb298-gateway
+- runtime checkout: /home/orbit/orbit-run
+- launcher: /usr/local/bin/orbit -> /home/orbit/orbit-run/apps/cli/orbit
+
+Candidate identity:
+- local AppListCommand.php sha256: bb3143ae27bcb41ded539c2cced16d806c798663392c50aae7bf055add0e04ad
+- operator AppListCommand.php sha256: bb3143ae27bcb41ded539c2cced16d806c798663392c50aae7bf055add0e04ad
+- gateway AppListCommand.php sha256: bb3143ae27bcb41ded539c2cced16d806c798663392c50aae7bf055add0e04ad
+
+Fixture:
+- logical app: docs
+- repository: git@github.com:orbit/docs.git
+- instance: development on app-dev-proof
+- workspace: feature-docs
+- app URL: https://docs.test
+- workspace URL: https://feature-docs.docs.test
+
+PTY:
+- terminal size presented to the Orbit command: 120 columns x 40 rows
+- capture helper: .agents/skills/cli-output-pty-capture/scripts/capture_pty_frames.py
+- retained summary: /tmp/orbit-app-list-datatable-dev-dcb298-3/summary.txt
+- retained chunks: /tmp/orbit-app-list-datatable-dev-dcb298-3/chunks.jsonl
+- retained transcript: /tmp/orbit-app-list-datatable-dev-dcb298-3/transcript.txt
+- exit code: 0
+- duration: 2.456s
+- maximum output-chunk delta: 0.504s
+- timed out: false
+- idle timed out: false
+- maximum stripped visible line width: 92
+- lines wider than 120 columns: 0
+
+Stripped active prompt frame:
+
+ ┌ Select an app ──────────────────────────────────────────────────┐
+ │ / Search                                                        │
+ ├──────┬───────────────────────────────┬───────────┬──────────────┤
+ │ Name │ Repository                    │ Instances │ Workspaces   │
+ ├──────┼───────────────────────────────┼───────────┼──────────────┤
+ │ docs │ git@github.com:orbit/docs.git │ 1         │ 1            │
+ └──────┴───────────────────────────────┴───────────┴──────────────┘
+  Press / to search
+
+After Enter:
+
+ ┌ Select an app ───────────────────────────────────────────────┐
+ │ docs, git@github.com:orbit/docs.git, 1, 1                    │
+ └──────────────────────────────────────────────────────────────┘
+
+┌  App: docs
+├  Domain       docs.test
+├  Repository   git@github.com:orbit/docs.git
+└  App deps     unknown
+
+ ┌─────────────────┬───────────┬───────────────┬────────────────────────────────┬──────────┐
+ │ NAME            │ DRIVER    │ NODE          │ URL                            │ APP DEPS │
+ ├─────────────────┼───────────┼───────────────┼────────────────────────────────┼──────────┤
+ │ development     │ orbit     │ app-dev-proof │ https://docs.test              │ unknown  │
+ │ └─ feature-docs │ workspace │ app-dev-proof │ https://feature-docs.docs.test │ —        │
+ └─────────────────┴───────────┴───────────────┴────────────────────────────────┴──────────┘
+
+Assertions:
+- Name, Repository, Instances, and Workspaces headers are present.
+- Repository:, Instances:, and Workspaces: grouped property lines are absent.
+- Enter selects the stable docs row key and opens App: docs.
+- The concrete instance and nested workspace, including both URLs, are visible.
+- The complete rendered flow fits the declared 120-column terminal.
+- `app:list --no-interaction` exits 1 before gateway I/O with:
+  `validation_failed: Interactive app selection requires a terminal. Use --json for non-interactive output.`
+
+Infrastructure note:
+- An earlier operator_gateway_app-dev acquisition failed before candidate
+  execution because the prepared dev Agent could not reach the gateway token
+  verification endpoint. The successful operator_gateway proof avoids that
+  unrelated bootstrap dependency while exercising the real CLI, gateway API,
+  interactive datatable, selection, and detail renderer.
