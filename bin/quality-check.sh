@@ -174,6 +174,18 @@ if [ "$CARGO_COMPONENT_DEMAND" -gt "$CPU_BUDGET" ]; then
     CARGO_COMPONENT_DEMAND="$CPU_BUDGET"
 fi
 
+QUALITY_CHECK_COMPONENT_SPECS=(
+    'apps/gateway|GATEWAY_COMPONENT_DEMAND|gateway'
+    'apps/cli|CLI_COMPONENT_DEMAND|cli'
+    'apps/docs|DOCS_COMPONENT_DEMAND|docs'
+    'apps/e2e|E2E_COMPONENT_DEMAND|e2e'
+    'apps/reverb|REVERB_COMPONENT_DEMAND|reverb'
+    'apps/agent|CARGO_COMPONENT_DEMAND|agent'
+    'apps/macos|CARGO_COMPONENT_DEMAND|macos'
+    'packages/sdk|SDK_COMPONENT_DEMAND|sdk'
+    'packages/core|CORE_COMPONENT_DEMAND|core'
+)
+
 running_bg_jobs() {
     local count=0
     local pid
@@ -1033,6 +1045,48 @@ wait_for_component_labels() {
     done
 }
 
+quality_check_scheduler_self_test() {
+    local spec
+    local area
+    local demand_var
+    local key
+    local dependency_specs=()
+
+    CPU_BUDGET=1
+    CORE_COMPONENT_DEMAND=1
+    SDK_COMPONENT_DEMAND=1
+    COMPONENT_WORKERS=()
+
+    for spec in "${QUALITY_CHECK_COMPONENT_SPECS[@]}"; do
+        IFS='|' read -r area demand_var key <<<"$spec"
+
+        if [ "$key" = "sdk" ] || [ "$key" = "core" ]; then
+            dependency_specs+=("$spec")
+        fi
+    done
+
+    sdk_component() {
+        : >"$LOG_DIR/sdk.completed"
+    }
+
+    core_component() {
+        if [ ! -f "$LOG_DIR/sdk.completed" ]; then
+            : >"$LOG_DIR/core.before-sdk"
+        fi
+    }
+
+    admit_components "${dependency_specs[@]}"
+    wait_for_component_labels sdk core
+
+    if [ -f "$LOG_DIR/core.before-sdk" ]; then
+        echo "budget=1 order=core,sdk result=failed"
+
+        return 1
+    fi
+
+    echo "budget=1 order=sdk,core result=passed"
+}
+
 wait_for_subgate_labels() {
     local label
 
@@ -1247,18 +1301,14 @@ core_component() {
     run_subgate core_pest bash -lc 'cd packages/core && vendor/bin/pest --profile --compact'
 }
 
+if [ "${ORBIT_QUALITY_CHECK_SCHEDULER_SELF_TEST:-}" = "1" ]; then
+    quality_check_scheduler_self_test
+    exit $?
+fi
+
 quality_check_progress_start_ticker
 
-admit_components \
-    'apps/gateway|GATEWAY_COMPONENT_DEMAND|gateway' \
-    'apps/cli|CLI_COMPONENT_DEMAND|cli' \
-    'apps/docs|DOCS_COMPONENT_DEMAND|docs' \
-    'apps/e2e|E2E_COMPONENT_DEMAND|e2e' \
-    'apps/reverb|REVERB_COMPONENT_DEMAND|reverb' \
-    'apps/agent|CARGO_COMPONENT_DEMAND|agent' \
-    'apps/macos|CARGO_COMPONENT_DEMAND|macos' \
-    'packages/core|CORE_COMPONENT_DEMAND|core' \
-    'packages/sdk|SDK_COMPONENT_DEMAND|sdk'
+admit_components "${QUALITY_CHECK_COMPONENT_SPECS[@]}"
 
 wait_for_component_labels gateway cli docs e2e reverb agent macos sdk core
 
