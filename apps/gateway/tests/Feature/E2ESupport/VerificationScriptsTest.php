@@ -318,6 +318,8 @@ it('budgets aggregate quality gate CPU pressure by host size', function (): void
         ->toContain('echo $((detected_jobs - 1))')
         ->toContain('echo 14')
         ->toContain('GATEWAY_PEST_PROCESSES')
+        ->toContain('MAX_CLI_COMPONENT_DEMAND=$((CPU_BUDGET - CORE_COMPONENT_DEMAND))')
+        ->toContain('CLI_COMPONENT_DEMAND="$MAX_CLI_COMPONENT_DEMAND"')
         ->toContain('wait_for_cpu_capacity')
         ->toContain('component_cpu_in_use')
         ->toContain("'apps/gateway|GATEWAY_COMPONENT_DEMAND|gateway'")
