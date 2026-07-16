@@ -3100,6 +3100,7 @@ class IncusTopologyBuilder
         $prodIngressCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
             'orbit:internal:bake-ingress-node',
             escapeshellarg('app-prod-1'),
+            '--tld='.escapeshellarg('prod'),
             '--host='.escapeshellarg($prodHost),
             '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
@@ -3109,6 +3110,7 @@ class IncusTopologyBuilder
             'orbit:internal:bake-app-node',
             escapeshellarg('app-prod-1'),
             '--role=app-prod',
+            '--tld='.escapeshellarg('prod'),
             '--host='.escapeshellarg($prodHost),
             '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
@@ -3363,6 +3365,7 @@ class IncusTopologyBuilder
         $prodIngressCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
             'orbit:internal:bake-ingress-node',
             escapeshellarg('app-prod-1'),
+            '--tld='.escapeshellarg('prod'),
             '--host='.escapeshellarg($prodHost),
             '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
@@ -3372,6 +3375,7 @@ class IncusTopologyBuilder
             'orbit:internal:bake-app-node',
             escapeshellarg('app-prod-1'),
             '--role=app-prod',
+            '--tld='.escapeshellarg('prod'),
             '--host='.escapeshellarg($prodHost),
             '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
@@ -3830,6 +3834,7 @@ class IncusTopologyBuilder
         $ingressCommand = E2ECommand::gatewayArtisanCommand(implode(' ', [
             'orbit:internal:bake-ingress-node',
             escapeshellarg('edge-1'),
+            '--tld='.escapeshellarg('edge'),
             '--host='.escapeshellarg($ingressHost),
             '--wireguard-address='.escapeshellarg(self::IngressWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
@@ -3839,6 +3844,7 @@ class IncusTopologyBuilder
             'orbit:internal:bake-app-node',
             escapeshellarg('app-prod-1'),
             '--role=app-prod',
+            '--tld='.escapeshellarg('prod'),
             '--host='.escapeshellarg($prodHost),
             '--wireguard-address='.escapeshellarg(self::ProdWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),

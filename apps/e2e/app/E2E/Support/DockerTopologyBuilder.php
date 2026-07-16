@@ -1160,7 +1160,7 @@ final readonly class DockerTopologyBuilder
             $hostKeyHost = $this->hostKeyHostOption('ingress', $networkPlan, $mode);
             $wireGuardAddress = $this->wireGuardAddressForRole('ingress', $networkPlan, $mode);
             $tasks['ingress'] = sprintf(
-                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-ingress-node edge-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-ingress-node edge-1 --tld=edge --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                 $host,
                 $hostKeyHost,
                 $wireGuardAddress,
@@ -1177,7 +1177,7 @@ final readonly class DockerTopologyBuilder
 
             if ($prodHostsIngress) {
                 $commands[] = sprintf(
-                    'php apps/gateway/artisan orbit:internal:bake-ingress-node app-prod-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                    'php apps/gateway/artisan orbit:internal:bake-ingress-node app-prod-1 --tld=prod --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                     $host,
                     $hostKeyHost,
                     $wireGuardAddress,
@@ -1193,7 +1193,7 @@ final readonly class DockerTopologyBuilder
             $ingress = $ingressNode !== null ? " --ingress-node={$ingressNode}" : '';
 
             $commands[] = sprintf(
-                'php apps/gateway/artisan orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
+                'php apps/gateway/artisan orbit:internal:bake-app-node app-prod-1 --role=app-prod --tld=prod --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
                 $host,
                 $hostKeyHost,
                 $wireGuardAddress,

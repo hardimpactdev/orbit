@@ -94,6 +94,9 @@ it('waits for gateway host-key reachability before incus bake commands pin host 
 
     expect($orderings)
         ->toBe(['dev' => true, 'prod' => true, 'agent' => true])
+        ->and($tasks['prod'])
+        ->toContain('orbit:internal:bake-ingress-node edge-1 --tld=edge')
+        ->toContain('orbit:internal:bake-app-node app-prod-1 --role=app-prod --tld=prod')
         ->and($ingressBake)
         ->toBeInt()
         ->and($prodBake)

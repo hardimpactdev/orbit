@@ -1371,8 +1371,8 @@ it('seeds gateway registry rows for composed docker app roles in parallel at acq
         ->toContain('--host=dev')
         ->toContain('--wireguard-address=10.6.0.4')
         ->toContain('--gateway-endpoint=gateway')
-        ->toContain('orbit:internal:bake-ingress-node app-prod-1')
-        ->toContain('orbit:internal:bake-app-node app-prod-1 --role=app-prod')
+        ->toContain('orbit:internal:bake-ingress-node app-prod-1 --tld=prod')
+        ->toContain('orbit:internal:bake-app-node app-prod-1 --role=app-prod --tld=prod')
         ->toContain('--wireguard-address=10.6.0.5')
         ->toContain('--ingress-node=app-prod-1')
         ->toContain('PID_NODE_NEW_DEV=$!;')
@@ -1456,8 +1456,8 @@ it('seeds dedicated ingress before app production references it at acquire time'
 
     expect($scriptWrite)
         ->toBeString()
-        ->toContain('orbit:internal:bake-ingress-node edge-1')
-        ->toContain('orbit:internal:bake-app-node app-prod-1 --role=app-prod')
+        ->toContain('orbit:internal:bake-ingress-node edge-1 --tld=edge')
+        ->toContain('orbit:internal:bake-app-node app-prod-1 --role=app-prod --tld=prod')
         ->toContain('--ingress-node=edge-1');
 
     assert(is_string($scriptWrite));

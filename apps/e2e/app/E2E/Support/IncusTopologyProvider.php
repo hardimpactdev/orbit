@@ -1321,7 +1321,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             $prodChain[] = $this->gatewayArtisanTask(
                 $gateway,
                 sprintf(
-                    'orbit:internal:bake-ingress-node edge-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                    'orbit:internal:bake-ingress-node edge-1 --tld=edge --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                     escapeshellarg(self::IngressWireGuardIp),
                     escapeshellarg(self::IngressWireGuardIp),
                     escapeshellarg(self::GatewayWireGuardIp),
@@ -1337,7 +1337,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $prodChain[] = $this->gatewayArtisanTask(
                     $gateway,
                     sprintf(
-                        'orbit:internal:bake-ingress-node app-prod-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                        'orbit:internal:bake-ingress-node app-prod-1 --tld=prod --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                         escapeshellarg(self::ProdWireGuardIp),
                         escapeshellarg(self::ProdWireGuardIp),
                         escapeshellarg(self::GatewayWireGuardIp),
@@ -1355,7 +1355,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             $prodChain[] = $this->gatewayArtisanTask(
                 $gateway,
                 sprintf(
-                    'orbit:internal:bake-app-node app-prod-1 --role=app-prod --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
+                    'orbit:internal:bake-app-node app-prod-1 --role=app-prod --tld=prod --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit%s',
                     escapeshellarg(self::ProdWireGuardIp),
                     escapeshellarg(self::ProdWireGuardIp),
                     escapeshellarg(self::GatewayWireGuardIp),

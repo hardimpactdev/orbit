@@ -46,8 +46,13 @@ it('bakes dedicated ingress before app production references it', function (): v
 
     expect($script)
         ->toContain('orbit:internal:bake-ingress-node')
+        ->toContain('--tld=')
+        ->toContain('edge')
         ->and($script)
         ->toContain('orbit:internal:bake-app-node')
+        ->toContain('--role=app-prod')
+        ->toContain('--tld=')
+        ->toContain('prod')
         ->and(strpos($script, 'wait "$PID_BAKE_INGRESS"'))
         ->toBeLessThan(strpos($script, 'PID_BAKE_PROD=$!'))
         ->and(strpos($script, 'PID_BAKE_PROD=$!'))

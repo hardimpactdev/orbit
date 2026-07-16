@@ -405,6 +405,9 @@ it('runs acquisition retarget bakes for downstream roles in one parallel gateway
 
     expect($prodIngress)
         ->toBeInt()
+        ->and($bakeCalls[0])
+        ->toContain('orbit:internal:bake-ingress-node app-prod-1 --tld=prod')
+        ->toContain('orbit:internal:bake-app-node app-prod-1 --role=app-prod --tld=prod')
         ->and($prodApp)
         ->toBeInt()
         ->and($prodIngress)

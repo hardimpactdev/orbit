@@ -1133,8 +1133,8 @@ it('provisions Docker downstream role source images in parallel after the gatewa
 
     expect($scriptWrite)
         ->toContain('orbit:internal:bake-app-node app-dev-1')
-        ->toContain('orbit:internal:bake-ingress-node app-prod-1')
-        ->toContain('orbit:internal:bake-app-node app-prod-1')
+        ->toContain('orbit:internal:bake-ingress-node app-prod-1 --tld=prod')
+        ->toContain('orbit:internal:bake-app-node app-prod-1 --role=app-prod --tld=prod')
         ->toContain('orbit:internal:bake-agent-node agent-1')
         ->toContain('PID_NODE_NEW_DEV=$!;')
         ->toContain('PID_NODE_NEW_PROD=$!;')
@@ -1713,10 +1713,10 @@ it('bakes prepared app production image with a colocated ingress role', function
     $setup = implode("\n", $commands);
 
     expect($setup)
-        ->toContain('orbit:internal:bake-ingress-node app-prod-1')
+        ->toContain('orbit:internal:bake-ingress-node app-prod-1 --tld=prod')
         ->toContain('--host=prod')
         ->toContain('--wireguard-address=10.6.0.5')
-        ->toContain('orbit:internal:bake-app-node app-prod-1')
+        ->toContain('orbit:internal:bake-app-node app-prod-1 --role=app-prod --tld=prod')
         ->toContain('--ingress-node=app-prod-1')
         ->not->toContain('orbit:internal:bake-ingress-node edge-1')
         ->not->toContain('orbit-e2e-prepared-build-operator_gateway_app-dev_app-prod_agent-ingress');
