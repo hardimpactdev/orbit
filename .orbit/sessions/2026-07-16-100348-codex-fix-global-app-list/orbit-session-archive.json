@@ -1,0 +1,29 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-16T08:03:48+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-global-app-list/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-16-100348-codex-fix-global-app-list",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/app-list-global-retained-topology.md",
+        "evidence/release-candidate-live-20260716T074046Z-b18fad790.md",
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-16T073557Z-bbb78c33af17.json"
+    ],
+    "entry_digests": {
+        "evidence/app-list-global-retained-topology.md": "7fe441e7ab8b20112fbd1dcc76722f539823df89eb8ede110dc504d35fe84a0c",
+        "evidence/release-candidate-live-20260716T074046Z-b18fad790.md": "093e3c47775ac57f81f5c8dc468dc496253c0828ae818a91464e75e172628296",
+        "feedback.jsonl": "311c7361964118c99f6236d02309c9f88267a0baab3b7252799c7a32d2cd6f0e",
+        "loop.md": "33210294e1268596c944727461d7baa1637cb106dd896174d20f093634e02794",
+        "quality-gates/quality-check-2026-07-16T073557Z-bbb78c33af17.json": "a7043fb659bf80dfcfa9f927a0f45f67905e9c8975e902ef79541fbda6bbd73f"
+    },
+    "branch": "codex/fix-global-app-list",
+    "candidate_commit": "b18fad7902a2a913be78cfdaa4e43d37009de82b",
+    "accepted_feature_tip": "b18fad7902a2a913be78cfdaa4e43d37009de82b",
+    "accepted_main_tip": "284b11926332176e1f8be0195c0a34f9a5166783",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
