@@ -45,7 +45,7 @@ describe('ProxyRouteIntent', function (): void {
                 'owner' => ['type' => 'custom', 'name' => null],
                 'node' => 'app-1',
                 'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
-                'status' => 'expected',
+                'status' => 'intent_only',
             ])
             ->and($result['meta']['action'])
             ->toBe('created')

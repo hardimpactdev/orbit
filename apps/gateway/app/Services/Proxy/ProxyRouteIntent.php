@@ -50,13 +50,14 @@ class ProxyRouteIntent
         }
 
         $kind = $redirect !== null ? 'redirect' : 'proxy';
-        $config = $redirect !== null
+        $intentConfig = $redirect !== null
             ? ['target' => ['type' => 'redirect', 'value' => $redirect], 'code' => $code ?? 302]
             : ['target' => ['type' => 'upstream', 'value' => $upstream], 'upstream' => $upstream];
+        $config = ProxyRouteEnactment::intentOnly($intentConfig);
 
         if (
             $existing instanceof ProxyRoute
-            && ! $this->sameCustomIntent($existing, $node, $kind, $config)
+            && ! $this->sameCustomIntent($existing, $node, $kind, $intentConfig)
             && ! $force
         ) {
             throw new GatewayApiException(
@@ -69,7 +70,7 @@ class ProxyRouteIntent
         }
 
         $action = $existing instanceof ProxyRoute
-            ? ($this->sameCustomIntent($existing, $node, $kind, $config) ? 'converged' : 'updated')
+            ? ($this->sameCustomIntent($existing, $node, $kind, $intentConfig) ? 'converged' : 'updated')
             : 'created';
 
         $route = ProxyRoute::query()->updateOrCreate(
@@ -87,7 +88,7 @@ class ProxyRouteIntent
 
         return [
             'data' => [
-                'route' => $this->query->toRouteEntity($route->refresh(), 'expected'),
+                'route' => $this->query->toRouteEntity($route->refresh()),
             ],
             'meta' => [
                 'action' => $action,
@@ -212,11 +213,14 @@ class ProxyRouteIntent
      */
     private function sameCustomIntent(ProxyRoute $route, Node $node, string $kind, array $config): bool
     {
+        $storedConfig = is_array($route->config) ? $route->config : [];
+        unset($storedConfig['enactment']);
+
         return (
             $route->node_id === $node->id
             && $route->owner_type === 'custom'
             && $route->kind === $kind
-            && $route->config === $config
+            && $storedConfig === $config
         );
     }
 

@@ -9,9 +9,11 @@ use App\Services\GatewayApiClient;
 use Closure;
 use InvalidArgumentException;
 use Orbit\Core\Security\OperationToken;
+use Orbit\Core\Security\TrustedExecutionContext;
 use SensitiveParameter;
 use Throwable;
 
+/** @mago-expect lint:kan-defect */
 final readonly class OperationTokenGuard
 {
     public function __construct(
@@ -28,7 +30,10 @@ final readonly class OperationTokenGuard
             throw new OperationTokenGuardException;
         }
 
-        if ($this->agentPushAlreadyAuthorized($compactToken, $expectedCommand)) {
+        if (
+            $this->trustedExecutionAlreadyAuthorized($compactToken, $expectedCommand)
+            || $this->agentPushAlreadyAuthorized($compactToken, $expectedCommand)
+        ) {
             return;
         }
 
@@ -174,5 +179,35 @@ final readonly class OperationTokenGuard
         }
 
         return hash_equals($token->id, $authorizedOperationId) && hash_equals($token->command, $expectedCommand);
+    }
+
+    private function trustedExecutionAlreadyAuthorized(
+        #[SensitiveParameter]
+        string $compactToken,
+        string $expectedCommand,
+    ): bool {
+        $environment = [];
+
+        foreach ([
+            TrustedExecutionContext::LANE_ENVIRONMENT_KEY,
+            TrustedExecutionContext::OPERATION_ID_ENVIRONMENT_KEY,
+            TrustedExecutionContext::COMMAND_ENVIRONMENT_KEY,
+            TrustedExecutionContext::OPERATION_TOKEN_ENVIRONMENT_KEY,
+        ] as $key) {
+            $value = getenv($key);
+
+            if (! is_string($value)) {
+                return false;
+            }
+
+            $environment[$key] = $value;
+        }
+
+        return (
+            TrustedExecutionContext::fromEnvironment($environment)?->authorizes(
+                compactToken: $compactToken,
+                expectedCommand: $expectedCommand,
+            ) === true
+        );
     }
 }

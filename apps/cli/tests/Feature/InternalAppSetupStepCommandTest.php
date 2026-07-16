@@ -23,10 +23,7 @@ describe('internal app setup step command', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
-            ->toBe(JsonEnvelope::failure(
-                'missing_token',
-                'Operation token is required.',
-            ));
+            ->toBe(JsonEnvelope::failure('missing_token', 'Operation token is required.'));
     });
 
     it('rejects an invalid operation token before reading stdin', function (): void {
@@ -42,20 +39,14 @@ describe('internal app setup step command', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
-            ->toBe(JsonEnvelope::failure(
-                'invalid_token',
-                'Operation token is invalid.',
-            ));
+            ->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'));
     });
 
     it('rejects payload validation failures without executing setup commands', function (string $stdin): void {
-        [$exitCode, $output] = run_internal_app_setup_step_command(
-            [
-                '--operation-token' => app_setup_step_signed_operation_token(),
-                '--json' => true,
-            ],
-            stdin: $stdin,
-        );
+        [$exitCode, $output] = run_internal_app_setup_step_command([
+            '--operation-token' => app_setup_step_signed_operation_token(),
+            '--json' => true,
+        ], stdin: $stdin);
 
         $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -94,6 +85,12 @@ describe('internal app setup step command', function (): void {
             'cwd' => '/tmp',
             'timeout' => 60,
             'environment' => ['ORBIT_AGENT_PUSH_AUTHORIZED_COMMAND' => 'x'],
+        ], JSON_THROW_ON_ERROR)],
+        'forbidden trusted execution env' => [json_encode([
+            'command' => 'echo ok',
+            'cwd' => '/tmp',
+            'timeout' => 60,
+            'environment' => ['ORBIT_TRUSTED_EXECUTION_COMMAND' => 'x'],
         ], JSON_THROW_ON_ERROR)],
     ]);
 
@@ -209,10 +206,10 @@ function run_internal_app_setup_step_command(array $parameters = [], string $std
     $input = new ArrayInput($parameters);
     $input->setStream($stream);
 
-    $output = new BufferedOutput;
+    $output = new BufferedOutput();
     $command = Artisan::all()['internal:app-setup-step'] ?? null;
 
-    if (! $command instanceof Command) {
+    if (!$command instanceof Command) {
         throw new RuntimeException('The internal app setup step command is not registered.');
     }
 

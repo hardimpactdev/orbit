@@ -9,11 +9,13 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Proxy\RemoteCaddyConfig;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -75,6 +77,59 @@ final readonly class EnsureAppProxyRouteTestCa extends OrbitCaService
     public function rootCert(): string
     {
         return 'fake-root-ca';
+    }
+}
+
+final class EnsureAppProxyRouteTestInternalExecutor implements RunsInternalCommands
+{
+    /** @var list<array{node: string, action: string, payload: array<string, mixed>}> */
+    public array $calls = [];
+
+    public function __construct(
+        private readonly ?string $failedNode = null,
+        private readonly ?string $failedAction = null,
+    ) {}
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $action = is_string($arguments[0] ?? null) ? $arguments[0] : '';
+        $input = $transportOptions['input'] ?? '{}';
+        $payload = is_string($input)
+            ? json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR)
+            : [];
+        $this->calls[] = [
+            'node' => $node->name,
+            'action' => $action,
+            'payload' => is_array($payload) ? $payload : [],
+        ];
+
+        if ($node->name === $this->failedNode && $action === $this->failedAction) {
+            return new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'failed', durationMs: 1);
+        }
+
+        $data = match ($action) {
+            'read-global' => ['content' => new CaddyGlobalConfig()->fresh()],
+            'write-site' => ['path' => "/etc/caddy/sites/{$node->name}.caddy"],
+            'reload' => ['container' => 'orbit-caddy'],
+            default => [],
+        };
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => [
+                    'data' => $data,
+                    'meta' => [],
+                ],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 1,
+        );
     }
 }
 
@@ -316,6 +371,72 @@ it('removes stale app-owned proxy routes for the same app when its domain change
         ->toBe(['happie.nmbp']);
 });
 
+it('converges production proxy artifacts in backend router ingress order', function (): void {
+    [$app, $backend, $router, $ingress] = ensure_app_proxy_route_production_topology();
+
+    app()->instance(RemoteShell::class, new EnsureAppProxyRouteTestShell);
+    app()->instance(SiteCertificateInstaller::class, new EnsureAppProxyRouteTestCertificateInstaller);
+    $executor = new EnsureAppProxyRouteTestInternalExecutor;
+    app()->instance(RemoteCaddyConfig::class, new RemoteCaddyConfig($executor));
+
+    $warnings = app(EnsureAppProxyRoute::class)->handle($app);
+    $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
+
+    expect(array_column($executor->calls, 'node'))
+        ->toBe([
+            'main1',
+            'main1',
+            'main1',
+            'gateway-router',
+            'gateway-router',
+            'gateway-router',
+            'public-ingress',
+            'public-ingress',
+            'public-ingress',
+        ])
+        ->and($route->config['enactment']['status'] ?? null)
+        ->toBe('converged')
+        ->and($route->config['enactment']['failure'])
+        ->toBeNull()
+        ->and(collect($warnings)->contains(
+            fn (array $warning): bool => ($warning['code'] ?? null) === 'proxy.enactment_failed',
+        ))
+        ->toBeFalse();
+});
+
+it('records partial production enactment and identifies the failed node and operation', function (): void {
+    [$app, $backend, $router, $ingress] = ensure_app_proxy_route_production_topology();
+
+    app()->instance(RemoteShell::class, new EnsureAppProxyRouteTestShell);
+    app()->instance(SiteCertificateInstaller::class, new EnsureAppProxyRouteTestCertificateInstaller);
+    $executor = new EnsureAppProxyRouteTestInternalExecutor(
+        failedNode: 'gateway-router',
+        failedAction: 'write-site',
+    );
+    app()->instance(RemoteCaddyConfig::class, new RemoteCaddyConfig($executor));
+
+    $warnings = app(EnsureAppProxyRoute::class)->handle($app);
+    $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
+    $warning = collect($warnings)->firstWhere('code', 'proxy.enactment_failed');
+
+    expect($route->config['enactment']['status'] ?? null)
+        ->toBe('partial')
+        ->and($route->config['enactment']['failure'] ?? null)
+        ->toBe([
+            'layer' => 'router',
+            'node' => 'gateway-router',
+            'operation' => 'caddy.router.install',
+        ])
+        ->and($warning)
+        ->toMatchArray([
+            'node' => 'gateway-router',
+            'operation' => 'caddy.router.install',
+            'layer' => 'router',
+        ])
+        ->and(array_column($executor->calls, 'node'))
+        ->not->toContain('public-ingress');
+});
+
 /**
  * @param  array<string, mixed>  $data
  * @return array<string, mixed>
@@ -356,4 +477,51 @@ function ensure_app_proxy_route_agent_requests(string $wireguardAddress): array
         ->map(fn (array $record): Request => $record[0])
         ->values()
         ->all();
+}
+
+/**
+ * @return array{App, Node, Node, Node}
+ */
+function ensure_app_proxy_route_production_topology(): array
+{
+    $ingress = Node::factory()
+        ->ingress()
+        ->managed()
+        ->create([
+            'name' => 'public-ingress',
+            'wireguard_address' => '10.47.1.10',
+        ]);
+    $router = Node::factory()
+        ->router()
+        ->managed()
+        ->create([
+            'name' => 'gateway-router',
+            'wireguard_address' => '10.47.1.20',
+        ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $router->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+    $backend = Node::factory()
+        ->managed()
+        ->create([
+            'name' => 'main1',
+            'wireguard_address' => '10.47.1.30',
+        ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $backend->id,
+        'role' => 'app-prod',
+        'status' => 'active',
+        'settings' => ['ingress_node_id' => $ingress->id],
+    ]);
+    $app = App::factory()->for($backend, 'node')->create([
+        'name' => 'hauzer',
+        'domain' => 'hauzer.app',
+        'environment' => 'production',
+        'document_root' => 'public',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+
+    return [$app, $backend, $router, $ingress];
 }

@@ -242,7 +242,7 @@ class ProxyRouteQuery
                 'managed_by' => $tlsManagedBy,
                 'trusted_by_gateway_ca' => $this->trustedByGatewayCa($config, $tlsManagedBy),
             ],
-            'status' => $status ?? $this->stringConfig($config, ['status']) ?? 'expected',
+            'status' => $status ?? ProxyRouteEnactment::status($config),
         ];
 
         if (($config['placement'] ?? null) === 'ingress') {

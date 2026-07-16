@@ -15,7 +15,7 @@ final readonly class LocalWorkspaceSetupStepEnvironment
      */
     public static function from(mixed $value): array
     {
-        if (! self::isStringMap($value)) {
+        if (!self::isStringMap($value)) {
             throw new InvalidArgumentException('Workspace setup environment is invalid.');
         }
 
@@ -37,15 +37,17 @@ final readonly class LocalWorkspaceSetupStepEnvironment
             return true;
         }
 
-        return str_starts_with($key, 'ORBIT_AGENT_PUSH_AUTHORIZED_');
+        return (
+            str_starts_with($key, 'ORBIT_AGENT_PUSH_AUTHORIZED_') || str_starts_with($key, 'ORBIT_TRUSTED_EXECUTION_')
+        );
     }
 
     private static function isStringMap(mixed $value): bool
     {
-        if (! is_array($value) || ! array_all(array_keys($value), static fn ($key) => is_string($key))) {
+        if (!is_array($value) || !array_all(array_keys($value), static fn($key) => is_string($key))) {
             return false;
         }
 
-        return array_all($value, static fn ($entry) => is_string($entry) && ! str_contains($entry, "\0"));
+        return array_all($value, static fn($entry) => is_string($entry) && !str_contains($entry, "\0"));
     }
 }

@@ -70,6 +70,15 @@ These terms define the types of routes that the proxy family owns and manages.
 - **Private backend artifact:** `orbit-caddy` site rendered on an `app-prod`
   node. It listens on HTTP port `80` bound to the node's WireGuard address and
   serves the app/workspace ingress contract to a backend FrankenPHP container.
+- **Route enactment state:** Persisted operation evidence attached to route
+  intent. `pending` means no operation has completed, `partial` means some
+  operations completed before a named failure, `failed` means the first
+  operation failed, and `converged` means every planned operation completed.
+  `intent_only` is custom intent deferred to doctor; `unknown` is an existing
+  row without enactment evidence.
+- **Production enactment order:** App production artifacts are applied backend
+  first, router second, and ingress last. Orbit never reports convergence if
+  any layer fails and records the exact layer, node, and operation for repair.
 - **Router backend pool:** Ordered list of URLs for app-prod backends.
   The router owns this pool. V1 creates one target but stores a list.
 - **WebSocket backend pool:** Ordered list of TLS websocket backend URLs using

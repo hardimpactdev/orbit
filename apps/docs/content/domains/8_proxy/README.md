@@ -71,7 +71,9 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   `proxy:add --redirect=<url>`, listed through `proxy:list --filter=redirect`,
   and removed by `proxy:remove`.
 - Proxy writes mutate gateway-tracked configuration first, then apply proxy and
-  TLS artifacts on the owning node.
+  TLS artifacts. Production app routes converge in dependency order: backend,
+  then router, then ingress. Each completed operation and any failure is
+  persisted with its layer, node, and operation identifier.
 - Orbit-managed TLS means gateway-issued route leaf certificate and key
   material on the serving node. Those certificates chain to the gateway root
   CA trusted by `gateway:add` and `gateway:trust`.
@@ -193,7 +195,7 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
     "managed_by": "orbit",
     "trusted_by_gateway_ca": true
   },
-  "status": "expected"
+  "status": "intent_only"
 }
 ```
 
@@ -213,7 +215,7 @@ The remaining fields describe placement, backend target, TLS, and status.
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |
 | `redirect_code` | integer \| null | HTTP redirect status code for redirect routes. |
 | `tls` | object | Orbit-managed TLS state expected for the route. |
-| `status` | string | Gateway configuration status, not live backend verification. |
+| `status` | `unknown`, `intent_only`, `pending`, `partial`, `failed`, or `converged` | Persisted enactment status, not a live probe. Existing rows without enactment evidence are `unknown`; custom rows awaiting doctor are `intent_only`. |
 
 ## Commands
 

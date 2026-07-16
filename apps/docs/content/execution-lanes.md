@@ -55,8 +55,9 @@ RemoteGatewayRuntimeExecutor:
   controlled one-shot gateway image for Laravel/artisan/PDO work.
 
 RemoteLocalExecutor:
-  Agent-push to the node Agent, then invoke the node-local Orbit CLI entry
-  point's internal executor command.
+  Select gateway-local execution for gateway-role targets; otherwise
+  Agent-push to the node Agent. Both paths invoke the Orbit CLI entry point's
+  internal executor command.
   It is for packaged node-local helper logic that needs host file access
   and PHP/PDO without relying on ad hoc python3/sqlite3 snippets.
   Production installs still use the native CLI binary artifact; source-dev
@@ -124,17 +125,23 @@ Forbidden work:
 
 ### RemoteLocalExecutor
 
-`RemoteLocalExecutor` invokes the node-local Orbit CLI entry point's internal
-executor command through Agent push. It is for packaged node-local helper logic that needs host
+`RemoteLocalExecutor` invokes the Orbit CLI entry point's internal executor
+command. Gateway-role targets use the gateway-local container lane; other
+node-local targets use Agent push. It is for packaged helper logic that needs host
 file access and PHP/PDO without relying on ad hoc
 `python3` or `sqlite3` snippets. In source-mounted nodes, `/usr/local/bin/orbit`
 points directly at `<source>/apps/cli/orbit`, and mutable node-local Orbit
 state lives under `~/.config/orbit`.
 
 The gateway primitive composes `/usr/local/bin/orbit internal:* ...` commands
-with `LocalExecutorCommandBuilder`, mints a short-lived gateway operation token,
-and dispatches the command as an allowlisted `binary + argv` Agent envelope.
-It never wraps local executor work in gateway container execution.
+with `LocalExecutorCommandBuilder` and mints a short-lived gateway operation
+token. Non-gateway targets receive an allowlisted `binary + argv` Agent
+envelope. Gateway-role targets stay in the gateway-local lane: the parent
+gateway verifies the exact signed `argv`, `cwd`, environment, and input,
+consumes the single-use token, and passes a trusted execution context into the
+gateway container. The CLI validates that context instead of reconstructing
+container-local state such as `/srv/orbit/apps/gateway` or omitting bound
+stdin.
 `RemoteLocalExecutor` cannot invoke public commands; internal executor commands
 verify operation tokens through the gateway API before any side effects, and
 nodes do not store executor token signing material.
@@ -223,10 +230,10 @@ node-local CLI execution is never an authority bypass. The token id corresponds
 to the fresh `operation_runs.id` created for that dispatch attempt.
 `ORBIT_OPERATION_ID`, when supplied, is retained as the row's logical
 `operation_id`; otherwise Orbit generates that logical grouping value. The
-command process spawned
-after Agent-side verification carries a gateway authorization marker so the
-node-local internal command can confirm the operation id, command, and token
-without spending the single-use verify token twice.
+command process spawned after Agent-side verification carries an Agent-push
+authorization marker. Gateway-local execution carries the generalized trusted
+execution context. Both let the internal command confirm the operation id,
+command, and token without spending the single-use verify token twice.
 
 Every completion-based `RemoteLocalExecutor::runInternal()` dispatch writes two
 gateway-owned activity records on the `local_executor` channel:

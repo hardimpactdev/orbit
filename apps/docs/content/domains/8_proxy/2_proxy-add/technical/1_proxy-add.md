@@ -42,6 +42,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Resolves a proxy-capable serving node.
 - Validates that exactly one of `--upstream` or `--redirect` is selected.
 - Creates or updates a custom gateway proxy route row.
+- Persists custom routes with `status=intent_only`; a registry row alone is
+  not evidence that Caddy or TLS artifacts exist.
 - Stores upstream routes with owner `custom`, kind `proxy`, and target type `upstream`.
 - Stores redirect routes with owner `custom`, kind `redirect`, target type `redirect`, and a redirect code.
 - Reports the registered `proxy.enactment_deferred` command handoff in the

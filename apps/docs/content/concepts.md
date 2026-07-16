@@ -334,6 +334,8 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Public route artifact**
 - **Private router artifact**
 - **Private backend artifact**
+- **Route enactment state**
+- **Production enactment order**
 - **Router backend pool**
 - **WebSocket backend pool**
 - **S3 backend pool**

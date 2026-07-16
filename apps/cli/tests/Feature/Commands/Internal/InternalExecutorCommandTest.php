@@ -73,6 +73,7 @@ function runTestInternalExecutorCommand(object $test, array $params = []): array
     return [$exitCode, trim(app(Kernel::class)->output())];
 }
 
+/** @mago-expect lint:cyclomatic-complexity */
 describe('InternalExecutorCommand base', function (): void {
     beforeEach(function (): void {
         configureInternalExecutorTestGuard();
@@ -238,6 +239,47 @@ describe('InternalExecutorCommand base', function (): void {
             ->toHaveKey('success')
             ->and($decoded['success']['data']['verified'])
             ->toBeTrue();
+    });
+
+    it('accepts a gateway-authorized trusted execution context without re-verifying reconstructed container state', function (): void {
+        $token = signInternalExecutorToken(id: 'gateway-local-operation');
+        $environment = [
+            'ORBIT_TRUSTED_EXECUTION_LANE' => 'gateway-local',
+            'ORBIT_TRUSTED_EXECUTION_OPERATION_ID' => 'gateway-local-operation',
+            'ORBIT_TRUSTED_EXECUTION_COMMAND' => 'test:internal-executor-command',
+            'ORBIT_TRUSTED_EXECUTION_OPERATION_TOKEN' => $token,
+        ];
+        $previous = [];
+
+        foreach ($environment as $key => $value) {
+            $previous[$key] = getenv($key);
+            putenv("{$key}={$value}");
+        }
+
+        fakeGatewayDown('The gateway must not be called for a parent-authorized gateway-local command.');
+
+        try {
+            [$exitCode, $output] = runTestInternalExecutorCommand($this, [
+                '--operation-token' => $token,
+                '--json' => true,
+            ]);
+
+            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data'] ?? null)
+                ->toMatchArray([
+                    'verified' => true,
+                    'command' => 'test:internal-executor-command',
+                ]);
+
+            Http::assertNothingSent();
+        } finally {
+            foreach ($previous as $key => $value) {
+                putenv($value === false ? $key : "{$key}={$value}");
+            }
+        }
     });
 
     it('maps a malformed gateway response to invalid_token without leaking details', function (): void {

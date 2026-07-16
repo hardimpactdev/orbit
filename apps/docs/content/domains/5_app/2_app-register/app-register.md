@@ -92,7 +92,7 @@ If DNS or TLS prerequisites are pending at Production Activation time, registrat
 
 ### Idempotency
 
-This command is idempotent. Re-running it on an app that is already managed re-renders artifacts and verifies the result; if nothing changes, the command still succeeds. The result reports which path the run took (`registered`, `adopted`, `moved`, or `converged`) so operators and agents can see what changed.
+This command is idempotent. Re-running it on an app that is already managed re-renders artifacts and verifies the result; if nothing changes, the command still succeeds. The result reports which path the run took (`registered`, `adopted`, `moved`, `partial`, or `converged`) so operators and agents can see what changed. `partial` means route intent persisted but proxy enactment failed; the warning identifies the failed node and operation.
 
 ## Output
 
@@ -100,7 +100,7 @@ You receive output in the format determined by the presence of `--json`.
 
 ### Human
 
-Progress showing each phase, followed by a success line keyed to the result (`registered`, `adopted`, `moved`, or `converged`) and any non-fatal warnings.
+Progress showing each phase, followed by a success line keyed to the result (`registered`, `adopted`, `moved`, `partial`, or `converged`) and any non-fatal warnings.
 
 ### JSON
 

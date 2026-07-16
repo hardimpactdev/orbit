@@ -936,6 +936,37 @@ describe('app mutation command human renderers', function (): void {
             ->not->toContain('{');
     });
 
+    it('renders app:register partial action without claiming convergence', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => ['action' => 'partial'],
+            'app' => ['name' => 'docs', 'node' => 'app-1', 'path' => '/home/orbit/apps/docs'],
+        ], [
+            'warnings' => [[
+                'code' => 'proxy.enactment_failed',
+                'family' => 'proxy',
+                'layer' => 'router',
+                'node' => 'gateway-router',
+                'operation' => 'caddy.router.install',
+                'message' => "Proxy route 'docs.example.com' failed on node 'gateway-router' during 'caddy.router.install'.",
+                'next_command' => 'doctor --family=proxy --restore',
+            ]],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app:register', [
+            'name' => 'docs',
+            '--node' => 'app-1',
+            '--path' => '/home/orbit/apps/docs',
+        ]);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("App 'docs' is registered on node 'app-1', but proxy enactment is incomplete.")
+            ->toContain("failed on node 'gateway-router' during 'caddy.router.install'")
+            ->not->toContain("App 'docs' converged")
+            ->not->toContain('No changes were needed.');
+    });
+
     it('renders app:register warnings after the success line', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'registered'],

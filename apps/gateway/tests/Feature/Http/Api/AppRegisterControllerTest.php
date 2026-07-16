@@ -521,8 +521,11 @@ describe('AppRegisterController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.result.action', 'converged')
-            ->assertJsonPath('success.data.app.url', 'https://happie.nmbp');
+            ->assertJsonPath('success.data.result.action', 'partial')
+            ->assertJsonPath('success.data.app.url', 'https://happie.nmbp')
+            ->assertJsonPath('success.meta.warnings.0.code', 'proxy.enactment_failed')
+            ->assertJsonPath('success.meta.warnings.0.node', 'app-1')
+            ->assertJsonPath('success.meta.warnings.0.operation', 'runtime_trust_pool.ensure');
 
         $app = App::query()->where('name', 'happie-nmbp')->firstOrFail();
 

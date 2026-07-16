@@ -17,6 +17,7 @@ use App\Services\NodeCommandTransport\NodeCommandEnvelope;
 use App\Services\NodeCommandTransport\NodeCommandTransportSelector;
 use App\Services\NodeCommandTransport\NodeTransport;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\Operations\GatewayLocalOperationTokenAuthorizer;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use Illuminate\Contracts\Process\InvokedProcess;
@@ -514,7 +515,13 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      * @param  list<string>  $trustedArgv
      * @param  array<string, string>  $environment
      * @param  array<string, mixed>  $transportOptions
-     * @return array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}
+     * @return array{
+     *     operationId: string,
+     *     operationToken: string,
+     *     auditLine: string,
+     *     argv: list<string>,
+     *     commandContext: OperationTokenCommandContext,
+     * }
      *
      * @mago-expect lint:excessive-parameter-list
      */
@@ -529,23 +536,25 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $environment,
         array $transportOptions,
     ): array {
+        $commandContext = OperationTokenCommandContext::fromTrustedDispatch(
+            argv: $trustedArgv,
+            cwd: $this->cwd($transportOptions),
+            environment: $environment,
+            input: $this->boundInput($transportOptions),
+        );
         $operationToken = $this->operationTokens
             ->mint(
                 operationId: $operationRunId,
                 targetNode: $node->name,
                 command: $commandName,
-                commandContext: OperationTokenCommandContext::fromTrustedDispatch(
-                    argv: $trustedArgv,
-                    cwd: $this->cwd($transportOptions),
-                    environment: $environment,
-                    input: $this->boundInput($transportOptions),
-                ),
+                commandContext: $commandContext,
             )
             ->toString();
 
         return [
             'operationId' => $operationId,
             'operationToken' => $operationToken,
+            'commandContext' => $commandContext,
             'argv' => $this->argvWithOperationToken($trustedArgv, $operationToken),
             'auditLine' => $this->commands->buildAuditLine(
                 targetNode: $node,
@@ -625,7 +634,13 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     }
 
     /**
-     * @param  array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}  $dispatch
+     * @param  array{
+     *     operationId: string,
+     *     operationToken: string,
+     *     auditLine: string,
+     *     argv: list<string>,
+     *     commandContext: OperationTokenCommandContext,
+     * }  $dispatch
      */
     private function logCompleted(
         Node $node,
@@ -1259,7 +1274,13 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     }
 
     /**
-     * @param  array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}  $dispatch
+     * @param  array{
+     *     operationId: string,
+     *     operationToken: string,
+     *     auditLine: string,
+     *     argv: list<string>,
+     *     commandContext: OperationTokenCommandContext,
+     * }  $dispatch
      */
     private function runAgentPush(
         Node $node,
@@ -1274,7 +1295,13 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     /**
      * @param  array<int|string, mixed>  $arguments
      * @param  array<int|string, mixed>  $commandOptions
-     * @param  array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}  $dispatch
+     * @param  array{
+     *     operationId: string,
+     *     operationToken: string,
+     *     auditLine: string,
+     *     argv: list<string>,
+     *     commandContext: OperationTokenCommandContext,
+     * }  $dispatch
      * @param  array{
      *     cwd?: string,
      *     timeout?: int,
@@ -1300,6 +1327,18 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $dispatch,
         array $transportOptions,
     ): RemoteShellResult {
+        $trustedExecution = app(GatewayLocalOperationTokenAuthorizer::class)->authorize(
+            compactToken: $dispatch['operationToken'],
+            expectedNode: $node->name,
+            expectedCommand: $commandName,
+            commandContext: $dispatch['commandContext'],
+        );
+        $dispatchOptions = $this->transportDispatchOptions($node, $transportOptions);
+        $dispatchOptions['environment'] = [
+            ...($dispatchOptions['environment'] ?? []),
+            ...$trustedExecution->environment(),
+        ];
+
         return app(RemoteOrbitGatewayExecutor::class)->run(
             node: $node,
             script: $this->commands->build(
@@ -1309,12 +1348,18 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 options: $commandOptions,
                 operationToken: $dispatch['operationToken'],
             ),
-            options: $this->transportDispatchOptions($node, $transportOptions),
+            options: $dispatchOptions,
         );
     }
 
     /**
-     * @param  array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}  $dispatch
+     * @param  array{
+     *     operationId: string,
+     *     operationToken: string,
+     *     auditLine: string,
+     *     argv: list<string>,
+     *     commandContext: OperationTokenCommandContext,
+     * }  $dispatch
      * @param  array<string, mixed>  $transportOptions
      * @param  callable(string): void  $onOutput
      */

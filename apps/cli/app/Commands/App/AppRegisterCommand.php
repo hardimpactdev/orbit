@@ -88,6 +88,7 @@ final class AppRegisterCommand extends AppGatewayCommand
         return match ($this->action($response)) {
             'adopted' => "App '{$name}' adopted",
             'converged' => "App '{$name}' converged",
+            'partial' => "App '{$name}' partially enacted",
             default => "App '{$name}' registered",
         };
     }
@@ -129,6 +130,7 @@ final class AppRegisterCommand extends AppGatewayCommand
         return match ($this->action($response)) {
             'adopted' => "App '{$name}' successfully adopted from path '{$path}' on node '{$node}'.",
             'converged' => "App '{$name}' is already converged on node '{$node}'. No changes were needed.",
+            'partial' => "App '{$name}' is registered on node '{$node}', but proxy enactment is incomplete.",
             default => "App '{$name}' successfully registered on node '{$node}'.",
         };
     }

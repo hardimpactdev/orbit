@@ -23,10 +23,7 @@ describe('internal workspace setup step command', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
-            ->toBe(JsonEnvelope::failure(
-                'missing_token',
-                'Operation token is required.',
-            ));
+            ->toBe(JsonEnvelope::failure('missing_token', 'Operation token is required.'));
     });
 
     it('returns command output and exit code without failing the internal command', function (): void {
@@ -84,6 +81,7 @@ describe('internal workspace setup step command', function (): void {
     })->with([
         'app key' => ['APP_KEY'],
         'agent push authorized command' => ['ORBIT_AGENT_PUSH_AUTHORIZED_COMMAND'],
+        'trusted execution command' => ['ORBIT_TRUSTED_EXECUTION_COMMAND'],
     ]);
 
     it('captures non-zero setup command exits as successful internal responses', function (): void {
@@ -146,10 +144,10 @@ function run_internal_workspace_setup_step_command(array $parameters = [], strin
     $input = new ArrayInput($parameters);
     $input->setStream($stream);
 
-    $output = new BufferedOutput;
+    $output = new BufferedOutput();
     $command = Artisan::all()['internal:workspace-setup-step'] ?? null;
 
-    if (! $command instanceof Command) {
+    if (!$command instanceof Command) {
         throw new RuntimeException('The internal workspace setup step command is not registered.');
     }
 

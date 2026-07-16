@@ -10,6 +10,7 @@ use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
+use App\Services\Operations\OperationTokenIntrospector;
 use App\Services\RemoteShell\Exceptions\LocalExecutorCommandBuilderException;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\LocalExecutorCommandComposer;
@@ -27,7 +28,6 @@ use Orbit\Core\Security\OperationToken;
 use Orbit\Core\Security\OperationTokenCommandContext;
 use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Security\OperationTokenVerifier;
-use Symfony\Component\Process\Process;
 use Tests\Fakes\RemoteLocalExecutorCountingCommands;
 use Tests\TestCase;
 
@@ -55,6 +55,10 @@ describe(RemoteLocalExecutor::class, function (): void {
             node: $node,
             commandName: 'internal:executor:verify',
             transportOptions: [
+                'input' => '{"round_trip":true}',
+                'environment' => [
+                    'ORBIT_TRUSTED_EXECUTION_LANE' => 'attacker-controlled',
+                ],
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000428',
                 ],
@@ -74,9 +78,14 @@ describe(RemoteLocalExecutor::class, function (): void {
                 str_contains($command, 'docker exec -i')
                 && str_contains($command, 'orbit-gateway')
                 && str_contains($command, 'internal:executor:verify')
+                && str_contains($command, 'ORBIT_TRUSTED_EXECUTION_LANE=gateway-local')
+                && ! str_contains($command, 'attacker-controlled')
                 && ! str_contains($command, ' ssh ')
             );
         });
+
+        expect(DB::table('operation_runs')->value('operation_token_consumed_at'))
+            ->not->toBeNull();
     });
 
     it('defaults node-local internal command execution to agent-push without calling ssh transport', function (): void {
@@ -1452,6 +1461,15 @@ function remoteLocalExecutor(
     ?LocalExecutorCommandComposer $commands = null,
     bool $stubAgent = true,
 ): RemoteLocalExecutor {
+    app()->instance(
+        OperationTokenIntrospector::class,
+        new OperationTokenIntrospector(
+            verifier: new OperationTokenVerifier(new OperationTokenSigner),
+            secretsByKeyId: ['current' => 'gateway-secret'],
+            clock: static fn (): int => 1_798_105_200,
+        ),
+    );
+
     if ($stubAgent) {
         Http::stubUrl('http://10.44.0.70:9477/v1/commands', function (Request $request) use ($transport) {
             $node = Node::query()->where('wireguard_address', '10.44.0.70')->firstOrFail();

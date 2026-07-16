@@ -8,6 +8,7 @@ use Closure;
 use Orbit\Core\Security\OperationToken;
 use Orbit\Core\Security\OperationTokenCommandContext;
 use Orbit\Core\Security\OperationTokenVerifier;
+use SensitiveParameter;
 
 final readonly class OperationTokenIntrospector
 {
@@ -47,14 +48,6 @@ final readonly class OperationTokenIntrospector
             return $this->denied('invalid_token');
         }
 
-        if (! hash_equals($expectedNode, $token->node)) {
-            return $this->denied('target_node_mismatch', $token->id);
-        }
-
-        if (! hash_equals($expectedCommand, $token->command)) {
-            return $this->denied('command_mismatch', $token->id);
-        }
-
         try {
             $commandContext = OperationTokenCommandContext::fromAgentVerification(
                 argv: $argv,
@@ -65,6 +58,56 @@ final readonly class OperationTokenIntrospector
             );
         } catch (\InvalidArgumentException) {
             return $this->denied('arguments_mismatch', $token->id);
+        }
+
+        return $this->introspectParsedToken(
+            token: $token,
+            expectedNode: $expectedNode,
+            expectedCommand: $expectedCommand,
+            commandContext: $commandContext,
+        );
+    }
+
+    /**
+     * @return array{allowed: bool, reason: ?string, operation_id: ?string}
+     */
+    public function introspectTrustedContext(
+        #[SensitiveParameter]
+        string $compactToken,
+        string $expectedNode,
+        string $expectedCommand,
+        OperationTokenCommandContext $commandContext,
+    ): array {
+        try {
+            $token = OperationToken::parse($compactToken);
+        } catch (\InvalidArgumentException) {
+            return $this->denied('invalid_token');
+        }
+
+        return $this->introspectParsedToken(
+            token: $token,
+            expectedNode: $expectedNode,
+            expectedCommand: $expectedCommand,
+            commandContext: $commandContext,
+        );
+    }
+
+    /**
+     * @return array{allowed: bool, reason: ?string, operation_id: ?string}
+     */
+    private function introspectParsedToken(
+        #[SensitiveParameter]
+        OperationToken $token,
+        string $expectedNode,
+        string $expectedCommand,
+        OperationTokenCommandContext $commandContext,
+    ): array {
+        if (! hash_equals($expectedNode, $token->node)) {
+            return $this->denied('target_node_mismatch', $token->id);
+        }
+
+        if (! hash_equals($expectedCommand, $token->command)) {
+            return $this->denied('command_mismatch', $token->id);
         }
 
         if (! hash_equals($token->commandContextHash, $commandContext->hash())) {

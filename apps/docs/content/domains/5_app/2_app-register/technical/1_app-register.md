@@ -134,6 +134,9 @@ This command follows the shared
     eligible node/path, requested with both `--node` and `--path`.
   - `converged` — idempotent re-application of an already-managed app where no
     observable artifact change was needed.
+  - `partial` — the registry was already managed, but proxy enactment failed
+    after recording intent or applying only part of the backend, router, and
+    ingress chain. The matching warning names the failed node and operation.
   This separation keeps durable adoption state on the app entity while letting
   `result.action` describe what this run did, mirroring the `node:new` and
   `gateway:add` exemplars.
@@ -191,7 +194,7 @@ registration attempts.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | CLI payload/validation, human registered/adopted/converged output, and warning pass-through. |
+| `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | CLI payload/validation, human registered/adopted/moved/partial/converged output, and warning pass-through. |
 | `apps/gateway/tests/Feature/Http/Api/AppRegisterControllerTest.php` | Register/adopt/converged actions, authorization, and ineligible-node rejection. |
 | `apps/gateway/tests/Feature/Actions/Apps/EnactAppRuntimeTest.php` | Agent-push artifact convergence across development and production runtimes. |
 

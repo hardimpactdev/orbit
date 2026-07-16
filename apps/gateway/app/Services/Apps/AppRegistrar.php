@@ -38,6 +38,7 @@ final class AppRegistrar
 
     public function __construct(
         private readonly RemoteAppSourcePathProbe $sourcePathProbe,
+        private readonly AppRegistrationResultAction $resultAction,
     ) {}
 
     /**
@@ -171,6 +172,7 @@ final class AppRegistrar
         $action = $this->registrationAction($existingApp, $explicitMove);
         $app = $this->registerAppRecord($input, $node, $path, $existingApp, $environment);
         $warnings = $enactAppRuntime->handle($app);
+        $action = $this->resultAction->afterEnactment($action, $warnings);
 
         return $this->successCommand(
             [
@@ -199,6 +201,7 @@ final class AppRegistrar
         $environment = $this->registrationEnvironment($input['domain'], $node);
         $app = $this->registerAppRecord($input, $node, $path, $existingApp, $environment);
         $warnings = $enactAppRuntime->handle($app);
+        $action = $this->resultAction->afterEnactment($action, $warnings);
 
         return $this->successCommand(
             [

@@ -17,10 +17,15 @@ use App\Services\Convergence\ManagedFile;
 use App\Services\Proxy\AppProxyRouteCaddyInstaller;
 use App\Services\Proxy\CaddyContainerHostPathResolver;
 use App\Services\Proxy\IngressResolver;
+use App\Services\Proxy\ProxyRouteEnactment;
 use App\Services\Proxy\ProxyRouteRenderer;
+use Closure;
 use RuntimeException;
-use Throwable;
 
+/**
+ * @mago-expect lint:kan-defect
+ * @mago-expect lint:too-many-methods
+ */
 final readonly class EnsureAppProxyRoute
 {
     public function __construct(
@@ -45,14 +50,17 @@ final readonly class EnsureAppProxyRoute
         $domain = $this->domain($app, $owningNode);
         [$servingNode, $config, $content] = $this->routeArtifact($app, $owningNode, $domain);
 
-        ProxyRoute::query()->updateOrCreate(
+        $route = ProxyRoute::query()->updateOrCreate(
             ['domain' => $domain],
             [
                 'node_id' => $servingNode->id,
                 'app_id' => $app->id,
                 'owner_type' => 'app',
                 'kind' => 'app',
-                'config' => $config,
+                'config' => ProxyRouteEnactment::pending(
+                    $config,
+                    $this->plannedOperations($config, $servingNode, $owningNode),
+                ),
                 'source_hash' => hash('sha256', $content),
             ],
         );
@@ -63,106 +71,410 @@ final readonly class EnsureAppProxyRoute
             ->where('domain', '!=', $domain)
             ->delete();
 
-        try {
-            $this->siteCertificateInstaller->ensureFor($servingNode, $domain);
-            $this->ensureRuntimeTrustPool($servingNode, $config);
-            $this->caddyInstaller->ensureGlobalCaddyfile($servingNode);
-        } catch (Throwable) {
-            return [[
-                'code' => 'proxy.enactment_failed',
-                'family' => 'proxy',
-                'message' => "Proxy route '{$domain}' was recorded, but TLS material could not be installed. Run doctor to converge proxy artifacts.",
-                'next_command' => 'doctor --family=proxy --restore',
-            ]];
-        }
-
-        $result = $this->caddyInstaller->installRouteConfig($servingNode, $domain, $content);
-
-        if (! $result->successful()) {
-            return [[
-                'code' => 'proxy.enactment_failed',
-                'family' => 'proxy',
-                'message' => "Proxy route '{$domain}' was recorded, but backend enactment failed. Run doctor to converge proxy artifacts.",
-                'next_command' => 'doctor --family=proxy --restore',
-            ]];
-        }
-
         if (($config['placement'] ?? null) === 'ingress') {
-            $routerArtifact = $config['router_artifact'] ?? null;
-
-            if (! is_array($routerArtifact)) {
-                throw new RuntimeException("Proxy route '{$domain}' is missing a router artifact.");
-            }
-
-            $routerNodeId = $routerArtifact['node_id'] ?? null;
-            $routerNode = is_int($routerNodeId) ? Node::query()->find($routerNodeId) : null;
-
-            if (! $routerNode instanceof Node) {
-                throw new RuntimeException("Proxy route '{$domain}' points at an unavailable router node.");
-            }
-
-            $routerContent = $this->proxyRouteRenderer->renderRouterRoute(new ProxyRoute([
-                'node_id' => $routerNode->id,
-                'domain' => $domain,
-                'app_id' => $app->id,
-                'owner_type' => 'app',
-                'kind' => 'app',
-                'config' => $config,
-            ]));
-
-            $this->caddyInstaller->ensureGlobalCaddyfile($routerNode);
-            $routerResult = $this->caddyInstaller->installRouteConfig(
-                $routerNode,
-                $domain,
-                $routerContent,
+            $warning = $this->enactProductionRoute(
+                route: $route,
+                app: $app,
+                owningNode: $owningNode,
+                servingNode: $servingNode,
+                domain: $domain,
+                config: $config,
+                ingressContent: $content,
             );
-
-            if (! $routerResult->successful()) {
-                return [[
-                    'code' => 'proxy.enactment_failed',
-                    'family' => 'proxy',
-                    'message' => "Proxy route '{$domain}' was recorded, but router enactment failed. Run doctor to converge proxy artifacts.",
-                    'next_command' => 'doctor --family=proxy --restore',
-                ]];
-            }
-
-            $backendArtifact = $config['backend_artifacts'][0] ?? null;
-
-            if (! is_array($backendArtifact)) {
-                throw new RuntimeException("Proxy route '{$domain}' is missing a backend artifact.");
-            }
-
-            $backendContent = $this->proxyRouteRenderer->renderPrivateBackend(
-                new ProxyRoute([
-                    'domain' => $domain,
-                    'kind' => 'app',
-                    'owner_type' => 'app',
-                    'app_id' => $app->id,
-                    'config' => $config,
-                ]),
-                $backendArtifact,
+        } else {
+            $warning = $this->enactSingleNodeRoute(
+                route: $route,
+                node: $servingNode,
+                domain: $domain,
+                config: $config,
+                content: $content,
             );
-
-            $this->caddyInstaller->ensureGlobalCaddyfile($owningNode);
-            $this->ensureRuntimeTrustPool($owningNode, $config);
-            $backendResult = $this->caddyInstaller->installRouteConfig(
-                $owningNode,
-                $domain,
-                $backendContent,
-                backend: true,
-            );
-
-            if (! $backendResult->successful()) {
-                return [[
-                    'code' => 'proxy.enactment_failed',
-                    'family' => 'proxy',
-                    'message' => "Proxy route '{$domain}' was recorded, but backend enactment failed. Run doctor to converge proxy artifacts.",
-                    'next_command' => 'doctor --family=proxy --restore',
-                ]];
-            }
         }
+
+        if ($warning !== null) {
+            return [$warning];
+        }
+
+        $this->storeConfig($route, ProxyRouteEnactment::converged($this->routeConfig($route)));
 
         return $this->productionActivationWarnings($app);
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array<string, string>|null
+     */
+    private function enactSingleNodeRoute(
+        ProxyRoute $route,
+        Node $node,
+        string $domain,
+        array $config,
+        string $content,
+    ): ?array {
+        foreach ([
+            [
+                'operation' => 'site_certificate.ensure',
+                'callback' => fn (): bool => $this->ensureSiteCertificate($node, $domain),
+            ],
+            ...$this->runtimeTrustOperation($node, $config, 'route'),
+            [
+                'operation' => 'caddy.global.ensure',
+                'callback' => fn (): bool => $this->ensureGlobalCaddyfile($node),
+            ],
+            [
+                'operation' => 'caddy.route.install',
+                'callback' => fn (): bool => $this->caddyInstaller
+                    ->installRouteConfig(
+                        $node,
+                        $domain,
+                        $content,
+                    )
+                    ->successful(),
+            ],
+        ] as $step) {
+            $warning = $this->performOperation(
+                route: $route,
+                node: $node,
+                layer: 'route',
+                operation: $step['operation'],
+                callback: $step['callback'],
+            );
+
+            if ($warning !== null) {
+                return $warning;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array<string, string>|null
+     *
+     * @mago-expect lint:excessive-parameter-list
+     */
+    private function enactProductionRoute(
+        ProxyRoute $route,
+        App $app,
+        Node $owningNode,
+        Node $servingNode,
+        string $domain,
+        array $config,
+        string $ingressContent,
+    ): ?array {
+        $routerNode = $this->routerNode($config, $domain);
+        $backendArtifact = $this->backendArtifact($config, $domain);
+        $backendContent = $this->proxyRouteRenderer->renderPrivateBackend(
+            new ProxyRoute([
+                'domain' => $domain,
+                'kind' => 'app',
+                'owner_type' => 'app',
+                'app_id' => $app->id,
+                'config' => $config,
+            ]),
+            $backendArtifact,
+        );
+        $routerContent = $this->proxyRouteRenderer->renderRouterRoute(new ProxyRoute([
+            'node_id' => $routerNode->id,
+            'domain' => $domain,
+            'app_id' => $app->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => $config,
+        ]));
+        $steps = [
+            [
+                'node' => $owningNode,
+                'layer' => 'backend',
+                'operation' => 'caddy.global.ensure',
+                'callback' => fn (): bool => $this->ensureGlobalCaddyfile($owningNode),
+            ],
+            ...$this->runtimeTrustOperation($owningNode, $config, 'backend'),
+            [
+                'node' => $owningNode,
+                'layer' => 'backend',
+                'operation' => 'caddy.backend.install',
+                'callback' => fn (): bool => $this->caddyInstaller
+                    ->installRouteConfig(
+                        $owningNode,
+                        $domain,
+                        $backendContent,
+                        backend: true,
+                    )
+                    ->successful(),
+            ],
+            [
+                'node' => $routerNode,
+                'layer' => 'router',
+                'operation' => 'caddy.global.ensure',
+                'callback' => fn (): bool => $this->ensureGlobalCaddyfile($routerNode),
+            ],
+            [
+                'node' => $routerNode,
+                'layer' => 'router',
+                'operation' => 'caddy.router.install',
+                'callback' => fn (): bool => $this->caddyInstaller
+                    ->installRouteConfig(
+                        $routerNode,
+                        $domain,
+                        $routerContent,
+                    )
+                    ->successful(),
+            ],
+            [
+                'node' => $servingNode,
+                'layer' => 'ingress',
+                'operation' => 'site_certificate.ensure',
+                'callback' => fn (): bool => $this->ensureSiteCertificate($servingNode, $domain),
+            ],
+            ...$this->runtimeTrustOperation($servingNode, $config, 'ingress'),
+            [
+                'node' => $servingNode,
+                'layer' => 'ingress',
+                'operation' => 'caddy.global.ensure',
+                'callback' => fn (): bool => $this->ensureGlobalCaddyfile($servingNode),
+            ],
+            [
+                'node' => $servingNode,
+                'layer' => 'ingress',
+                'operation' => 'caddy.ingress.install',
+                'callback' => fn (): bool => $this->caddyInstaller
+                    ->installRouteConfig(
+                        $servingNode,
+                        $domain,
+                        $ingressContent,
+                    )
+                    ->successful(),
+            ],
+        ];
+
+        foreach ($steps as $step) {
+            $warning = $this->performOperation(
+                route: $route,
+                node: $step['node'],
+                layer: $step['layer'],
+                operation: $step['operation'],
+                callback: $step['callback'],
+            );
+
+            if ($warning !== null) {
+                return $warning;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, string>|null
+     */
+    private function performOperation(
+        ProxyRoute $route,
+        Node $node,
+        string $layer,
+        string $operation,
+        Closure $callback,
+    ): ?array {
+        $record = [
+            'layer' => $layer,
+            'node' => $node->name,
+            'operation' => $operation,
+        ];
+
+        try {
+            $successful = $callback();
+        } catch (\Throwable) {
+            $successful = false;
+        }
+
+        if ($successful) {
+            $this->storeConfig(
+                $route,
+                ProxyRouteEnactment::completed($this->routeConfig($route), $record),
+            );
+
+            return null;
+        }
+
+        $this->storeConfig(
+            $route,
+            ProxyRouteEnactment::failed($this->routeConfig($route), $record),
+        );
+
+        return [
+            'code' => 'proxy.enactment_failed',
+            'family' => 'proxy',
+            'layer' => $layer,
+            'node' => $node->name,
+            'operation' => $operation,
+            'message' => "Proxy route '{$route->domain}' failed on node '{$node->name}' during '{$operation}'. Run doctor to converge proxy artifacts.",
+            'next_command' => 'doctor --family=proxy --restore',
+        ];
+    }
+
+    private function ensureSiteCertificate(Node $node, string $domain): bool
+    {
+        $this->siteCertificateInstaller->ensureFor($node, $domain);
+
+        return true;
+    }
+
+    private function ensureGlobalCaddyfile(Node $node): bool
+    {
+        $this->caddyInstaller->ensureGlobalCaddyfile($node);
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return list<array{node: Node, layer: string, operation: string, callback: Closure(): bool}>
+     */
+    private function runtimeTrustOperation(Node $node, array $config, string $layer): array
+    {
+        if (! $this->requiresRuntimeTrustPool($config)) {
+            return [];
+        }
+
+        return [[
+            'node' => $node,
+            'layer' => $layer,
+            'operation' => 'runtime_trust_pool.ensure',
+            'callback' => function () use ($node, $config): bool {
+                $this->ensureRuntimeTrustPool($node, $config);
+
+                return true;
+            },
+        ]];
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function requiresRuntimeTrustPool(array $config): bool
+    {
+        $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
+
+        return is_array($runtimeUpstreamTls) && ($runtimeUpstreamTls['trusted_by_gateway_ca'] ?? null) === true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return list<array{layer: string, node: string, operation: string}>
+     */
+    private function plannedOperations(array $config, Node $servingNode, Node $owningNode): array
+    {
+        if (($config['placement'] ?? null) !== 'ingress') {
+            return $this->plannedNodeOperations(
+                node: $servingNode,
+                layer: 'route',
+                operations: [
+                    'site_certificate.ensure',
+                    ...($this->requiresRuntimeTrustPool($config) ? ['runtime_trust_pool.ensure'] : []),
+                    'caddy.global.ensure',
+                    'caddy.route.install',
+                ],
+            );
+        }
+
+        $routerNode = $this->routerNode($config, 'production route');
+
+        return [
+            ...$this->plannedNodeOperations(
+                node: $owningNode,
+                layer: 'backend',
+                operations: [
+                    'caddy.global.ensure',
+                    ...($this->requiresRuntimeTrustPool($config) ? ['runtime_trust_pool.ensure'] : []),
+                    'caddy.backend.install',
+                ],
+            ),
+            ...$this->plannedNodeOperations(
+                node: $routerNode,
+                layer: 'router',
+                operations: ['caddy.global.ensure', 'caddy.router.install'],
+            ),
+            ...$this->plannedNodeOperations(
+                node: $servingNode,
+                layer: 'ingress',
+                operations: [
+                    'site_certificate.ensure',
+                    ...($this->requiresRuntimeTrustPool($config) ? ['runtime_trust_pool.ensure'] : []),
+                    'caddy.global.ensure',
+                    'caddy.ingress.install',
+                ],
+            ),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $operations
+     * @return list<array{layer: string, node: string, operation: string}>
+     */
+    private function plannedNodeOperations(Node $node, string $layer, array $operations): array
+    {
+        return array_map(
+            static fn (string $operation): array => [
+                'layer' => $layer,
+                'node' => $node->name,
+                'operation' => $operation,
+            ],
+            $operations,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function routerNode(array $config, string $domain): Node
+    {
+        $routerArtifact = $config['router_artifact'] ?? null;
+
+        if (! is_array($routerArtifact)) {
+            throw new RuntimeException("Proxy route '{$domain}' is missing a router artifact.");
+        }
+
+        $routerNodeId = $routerArtifact['node_id'] ?? null;
+        $routerNode = is_int($routerNodeId) ? Node::query()->find($routerNodeId) : null;
+
+        if (! $routerNode instanceof Node) {
+            throw new RuntimeException("Proxy route '{$domain}' points at an unavailable router node.");
+        }
+
+        return $routerNode;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function backendArtifact(array $config, string $domain): array
+    {
+        $backendArtifact = $config['backend_artifacts'][0] ?? null;
+
+        if (! is_array($backendArtifact)) {
+            throw new RuntimeException("Proxy route '{$domain}' is missing a backend artifact.");
+        }
+
+        return $backendArtifact;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function routeConfig(ProxyRoute $route): array
+    {
+        return is_array($route->config) ? $route->config : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function storeConfig(ProxyRoute $route, array $config): void
+    {
+        $route->forceFill(['config' => $config])->save();
+        $route->setAttribute('config', $config);
     }
 
     /**

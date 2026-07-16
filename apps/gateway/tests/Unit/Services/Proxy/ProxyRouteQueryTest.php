@@ -78,7 +78,7 @@ describe('ProxyRouteQuery', function (): void {
                 'target' => ['type' => 'app', 'value' => 'docs'],
                 'redirect_code' => null,
                 'tls' => ['managed_by' => 'orbit', 'trusted_by_gateway_ca' => true],
-                'status' => 'expected',
+                'status' => 'unknown',
             ])
             ->and($result['routes'][1])
             ->toMatchArray([
@@ -88,6 +88,38 @@ describe('ProxyRouteQuery', function (): void {
                 'target' => ['type' => 'redirect', 'value' => 'https://docs.test'],
                 'redirect_code' => 302,
             ]);
+    });
+
+    it('reports persisted partial enactment instead of treating registry intent as expected runtime state', function (): void {
+        $node = Node::factory()->create(['name' => 'gateway-1']);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'partial.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => [
+                'upstream' => 'http://10.6.0.21:8080',
+                'enactment' => [
+                    'status' => 'partial',
+                    'completed_operations' => [
+                        [
+                            'layer' => 'backend',
+                            'node' => 'main1',
+                            'operation' => 'caddy.global.ensure',
+                        ],
+                    ],
+                    'failure' => [
+                        'layer' => 'router',
+                        'node' => 'gateway-1',
+                        'operation' => 'caddy.router.install',
+                    ],
+                ],
+            ],
+        ]);
+
+        expect(app(ProxyRouteQuery::class)->list()['routes'][0]['status'])
+            ->toBe('partial');
     });
 
     it('reports canonical app instance primary route owner and target selectors', function (): void {
