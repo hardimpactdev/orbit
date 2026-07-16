@@ -8,6 +8,10 @@ use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process as ProcessFacade;
 use Symfony\Component\Process\Process;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:too-many-methods
+ */
 final readonly class LocalDockerSwarmServiceAction
 {
     private const array ACTIONS = ['apply', 'ensure', 'remove', 'restart', 'start', 'stop'];
@@ -123,18 +127,18 @@ final readonly class LocalDockerSwarmServiceAction
     private function advertiseAddress(array $payload): string
     {
         if (
-            isset($payload['advertise_address'])
-            && is_string($payload['advertise_address'])
-            && filter_var($payload['advertise_address'], FILTER_VALIDATE_IP) !== false
+            ! array_key_exists('advertise_address', $payload)
+            || ! is_string($payload['advertise_address'])
+            || filter_var($payload['advertise_address'], FILTER_VALIDATE_IP) === false
         ) {
-            return $payload['advertise_address'];
+            throw new LocalDockerSwarmServiceFailure(
+                errorCode: 'validation_failed',
+                message: 'Docker Swarm advertise address is invalid.',
+                meta: ['field' => 'advertise_address'],
+            );
         }
 
-        throw new LocalDockerSwarmServiceFailure(
-            errorCode: 'validation_failed',
-            message: 'Docker Swarm advertise address is invalid.',
-            meta: ['field' => 'advertise_address'],
-        );
+        return $payload['advertise_address'];
     }
 
     /**

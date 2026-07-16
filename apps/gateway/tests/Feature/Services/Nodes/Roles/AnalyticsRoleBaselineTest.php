@@ -32,6 +32,7 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
         'status' => NodeStatus::Active,
     ]);
     $databasePassword = Str::random(32);
+    $unrelatedDatabasePassword = Str::random(32);
 
     $unrelatedApp = App::factory()->create([
         'node_id' => $databaseNode->id,
@@ -49,7 +50,7 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
                 'credentials' => [
                     'database' => 'unrelated',
                     'username' => 'unrelated',
-                    'password' => 'must-not-leak',
+                    'password' => $unrelatedDatabasePassword,
                 ],
             ],
         ]);
@@ -138,7 +139,7 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
         ->toBeString()
         ->not
         ->toBe('change-me')
-        ->and(strlen($secretKeyBase))
+        ->and(strlen((string) $secretKeyBase))
         ->toBeGreaterThanOrEqual(64);
 
     $converger->converge($analyticsNode, $assignment);

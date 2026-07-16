@@ -15,6 +15,7 @@ use App\Services\Nodes\Roles\RoleBaselines\RoleRuntimeConverger;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\S3\S3ServiceConfigurator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -45,7 +46,7 @@ it('enacts Docker and Plausible before activating the analytics role', function 
     $runtime = new ProvisionedServiceRoleRecordingRuntime;
     app()->instance(RoleRuntimeConverger::class, $runtime);
 
-    $databaseNode = provisionedServiceRoleDatabaseNode();
+    $databaseNode = provisioned_service_role_database_node();
     $node = Node::factory()->create([
         'name' => 'services1',
         'platform' => 'ubuntu_26-04',
@@ -77,7 +78,7 @@ it('keeps provisioning incomplete when a service runtime cannot start', function
     $settings = ['data_path' => '/var/lib/orbit/s3'];
 
     if ($role === 'analytics') {
-        $databaseNode = provisionedServiceRoleDatabaseNode();
+        $databaseNode = provisioned_service_role_database_node();
         $settings = [
             'postgres_node_id' => $databaseNode->id,
             'clickhouse_node_id' => $databaseNode->id,
@@ -223,7 +224,7 @@ it('removes the node-owned runtime before deleting the role process', function (
     $settings = ['data_path' => '/var/lib/orbit/s3'];
 
     if ($role === 'analytics') {
-        $databaseNode = provisionedServiceRoleDatabaseNode();
+        $databaseNode = provisioned_service_role_database_node();
         $settings = [
             'postgres_node_id' => $databaseNode->id,
             'clickhouse_node_id' => $databaseNode->id,
@@ -242,7 +243,7 @@ it('removes the node-owned runtime before deleting the role process', function (
         ->toBeNull();
 })->with(['analytics', 's3']);
 
-function provisionedServiceRoleDatabaseNode(): Node
+function provisioned_service_role_database_node(): Node
 {
     $node = Node::factory()
         ->database()
@@ -270,7 +271,7 @@ function provisionedServiceRoleDatabaseNode(): Node
                     'credentials' => $service === 'postgres'
                         ? [
                             'username' => 'orbit',
-                            'password' => 'database-password',
+                            'password' => Str::random(32),
                         ]
                         : [],
                 ],
@@ -324,6 +325,7 @@ final class ProvisionedServiceRoleRecordingRuntime extends RoleRuntimeConverger
     }
 }
 
+/** @mago-expect lint:single-class-per-file */
 final class ProvisionedServiceRoleInternalExecutor implements RunsInternalCommands
 {
     /**
@@ -434,7 +436,11 @@ final class ProvisionedServiceRoleInternalExecutor implements RunsInternalComman
             return [];
         }
 
-        $payload = json_decode($input, true, 512, JSON_THROW_ON_ERROR);
+        $payload = json_decode(
+            json: $input,
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
 
         if (! is_array($payload)) {
             return [];

@@ -15,6 +15,7 @@ use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
 use RuntimeException;
 
+/** @mago-expect lint:cyclomatic-complexity */
 class RoleRuntimeConverger
 {
     public function __construct(
