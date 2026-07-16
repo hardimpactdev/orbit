@@ -1,0 +1,27 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-16T14:50:55+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-gateway-operation-token-proxy-convergence/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-16-165055-codex-gateway-operation-token-proxy-convergence",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/gateway-operation-token-proxy-incus.txt",
+        "evidence/gateway-operation-token-proxy-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-16T143956Z-7dbf6ae64e2f.json"
+    ],
+    "entry_digests": {
+        "evidence/gateway-operation-token-proxy-incus.txt": "b08603fe442b65518c9cc04b1ae0903d28b28998373346c39fdb1e433d3b7eae",
+        "evidence/gateway-operation-token-proxy-runtime.txt": "fbf9fdf581744fe0ce842a30566a506367f66ea360489cf0506e61d3f9ae67d5",
+        "loop.md": "63664363074f4b81026bf47f86e536d6fc42a49f519014fd42839fa4110d4ba0",
+        "quality-gates/quality-check-2026-07-16T143956Z-7dbf6ae64e2f.json": "69b96f5a66e0a497d211e1d60b550f331de960ebb3eef6fbb8878d6d9f3a7fb6"
+    },
+    "branch": "codex/gateway-operation-token-proxy-convergence",
+    "candidate_commit": "88a91bca322805e25e308398b1ca13799d3f174e",
+    "accepted_feature_tip": "88a91bca322805e25e308398b1ca13799d3f174e",
+    "accepted_main_tip": "54a5df0bb210129a37180dd20a40e7a20f135315",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

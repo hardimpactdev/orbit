@@ -1,0 +1,85 @@
+Topology: dev-48819c
+Provider: incus
+Kind: operator_gateway_app-prod_ingress
+Host: beast
+Source-mounted roles: operator,gateway
+Operator launcher: /home/orbit/orbit-run/apps/cli/orbit
+
+The prepared Incus gateway API runs from the source checkout but does not create
+the production-shaped orbit-gateway execution container. For this isolated
+acceptance run, a real container was started from the prepared gateway image:
+
+docker run --rm --detach --name orbit-gateway \
+  --volume /home/orbit/orbit-run:/srv/orbit \
+  --entrypoint tail orbit-gateway:prepared-current -f /dev/null
+
+The source-mounted operator then ran:
+
+/home/orbit/orbit-run/apps/cli/orbit doctor \
+  --family=node --node=gateway --stream-json
+
+Result:
+- The gateway-local command completed through the real orbit-gateway container.
+- No operation token was rejected as invalid_token.
+- Doctor reached the node probes and reported two ordinary retained-fixture
+  drift findings: platform_record_mismatch and public_ssh_deny.
+- This is the same gateway node probe that the installed pre-fix production
+  version rejected as invalid_token.
+
+The separate retained Docker proof exercises the complete seven-operation
+backend -> router -> ingress proxy flow, including gateway-local Caddy writes,
+agent-push writes, explicit partial state, exact failure attribution, and final
+convergence.
+
+Follow-up router host-path proof at feature tip
+54a5df0bb210129a37180dd20a40e7a20f135315:
+
+- The gateway execution container mounted the gateway host paths at
+  `/mnt/orbit-host`, matching the production stack renderer.
+- `doctor --family=proxy --restore --node=gateway --stream-json` authorized the
+  gateway-local Caddy operations without `invalid_token`.
+- The route was written to the gateway host at
+  `/etc/caddy/sites/incus-token-proof.example.test.caddy`.
+- The same file was visible inside the real `orbit-caddy` container.
+- The file was absent from `/etc/caddy/sites` inside the `orbit-gateway`
+  execution container, proving the write did not land in its private filesystem.
+- Caddy reload failed explicitly because this retained fixture intentionally
+  lacks `/etc/orbit/certs/incus-token-proof.example.test.crt`; Doctor reported
+  both operations as failed and did not report convergence.
+
+Live Hauzer follow-up:
+
+- Release candidate `20260716T142456Z-54a5df0bb` installed the gateway host-path
+  mounts and exact Linux CLI checksum
+  `85ba0cd0472628d60839a7839186f1840afd4c0491334a9deed192a327ee84ec`.
+- Re-registering `hauzer-production` completed backend enactment on `main1` and
+  router enactment on `gateway` without `invalid_token`.
+- `/etc/caddy/sites/hauzer.app.caddy` exists on the gateway host and in the real
+  router container, is absent from the gateway execution container, and targets
+  `http://10.6.0.13:8081`.
+- The recorded enactment is explicitly `partial`: backend and router operations
+  completed, while ingress stopped at `ingress1 / site_certificate.ensure`.
+- A scoped Doctor restore exposed the remaining Orbit contract defect:
+  `internal:site-certificate:install` was not allowed for the `ingress` role.
+
+Final live convergence after commit
+`88a91bca322805e25e308398b1ca13799d3f174e`:
+
+- Candidate `20260716T144149Z-88a91bca3` installed gateway image digest
+  `sha256:13a7463b78e145b6c851a37bbe1d8cb0bcb133a52ddd41df4e7740a175803009`.
+- The gateway host and execution container both ran the exact candidate CLI
+  checksum `c12fbc452b2ffc071ce9196de6be26396a3e49a752bb63b1f5119ab8e95558eb`.
+- `app:register hauzer-production` returned `action=converged`.
+- The recorded operation list contains all seven required operations:
+  backend global/site on `main1`, router global/site on `gateway`, and ingress
+  certificate/global/site on `ingress1`.
+- Activity `186164` records `site-certificate.install` on `ingress1` as
+  succeeded with exit code 0; ingress Caddy write, container apply, and reload
+  also completed with exit code 0.
+- `proxy:list` reports `hauzer.app` as `converged` with placement `ingress`,
+  router `gateway` at `10.6.0.2:80`, and backend `main1` at `10.6.0.13:8081`.
+- Direct HTTPS to `10.6.0.10` for `hauzer.app` returns two `Via: 1.1 Caddy`
+  headers, proving ingress -> router traversal.
+- The response is HTTP 502 because the backend at `10.6.0.13:8081` itself
+  returns 502. That application-runtime failure is downstream of the now
+  converged proxy topology.

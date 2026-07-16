@@ -1,0 +1,59 @@
+Topology: dev-07289e
+Provider: docker
+Kind: operator_gateway_app-prod_ingress
+Roles: operator,gateway,prod,ingress
+Host: sidecar1
+
+Regression sequence:
+1. Registered token-proof while the retained topology lacked its runtime companions.
+   Result: action=partial with the exact failed layer/node/operation.
+2. Started the retained topology's real Orbit Agent and Caddy companions.
+3. Moved the ephemeral gateway API from port 80 to 8080 so router Caddy could own port 80.
+4. Re-ran:
+   orbit app:register token-proof --node=app-prod-1 --path=/home/orbit/apps/token-proof --domain=token-proof.example.test --root=public --php-version=8.5 --json
+
+Result:
+{"success":{"data":{"result":{"action":"converged"}}}}
+
+proxy:list:
+domain=token-proof.example.test
+status=converged
+placement=ingress
+router=gateway http://10.6.0.2:80
+backend=app-prod-1 http://10.6.0.5:8081
+
+Persisted enactment:
+status=converged
+planned_operations=7
+completed_operations=7
+failure=null
+
+Ordered operations:
+backend/app-prod-1/caddy.global.ensure
+backend/app-prod-1/caddy.backend.install
+router/gateway/caddy.global.ensure
+router/gateway/caddy.router.install
+ingress/app-prod-1/site_certificate.ensure
+ingress/app-prod-1/caddy.global.ensure
+ingress/app-prod-1/caddy.ingress.install
+
+Token evidence:
+The final registration recorded consumed operation tokens with exit_code=0 for
+the gateway-local router internal:caddy-config runs and for the agent-push
+backend/ingress internal commands. No command was rejected as invalid_token.
+
+Artifacts:
+backend /etc/caddy/sites/token-proof.example.test.backend.caddy
+  reverse_proxy http://orbit-app-token-proof:8080
+router /etc/caddy/sites/token-proof.example.test.caddy
+  reverse_proxy http://10.6.0.5:8081
+ingress /etc/caddy/sites/token-proof.example.test.caddy
+  reverse_proxy http://10.6.0.2:80
+
+HTTP proof:
+backend http://10.6.0.5:8081 Host=token-proof.example.test => token-proof
+router http://10.6.0.2 Host=token-proof.example.test => token-proof
+ingress http://10.6.0.5 Host=token-proof.example.test => 308 https://token-proof.example.test/
+
+The retained .test domain cannot receive a public ACME certificate. That TLS
+failure is separate from route enactment and operation-token authorization.
