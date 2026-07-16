@@ -16,7 +16,7 @@ classes](../architecture.md#authorization-classes).
 | `activity:show` | `activity:read` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `agent-ide:message` | `agent-ide:message` | resolved app or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved app/workspace when available |
 | `app:agent-ide` | `app:agent` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
-| `app:list` | `app:read` | app owning node per returned row | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested filter resolves to no visible node |
+| `app:list` | `app:read` | at least one concrete Orbit app instance serving node per returned logical app | Logical-app and workspace placement filtering applies | `authorization_failed` | Standard missing-permission meta when the caller has no visible app-instance serving node |
 | `app:new` | `app:new` | target app node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `app:prune` | `app:prune` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
 | `app:register` | `app:register` | target app node | `app-dev` self-grants include same-node registration; `app-prod` self-grants do not | `authorization_failed` | Standard missing-permission meta plus target node |

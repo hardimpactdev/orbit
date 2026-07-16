@@ -4,18 +4,13 @@ declare(strict_types=1);
 
 namespace App\Commands\App;
 
-use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
-use App\Exceptions\OrbitConfigStoreException;
-use App\Services\OrbitConfigStore;
 
 use function Laravel\Prompts\table;
 
 final class AppListCommand extends GatewayCommand
 {
-    use ResolvesHostContext;
-
     /**
      * App registry rows are desired-state rows; the gateway emits no per-app
      * status field, so the human table shows the desired-state marker.
@@ -24,7 +19,6 @@ final class AppListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'app:list
-        {--node= : Filter by owning node}
         {--json}';
 
     #[\Override]
@@ -33,9 +27,7 @@ final class AppListCommand extends GatewayCommand
     public function handle(): int
     {
         try {
-            $response = $this->gatewayGet('/api/apps', $this->appListQuery());
-        } catch (OrbitConfigStoreException $exception) {
-            return $this->renderFailure($exception->orbitCode, $exception->getMessage());
+            $response = $this->gatewayGet('/api/apps');
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -52,21 +44,12 @@ final class AppListCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->renderAppTables($apps);
+        table(
+            headers: ['NAME', 'URL', 'STATUS'],
+            rows: $this->rowsForApps($apps),
+        );
 
         return self::SUCCESS;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function appListQuery(): array
-    {
-        return new AppListQueryResolver(
-            node: $this->stringOption('node'),
-            defaultNode: app(OrbitConfigStore::class)->defaultNode(),
-            gateway: $this->gateway(),
-        )->resolve();
     }
 
     /**
@@ -86,42 +69,13 @@ final class AppListCommand extends GatewayCommand
 
     /**
      * @param  list<array<string, mixed>>  $apps
-     */
-    private function renderAppTables(array $apps): void
-    {
-        $groups = [];
-
-        foreach ($apps as $app) {
-            $groups[$this->appString($app, 'node')][] = $app;
-        }
-
-        $first = true;
-
-        foreach ($groups as $node => $nodeApps) {
-            if (! $first) {
-                $this->newLine();
-            }
-
-            $first = false;
-
-            $this->line("Node: {$node}");
-
-            table(
-                headers: ['NAME', 'URL', 'STATUS'],
-                rows: $this->rowsForNode($nodeApps),
-            );
-        }
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $nodeApps
      * @return list<array{string, string, string}>
      */
-    private function rowsForNode(array $nodeApps): array
+    private function rowsForApps(array $apps): array
     {
         $rows = [];
 
-        foreach ($nodeApps as $app) {
+        foreach ($apps as $app) {
             $rows[] = [
                 $this->appString($app, 'name'),
                 $this->appString($app, 'url'),

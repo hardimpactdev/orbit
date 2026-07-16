@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Models\App;
 use App\Models\AppDependencyAuditSummary;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
@@ -47,6 +49,20 @@ function assignAppListGatewayRole(Node $node): void
     ]);
 }
 
+function create_app_list_instance(App $app, Node $node, string $name = 'development'): AppInstance
+{
+    return AppInstance::factory()->for($app)->create([
+        'name' => $name,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+}
+
 /**
  * @param  list<string>  $permissions
  */
@@ -63,16 +79,20 @@ function grantAppListAccess(Node $caller, Node $appNode, array $permissions = ['
 }
 
 describe('AppListController', function (): void {
-    it('lists visible apps sorted by owning node then app name', function (): void {
+    it('lists visible logical apps once sorted by app name', function (): void {
         $caller = createAppListCallerNode();
         $zNode = createAppListAppNode(['name' => 'z-node']);
         $aNode = createAppListAppNode(['name' => 'a-node']);
         grantAppListAccess($caller, $zNode);
         grantAppListAccess($caller, $aNode);
 
-        App::factory()->create(['name' => 'zebra', 'node_id' => $zNode->id, 'domain' => 'zebra.test']);
-        App::factory()->create(['name' => 'beta', 'node_id' => $aNode->id, 'domain' => 'beta.test']);
-        App::factory()->create(['name' => 'alpha', 'node_id' => $aNode->id, 'domain' => 'alpha.test']);
+        $zebra = App::factory()->create(['name' => 'zebra', 'node_id' => $aNode->id, 'domain' => 'zebra.test']);
+        $beta = App::factory()->create(['name' => 'beta', 'node_id' => $zNode->id, 'domain' => 'beta.test']);
+        $alpha = App::factory()->create(['name' => 'alpha', 'node_id' => $zNode->id, 'domain' => 'alpha.test']);
+
+        create_app_list_instance($zebra, $aNode);
+        create_app_list_instance($beta, $zNode);
+        create_app_list_instance($alpha, $zNode);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
@@ -82,40 +102,17 @@ describe('AppListController', function (): void {
         expect(array_column($apps, 'name'))->toBe(['alpha', 'beta', 'zebra']);
     });
 
-    it('filters apps by owning node and environment', function (): void {
-        $caller = createAppListCallerNode();
-        $devNode = createAppListAppNode(['name' => 'dev-1']);
-        $prodNode = createAppListAppNode(['name' => 'prod-1'], 'app-prod');
-        grantAppListAccess($caller, $devNode);
-        grantAppListAccess($caller, $prodNode);
-
-        App::factory()->create(['name' => 'docs', 'node_id' => $devNode->id, 'environment' => 'development']);
-        App::factory()->create(['name' => 'site', 'node_id' => $prodNode->id, 'environment' => 'production']);
-
-        $response = $this->call(
-            'GET',
-            '/api/apps?node=prod-1&environment=production',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP],
-        );
-
-        $response
-            ->assertOk()
-            ->assertJsonCount(1, 'success.data.apps')
-            ->assertJsonPath('success.data.apps.0.name', 'site');
-    });
-
-    it('omits hidden apps from the result', function (): void {
+    it('derives visibility from concrete instances instead of logical app default nodes', function (): void {
         $caller = createAppListCallerNode();
         $visibleNode = createAppListAppNode(['name' => 'visible-node']);
         $hiddenNode = createAppListAppNode(['name' => 'hidden-node']);
         grantAppListAccess($caller, $visibleNode);
-        grantAppListAccess($caller, $hiddenNode, ['node:read']);
 
-        App::factory()->create(['name' => 'visible', 'node_id' => $visibleNode->id]);
-        App::factory()->create(['name' => 'hidden', 'node_id' => $hiddenNode->id]);
+        $visible = App::factory()->create(['name' => 'visible', 'node_id' => $hiddenNode->id]);
+        $hidden = App::factory()->create(['name' => 'hidden', 'node_id' => $visibleNode->id]);
+
+        create_app_list_instance($visible, $visibleNode);
+        create_app_list_instance($hidden, $hiddenNode);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
@@ -125,7 +122,60 @@ describe('AppListController', function (): void {
             ->assertJsonPath('success.data.apps.0.name', 'visible');
     });
 
-    it('lets an app role node list only its own app registry rows through its self grant', function (): void {
+    it('returns a logical app once when multiple visible instances exist', function (): void {
+        $caller = createAppListCallerNode();
+        $firstNode = createAppListAppNode(['name' => 'first-node']);
+        $secondNode = createAppListAppNode(['name' => 'second-node']);
+        grantAppListAccess($caller, $firstNode);
+        grantAppListAccess($caller, $secondNode);
+
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $firstNode->id]);
+        create_app_list_instance($app, $firstNode, name: 'development');
+        create_app_list_instance($app, $secondNode, name: 'nmbp');
+
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(1, 'success.data.apps')
+            ->assertJsonPath('success.data.apps.0.name', 'docs');
+    });
+
+    it('returns only workspaces placed on visible app instances', function (): void {
+        $caller = createAppListCallerNode();
+        $visibleNode = createAppListAppNode(['name' => 'visible-node', 'tld' => 'visible']);
+        $hiddenNode = createAppListAppNode(['name' => 'hidden-node', 'tld' => 'hidden']);
+        grantAppListAccess($caller, $visibleNode);
+
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $hiddenNode->id]);
+        $visibleInstance = create_app_list_instance($app, $visibleNode, name: 'development');
+        $hiddenInstance = create_app_list_instance($app, $hiddenNode, name: 'production');
+
+        Workspace::factory()->create([
+            'name' => 'visible-workspace',
+            'app_id' => $app->id,
+            'app_instance_id' => $visibleInstance->id,
+        ]);
+        Workspace::factory()->create([
+            'name' => 'hidden-workspace',
+            'app_id' => $app->id,
+            'app_instance_id' => $hiddenInstance->id,
+        ]);
+
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(1, 'success.data.apps.0.workspaces')
+            ->assertJsonPath('success.data.apps.0.workspaces.0.name', 'visible-workspace')
+            ->assertJsonPath(
+                'success.data.apps.0.workspaces.0.url',
+                'https://visible-workspace.docs.visible',
+            )
+            ->assertJsonMissing(['name' => 'hidden-workspace']);
+    });
+
+    it('lets an app role node list logical apps with an instance on its self-granted node', function (): void {
         $caller = createAppListAppNode([
             'name' => 'dev-1',
             'host' => APP_LIST_CALLER_WG_IP,
@@ -139,8 +189,11 @@ describe('AppListController', function (): void {
             permissions: app(NodePermissionPresets::class)->permissions('app-dev-self'),
         );
 
-        App::factory()->create(['name' => 'owned', 'node_id' => $caller->id]);
-        App::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
+        $owned = App::factory()->create(['name' => 'owned', 'node_id' => $otherNode->id]);
+        $hidden = App::factory()->create(['name' => 'hidden', 'node_id' => $caller->id]);
+
+        create_app_list_instance($owned, $caller);
+        create_app_list_instance($hidden, $otherNode);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
@@ -157,8 +210,11 @@ describe('AppListController', function (): void {
         $firstNode = createAppListAppNode(['name' => 'app-1']);
         $secondNode = createAppListAppNode(['name' => 'app-2']);
 
-        App::factory()->create(['name' => 'first', 'node_id' => $firstNode->id]);
-        App::factory()->create(['name' => 'second', 'node_id' => $secondNode->id]);
+        $first = App::factory()->create(['name' => 'first', 'node_id' => $firstNode->id]);
+        $second = App::factory()->create(['name' => 'second', 'node_id' => $secondNode->id]);
+
+        create_app_list_instance($first, $firstNode);
+        create_app_list_instance($second, $secondNode);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
@@ -169,7 +225,8 @@ describe('AppListController', function (): void {
     it('does not treat an unassigned caller as gateway visibility', function (): void {
         createAppListCallerNode();
         $node = createAppListAppNode(['name' => 'app-1']);
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        create_app_list_instance($app, $node);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
@@ -181,7 +238,8 @@ describe('AppListController', function (): void {
         $caller = createAppListCallerNode();
         $node = createAppListAppNode(['name' => 'app-1']);
         grantAppListAccess($caller, $node, ['node:read']);
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        create_app_list_instance($app, $node);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 

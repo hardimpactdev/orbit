@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\ActivityLogType;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Apps\AppResponsePayload;
@@ -36,7 +39,6 @@ final readonly class AppListController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $node = $request->query('node');
         $environment = $request->query('environment');
 
         if (
@@ -70,30 +72,16 @@ final readonly class AppListController implements Loggable
             ]);
         }
 
-        if (is_string($node) && $node !== '' && ! $this->nodeFilterIsValid($node, $callerIsGateway, $visibleNodeIds)) {
-            return response()->json([
-                'error' => [
-                    'code' => 'validation_failed',
-                    'message' => "Invalid value for --node: '{$node}'. Expected a visible app node name.",
-                    'meta' => [
-                        'field' => 'node',
-                        'value' => $node,
-                    ],
-                ],
-            ], 400);
-        }
-
         $apps = $this->fetchApps(
             callerIsGateway: $callerIsGateway,
             visibleNodeIds: $visibleNodeIds,
-            node: is_string($node) && $node !== '' ? $node : null,
             environment: is_string($environment) && $environment !== '' ? $environment : null,
         );
 
         return response()->json([
             'success' => [
                 'data' => [
-                    'apps' => $this->appPayloads($apps),
+                    'apps' => $this->appPayloads($apps, $callerIsGateway, $visibleNodeIds),
                 ],
             ],
         ]);
@@ -110,25 +98,21 @@ final readonly class AppListController implements Loggable
             return $visibleNodeIds;
         }
 
-        return Node::query()
-            ->whereIn('id', $visibleNodeIds)
-            ->get()
-            ->filter(fn (Node $node): bool => $this->authorizer->allows($caller, $node, 'app:read'))
-            ->map(fn (Node $node): int => $node->id)
-            ->values()
-            ->all();
-    }
+        /** @var Builder<Node> $query */
+        $query = Node::query();
+        $query->whereIn('id', $visibleNodeIds);
+        $nodes = $query->get();
+        $authorizedNodeIds = [];
 
-    /**
-     * @param  list<int>  $visibleNodeIds
-     */
-    private function nodeFilterIsValid(string $node, bool $callerIsGateway, array $visibleNodeIds): bool
-    {
-        return Node::query()
-            ->where('name', $node)
-            ->when(! $callerIsGateway, fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds))
-            ->whereIn('id', $this->hostedAppNodeIds())
-            ->exists();
+        foreach ($nodes as $node) {
+            if (! $this->authorizer->allows($caller, $node, 'app:read')) {
+                continue;
+            }
+
+            $authorizedNodeIds[] = $node->id;
+        }
+
+        return $authorizedNodeIds;
     }
 
     /**
@@ -149,66 +133,85 @@ final readonly class AppListController implements Loggable
     private function fetchApps(
         bool $callerIsGateway,
         array $visibleNodeIds,
-        ?string $node,
         ?string $environment,
     ): Collection {
-        return App::query()
-            ->with(['node', 'workspaces', 'dependencyAuditSummaries'])
-            ->when(! $callerIsGateway, fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
-            ->when($node
-            !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where(
-                'name',
-                $node,
-            )))
-            ->when($environment !== null, fn (Builder $query): Builder => $query->where('environment', $environment))
-            ->get()
-            ->sort(
-                fn (App $first, App $second): int => (
-                    [
-                        mb_strtolower((string) $first->node?->name),
-                        mb_strtolower($first->name),
-                    ] <=> [
-                        mb_strtolower((string) $second->node?->name),
-                        mb_strtolower($second->name),
-                    ]
-                ),
-            )
-            ->values();
+        /** @var Builder<App> $query */
+        $query = App::query();
+        $query->with(['node', 'instances', 'workspaces.appInstance', 'dependencyAuditSummaries']);
+
+        if (! $callerIsGateway) {
+            $query->whereHas('instances', static function (Builder $query) use ($visibleNodeIds): void {
+                $query
+                    ->where('driver', AppInstanceDriver::Orbit->value)
+                    ->whereIn('driver_config->data->node_id', $visibleNodeIds);
+            });
+        }
+
+        if ($environment !== null) {
+            $query->where('environment', $environment);
+        }
+
+        $query->getQuery()->orderByRaw('LOWER(name)');
+
+        return $query->get();
     }
 
     /**
      * @param  Collection<int, App>  $apps
+     * @param  list<int>  $visibleNodeIds
      * @return list<array<string, mixed>>
      */
-    private function appPayloads(Collection $apps): array
+    private function appPayloads(Collection $apps, bool $callerIsGateway, array $visibleNodeIds): array
     {
         $appPayload = app(AppResponsePayload::class);
+        $payloads = [];
 
-        return $apps->map(fn (App $app): array => [
-            ...$appPayload->forApp($app),
-            'workspaces' => $this->workspacePayloads($app),
-        ])->all();
+        foreach ($apps as $app) {
+            $payloads[] = [
+                ...$appPayload->forApp($app),
+                'workspaces' => $this->workspacePayloads($app, $callerIsGateway, $visibleNodeIds),
+            ];
+        }
+
+        return $payloads;
     }
 
     /**
+     * @param  list<int>  $visibleNodeIds
      * @return list<array<string, mixed>>
      */
-    private function workspacePayloads(App $app): array
+    private function workspacePayloads(App $app, bool $callerIsGateway, array $visibleNodeIds): array
     {
-        $appHost = parse_url($app->url(), PHP_URL_HOST);
+        $payloads = [];
 
-        return $app
-            ->workspaces
-            ->sortBy(fn (Workspace $workspace): string => mb_strtolower($workspace->name))
-            ->map(fn (Workspace $workspace): array => [
+        foreach ($app->workspaces->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE) as $workspace) {
+            if (
+                ! $workspace instanceof Workspace
+                || ! $callerIsGateway
+                && ! in_array($this->instanceNodeId($workspace->appInstance), $visibleNodeIds, strict: true)
+            ) {
+                continue;
+            }
+
+            $payloads[] = [
                 'name' => $workspace->name,
-                'url' => is_string($appHost) && $appHost !== ''
-                    ? "https://{$workspace->name}.{$appHost}"
-                    : $workspace->url(),
+                'url' => $workspace->url(),
                 'lifecycle_status' => $workspace->lifecycle_status->value,
-            ])
-            ->values()
-            ->all();
+            ];
+        }
+
+        return $payloads;
+    }
+
+    private function instanceNodeId(?AppInstance $instance): ?int
+    {
+        $config = $instance?->driver_config;
+
+        if (! $config instanceof OrbitAppInstanceDriverConfigData) {
+            return null;
+        }
+
+        return $config->node_id;
     }
 
     /**

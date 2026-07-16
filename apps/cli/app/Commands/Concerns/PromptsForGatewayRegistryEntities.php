@@ -20,10 +20,10 @@ trait PromptsForGatewayRegistryEntities
         return ! $this->wantsJson() && $this->input->isInteractive();
     }
 
-    protected function promptForVisibleApp(?string $node = null): string|int
+    protected function promptForVisibleApp(): string|int
     {
         try {
-            $response = $this->gatewayGet('/api/apps', $this->filledQuery(['node' => $node]));
+            $response = $this->gatewayGet('/api/apps');
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }

@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit app:list [--node=<name>] [--json]
+orbit app:list [--json]
 ```
 
 ## Input Contract
@@ -26,23 +26,25 @@ options are optional.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `node` | `--node`, configured default node, or gateway-reported caller node | Optional. | Never. | Effective node. | App-role name in the gateway registry. Single value only. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-`--node` is a scalar filter and overrides the configured default node and
-gateway-reported caller node. Multi-value semantics are not part of the initial
-contract.
+The command has no node input. Logical apps are gateway records; concrete node
+placement is selected and inspected through app-instance and workspace
+commands.
 
 ## Visibility Behavior
 
-Visibility is filtered at the gateway as set membership against the app access
-policy that the gateway owns. Callers receive only the apps their
-authenticated identity is authorized to see.
+Visibility is resolved at the gateway from concrete app-instance placement and
+the app access policy that the gateway owns. A logical app is returned at most
+once.
 
-- The self grants for app roles include `app:read`, allowing a local CLI on an
-  `app-dev` or `app-prod` node to read only apps owned by that same node.
-  Visibility across nodes still requires an explicit grant on each other
-  app-owning node.
+- Gateway callers receive every logical app.
+- A non-gateway caller receives a logical app when at least one Orbit instance
+  resolves to a serving node on which that caller has `app:read`.
+- A logical app with multiple visible instances is still returned once.
+- Workspaces remain placement-scoped. Non-gateway callers receive only
+  workspaces whose concrete app instance resolves to a serving node included in
+  the caller's visible app-node set.
 - An authorized caller whose visible set is empty receives an empty list
   (`success.data.apps=[]` in JSON, `No apps found.` in human output) with
   exit zero.
@@ -52,13 +54,8 @@ authenticated identity is authorized to see.
 
 ## Input Resolution
 
-1. Resolve `app_list.node` from `--node` when present. Validate immediately.
-2. When `--node` is omitted, resolve `app_list.node` from the configured
-   default node.
-3. When no configured default node exists, query the gateway for the caller node
-   identity and use that node as `app_list.node`.
-4. Select the output renderer and query the gateway for visible app registry
-   configuration.
+1. Select the output renderer.
+2. Query the gateway for visible logical app registry configuration.
 
 ## Behavior Contract
 
@@ -66,15 +63,15 @@ authenticated identity is authorized to see.
 
 1. **Query gateway registry.** Read visible app registry configuration scoped to the
    current consuming node's access policy. No host probing is performed.
-2. **Apply filters.** Include only apps on the effective node. `--node` is the
-   explicit effective node; otherwise the effective node is the configured
-   default node or, when no default exists, the gateway-reported caller node.
-3. **Sort results.** Apps are sorted by owning node name (ascending,
-   case-insensitive) and then by app name (ascending, case-insensitive). Every
-   output renderer uses this single ordering.
-4. **Attach workspaces.** Each app list item includes the app's registered
-   workspaces sorted by workspace name (ascending, case-insensitive).
-   Workspaces are registry configuration rows; no live workspace probing is performed.
+2. **Resolve logical-app visibility.** Include each logical app once when the
+   caller can inspect at least one concrete Orbit instance. Do not filter or
+   sort by the logical app's default node metadata.
+3. **Sort results.** Apps are sorted by app name (ascending,
+   case-insensitive). Every output renderer uses this single ordering.
+4. **Attach visible workspaces.** Each app list item includes only the app's
+   placement-visible workspaces, sorted by workspace name (ascending,
+   case-insensitive). Workspaces are registry configuration rows; no live
+   workspace probing is performed.
 5. **Render output.** Return the filtered app list through the selected output
    renderer.
 
@@ -85,6 +82,7 @@ authenticated identity is authorized to see.
 - Probe host reachability or health.
 - Modify gateway configuration or node artifacts.
 - Touch downstream family state.
+- Resolve the configured default node or caller node as a list filter.
 
 ## Renderer Contracts
 
@@ -92,11 +90,9 @@ authenticated identity is authorized to see.
 - [JSON renderer](6.2_app-list_output-render_json.md)
 
 ## Failure Semantics
-Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
-| Failure | Condition | Outcome |
-| --- | --- | --- |
-| Invalid filter value | `--node` contains an unsupported value. | Failure |
+Standard failures defined in [Common Failures](../../../README.md#common-failures)
+apply. `app:list` has no command-specific input failures.
 
 ## Doctor Relationship
 
@@ -125,8 +121,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppListCommandTest.php` | CLI command contract: JSON envelope, node filter forwarding, unsupported environment filter guard, human output, gateway-unavailable failure, and WireGuard-specific failure mapping. |
-| `apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php` | Gateway app list API: authorization, node filter, workspace payload, and empty result shape. |
+| `apps/cli/tests/Feature/Commands/App/AppListCommandTest.php` | CLI command contract: global request without node resolution, absence of node/environment filters, human output, gateway-unavailable failure, and WireGuard-specific failure mapping. |
+| `apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php` | Gateway app list API: instance-derived authorization, logical-app uniqueness, placement-scoped workspace payload, and empty result shape. |
 
 Renderer-specific test mapping lives in:
 

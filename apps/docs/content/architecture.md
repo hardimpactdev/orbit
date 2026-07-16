@@ -486,7 +486,13 @@ Node-side state is never written by the public local CLI. The gateway is the
 only authority, even when the gateway dispatches token-gated local executor
 work back to the same node.
 
-This is why commands like `workspace:setup`, `app:list`, and `app:show` work when run from inside an `app-dev` or `app-prod` node for that same owning node, and why `app:register`, `process:add`, `process:update`, and `process:remove` work from inside an `app-dev` node for apps on that same node: the node's self-grant includes the necessary scoped permissions. It is not an exception — it is the self-grant model.
+This is why `workspace:setup` works for workspaces placed on the self-granted
+node, why `app:list` includes logical apps with at least one instance on that
+node, and why `app:show` can inspect apps served there. It is also why
+`app:register`, `process:add`, `process:update`, and `process:remove` work from
+inside an `app-dev` node for instance-owned state on that same node. The node's
+self-grant includes the necessary scoped permissions; this is the self-grant
+model, not an exception.
 
 A roleless operator node cannot run workload commands by default. It becomes an
 Agent execution target only through its explicit `managed` opt-in on a

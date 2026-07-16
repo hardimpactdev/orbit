@@ -859,7 +859,6 @@
             "family": "app",
             "arguments": [],
             "options": [
-                "node",
                 "json"
             ],
             "renderers": {

@@ -107,10 +107,11 @@ Use this:
 List registered apps.
 
 ```bash
-orbit app:list [--node=<name>] [--environment=development|production] [--json]
+orbit app:list [--json]
 ```
 
-Reads gateway DB only  -  no SSH.
+Reads logical apps from the gateway DB only. Apps are not node-scoped; concrete
+placement belongs to app instances and workspaces. No SSH.
 
 ## `orbit app:show [app]`
 
