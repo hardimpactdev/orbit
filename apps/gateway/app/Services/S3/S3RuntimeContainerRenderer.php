@@ -93,10 +93,6 @@ class S3RuntimeContainerRenderer
             throw new InvalidArgumentException('The s3 runtime data path cannot be empty.');
         }
 
-        if ($dataPath === '/') {
-            return $dataPath;
-        }
-
         return rtrim($dataPath, '/');
     }
 }

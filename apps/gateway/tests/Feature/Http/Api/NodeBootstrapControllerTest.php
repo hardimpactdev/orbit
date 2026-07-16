@@ -966,3 +966,28 @@ function nodeBootstrapControllerReleaseManifest(): array
         ],
     ];
 }
+
+it('rejects an unsafe S3 data path before reserving a node bootstrap', function (): void {
+    [, $caller] = nodeBootstrapGatewayAndCaller();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap', [
+            'name' => 'storage-unsafe',
+            'roles' => ['s3'],
+            'host' => '192.0.2.31',
+            'user' => 'root',
+            'tld' => 'storage-unsafe',
+            'platform' => 'ubuntu_24-04',
+            'architecture' => 'amd64',
+            's3_data_path' => '/',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath('error.meta.field', 's3_data_path');
+
+    expect(Node::query()->where('name', 'storage-unsafe')->exists())
+        ->toBeFalse()
+        ->and(NodeBootstrap::query()->exists())
+        ->toBeFalse();
+});

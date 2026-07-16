@@ -107,8 +107,10 @@ final readonly class AddProcess
 
             $command = $serviceDescriptor->command;
             $runtimeConfig = $serviceDescriptor->runtimeConfig;
+            $credentials = $serviceDescriptor->credentials;
         } else {
             $context->assertRuntimeAllowed($resolvedRuntime);
+            $credentials = [];
         }
 
         if ($resolvedRuntime === ProcessRuntime::Launchd && $crashNotification === ProcessCrashNotification::AgentIde) {
@@ -153,6 +155,7 @@ final readonly class AddProcess
             $resolvedRuntime,
             $tool,
             $runtimeConfig,
+            $credentials,
         ): Process {
             $maxOrder = $context
                 ->ownerProcesses()
@@ -171,6 +174,7 @@ final readonly class AddProcess
                     'runtime' => $resolvedRuntime,
                     'tool' => $tool,
                     'runtime_config' => $runtimeConfig,
+                    'credentials' => $credentials !== [] ? $credentials : null,
                     'sort_order' => $maxOrder + 1,
                 ]);
 

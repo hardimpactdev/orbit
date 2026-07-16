@@ -127,17 +127,27 @@ it('applies and starts the node-owned SeaweedFS Docker runtime', function (NodeR
         ->toBe([
             'internal:tool:run-script',
             'internal:tool:run-script',
+            'internal:managed-file',
+            'internal:managed-file',
             'internal:process-docker-container',
             'internal:process-docker-container',
         ])
         ->and($executor->dockerActions)
-        ->toBe(['apply', 'start']);
+        ->toBe(['apply', 'start'])
+        ->and($executor->managedFileActions)
+        ->toBe(['probe', 'write'])
+        ->and($executor->managedFilePayloads[1])
+        ->toMatchArray([
+            'path' => '/var/lib/orbit/s3/s3.json',
+            'mode' => '0600',
+            'directory_mode' => '0750',
+        ]);
 })->with([
     NodeRoleStatus::Pending,
     NodeRoleStatus::Error,
 ]);
 
-it('applies and starts the node-owned Plausible Docker Swarm runtime', function (): void {
+it('applies and starts the node-owned Plausible Docker runtime on WireGuard', function (): void {
     $executor = new ProvisionedServiceRoleInternalExecutor;
     app()->instance(RunsInternalCommands::class, $executor);
 
@@ -160,15 +170,31 @@ it('applies and starts the node-owned Plausible Docker Swarm runtime', function 
         ->create([
             'name' => 'plausible',
             'command' => 'run',
-            'runtime' => ProcessRuntime::DockerSwarm,
+            'runtime' => ProcessRuntime::Docker,
             'runtime_config' => [
                 'service' => 'plausible',
                 'service_name' => 'orbit-plausible',
                 'image' => 'ghcr.io/plausible/community-edition:v3.2.1',
-                'environment' => [],
-                'ports' => [],
+                'environment' => [
+                    'BASE_URL' => 'https://analytics.orbit',
+                ],
+                'ports' => [
+                    [
+                        'host' => '10.6.0.8',
+                        'published' => 8000,
+                        'target' => 8000,
+                        'protocol' => 'tcp',
+                    ],
+                ],
                 'mounts' => [],
                 'labels' => [],
+            ],
+            'credentials' => [
+                'environment' => [
+                    'DATABASE_URL' => 'postgres://orbit:secret@10.6.0.4:5432/plausible_db',
+                    'CLICKHOUSE_DATABASE_URL' => 'http://plausible:secret@10.6.0.4:8123/plausible_events_db',
+                    'SECRET_KEY_BASE' => Str::random(64),
+                ],
             ],
         ]);
 
@@ -180,14 +206,19 @@ it('applies and starts the node-owned Plausible Docker Swarm runtime', function 
         ->toBe([
             'internal:tool:run-script',
             'internal:tool:run-script',
-            'internal:process-docker-swarm-service',
-            'internal:process-docker-swarm-service',
-            'internal:process-docker-swarm-service',
+            'internal:process-docker-container',
+            'internal:process-docker-container',
         ])
-        ->and($executor->swarmActions)
-        ->toBe(['ensure', 'apply', 'start'])
-        ->and($executor->swarmPayloads[0])
-        ->toBe(['advertise_address' => '10.6.0.8']);
+        ->and($executor->dockerActions)
+        ->toBe(['apply', 'start'])
+        ->and($executor->dockerPayloads[0]['spec']['ports'][0])
+        ->toMatchArray([
+            'host' => '10.6.0.8',
+            'published' => 8000,
+            'target' => 8000,
+        ])
+        ->and($executor->dockerPayloads[0]['spec']['environment'])
+        ->toHaveKeys(['DATABASE_URL', 'CLICKHOUSE_DATABASE_URL', 'SECRET_KEY_BASE']);
 });
 
 it('throws when the persisted service runtime cannot be started', function (): void {
@@ -257,23 +288,27 @@ function provisioned_service_role_database_node(): Node
         'postgres' => 5432,
         'clickhouse' => 8123,
     ] as $service => $port) {
+        $password = Str::random(32);
+
         Process::factory()
             ->forOwner($node)
             ->create([
                 'name' => $service,
-                'runtime' => ProcessRuntime::DockerSwarm,
+                'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => [
                     'service' => $service,
                     'endpoint' => [
                         'host' => '10.6.0.4',
                         'port' => $port,
                     ],
-                    'credentials' => $service === 'postgres'
-                        ? [
-                            'username' => 'orbit',
-                            'password' => Str::random(32),
-                        ]
-                        : [],
+                ],
+                'credentials' => [
+                    'database' => $service === 'postgres' ? 'plausible_db' : 'plausible_events_db',
+                    'username' => $service === 'postgres' ? 'orbit' : 'plausible',
+                    'password' => $password,
+                    'environment' => [
+                        $service === 'postgres' ? 'POSTGRES_PASSWORD' : 'CLICKHOUSE_PASSWORD' => $password,
+                    ],
                 ],
             ]);
     }
@@ -339,14 +374,19 @@ final class ProvisionedServiceRoleInternalExecutor implements RunsInternalComman
     public array $dockerActions = [];
 
     /**
+     * @var list<array<string, mixed>>
+     */
+    public array $dockerPayloads = [];
+
+    /**
      * @var list<string>
      */
-    public array $swarmActions = [];
+    public array $managedFileActions = [];
 
     /**
      * @var list<array<string, mixed>>
      */
-    public array $swarmPayloads = [];
+    public array $managedFilePayloads = [];
 
     public function __construct(
         private readonly bool $failStart = false,
@@ -369,6 +409,7 @@ final class ProvisionedServiceRoleInternalExecutor implements RunsInternalComman
             $payload = $this->payload($transportOptions);
             $action = is_string($payload['action'] ?? null) ? $payload['action'] : '';
             $this->dockerActions[] = $action;
+            $this->dockerPayloads[] = $payload;
 
             if ($this->failStart && $action === 'start') {
                 return new RemoteShellResult(1, '', 'Docker unavailable.', 1);
@@ -381,16 +422,16 @@ final class ProvisionedServiceRoleInternalExecutor implements RunsInternalComman
             );
         }
 
-        if ($commandName === 'internal:process-docker-swarm-service') {
+        if ($commandName === 'internal:managed-file') {
             $action = is_string($arguments[0] ?? null) ? $arguments[0] : '';
-            $this->swarmActions[] = $action;
-            $this->swarmPayloads[] = $this->payload($transportOptions);
+            $this->managedFileActions[] = $action;
+            $this->managedFilePayloads[] = $this->payload($transportOptions);
 
-            if ($this->failStart && $action === 'start') {
-                return new RemoteShellResult(1, '', 'Docker Swarm unavailable.', 1);
-            }
-
-            return new RemoteShellResult(0, '', '', 1);
+            return (
+                $action === 'probe'
+                    ? $this->successResult(['exists' => false])
+                    : $this->successResult(['outcome' => 'written'])
+            );
         }
 
         return new RemoteShellResult(0, '', '', 1);

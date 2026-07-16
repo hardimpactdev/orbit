@@ -110,7 +110,8 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=al
   `analytics`.
 - `--s3-data-path`: host path mounted into the SeaweedFS container as `/data`.
   Optional when `--roles` includes `s3`; defaults to `/srv/orbit/s3/data`.
-  Must be an absolute path.
+  Must be a canonical path under `/media`, `/mnt`, `/opt/orbit`, `/srv`, or
+  `/var/lib/orbit`.
 - `--self-grant`: `default` to apply the role-union self-preset, `custom`
   to drive the self-grant interactively, or omitted to fall back to the
   documented default for non-interactive runs (`default`).
@@ -226,7 +227,8 @@ Requires `--host`.
 
 Provisions a private analytics node and creates an active `analytics` role
 assignment whose settings point at the selected PostgreSQL and ClickHouse
-service nodes.
+service nodes. Plausible runs as a node-owned Docker process published only on
+the analytics node's WireGuard address.
 
 Requires `--host`, `--postgres-node`, and `--clickhouse-node`.
 

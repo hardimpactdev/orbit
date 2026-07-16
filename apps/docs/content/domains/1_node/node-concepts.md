@@ -100,8 +100,8 @@ Each term below has a precise meaning in the node command family.
   private `metrics.orbit` route, and can be dedicated or co-located with any
   non-agent role.
 - **Analytics role:** Private workload role for Plausible CE analytics. An
-  analytics node runs Plausible CE as a process-owned Docker/Swarm service,
-  binds only to the node's WireGuard address, receives dashboard traffic through
+  analytics node runs Plausible CE as a process-owned Docker container,
+  publishes only on the node's WireGuard address, receives dashboard traffic through
   `analytics.orbit`, and receives tracking traffic for each app through public
   ingress-to-router routes.
 - **Agent role:** Exclusive workload role for first-party autonomous agent
@@ -261,7 +261,7 @@ Role baselines are code-defined desired state, not editable package lists.
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
 | `metrics` | Docker substrate, node-exporter binary, Prometheus/Grafana Swarm processes, node-exporter systemd processes on metrics/workload nodes, `metrics.orbit`, and Grafana credentials |
-| `analytics` | Plausible CE in a process-owned Docker/Swarm service, private `analytics.orbit` router route, per-app public tracking route support, analytics backend pool registration, and runtime configuration derived from PostgreSQL and ClickHouse process endpoints |
+| `analytics` | Plausible CE in a process-owned WireGuard-bound Docker container, private `analytics.orbit` router route, per-app public tracking route support, analytics backend pool registration, and authenticated runtime configuration derived from PostgreSQL and ClickHouse process endpoints |
 
 Baseline convergence first stores the gateway intent for the selected role.
 When `node:new` provisions a real managed workload host, node setup then

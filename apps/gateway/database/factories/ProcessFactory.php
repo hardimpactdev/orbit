@@ -25,6 +25,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 class ProcessFactory extends Factory
 {
+    #[\Override]
     protected $model = Process::class;
 
     public function definition(): array
@@ -40,6 +41,7 @@ class ProcessFactory extends Factory
             'runtime' => ProcessRuntime::Systemd,
             'tool' => null,
             'runtime_config' => [],
+            'credentials' => null,
             'sort_order' => fake()->numberBetween(1, 100),
         ];
     }

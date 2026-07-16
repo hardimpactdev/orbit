@@ -537,6 +537,8 @@ final class GatewayNodeCreator
     /**
      * @param  list<string>  $roles
      * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
+     *
+     * @mago-expect lint:halstead
      */
     private function provisionWorkloadRoleNode(
         NodeRegistryWriter $registryWriter,
@@ -1371,6 +1373,8 @@ final class GatewayNodeCreator
     /**
      * @param  list<string>  $roles
      * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
+     *
+     * @mago-expect lint:halstead
      */
     private function completePreparedWorkloadNode(
         NodeRoleAssignmentService $roleAssignmentService,
@@ -2040,11 +2044,11 @@ final class GatewayNodeCreator
 
         $dataPath ??= S3RoleSettings::DefaultDataPath;
 
-        if (! str_starts_with($dataPath, '/')) {
-            return $this->validationFailed('s3_data_path', 'The s3 data path must be absolute.');
+        try {
+            return S3RoleSettings::fromArray(['data_path' => $dataPath])->dataPath;
+        } catch (InvalidArgumentException $exception) {
+            return $this->validationFailed('s3_data_path', $exception->getMessage());
         }
-
-        return $dataPath;
     }
 
     /**

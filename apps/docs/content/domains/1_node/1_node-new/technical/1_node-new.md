@@ -44,7 +44,7 @@ This command follows the shared
 | `redis_node` | `--redis-node` | `websocket`. | Every path that does not include `websocket`. | None. | Must match an active node with the `database` role and Redis expected or installed. |
 | `postgres_node` | `--postgres-node` | `analytics`. | Every path that does not include `analytics`. | None. | Must match an active node with the `database` role and PostgreSQL expected or installed. |
 | `clickhouse_node` | `--clickhouse-node` | `analytics`. | Every path that does not include `analytics`. | None. | Must match an active node with the `database` role and ClickHouse expected or installed. |
-| `s3_data_path` | `--s3-data-path` | Never. | Every path that does not include `s3`. | `/srv/orbit/s3/data`. | Absolute host path mounted into SeaweedFS as `/data`. |
+| `s3_data_path` | `--s3-data-path` | Never. | Every path that does not include `s3`. | `/srv/orbit/s3/data`. | Canonical host path under `/media`, `/mnt`, `/opt/orbit`, `/srv`, or `/var/lib/orbit`, mounted into SeaweedFS as `/data`. |
 | `host_key_fingerprint` | `--host-key-fingerprint` | Optional. | Never. | None. | Expected SSH host key SHA256 fingerprint verified by the initiating CLI during bootstrap. |
 | `self_grant` | `--self-grant` | Optional. | Never. | None. | Self-grant mode applied to this node identity. |
 | `self_grant_permissions` | `--self-grant-permissions` | Optional. | Never. | None. | Custom permission set for the self-grant. Requires `--self-grant`. |
@@ -238,11 +238,12 @@ Grafana admin credentials. Metrics has no role-local settings and records
 host-resource observability only in this slice.
 
 Analytics assignment convergence stores `settings.postgres_node_id` and
-`settings.clickhouse_node_id`. Plausible CE runs as a process-owned
-Docker/Swarm service, binds only to the node's WireGuard address, reads
+`settings.clickhouse_node_id`. Plausible CE runs as a process-owned Docker
+container published only on the node's WireGuard address, reads authenticated
 PostgreSQL and ClickHouse endpoints from those database-role process
 definitions, and receives traffic only through router-owned analytics service
-routes.
+routes. Database and Plausible secrets remain in encrypted process credentials,
+not plain runtime configuration.
 - If an initial role is persisted with `status=error` because its first
   convergence failed, `node:new` fails and returns the role status and
   `last_error` in failure metadata. The persisted assignment remains available

@@ -29,7 +29,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `redis_node` | `--redis-node` | Required for `websocket`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and Redis expected or installed. |
 | `postgres_node` | `--postgres-node` | Required for `analytics`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and PostgreSQL expected or installed. |
 | `clickhouse_node` | `--clickhouse-node` | Required for `analytics`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and ClickHouse expected or installed. |
-| `s3_data_path` | `--s3-data-path` | Never. | Forbidden for roles that do not support it. | `/srv/orbit/s3/data` for `s3`. | Absolute host path mounted into SeaweedFS as `/data`. |
+| `s3_data_path` | `--s3-data-path` | Never. | Forbidden for roles that do not support it. | `/srv/orbit/s3/data` for `s3`. | Canonical host path under `/media`, `/mnt`, `/opt/orbit`, `/srv`, or `/var/lib/orbit`, mounted into SeaweedFS as `/data`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and forces non-interactive input mode. |
 
 ## Behavior Contract
@@ -54,8 +54,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   database node. Either option may point at the target analytics node only when
   the target node also has an active `database` role.
 - `s3` accepts optional `--s3-data-path`. The resolved path defaults to
-  `/srv/orbit/s3/data`, must be absolute, is stored as `settings.data_path`,
-  and is mounted into SeaweedFS as `/data`.
+  `/srv/orbit/s3/data`, must be canonical and rooted under `/media`, `/mnt`,
+  `/opt/orbit`, `/srv`, or `/var/lib/orbit`, is stored as
+  `settings.data_path`, and is mounted into SeaweedFS as `/data`.
 - `metrics` accepts no role-local options.
 - `app-prod`, `database`, and other roles reject role-local options they
   do not support.

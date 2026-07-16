@@ -143,7 +143,10 @@ final readonly class ProcessDockerContainerRenderer
             processSlug: $process->name,
             workingDirectory: $this->optionalConfigString($config, 'working_directory') ?? '/',
             command: $command,
-            environment: $this->stringMap($config['environment'] ?? []),
+            environment: [
+                ...$this->stringMap($config['environment'] ?? []),
+                ...$this->secretEnvironment($process),
+            ],
             mounts: $mounts,
             networkAliases: array_values(array_unique([
                 $name,
@@ -252,6 +255,16 @@ final readonly class ProcessDockerContainerRenderer
         }
 
         return $map;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function secretEnvironment(Process $process): array
+    {
+        $credentials = is_array($process->credentials) ? $process->credentials : [];
+
+        return $this->stringMap($credentials['environment'] ?? []);
     }
 
     /**

@@ -1013,6 +1013,69 @@ describe('ProcessStoreController', function (): void {
             ->toContain('--json');
     });
 
+    it('stores generated PostgreSQL credentials encrypted and binds the service to WireGuard', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $node = createTestAppHostNode([
+            'name' => 'database-1',
+            'wireguard_address' => '10.6.0.44',
+        ]);
+        $remoteShell = new ProcessStoreRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $this
+            ->call(
+                'POST',
+                '/api/processes',
+                [
+                    'node' => 'database-1',
+                    'name' => 'postgres16',
+                    'service' => 'postgres',
+                    'version' => '16',
+                    'runtime' => 'docker',
+                ],
+                [],
+                [],
+                ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+            )
+            ->assertOk()
+            ->assertJsonPath('success.data.process.name', 'postgres16')
+            ->assertJsonPath('success.data.process.runtime', 'docker');
+
+        $process = Process::query()->where('name', 'postgres16')->firstOrFail();
+        $credentials = $process->credentials;
+        $password = is_array($credentials) ? $credentials['password'] ?? null : null;
+        $rawCredentials = (string) $process->getRawOriginal('credentials');
+        $runtimeConfigJson = json_encode($process->runtime_config, JSON_THROW_ON_ERROR);
+
+        expect($process->owner_id)
+            ->toBe($node->id)
+            ->and($process->runtime_config['ports'][0])
+            ->toMatchArray([
+                'host' => '10.6.0.44',
+                'published' => 5432,
+                'target' => 5432,
+            ])
+            ->and($process->runtime_config['command_mode'])
+            ->toBe('image_entrypoint')
+            ->and($credentials)
+            ->toMatchArray([
+                'database' => 'plausible_db',
+                'username' => 'orbit',
+            ])
+            ->and($password)
+            ->toBeString()
+            ->not->toBe('')->and($credentials['environment']['POSTGRES_PASSWORD'])->toBe($password)->and(
+                $rawCredentials,
+            )
+            ->not->toContain($password)->and($runtimeConfigJson)
+            ->not->toContain($password)->and(implode("\n", $remoteShell->scripts))
+            ->not->toContain($password);
+    });
+
     it('lets MySQL 8 and MySQL 9 managed services coexist on one node', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         $node = createTestAppHostNode([
@@ -1274,6 +1337,7 @@ describe('ProcessStoreController', function (): void {
             ->toBe('image_entrypoint')
             ->and($process->runtime_config['ports'][0])
             ->toBe([
+                'host' => '10.6.0.44',
                 'published' => 3308,
                 'target' => 3306,
                 'protocol' => 'tcp',
@@ -1410,7 +1474,10 @@ describe('ProcessStoreController', function (): void {
             ->assertJsonPath('error.meta.field', 'version')
             ->assertJsonPath('error.meta.reason', 'process_service_version_requires_service');
 
-        expect(Process::query()->where('name', 'worker')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->where('name', 'worker')->exists())
+            ->toBeFalse()
+            ->and($remoteShell->scripts)
+            ->toBeEmpty();
     });
 
     it('accepts launchd runtime for host command processes on macos nodes', function (): void {
@@ -1465,7 +1532,7 @@ describe('ProcessStoreController', function (): void {
             ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
         );
 
-        $response->assertStatus(422);
+        $response->assertUnprocessable();
         $json = $response->json();
         expect($json['error']['meta']['reason'] ?? null)->toBe('launchd_crash_notification_deferred');
     });

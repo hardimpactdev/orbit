@@ -60,16 +60,15 @@ final class AnalyticsProcessEndpointResolver
         ];
     }
 
-    /**
-     * @return array{username: string, password: string}
-     */
-    public function postgresCredentials(Process $process): array
+    /** @return array{database: string, username: string, password: string} */
+    public function credentials(Process $process, string $context): array
     {
-        $credentials = $this->stringKeyedArray($process->runtime_config['credentials'] ?? null);
+        $credentials = $this->stringKeyedArray($process->credentials);
 
         return [
-            'username' => $this->requiredString($credentials, 'username', 'PostgreSQL'),
-            'password' => $this->requiredString($credentials, 'password', 'PostgreSQL'),
+            'database' => $this->requiredString($credentials, 'database', $context),
+            'username' => $this->requiredString($credentials, 'username', $context),
+            'password' => $this->requiredString($credentials, 'password', $context),
         ];
     }
 

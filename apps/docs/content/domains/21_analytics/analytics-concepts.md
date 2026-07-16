@@ -10,12 +10,15 @@ These terms describe the analytics role and the routes around it.
 
 - **Analytics role:** Private workload node role that runs Plausible CE for the
   fleet. The role binds only to WireGuard and receives traffic through router.
-- **Plausible CE process:** Process-owned service row for Plausible CE. The row
-  owns the image version, environment, endpoint, lifecycle, logs, and restart
-  policy.
+- **Plausible CE process:** Node-owned Docker service row for Plausible CE
+  3.2.1. The row owns the image version, endpoint, lifecycle, logs, restart
+  policy, and encrypted runtime credentials. Its published port binds directly
+  to the analytics node's WireGuard address.
 - **Analytics backing database:** PostgreSQL or ClickHouse service process
   selected from an active `database` role node. A single database node may back
-  both services.
+  both services. The supported Plausible pairing is PostgreSQL 16 Alpine and
+  ClickHouse 24.12 Alpine; both are authenticated Docker services published
+  only on the database node's WireGuard address.
 - **Private analytics endpoint:** `https://analytics.orbit`, the internal
   dashboard and admin endpoint served through router.
 - **Public app analytics host:** App-owned public hostname such as
@@ -32,3 +35,7 @@ operator workflow for updating the fleet Plausible CE process version.
 It does not own app bindings, proxy rows, or process lifecycle in isolation:
 app commands own per-app binding state, proxy owns route artifacts, process owns
 runtime lifecycle, and node owns role assignment settings.
+
+Generated PostgreSQL, ClickHouse, and Plausible secrets stay in the process
+row's encrypted credential field. Plain `runtime_config` contains non-secret
+container intent only.

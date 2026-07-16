@@ -10,11 +10,19 @@ final readonly class S3RoleSettings implements NodeRoleSettings
 {
     public const string DefaultDataPath = '/srv/orbit/s3/data';
 
+    private const array ALLOWED_DATA_ROOTS = [
+        '/media/',
+        '/mnt/',
+        '/opt/orbit/',
+        '/srv/',
+        '/var/lib/orbit/',
+    ];
+
     public function __construct(
         public string $dataPath = self::DefaultDataPath,
     ) {
-        if (! self::isAbsolutePath($dataPath)) {
-            throw new InvalidArgumentException('The s3 role requires an absolute data_path setting.');
+        if (! self::isSafeDataPath($dataPath)) {
+            throw new InvalidArgumentException('The s3 role requires a safe canonical data_path setting.');
         }
     }
 
@@ -35,8 +43,8 @@ final readonly class S3RoleSettings implements NodeRoleSettings
 
         $dataPath = $settings['data_path'];
 
-        if (! is_string($dataPath) || ! self::isAbsolutePath($dataPath)) {
-            throw new InvalidArgumentException('The s3 role requires an absolute data_path setting.');
+        if (! is_string($dataPath) || ! self::isSafeDataPath($dataPath)) {
+            throw new InvalidArgumentException('The s3 role requires a safe canonical data_path setting.');
         }
 
         return new self($dataPath);
@@ -48,8 +56,27 @@ final readonly class S3RoleSettings implements NodeRoleSettings
         return ['data_path' => $this->dataPath];
     }
 
-    private static function isAbsolutePath(string $path): bool
+    private static function isSafeDataPath(string $path): bool
     {
-        return $path !== '' && str_starts_with($path, '/');
+        if ($path === '' || trim($path) !== $path || ! str_starts_with($path, '/')) {
+            return false;
+        }
+
+        if (
+            preg_match('/[\x00-\x1f\x7f]/', $path) === 1
+            || str_contains($path, '//')
+            || str_ends_with($path, '/')
+            || array_any(
+                explode('/', $path),
+                static fn (string $part): bool => in_array($part, ['.', '..'], strict: true),
+            )
+        ) {
+            return false;
+        }
+
+        return array_any(
+            self::ALLOWED_DATA_ROOTS,
+            static fn (string $root): bool => str_starts_with($path, $root),
+        );
     }
 }

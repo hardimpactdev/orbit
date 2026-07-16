@@ -150,6 +150,14 @@ final readonly class S3ServiceConfigurator
 
     private function persistSeaweedfsProcess(Node $node, S3RuntimeContainer $runtimeContainer): Process
     {
+        $configPath =
+            collect($runtimeContainer->mounts())
+                ->firstWhere('target', S3RuntimeContainer::S3ConfigTarget)['source'] ?? null;
+
+        if (! is_string($configPath) || $configPath === '') {
+            throw new \RuntimeException('The SeaweedFS runtime requires an S3 config mount.');
+        }
+
         return $node->processes()->updateOrCreate(
             ['name' => 'seaweedfs'],
             [
@@ -176,6 +184,21 @@ final readonly class S3ServiceConfigurator
                         ],
                     ],
                     'command_mode' => 'shell',
+                ],
+                'credentials' => [
+                    'managed_files' => [
+                        [
+                            'path' => $configPath,
+                            'content' =>
+                                json_encode(
+                                    $runtimeContainer->s3Config(),
+                                    JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
+                                ).PHP_EOL,
+                            'mode' => '0600',
+                            'directory_mode' => '0750',
+                            'sensitive' => true,
+                        ],
+                    ],
                 ],
                 'sort_order' => 0,
             ],

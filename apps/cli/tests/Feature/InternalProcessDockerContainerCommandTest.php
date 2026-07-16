@@ -64,8 +64,8 @@ describe('internal process Docker container command', function (): void {
 
     it('rejects an invalid operation token before reading stdin', function (): void {
         config()->set('orbit.gateway.url', null);
-        app()->forgetInstance('App\Services\GatewayApiClient');
-        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        app()->forgetInstance(\App\Services\GatewayApiClient::class);
+        app()->forgetInstance(\App\Services\Executor\OperationTokenGuard::class);
 
         [$exitCode, $output] = run_internal_process_docker_container_command([
             '--operation-token' => 'not-a-token',
@@ -175,11 +175,52 @@ describe('internal process Docker container command', function (): void {
             )
             ->not->toContain('/var/run/docker.sock');
     });
+
+    it('does not prepare an existing managed file bind source as a directory', function (): void {
+        $home = process_docker_container_fake_home();
+        $socket = process_docker_container_fake_orbstack_socket($home);
+        $configPath = "{$home}/s3.json";
+        file_put_contents(filename: $configPath, data: "{}\n");
+        putenv('DOCKER_HOST');
+        $bin = install_process_docker_container_fake_docker_bin(requiredDockerHost: "unix://{$socket}");
+        $spec = process_docker_container_spec_payload();
+        $spec['mounts'] = [
+            [
+                'source' => $configPath,
+                'target' => '/etc/seaweedfs/s3.json',
+                'read_only' => true,
+            ],
+        ];
+
+        [$exitCode, $output] = run_internal_process_docker_container_command(
+            [
+                '--operation-token' => process_docker_container_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'action' => 'apply',
+                'prepare_prerequisites' => true,
+                'spec' => $spec,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(
+                json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR)['success']['data']['outcome']
+                ?? null,
+            )
+            ->toBe('created')
+            ->and(is_file($configPath))
+            ->toBeTrue()
+            ->and(file_exists("{$bin}/sudo-calls.log"))
+            ->toBeFalse();
+    });
 });
 
 function configure_process_docker_container_operation_token_guard(): void
 {
-    app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+    app()->forgetInstance(\App\Services\Executor\OperationTokenGuard::class);
 }
 
 function process_docker_container_signed_operation_token(
@@ -257,6 +298,13 @@ function install_process_docker_container_fake_docker_bin(string $requiredDocker
         exit(0);
         PHP_WRAP);
     chmod(filename: "{$dir}/docker", permissions: 0o755);
+    file_put_contents("{$dir}/sudo", <<<'PHP_WRAP'
+        #!/usr/bin/env php
+        <?php
+        file_put_contents(__DIR__.'/sudo-calls.log', implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
+        exit(0);
+        PHP_WRAP);
+    chmod(filename: "{$dir}/sudo", permissions: 0o755);
 
     $path = getenv('PATH');
     putenv('PATH='.$dir.($path === false ? '' : ":{$path}"));

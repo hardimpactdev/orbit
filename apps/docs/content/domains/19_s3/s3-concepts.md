@@ -36,8 +36,14 @@ These terms describe how public S3 access is exposed.
 - **S3 service credentials:** SeaweedFS access key and secret stored for the
   service on the `seaweedfs` tool row and returned by `s3:credentials` and
   `tool:credentials seaweedfs`.
-- **S3 role data path:** Absolute host path stored on the `s3` role assignment,
-  defaulting to `/srv/orbit/s3/data`, mounted into SeaweedFS as `/data`.
+- **S3 role data path:** Canonical host path stored on the `s3` role assignment,
+  defaulting to `/srv/orbit/s3/data`, rooted under `/media`, `/mnt`,
+  `/opt/orbit`, `/srv`, or `/var/lib/orbit`, and mounted into SeaweedFS as
+  `/data`. Root, traversal, duplicate separators, and sensitive paths outside
+  those roots are rejected before role persistence.
+- **SeaweedFS managed configuration:** Credential-bearing `s3.json` content
+  stored in encrypted process credentials and written with mode `0600` before
+  the SeaweedFS Docker container is applied.
 
 ## Boundaries
 

@@ -160,6 +160,22 @@ describe('NodeRoleAddController', function (): void {
             ->toBe('Docker is missing.');
     });
 
+    it('rejects an unsafe S3 data path before assigning the role', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
+
+        postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
+            'role' => 's3',
+            'settings' => [
+                'data_path' => '/',
+            ],
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.role', 's3');
+
+        expect($target->roleAssignments()->where('role', 's3')->exists())->toBeFalse();
+    });
+
     it('rejects reconverge existing for non metrics roles', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
 
@@ -406,5 +422,6 @@ final class NodeRoleAddNoopConverger extends NodeRoleBaselineConverger
         );
     }
 
+    #[\Override]
     public function converge(Node $node, NodeRoleAssignment $assignment): void {}
 }

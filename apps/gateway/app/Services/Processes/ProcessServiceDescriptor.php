@@ -8,6 +8,9 @@ final readonly class ProcessServiceDescriptor
 {
     /**
      * @param  array<string, mixed>  $runtimeConfig
+     * @param  array<string, mixed>  $credentials
+     *
+     * @mago-expect lint:excessive-parameter-list
      */
     public function __construct(
         public string $service,
@@ -15,5 +18,6 @@ final readonly class ProcessServiceDescriptor
         public string $version,
         public string $command,
         public array $runtimeConfig,
+        public array $credentials,
     ) {}
 }

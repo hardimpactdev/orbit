@@ -198,16 +198,18 @@ or database-specific metrics. The role can run on a dedicated node or be
 co-located with any non-agent role, including a Debian gateway/router node.
 
 The `analytics` role is a private workload role for Orbit-managed Plausible CE
-analytics. An analytics node runs Plausible CE as a process-owned Docker/Swarm
-service, binds only to the node's WireGuard address, and receives dashboard and
-tracking traffic through router-owned private service routes. The private
+analytics. An analytics node runs Plausible CE as a process-owned Docker
+container, publishes it only on the node's WireGuard address, and receives
+dashboard and tracking traffic through router-owned private service routes. The private
 dashboard/admin endpoint is `analytics.orbit`. App-owned public analytics hosts
 such as `analytics.example.com` enter through `ingress`, flow to `router`, and
 proxy only Plausible script and event-ingest paths to the analytics backend.
-The role depends on PostgreSQL and ClickHouse service processes selected from
-active `database` role nodes. Those database processes may live on the same
-node as each other, and may live on the analytics node only when that node also
-has the active `database` role.
+The role depends on authenticated PostgreSQL and ClickHouse Docker service
+processes selected from active `database` role nodes. Those services publish
+only on their database nodes' WireGuard addresses and keep generated
+credentials in encrypted gateway storage. The database processes may live on
+the same node as each other, and may live on the analytics node only when that
+node also has the active `database` role.
 
 The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics`, or `analytics`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
 

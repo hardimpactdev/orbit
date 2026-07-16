@@ -8,6 +8,7 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\NodeWireGuardServiceAddress;
+use Illuminate\Support\Str;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use RuntimeException;
 
@@ -75,7 +76,14 @@ final readonly class ProcessServiceCatalog
         $serviceName = "orbit-{$processName}";
         $volumeName = "orbit-{$processName}";
         $dataPath = $this->hostPaths->processDataRoot($node, $processName);
-        $servicePorts = $this->servicePorts($entry, $host, $resolved['published_port'], $processName);
+        $servicePorts = $this->servicePorts(
+            $entry,
+            $host,
+            $resolved['published_port'],
+            $processName,
+            $runtime,
+        );
+        $credentials = $this->encryptedCredentials($service, $entry);
 
         $runtimeConfig = [
             'service' => $service,
@@ -87,12 +95,23 @@ final readonly class ProcessServiceCatalog
             'environment' => $entry['environment'],
             'network_aliases' => array_values(array_unique([$service, $processName])),
             'healthcheck' => $entry['healthcheck'],
-            'credentials' => $entry['credentials'],
             'update_strategy' => [
                 'order' => 'stop-first',
                 'parallelism' => 1,
             ],
         ];
+
+        if ($credentials === []) {
+            $runtimeConfig['credentials'] = $entry['credentials'];
+        }
+
+        if ($credentials !== []) {
+            $runtimeConfig['credential_hash'] = substr(
+                string: hash('sha256', json_encode($credentials, JSON_THROW_ON_ERROR)),
+                offset: 0,
+                length: 16,
+            );
+        }
 
         if ($imageOverride !== null && $imageOverride !== '') {
             $runtimeConfig['image'] = $imageOverride;
@@ -112,6 +131,7 @@ final readonly class ProcessServiceCatalog
         } elseif (is_int($entry['target_port'] ?? null)) {
             $runtimeConfig['ports'] = [
                 [
+                    ...($runtime === ProcessRuntime::Docker ? ['host' => $host] : []),
                     'published' => $resolved['published_port'],
                     'target' => $entry['target_port'],
                     'protocol' => 'tcp',
@@ -156,6 +176,7 @@ final readonly class ProcessServiceCatalog
             version: $resolved['version'],
             command: $entry['command'],
             runtimeConfig: $runtimeConfig,
+            credentials: $credentials,
         );
     }
 
@@ -319,19 +340,18 @@ final readonly class ProcessServiceCatalog
                 ],
             ],
             'postgres' => [
-                'runtimes' => [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
+                'runtimes' => [ProcessRuntime::Docker],
                 'image' => 'postgres',
+                'command_mode' => 'image_entrypoint',
                 'command' => 'postgres',
                 'target_port' => 5432,
                 'data_path' => '/var/lib/postgresql/data',
                 'environment' => [
-                    'POSTGRES_DB' => 'orbit',
-                    'POSTGRES_PASSWORD' => 'orbit',
+                    'POSTGRES_DB' => 'plausible_db',
                     'POSTGRES_USER' => 'orbit',
                 ],
                 'credentials' => [
-                    'database' => 'orbit',
-                    'password' => 'orbit',
+                    'database' => 'plausible_db',
                     'username' => 'orbit',
                 ],
                 'healthcheck' => [
@@ -347,15 +367,20 @@ final readonly class ProcessServiceCatalog
                 ],
             ],
             'clickhouse' => [
-                'runtimes' => [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
+                'runtimes' => [ProcessRuntime::Docker],
                 'image' => 'clickhouse/clickhouse-server',
+                'command_mode' => 'image_entrypoint',
                 'command' => 'clickhouse-server',
                 'target_port' => 8123,
                 'data_path' => '/var/lib/clickhouse',
                 'environment' => [
-                    'CLICKHOUSE_SKIP_USER_SETUP' => '1',
+                    'CLICKHOUSE_DB' => 'plausible_events_db',
+                    'CLICKHOUSE_USER' => 'plausible',
                 ],
-                'credentials' => [],
+                'credentials' => [
+                    'database' => 'plausible_events_db',
+                    'username' => 'plausible',
+                ],
                 'healthcheck' => [
                     'command' => 'wget --spider -q http://127.0.0.1:8123/ping || exit 1',
                     'kind' => 'command',
@@ -369,7 +394,7 @@ final readonly class ProcessServiceCatalog
                 ],
             ],
             'plausible' => [
-                'runtimes' => [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
+                'runtimes' => [ProcessRuntime::Docker],
                 'image' => 'ghcr.io/plausible/community-edition',
                 'image_version_prefix' => 'v',
                 'command' => 'sh -c "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"',
@@ -390,6 +415,29 @@ final readonly class ProcessServiceCatalog
                     ],
                 ],
             ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @return array<string, mixed>
+     */
+    private function encryptedCredentials(string $service, array $entry): array
+    {
+        if (! in_array($service, ['postgres', 'clickhouse'], strict: true)) {
+            return [];
+        }
+
+        $credentials = is_array($entry['credentials'] ?? null) ? $entry['credentials'] : [];
+        $password = Str::random(48);
+        $passwordEnvironment = $service === 'postgres'
+            ? ['POSTGRES_PASSWORD' => $password]
+            : ['CLICKHOUSE_PASSWORD' => $password];
+
+        return [
+            ...$credentials,
+            'password' => $password,
+            'environment' => $passwordEnvironment,
         ];
     }
 
@@ -510,11 +558,18 @@ final readonly class ProcessServiceCatalog
      * @return array{
      *     endpoint: array{name: string, kind: string, host: string, port: int},
      *     endpoints: list<array{name: string, kind: string, host: string, port: int}>,
-     *     ports: list<array{published: int, target: int, protocol: string}>
+     *     ports: list<array{host?: string, published: int, target: int, protocol: string}>
      * }
+     *
+     * @mago-expect lint:halstead
      */
-    private function servicePorts(array $entry, string $host, int $defaultPublishedPort, string $processName): array
-    {
+    private function servicePorts(
+        array $entry,
+        string $host,
+        int $defaultPublishedPort,
+        string $processName,
+        ProcessRuntime $runtime,
+    ): array {
         $rawPorts = $entry['service_ports'] ?? null;
 
         if (! is_array($rawPorts) || $rawPorts === []) {
@@ -536,6 +591,7 @@ final readonly class ProcessServiceCatalog
                 'ports' => is_int($entry['target_port'] ?? null)
                     ? [
                         [
+                            ...($runtime === ProcessRuntime::Docker ? ['host' => $host] : []),
                             'published' => $defaultPublishedPort,
                             'target' => $entry['target_port'],
                             'protocol' => 'tcp',
@@ -582,6 +638,7 @@ final readonly class ProcessServiceCatalog
 
             if ($publishesPort && $published > 0) {
                 $ports[] = [
+                    ...($runtime === ProcessRuntime::Docker ? ['host' => $host] : []),
                     'published' => $published,
                     'target' => $target,
                     'protocol' => $protocol !== '' ? $protocol : 'tcp',
@@ -623,6 +680,10 @@ final readonly class ProcessServiceCatalog
     {
         ksort($spec);
 
-        return substr(hash('sha256', json_encode($spec, JSON_THROW_ON_ERROR)), 0, 16);
+        return substr(
+            string: hash('sha256', json_encode($spec, JSON_THROW_ON_ERROR)),
+            offset: 0,
+            length: 16,
+        );
     }
 }

@@ -135,7 +135,7 @@ Roles materialize baseline tool intent when a role assignment converges.
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | Docker installation and verification, SeaweedFS Docker runtime apply/start, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
 | `metrics` | Docker substrate, node-exporter binary, Prometheus/Grafana Swarm processes, node-exporter systemd processes on metrics/workload nodes, `metrics.orbit`, and Grafana credentials |
-| `analytics` | Docker verification, Plausible CE Swarm apply/start, private routing, public tracking route support, backend pool registration, and PostgreSQL/ClickHouse endpoint configuration |
+| `analytics` | Docker verification, WireGuard-bound Plausible CE Docker apply/start, private routing, public tracking route support, backend pool registration, and authenticated PostgreSQL/ClickHouse endpoint configuration |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the

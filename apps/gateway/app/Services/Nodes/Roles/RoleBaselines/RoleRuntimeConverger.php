@@ -8,9 +8,11 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Process;
+use App\Services\Convergence\ManagedFile;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\RemoteDockerSwarmService;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
 use RuntimeException;
@@ -23,6 +25,7 @@ class RoleRuntimeConverger
         private readonly ?ToolsFixer $toolsFixer = null,
         private readonly ?ProcessRuntimeDriverRegistry $processRuntimeDrivers = null,
         private readonly ?RemoteDockerSwarmService $dockerSwarm = null,
+        private readonly ?RunsInternalCommands $localExecutor = null,
     ) {}
 
     public function convergeTool(Node $node, string $toolName): void
@@ -70,6 +73,12 @@ class RoleRuntimeConverger
         $driver = $this->processRuntimeDrivers()->forProcess($process);
         $runtimeUnit = $driver->runtimeUnitName($runtimeApp, $process, $workspace);
 
+        if (! $this->applyManagedFiles($node, $process)) {
+            throw new RuntimeException(
+                ucfirst($role)." process runtime unit '{$runtimeUnit}' managed files could not be applied.",
+            );
+        }
+
         if (! $driver->apply($node, $runtimeApp, $process, $workspace)) {
             throw new RuntimeException(
                 ucfirst($role)." process runtime unit '{$runtimeUnit}' could not be rendered.",
@@ -81,6 +90,43 @@ class RoleRuntimeConverger
                 ucfirst($role)." process runtime unit '{$runtimeUnit}' could not be started.",
             );
         }
+    }
+
+    private function applyManagedFiles(Node $node, Process $process): bool
+    {
+        $credentials = is_array($process->credentials) ? $process->credentials : [];
+        $managedFiles = is_array($credentials['managed_files'] ?? null) ? $credentials['managed_files'] : [];
+
+        foreach ($managedFiles as $intent) {
+            if (! is_array($intent)) {
+                return false;
+            }
+
+            $path = $intent['path'] ?? null;
+            $content = $intent['content'] ?? null;
+
+            if (! is_string($path) || ! is_string($content)) {
+                return false;
+            }
+
+            $file = new ManagedFile(
+                path: $path,
+                content: $content,
+                mode: is_string($intent['mode'] ?? null) ? $intent['mode'] : '0600',
+                directoryMode: is_string($intent['directory_mode'] ?? null)
+                    ? $intent['directory_mode']
+                    : '0750',
+                sensitive: ($intent['sensitive'] ?? true) === true,
+                localExecutor: $this->localExecutor ?? app(RunsInternalCommands::class),
+            );
+            $result = $file->apply($node, $file->plan($file->probe($node)));
+
+            if (! $result->successful()) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function removeProcess(Node $node, Process $process, string $role): void

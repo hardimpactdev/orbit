@@ -81,7 +81,7 @@ class AnalyticsRoleBaseline implements RoleBaseline
         $descriptor = $this->serviceCatalog->resolve(
             service: 'plausible',
             version: self::DefaultVersion,
-            runtime: ProcessRuntime::DockerSwarm,
+            runtime: ProcessRuntime::Docker,
             node: $node,
             processName: self::ProcessName,
         );
@@ -95,7 +95,7 @@ class AnalyticsRoleBaseline implements RoleBaseline
             $existingProcess = null;
         }
 
-        $runtimeConfig = $this->plausibleRuntimeConfig->for(
+        $settings = $this->plausibleRuntimeConfig->for(
             assignment: $assignment,
             existingProcess: $existingProcess,
             runtimeConfig: $descriptor->runtimeConfig,
@@ -113,9 +113,10 @@ class AnalyticsRoleBaseline implements RoleBaseline
                 'command' => $descriptor->command,
                 'restart_policy' => ProcessRestartPolicy::Always,
                 'crash_notification' => ProcessCrashNotification::AgentIde,
-                'runtime' => ProcessRuntime::DockerSwarm,
+                'runtime' => ProcessRuntime::Docker,
                 'tool' => null,
-                'runtime_config' => $runtimeConfig,
+                'runtime_config' => $settings->runtimeConfig,
+                'credentials' => $settings->credentials,
                 'sort_order' => 10,
             ],
         );

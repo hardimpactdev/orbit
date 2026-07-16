@@ -6,7 +6,6 @@ namespace App\Services\Processes;
 
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process as ProcessFacade;
-use Symfony\Component\Process\Process;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
@@ -38,11 +37,19 @@ final readonly class LocalDockerSwarmServiceAction
 
         $result = $this->runProcess($this->command($action, $service));
 
-        if ($result->isSuccessful()) {
+        if ($result->successful()) {
             return [
                 'action' => $action,
                 'service' => $service,
                 'changed' => true,
+            ];
+        }
+
+        if ($action === 'remove' && $this->serviceIsAbsent($result)) {
+            return [
+                'action' => $action,
+                'service' => $service,
+                'changed' => false,
             ];
         }
 
@@ -154,9 +161,9 @@ final readonly class LocalDockerSwarmServiceAction
             '{{ index .Spec.Labels "orbit.process.spec_hash" }}',
             $spec->name,
         ]);
-        $hadExistingService = $inspect->isSuccessful();
+        $hadExistingService = $inspect->successful();
 
-        if ($hadExistingService && hash_equals($spec->expectedHash, trim($inspect->getOutput()))) {
+        if ($hadExistingService && hash_equals($spec->expectedHash, trim($inspect->output()))) {
             return [
                 'action' => 'apply',
                 'service' => $spec->name,
@@ -168,14 +175,14 @@ final readonly class LocalDockerSwarmServiceAction
         if ($hadExistingService) {
             $remove = $this->runProcess(['docker', 'service', 'rm', $spec->name]);
 
-            if (! $remove->isSuccessful()) {
+            if (! $remove->successful()) {
                 throw $this->applyFailure('remove drifted', $spec, $remove, true);
             }
         }
 
         $create = $this->runProcess($spec->createCommand());
 
-        if (! $create->isSuccessful()) {
+        if (! $create->successful()) {
             throw $this->applyFailure('create', $spec, $create, $hadExistingService);
         }
 
@@ -234,13 +241,9 @@ final readonly class LocalDockerSwarmServiceAction
     /**
      * @param  list<string>  $command
      */
-    private function runProcess(array $command): Process
+    private function runProcess(array $command): ProcessResult
     {
-        $process = new Process($command);
-        $process->setTimeout(60);
-        $process->run();
-
-        return $process;
+        return ProcessFacade::timeout(60)->run($command);
     }
 
     /**
@@ -251,7 +254,15 @@ final readonly class LocalDockerSwarmServiceAction
         return ProcessFacade::timeout(60)->run($command);
     }
 
-    private function failure(string $action, string $service, Process $result): LocalDockerSwarmServiceFailure
+    private function serviceIsAbsent(ProcessResult $result): bool
+    {
+        return str_contains(
+            strtolower($result->errorOutput().' '.$result->output()),
+            'no such service',
+        );
+    }
+
+    private function failure(string $action, string $service, ProcessResult $result): LocalDockerSwarmServiceFailure
     {
         return new LocalDockerSwarmServiceFailure(
             errorCode: "docker_swarm_service.{$action}_failed",
@@ -259,8 +270,8 @@ final readonly class LocalDockerSwarmServiceAction
             meta: [
                 'action' => $action,
                 'service' => $service,
-                'exit_code' => $result->getExitCode(),
-                'stderr' => trim($result->getErrorOutput()),
+                'exit_code' => $result->exitCode(),
+                'stderr' => trim($result->errorOutput()),
             ],
         );
     }
@@ -282,10 +293,10 @@ final readonly class LocalDockerSwarmServiceAction
     private function applyFailure(
         string $step,
         LocalDockerSwarmServiceSpec $spec,
-        Process $result,
+        ProcessResult $result,
         bool $hadExistingService,
     ): LocalDockerSwarmServiceFailure {
-        $output = trim($result->getErrorOutput().' '.$result->getOutput());
+        $output = trim($result->errorOutput().' '.$result->output());
         $message = $output !== '' ? $output : 'unknown error';
 
         return new LocalDockerSwarmServiceFailure(
@@ -295,8 +306,8 @@ final readonly class LocalDockerSwarmServiceAction
                 'action' => 'apply',
                 'service' => $spec->name,
                 'had_existing_service' => $hadExistingService,
-                'exit_code' => $result->getExitCode(),
-                'stderr' => trim($result->getErrorOutput()),
+                'exit_code' => $result->exitCode(),
+                'stderr' => trim($result->errorOutput()),
             ],
         );
     }

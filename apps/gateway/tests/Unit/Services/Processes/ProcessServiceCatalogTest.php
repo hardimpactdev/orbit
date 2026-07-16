@@ -205,9 +205,9 @@ it('resolves PostgreSQL, ClickHouse, and Plausible managed services into process
 
     $registry = app(ProcessServiceCatalog::class);
 
-    $postgres = $registry->resolve('postgres', '16', ProcessRuntime::DockerSwarm, $node, 'postgres16');
-    $clickhouse = $registry->resolve('clickhouse', '24.12', ProcessRuntime::DockerSwarm, $node, 'clickhouse24');
-    $plausible = $registry->resolve('plausible', '3.2.1', ProcessRuntime::DockerSwarm, $node, 'plausible');
+    $postgres = $registry->resolve('postgres', '16', ProcessRuntime::Docker, $node, 'postgres16');
+    $clickhouse = $registry->resolve('clickhouse', '24.12', ProcessRuntime::Docker, $node, 'clickhouse24');
+    $plausible = $registry->resolve('plausible', '3.2.1', ProcessRuntime::Docker, $node, 'plausible');
 
     expect($registry->names())
         ->toContain('postgres', 'clickhouse', 'plausible')
@@ -220,6 +220,26 @@ it('resolves PostgreSQL, ClickHouse, and Plausible managed services into process
         ])
         ->and($postgres->runtimeConfig['endpoint']['port'])
         ->toBe(5432)
+        ->and($postgres->runtimeConfig['ports'][0])
+        ->toMatchArray([
+            'host' => '10.6.0.50',
+            'published' => 5432,
+            'target' => 5432,
+        ])
+        ->and($postgres->runtimeConfig['environment'])
+        ->toBe([
+            'POSTGRES_DB' => 'plausible_db',
+            'POSTGRES_USER' => 'orbit',
+        ])
+        ->and($postgres->credentials)
+        ->toMatchArray([
+            'database' => 'plausible_db',
+            'username' => 'orbit',
+        ])
+        ->and($postgres->credentials['password'])
+        ->toBeString()
+        ->and($postgres->credentials['environment']['POSTGRES_PASSWORD'])
+        ->toBe($postgres->credentials['password'])
         ->and($clickhouse->runtimeConfig)
         ->toMatchArray([
             'service' => 'clickhouse',
@@ -229,10 +249,26 @@ it('resolves PostgreSQL, ClickHouse, and Plausible managed services into process
         ])
         ->and($clickhouse->runtimeConfig['endpoint']['port'])
         ->toBe(8123)
-        ->and($clickhouse->runtimeConfig['environment'])
+        ->and($clickhouse->runtimeConfig['ports'][0])
         ->toMatchArray([
-            'CLICKHOUSE_SKIP_USER_SETUP' => '1',
+            'host' => '10.6.0.50',
+            'published' => 8123,
+            'target' => 8123,
         ])
+        ->and($clickhouse->runtimeConfig['environment'])
+        ->toBe([
+            'CLICKHOUSE_DB' => 'plausible_events_db',
+            'CLICKHOUSE_USER' => 'plausible',
+        ])
+        ->and($clickhouse->credentials)
+        ->toMatchArray([
+            'database' => 'plausible_events_db',
+            'username' => 'plausible',
+        ])
+        ->and($clickhouse->credentials['password'])
+        ->toBeString()
+        ->and($clickhouse->credentials['environment']['CLICKHOUSE_PASSWORD'])
+        ->toBe($clickhouse->credentials['password'])
         ->and($plausible->runtimeConfig)
         ->toMatchArray([
             'service' => 'plausible',
@@ -244,6 +280,12 @@ it('resolves PostgreSQL, ClickHouse, and Plausible managed services into process
         ->toBe('sh -c "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"')
         ->and($plausible->runtimeConfig['endpoint']['port'])
         ->toBe(8000)
+        ->and($plausible->runtimeConfig['ports'][0])
+        ->toMatchArray([
+            'host' => '10.6.0.50',
+            'published' => 8000,
+            'target' => 8000,
+        ])
         ->and($plausible->runtimeConfig['environment'])
         ->toMatchArray([
             'BASE_URL' => 'https://analytics.orbit',
@@ -251,7 +293,13 @@ it('resolves PostgreSQL, ClickHouse, and Plausible managed services into process
         ->and($plausible->runtimeConfig['labels']['orbit.process.service'])
         ->toBe('plausible')
         ->and($plausible->runtimeConfig['labels']['orbit.process.version'])
-        ->toBe('3.2.1');
+        ->toBe('3.2.1')
+        ->and(json_encode($postgres->runtimeConfig, JSON_THROW_ON_ERROR))
+        ->not->toContain($postgres->credentials['password'])->and(json_encode(
+            $clickhouse->runtimeConfig,
+            JSON_THROW_ON_ERROR,
+        ))
+        ->not->toContain($clickhouse->credentials['password']);
 });
 
 it('requires service process endpoints to use the owner node WireGuard address', function (): void {
@@ -424,6 +472,7 @@ it('resolves Mailpit managed service with published SMTP and private Web UI', fu
         ->and($mailpit->runtimeConfig['ports'])
         ->toBe([
             [
+                'host' => '10.6.0.7',
                 'published' => 1025,
                 'target' => 1025,
                 'protocol' => 'tcp',
@@ -516,6 +565,39 @@ it('rejects unsupported managed service inputs', function (Closure $operation, s
             ProcessRuntime::DockerSwarm,
             $node,
             'node-exporter',
+        ),
+        'runtime',
+        'process_service_runtime_unsupported',
+    ],
+    'postgres swarm unsupported' => [
+        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve(
+            'postgres',
+            '16',
+            ProcessRuntime::DockerSwarm,
+            $node,
+            'postgres16',
+        ),
+        'runtime',
+        'process_service_runtime_unsupported',
+    ],
+    'clickhouse swarm unsupported' => [
+        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve(
+            'clickhouse',
+            '24.12',
+            ProcessRuntime::DockerSwarm,
+            $node,
+            'clickhouse24',
+        ),
+        'runtime',
+        'process_service_runtime_unsupported',
+    ],
+    'plausible swarm unsupported' => [
+        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve(
+            'plausible',
+            '3.2.1',
+            ProcessRuntime::DockerSwarm,
+            $node,
+            'plausible',
         ),
         'runtime',
         'process_service_runtime_unsupported',

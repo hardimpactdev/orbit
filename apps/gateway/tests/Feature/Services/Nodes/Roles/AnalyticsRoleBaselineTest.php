@@ -24,6 +24,7 @@ beforeEach(function (): void {
     });
 });
 
+/** @mago-expect lint:halstead */
 it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard endpoints', function (): void {
     $databaseNode = Node::factory()->create([
         'name' => 'database1',
@@ -32,6 +33,7 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
         'status' => NodeStatus::Active,
     ]);
     $databasePassword = Str::random(32);
+    $clickHousePassword = Str::random(32);
     $unrelatedDatabasePassword = Str::random(32);
 
     $unrelatedApp = App::factory()->create([
@@ -59,17 +61,20 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
         ->forOwner($databaseNode)
         ->create([
             'name' => 'postgres16',
-            'runtime' => ProcessRuntime::DockerSwarm,
+            'runtime' => ProcessRuntime::Docker,
             'runtime_config' => [
                 'service' => 'postgres',
                 'endpoint' => [
                     'host' => '10.6.0.4',
                     'port' => 5432,
                 ],
-                'credentials' => [
-                    'database' => 'orbit',
-                    'username' => 'orbit',
-                    'password' => $databasePassword,
+            ],
+            'credentials' => [
+                'database' => 'plausible_db',
+                'username' => 'orbit',
+                'password' => $databasePassword,
+                'environment' => [
+                    'POSTGRES_PASSWORD' => $databasePassword,
                 ],
             ],
         ]);
@@ -77,14 +82,21 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
         ->forOwner($databaseNode)
         ->create([
             'name' => 'clickhouse24',
-            'runtime' => ProcessRuntime::DockerSwarm,
+            'runtime' => ProcessRuntime::Docker,
             'runtime_config' => [
                 'service' => 'clickhouse',
                 'endpoint' => [
                     'host' => '10.6.0.4',
                     'port' => 8123,
                 ],
-                'credentials' => [],
+            ],
+            'credentials' => [
+                'database' => 'plausible_events_db',
+                'username' => 'plausible',
+                'password' => $clickHousePassword,
+                'environment' => [
+                    'CLICKHOUSE_PASSWORD' => $clickHousePassword,
+                ],
             ],
         ]);
 
@@ -106,11 +118,11 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
         ->forOwner($analyticsNode)
         ->create([
             'name' => 'plausible',
-            'runtime' => ProcessRuntime::DockerSwarm,
+            'runtime' => ProcessRuntime::Docker,
             'runtime_config' => [
                 'service' => 'plausible',
                 'environment' => [
-                    'SECRET_KEY_BASE' => 'change-me',
+                    'BASE_URL' => 'https://analytics.orbit',
                 ],
             ],
         ]);
@@ -122,25 +134,43 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
         ->ownedBy($analyticsNode)
         ->withRuntimeService('plausible')
         ->firstOrFail();
-    $environment = $plausible->runtime_config['environment'];
-    $secretKeyBase = $environment['SECRET_KEY_BASE'] ?? null;
+    $runtimeEnvironment = $plausible->runtime_config['environment'];
+    $credentials = $plausible->credentials;
+    $secretEnvironment = is_array($credentials) && is_array($credentials['environment'] ?? null)
+        ? $credentials['environment']
+        : [];
+    $secretKeyBase = $secretEnvironment['SECRET_KEY_BASE'] ?? null;
 
     expect($plausible->runtime_config)
         ->toMatchArray([
             'version' => '3.2.1',
             'image' => 'ghcr.io/plausible/community-edition:v3.2.1',
         ])
-        ->and($environment)
+        ->and($plausible->runtime)
+        ->toBe(ProcessRuntime::Docker)
+        ->and($plausible->runtime_config['ports'][0])
         ->toMatchArray([
-            'DATABASE_URL' => "postgres://orbit:{$databasePassword}@10.6.0.4:5432/plausible",
-            'CLICKHOUSE_DATABASE_URL' => 'http://10.6.0.4:8123/plausible',
+            'host' => '10.6.0.14',
+            'published' => 8000,
+            'target' => 8000,
+        ])
+        ->and($runtimeEnvironment)
+        ->toBe([
+            'BASE_URL' => 'https://analytics.orbit',
+        ])
+        ->and($secretEnvironment)
+        ->toMatchArray([
+            'DATABASE_URL' => "postgres://orbit:{$databasePassword}@10.6.0.4:5432/plausible_db",
+            'CLICKHOUSE_DATABASE_URL' => "http://plausible:{$clickHousePassword}@10.6.0.4:8123/plausible_events_db",
         ])
         ->and($secretKeyBase)
         ->toBeString()
-        ->not
-        ->toBe('change-me')
-        ->and(strlen((string) $secretKeyBase))
-        ->toBeGreaterThanOrEqual(64);
+        ->not->toBe('change-me')->and(strlen((string) $secretKeyBase))->toBeGreaterThanOrEqual(
+            64,
+        )->and((string) $plausible->getRawOriginal('credentials'))
+        ->not->toContain($databasePassword)
+        ->not->toContain($clickHousePassword)
+        ->not->toContain((string) $secretKeyBase);
 
     $converger->converge($analyticsNode, $assignment);
 
@@ -149,7 +179,7 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
             ->ownedBy($analyticsNode)
             ->withRuntimeService('plausible')
             ->firstOrFail()
-            ->runtime_config['environment']['SECRET_KEY_BASE'],
+            ->credentials['environment']['SECRET_KEY_BASE'],
     )
         ->toBe($secretKeyBase);
 });

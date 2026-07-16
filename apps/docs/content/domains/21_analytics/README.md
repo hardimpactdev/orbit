@@ -11,7 +11,7 @@ These rules define the analytics command domain and its role boundary.
 
 - The analytics command family owns the `analytics:*` command prefix.
 - The `analytics` role is a private workload role. It runs Plausible CE as a
-  process-owned Docker/Swarm service, binds only to the node's WireGuard
+  process-owned Docker container, publishes only on the node's WireGuard
   address, and receives traffic through router-owned analytics routes.
 - The private dashboard and admin endpoint is `https://analytics.orbit`.
 - Public app analytics hosts, such as `https://analytics.example.com`, are
@@ -22,18 +22,17 @@ These rules define the analytics command domain and its role boundary.
   `--plausible-version` option; commands use the generic `--version` field.
 - PostgreSQL and ClickHouse are service processes on active `database` role
   nodes. The analytics role selects those backing nodes by role settings and
-  does not install or own either database.
+  does not install or own either database. Both services use generated
+  credentials encrypted in gateway storage and publish only on WireGuard.
 - The default deployment follows the official Plausible CE 3.2.1 composition:
   `postgres:16-alpine` and
   `clickhouse/clickhouse-server:24.12-alpine`. Plausible reads the selected
-  process endpoints over their WireGuard addresses; Docker-local service
-  aliases are not cross-node dependency addresses.
-- Analytics role convergence installs and verifies Docker. It initializes
-  Docker Swarm with the node's WireGuard address as its advertised address, or
-  reuses an active manager after verifying manager control. It then applies
-  and starts the Plausible service before the role assignment becomes active.
-  Initialization, apply, or start failure keeps provisioning incomplete.
-- Removing the analytics role removes its live Plausible Swarm service before
+  process endpoints over their WireGuard addresses with authentication;
+  Docker-local service aliases are not cross-node dependency addresses.
+- Analytics role convergence installs and verifies Docker, then applies and
+  starts the Plausible Docker container before the role assignment becomes
+  active. Apply or start failure keeps provisioning incomplete.
+- Removing the analytics role removes its live Plausible Docker container before
   deleting the process and role records.
 - The analytics command family coordinates node, process, proxy, and app-owned
   binding state. It does not own an independent `doctor --family=analytics`

@@ -151,6 +151,22 @@ describe('internal process Docker Swarm service command', function (): void {
         ]))
             ->toThrow(LocalDockerSwarmServiceFailure::class, 'advertise address is invalid');
     })->with(['', 'wg0', 'not-an-ip']);
+
+    it('treats removal of an absent Swarm service as converged', function (): void {
+        Process::fake(fn (PendingProcess $process) => Process::result(
+            errorOutput: 'Error response from daemon: no such service: orbit-plausible',
+            exitCode: 1,
+        ));
+
+        $result = app(LocalDockerSwarmServiceAction::class)->run('remove', 'orbit-plausible');
+
+        expect($result)
+            ->toBe([
+                'action' => 'remove',
+                'service' => 'orbit-plausible',
+                'changed' => false,
+            ]);
+    });
 });
 
 function configure_process_docker_swarm_service_operation_token_guard(): void

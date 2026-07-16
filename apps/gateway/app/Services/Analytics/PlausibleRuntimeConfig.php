@@ -15,36 +15,50 @@ final readonly class PlausibleRuntimeConfig
         private AnalyticsProcessEndpointResolver $endpointResolver,
     ) {}
 
-    /**
-     * @param  array<string, mixed>  $runtimeConfig
-     * @return array<string, mixed>
-     */
+    /** @param  array<string, mixed>  $runtimeConfig */
     public function for(
         NodeRoleAssignment $assignment,
         ?Process $existingProcess,
         array $runtimeConfig,
-    ): array {
+    ): PlausibleRuntimeSettings {
         $postgres = $this->endpointResolver->resolve($assignment, 'postgres_node_id', 'postgres');
         $clickHouse = $this->endpointResolver->resolve($assignment, 'clickhouse_node_id', 'clickhouse');
-        $credentials = $this->endpointResolver->postgresCredentials($postgres['process']);
+        $postgresCredentials = $this->endpointResolver->credentials($postgres['process'], 'PostgreSQL');
+        $clickHouseCredentials = $this->endpointResolver->credentials($clickHouse['process'], 'ClickHouse');
         $environment = $this->stringKeyedArray($runtimeConfig['environment'] ?? null);
-        $existingRuntimeConfig = $existingProcess?->runtime_config ?? [];
-        $existingEnvironment = $this->stringKeyedArray($existingRuntimeConfig['environment'] ?? null);
+        $existingCredentials = $this->stringKeyedArray($existingProcess?->credentials);
+        $existingEnvironment = $this->stringKeyedArray($existingCredentials['environment'] ?? null);
 
-        $runtimeConfig['environment'] = [
-            ...$environment,
+        $secretEnvironment = [
             'DATABASE_URL' => sprintf(
-                'postgres://%s:%s@%s:%d/plausible',
-                rawurlencode($credentials['username']),
-                rawurlencode($credentials['password']),
+                'postgres://%s:%s@%s:%d/%s',
+                rawurlencode($postgresCredentials['username']),
+                rawurlencode($postgresCredentials['password']),
                 $postgres['host'],
                 $postgres['port'],
+                rawurlencode($postgresCredentials['database']),
             ),
-            'CLICKHOUSE_DATABASE_URL' => "http://{$clickHouse['host']}:{$clickHouse['port']}/plausible",
+            'CLICKHOUSE_DATABASE_URL' => sprintf(
+                'http://%s:%s@%s:%d/%s',
+                rawurlencode($clickHouseCredentials['username']),
+                rawurlencode($clickHouseCredentials['password']),
+                $clickHouse['host'],
+                $clickHouse['port'],
+                rawurlencode($clickHouseCredentials['database']),
+            ),
             'SECRET_KEY_BASE' => $this->secretKeyBase($existingEnvironment),
         ];
+        $runtimeConfig['environment'] = $environment;
+        $runtimeConfig['credential_hash'] = substr(
+            string: hash('sha256', json_encode($secretEnvironment, JSON_THROW_ON_ERROR)),
+            offset: 0,
+            length: 16,
+        );
 
-        return $this->withRefreshedSpecHash($runtimeConfig);
+        return new PlausibleRuntimeSettings(
+            runtimeConfig: $this->withRefreshedSpecHash($runtimeConfig),
+            credentials: ['environment' => $secretEnvironment],
+        );
     }
 
     /**
@@ -71,7 +85,7 @@ final readonly class PlausibleRuntimeConfig
 
         $spec = [
             ...$runtimeConfig,
-            'runtime' => ProcessRuntime::DockerSwarm->value,
+            'runtime' => ProcessRuntime::Docker->value,
             'process' => 'plausible',
         ];
         ksort($spec);

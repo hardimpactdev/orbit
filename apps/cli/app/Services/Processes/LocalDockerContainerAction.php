@@ -117,7 +117,10 @@ final readonly class LocalDockerContainerAction
             throw $this->applyFailure('pull image', $spec, $pull, false);
         }
 
-        $sources = $spec->bindMountSources();
+        $sources = array_values(array_filter(
+            $spec->bindMountSources(),
+            static fn (string $source): bool => ! file_exists($source) && ! is_link($source),
+        ));
 
         if ($sources === []) {
             return;

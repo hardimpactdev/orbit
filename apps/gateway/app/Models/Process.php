@@ -32,6 +32,7 @@ use InvalidArgumentException;
  * @property ProcessRuntime $runtime
  * @property string|null $tool
  * @property array<string, mixed> $runtime_config
+ * @property array<string, mixed>|null $credentials
  * @property int $sort_order
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -81,6 +82,7 @@ class Process extends Model
         'runtime',
         'tool',
         'runtime_config',
+        'credentials',
         'sort_order',
     ];
 
@@ -98,6 +100,7 @@ class Process extends Model
             'crash_notification' => ProcessCrashNotification::class,
             'runtime' => ProcessRuntime::class,
             'runtime_config' => 'array',
+            'credentials' => 'encrypted:array',
         ];
     }
 

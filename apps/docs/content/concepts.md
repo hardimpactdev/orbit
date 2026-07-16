@@ -408,6 +408,7 @@ Source: [S3 Concepts](domains/19_s3/s3-concepts.md).
 - **S3 route publication**
 - **S3 service credentials**
 - **S3 role data path**
+- **SeaweedFS managed configuration**
 - **S3-domain boundaries**
 - **S3-domain exclusions**
 <!-- /concept-index -->

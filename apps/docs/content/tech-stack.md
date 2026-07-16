@@ -62,7 +62,7 @@ Private analytics:
 
 VPN client browser
   -> router orbit-caddy for `analytics.orbit`
-  -> Plausible CE in a Docker/Swarm service process managed by Orbit
+  -> Plausible CE in a WireGuard-bound Docker process managed by Orbit
 
 Public app analytics tracking:
 
@@ -71,7 +71,7 @@ Browser
   -> ingress edge orbit-caddy
   -> private WireGuard route to router
   -> router orbit-caddy for public analytics host relay and analytics backend pool
-  -> Plausible CE in a Docker/Swarm service process managed by Orbit
+  -> Plausible CE in a WireGuard-bound Docker process managed by Orbit
 ```
 
 The sections below walk through each layer of the stack in the same order as the table.
@@ -100,7 +100,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Realtime service backend | Laravel Reverb in a Docker runtime container managed by Orbit on `websocket` nodes, bound only to the node's WireGuard address and reached through router-owned WebSocket routes |
 | S3 service backend | SeaweedFS in a canonical node-owned Docker process on `s3` nodes, bound only to the node's WireGuard address and reached through router-owned S3 routes |
 | Metrics backend | Prometheus and Grafana as Docker Swarm process definitions on metrics role nodes; node-exporter as a host binary tool plus systemd process on metrics and workload nodes; Grafana private route `metrics.orbit` |
-| Analytics service backend | Plausible CE in a Docker/Swarm service process managed by Orbit on `analytics` nodes, bound only to the node's WireGuard address and reached through router-owned analytics routes. PostgreSQL and ClickHouse run as process-owned managed services on active `database` role nodes. |
+| Analytics service backend | Plausible CE 3.2.1 in a node-owned Docker process on `analytics` nodes, published only on the node's WireGuard address and reached through router-owned analytics routes. PostgreSQL 16 Alpine and ClickHouse 24.12 Alpine run as authenticated, node-owned Docker service processes published only on active `database` nodes' WireGuard addresses. |
 | Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
 | Network | WireGuard, served by the gateway-coupled `vpn` role |
 | Public DNS/CDN | Cloudflare integration for production domains |
@@ -552,7 +552,9 @@ from role-local Docker Compose and does not use host package installation as a
 fallback. The container uses the `chrislusf/seaweedfs:4.33` image, mounts the
 role-owned `data_path` as `/data`, and binds the S3 API only to the node's
 WireGuard address on port `8333`. The SeaweedFS console is not publicly exposed
-in v1.
+in v1. Orbit accepts only canonical S3 data paths under approved persistent-data
+roots, writes the credential-bearing `s3.json` as a mode-`0600` managed file,
+and materializes that file before Docker prepares the remaining bind mounts.
 
 The `router` role owns `s3.orbit`, the S3 backend pool, upload-compatible proxy
 settings, and private router-to-SeaweedFS routing. Apps and VPN clients use
@@ -569,6 +571,21 @@ S3 credentials are service-level SeaweedFS credentials stored on the `seaweedfs`
 row. V1 does not create per-app bucket credentials, bucket lifecycle commands,
 virtual-hosted bucket routes, wildcard DNS/TLS for bucket hostnames, distributed
 SeaweedFS, or HA guarantees.
+
+### Analytics runtime
+
+The `analytics` role uses the official Plausible CE 3.2.1 service pairing:
+`postgres:16-alpine`, `clickhouse/clickhouse-server:24.12-alpine`, and
+`ghcr.io/plausible/community-edition:v3.2.1`. Each is a node-owned Docker
+process rather than a Swarm service. Published PostgreSQL, ClickHouse, and
+Plausible ports bind directly to the owning node's WireGuard address.
+
+Orbit generates separate PostgreSQL and ClickHouse passwords when their managed
+service process rows are created. Process credentials are encrypted at rest and
+are injected into the remote Docker specification only during convergence;
+they are not stored in `runtime_config`. Plausible receives authenticated
+PostgreSQL and ClickHouse URLs plus its generated `SECRET_KEY_BASE` through the
+same encrypted process-credential boundary.
 
 Focused S3 E2E coverage lives in the dedicated `apps/e2e` runner. It covers the
 private `s3.orbit` route, credentials output, public ingress publication, and

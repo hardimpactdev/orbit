@@ -35,8 +35,9 @@ This command validates the role assignment, applies role-local options, and repo
   nodes must have active `database` roles and PostgreSQL or ClickHouse expected
   or installed. The same database node can satisfy both options.
 - `s3` accepts optional `--s3-data-path`; it defaults to
-  `/srv/orbit/s3/data`, must be absolute, and is mounted into SeaweedFS as
-  `/data`.
+  `/srv/orbit/s3/data`, must be a canonical path under an approved persistent
+  data root (`/media`, `/mnt`, `/opt/orbit`, `/srv`, or `/var/lib/orbit`), and
+  is mounted into SeaweedFS as `/data`.
 - `metrics` has no role-local options.
 - `app-prod`, `database`, and `metrics` reject unsupported role-local options.
 - Human output shows progress because convergence can be slow.
