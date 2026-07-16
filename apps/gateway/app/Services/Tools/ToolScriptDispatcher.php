@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteShellSuccessData;
@@ -51,7 +52,14 @@ final readonly class ToolScriptDispatcher
             return $result;
         }
 
-        return $this->fromSuccessEnvelope($result);
+        $scriptData = $this->scriptResultData(RemoteShellSuccessData::fromJsonEnvelope($result));
+        $scriptResult = $this->fromSuccessEnvelope($result, $scriptData);
+
+        if ($throw && $scriptData !== null && ! $scriptResult->successful()) {
+            throw new RemoteShellFailed($node, "{$tool}:{$action}", $scriptResult);
+        }
+
+        return $scriptResult;
     }
 
     public function runForRegistry(
@@ -92,16 +100,12 @@ final readonly class ToolScriptDispatcher
         );
     }
 
-    private function fromSuccessEnvelope(RemoteShellResult $result): RemoteShellResult
+    /**
+     * @param  array{exit_code: int, stdout: string, stderr: string, duration_ms: int}|null  $data
+     */
+    private function fromSuccessEnvelope(RemoteShellResult $result, ?array $data): RemoteShellResult
     {
-        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
-
-        if (
-            ! is_int($data['exit_code'] ?? null)
-            || ! is_string($data['stdout'] ?? null)
-            || ! is_string($data['stderr'] ?? null)
-            || ! is_int($data['duration_ms'] ?? null)
-        ) {
+        if ($data === null) {
             return new RemoteShellResult(
                 exitCode: 1,
                 stdout: $result->stdout,
@@ -116,5 +120,33 @@ final readonly class ToolScriptDispatcher
             stderr: $data['stderr'],
             durationMs: $data['duration_ms'],
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{exit_code: int, stdout: string, stderr: string, duration_ms: int}|null
+     */
+    private function scriptResultData(array $data): ?array
+    {
+        $exitCode = $data['exit_code'] ?? null;
+        $stdout = $data['stdout'] ?? null;
+        $stderr = $data['stderr'] ?? null;
+        $durationMs = $data['duration_ms'] ?? null;
+
+        if (
+            ! is_int($exitCode)
+            || ! is_string($stdout)
+            || ! is_string($stderr)
+            || ! is_int($durationMs)
+        ) {
+            return null;
+        }
+
+        return [
+            'exit_code' => $exitCode,
+            'stdout' => $stdout,
+            'stderr' => $stderr,
+            'duration_ms' => $durationMs,
+        ];
     }
 }

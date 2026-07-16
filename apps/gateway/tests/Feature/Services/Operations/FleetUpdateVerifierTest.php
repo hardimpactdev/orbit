@@ -8,6 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Operations\FleetUpdateVerificationFailed;
 use App\Services\Operations\FleetUpdateVerifier;
 use App\Services\Operations\GatewayCliArtifactRelay;
@@ -35,6 +36,7 @@ function fleet_update_verifier_use_agent_push(): void
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
+    app()->instance(OrbitCaService::class, new FleetVerifierFakeCa);
     app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay {
         /**
          * @return array{url: string, sha256: string, source_url: string}
@@ -684,6 +686,15 @@ function fleet_verifier_agent_response(Request $request, ?string $failCheck = nu
             ],
         ],
     ]);
+}
+
+readonly class FleetVerifierFakeCa extends OrbitCaService
+{
+    #[Override]
+    public function rootCert(): string
+    {
+        return "-----BEGIN CERTIFICATE-----\ndGVzdA==\n-----END CERTIFICATE-----\n";
+    }
 }
 
 function fleet_verifier_install_success_envelope(): string

@@ -17,6 +17,7 @@ use App\Services\NodeCommandTransport\NodeCommandEnvelope;
 use App\Services\NodeCommandTransport\NodeCommandTransportSelector;
 use App\Services\NodeCommandTransport\NodeTransport;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\Operations\FleetUpdateNodeCliLauncher;
 use App\Services\Operations\GatewayLocalOperationTokenAuthorizer;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
@@ -1242,6 +1243,10 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
 
         $environment['HOME'] = $home;
         $environment['ORBIT_CONFIG_PATH'] ??= "{$home}/.config/orbit/config.json";
+
+        if (! $node->hasActiveRole('gateway')) {
+            $environment['ORBIT_BIN_PATH'] = FleetUpdateNodeCliLauncher::binPath($node);
+        }
 
         if ($this->shouldBindApplicationKey($transportOptions)) {
             $environment['APP_KEY'] = $this->applicationKey;

@@ -413,12 +413,10 @@ describe('DoctorRunController', function (): void {
         $restoredHash = new ProxyRouteRenderer()->sourceHash($route);
         app()->instance(OrbitCaService::class, new DoctorRunFakeCa);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(
-            perRouteStdout: "0\t\t\t\t0\t0\n",
+            perRouteStdout: '',
             nodeLevelStdout: '',
-            perRouteStdouts: [
+            routeProbeStdouts: [
                 "0\t\t\t\t0\t0\n",
-                '',
-                '',
                 "1\t{$restoredHash}\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n",
             ],
         ));
@@ -441,6 +439,58 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.mode', 'restore')
             ->assertJsonPath('success.data.doctor.summary.fixed', 1)
             ->assertJsonPath('success.data.doctor.actions.0.status', 'completed');
+    });
+
+    it('does not report proxy convergence when drift remains after restore', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'ingress-1', 'status' => 'active']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'hauzer.app',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://10.6.0.2:80'],
+                'upstream' => 'http://10.6.0.2:80',
+            ],
+        ]);
+        $expectedHash = new ProxyRouteRenderer()->sourceHash($route);
+        app()->instance(OrbitCaService::class, new DoctorRunFakeCa);
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(
+            perRouteStdout: '',
+            nodeLevelStdout: '',
+            routeProbeStdouts: [
+                "0\t\t\t\t0\t0\n",
+                "1\t".str_repeat('a', 64)."\t/etc/orbit/certs/hauzer.app.crt\t/etc/orbit/certs/hauzer.app.key\t1\t1\n",
+            ],
+        ));
+
+        $response = $this->call(
+            'POST',
+            '/api/doctor/fix',
+            [
+                'mode' => 'restore',
+                'families' => ['proxy'],
+                'node' => 'ingress-1',
+            ],
+            [],
+            [],
+            doctor_run_explicit_fallback_server(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.doctor.healthy', false)
+            ->assertJsonPath('success.data.doctor.summary.fixed', 0)
+            ->assertJsonPath('success.data.doctor.summary.failed', 1)
+            ->assertJsonPath('success.data.doctor.issues.0.key', 'proxy.route_mismatch')
+            ->assertJsonPath('success.data.doctor.issues.0.detail.expected_hash', $expectedHash)
+            ->assertJsonPath('success.data.doctor.actions.0.status', 'failed')
+            ->assertJsonPath('success.data.doctor.actions.0.details.node', 'ingress-1')
+            ->assertJsonPath(
+                'success.data.doctor.actions.0.details.operation',
+                'verify proxy.route_mismatch',
+            );
     });
 
     it('dry-runs API restore without applying fixers', function (): void {
@@ -1396,16 +1446,22 @@ final class DoctorRunRemoteShell implements RemoteShell
     /** @var list<string> */
     private array $perRouteStdouts;
 
+    /** @var list<string> */
+    private array $routeProbeStdouts;
+
     /**
      * @param  list<string>  $perRouteStdouts
+     * @param  list<string>  $routeProbeStdouts
      */
     public function __construct(
         string $perRouteStdout,
         private readonly string $nodeLevelStdout = '',
         private readonly int $exitCode = 0,
         array $perRouteStdouts = [],
+        array $routeProbeStdouts = [],
     ) {
         $this->perRouteStdouts = $perRouteStdouts === [] ? [$perRouteStdout] : $perRouteStdouts;
+        $this->routeProbeStdouts = $routeProbeStdouts;
     }
 
     /**
@@ -1435,6 +1491,15 @@ final class DoctorRunRemoteShell implements RemoteShell
             return new RemoteShellResult(
                 exitCode: 0,
                 stdout: "1\t".base64_encode(new CaddyGlobalConfig()->fresh())."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        if ($this->routeProbeStdouts !== [] && str_contains($script, '$ORBIT_PROXY_DOMAIN')) {
+            return new RemoteShellResult(
+                exitCode: $this->exitCode,
+                stdout: array_shift($this->routeProbeStdouts) ?? '',
                 stderr: '',
                 durationMs: 1,
             );

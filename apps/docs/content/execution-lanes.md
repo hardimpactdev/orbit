@@ -175,6 +175,10 @@ not retry it over SSH. On Linux, the install converges an existing managed
 `orbit-agent` systemd unit to the candidate binary and service configuration
 before scheduling the deferred Agent restart, so a stale unit cannot keep an
 older transport implementation alive after a successful artifact install.
+Every later Agent-push envelope pins `ORBIT_BIN_PATH` to the owner-user
+launcher selected by the fleet updater. This prevents a stale protected
+`/usr/local/bin/orbit` compatibility link from shadowing the newly installed
+immutable CLI artifact.
 Gateway-host CLI replacement additionally verifies both host symlinks after
 install and forces a gateway service task replacement. This is required when a
 new immutable CLI checksum shares the current semantic version or gateway image

@@ -9,6 +9,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
+use App\Exceptions\RemoteShellFailed;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -78,6 +79,50 @@ describe('ProxyRouteProbe interface', function (): void {
                 ->introspect($route)
                 ->isEmpty(),
         )->toBeTrue();
+    });
+
+    it('fails the probe when the executed tool script exits unsuccessfully', function (): void {
+        $node = createTestAppHostNode(['name' => 'ingress-1']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'hauzer.app',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://10.6.0.2:80'],
+                'upstream' => 'http://10.6.0.2:80',
+            ],
+        ]);
+        $executor = new class implements RunsInternalCommands {
+            public function runInternal(
+                Node $node,
+                string $commandName,
+                array $arguments = [],
+                array $commandOptions = [],
+                array $transportOptions = [],
+            ): RemoteShellResult {
+                return new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: json_encode([
+                        'success' => ['data' => [
+                            'exit_code' => 2,
+                            'stdout' => '',
+                            'stderr' => 'sh: 2: set: Illegal option -o pipefail',
+                            'duration_ms' => 4,
+                        ]],
+                    ], JSON_THROW_ON_ERROR),
+                    stderr: '',
+                    durationMs: 4,
+                );
+            }
+        };
+        $probe = new ProxyRouteProbe(scripts: new ToolScriptDispatcher($executor));
+
+        expect(fn (): ProbeSnapshot => $probe->introspect($route))
+            ->toThrow(
+                RemoteShellFailed::class,
+                'RemoteShell failed on ingress-1 (exit 2): sh: 2: set: Illegal option -o pipefail',
+            );
     });
 });
 

@@ -106,6 +106,11 @@ Each code below identifies a specific proxy-family drift condition that the prob
 ## Proxy Fix Map
 
 Use `doctor --restore` to trigger the repair action listed for each code.
+After applying restore actions, Doctor performs a fresh probe in the same
+node/app/workspace scope. A command-level success is reported as failed when
+the matching route still has drift, with the node, verification operation, and
+observed mismatch retained in the action details. Doctor reports convergence
+only when that readback is clean.
 
 | Code | `doctor --restore` behavior |
 | --- | --- |

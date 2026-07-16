@@ -184,6 +184,7 @@ it('passes the macOS node home to workspace runtime container agent-push actions
                 'environment' => [
                     'HOME' => '/Users/nckrtl',
                     'ORBIT_CONFIG_PATH' => '/Users/nckrtl/.config/orbit/config.json',
+                    'ORBIT_BIN_PATH' => '/Users/nckrtl/.local/bin/orbit',
                     'APP_KEY' => app_runtime_manager_operation_secret(),
                 ],
             ],

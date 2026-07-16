@@ -1099,15 +1099,54 @@ final readonly class DoctorReportRunner
             ];
         }
 
-        if ($mode === 'restore' && $key === 'node.updates') {
-            return $this->finalize(
-                $this->probe($node, $families, $key, scope: $scope),
-                $mode,
-                $actions,
-            );
+        if ($this->restoreRequiresVerification($mode, $key, $probe)) {
+            return $this->finalizeRestore($node, $families, $key, $scope, $actions);
         }
 
         return $this->finalize($probe, $mode, $actions);
+    }
+
+    /**
+     * @param  list<string>  $families
+     * @param  list<array<string, mixed>>  $actions
+     * @return array<string, mixed>
+     */
+    public function finalizeRestore(
+        Node $node,
+        array $families,
+        ?string $key,
+        DoctorTargetScope $scope,
+        array $actions,
+    ): array {
+        $probe = $this->probe($node, $families, $key, scope: $scope);
+
+        return $this->finalize(
+            $probe,
+            'restore',
+            $this->markCompletedProxyActionsWithRemainingDriftAsFailed(
+                $actions,
+                $this->issuesFromProbe($probe),
+            ),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $probe
+     */
+    public function restoreRequiresVerification(string $mode, ?string $key, array $probe): bool
+    {
+        if ($mode !== 'restore') {
+            return false;
+        }
+
+        if ($key === 'node.updates') {
+            return true;
+        }
+
+        $scope = is_array($probe['scope'] ?? null) ? $probe['scope'] : [];
+        $families = is_array($scope['families'] ?? null) ? $scope['families'] : [];
+
+        return in_array('proxy', $families, true);
     }
 
     /**
@@ -4062,6 +4101,135 @@ final readonly class DoctorReportRunner
                 && ! $this->databaseConnectionIssueResolved($issue, $resolvedDatabaseTargets)
             ),
         ));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $actions
+     * @param  list<array<string, mixed>>  $remainingIssues
+     * @return list<array<string, mixed>>
+     */
+    private function markCompletedProxyActionsWithRemainingDriftAsFailed(
+        array $actions,
+        array $remainingIssues,
+    ): array {
+        $verifiedActions = [];
+
+        foreach ($actions as $action) {
+            $verifiedActions[] = $this->verifyCompletedProxyAction($action, $remainingIssues);
+        }
+
+        return $verifiedActions;
+    }
+
+    /**
+     * @param  array<string, mixed>  $action
+     * @param  list<array<string, mixed>>  $remainingIssues
+     * @return array<string, mixed>
+     */
+    private function verifyCompletedProxyAction(array $action, array $remainingIssues): array
+    {
+        if (
+            ($action['status'] ?? null) !== 'completed'
+            || ($action['family'] ?? null) !== 'proxy'
+        ) {
+            return $action;
+        }
+
+        $remainingIssue = collect($remainingIssues)->first(
+            fn (array $issue): bool => $this->actionMatchesRemainingIssue($action, $issue),
+        );
+
+        if (! is_array($remainingIssue)) {
+            return $action;
+        }
+
+        return $this->failedProxyAction($action, $remainingIssue);
+    }
+
+    /**
+     * @param  array<string, mixed>  $action
+     * @param  array<string, mixed>  $remainingIssue
+     * @return array<string, mixed>
+     */
+    private function failedProxyAction(array $action, array $remainingIssue): array
+    {
+        $node = $this->stringValue($remainingIssue, 'node') ?? $this->stringValue($action, 'node') ?? 'unknown';
+        $key = $this->stringValue($remainingIssue, 'key') ?? $this->stringValue($action, 'key') ?? 'unknown';
+        $operation = "verify {$key}";
+        $issueDetail = is_array($remainingIssue['detail'] ?? null) ? $remainingIssue['detail'] : [];
+        $details = is_array($action['details'] ?? null) ? $action['details'] : [];
+
+        return [
+            ...$action,
+            'status' => 'failed',
+            'summary' => "Proxy restore verification failed on node '{$node}' during '{$operation}'.",
+            'details' => [
+                ...$details,
+                ...$issueDetail,
+                'node' => $node,
+                'operation' => $operation,
+                'error' => "Drift remained after repair on node '{$node}' during '{$operation}'.",
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $action
+     * @param  array<string, mixed>  $issue
+     */
+    private function actionMatchesRemainingIssue(array $action, array $issue): bool
+    {
+        if (($action['family'] ?? null) !== 'proxy' || ($issue['family'] ?? null) !== 'proxy') {
+            return false;
+        }
+
+        $actionDetails = is_array($action['details'] ?? null) ? $action['details'] : [];
+        $issueDetail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+        $actionDomain = is_string($actionDetails['route'] ?? null) ? $actionDetails['route'] : null;
+        $issueDomain = is_string($issueDetail['domain'] ?? null) ? $issueDetail['domain'] : null;
+
+        if ($actionDomain !== null) {
+            return $actionDomain === $issueDomain;
+        }
+
+        $actionNode = is_string($action['node'] ?? null) ? $action['node'] : null;
+        $issueNode = is_string($issue['node'] ?? null) ? $issue['node'] : null;
+
+        return (
+            ($actionNode === null || $actionNode === $issueNode)
+            && $this->issueResolutionId($action) === $this->issueResolutionId($issue)
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $probe
+     * @return list<array<string, mixed>>
+     */
+    private function issuesFromProbe(array $probe): array
+    {
+        $probeIssues = is_array($probe['issues'] ?? null) ? $probe['issues'] : [];
+        $issues = [];
+
+        foreach ($probeIssues as $issue) {
+            if (! is_array($issue)) {
+                continue;
+            }
+
+            /** @var array<string, mixed> $issue */
+            $issues[] = $issue;
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function stringValue(array $item, string $key): ?string
+    {
+        $value = $item[$key] ?? null;
+
+        return is_string($value) ? $value : null;
     }
 
     /**

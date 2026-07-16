@@ -134,6 +134,7 @@ describe(RemoteLocalExecutor::class, function (): void {
                 'timeout' => 45,
                 'environment' => [
                     'ORBIT_REQUEST_MARKER' => 'agent-push-env',
+                    'ORBIT_BIN_PATH' => '/usr/local/bin/orbit',
                 ],
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000406',
@@ -1514,6 +1515,7 @@ function remoteLocalExecutorEnvironment(): array
     return [
         'HOME' => '/home/orbit',
         'ORBIT_CONFIG_PATH' => '/home/orbit/.config/orbit/config.json',
+        'ORBIT_BIN_PATH' => '/home/orbit/.local/bin/orbit',
         'APP_KEY' => 'gateway-secret',
     ];
 }
@@ -1630,7 +1632,7 @@ function remote_local_executor_default_agent_push_request_matches(Request $reque
         $request->url() === 'http://10.44.0.70:9477/v1/commands'
         && $operationToken !== null
         && ($payload['operation_id'] ?? null) === OperationToken::parse($operationToken)->id
-        && ($payload['environment'] ?? null) === array_merge([
+        && ($payload['environment'] ?? null) == array_merge([
             'ORBIT_REQUEST_MARKER' => 'agent-push-env',
         ], remoteLocalExecutorEnvironment())
         && remote_local_executor_request_body_contains_all($body, [
