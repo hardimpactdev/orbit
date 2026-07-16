@@ -163,6 +163,38 @@ describe('internal managed file command', function (): void {
             ->and($commands)
             ->toContain('-n chmod 0644 /etc/apt/apt.conf.d/20auto-upgrades');
     });
+
+    it('writes user orbit files without sudo', function (): void {
+        $log = fake_user_managed_file_binaries();
+
+        [$exitCode, $output] = run_internal_managed_file_command(
+            [
+                'action' => 'write',
+                '--operation-token' => managed_file_signed_operation_token(),
+                '--json' => true,
+            ],
+            json_encode([
+                'path' => '/Users/orbit-test-user/.config/orbit/certs/app.test.crt',
+                'content' => "certificate\n",
+                'mode' => '0644',
+                'directory_mode' => '0755',
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $commands = file($log, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        expect(is_array($commands))->toBeTrue();
+        /** @var list<string> $commands */
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('"path":"/Users/orbit-test-user/.config/orbit/certs/app.test.crt"')
+            ->and($commands)
+            ->toContain('install -d -m 0755 /Users/orbit-test-user/.config/orbit/certs')
+            ->toContain('tee /Users/orbit-test-user/.config/orbit/certs/app.test.crt')
+            ->toContain('chmod 0644 /Users/orbit-test-user/.config/orbit/certs/app.test.crt')
+            ->not->toContain('sudo');
+    });
 });
 
 function managed_file_signed_operation_token(
@@ -259,6 +291,34 @@ function fake_managed_file_sudo_binary(
         SH;
 
     file_put_contents("{$directory}/bin/sudo", $script);
+    chmod("{$directory}/bin/sudo", 0755);
+
+    $originalPath = getenv('PATH') ?: '';
+    putenv("ORBIT_MANAGED_FILE_ORIGINAL_PATH={$originalPath}");
+    putenv("PATH={$directory}/bin:{$originalPath}");
+
+    return $log;
+}
+
+function fake_user_managed_file_binaries(): string
+{
+    $directory = sys_get_temp_dir().'/orbit-user-managed-file-'.bin2hex(random_bytes(8));
+    mkdir("{$directory}/bin", recursive: true);
+    $log = "{$directory}/commands.log";
+
+    foreach (['install', 'tee', 'chmod'] as $command) {
+        $script = <<<SH
+            #!/bin/sh
+            printf '%s %s\n' '$command' "\$*" >> '$log'
+            [ '$command' = 'tee' ] && cat >/dev/null
+            exit 0
+            SH;
+
+        file_put_contents("{$directory}/bin/{$command}", $script);
+        chmod("{$directory}/bin/{$command}", 0755);
+    }
+
+    file_put_contents("{$directory}/bin/sudo", "#!/bin/sh\nprintf 'sudo\\n' >> '$log'\nexit 77\n");
     chmod("{$directory}/bin/sudo", 0755);
 
     $originalPath = getenv('PATH') ?: '';

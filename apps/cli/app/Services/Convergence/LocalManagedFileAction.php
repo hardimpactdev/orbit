@@ -70,18 +70,18 @@ final readonly class LocalManagedFileAction
     private function write(string $path, string $content, string $mode, string $directoryMode): array
     {
         $directory = dirname($path);
+        $privilege = $this->isUserOrbitPath($path) ? [] : ['sudo', '-n'];
 
         $this->mustRun([
-            'sudo',
-            '-n',
+            ...$privilege,
             'install',
             '-d',
             '-m',
             $directoryMode,
             $directory,
         ], 'managed_file.directory_failed');
-        $this->mustRunWithInput(['sudo', '-n', 'tee', $path], $content, 'managed_file.write_failed');
-        $this->mustRun(['sudo', '-n', 'chmod', $mode, $path], 'managed_file.chmod_failed');
+        $this->mustRunWithInput([...$privilege, 'tee', $path], $content, 'managed_file.write_failed');
+        $this->mustRun([...$privilege, 'chmod', $mode, $path], 'managed_file.chmod_failed');
 
         return [
             'path' => $path,
@@ -129,6 +129,11 @@ final readonly class LocalManagedFileAction
     private function containsPathTraversal(string $path): bool
     {
         return array_any(explode('/', $path), static fn ($segment) => $segment === '.' || $segment === '..');
+    }
+
+    private function isUserOrbitPath(string $path): bool
+    {
+        return preg_match(self::USER_ORBIT_PATH_PATTERN, $path) === 1;
     }
 
     private function fileExists(string $path): bool
