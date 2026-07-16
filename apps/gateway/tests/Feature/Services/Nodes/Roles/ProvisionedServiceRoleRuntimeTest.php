@@ -178,9 +178,10 @@ it('applies and starts the node-owned Plausible Docker Swarm runtime', function 
             'internal:tool:run-script',
             'internal:process-docker-swarm-service',
             'internal:process-docker-swarm-service',
+            'internal:process-docker-swarm-service',
         ])
         ->and($executor->swarmActions)
-        ->toBe(['apply', 'start']);
+        ->toBe(['ensure', 'apply', 'start']);
 });
 
 it('throws when the persisted service runtime cannot be started', function (): void {
@@ -204,6 +205,37 @@ it('throws when the persisted service runtime cannot be started', function (): v
     expect(fn () => app(RoleRuntimeConverger::class)->convergeProcess($node, $process, 's3'))
         ->toThrow(\RuntimeException::class, "S3 process runtime unit 'orbit-seaweedfs' could not be started.");
 });
+
+it('removes the node-owned runtime before deleting the role process', function (string $role): void {
+    $runtime = new ProvisionedServiceRoleRecordingRuntime;
+    app()->instance(RoleRuntimeConverger::class, $runtime);
+
+    $node = Node::factory()->create([
+        'name' => "services1-{$role}",
+        'platform' => 'ubuntu_26-04',
+        'status' => NodeStatus::Active,
+    ]);
+    $settings = ['data_path' => '/var/lib/orbit/s3'];
+
+    if ($role === 'analytics') {
+        $databaseNode = provisionedServiceRoleDatabaseNode();
+        $settings = [
+            'postgres_node_id' => $databaseNode->id,
+            'clickhouse_node_id' => $databaseNode->id,
+        ];
+    }
+
+    $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, $role, $settings);
+
+    app(NodeRoleAssignmentService::class)->remove($node, $role, force: true);
+
+    expect($runtime->removedProcesses)
+        ->toBe(["{$role}:".($role === 'analytics' ? 'plausible' : 'seaweedfs')])
+        ->and(Process::query()->ownedBy($node)->count())
+        ->toBe(0)
+        ->and($assignment->fresh())
+        ->toBeNull();
+})->with(['analytics', 's3']);
 
 function provisionedServiceRoleDatabaseNode(): Node
 {
@@ -255,15 +287,22 @@ final class ProvisionedServiceRoleRecordingRuntime extends RoleRuntimeConverger
      */
     public array $processes = [];
 
+    /**
+     * @var list<string>
+     */
+    public array $removedProcesses = [];
+
     public function __construct(
         private readonly bool $failProcess = false,
     ) {}
 
-    public function convergeTool(Node $node, string $tool): void
+    #[\Override]
+    public function convergeTool(Node $node, string $toolName): void
     {
-        $this->tools[] = $tool;
+        $this->tools[] = $toolName;
     }
 
+    #[\Override]
     public function convergeProcess(Node $node, Process $process, string $role): void
     {
         if ($this->failProcess) {
@@ -271,6 +310,12 @@ final class ProvisionedServiceRoleRecordingRuntime extends RoleRuntimeConverger
         }
 
         $this->processes[] = "{$role}:{$process->name}";
+    }
+
+    #[\Override]
+    public function removeProcess(Node $node, Process $process, string $role): void
+    {
+        $this->removedProcesses[] = "{$role}:{$process->name}";
     }
 }
 

@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
+use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Support\Facades\Process as ProcessFacade;
 use Symfony\Component\Process\Process;
 
 final readonly class LocalDockerSwarmServiceAction
 {
-    private const array ACTIONS = ['apply', 'remove', 'restart', 'start', 'stop'];
+    private const array ACTIONS = ['apply', 'ensure', 'remove', 'restart', 'start', 'stop'];
 
     /**
      * @param  array<string, mixed>  $payload
@@ -18,6 +20,10 @@ final readonly class LocalDockerSwarmServiceAction
     {
         $action = $this->action($action);
         $service = $this->service($service);
+
+        if ($action === 'ensure') {
+            return $this->ensureManager($service);
+        }
 
         if ($action === 'apply') {
             return $this->apply(LocalDockerSwarmServiceSpec::from([
@@ -37,6 +43,52 @@ final readonly class LocalDockerSwarmServiceAction
         }
 
         throw $this->failure($action, $service, $result);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function ensureManager(string $service): array
+    {
+        $inspect = $this->runEnsureProcess(['docker', 'info', '--format', '{{.Swarm.LocalNodeState}}']);
+
+        if (! $inspect->successful()) {
+            throw $this->ensureFailure($service, $inspect);
+        }
+
+        $state = trim($inspect->output());
+
+        if ($state === 'active') {
+            return [
+                'action' => 'ensure',
+                'service' => $service,
+                'changed' => false,
+            ];
+        }
+
+        if ($state !== 'inactive') {
+            throw new LocalDockerSwarmServiceFailure(
+                errorCode: 'docker_swarm_service.ensure_failed',
+                message: "Docker Swarm local node state '{$state}' is not supported.",
+                meta: [
+                    'action' => 'ensure',
+                    'service' => $service,
+                    'state' => $state,
+                ],
+            );
+        }
+
+        $initialize = $this->runEnsureProcess(['docker', 'swarm', 'init']);
+
+        if (! $initialize->successful()) {
+            throw $this->ensureFailure($service, $initialize);
+        }
+
+        return [
+            'action' => 'ensure',
+            'service' => $service,
+            'changed' => true,
+        ];
     }
 
     /**
@@ -141,6 +193,14 @@ final readonly class LocalDockerSwarmServiceAction
         return $process;
     }
 
+    /**
+     * @param  list<string>  $command
+     */
+    private function runEnsureProcess(array $command): ProcessResult
+    {
+        return ProcessFacade::timeout(60)->run($command);
+    }
+
     private function failure(string $action, string $service, Process $result): LocalDockerSwarmServiceFailure
     {
         return new LocalDockerSwarmServiceFailure(
@@ -151,6 +211,20 @@ final readonly class LocalDockerSwarmServiceAction
                 'service' => $service,
                 'exit_code' => $result->getExitCode(),
                 'stderr' => trim($result->getErrorOutput()),
+            ],
+        );
+    }
+
+    private function ensureFailure(string $service, ProcessResult $result): LocalDockerSwarmServiceFailure
+    {
+        return new LocalDockerSwarmServiceFailure(
+            errorCode: 'docker_swarm_service.ensure_failed',
+            message: "Docker Swarm manager initialization failed for '{$service}'.",
+            meta: [
+                'action' => 'ensure',
+                'service' => $service,
+                'exit_code' => $result->exitCode(),
+                'stderr' => trim($result->errorOutput()),
             ],
         );
     }

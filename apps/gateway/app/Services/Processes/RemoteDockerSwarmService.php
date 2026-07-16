@@ -19,6 +19,11 @@ final readonly class RemoteDockerSwarmService
         return $this->run($node, 'remove', $service)->successful();
     }
 
+    public function ensureManager(Node $node): bool
+    {
+        return $this->run($node, 'ensure', 'orbit-runtime')->successful();
+    }
+
     /**
      * @param  array<string, mixed>  $spec
      */

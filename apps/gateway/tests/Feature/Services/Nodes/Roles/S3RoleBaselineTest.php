@@ -15,11 +15,16 @@ use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\RoleRuntimeConverger;
 use App\Services\Nodes\Roles\RoleBaselines\S3RoleBaseline;
 use App\Services\S3\S3RuntimeContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(RoleRuntimeConverger::class, new S3BaselineNoopRuntime);
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -235,3 +240,15 @@ it('does not purge the host data path when purgeData is true (configurator bound
 
     expect($remaining)->toBeNull();
 });
+
+final class S3BaselineNoopRuntime extends RoleRuntimeConverger
+{
+    #[\Override]
+    public function convergeTool(Node $node, string $toolName): void {}
+
+    #[\Override]
+    public function convergeProcess(Node $node, Process $process, string $role): void {}
+
+    #[\Override]
+    public function removeProcess(Node $node, Process $process, string $role): void {}
+}

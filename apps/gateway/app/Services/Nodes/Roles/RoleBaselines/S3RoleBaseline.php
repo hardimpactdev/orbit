@@ -6,6 +6,7 @@ namespace App\Services\Nodes\Roles\RoleBaselines;
 
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Process;
 use App\Services\S3\S3ServiceConfigurator;
 use App\Services\Tools\ToolCatalog;
 
@@ -29,6 +30,16 @@ class S3RoleBaseline implements RoleBaseline
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
     {
+        /** @var Process|null $process */
+        $process = Process::query()
+            ->where('node_id', $node->id)
+            ->where('tool', 'seaweedfs')
+            ->first();
+
+        if ($process instanceof Process) {
+            $this->runtimeConverger()->removeProcess($node, $process, 's3');
+        }
+
         $this->configurator->remove($node, $purgeData);
     }
 

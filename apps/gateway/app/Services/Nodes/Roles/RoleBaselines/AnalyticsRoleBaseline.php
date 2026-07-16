@@ -53,13 +53,17 @@ class AnalyticsRoleBaseline implements RoleBaseline
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
     {
-        Process::query()
+        /** @var Process|null $process */
+        $process = Process::query()
             ->ownedBy($node)
             ->where('name', self::ProcessName)
             ->withRuntimeService('plausible')
-            ->delete();
+            ->first();
 
-        $this->removeTools($node, ['docker']);
+        if ($process instanceof Process) {
+            $this->runtimeConverger()->removeProcess($node, $process, 'analytics');
+            $process->delete();
+        }
     }
 
     protected function toolCatalog(): ToolCatalog

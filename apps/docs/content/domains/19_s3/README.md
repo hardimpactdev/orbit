@@ -26,6 +26,9 @@ These rules govern what the S3 command family owns and what it may not touch.
 - S3 role convergence installs and verifies Docker, applies the canonical
   SeaweedFS process runtime, and starts it before the role assignment becomes
   active. Apply or start failure keeps provisioning incomplete.
+- Removing the S3 role removes its live SeaweedFS container before deleting
+  the process, tool, and role records. The data path owned by the role remains
+  intact unless a separate purge contract explicitly removes it.
 - S3 service credentials are service-level SeaweedFS credentials stored on the
   `seaweedfs` tool row. They are visible through `tool:credentials seaweedfs` and
   `s3:credentials`.

@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles\RoleBaselines;
 
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use App\Services\Processes\RemoteDockerSwarmService;
 use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
 use RuntimeException;
@@ -19,6 +21,7 @@ class RoleRuntimeConverger
         private readonly ?ToolsProbe $toolsProbe = null,
         private readonly ?ToolsFixer $toolsFixer = null,
         private readonly ?ProcessRuntimeDriverRegistry $processRuntimeDrivers = null,
+        private readonly ?RemoteDockerSwarmService $dockerSwarm = null,
     ) {}
 
     public function convergeTool(Node $node, string $toolName): void
@@ -49,6 +52,12 @@ class RoleRuntimeConverger
 
     public function convergeProcess(Node $node, Process $process, string $role): void
     {
+        if ($process->runtime === ProcessRuntime::DockerSwarm && ! $this->dockerSwarm()->ensureManager($node)) {
+            throw new RuntimeException(
+                ucfirst($role).' process runtime could not initialize Docker Swarm.',
+            );
+        }
+
         $context = new ProcessOwnerContext(
             node: $node,
             app: null,
@@ -69,6 +78,26 @@ class RoleRuntimeConverger
         if (! $driver->start($node, $runtimeUnit)) {
             throw new RuntimeException(
                 ucfirst($role)." process runtime unit '{$runtimeUnit}' could not be started.",
+            );
+        }
+    }
+
+    public function removeProcess(Node $node, Process $process, string $role): void
+    {
+        $context = new ProcessOwnerContext(
+            node: $node,
+            app: null,
+            workspace: null,
+            owner: $node,
+        );
+        $runtimeApp = $context->runtimeApp();
+        $workspace = $context->runtimeWorkspaceFor($process);
+        $driver = $this->processRuntimeDrivers()->forProcess($process);
+        $runtimeUnit = $driver->runtimeUnitName($runtimeApp, $process, $workspace);
+
+        if (! $driver->remove($node, $runtimeUnit)) {
+            throw new RuntimeException(
+                ucfirst($role)." process runtime unit '{$runtimeUnit}' could not be removed.",
             );
         }
     }
@@ -111,5 +140,10 @@ class RoleRuntimeConverger
     private function processRuntimeDrivers(): ProcessRuntimeDriverRegistry
     {
         return $this->processRuntimeDrivers ?? app(ProcessRuntimeDriverRegistry::class);
+    }
+
+    private function dockerSwarm(): RemoteDockerSwarmService
+    {
+        return $this->dockerSwarm ?? app(RemoteDockerSwarmService::class);
     }
 }
