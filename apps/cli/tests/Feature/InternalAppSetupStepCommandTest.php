@@ -206,10 +206,10 @@ function run_internal_app_setup_step_command(array $parameters = [], string $std
     $input = new ArrayInput($parameters);
     $input->setStream($stream);
 
-    $output = new BufferedOutput();
+    $output = new BufferedOutput;
     $command = Artisan::all()['internal:app-setup-step'] ?? null;
 
-    if (!$command instanceof Command) {
+    if (! $command instanceof Command) {
         throw new RuntimeException('The internal app setup step command is not registered.');
     }
 

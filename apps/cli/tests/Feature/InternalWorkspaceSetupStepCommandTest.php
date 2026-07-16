@@ -144,10 +144,10 @@ function run_internal_workspace_setup_step_command(array $parameters = [], strin
     $input = new ArrayInput($parameters);
     $input->setStream($stream);
 
-    $output = new BufferedOutput();
+    $output = new BufferedOutput;
     $command = Artisan::all()['internal:workspace-setup-step'] ?? null;
 
-    if (!$command instanceof Command) {
+    if (! $command instanceof Command) {
         throw new RuntimeException('The internal workspace setup step command is not registered.');
     }
 

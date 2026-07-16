@@ -457,7 +457,17 @@ final readonly class EnsureAppProxyRoute
             throw new RuntimeException("Proxy route '{$domain}' is missing a backend artifact.");
         }
 
-        return $backendArtifact;
+        $artifact = [];
+
+        foreach ($backendArtifact as $key => $value) {
+            if (! is_string($key)) {
+                throw new RuntimeException("Proxy route '{$domain}' has an invalid backend artifact.");
+            }
+
+            $artifact[$key] = $value;
+        }
+
+        return $artifact;
     }
 
     /**

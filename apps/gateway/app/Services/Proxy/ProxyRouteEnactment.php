@@ -127,6 +127,20 @@ final class ProxyRouteEnactment
     {
         $enactment = $config['enactment'] ?? null;
 
-        return is_array($enactment) ? $enactment : [];
+        if (! is_array($enactment)) {
+            return [];
+        }
+
+        $state = [];
+
+        foreach ($enactment as $key => $value) {
+            if (! is_string($key)) {
+                return [];
+            }
+
+            $state[$key] = $value;
+        }
+
+        return $state;
     }
 }
