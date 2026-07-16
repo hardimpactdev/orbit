@@ -1,0 +1,118 @@
+Retained topology proof
+=======================
+
+Feature tip: d4d25f74d2256abcfa20e28cf660c7267e983ee9
+Accepted main tip: ea28132f2dfc042134fb89c41f0e3bd7a9780053
+Topology: dev-4ef733
+Kind: operator_gateway_app-prod_ingress
+Provider/host: Incus on beast
+Instances:
+- operator: orbit-e2e-dev-4ef733-operator
+- gateway/router: orbit-e2e-dev-4ef733-gateway
+- app-prod/ingress: orbit-e2e-dev-4ef733-prod
+
+BEAST was used only as the disposable retained E2E substrate. Hauzer was not
+deployed or configured as a BEAST project.
+
+Source identity
+---------------
+
+The local worktree and the gateway runtime overlay produced identical SHA-256
+hashes for:
+
+- RemoteLocalExecutor.php: b09ec090d03754380a6ec9ef18bcd12c5a898c9e873d0a3799da2f9cdb5edecf
+- OperationTokenGuard.php: 7a2c3671146b35e82dba4deff5acfca821179dd957d472c9c23b693e2e900d8e
+- DoctorReportRunner.php: b76e27a050202ad77a11935c4f02e57f408bb903d381bf06fbac4046d5be8de6
+- ProxyRouteProbe.php: 5bd2eb90687367a9c4abaa9104ad1ba1cc6efba435fd528c6dd8565a64d0942c
+- ProxyRouteFixer.php: 5a85ce1e58b694c0ba4168de2ba2ad1bb5c44c70dcc9fddf235692bc6dbcb7cc
+- GatewaySwarmManager.php: 8824e696c957ea034bc3202af4e4a87d4a5bf2babf7559ec0dc472a392661ca7
+
+Gateway-local token round trip
+------------------------------
+
+The retained gateway used an `orbit-gateway` container alias whose
+`/usr/local/bin/orbit` and `/usr/local/bin/orbit-cli` both executed the
+source-mounted CLI. Registering Hauzer and Mealou executed backend operations
+on app-prod and gateway-local router operations through the real gateway API,
+operation-token authorization, container executor, and CLI guard.
+
+With the gateway Caddy container intentionally absent, both registrations
+failed at the exact expected operation:
+
+- Hauzer: layer=router node=gateway operation=caddy.router.install
+- Mealou: layer=router node=gateway operation=caddy.router.install
+
+The router artifacts existed on the gateway after the failed reload, proving
+the gateway-local token was authorized and the stdin payload was consumed:
+
+- /etc/caddy/sites/hauzer.app.caddy
+- /etc/caddy/sites/mealou.app.caddy
+
+`proxy:list --json` reported both routes as `partial`; it did not infer
+`expected` or `converged` from database intent.
+
+Scoped single-run restore
+-------------------------
+
+Command:
+
+  orbit doctor --app=hauzer-production --node=app-prod-1 --family=proxy --restore --dry-run --json
+
+Result: exit 0. Exactly two Hauzer issues were planned:
+
+- proxy.public_route_missing
+- proxy.enactment_incomplete, with failure
+  layer=router node=gateway operation=caddy.router.install
+
+No Mealou issue or action appeared.
+
+Command:
+
+  orbit doctor --app=hauzer-production --node=app-prod-1 --family=proxy --restore --json
+
+Result: exit 0, healthy=true, fixed=2, failed=0. The same run:
+
+- restored the Hauzer public ingress artifact;
+- re-enacted the complete backend -> router -> ingress operation plan.
+
+Persisted Hauzer enactment after restore:
+
+- status=converged
+- all seven planned operations completed in order
+- failure=null
+
+Final verification
+------------------
+
+Command:
+
+  orbit doctor --app=hauzer-production --node=app-prod-1 --family=proxy --json
+
+Result: exit 0, healthy=true, issues=0.
+
+Command:
+
+  orbit proxy:list --json
+
+Result:
+
+- hauzer.app (`hauzer-production.production`): converged
+- mealou.app (`mealou-production.production`): partial
+
+Artifact inventory:
+
+- app-prod/ingress Hauzer: backend and public route artifacts present
+- gateway/router Hauzer: router artifact present
+- app-prod/ingress Mealou: backend artifact only; no public route artifact
+- gateway/router Mealou: router artifact from the intentionally failed reload
+
+The Hauzer artifacts encode the intended topology:
+
+  ingress app-prod-1 -> gateway/router 10.6.0.2:80
+  gateway/router -> backend app-prod-1 10.6.0.5:8081
+  backend -> orbit-app-hauzer-production:8080
+
+The retained substrate's public TLS request failed at certificate negotiation
+because the route requests an ACME certificate without public DNS reachability.
+That is separate from operation-token authorization and proxy convergence, as
+is the reported Cloudflare edge-certificate/API-token issue.

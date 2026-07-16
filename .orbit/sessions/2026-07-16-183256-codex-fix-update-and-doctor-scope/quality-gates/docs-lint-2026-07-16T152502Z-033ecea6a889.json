@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "producer": "quality-gate-run",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-16T15:24:53Z",
+    "ended_at": "2026-07-16T15:25:02Z",
+    "duration_seconds": 9,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/fix-update-and-doctor-scope",
+        "commit": "4770546ab538d27bbe1a5ce68e703c8e5b71be03",
+        "dirty": true
+    },
+    "subgates": []
+}

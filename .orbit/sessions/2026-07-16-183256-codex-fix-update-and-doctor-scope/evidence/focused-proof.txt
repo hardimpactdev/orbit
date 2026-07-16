@@ -1,0 +1,48 @@
+Focused verification for codex/fix-update-and-doctor-scope
+
+Command:
+bin/orbit-gateway-pest --compact tests/Feature/Services/Operations/GatewayServiceUpdaterTest.php tests/Unit/Services/Gateway/GatewaySwarmManagerTest.php tests/Unit/Services/Doctor/DoctorReportRunnerTest.php tests/Unit/Services/WebSockets/WebSocketProxyDoctorProbeTest.php
+Result:
+PASS - 114 tests, 809 assertions
+
+Command:
+ORBIT_GATEWAY_TEST_IMAGE='ghcr.io/hardimpactdev/orbit-gateway:0.1.190-candidate-20260716T144149Z-88a91bca3' bin/orbit-gateway-pest --compact tests/Feature/Runtime/GatewayHostCliArtifactRefreshTest.php tests/Feature/Runtime/GatewayLocalOperationTokenRoundTripTest.php
+Result:
+PASS - 2 tests, 9 assertions
+
+Command:
+bin/orbit-cli-pest --compact tests/Feature/InternalFleetUpdateInstallCliCommandTest.php tests/Feature/Commands/Operation/DoctorCommandTest.php tests/Feature/Commands/Operation/DoctorFixCommandTest.php
+Result:
+PASS - 72 tests, 603 assertions
+
+Command:
+composer docs-lint
+Result:
+PASS - zero errors; existing documentation warnings remain
+
+Command:
+bin/orbit-gateway-vendor-bin mago lint app/Services/Gateway/GatewaySwarmManager.php app/Services/Operations/GatewayServiceUpdater.php app/Services/Doctor/DoctorReportRunner.php app/Services/WebSockets/WebSocketProxyDoctorProbe.php tests/Feature/Runtime/GatewayHostCliArtifactRefreshTest.php tests/Feature/Services/Operations/GatewayServiceUpdaterTest.php tests/Unit/Services/Doctor/DoctorReportRunnerTest.php tests/Unit/Services/Gateway/GatewaySwarmManagerTest.php tests/Unit/Services/WebSockets/WebSocketProxyDoctorProbeTest.php
+Result:
+PASS - zero errors; baseline-filtered existing warnings only
+
+Command:
+git diff --check
+Result:
+PASS
+
+Command:
+bin/orbit-gateway-pest --compact tests/Feature/Services/Operations/FleetUpdateVerifierTest.php tests/Feature/Services/Operations/GatewayServiceUpdaterTest.php tests/Unit/Services/Gateway/GatewaySwarmManagerTest.php
+Result:
+PASS - 32 tests, 148 assertions
+
+Final focused gateway command:
+bin/orbit-gateway-pest --compact tests/Feature/Services/Operations/FleetUpdateVerifierTest.php tests/Feature/Services/Operations/GatewayServiceUpdaterTest.php tests/Unit/Services/Gateway/GatewaySwarmManagerTest.php tests/Unit/Services/Doctor/DoctorReportRunnerTest.php tests/Unit/Services/WebSockets/WebSocketProxyDoctorProbeTest.php
+Result:
+PASS - 122 tests, 856 assertions
+
+Command:
+composer quality-check
+Result:
+PASS - gateway, CLI, docs, E2E harness, Reverb, agent, macOS, core, and SDK quality checks all passed
+Profile:
+.orbit/quality-gates/profiles/2026-07-16T15-29-34Z-4770546ab538
