@@ -78,7 +78,8 @@ These rules govern all workspace family commands.
   setup initializes it from the workspace's own `.env.example` when present,
   then overlays the effective workspace env. It never copies the parent app
   `.env`. Setup and teardown step definitions that directly consume
-  `$ORBIT_APP_PATH/.env` are rejected.
+  `$ORBIT_APP_PATH/.env` are rejected. Upgrade migration removes existing
+  unsafe rows, and teardown skips any unsafe row that bypassed normal writes.
 
 ## Workspace Source Drivers
 

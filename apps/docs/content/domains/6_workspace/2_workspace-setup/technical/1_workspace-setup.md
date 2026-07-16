@@ -190,6 +190,9 @@ authorization decision.
    - A stored setup command that directly consumes `$ORBIT_APP_PATH/.env` is
      rejected before execution. References to parent `.env.example` remain
      allowed.
+   - Upgrade migration removes stored setup and teardown rows that directly
+     consume `$ORBIT_APP_PATH/.env`. Teardown also rechecks this boundary and
+     skips any unsafe row that bypassed normal writes.
    - Steps receive the lifecycle environment defined in the
      [Workspaces README](../../README.md#lifecycle-step-environment).
 5. **Processes** (`phase=processes`):

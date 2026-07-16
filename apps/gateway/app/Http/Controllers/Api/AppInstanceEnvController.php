@@ -28,7 +28,7 @@ final class AppInstanceEnvController implements Loggable
         private readonly AppInstanceEnvApplier $applier,
     ) {}
 
-    #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
+    #[RequiresPermission('app:read', servingNode: ServingNode::AppInstanceOwning)]
     public function index(string $app, string $instance): JsonResponse
     {
         $this->currentAction = 'list';
@@ -47,7 +47,7 @@ final class AppInstanceEnvController implements Loggable
         ]);
     }
 
-    #[RequiresPermission('app:write', servingNode: ServingNode::AppOwning)]
+    #[RequiresPermission('app:write', servingNode: ServingNode::AppInstanceOwning)]
     public function store(string $app, string $instance, Request $request): JsonResponse
     {
         $this->currentAction = 'set';
@@ -104,7 +104,7 @@ final class AppInstanceEnvController implements Loggable
         return $this->success($payload);
     }
 
-    #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
+    #[RequiresPermission('app:read', servingNode: ServingNode::AppInstanceOwning)]
     public function render(string $app, string $instance): JsonResponse
     {
         $this->currentAction = 'render';

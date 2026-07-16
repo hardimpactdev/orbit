@@ -99,7 +99,8 @@ The terms below describe setup and teardown step vocabulary.
   environment. Lifecycle steps may inspect parent source through
   `ORBIT_APP_PATH`, but commands that directly read or copy
   `$ORBIT_APP_PATH/.env` are rejected because parent env values are not
-  workspace configuration.
+  workspace configuration. Upgrade migration removes existing unsafe rows, and
+  teardown skips any unsafe row that bypassed normal writes.
 
 ## Lifecycle
 

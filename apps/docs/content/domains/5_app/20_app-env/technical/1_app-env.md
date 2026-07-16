@@ -9,8 +9,8 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The target app and instance exist.
-- The authenticated peer has `app:read` or `app:write` on the app's default
-  owning node for the selected action.
+- The authenticated peer has `app:read` or `app:write` on the selected app
+  instance's serving node for the selected action.
 
 ## Signature
 

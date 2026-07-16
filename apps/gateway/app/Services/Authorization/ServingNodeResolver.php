@@ -129,7 +129,10 @@ final class ServingNodeResolver
 
     private function resolveAppInstanceOwning(Request $request): ?Node
     {
-        $selection = $this->appSelectionFromValue($this->requestValue($request, 'app'));
+        $selection = $this->appInstanceSelectionFromValues(
+            appSelector: $this->requestValue($request, 'app'),
+            instanceSelector: $this->requestValue($request, 'instance'),
+        );
 
         if (! $selection instanceof AppSelection) {
             return null;
@@ -148,6 +151,20 @@ final class ServingNodeResolver
         $node = app(WorkspacePlacement::class)->nodeForInstance($selection->instance);
 
         return $node instanceof Node ? $node : $this->resolveGateway();
+    }
+
+    private function appInstanceSelectionFromValues(mixed $appSelector, mixed $instanceSelector): ?AppSelection
+    {
+        if (
+            is_string($appSelector)
+            && trim($appSelector) !== ''
+            && is_string($instanceSelector)
+            && trim($instanceSelector) !== ''
+        ) {
+            return $this->appSelectionFromValue(trim($appSelector).'.'.trim($instanceSelector));
+        }
+
+        return $this->appSelectionFromValue($appSelector);
     }
 
     private function resolveCaller(Request $request): ?Node

@@ -7,12 +7,14 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Processes\ProcessRuntime;
+use App\Enums\WorkspaceLifecyclePhase;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Models\WorkspaceStep;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
@@ -58,6 +60,67 @@ function workspaceRemoveRemoteShellFallbackHeader(): array
 }
 
 describe('WorkspaceRemoveController', function (): void {
+    it('does not execute a legacy teardown step that consumes the parent env', function (): void {
+        $caller = createWorkspaceRemoveCallerNode();
+        $targetNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'status' => 'active',
+        ]);
+        grantWorkspaceRemoveAccess($caller, $targetNode);
+
+        $app = App::factory()->for($targetNode, 'node')->create([
+            'name' => 'docs',
+            'runtime' => 'static',
+        ]);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $targetNode->id,
+                path: '/srv/docs-development',
+                document_root: 'public',
+                domain: 'docs-development.test',
+            ),
+        ]);
+        WorkspaceStep::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'phase' => WorkspaceLifecyclePhase::Teardown,
+            'command' => 'cp "$ORBIT_APP_PATH/.env" .env.backup',
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'name' => 'feature-api',
+            'path' => '/srv/docs-development-feature-api',
+        ]);
+        $shell = new WorkspaceRemoveApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
+
+        $response = $this->call(
+            'DELETE',
+            '/api/workspaces/feature-api?app=docs.development',
+            [
+                'keep_files' => true,
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            workspaceRemoveRemoteShellFallbackHeader(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.teardown_steps_run', 0)
+            ->assertJsonPath('success.meta.warnings.0.code', 'workspace.teardown_step_unsafe');
+
+        expect(collect($shell->scripts)
+            ->contains(
+                static fn (string $script): bool => str_contains($script, 'ORBIT_APP_PATH'),
+            ))->toBeFalse();
+    });
+
     it('removes workspace intent for authorized callers', function (): void {
         $caller = createWorkspaceRemoveCallerNode();
         $targetNode = createTestAppHostNode([
