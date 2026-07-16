@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Services\Executor\OperationTokenGuard;
+use App\Services\Processes\LocalDockerSwarmServiceAction;
+use App\Services\Processes\LocalDockerSwarmServiceFailure;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
@@ -89,25 +91,18 @@ describe('internal process Docker Swarm service command', function (): void {
                 : Process::result();
         });
 
-        $exitCode = Artisan::call('internal:process-docker-swarm-service', [
-            'action' => 'ensure',
-            'service' => 'orbit-runtime',
-            '--operation-token' => process_docker_swarm_service_signed_operation_token(),
-            '--json' => true,
+        $result = app(LocalDockerSwarmServiceAction::class)->run('ensure', 'orbit-runtime', [
+            'advertise_address' => '10.6.0.8',
         ]);
 
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($payload['success']['data']['action'])
+        expect($result['action'])
             ->toBe('ensure')
-            ->and($payload['success']['data']['changed'])
+            ->and($result['changed'])
             ->toBeTrue()
             ->and($commands)
             ->toHaveCount(2)
             ->and($commands[1])
-            ->toBe('docker swarm init');
+            ->toBe('docker swarm init --advertise-addr 10.6.0.8');
     });
 
     it('reuses an active Docker Swarm manager', function (): void {
@@ -116,27 +111,46 @@ describe('internal process Docker Swarm service command', function (): void {
             $command = is_array($process->command) ? implode(' ', $process->command) : $process->command;
             $commands[] = $command;
 
-            return Process::result(output: "active\n");
+            return str_contains($command, 'ControlAvailable')
+                ? Process::result(output: "true\n")
+                : Process::result(output: "active\n");
         });
 
-        $exitCode = Artisan::call('internal:process-docker-swarm-service', [
-            'action' => 'ensure',
-            'service' => 'orbit-runtime',
-            '--operation-token' => process_docker_swarm_service_signed_operation_token(),
-            '--json' => true,
+        $result = app(LocalDockerSwarmServiceAction::class)->run('ensure', 'orbit-runtime', [
+            'advertise_address' => '10.6.0.8',
         ]);
 
-        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($payload['success']['data']['action'])
+        expect($result['action'])
             ->toBe('ensure')
-            ->and($payload['success']['data']['changed'])
+            ->and($result['changed'])
             ->toBeFalse()
             ->and($commands)
-            ->toHaveCount(1);
+            ->toHaveCount(2);
     });
+
+    it('rejects an active Swarm worker that cannot manage services', function (): void {
+        Process::fake(function (PendingProcess $process) {
+            $command = is_array($process->command) ? implode(' ', $process->command) : $process->command;
+
+            return str_contains($command, 'ControlAvailable')
+                ? Process::result(output: "false\n")
+                : Process::result(output: "active\n");
+        });
+
+        expect(fn (): array => app(LocalDockerSwarmServiceAction::class)->run('ensure', 'orbit-runtime', [
+            'advertise_address' => '10.6.0.8',
+        ]))
+            ->toThrow(LocalDockerSwarmServiceFailure::class, 'not a Swarm manager');
+    });
+
+    it('requires a valid IP address for Swarm advertisement', function (string $advertiseAddress): void {
+        Process::fake();
+
+        expect(fn (): array => app(LocalDockerSwarmServiceAction::class)->run('ensure', 'orbit-runtime', [
+            'advertise_address' => $advertiseAddress,
+        ]))
+            ->toThrow(LocalDockerSwarmServiceFailure::class, 'advertise address is invalid');
+    })->with(['', 'wg0', 'not-an-ip']);
 });
 
 function configure_process_docker_swarm_service_operation_token_guard(): void

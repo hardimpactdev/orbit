@@ -25,6 +25,7 @@ it('enacts Docker and the SeaweedFS runtime before activating the S3 role', func
     $node = Node::factory()->create([
         'name' => 'services1',
         'platform' => 'ubuntu_26-04',
+        'wireguard_address' => '10.6.0.8',
         'status' => NodeStatus::Provisioning,
     ]);
 
@@ -48,6 +49,7 @@ it('enacts Docker and Plausible before activating the analytics role', function 
     $node = Node::factory()->create([
         'name' => 'services1',
         'platform' => 'ubuntu_26-04',
+        'wireguard_address' => '10.6.0.8',
         'status' => NodeStatus::Provisioning,
     ]);
 
@@ -141,6 +143,7 @@ it('applies and starts the node-owned Plausible Docker Swarm runtime', function 
     $node = Node::factory()->create([
         'name' => 'services1',
         'platform' => 'ubuntu_26-04',
+        'wireguard_address' => '10.6.0.8',
         'status' => NodeStatus::Provisioning,
     ]);
     NodeRoleAssignment::factory()->for($node)->create([
@@ -181,7 +184,9 @@ it('applies and starts the node-owned Plausible Docker Swarm runtime', function 
             'internal:process-docker-swarm-service',
         ])
         ->and($executor->swarmActions)
-        ->toBe(['ensure', 'apply', 'start']);
+        ->toBe(['ensure', 'apply', 'start'])
+        ->and($executor->swarmPayloads[0])
+        ->toBe(['advertise_address' => '10.6.0.8']);
 });
 
 it('throws when the persisted service runtime cannot be started', function (): void {
@@ -336,6 +341,11 @@ final class ProvisionedServiceRoleInternalExecutor implements RunsInternalComman
      */
     public array $swarmActions = [];
 
+    /**
+     * @var list<array<string, mixed>>
+     */
+    public array $swarmPayloads = [];
+
     public function __construct(
         private readonly bool $failStart = false,
     ) {}
@@ -372,6 +382,7 @@ final class ProvisionedServiceRoleInternalExecutor implements RunsInternalComman
         if ($commandName === 'internal:process-docker-swarm-service') {
             $action = is_string($arguments[0] ?? null) ? $arguments[0] : '';
             $this->swarmActions[] = $action;
+            $this->swarmPayloads[] = $this->payload($transportOptions);
 
             if ($this->failStart && $action === 'start') {
                 return new RemoteShellResult(1, '', 'Docker Swarm unavailable.', 1);

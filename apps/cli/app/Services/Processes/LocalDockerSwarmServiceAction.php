@@ -22,7 +22,7 @@ final readonly class LocalDockerSwarmServiceAction
         $service = $this->service($service);
 
         if ($action === 'ensure') {
-            return $this->ensureManager($service);
+            return $this->ensureManager($service, $payload);
         }
 
         if ($action === 'apply') {
@@ -46,10 +46,12 @@ final readonly class LocalDockerSwarmServiceAction
     }
 
     /**
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
-    private function ensureManager(string $service): array
+    private function ensureManager(string $service, array $payload): array
     {
+        $advertiseAddress = $this->advertiseAddress($payload);
         $inspect = $this->runEnsureProcess(['docker', 'info', '--format', '{{.Swarm.LocalNodeState}}']);
 
         if (! $inspect->successful()) {
@@ -59,6 +61,24 @@ final readonly class LocalDockerSwarmServiceAction
         $state = trim($inspect->output());
 
         if ($state === 'active') {
+            $control = $this->runEnsureProcess(['docker', 'info', '--format', '{{.Swarm.ControlAvailable}}']);
+
+            if (! $control->successful()) {
+                throw $this->ensureFailure($service, $control);
+            }
+
+            if (trim($control->output()) !== 'true') {
+                throw new LocalDockerSwarmServiceFailure(
+                    errorCode: 'docker_swarm_service.ensure_failed',
+                    message: "Docker Swarm is active on '{$service}', but this node is not a Swarm manager.",
+                    meta: [
+                        'action' => 'ensure',
+                        'service' => $service,
+                        'state' => $state,
+                    ],
+                );
+            }
+
             return [
                 'action' => 'ensure',
                 'service' => $service,
@@ -78,7 +98,13 @@ final readonly class LocalDockerSwarmServiceAction
             );
         }
 
-        $initialize = $this->runEnsureProcess(['docker', 'swarm', 'init']);
+        $initialize = $this->runEnsureProcess([
+            'docker',
+            'swarm',
+            'init',
+            '--advertise-addr',
+            $advertiseAddress,
+        ]);
 
         if (! $initialize->successful()) {
             throw $this->ensureFailure($service, $initialize);
@@ -89,6 +115,26 @@ final readonly class LocalDockerSwarmServiceAction
             'service' => $service,
             'changed' => true,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function advertiseAddress(array $payload): string
+    {
+        if (
+            isset($payload['advertise_address'])
+            && is_string($payload['advertise_address'])
+            && filter_var($payload['advertise_address'], FILTER_VALIDATE_IP) !== false
+        ) {
+            return $payload['advertise_address'];
+        }
+
+        throw new LocalDockerSwarmServiceFailure(
+            errorCode: 'validation_failed',
+            message: 'Docker Swarm advertise address is invalid.',
+            meta: ['field' => 'advertise_address'],
+        );
     }
 
     /**

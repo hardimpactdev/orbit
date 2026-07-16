@@ -29,8 +29,9 @@ These rules define the analytics command domain and its role boundary.
   process endpoints over their WireGuard addresses; Docker-local service
   aliases are not cross-node dependency addresses.
 - Analytics role convergence installs and verifies Docker. It initializes
-  Docker Swarm on the node, or reuses the active manager. It then applies and
-  starts the Plausible service before the role assignment becomes active.
+  Docker Swarm with the node's WireGuard address as its advertised address, or
+  reuses an active manager after verifying manager control. It then applies
+  and starts the Plausible service before the role assignment becomes active.
   Initialization, apply, or start failure keeps provisioning incomplete.
 - Removing the analytics role removes its live Plausible Swarm service before
   deleting the process and role records.

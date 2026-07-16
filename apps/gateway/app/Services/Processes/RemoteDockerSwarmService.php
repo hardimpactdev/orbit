@@ -21,7 +21,16 @@ final readonly class RemoteDockerSwarmService
 
     public function ensureManager(Node $node): bool
     {
-        return $this->run($node, 'ensure', 'orbit-runtime')->successful();
+        return $this->run(
+            node: $node,
+            action: 'ensure',
+            service: 'orbit-runtime',
+            input: json_encode([
+                'advertise_address' => is_string($node->wireguard_address)
+                    ? $node->wireguard_address
+                    : '',
+            ], JSON_THROW_ON_ERROR),
+        )->successful();
     }
 
     /**
