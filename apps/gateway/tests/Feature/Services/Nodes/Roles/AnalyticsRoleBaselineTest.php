@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Enums\Processes\ProcessRuntime;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
@@ -22,6 +23,27 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
         'status' => NodeStatus::Active,
     ]);
     $databasePassword = Str::random(32);
+
+    $unrelatedApp = App::factory()->create([
+        'node_id' => $databaseNode->id,
+    ]);
+    Process::factory()
+        ->forOwner($unrelatedApp, $databaseNode)
+        ->create([
+            'name' => 'unrelated-postgres',
+            'runtime_config' => [
+                'service' => 'postgres',
+                'endpoint' => [
+                    'host' => '10.6.0.99',
+                    'port' => 5432,
+                ],
+                'credentials' => [
+                    'database' => 'unrelated',
+                    'username' => 'unrelated',
+                    'password' => 'must-not-leak',
+                ],
+            ],
+        ]);
 
     Process::factory()
         ->forOwner($databaseNode)
@@ -96,7 +118,7 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
     expect($plausible->runtime_config)
         ->toMatchArray([
             'version' => '3.2.1',
-            'image' => 'ghcr.io/plausible/community-edition:3.2.1',
+            'image' => 'ghcr.io/plausible/community-edition:v3.2.1',
         ])
         ->and($environment)
         ->toMatchArray([

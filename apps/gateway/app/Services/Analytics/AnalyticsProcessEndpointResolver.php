@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Analytics;
 
+use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use RuntimeException;
@@ -25,8 +26,16 @@ final class AnalyticsProcessEndpointResolver
             throw new RuntimeException("The analytics role requires a {$nodeIdSetting} setting.");
         }
 
+        $node = Node::query()->find($nodeId);
+
+        if (! $node instanceof Node) {
+            throw new RuntimeException("The analytics role requires an existing {$nodeIdSetting} node.");
+        }
+
+        /** @var Process|null $process */
         $process = Process::query()
-            ->where('node_id', $nodeId)
+            ->where('owner_type', $node->getMorphClass())
+            ->where('owner_id', $node->getKey())
             ->where('runtime_config->service', $service)
             ->first();
 

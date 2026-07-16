@@ -49,7 +49,7 @@ function createAnalyticsUpdateProcess(Node $node, string $version = '3.2.1'): Pr
                 'service' => 'plausible',
                 'version_family' => $version,
                 'version' => $version,
-                'image' => "ghcr.io/plausible/community-edition:{$version}",
+                'image' => "ghcr.io/plausible/community-edition:v{$version}",
                 'labels' => [
                     'orbit.process.service' => 'plausible',
                     'orbit.process.version' => $version,
@@ -115,7 +115,7 @@ describe('AnalyticsUpdateController', function (): void {
             ->and($runtimeConfig['version_family'])
             ->toBe('3.2.2')
             ->and($runtimeConfig['image'])
-            ->toBe('ghcr.io/plausible/community-edition:3.2.2')
+            ->toBe('ghcr.io/plausible/community-edition:v3.2.2')
             ->and($runtimeConfig['service'])
             ->toBe('plausible')
             ->and($runtimeConfig['labels']['orbit.process.service'])

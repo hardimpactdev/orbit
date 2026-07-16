@@ -214,7 +214,7 @@ final class AnalyticsUpdateController implements Loggable
         $config['service'] = self::ProcessService;
         $config['version_family'] = $version;
         $config['version'] = $version;
-        $config['image'] = self::ImageRepository.":{$version}";
+        $config['image'] = self::ImageRepository.":v{$version}";
         unset($config['definition']);
         unset($config['spec_hash']);
 

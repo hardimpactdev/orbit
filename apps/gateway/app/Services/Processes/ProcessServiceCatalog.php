@@ -97,7 +97,10 @@ final readonly class ProcessServiceCatalog
         if ($imageOverride !== null && $imageOverride !== '') {
             $runtimeConfig['image'] = $imageOverride;
         } elseif (is_string($entry['image'] ?? null) && $entry['image'] !== '') {
-            $runtimeConfig['image'] = "{$entry['image']}:{$resolved['version']}";
+            $imageVersionPrefix = is_string($entry['image_version_prefix'] ?? null)
+                ? $entry['image_version_prefix']
+                : '';
+            $runtimeConfig['image'] = "{$entry['image']}:{$imageVersionPrefix}{$resolved['version']}";
         }
 
         if (is_string($entry['command_mode'] ?? null) && $entry['command_mode'] !== '') {
@@ -368,6 +371,7 @@ final readonly class ProcessServiceCatalog
             'plausible' => [
                 'runtimes' => [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
                 'image' => 'ghcr.io/plausible/community-edition',
+                'image_version_prefix' => 'v',
                 'command' => 'sh -c "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"',
                 'target_port' => 8000,
                 'environment' => [

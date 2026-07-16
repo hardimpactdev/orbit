@@ -238,7 +238,7 @@ it('resolves PostgreSQL, ClickHouse, and Plausible managed services into process
             'service' => 'plausible',
             'version_family' => '3.2.1',
             'version' => '3.2.1',
-            'image' => 'ghcr.io/plausible/community-edition:3.2.1',
+            'image' => 'ghcr.io/plausible/community-edition:v3.2.1',
         ])
         ->and($plausible->command)
         ->toBe('sh -c "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"')
