@@ -13,7 +13,7 @@ Add a process definition for an app, workspace, or node.
 
 ```bash
 orbit process:add [<name>] [<command>] [--app=<name>] [--node=<node>]
-                  [--service=<mysql|redis>] [--version=<version>] [--image=<image>]
+                  [--service=<mysql|valkey>] [--version=<version>] [--image=<image>]
                   [--restart-policy=never|on_failure|always]
                   [--crash-notification=none|agent_ide]
                   [--runtime=docker|docker-swarm|systemd|launchd]
@@ -27,7 +27,7 @@ orbit process:add [<name>] [<command>] [--app=<name>] [--node=<node>]
 | `command` |  -  | Shell command (run inside the app/workspace path). Omit when `--service` is present. |
 | `--app` |  -  | Parent app slug. |
 | `--node` |  -  | Owning node for node-owned processes and managed services. |
-| `--service` |  -  | Managed service identifier (`mysql`, `redis`, ...). Node-owned only. |
+| `--service` |  -  | Managed service identifier (`mysql`, `valkey`, ...). Node-owned only. |
 | `--version` | service default | Service version selector. Public CLI flag; normalized internally because Symfony reserves global `--version`. |
 | `--image` | resolved catalog image | Explicit Docker image override for managed services. |
 | `--replace-container` |  -  | Explicit Docker container to remove before adding a node-owned Docker managed service. Repeat for multiple known blockers. Requires `--force` in non-interactive mode. |

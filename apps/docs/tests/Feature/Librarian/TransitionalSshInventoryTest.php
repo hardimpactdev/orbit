@@ -310,6 +310,23 @@ it('does not advertise the removed node transport selector in active docs or Orb
     }
 });
 
+it('advertises Valkey instead of Redis in the active Orbit process reference', function (): void {
+    $repositoryRoot = realpath(base_path('../..'));
+
+    if (! is_string($repositoryRoot)) {
+        throw new RuntimeException('Unable to resolve the repository root.');
+    }
+
+    $reference = file_get_contents("{$repositoryRoot}/.agents/skills/orbit/references/process.md");
+
+    expect($reference)
+        ->toBeString()
+        ->toContain('--service=<mysql|valkey>')
+        ->toContain('Managed service identifier (`mysql`, `valkey`, ...).')
+        ->not->toContain('--service=<mysql|redis>')
+        ->not->toContain('Managed service identifier (`mysql`, `redis`, ...).');
+});
+
 it('does not publish retired SSH-era machine contracts in active docs', function (): void {
     foreach (active_agent_transport_reference_files() as $contents) {
         foreach ([
