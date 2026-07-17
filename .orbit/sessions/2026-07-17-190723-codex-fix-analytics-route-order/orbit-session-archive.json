@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-17T17:07:23+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-analytics-route-order/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-17-190723-codex-fix-analytics-route-order",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "595b5bc55b042605cda931b4086e3544f23d5cebafc396906625e14b5e136d80",
+        "loop.md": "9a0fb26546a37ebdb71ebc9872377a0f4fd247ee7948d0f3ddaad6d5a5d78358"
+    },
+    "branch": "codex/fix-analytics-route-order",
+    "candidate_commit": "1932c6b857c8cdd1df4c30bf292d7f59d7ede974",
+    "accepted_feature_tip": "1932c6b857c8cdd1df4c30bf292d7f59d7ede974",
+    "accepted_main_tip": "9f36134b9a57be4170917e5a2cde78ddaf30a8e1",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

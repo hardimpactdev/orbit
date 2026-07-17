@@ -1,0 +1,53 @@
+Candidate: 1932c6b857c8cdd1df4c30bf292d7f59d7ede974
+Topology: dev-728b2c
+Kind: operator_gateway_app-prod_ingress
+Provider: incus
+Host: beast
+Roles: operator VM, gateway/router VM, app-prod/ingress VM
+
+Candidate identity:
+- Source-mounted checkout: /home/orbit/orbit-run
+- Operator command: ./apps/cli/orbit --version
+- Result: Version 0.1.190, installed 17-07-2026 16:24
+- Candidate renderer was invoked from the source-mounted gateway checkout with
+  ProxyRoute owner_type=app-analytics, protocol=analytics, tracking_paths
+  /js/* and /api/event.
+- Emitted structure: @plausible_tracking followed by matched handle containing
+  reverse_proxy, then an unmatched handle containing respond 404.
+
+Runtime setup:
+- Disposable backend: Python SimpleHTTP on operator 10.6.0.3:8000.
+- Runtime proxy: Caddy 2 Alpine on gateway/router 10.6.0.2:8088 using the
+  candidate-emitted handler body.
+- Request origin: app-prod/ingress VM.
+
+Runtime results at 2026-07-17T16:47:39Z:
+- GET /js/test.js -> HTTP 200, Server SimpleHTTP, Via 1.0 Caddy, body TRACKING_OK.
+- POST /api/event -> HTTP 501 from SimpleHTTP, Via 1.0 Caddy. The backend's
+  method response proves that the event path traversed the proxy.
+- GET / -> HTTP 404, Server Caddy, empty body.
+- GET /login -> HTTP 404, Server Caddy, empty body.
+
+Static Caddy validation:
+- docker run --rm -i caddy:2-alpine caddy adapt --adapter caddyfile
+  --config - --validate
+- Result: success; adapted JSON contains one path-matched reverse_proxy handler
+  group and one fallback static_response 404 handler in order.
+
+Focused and broader proof:
+- ProxyRouteRendererTest: 36 passed, 115 assertions.
+- AppAnalyticsBindingServiceTest: 11 passed, 43 assertions.
+- AnalyticsProxyDoctorProbeTest: 5 passed, 18 assertions.
+- AppAnalyticsControllerTest: 9 passed, 47 assertions.
+- Gateway component of composer quality-check: passed.
+- Aggregate quality-check ended because CLI Pest mixed_3 received SIGTERM
+  (exit 143) under aggregate concurrency; no assertion failed.
+- Exact killed CLI mixed_3 file set rerun independently: 655 passed,
+  2280 assertions in 15.32 seconds.
+- Classification: tooling regression in the aggregate launcher/concurrency
+  environment, high confidence; not a product or candidate regression.
+
+Review:
+- Independent general review of exact candidate: PASS.
+- Blast-radius search: complete, 103 references inspected.
+- Human judgment: not required.
