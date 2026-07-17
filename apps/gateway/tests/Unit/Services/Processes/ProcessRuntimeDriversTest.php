@@ -373,6 +373,7 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
                     ],
                 ],
                 'service_name' => 'orbit-mysql-8',
+                'replaces_runtime_unit' => 'orbit-mysql-legacy',
                 'update_strategy' => [
                     'order' => 'stop-first',
                     'parallelism' => 1,
@@ -393,6 +394,9 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
         ->toBe("docker service rm 'orbit-mysql-8' 2>/dev/null || true")
         ->and($driver->apply($node, $app, $process))
         ->toBeTrue()
+        ->and($process->fresh()->runtime_config)
+        ->not
+        ->toHaveKey('replaces_runtime_unit')
         ->and($driver->remove($node, $runtimeUnit))
         ->toBeTrue();
 
@@ -426,6 +430,7 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
 
     expect(process_driver_agent_arguments('internal:process-docker-swarm-service'))
         ->toBe([
+            ['remove', 'orbit-mysql-legacy'],
             ['apply',  'orbit-mysql-8'],
             ['remove', 'orbit-mysql-8'],
         ]);

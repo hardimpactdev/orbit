@@ -223,9 +223,17 @@ final readonly class WebSocketDoctorProbe
 
         $state = $this->probeState($probe);
         $expectedBind = '0.0.0.0';
+        $expectedPublishedHost = $this->backendName->forNode($node);
+        $expectedPublishedPort = '8080';
         $observedBind = $this->observedBindAddress($state);
+        $observedPublishedHost = trim($state['published_host'] ?? '');
+        $observedPublishedPort = trim($state['published_port'] ?? '');
 
-        if ($observedBind === null || $observedBind === $expectedBind) {
+        if (
+            $observedBind === $expectedBind
+            && $observedPublishedHost === $expectedPublishedHost
+            && $observedPublishedPort === $expectedPublishedPort
+        ) {
             return [];
         }
 
@@ -240,6 +248,10 @@ final readonly class WebSocketDoctorProbe
                     'container' => $this->runtimeRenderer->containerName($node),
                     'expected_bind' => $expectedBind,
                     'observed_bind' => $observedBind,
+                    'expected_published_host' => $expectedPublishedHost,
+                    'expected_published_port' => $expectedPublishedPort,
+                    'observed_published_host' => $observedPublishedHost,
+                    'observed_published_port' => $observedPublishedPort,
                     'env_host' => $state['env_host'] ?? null,
                     'cmd_host' => $state['cmd_host'] ?? null,
                 ],

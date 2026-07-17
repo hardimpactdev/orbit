@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Nodes\Roles;
 
 use App\Models\Node;
-use App\Services\WebSockets\WebSocketRedisResolver;
+use App\Services\WebSockets\WebSocketValkeyResolver;
 use Illuminate\Http\JsonResponse;
 
 final readonly class WebSocketRoleSettingsResolver
 {
     public function __construct(
-        private WebSocketRedisResolver $webSocketRedisResolver,
+        private WebSocketValkeyResolver $webSocketValkeyResolver,
     ) {}
 
     /**
@@ -20,36 +20,36 @@ final readonly class WebSocketRoleSettingsResolver
      */
     public function resolve(array $settings): array|JsonResponse
     {
-        $redisNodeName = is_string($settings['redis_node'] ?? null) ? $settings['redis_node'] : null;
+        $valkeyNodeName = is_string($settings['valkey_node'] ?? null) ? $settings['valkey_node'] : null;
 
-        unset($settings['redis_node']);
+        unset($settings['valkey_node']);
 
-        if (array_key_exists('redis_node_id', $settings)) {
+        if (array_key_exists('valkey_node_id', $settings)) {
             return $settings;
         }
 
-        $redisNode = $redisNodeName === null
+        $valkeyNode = $valkeyNodeName === null
             ? null
-            : Node::query()->where('name', $redisNodeName)->first();
+            : Node::query()->where('name', $valkeyNodeName)->first();
 
         if (
-            ! $redisNode instanceof Node
-            || ! $this->webSocketRedisResolver->usableRedisNode($redisNode->id) instanceof Node
+            ! $valkeyNode instanceof Node
+            || ! $this->webSocketValkeyResolver->usableValkeyNode($valkeyNode->id) instanceof Node
         ) {
             return response()->json([
                 'error' => [
                     'code' => 'validation_failed',
-                    'message' => 'The websocket role requires an active database node with Redis.',
+                    'message' => 'The websocket role requires an active database node with Valkey.',
                     'meta' => [
-                        'field' => 'redis_node',
+                        'field' => 'valkey_node',
                         'required_role' => 'database',
-                        'required_service' => 'redis',
+                        'required_service' => 'valkey',
                     ],
                 ],
             ], 422);
         }
 
-        $settings['redis_node_id'] = $redisNode->id;
+        $settings['valkey_node_id'] = $valkeyNode->id;
 
         return $settings;
     }

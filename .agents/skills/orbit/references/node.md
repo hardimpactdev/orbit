@@ -13,7 +13,7 @@ orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
                [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>]
                [--tld=<tld>]
                [--user=<user>] [--gateway-endpoint=<endpoint>]
-               [--ingress=<node>] [--redis-node=<node>]
+               [--ingress=<node>] [--valkey-node=<node>]
                [--postgres-node=<node>] [--clickhouse-node=<node>]
                [--s3-data-path=<path>] [--host-key-fingerprint=<sha256>]
                [--self-grant=<mode>] [--self-grant-permissions=<perms>]
@@ -37,7 +37,7 @@ orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
 | `--user` | `root` | Bootstrap-only SSH user; the managed steady-state user is created during provisioning. |
 | `--gateway-endpoint` | gateway public endpoint | WireGuard endpoint this node should use to reach the gateway. Useful for nodes in the same private provider network. |
 | `--ingress` |  -  | Active ingress node for private `app-prod` placement. |
-| `--redis-node` |  -  | Active database-role node that backs `websocket` Reverb scaling. |
+| `--valkey-node` |  -  | Active database-role node with managed Valkey that backs `websocket` Reverb scaling. |
 | `--postgres-node` |  -  | Active database-role node for analytics PostgreSQL. |
 | `--clickhouse-node` |  -  | Active database-role node for analytics ClickHouse. |
 | `--s3-data-path` | `/srv/orbit/s3/data` | Host path mounted into SeaweedFS as `/data`. |
@@ -185,7 +185,7 @@ Manage assignable hosted roles on existing nodes.
 
 ```bash
 orbit node role:list [<node>] [--json]
-orbit node role:add <node> <role> [--redis-node=<node>]
+orbit node role:add <node> <role> [--valkey-node=<node>]
                     [--s3-data-path=<path>] [--json]
 orbit node role:remove <node> <role> [--force] [--purge-data] [--json]
 ```

@@ -186,6 +186,45 @@ it('applies and starts the node-owned SeaweedFS Docker runtime', function (NodeR
     NodeRoleStatus::Error,
 ]);
 
+it('removes a replaced legacy Docker runtime before applying its canonical process', function (): void {
+    $executor = new ProvisionedServiceRoleInternalExecutor;
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $node = Node::factory()->create([
+        'name' => 'database1',
+        'platform' => 'ubuntu_26-04',
+        'wireguard_address' => '10.6.0.4',
+        'status' => NodeStatus::Active,
+    ]);
+    $descriptor = app(\App\Services\Processes\ProcessServiceCatalog::class)->resolve(
+        service: 'valkey',
+        version: '8',
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'valkey',
+    );
+    $process = Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'valkey',
+            'command' => $descriptor->command,
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                ...$descriptor->runtimeConfig,
+                'replaces_runtime_unit' => 'redis',
+            ],
+        ]);
+
+    app(RoleRuntimeConverger::class)->convergeProcess($node, $process, 'database');
+
+    expect($executor->dockerActions)
+        ->toBe(['remove', 'apply', 'start'])
+        ->and($executor->dockerPayloads[0]['container'])
+        ->toBe('redis')
+        ->and($process->fresh()->runtime_config)
+        ->not->toHaveKey('replaces_runtime_unit');
+});
+
 it('applies and starts the node-owned Plausible Docker runtime on WireGuard', function (): void {
     $executor = new ProvisionedServiceRoleInternalExecutor;
     app()->instance(RunsInternalCommands::class, $executor);

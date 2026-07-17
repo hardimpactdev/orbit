@@ -450,7 +450,7 @@ final readonly class LocalWebSocketRuntimeAction
 
     /**
      * @param  array<string, mixed>  $payload
-     * @return array{exists: string, running: string, env_host: string, cmd_host: string, stdout: string}
+     * @return array{exists: string, running: string, env_host: string, cmd_host: string, published_host: string, published_port: string, stdout: string}
      */
     private function runtimeProbe(array $payload): array
     {
@@ -458,19 +458,33 @@ final readonly class LocalWebSocketRuntimeAction
         $inspect = $this->runProcess(['docker', 'container', 'inspect', $container]);
 
         if (! $inspect->isSuccessful()) {
-            return $this->runtimeProbePayload('0', 'false', '', '');
+            return $this->runtimeProbePayload([
+                'exists' => '0',
+                'running' => 'false',
+                'env_host' => '',
+                'cmd_host' => '',
+                'published_host' => '',
+                'published_port' => '',
+            ]);
         }
 
         $running = $this->inspectValue($container, '{{.State.Running}}');
         $env = $this->inspectValue($container, '{{range .Config.Env}}{{println .}}{{end}}');
         $command = $this->inspectValue($container, '{{range .Config.Cmd}}{{print . " "}}{{end}}');
-
-        return $this->runtimeProbePayload(
-            exists: '1',
-            running: $running !== '' ? $running : 'false',
-            envHost: $this->envValue($env, 'REVERB_SERVER_HOST'),
-            cmdHost: $this->commandHost($command),
+        $publication = $this->inspectValue(
+            $container,
+            '{{with (index .NetworkSettings.Ports "8080/tcp")}}{{range .}}{{println .HostIp "|" .HostPort}}{{end}}{{end}}',
         );
+        [$publishedHost, $publishedPort] = $this->publishedAddress($publication);
+
+        return $this->runtimeProbePayload([
+            'exists' => '1',
+            'running' => $running !== '' ? $running : 'false',
+            'env_host' => $this->envValue($env, 'REVERB_SERVER_HOST'),
+            'cmd_host' => $this->commandHost($command),
+            'published_host' => $publishedHost,
+            'published_port' => $publishedPort,
+        ]);
     }
 
     /**
@@ -797,17 +811,31 @@ final readonly class LocalWebSocketRuntimeAction
     }
 
     /**
-     * @return array{exists: string, running: string, env_host: string, cmd_host: string, stdout: string}
+     * @param  array{exists: string, running: string, env_host: string, cmd_host: string, published_host: string, published_port: string}  $state
+     * @return array{exists: string, running: string, env_host: string, cmd_host: string, published_host: string, published_port: string, stdout: string}
      */
-    private function runtimeProbePayload(string $exists, string $running, string $envHost, string $cmdHost): array
+    private function runtimeProbePayload(array $state): array
     {
         return [
-            'exists' => $exists,
-            'running' => $running,
-            'env_host' => $envHost,
-            'cmd_host' => $cmdHost,
-            'stdout' => "exists={$exists}\nrunning={$running}\nenv_host={$envHost}\ncmd_host={$cmdHost}\n",
+            ...$state,
+            'stdout' => "exists={$state['exists']}\nrunning={$state['running']}\nenv_host={$state['env_host']}\ncmd_host={$state['cmd_host']}\npublished_host={$state['published_host']}\npublished_port={$state['published_port']}\n",
         ];
+    }
+
+    /**
+     * @return array{string, string}
+     */
+    private function publishedAddress(string $publication): array
+    {
+        $line = trim((string) (preg_split('/\R/', trim($publication))[0] ?? ''));
+
+        if ($line === '' || ! str_contains($line, '|')) {
+            return ['', ''];
+        }
+
+        [$host, $port] = array_pad(explode('|', $line, 2), 2, '');
+
+        return [trim($host), trim($port)];
     }
 
     private function envValue(string $env, string $name): string

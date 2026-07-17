@@ -12,6 +12,7 @@ use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessDockerRuntimeManager;
 use Throwable;
 
+/** @mago-expect lint:too-many-methods */
 final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
 {
     public function __construct(
@@ -32,12 +33,22 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
     ): bool {
         try {
             $container = $this->renderer->render($app, $process, $workspace);
+            $replacementRuntimeUnit = $this->replacementRuntimeUnit($process);
+
+            if (
+                $replacementRuntimeUnit !== null
+                && $replacementRuntimeUnit !== $container->name()
+                && ! $this->manager->remove($node, $replacementRuntimeUnit)
+            ) {
+                return false;
+            }
 
             $this->manager->apply(
                 node: $node,
                 container: $container,
                 preparePrerequisites: $process->owner instanceof Node,
             );
+            $this->clearReplacementRuntimeUnit($process);
 
             return true;
         } catch (Throwable) {
@@ -87,5 +98,25 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
         ])
             ->filter()
             ->implode(' ');
+    }
+
+    private function replacementRuntimeUnit(Process $process): ?string
+    {
+        $runtimeConfig = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $runtimeUnit = $runtimeConfig['replaces_runtime_unit'] ?? null;
+
+        return is_string($runtimeUnit) && $runtimeUnit !== '' ? $runtimeUnit : null;
+    }
+
+    private function clearReplacementRuntimeUnit(Process $process): void
+    {
+        $runtimeConfig = is_array($process->runtime_config) ? $process->runtime_config : [];
+
+        if (! array_key_exists('replaces_runtime_unit', $runtimeConfig)) {
+            return;
+        }
+
+        unset($runtimeConfig['replaces_runtime_unit']);
+        $process->forceFill(['runtime_config' => $runtimeConfig])->save();
     }
 }

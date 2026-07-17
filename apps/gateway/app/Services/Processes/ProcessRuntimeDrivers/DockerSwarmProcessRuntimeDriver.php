@@ -34,8 +34,23 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
     ): bool {
         try {
             $runtimeUnit = $this->runtimeUnitName($app, $process, $workspace);
+            $replacementRuntimeUnit = $this->replacementRuntimeUnit($process);
 
-            return $this->services->apply($node, $runtimeUnit, $this->serviceSpec($process, $runtimeUnit));
+            if (
+                $replacementRuntimeUnit !== null
+                && $replacementRuntimeUnit !== $runtimeUnit
+                && ! $this->services->remove($node, $replacementRuntimeUnit)
+            ) {
+                return false;
+            }
+
+            if (! $this->services->apply($node, $runtimeUnit, $this->serviceSpec($process, $runtimeUnit))) {
+                return false;
+            }
+
+            $this->clearReplacementRuntimeUnit($process);
+
+            return true;
         } catch (Throwable) {
             return false;
         }
@@ -166,6 +181,25 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
     private function runtimeConfig(Process $process): array
     {
         return is_array($process->runtime_config) ? $process->runtime_config : [];
+    }
+
+    private function replacementRuntimeUnit(Process $process): ?string
+    {
+        $runtimeUnit = $this->runtimeConfig($process)['replaces_runtime_unit'] ?? null;
+
+        return is_string($runtimeUnit) && $runtimeUnit !== '' ? $runtimeUnit : null;
+    }
+
+    private function clearReplacementRuntimeUnit(Process $process): void
+    {
+        $runtimeConfig = $this->runtimeConfig($process);
+
+        if (! array_key_exists('replaces_runtime_unit', $runtimeConfig)) {
+            return;
+        }
+
+        unset($runtimeConfig['replaces_runtime_unit']);
+        $process->forceFill(['runtime_config' => $runtimeConfig])->save();
     }
 
     /**

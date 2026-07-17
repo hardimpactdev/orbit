@@ -160,7 +160,7 @@ describe('NodeRoleAddController', function (): void {
             ->toBe('Docker is missing.');
     });
 
-    it('resolves a websocket Redis node name to its node id', function (): void {
+    it('resolves a websocket Valkey node name to its node id', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
         $database = createNodeRoleApiContractTarget([
             'name' => 'database-1',
@@ -172,30 +172,30 @@ describe('NodeRoleAddController', function (): void {
         Process::factory()
             ->forOwner($database)
             ->create([
-                'name' => 'redis',
+                'name' => 'valkey',
                 'runtime' => ProcessRuntime::Docker,
-                'runtime_config' => ['service' => 'redis'],
+                'runtime_config' => ['service' => 'valkey'],
             ]);
 
         app()->instance(NodeRoleBaselineConverger::class, new NodeRoleAddNoopConverger);
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
             'role' => 'websocket',
-            'settings' => ['redis_node' => 'database-1'],
+            'settings' => ['valkey_node' => 'database-1'],
         ]);
 
         $response
             ->assertOk()
             ->assertJsonPath('success.data.assignment.role', 'websocket')
             ->assertJsonPath('success.data.assignment.status', 'active')
-            ->assertJsonPath('success.data.assignment.settings.redis_node_id', $database->id)
-            ->assertJsonMissingPath('success.data.assignment.settings.redis_node');
+            ->assertJsonPath('success.data.assignment.settings.valkey_node_id', $database->id)
+            ->assertJsonMissingPath('success.data.assignment.settings.valkey_node');
 
         expect(
             $target
                 ->roleAssignments()
                 ->where('role', 'websocket')
-                ->where('settings->redis_node_id', $database->id)
+                ->where('settings->valkey_node_id', $database->id)
                 ->exists(),
         )->toBeTrue();
     });
