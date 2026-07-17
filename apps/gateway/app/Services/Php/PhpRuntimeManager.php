@@ -6,6 +6,7 @@ namespace App\Services\Php;
 
 use App\Data\Apps\AppSelection;
 use App\Data\Php\PhpRuntimeFailure;
+use App\Data\Php\PhpRuntimeImageInventory;
 use App\Data\Php\PhpRuntimeOperation;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\AppSelectionResolutionFailed;
@@ -27,6 +28,7 @@ final readonly class PhpRuntimeManager
         private NodeRoleAssignments $nodeRoleAssignments,
         private AppSelectorResolver $appSelectorResolver,
         private WorkspacePlacement $workspacePlacement,
+        private PhpRuntimeImageInventoryStore $imageInventory,
     ) {}
 
     public function view(
@@ -41,10 +43,19 @@ final readonly class PhpRuntimeManager
             return new PhpRuntimeOperation(failure: $target);
         }
 
+        $inventory = $live
+            ? $this->imageInventory->refresh($target['node'])
+            : $this->imageInventory->stored($target['node']);
+
+        if ($live && ! $inventory->confirmed()) {
+            return new PhpRuntimeOperation(failure: $this->inventoryUnavailableFailure($target['node'], $inventory));
+        }
+
         $payload = $this->runtimeView(
             node: $target['node'],
             app: $target['app'],
             workspace: $target['workspace'],
+            inventory: $inventory,
         );
 
         return new PhpRuntimeOperation(
@@ -544,12 +555,19 @@ final readonly class PhpRuntimeManager
     /**
      * @return array<string, mixed>
      */
-    private function runtimeView(Node $node, ?App $app = null, ?Workspace $workspace = null): array
-    {
+    private function runtimeView(
+        Node $node,
+        ?App $app = null,
+        ?Workspace $workspace = null,
+        ?PhpRuntimeImageInventory $inventory = null,
+    ): array {
+        $inventory ??= $this->imageInventory->stored($node);
+
         return [
             'node' => $node->name,
             'supported' => $this->catalog->supported(),
-            'available_images' => $this->availableImageVersions($node),
+            'available_images' => $inventory->versions,
+            'image_inventory_status' => $inventory->status,
             'cli' => $this->cliVersion($node),
             'app' => $app instanceof App
                 ? [
@@ -563,32 +581,6 @@ final readonly class PhpRuntimeManager
                     'inherits' => ! is_string($workspace->php_version) || $workspace->php_version === '',
                 ] : null,
         ];
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function availableImageVersions(Node $node): array
-    {
-        $tool = $this->phpTool($node);
-        $config = is_array($tool?->config) ? $tool?->config : [];
-        $images = $config['images'] ?? null;
-
-        if (is_array($images)) {
-            $versions = [];
-
-            foreach ($images as $image) {
-                if (! is_string($image) || ! $this->catalog->isApprovedImage($image)) {
-                    continue;
-                }
-
-                $versions[] = $this->catalog->versionForImage($image);
-            }
-
-            return array_values(array_unique($versions));
-        }
-
-        return [];
     }
 
     private function versionAvailabilityFailure(Node $node, string $version): ?PhpRuntimeFailure
@@ -607,7 +599,20 @@ final readonly class PhpRuntimeManager
             );
         }
 
-        if (in_array($version, $this->availableImageVersions($node), true)) {
+        $inventory = $this->imageInventory->stored($node);
+        $rejectedImages = $this->rejectedImages($node);
+
+        if ($inventory->confirmed() && in_array($version, $inventory->versions, strict: true)) {
+            return null;
+        }
+
+        $inventory = $this->imageInventory->refresh($node);
+
+        if (! $inventory->confirmed()) {
+            return $this->inventoryUnavailableFailure($node, $inventory);
+        }
+
+        if (in_array($version, $inventory->versions, true)) {
             return null;
         }
 
@@ -620,7 +625,25 @@ final readonly class PhpRuntimeManager
                 'node' => $node->name,
                 'version' => $version,
                 'image' => $this->catalog->imageFor($version),
-                'rejected_images' => $this->rejectedImages($node),
+                'inventory_status' => $inventory->status,
+                'rejected_images' => $rejectedImages,
+            ],
+        );
+    }
+
+    private function inventoryUnavailableFailure(
+        Node $node,
+        PhpRuntimeImageInventory $inventory,
+    ): PhpRuntimeFailure {
+        return new PhpRuntimeFailure(
+            code: 'php.image_inventory_unavailable',
+            message: "Approved FrankenPHP image inventory is unavailable on node '{$node->name}'.",
+            meta: [
+                'reason' => 'inventory_unavailable',
+                'node' => $node->name,
+                'inventory_status' => $inventory->status,
+                'error' => $inventory->error,
+                'next_command' => 'php:list --node='.$node->name.' --live',
             ],
         );
     }

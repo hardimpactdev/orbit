@@ -34,6 +34,33 @@ function grantToolShowAccess(Node $caller, Node $appNode): void
 }
 
 describe('ToolShowController', function (): void {
+    it('shows the Docker-backed PHP image tool on a macOS app node', function (): void {
+        $caller = createToolShowCallerNode();
+        $node = createTestAppHostNode([
+            'name' => 'nckrtl',
+            'platform' => 'macos_14',
+        ]);
+        grantToolShowAccess($caller, $node);
+        NodeTool::factory()->create([
+            'name' => 'php',
+            'node_id' => $node->id,
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/tools/php?node=nckrtl',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'php')
+            ->assertJsonPath('success.data.tool.node', 'nckrtl');
+    });
+
     it('returns tool registry details by tool and node', function (): void {
         $caller = createToolShowCallerNode();
         $node = createTestAppHostNode(['name' => 'app-1']);

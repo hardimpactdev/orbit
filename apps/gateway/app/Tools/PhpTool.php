@@ -11,7 +11,7 @@ final class PhpTool extends BaseTool
     /**
      * @var list<string>
      */
-    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux'];
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux', 'macos'];
 
     protected const ?string REQUIRED_CONTAINER_PROVIDER = 'docker-compatible';
 

@@ -21,6 +21,7 @@ use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\SchedulerState;
@@ -37,6 +38,7 @@ use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
+use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
@@ -887,15 +889,6 @@ describe('DoctorReportRunner', function (): void {
                 domain: $app->domain,
             ),
         ]);
-        AppInstance::factory()->for($app)->create([
-            'name' => 'production',
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
-                node_id: $node->id,
-                path: '/home/orbit/apps/docs-production',
-                document_root: $app->document_root,
-                domain: 'docs.test',
-            ),
-        ]);
         $expectedHash = app(AppRuntimeContainerRenderer::class)->renderForInstance($app, $instance)->specHash();
         $process = \App\Models\Process::factory()
             ->forOwner($app)
@@ -1083,6 +1076,171 @@ describe('DoctorReportRunner', function (): void {
             ->toMatchArray([
                 'container_spec_hash' => $expectedHash,
             ]);
+    });
+
+    it('reports a missing FrankenPHP process for a secondary app instance that owns runtime intent', function (): void {
+        $node = createDoctorRunnerAppHostNode([
+            'name' => 'nckrtl',
+            'tld' => 'nmbp',
+            'platform' => 'macos_14',
+        ]);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'nckrtl',
+            'path' => '/Users/nckrtl/apps/nckrtl',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ]);
+        $development = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: $app->path,
+                document_root: $app->document_root,
+                domain: $app->domain,
+            ),
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'nmbp',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/Users/nckrtl/.config/orbit/worktrees/nckrtl-nmbp',
+                document_root: $app->document_root,
+                domain: 'nckrtl.nmbp',
+            ),
+        ]);
+        $process = app(EnsureFrankenPhpRuntimeProcess::class)->forApp($app, $development);
+        $expectedHash = $process->runtime_config['container_spec_hash'];
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Running' => true, 'Status' => 'running'],
+                    'Config' => ['Labels' => [AppRuntimeContainer::SpecHashLabel => $expectedHash]],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
+        ]));
+
+        $report = app(DoctorReportRunner::class)->probe($node, families: ['process']);
+        $issue = collect($report['issues'])
+            ->first(
+                fn (array $issue): bool => ($issue['detail']['reason'] ?? null) === 'runtime_process_missing',
+            );
+
+        expect($issue)
+            ->toMatchArray([
+                'family' => 'process',
+                'node' => 'nckrtl',
+                'key' => 'process.runtime_unit_missing',
+                'restorable' => true,
+                'detail' => [
+                    'app' => 'nckrtl',
+                    'app_instance' => 'nmbp',
+                    'process' => 'frankenphp-nckrtl',
+                    'runtime_unit' => 'orbit-app-nckrtl-nmbp',
+                    'reason' => 'runtime_process_missing',
+                ],
+            ])
+            ->and(OrbitProcess::query()->where('app_instance_id', $development->id)->count())
+            ->toBe(1)
+            ->and(OrbitProcess::query()->count())
+            ->toBe(1);
+    });
+
+    it('restores the missing secondary app-instance FrankenPHP process and container', function (): void {
+        $node = createDoctorRunnerAppHostNode([
+            'name' => 'nckrtl',
+            'tld' => 'nmbp',
+            'platform' => 'macos_14',
+        ]);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'nckrtl',
+            'path' => '/Users/nckrtl/apps/nckrtl',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ]);
+        $development = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: $app->path,
+                document_root: $app->document_root,
+                domain: $app->domain,
+            ),
+        ]);
+        $nmbp = AppInstance::factory()->for($app)->create([
+            'name' => 'nmbp',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/Users/nckrtl/.config/orbit/worktrees/nckrtl-nmbp',
+                document_root: $app->document_root,
+                domain: 'nckrtl.nmbp',
+            ),
+        ]);
+        $developmentProcess = app(EnsureFrankenPhpRuntimeProcess::class)->forApp($app, $development);
+        $developmentHash = $developmentProcess->runtime_config['container_spec_hash'];
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Running' => true, 'Status' => 'running'],
+                    'Config' => ['Labels' => [AppRuntimeContainer::SpecHashLabel => $developmentHash]],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(['outcome' => 'created'], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+        app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_fake_ca());
+        doctor_runner_expect_app_runtime_outcomes('created');
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
+        $action = collect($report['actions'])
+            ->first(
+                fn (array $action): bool => ($action['details']['app_instance'] ?? null) === 'nmbp',
+            );
+
+        expect($report['healthy'])
+            ->toBeTrue()
+            ->and($action)
+            ->toMatchArray([
+                'family' => 'process',
+                'node' => 'nckrtl',
+                'key' => 'process.runtime_unit_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => [
+                    'app' => 'nckrtl',
+                    'app_instance' => 'nmbp',
+                    'process' => 'frankenphp-nckrtl',
+                    'container' => 'orbit-app-nckrtl-nmbp',
+                    'outcome' => 'created',
+                ],
+            ])
+            ->and(OrbitProcess::query()->where('app_instance_id', $nmbp->id)->exists())
+            ->toBeTrue()
+            ->and(collect($shell->scripts)
+                ->contains(
+                    fn (string $script): bool => (
+                        str_contains($script, 'internal:app-runtime-container')
+                        && str_contains($script, 'container:apply')
+                    ),
+                ))
+            ->toBeTrue();
     });
 
     it('refreshes stale managed FrankenPHP workspace process intent during process restore', function (): void {

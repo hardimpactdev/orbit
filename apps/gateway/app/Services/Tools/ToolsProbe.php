@@ -540,6 +540,11 @@ final readonly class ToolsProbe
             ? array_values(array_filter($metadata['images'], is_string(...)))
             : [];
         $script = <<<'BASH'
+            if ! docker info >/dev/null 2>&1; then
+                printf '%s\n' 'Docker-compatible provider is unreachable.' >&2
+                exit 2
+            fi
+
             found=0
             while IFS= read -r image; do
                 [ -n "$image" ] || continue
@@ -549,7 +554,7 @@ final readonly class ToolsProbe
                 fi
             done
 
-            [ "$found" -eq 1 ]
+            exit 0
             BASH;
 
         $script = 'printf %s '.escapeshellarg(implode("\n", $images)."\n").' | ('.$script.')';
@@ -572,6 +577,8 @@ final readonly class ToolsProbe
                 'state' => null,
                 'images' => $observedImages,
                 'versions' => $versions,
+                'image_inventory_available' => $result->successful(),
+                'image_inventory_error' => $result->successful() ? null : trim($result->errorOutput()),
                 'config_exists' => null,
                 'config_hash' => null,
                 'secret_exists' => null,

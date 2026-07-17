@@ -58,6 +58,11 @@ concrete app-instance references, plus a process name, command, restart policy,
 and crash-notification policy. Node-owned service process definitions have a
 valid active node owner instead of an app-instance owner.
 
+For a PHP app that already owns managed FrankenPHP runtime intent, every active
+app instance must have its canonical FrankenPHP process row. A missing
+secondary-instance row is reported before artifact inspection so restore can
+recreate both the derived definition and its container.
+
 ### Owning app instance and workspace expansion
 
 The owner resolves to one active `AppInstance`. Expected runtime contexts are
@@ -162,7 +167,7 @@ Each code below identifies a specific process-family drift condition that the pr
 | `process.wireguard_self_route_unavailable` | A node-owned service endpoint points at the owning node's own WireGuard service address, but Linux self-route diagnostics are missing/unhealthy or the platform does not support this diagnostic. |
 | `process.runtime_backend_unavailable` | The selected process runtime backend is unavailable. Downstream runtime-unit checks are skipped while this code is active. |
 | `process.runtime_unit_unrenderable` | Gateway process intent is incomplete or invalid, so the expected runtime unit cannot be rendered. |
-| `process.runtime_unit_missing` | An expected Orbit-owned runtime unit has no corresponding backend artifact. |
+| `process.runtime_unit_missing` | An expected Orbit-owned runtime unit has no corresponding backend artifact, or an active instance of a managed PHP app lacks its canonical FrankenPHP process row. |
 | `process.runtime_unit_extra` | An Orbit-owned backend artifact exists without matching active app, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | The runtime artifact command, working directory, user, or unit name differs from gateway process configuration. |
 | `process.runtime_unit_unloaded` | A launchd-backed runtime unit that is expected to be running has an Orbit-owned plist but its label is not loaded in the current user GUI domain. |
@@ -180,7 +185,7 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `process.runtime_backend_unavailable` | No `doctor --restore` action. Process manager installation and recovery belong to node operations. Process doctor reports the dependency and does not attempt to install Docker, systemd, or launchd. |
 | `process.wireguard_self_route_unavailable` | No `doctor --restore` action. WireGuard self-route mutation belongs to node provisioning/topology repair, not the process family. |
 | `process.runtime_unit_unrenderable` | No `doctor --restore` action. Fix the process definition or run the role baseline that owns the incomplete service process intent. |
-| `process.runtime_unit_missing` | Re-render and reload the missing backend artifact from gateway app-instance, workspace, and process configuration. |
+| `process.runtime_unit_missing` | Re-render and reload the missing backend artifact from gateway app-instance, workspace, and process configuration. For a managed PHP app instance missing its canonical FrankenPHP process row, recreate that derived row first and then restore its container. |
 | `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in active gateway app-instance, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | Rewrite the backend artifact from gateway app-instance, workspace, and process configuration. |
 | `process.runtime_unit_unloaded` | Re-run launchd lifecycle actions for the Orbit-owned label when the process should be running. |
@@ -196,7 +201,13 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 `process.runtime_backend_unavailable`, or
 `process.runtime_unit_unrenderable`.
 
-Missing or invalid process definitions and app-instance ownership problems remain explicit process, app, or workspace command work. Process doctor never creates process definitions, changes process names, edits app-instance or workspace records, or adopts arbitrary runtime-unit files as gateway configuration.
+Invalid user-managed process definitions and app-instance ownership problems
+remain explicit process, app, or workspace command work. Process doctor does
+not create arbitrary definitions, change process names, edit app-instance or
+workspace records, or adopt arbitrary runtime-unit files as gateway
+configuration. Its only definition-recreation exception is the canonical,
+derived FrankenPHP process row for an active instance of an app that already
+owns managed FrankenPHP runtime intent.
 
 For launchd, restore is limited to Orbit-owned user LaunchAgents. It may write
 the expected plist under the configured node user's `~/Library/LaunchAgents`,
@@ -231,7 +242,7 @@ Required test files:
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for process family scope and process drift reporting. |
 | `apps/gateway/tests/Unit/Services/Processes/ProcessesProbeTest.php` | In-memory probe diff behavior for the processes family (see breakdown below). |
-| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Node-wide managed runtime inventory dispatch and safe removal of orphaned app containers through the process family. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Node-wide managed runtime inventory dispatch, safe removal of orphaned app containers, and detection and restoration of missing secondary-instance FrankenPHP runtime rows and containers. |
 
 No current E2E test is mapped for process-family doctor coverage.
 

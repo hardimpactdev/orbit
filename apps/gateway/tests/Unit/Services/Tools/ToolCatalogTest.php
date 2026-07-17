@@ -23,6 +23,21 @@ use Tests\TestCase;
 uses(TestCase::class);
 
 describe('tool catalog definitions', function (): void {
+    it('catalogs Docker-isolated PHP images for Linux and macOS without weakening the provider constraint', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->supportedOperatingSystems('php'))
+            ->toBe(['linux', 'macos'])
+            ->and($catalog->supportsPlatform('php', 'ubuntu_24-04'))
+            ->toBeTrue()
+            ->and($catalog->supportsPlatform('php', 'macos_14'))
+            ->toBeTrue()
+            ->and($catalog->requiredContainerProvider('php'))
+            ->toBe('docker-compatible')
+            ->and($catalog->isolation('php'))
+            ->toBe('docker');
+    });
+
     it('resolves supported tools through dedicated definitions', function (): void {
         $catalog = app(ToolCatalog::class);
 

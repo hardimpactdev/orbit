@@ -38,7 +38,11 @@ Run this command to inspect PHP image support and selection for a node, app, or 
 caller context, concrete app-instance placement, workspace-instance placement,
 or local `node:default`. It reads gateway configuration and the PHP image facts
 tracked by the gateway for the resolved node. With `--live`, it also asks the
-gateway to inspect the target node for available PHP images.
+gateway to inspect the target node through its Docker-compatible provider and
+records the approved image inventory. A failed live inventory probe is reported
+as unavailable. On an eligible node without a PHP inventory fact, Orbit
+registers that fact before probing. The probe through the Docker-compatible
+provider still has to succeed before the inventory is confirmed.
 
 The command does not install PHP, remove PHP, change app configuration, change
 workspace overrides, or edit project files.

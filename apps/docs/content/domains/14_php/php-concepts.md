@@ -37,10 +37,16 @@ These terms define the PHP command domain and how PHP runtime selections are tra
   container wiring, but they must not choose a host PHP or PHP-FPM fallback.
 - **Gateway-tracked image facts:** Stored gateway facts about PHP images
   available on a node. `php:list` uses these by default instead of live node
-  inspection.
+  inspection. The inventory status distinguishes confirmed observations from
+  stale facts and an unavailable Docker-compatible provider.
 - **Live image inspection:** Explicit `php:list --live` behavior that asks the
-  gateway to inspect the resolved node for available PHP images
-  during the command.
+  gateway to inspect the resolved node for available PHP images during the
+  command and records the resulting approved image inventory. A
+  supported node without an inventory fact receives one as part of that
+  refresh. This does not bypass the Docker-compatible provider requirement. A
+  successful empty inspection confirms that the approved image is missing;
+  a failed inspection reports inventory unavailability without treating the
+  image as confirmed missing.
 - **PHP runtime view:** Shared PHP JSON entity reporting the resolved node,
   supported versions, available images, app PHP selection, and workspace
   effective selection when those scopes are resolved.

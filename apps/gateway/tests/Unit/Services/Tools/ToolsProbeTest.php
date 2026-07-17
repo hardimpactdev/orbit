@@ -597,7 +597,7 @@ describe('ToolsProbe', function (): void {
     });
 
     it('frankenphp probes approved Docker image inventory for the PHP tool instead of host PHP', function (): void {
-        $node = createToolsProbeAppHostNode();
+        $node = createToolsProbeAppHostNode(['platform' => 'macos_14']);
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'php']);
         $shell = new RecordingToolsProbeRemoteShell(
             exitCode: 0,
@@ -619,6 +619,8 @@ describe('ToolsProbe', function (): void {
                 'installed' => true,
                 'version' => '8.5',
                 'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+                'image_inventory_available' => true,
+                'image_inventory_error' => null,
             ])
             ->and($probe->diff($tool, $snapshot))
             ->toBe([]);

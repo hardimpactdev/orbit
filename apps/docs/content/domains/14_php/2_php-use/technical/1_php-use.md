@@ -43,7 +43,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 2. Resolve `version` from positional input or prompt unless `--inherit` is supplied.
 3. Validate mutually exclusive inputs.
 4. Validate the requested version against Orbit-supported versions and
-   available images on the target node. CLI scope accepts only PHP 8.5.
+   available images on the target node. When stored inventory is stale or does
+   not contain the approved image, refresh it through the node's
+   Docker-compatible provider before rejecting the selection. CLI scope accepts
+   only PHP 8.5.
 5. Apply post-input authorization before side effects.
 
 For app and workspace runtime targets, the target node comes from the concrete
@@ -109,6 +112,11 @@ change framework cache state, or create app/workspace records.
 
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
+
+For app and workspace runtime selection, a successful inventory probe that does
+not find the approved image fails validation as a confirmed missing image. An
+unreachable provider or otherwise failed inventory probe reports image
+inventory unavailability and does not claim that the image is missing.
 
 ## Doctor Relationship
 

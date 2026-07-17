@@ -1295,11 +1295,14 @@ final readonly class DoctorReportRunner
 
         if (in_array('process', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
+            $missingRuntimeProcessIssues = $this->missingFrankenPhpRuntimeProcessIssues($node);
             $this->runFamilyCheckPlan(
                 $onFamilyProgress,
                 'process',
-                Process::query()->with('owner')->where('node_id', $node->id)->count() + 1,
-                function (callable $advance) use ($node, &$issues): void {
+                count($missingRuntimeProcessIssues)
+                + Process::query()->with('owner')->where('node_id', $node->id)->count()
+                + 1,
+                function (callable $advance) use ($missingRuntimeProcessIssues, $node, &$issues): void {
                     foreach (Process::query()->with('owner')->where('node_id', $node->id)->get() as $process) {
                         $snapshot = $this->processesProbe->introspect($process);
 
@@ -1307,6 +1310,11 @@ final readonly class DoctorReportRunner
                             $issues[] = $this->processIssuePayload($entry, $process);
                         }
 
+                        $advance();
+                    }
+
+                    foreach ($missingRuntimeProcessIssues as $issue) {
+                        $issues[] = $issue;
                         $advance();
                     }
 
@@ -1788,6 +1796,66 @@ final readonly class DoctorReportRunner
         }
 
         return array_values(array_unique($slugs));
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function missingFrankenPhpRuntimeProcessIssues(Node $node): array
+    {
+        $ensure = app(EnsureFrankenPhpRuntimeProcess::class);
+        $renderer = app(AppRuntimeContainerRenderer::class);
+        $issues = [];
+
+        foreach ($this->appInstancesForNode($node) as $instance) {
+            $app = $instance->app;
+
+            if (! $this->appHasManagedFrankenPhpRuntimeIntent($app)) {
+                continue;
+            }
+
+            $processName = $ensure->appProcessName($app);
+            $exists = Process::query()
+                ->where('owner_type', $app->getMorphClass())
+                ->where('owner_id', $app->getKey())
+                ->where('app_instance_id', $instance->id)
+                ->where('name', $processName)
+                ->exists();
+
+            if ($exists) {
+                continue;
+            }
+
+            $issues[] = $this->annotateIssue([
+                'family' => 'process',
+                'node' => $node->name,
+                'key' => 'process.runtime_unit_missing',
+                'kind' => DriftKind::Missing->value,
+                'summary' => "FrankenPHP runtime intent is missing for app instance {$app->name}.{$instance->name}.",
+                'detail' => [
+                    'app' => $app->name,
+                    'app_instance' => $instance->name,
+                    'process' => $processName,
+                    'runtime_unit' => $renderer->containerNameForInstance($app, $instance),
+                    'reason' => 'runtime_process_missing',
+                ],
+            ]);
+        }
+
+        return $issues;
+    }
+
+    private function appHasManagedFrankenPhpRuntimeIntent(App $app): bool
+    {
+        return Process::query()
+            ->where('owner_type', $app->getMorphClass())
+            ->where('owner_id', $app->getKey())
+            ->get()
+            ->contains(function (Process $process): bool {
+                $config = $process->runtime_config;
+
+                return ($config['container_spec_hash_label'] ?? null) === AppRuntimeContainer::SpecHashLabel;
+            });
     }
 
     /**
@@ -2663,6 +2731,10 @@ final readonly class DoctorReportRunner
             return null;
         }
 
+        if (($detail['reason'] ?? null) === 'runtime_process_missing') {
+            return $this->restoreMissingFrankenPhpRuntimeProcess($node, $key, $detail);
+        }
+
         $process = $this->processFromIssueDetail($node, $detail);
 
         if (! $process instanceof Process) {
@@ -2735,6 +2807,56 @@ final readonly class DoctorReportRunner
                 'process' => $process->name,
             ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>|null
+     */
+    private function restoreMissingFrankenPhpRuntimeProcess(Node $node, string $key, array $detail): ?array
+    {
+        $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
+        $instanceName = is_string($detail['app_instance'] ?? null) ? $detail['app_instance'] : null;
+
+        if ($appName === null || $instanceName === null) {
+            return null;
+        }
+
+        $app = App::query()
+            ->with('instances')
+            ->where('name', $appName)
+            ->first();
+        $instance = $app instanceof App
+            ? $app->instances->firstWhere('name', $instanceName)
+            : null;
+
+        if (
+            ! $app instanceof App
+            || ! $instance instanceof AppInstance
+            || $this->workspacePlacement->nodeForInstance($instance)?->id !== $node->id
+        ) {
+            return null;
+        }
+
+        try {
+            $process = app(EnsureFrankenPhpRuntimeProcess::class)->forApp($app, $instance);
+        } catch (Throwable $exception) {
+            return [
+                'family' => 'process',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore {$key}.",
+                'details' => [
+                    ...$detail,
+                    'error' => $exception->getMessage(),
+                ],
+            ];
+        }
+
+        return $this->restoreManagedFrankenPhpAppRuntime($node, $key, $process, $app);
     }
 
     /**

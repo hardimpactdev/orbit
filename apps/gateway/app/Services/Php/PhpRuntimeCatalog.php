@@ -62,6 +62,37 @@ final readonly class PhpRuntimeCatalog
     /**
      * @return list<string>
      */
+    public function approvedImages(mixed $images): array
+    {
+        if (! is_array($images)) {
+            return [];
+        }
+
+        $approved = [];
+
+        foreach ($images as $image) {
+            if (! is_string($image) || ! $this->isApprovedImage($image)) {
+                continue;
+            }
+
+            $approved[] = $image;
+        }
+
+        return array_values(array_unique($approved));
+    }
+
+    /**
+     * @param  list<string>  $images
+     * @return list<string>
+     */
+    public function versionsForImages(array $images): array
+    {
+        return array_values(array_unique(array_map($this->versionForImage(...), $images)));
+    }
+
+    /**
+     * @return list<string>
+     */
     public function supported(): array
     {
         return self::SUPPORTED;

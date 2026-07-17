@@ -13,7 +13,7 @@ These fields describe the PHP image tool's identity, backend, and support model 
 | Backend | FrankenPHP Docker image capability |
 | Support model | Selected by app/workspace runtime configuration |
 | Category | `runtime` |
-| Supported operating systems | Linux |
+| Supported operating systems | Linux and macOS |
 | Required container provider | Docker-compatible |
 | Isolation | Docker container |
 
@@ -33,6 +33,10 @@ The `php` tool owns PHP image capability evidence for app and workspace runtime
 containers. PHP runtime selection is admitted as the separate `php:*` command
 family because it mutates app configuration and workspace overrides rather than
 only tool capability state.
+
+On both Linux and macOS, this tool remains Docker-isolated and requires a
+Docker-compatible container provider. macOS support does not introduce a
+host-native PHP or FrankenPHP fallback.
 
 Orbit resolves supported PHP versions to the approved FrankenPHP image family
 that Orbit owns and builds from the upstream Debian/glibc image:

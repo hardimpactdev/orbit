@@ -45,7 +45,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Reads the Orbit-supported PHP version set from the PHP runtime catalog.
 - Reads gateway-tracked image facts by default.
 - Performs live image inspection through Agent push only when `--live` is
-  supplied and only for the resolved node.
+  supplied and only for the resolved node. On a supported node without a PHP
+  inventory fact, the refresh registers that fact before probing. A successful
+  probe records the approved image set with confirmed inventory status;
+  provider or probe failure records unavailable status and returns an explicit
+  error.
 
 ### Scope Boundaries
 
@@ -63,7 +67,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`php:list` is read-only. [`doctor --family=tool`](../../../3_tool/tool-doctor.md)
+`php:list` does not change runtime selection or runtime artifacts; live reads
+may reconcile their PHP inventory fact. [`doctor --family=tool`](../../../3_tool/tool-doctor.md)
 owns PHP image capability drift. [`doctor --family=app`](../../../5_app/app-doctor.md)
 and [`doctor --family=workspace`](../../../6_workspace/workspace-doctor.md)
 own PHP runtime health for app and workspace artifacts.
