@@ -14,8 +14,8 @@ orbit analytics:update [--node=<node>] [--version=<version>] [--json]
 
 - `--version`: Plausible CE version to apply. Required. Use a plain semantic
   version such as `3.2.2`.
-- `--node`: active analytics role node to update. Optional when exactly one
-  visible active analytics node exists.
+- `--node`: active analytics role node to update. Optional; defaults to the
+  fleet's singleton active analytics node.
 - `--json`: Output JSON.
 
 ## Behavior Summary

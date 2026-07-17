@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `version` | `--version` | Always. | Never. | None. | Plausible CE semantic version string such as `3.2.2`. |
-| `node` | `--node` | Required when zero or multiple visible active analytics nodes exist. | Never. | The only visible active analytics node when exactly one exists. | Must match an active node with the `analytics` role. |
+| `node` | `--node` | Optional. | Never. | The fleet's singleton visible active analytics node. | Must match the active node with the `analytics` role. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 
 ## Input Resolution

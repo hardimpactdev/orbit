@@ -104,7 +104,9 @@ Each term below has a precise meaning in the node command family.
   analytics node runs Plausible CE as a process-owned Docker container,
   publishes only on the node's WireGuard address, receives dashboard traffic through
   `analytics.orbit`, and receives tracking traffic for each app through public
-  ingress-to-router routes.
+  ingress-to-router routes. Exactly one assignment may exist fleet-wide. Its
+  convergence owns the deployment workflow that creates and enacts the private
+  route, while proxy owns the resulting route, artifact, and TLS state.
 - **Agent role:** Exclusive workload role for first-party autonomous agent
   workloads. Conflicts with `gateway`, `vpn`, `router`, `app-dev`,
   `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics`, and
@@ -262,7 +264,7 @@ Role baselines are code-defined desired state, not editable package lists.
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Valkey-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
 | `metrics` | Docker substrate, node-exporter binary, Prometheus/Grafana Swarm processes, node-exporter systemd processes on metrics/workload nodes, `metrics.orbit`, and Grafana credentials |
-| `analytics` | Plausible CE in a process-owned WireGuard-bound Docker container, private `analytics.orbit` router route, per-app public tracking route support, analytics backend pool registration, and authenticated runtime configuration derived from PostgreSQL and ClickHouse process endpoints |
+| `analytics` | Fleet-singleton Plausible CE in a process-owned WireGuard-bound Docker container, enacted private `analytics.orbit` router route with Orbit-managed TLS, per-app public tracking route support, analytics backend pool registration, and authenticated runtime configuration derived from PostgreSQL and ClickHouse process endpoints |
 
 Baseline convergence first stores the gateway intent for the selected role.
 When `node:new` provisions a real managed workload host, node setup then

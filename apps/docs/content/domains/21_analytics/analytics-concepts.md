@@ -9,7 +9,9 @@ the analytics command contracts and does not override the
 These terms describe the analytics role and the routes around it.
 
 - **Analytics role:** Private workload node role that runs Plausible CE for the
-  fleet. The role binds only to WireGuard and receives traffic through router.
+  fleet. Exactly one assignment may exist, including while deployment or
+  removal is incomplete. The role binds only to WireGuard and receives traffic
+  through router.
 - **Plausible CE process:** Node-owned Docker service row for Plausible CE
   3.2.1. The row owns the image version, endpoint, lifecycle, logs, restart
   policy, and encrypted runtime credentials. Its published port binds directly
@@ -20,7 +22,9 @@ These terms describe the analytics role and the routes around it.
   ClickHouse 24.12 Alpine; both are authenticated Docker services published
   only on the database node's WireGuard address.
 - **Private analytics endpoint:** `https://analytics.orbit`, the internal
-  dashboard and admin endpoint served through router.
+  dashboard and admin endpoint served through router. Analytics role deployment
+  converges its route and TLS after Plausible is healthy; removal deletes the
+  route and its rendered artifacts.
 - **Public app analytics host:** App-owned public hostname such as
   `analytics.example.com` that proxies Plausible script and event-ingest paths
   only.

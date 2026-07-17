@@ -9,8 +9,10 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Analytics\AnalyticsDatabaseResolver;
+use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\S3\S3RouteRegistrar;
 use App\Services\WebSockets\WebSocketValkeyResolver;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Throwable;
@@ -25,6 +27,7 @@ class NodeRoleAssignmentService
         private readonly RoleSelfGrantMaterializer $roleSelfGrantMaterializer,
         private readonly WebSocketValkeyResolver $webSocketValkeyResolver,
         private readonly AnalyticsDatabaseResolver $analyticsDatabaseResolver,
+        private readonly AnalyticsRouteRegistrar $analyticsRouteRegistrar,
         private readonly S3RouteRegistrar $s3RouteRegistrar,
     ) {}
 
@@ -71,6 +74,7 @@ class NodeRoleAssignmentService
             throw new InvalidArgumentException("Role '{$role}' is already assigned to node '{$node->name}'.");
         }
 
+        $this->assertFleetRoleAvailable($role, $node);
         $this->guardSupportedPlatform($node, $definition);
         $this->guardAgainstConflicts($node, $definition);
 
@@ -79,13 +83,19 @@ class NodeRoleAssignmentService
         $this->guardAnalyticsDatabaseNodes($role, $settingsData);
         $this->guardAppProductionIngressNode($node, $role, $settingsData);
 
-        $assignment = $node->roleAssignments()->create([
-            'role' => $role,
-            'status' => NodeRoleStatus::Pending->value,
-            'settings' => $settingsData,
-            'last_error' => null,
-            'converged_at' => null,
-        ]);
+        try {
+            $assignment = $node->roleAssignments()->create([
+                'role' => $role,
+                'status' => NodeRoleStatus::Pending->value,
+                'settings' => $settingsData,
+                'last_error' => null,
+                'converged_at' => null,
+            ]);
+        } catch (QueryException $exception) {
+            $this->assertFleetRoleAvailable($role, $node);
+
+            throw $exception;
+        }
 
         return $this->clearManagedOptInAfterActiveRole($node, $this->converge($node, $assignment));
     }
@@ -191,6 +201,11 @@ class NodeRoleAssignmentService
 
         try {
             $this->converger->remove($node, $removingAssignment, $purgeData);
+
+            if ($role === NodeRoleName::Analytics->value) {
+                $this->analyticsRouteRegistrar->removeServiceRoute();
+            }
+
             $this->completeRemoval($node, $assignment, $dependentPolicy, $role);
 
             if ($role === NodeRoleName::S3->value && $this->hasActiveRouter()) {
@@ -297,6 +312,10 @@ class NodeRoleAssignmentService
         try {
             $this->converger->converge($node, $assignment);
 
+            if ($assignment->role === NodeRoleName::Analytics->value) {
+                $this->analyticsRouteRegistrar->convergeServiceRoute($node);
+            }
+
             $assignment->forceFill([
                 'status' => NodeRoleStatus::Active->value,
                 'converged_at' => now(),
@@ -327,6 +346,33 @@ class NodeRoleAssignmentService
     private function hasActiveRouter(): bool
     {
         return $this->assignments->activeRouterNodeQuery()->exists();
+    }
+
+    public function assertFleetRoleAvailable(string $role, ?Node $exceptNode = null): void
+    {
+        if ($role !== NodeRoleName::Analytics->value) {
+            return;
+        }
+
+        $query = NodeRoleAssignment::query()
+            ->where('role', NodeRoleName::Analytics->value);
+
+        if ($exceptNode instanceof Node) {
+            $query->where('node_id', '!=', $exceptNode->id);
+        }
+
+        $existing = $query->orderBy('id')->first();
+
+        if (! $existing instanceof NodeRoleAssignment) {
+            return;
+        }
+
+        $existingNode = Node::query()->find($existing->node_id);
+        $existingNodeName = $existingNode instanceof Node ? $existingNode->name : (string) $existing->node_id;
+
+        throw new InvalidArgumentException(
+            "Role 'analytics' is already assigned to node '{$existingNodeName}'.",
+        );
     }
 
     private function guardSupportedPlatform(Node $node, NodeRoleDefinition $definition): void

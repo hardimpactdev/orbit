@@ -244,6 +244,14 @@ PostgreSQL and ClickHouse endpoints from those database-role process
 definitions, and receives traffic only through router-owned analytics service
 routes. Database and Plausible secrets remain in encrypted process credentials,
 not plain runtime configuration.
+- Reject a requested analytics assignment before target provisioning when any
+  analytics role assignment already exists on another fleet node. Pending,
+  active, errored, and removing assignments all retain singleton ownership
+  until their row is removed.
+- Analytics convergence succeeds only after Plausible is verified and the
+  router-owned `analytics.orbit` Caddy route plus Orbit-managed TLS material are
+  enacted. Route failure persists the assignment as `error` and keeps node
+  provisioning incomplete.
 - If an initial role is persisted with `status=error` because its first
   convergence failed, `node:new` fails and returns the role status and
   `last_error` in failure metadata. The persisted assignment remains available

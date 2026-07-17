@@ -7,6 +7,7 @@ use App\Models\AppAnalyticsBinding;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\ProxyRoute;
+use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Analytics\AppAnalyticsBindingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
@@ -60,6 +61,10 @@ function createAppAnalyticsRoutePrerequisites(bool $withRouter = true, bool $wit
                 'name' => 'analytics-1',
                 'wireguard_address' => '10.6.0.50',
             ]);
+    }
+
+    if ($withRouter && $withAnalytics) {
+        app(AnalyticsRouteRegistrar::class)->syncServiceRoute();
     }
 }
 

@@ -10,8 +10,8 @@
 - The CLI caller can reach the Orbit gateway.
 - The authenticated peer holds `app:write` on the app's owning node.
 - The target app exists in the gateway registry.
-- An active router node and at least one active analytics backend node exist in
-  the fleet.
+- The singleton analytics role is active and its router-owned
+  `analytics.orbit` service route exists.
 
 ## Signature
 
@@ -49,7 +49,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Set `enabled=true`.
 - Store public tracking hosts. When the request omits hosts and the app has a
   hostname, store `analytics.<app-domain>`.
-- Sync the private analytics service route for `analytics.orbit` on router.
+- Require the private `analytics.orbit` service route created by analytics role
+  deployment. App binding enable must not create or own that route.
 - Register one public `app-analytics` route for each public host. Public routes
   must proxy only Plausible script and event paths and must preserve forwarding
   identity for event attribution.
@@ -97,7 +98,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`app:analytics enable` writes app-owned binding intent and triggers route sync.
+`app:analytics enable` writes app-owned binding intent and syncs only public
+app analytics routes.
 [`doctor --family=app`](../../app-doctor.md) owns app binding drift and
 [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md) owns route drift.
 

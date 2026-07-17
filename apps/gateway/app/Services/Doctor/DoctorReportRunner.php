@@ -31,6 +31,7 @@ use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
+use App\Services\Analytics\AnalyticsProxyDoctorProbe;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerManager;
@@ -177,6 +178,7 @@ final readonly class DoctorReportRunner
         private WebSocketProxyDoctorProbe $webSocketProxyDoctorProbe,
         private S3DoctorProbe $s3DoctorProbe,
         private S3ProxyDoctorProbe $s3ProxyDoctorProbe,
+        private AnalyticsProxyDoctorProbe $analyticsProxyDoctorProbe,
         private AppRuntimeRequirementProbe $appRuntimeRequirementProbe,
         private DnsRuntimeProbe $dnsRuntimeProbe,
         private WorkspacePlacement $workspacePlacement = new WorkspacePlacement,
@@ -1822,6 +1824,10 @@ final readonly class DoctorReportRunner
 
         if ($scope->app === null && $scope->workspace === null) {
             foreach ($this->s3ProxyDoctorProbe->drift($node) as $entry) {
+                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+            }
+
+            foreach ($this->analyticsProxyDoctorProbe->drift($node) as $entry) {
                 $issues[] = $this->nodeScopedIssuePayload($entry, $node);
             }
         }
@@ -3546,6 +3552,17 @@ final readonly class DoctorReportRunner
     {
         $node = $this->nodeFromIssue($issue) ?? $fallbackNode;
 
+        if (in_array(
+            $key,
+            [
+                AnalyticsProxyDoctorProbe::RouterRouteKey,
+                AnalyticsProxyDoctorProbe::RouterRouteOrphanedKey,
+            ],
+            true,
+        )) {
+            return $this->handleAnalyticsProxyAction($mode, $node, $this->driftEntryFromIssue($issue));
+        }
+
         if (($issue['kind'] ?? null) === DriftKind::Extra->value) {
             if ($mode === 'adopt') {
                 $snapshot = $this->proxyRouteProbe->snapshotForAdopt($node);
@@ -3726,6 +3743,33 @@ final readonly class DoctorReportRunner
                 'summary' => "Failed to fix {$entry->key}.",
                 'details' => [
                     'error' => $e->getMessage(),
+                ],
+            ];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleAnalyticsProxyAction(string $mode, Node $node, DriftEntry $entry): ?array
+    {
+        if ($mode === 'verify') {
+            return null;
+        }
+
+        try {
+            return $this->analyticsProxyDoctorProbe->restore($node, $entry);
+        } catch (\Throwable $throwable) {
+            return [
+                'family' => $entry->family,
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => $mode,
+                'status' => 'failed',
+                'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'error' => $throwable->getMessage(),
                 ],
             ];
         }
@@ -3971,6 +4015,8 @@ final readonly class DoctorReportRunner
             S3ProxyDoctorProbe::RouterRouteKey,
             S3ProxyDoctorProbe::RouterBackendKey,
             S3ProxyDoctorProbe::PublicRouteKey,
+            AnalyticsProxyDoctorProbe::RouterRouteKey,
+            AnalyticsProxyDoctorProbe::RouterRouteOrphanedKey,
             'workspace.security.system_user',
             'workspace.security.fs_permissions',
             'app.runtime_config_missing',

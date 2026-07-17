@@ -53,6 +53,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   service processes expected or installed. Both options may point at the same
   database node. Either option may point at the target analytics node only when
   the target node also has an active `database` role.
+- `analytics` is fleet-singleton. A pending, active, errored, or removing
+  analytics role assignment on another node rejects the request before an
+  assignment or runtime side effect is created. Removal releases the slot only
+  after its cleanup completes and the assignment row is deleted.
 - `s3` accepts optional `--s3-data-path`. The resolved path defaults to
   `/srv/orbit/s3/data`, must be canonical and rooted under `/media`, `/mnt`,
   `/opt/orbit`, `/srv`, or `/var/lib/orbit`, is stored as
@@ -67,6 +71,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Adding a role triggers convergence through `NodeRoleAssignmentService`.
 - Success returns the stored assignment payload after convergence completes with
   `status=active`.
+- Analytics success requires the Plausible runtime, router-owned
+  `analytics.orbit` route, rendered Caddy site, and Orbit-managed TLS material
+  to converge. Any route enactment failure leaves the assignment in `error`.
 - Websocket convergence resolves the selected release manifest's
   `orbit-websocket` image. When its verified image archive is available,
   convergence downloads it over HTTPS, verifies its SHA-256, and loads it
@@ -122,6 +129,7 @@ Renderer-specific test mapping lives in:
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Node not found | No active node matches `node`. | Failure |
+| Analytics role already assigned | Another analytics assignment exists in the fleet, including an incomplete deployment or removal. | `error.code=validation_failed` |
 | Convergence failed | Role assignment was stored but baseline convergence ended in `error`. | `error.code=node_role.convergence_failed`, `error.meta.last_error=<recorded convergence error>` |
 
 ## Doctor Relationship

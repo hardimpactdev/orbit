@@ -172,14 +172,14 @@ Supported managed services in this vertical slice:
 | Service | Versions | Default runtime | Notes |
 | --- | --- | --- | --- |
 | `mysql` | `8` -> `8.4`, `9` -> `9` | `docker` | Published ports are version-family specific, so MySQL 8 and 9 can coexist on one node. |
-| `postgres` | `16` -> `16-alpine` | `docker` | Publishes PostgreSQL on the owning node's WireGuard service address. Analytics backing-service deployments may select `docker-swarm`. |
-| `clickhouse` | `24.12` -> `24.12-alpine` | `docker` | Publishes the ClickHouse HTTP endpoint on the owning node's WireGuard service address. Analytics backing-service deployments may select `docker-swarm`. |
+| `postgres` | `16` -> `16-alpine` | `docker` | Publishes PostgreSQL on the owning node's WireGuard service address and can back the analytics role. |
+| `clickhouse` | `24.12` -> `24.12-alpine` | `docker` | Publishes the ClickHouse HTTP endpoint on the owning node's WireGuard service address and can back the analytics role. |
 | `valkey` | `8` -> `8.1` | `docker` | Publishes the Valkey TCP endpoint from the owning node's WireGuard service address and is the required app-facing WebSocket broker. |
 | `mailpit` | `latest` -> `latest` | `docker` | Publishes SMTP (`1025`) on the owning node. The Web UI stays private on the Docker network and should be exposed with a proxy route to `http://mailpit:8025`. |
 | `prometheus` | `3` -> `v3.12.0` | `docker-swarm` | Metrics-role service process for host-resource time-series storage. Uses local TSDB retention of 15 days. |
 | `grafana` | `13` -> `13.0.2` | `docker-swarm` | Metrics-role service process for dashboards, exposed through the private `metrics.orbit` route. |
 | `node-exporter` | `1` -> `1.11.1` | `systemd` | Metrics-role host process that exposes host resource metrics on metrics and active workload nodes through the owning node's WireGuard service address. |
-| `plausible` | `3.2.1` -> `3.2.1` | `docker` | Plausible CE application service. The analytics role converges it with `docker-swarm` and selected PostgreSQL and ClickHouse WireGuard endpoints. |
+| `plausible` | `3.2.1` -> `3.2.1` | `docker` | Plausible CE application service. The analytics role converges it as a node-owned Docker process with selected PostgreSQL and ClickHouse WireGuard endpoints. |
 
 `docker-swarm` is also admitted for node-owned managed services whose catalog
 entry declares Swarm support. `node-exporter` declares only `systemd` because

@@ -595,6 +595,12 @@ The `analytics` role uses the official Plausible CE 3.2.1 service pairing:
 process rather than a Swarm service. Published PostgreSQL, ClickHouse, and
 Plausible ports bind directly to the owning node's WireGuard address.
 
+Orbit permits one analytics role assignment fleet-wide. After the Plausible
+container is verified, role convergence persists and enacts the router-owned
+`analytics.orbit` Caddy route to the node's WireGuard-bound port `8000`, issues
+the Orbit-managed leaf certificate, and reloads router Caddy. Removing the role
+removes the Caddy site, leaf certificate and key, and gateway route row.
+
 Orbit generates separate PostgreSQL and ClickHouse passwords when their managed
 service process rows are created. Process credentials are encrypted at rest and
 are injected into the remote Docker specification only during convergence;

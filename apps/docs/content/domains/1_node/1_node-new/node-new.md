@@ -228,7 +228,10 @@ Requires `--host`.
 Provisions a private analytics node and creates an active `analytics` role
 assignment whose settings point at the selected PostgreSQL and ClickHouse
 service nodes. Plausible runs as a node-owned Docker process published only on
-the analytics node's WireGuard address.
+the analytics node's WireGuard address. The fleet permits one analytics role
+assignment. Provisioning rejects a second assignment before opening the target
+bootstrap path, and succeeds only after `analytics.orbit` and its TLS material
+are enacted on router.
 
 Requires `--host`, `--postgres-node`, and `--clickhouse-node`.
 

@@ -584,6 +584,21 @@ final class GatewayNodeCreator
             );
         }
 
+        try {
+            foreach ($roles as $role) {
+                $roleAssignmentService->assertFleetRoleAvailable($role, $existing);
+            }
+        } catch (InvalidArgumentException $exception) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: $exception->getMessage(),
+                meta: [
+                    'field' => 'roles',
+                    'role' => NodeRoleName::Analytics->value,
+                ],
+            );
+        }
+
         if (
             $inputs['tld'] !== null
             && Node::query()->where('tld', $inputs['tld'])->where('status', NodeStatus::Active->value)->exists()
