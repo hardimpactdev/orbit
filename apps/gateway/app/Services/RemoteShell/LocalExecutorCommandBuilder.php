@@ -189,6 +189,7 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
             NodeRoleName::AppProduction,
             NodeRoleName::Database,
             NodeRoleName::S3,
+            NodeRoleName::Analytics,
         ],
         InternalCommand::ProcessDockerSwarmService->value => [
             NodeRoleName::AppDevelopment,
@@ -582,6 +583,7 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
             ->whereIn('status', [
                 NodeRoleStatus::Pending->value,
                 NodeRoleStatus::Error->value,
+                NodeRoleStatus::Removing->value,
             ])
             ->exists();
     }
