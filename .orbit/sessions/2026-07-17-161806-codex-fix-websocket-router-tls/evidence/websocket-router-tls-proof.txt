@@ -1,0 +1,52 @@
+Retained topology proof
+
+Feature tip: cfd91f0f00511c793d584a302f53e081d4ca8bdf
+Topology id: dev-5f81a4
+Topology kind: operator_gateway_app-dev_websocket
+Provider: incus
+Host: beast
+Source overlays: operator,gateway
+Runtime checkout: /home/orbit/orbit-run
+Managed Caddy node: app-dev-1 (10.6.0.4)
+
+Acquisition
+
+composer e2e:incus -- --start --topology=operator_gateway_app-dev_websocket --checkout-roles=operator,gateway --json --no-interaction
+
+The retained topology acquired successfully. Source-mounted launcher identity was verified by node:list from /home/orbit/orbit-run. The active WebSocket role referenced valkey_node_id=5.
+
+Production-shaped route setup
+
+Created isolated custom route websocket-proof.orbit on app-dev-1 with proxy:add, then changed only its topology-local TLS intent to the production WebSocket shape: tls.managed_by=internal. No live topology was used for this development proof.
+
+First supported restore
+
+./apps/cli/orbit doctor --node=app-dev-1 --family=proxy --key=proxy.route_missing --restore --json
+
+Result: exit 0; healthy=true; issues=0; fixed=1; failed=0. Orbit issued the internal leaf material before rendering the route and reloading Caddy.
+
+Exact live-failure drift
+
+Removed only the isolated websocket-proof.orbit certificate and key while leaving its rendered route in place.
+
+./apps/cli/orbit doctor --node=app-dev-1 --family=proxy --key=proxy.tls_missing --json
+
+Result: exit 1 with exactly one issue, proxy.tls_missing. The issue was missing, restorable=true, and named websocket-proof.orbit.
+
+Supported TLS restore
+
+./apps/cli/orbit doctor --node=app-dev-1 --family=proxy --key=proxy.tls_missing --restore --json
+
+Result: exit 0; healthy=true; issues=0; fixed=1; failed=0. The completed action reported that Orbit-managed TLS material was repaired for websocket-proof.orbit.
+
+Independent post-restore checks
+
+- A verify-only proxy.tls_missing doctor returned exit 0, healthy=true, issues=0.
+- /etc/orbit/certs/websocket-proof.orbit.crt and .key both existed.
+- docker exec orbit-caddy caddy validate --config /etc/caddy/Caddyfile returned Valid configuration and loaded websocket-proof.orbit.
+- Focused proxy and WebSocket coverage passed: 243 tests, 1,153 assertions.
+- Exact-head CPU-budget-1 composer quality-check passed all ten units. Profile: .orbit/quality-gates/profiles/2026-07-17T13-45-39Z-cfd91f0f0051
+
+Release command
+
+composer e2e:incus -- --stop --id=dev-5f81a4

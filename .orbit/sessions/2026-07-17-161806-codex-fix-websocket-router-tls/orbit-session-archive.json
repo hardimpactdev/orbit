@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-17T14:18:06+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-websocket-router-tls/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-17-161806-codex-fix-websocket-router-tls",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/websocket-router-tls-proof.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/websocket-router-tls-proof.txt": "b2f8e432b00f321968df0391bac88b940877b9fa14ba0b8c9cda7b674086018e",
+        "loop.md": "02114f1eeb49236e577f14028f4a9d95fc97d09932f46737c673816075752a93"
+    },
+    "branch": "codex/fix-websocket-router-tls",
+    "candidate_commit": "cfd91f0f00511c793d584a302f53e081d4ca8bdf",
+    "accepted_feature_tip": "cfd91f0f00511c793d584a302f53e081d4ca8bdf",
+    "accepted_main_tip": "b3de1fafa86d33e2aacc672ada5d2d1ebd634099",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
