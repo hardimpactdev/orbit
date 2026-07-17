@@ -67,6 +67,63 @@ function appInstanceEnvApiJson(string $method, string $uri, array $data = [], ar
     );
 }
 
+it('authorizes app instance env against the selected instance node', function (): void {
+    $caller = createAppInstanceEnvApiCaller();
+    $logicalNode = Node::factory()->appDev()->create(['name' => 'logical-app-node']);
+    $instanceNode = Node::factory()->appDev()->create(['name' => 'instance-node']);
+    $app = App::factory()->for($logicalNode, 'node')->create(['name' => 'billing']);
+    AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $instanceNode->id,
+            path: '/srv/billing-development',
+            document_root: 'public',
+            domain: 'billing-development.test',
+        ),
+    ]);
+    grantAppInstanceEnvApiAccess($caller, $logicalNode, ['app:read']);
+
+    appInstanceEnvApiJson('GET', '/api/apps/billing/instances/development/env')
+        ->assertForbidden();
+
+    grantAppInstanceEnvApiAccess($caller, $instanceNode, ['app:read']);
+
+    appInstanceEnvApiJson('GET', '/api/apps/billing/instances/development/env')
+        ->assertOk()
+        ->assertJsonPath('success.data.app', 'billing')
+        ->assertJsonPath('success.data.instance', 'development');
+});
+
+it('authorizes hostname app selectors against the selected instance node', function (): void {
+    $caller = createAppInstanceEnvApiCaller();
+    $logicalNode = Node::factory()->appDev()->create(['name' => 'hostname-logical-node']);
+    $instanceNode = Node::factory()->appDev()->create(['name' => 'hostname-instance-node']);
+    $app = App::factory()->for($logicalNode, 'node')->create([
+        'name' => 'billing',
+        'domain' => 'billing.test',
+    ]);
+    AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $instanceNode->id,
+            path: '/srv/billing-development',
+            document_root: 'public',
+            domain: 'billing-development.test',
+        ),
+    ]);
+    grantAppInstanceEnvApiAccess($caller, $logicalNode, ['app:read']);
+
+    appInstanceEnvApiJson('GET', '/api/apps/billing.test/instances/development/env')
+        ->assertForbidden();
+
+    grantAppInstanceEnvApiAccess($caller, $instanceNode, ['app:read']);
+
+    appInstanceEnvApiJson('GET', '/api/apps/billing.test/instances/development/env')
+        ->assertOk()
+        ->assertJsonPath('success.data.app', 'billing')
+        ->assertJsonPath('success.data.instance', 'development');
+});
+
 it('sets lists and renders non-secret app instance env values with database attachments', function (): void {
     $caller = createAppInstanceEnvApiCaller();
     $node = Node::factory()
@@ -175,9 +232,9 @@ it('applies set env values to the remote app runtime when apply is requested', f
         'name' => 'development',
         'driver_config' => new OrbitAppInstanceDriverConfigData(
             node_id: $node->id,
-            path: $app->path,
+            path: '/home/orbit/apps/billing-development',
             document_root: $app->document_root,
-            domain: $app->domain,
+            domain: 'billing-development.test',
         ),
     ]);
 
@@ -204,7 +261,15 @@ it('applies set env values to the remote app runtime when apply is requested', f
         ->assertOk()
         ->assertJsonPath('success.data.variable.key', 'MAIL_MAILER')
         ->assertJsonPath('success.data.variable.value', 'smtp')
-        ->assertJsonPath('success.data.apply.env_path', '/home/orbit/apps/billing/.env')
+        ->assertJsonPath('success.data.scope', 'app-instance')
+        ->assertJsonPath('success.data.app', 'billing')
+        ->assertJsonPath('success.data.instance', 'development')
+        ->assertJsonPath('success.data.workspace', null)
+        ->assertJsonPath('success.data.path', '/home/orbit/apps/billing-development/.env')
+        ->assertJsonPath('success.data.stored', true)
+        ->assertJsonPath('success.data.applied', true)
+        ->assertJsonPath('success.data.runtime_restarted', true)
+        ->assertJsonPath('success.data.apply.env_path', '/home/orbit/apps/billing-development/.env')
         ->assertJsonPath('success.data.apply.cache_cleared', true)
         ->assertJsonPath('success.data.apply.runtime_outcome', 'created');
 });

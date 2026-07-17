@@ -9,8 +9,8 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The target app and instance exist.
-- The authenticated peer has `app:read` or `app:write` on the app's default
-  owning node for the selected action.
+- The authenticated peer has `app:read` or `app:write` on the selected app
+  instance's serving node for the selected action.
 
 ## Signature
 
@@ -51,7 +51,7 @@ owning node. These defaults are not stored as explicit instance env rows.
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
 | `GET` | `/api/apps/{app}/instances/{instance}/env` | `app:read` | List explicit env values. |
-| `POST` | `/api/apps/{app}/instances/{instance}/env` | `app:write` | Set a non-secret env value. Optional `apply=true` writes the live `.env`, clears Laravel caches, and reapplies the runtime container. |
+| `POST` | `/api/apps/{app}/instances/{instance}/env` | `app:write` | Set a non-secret env value. Optional `apply=true` writes the selected instance's live `.env`, clears Laravel caches at that instance path, and reapplies that instance's runtime container. |
 | `GET` | `/api/apps/{app}/instances/{instance}/env/render` | `app:read` | Render effective env. |
 
 ## Behavior Contract
@@ -70,11 +70,17 @@ owning node. These defaults are not stored as explicit instance env rows.
 5. **Secret redaction.** Rendered database password values are marked
    `secret=true` and redacted from responses.
 6. **Gateway-only by default.** `set` persists gateway intent only. `set --apply`
-   writes the app's live `.env` on the owning node through authenticated Agent
-   push over WireGuard.
+   writes the selected instance's live `.env` on its owning node through
+   authenticated Agent push over WireGuard. It cannot write the logical app
+   default path or a sibling instance path. Workspace CWD never supplies an
+   implicit app target; app and instance selection remains explicit.
 7. **Runtime apply.** When `apply` is requested for a PHP app, Orbit clears
-   Laravel config/bootstrap cache on the host PHP toolchain and reapplies the
-   FrankenPHP runtime container through `AppRuntimeContainerManager`.
+   Laravel config/bootstrap cache at the selected instance path on the host PHP
+   toolchain and reapplies the selected instance's FrankenPHP runtime container
+   through `AppRuntimeContainerManager`.
+8. **Explicit scope output.** Every success response carries
+   `scope=app-instance`, `app`, `instance`, `workspace=null`, the concrete
+   `.env` `path`, and `stored`, `applied`, and `runtime_restarted` booleans.
 
 ## Renderer Contracts
 
@@ -87,7 +93,8 @@ owning node. These defaults are not stored as explicit instance env rows.
 | --- | --- | --- |
 | App not found | No app record matches `app`. | `error.code=app.not_found`. |
 | Instance not found | No instance record matches `instance` for the app. | `error.code=app_instance.not_found`. |
-| Runtime apply failed | Gateway state saved but remote `.env`, cache clear, or runtime reapply failed. | `error.code=app_instance.env_apply_failed`. |
+| Instance driver cannot apply env | The selected instance does not expose an Orbit-managed node and path. | Gateway state remains saved; `error.code=app_instance.env_apply_failed`. |
+| Runtime apply failed | Gateway state saved but the selected instance's remote `.env`, cache clear, or runtime reapply failed. | `error.code=app_instance.env_apply_failed`. |
 
 ## Doctor Relationship
 

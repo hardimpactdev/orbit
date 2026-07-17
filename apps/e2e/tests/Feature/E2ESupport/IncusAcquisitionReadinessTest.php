@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EPhaseTimer;
+use App\E2E\Support\E2ETopologyAcquisitionOptions;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusInstance;
@@ -89,6 +91,10 @@ function incusAcquisitionReadinessCapturingHost(): array
                 return incusAcquisitionReadinessResult("wg-easy-public-key\n");
             }
 
+            if (str_contains($command, 'cat ~/.ssh/id_ed25519.pub')) {
+                return incusAcquisitionReadinessResult("ssh-ed25519 gateway-public-key\n");
+            }
+
             return incusAcquisitionReadinessResult();
         }
 
@@ -106,6 +112,36 @@ function incusAcquisitionReadinessCapturingHost(): array
         function () use ($host): array {
             return $host->commands;
         },
+    ];
+}
+
+/**
+ * @return array<string, IncusInstance>
+ */
+function incusAcquisitionReadinessSourceMountedInstances(IncusHost $host): array
+{
+    return [
+        'operator' => new IncusInstance(
+            $host,
+            'clone-operator',
+            commandTransport: true,
+            sourceMountedCheckout: true,
+            hostSourcePath: '/home/orbit/orbit',
+        ),
+        'gateway' => new IncusInstance(
+            $host,
+            'clone-gateway',
+            commandTransport: true,
+            sourceMountedCheckout: true,
+            hostSourcePath: '/home/orbit/orbit',
+        ),
+        'dev' => new IncusInstance(
+            $host,
+            'clone-dev',
+            commandTransport: true,
+            sourceMountedCheckout: true,
+            hostSourcePath: '/home/orbit/orbit',
+        ),
     ];
 }
 
@@ -412,6 +448,83 @@ it('runs acquisition retarget bakes for downstream roles in one parallel gateway
         ->toBeInt()
         ->and($prodIngress)
         ->toBeLessThan($prodApp);
+});
+
+it('starts the gateway api before acquisition retarget bakes downstream roles', function (): void {
+    [$host, $commands] = incusAcquisitionReadinessCapturingHost();
+    $provider = new IncusTopologyProvider(incusAcquisitionReadinessConfig());
+    $instances = incusAcquisitionReadinessSourceMountedInstances($host);
+
+    $method = new ReflectionMethod($provider, 'prepareInstances');
+    $method->setAccessible(true);
+    $method->invoke(
+        $provider,
+        $instances,
+        incusAcquisitionReadinessConfig(),
+        new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+        new E2EPhaseTimer,
+        new E2ETopologyAcquisitionOptions(startGatewayApi: true, sourceMountedCheckout: true),
+        E2ETopologyKind::OperatorGatewayAppdev,
+    );
+
+    $joined = implode("\n", $commands());
+    $gatewayApiStart = strpos($joined, 'orbit-gateway-e2e-topology-lease-http');
+    $sourceMountedLauncher = strpos($joined, '/home/orbit/.local/bin/orbit');
+    $downstreamBake = strpos($joined, 'orbit:internal:bake-app-node app-dev-1');
+
+    expect($gatewayApiStart)
+        ->toBeInt()
+        ->and($sourceMountedLauncher)
+        ->toBeInt()
+        ->and($downstreamBake)
+        ->toBeInt()
+        ->and($gatewayApiStart)
+        ->toBeLessThan($downstreamBake)
+        ->and($sourceMountedLauncher)
+        ->toBeLessThan($downstreamBake)
+        ->and($joined)
+        ->toContain('/home/orbit/orbit/bin/orbit');
+});
+
+it('starts the gateway api before snapshot reset retarget bakes downstream roles', function (): void {
+    [$host, $commands] = incusAcquisitionReadinessCapturingHost();
+    $provider = new IncusTopologyProvider(incusAcquisitionReadinessConfig());
+    $instances = incusAcquisitionReadinessSourceMountedInstances($host);
+
+    $method = new ReflectionMethod($provider, 'snapshotResetFor');
+    $method->setAccessible(true);
+    $reset = $method->invoke(
+        $provider,
+        $instances,
+        [
+            'operator' => 'operator',
+            'gateway' => 'orbit',
+            'dev' => 'orbit',
+        ],
+        new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+        true,
+        E2ETopologyKind::OperatorGatewayAppdev,
+        true,
+    );
+    $reset(new E2EPhaseTimer);
+
+    $joined = implode("\n", $commands());
+    $gatewayApiStart = strpos($joined, 'orbit-gateway-e2e-topology-reset-http');
+    $sourceMountedLauncher = strpos($joined, '/home/orbit/.local/bin/orbit');
+    $downstreamBake = strpos($joined, 'orbit:internal:bake-app-node app-dev-1');
+
+    expect($gatewayApiStart)
+        ->toBeInt()
+        ->and($sourceMountedLauncher)
+        ->toBeInt()
+        ->and($downstreamBake)
+        ->toBeInt()
+        ->and($gatewayApiStart)
+        ->toBeLessThan($downstreamBake)
+        ->and($sourceMountedLauncher)
+        ->toBeLessThan($downstreamBake)
+        ->and($joined)
+        ->toContain('/home/orbit/orbit/bin/orbit');
 });
 
 it('clears known hosts on every clone through one parallel host call', function (): void {

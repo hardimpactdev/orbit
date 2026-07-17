@@ -318,11 +318,38 @@ it('budgets aggregate quality gate CPU pressure by host size', function (): void
         ->toContain('echo $((detected_jobs - 1))')
         ->toContain('echo 14')
         ->toContain('GATEWAY_PEST_PROCESSES')
+        ->toContain('MAX_CLI_COMPONENT_DEMAND=$((CPU_BUDGET - CORE_COMPONENT_DEMAND))')
+        ->toContain('CLI_COMPONENT_DEMAND="$MAX_CLI_COMPONENT_DEMAND"')
         ->toContain('wait_for_cpu_capacity')
         ->toContain('component_cpu_in_use')
         ->toContain("'apps/gateway|GATEWAY_COMPONENT_DEMAND|gateway'")
         ->toContain("'apps/cli|CLI_COMPONENT_DEMAND|cli'")
         ->toContain('CARGO_BUILD_JOBS="$CARGO_COMPONENT_DEMAND"');
+});
+
+it('admits sdk before core when the aggregate quality gate has one cpu', function (): void {
+    expect(quality_check_script_source())
+        ->toContain('ORBIT_QUALITY_CHECK_SCHEDULER_SELF_TEST');
+
+    $process = new Process(
+        [
+            'env',
+            'ORBIT_QUALITY_CHECK_SCHEDULER_SELF_TEST=1',
+            'ORBIT_QUALITY_CHECK_CPU_BUDGET=1',
+            'bash',
+            repo_path('bin/quality-check.sh'),
+        ],
+        repo_path(),
+        null,
+        null,
+        30,
+    );
+    $process->run();
+
+    expect($process->isSuccessful())
+        ->toBeTrue($process->getErrorOutput())
+        ->and(trim($process->getOutput()))
+        ->toBe('budget=1 order=sdk,core result=passed');
 });
 
 it('handles an empty aggregate quality-check worker set under nounset', function (): void {

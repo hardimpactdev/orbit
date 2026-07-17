@@ -19,6 +19,7 @@ final readonly class WorkspaceSetupStepRunner
     public function __construct(
         ?RunsInternalCommands $localExecutor = null,
         private AppCommandRouter $commandRouter = new AppCommandRouter,
+        private WorkspaceEnvInheritanceGuard $envInheritanceGuard = new WorkspaceEnvInheritanceGuard,
     ) {
         $this->setupStepLocalExecutor = new WorkspaceSetupStepLocalExecutor($localExecutor);
     }
@@ -41,6 +42,7 @@ final readonly class WorkspaceSetupStepRunner
         $stepCount = count($steps);
 
         foreach (array_values($steps) as $index => $step) {
+            /** @var WorkspaceRunStep $runStep */
             $runStep = WorkspaceRunStep::create([
                 'workspace_run_id' => $run->id,
                 'workspace_step_id' => $step->id,
@@ -50,6 +52,22 @@ final readonly class WorkspaceSetupStepRunner
 
             if ($onProgress !== null) {
                 $onProgress('running', $step, $index + 1, $stepCount);
+            }
+
+            if ($this->envInheritanceGuard->consumesParentEnv($step->command)) {
+                $runStep->update([
+                    'exit_code' => 1,
+                    'output' => 'Workspace lifecycle steps cannot read or copy the parent app .env file.',
+                    'completed_at' => now(),
+                ]);
+
+                if ($onProgress !== null) {
+                    $onProgress('failed', $step, $index + 1, $stepCount);
+                }
+
+                $run->update(['status' => 'failed', 'completed_at' => now()]);
+
+                return false;
             }
 
             $command = $app instanceof App

@@ -26,6 +26,10 @@ The terms below define the core identity vocabulary for the workspace family.
 - **Workspace path:** Absolute path on the owning app-instance node where
   workspace files live. Derived from gateway configuration and applied through
   Agent push.
+- **Workspace env:** Non-secret gateway-owned key/value intent scoped to one
+  workspace. The effective workspace env merges Orbit-derived workspace URL
+  and Vite values, explicit workspace values, and database connections attached
+  to that workspace. Applying it writes only `<workspace path>/.env`.
 - **Workspace lifecycle status:** Registry configuration lifecycle field,
   currently `expected` or `setup-pending`. It is not setup-run status and not a
   live readiness result.
@@ -92,7 +96,11 @@ The terms below describe setup and teardown step vocabulary.
   by `workspace-teardown-step:add` and run during workspace removal.
 - **Lifecycle step environment:** `ORBIT_*` and `VITE_*` variables exposed to
   setup and teardown step commands. Separate from process runtime unit
-  environment.
+  environment. Lifecycle steps may inspect parent source through
+  `ORBIT_APP_PATH`, but commands that directly read or copy
+  `$ORBIT_APP_PATH/.env` are rejected because parent env values are not
+  workspace configuration. Upgrade migration removes existing unsafe rows, and
+  teardown skips any unsafe row that bypassed normal writes.
 
 ## Lifecycle
 
@@ -122,3 +130,6 @@ These boundaries define what the workspace family owns and what belongs to other
   do not own proxy route convergence, process-unit convergence, app
   configuration, app runtime mount intent, or node-level firewall policy.
   Workspace commands do not install host PHP, Composer, or Caddy.
+  Workspace setup initializes a missing workspace `.env` from that workspace's
+  own `.env.example`, then overlays the effective workspace env. It preserves
+  an existing workspace `.env` and never seeds from the parent app `.env`.

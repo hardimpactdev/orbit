@@ -176,6 +176,10 @@ authorization decision.
    - Updates the record if configuration has changed.
 3. **Artifact Apply** (`phase=artifacts`):
    - Dispatches to the resolved workspace node through Agent push.
+   - Preserves an existing `<workspace path>/.env`. If the file is missing,
+     initializes it from `<workspace path>/.env.example` when present and then
+     overlays the effective workspace env. It never reads or copies the parent
+     app `.env`.
    - Applies workspace-specific runtime artifacts (runtime container, environment).
    - Hands proxy backend artifact convergence to the `proxy` family.
 4. **Setup Steps** (`phase=setup_steps`):
@@ -183,6 +187,12 @@ authorization decision.
      app instance.
    - Executes steps sequentially in the workspace directory on the node through typed `internal:workspace-setup-step` over agent-push on agent-capable nodes.
    - Setup environment values travel only in the token-bound stdin payload, not in transport metadata or activity summaries.
+   - A stored setup command that directly consumes `$ORBIT_APP_PATH/.env` is
+     rejected before execution. References to parent `.env.example` remain
+     allowed.
+   - Upgrade migration removes stored setup and teardown rows that directly
+     consume `$ORBIT_APP_PATH/.env`. Teardown also rechecks this boundary and
+     skips any unsafe row that bypassed normal writes.
    - Steps receive the lifecycle environment defined in the
      [Workspaces README](../../README.md#lifecycle-step-environment).
 5. **Processes** (`phase=processes`):

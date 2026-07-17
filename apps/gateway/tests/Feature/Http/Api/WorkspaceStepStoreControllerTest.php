@@ -43,7 +43,7 @@ function grantWorkspaceStepStoreAccess(Node $caller, Node $appNode, array $permi
     ]);
 }
 
-function createWorkspaceStepStoreInstance(App $app, Node $node, string $instanceName): AppInstance
+function create_workspace_step_store_instance(App $app, Node $node, string $instanceName): AppInstance
 {
     return AppInstance::factory()->create([
         'app_id' => $app->id,
@@ -58,6 +58,46 @@ function createWorkspaceStepStoreInstance(App $app, Node $node, string $instance
 }
 
 describe('WorkspaceStepStoreController', function (): void {
+    it('rejects setup steps that directly consume the parent app env file', function (string $command): void {
+        $caller = createWorkspaceStepStoreCallerNode();
+        $node = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
+        grantWorkspaceStepStoreAccess($caller, $node);
+        $app = App::factory()->create([
+            'name' => 'hauser',
+            'node_id' => $node->id,
+            'path' => '/home/nckrtl/apps/hauser',
+        ]);
+        create_workspace_step_store_instance(app: $app, node: $node, instanceName: 'nmbp');
+
+        $response = $this->call(
+            'POST',
+            '/api/workspaces/steps/setup',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
+                'CONTENT_TYPE' => 'application/json',
+            ],
+            json_encode([
+                'app' => 'hauser.nmbp',
+                'command' => $command,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $response
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'command')
+            ->assertJsonPath('error.meta.reason', 'parent_env_inheritance_forbidden');
+
+        expect(WorkspaceStep::query()->count())->toBe(0);
+    })->with([
+        'quoted path' => 'cp "$ORBIT_APP_PATH/.env" .env',
+        'quoted variable' => 'cp "$ORBIT_APP_PATH"/.env .env',
+        'quoted braced variable' => 'cp "${ORBIT_APP_PATH}"/.env .env',
+    ]);
+
     it('stores instance-specific setup steps for dotted selectors without exposing them to sibling instances', function (): void {
         $caller = createWorkspaceStepStoreCallerNode();
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
@@ -70,8 +110,16 @@ describe('WorkspaceStepStoreController', function (): void {
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/hauser',
         ]);
-        $nmbpInstance = createWorkspaceStepStoreInstance($app, $nmbpNode, 'nmbp');
-        createWorkspaceStepStoreInstance($app, $developmentNode, 'development');
+        $nmbpInstance = create_workspace_step_store_instance(
+            app: $app,
+            node: $nmbpNode,
+            instanceName: 'nmbp',
+        );
+        create_workspace_step_store_instance(
+            app: $app,
+            node: $developmentNode,
+            instanceName: 'development',
+        );
 
         $response = $this->call(
             'POST',
@@ -127,7 +175,11 @@ describe('WorkspaceStepStoreController', function (): void {
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/happie',
         ]);
-        $instance = createWorkspaceStepStoreInstance($app, $localNode, 'nmbp');
+        $instance = create_workspace_step_store_instance(
+            app: $app,
+            node: $localNode,
+            instanceName: 'nmbp',
+        );
 
         $response = $this->call(
             'POST',
@@ -221,7 +273,11 @@ describe('WorkspaceStepStoreController', function (): void {
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/docs',
         ]);
-        $instance = createWorkspaceStepStoreInstance($app, $localNode, 'nmbp');
+        $instance = create_workspace_step_store_instance(
+            app: $app,
+            node: $localNode,
+            instanceName: 'nmbp',
+        );
         WorkspaceStep::factory()->create([
             'app_id' => $app->id,
             'app_instance_id' => $instance->id,
@@ -269,8 +325,12 @@ describe('WorkspaceStepStoreController', function (): void {
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/hauser',
         ]);
-        createWorkspaceStepStoreInstance($app, $localNode, 'nmbp');
-        $other = createWorkspaceStepStoreInstance($app, $canonicalNode, 'development');
+        create_workspace_step_store_instance(app: $app, node: $localNode, instanceName: 'nmbp');
+        $other = create_workspace_step_store_instance(
+            app: $app,
+            node: $canonicalNode,
+            instanceName: 'development',
+        );
         $foreignStep = WorkspaceStep::factory()->create([
             'app_id' => $app->id,
             'app_instance_id' => $other->id,

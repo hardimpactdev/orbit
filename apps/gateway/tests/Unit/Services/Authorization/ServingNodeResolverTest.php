@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App as OrbitApp;
@@ -117,6 +118,31 @@ describe('ServingNodeResolver', function (): void {
         );
 
         expect($resolved?->is($gateway))->toBeTrue();
+    });
+
+    it('resolves app instance owning nodes from separate app and instance route parameters', function (): void {
+        $logicalNode = Node::factory()->create(['name' => 'logical-app-node']);
+        $instanceNode = Node::factory()->create(['name' => 'instance-node']);
+        $app = OrbitApp::factory()->for($logicalNode, 'node')->create(['name' => 'billing']);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $instanceNode->id,
+                path: '/srv/billing-development',
+                document_root: 'public',
+                domain: 'billing-development.test',
+            ),
+        ]);
+
+        $resolved = new ServingNodeResolver()->resolve(
+            servingNodeRequest([
+                'app' => 'billing',
+                'instance' => 'development',
+            ]),
+            ServingNode::AppInstanceOwning,
+        );
+
+        expect($resolved?->is($instanceNode))->toBeTrue();
     });
 
     it('resolves app-owning nodes from process identity', function (): void {

@@ -506,6 +506,34 @@
       "reason": "Update artifact download is release/update plumbing, not dashboard public SDK surface."
     },
     {
+      "operation": "GET /workspaces/env/resolve-by-path",
+      "operation_id": "workspaceEnv.resolveByPath",
+      "classification": "deferred_optional",
+      "group": "workspace_env",
+      "reason": "Workspace env resolution is sensitive and should be promoted with explicit secret-handling DTOs."
+    },
+    {
+      "operation": "GET /workspaces/{workspace}/env",
+      "operation_id": "workspaceEnv.index",
+      "classification": "deferred_optional",
+      "group": "workspace_env",
+      "reason": "Workspace env inspection is sensitive and should be promoted with explicit secret-handling DTOs."
+    },
+    {
+      "operation": "POST /workspaces/{workspace}/env",
+      "operation_id": "workspaceEnv.store",
+      "classification": "deferred_optional",
+      "group": "workspace_env",
+      "reason": "Workspace env mutation is sensitive and should be promoted with explicit secret-handling DTOs."
+    },
+    {
+      "operation": "GET /workspaces/{workspace}/env/render",
+      "operation_id": "workspaceEnv.render",
+      "classification": "deferred_optional",
+      "group": "workspace_env",
+      "reason": "Rendered workspace env output is sensitive and should be promoted with explicit secret-handling DTOs."
+    },
+    {
       "operation": "GET /workspaces/{name}/history",
       "operation_id": "workspaceHistory",
       "classification": "public_sdk",

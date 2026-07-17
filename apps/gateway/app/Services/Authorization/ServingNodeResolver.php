@@ -11,6 +11,7 @@ use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\ServingNode;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\Workspace;
@@ -129,7 +130,10 @@ final class ServingNodeResolver
 
     private function resolveAppInstanceOwning(Request $request): ?Node
     {
-        $selection = $this->appSelectionFromValue($this->requestValue($request, 'app'));
+        $selection = $this->appInstanceSelectionFromValues(
+            appSelector: $this->requestValue($request, 'app'),
+            instanceSelector: $this->requestValue($request, 'instance'),
+        );
 
         if (! $selection instanceof AppSelection) {
             return null;
@@ -148,6 +152,38 @@ final class ServingNodeResolver
         $node = app(WorkspacePlacement::class)->nodeForInstance($selection->instance);
 
         return $node instanceof Node ? $node : $this->resolveGateway();
+    }
+
+    private function appInstanceSelectionFromValues(mixed $appSelector, mixed $instanceSelector): ?AppSelection
+    {
+        $selection = $this->appSelectionFromValue($appSelector);
+
+        if (
+            ! $selection instanceof AppSelection
+            || ! is_string($instanceSelector)
+            || trim($instanceSelector) === ''
+        ) {
+            return $selection;
+        }
+
+        $instanceName = trim($instanceSelector);
+        $instance = $selection
+            ->app
+            ->instances
+            ->first(
+                static fn (AppInstance $candidate): bool => $candidate->name === $instanceName,
+            );
+
+        if (! $instance instanceof AppInstance) {
+            return null;
+        }
+
+        return new AppSelection(
+            app: $selection->app,
+            instance: $instance,
+            selector: $selection->selector,
+            instanceSelector: $instanceName,
+        );
     }
 
     private function resolveCaller(Request $request): ?Node

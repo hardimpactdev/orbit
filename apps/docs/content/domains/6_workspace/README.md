@@ -69,6 +69,17 @@ These rules govern all workspace family commands.
 - Workspace setup and teardown step runs are durable workspace history.
   `workspace:history` and `workspace:log` read that history; doctor verifies
   current workspace reality.
+- Workspace env values are non-secret gateway configuration scoped to one
+  workspace. Rendering merges Orbit-derived workspace URL/Vite values,
+  explicit workspace values, and database attachments for that workspace.
+  Applying writes only the workspace `.env`; it never writes the selected app
+  instance root or a sibling workspace.
+- Workspace setup preserves an existing workspace `.env`. When it is missing,
+  setup initializes it from the workspace's own `.env.example` when present,
+  then overlays the effective workspace env. It never copies the parent app
+  `.env`. Setup and teardown step definitions that directly consume
+  `$ORBIT_APP_PATH/.env` are rejected. Upgrade migration removes existing
+  unsafe rows, and teardown skips any unsafe row that bypassed normal writes.
 
 ## Workspace Source Drivers
 
@@ -247,6 +258,7 @@ These commands manage the setup and teardown step policy that runs during worksp
 11. [`orbit workspace-teardown-step:add`](11_workspace-teardown-step-add/workspace-teardown-step-add.md)
 12. [`orbit workspace-teardown-step:list`](12_workspace-teardown-step-list/workspace-teardown-step-list.md)
 13. [`orbit workspace-teardown-step:remove`](13_workspace-teardown-step-remove/workspace-teardown-step-remove.md)
+14. [`orbit workspace:env list|set|render [name]`](14_workspace-env/workspace-env.md)
 
 ## Related
 

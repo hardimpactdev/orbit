@@ -19,6 +19,7 @@ use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
+use App\Services\Workspaces\WorkspaceEnvInitializer;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceReadinessProbe;
 use App\Services\Workspaces\WorkspaceRoleGuard;
@@ -46,6 +47,7 @@ final readonly class SetupWorkspace
         private LaravelViteDevServerEnvironment $vite,
         private WorkspacePlacement $placement,
         private WorkspaceStepPolicyService $stepPolicy,
+        private WorkspaceEnvInitializer $envInitializer,
     ) {}
 
     /**
@@ -82,26 +84,29 @@ final readonly class SetupWorkspace
         $routeWarnings = $this->registerProxyRoutes($workspace);
         $warnings = array_merge($warnings, $routeWarnings);
 
-        // Phase 3: Runtime Container Convergence (FrankenPHP for PHP workspaces)
+        // Phase 3: Workspace Environment
+        $this->envInitializer->initialize($workspace);
+
+        // Phase 4: Runtime Container Convergence (FrankenPHP for PHP workspaces)
         $runtimeWarning = $this->enactRuntimeContainer($workspace, $node);
         if ($runtimeWarning !== null) {
             $warnings[] = $runtimeWarning;
         }
 
-        // Phase 4: Setup Steps
+        // Phase 5: Setup Steps
         $setupResult = $this->runSetupSteps($workspace, $app, $node);
 
         if ($setupResult['status'] === 'failed') {
             throw new RuntimeException($setupResult['message']);
         }
 
-        // Phase 5: Processes
+        // Phase 6: Processes
         $processResult = $this->startProcesses($app, $workspace, $node);
         if (! $processResult['success']) {
             throw new RuntimeException($processResult['message']);
         }
 
-        // Phase 6: HTTP Probe
+        // Phase 7: HTTP Probe
         $probe = $this->probeReadiness($workspace);
 
         if (! $probe['reachable']) {

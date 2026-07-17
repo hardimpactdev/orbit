@@ -32,6 +32,7 @@ use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process as ProcessFacade;
 
@@ -755,6 +756,15 @@ it('starts configured app processes for the workspace after rendering runtime un
             ->push(setup_workspace_agent_response('caddy-config.reload', [
                 'container' => 'orbit-caddy',
             ]))
+            ->push(setup_workspace_agent_response('env-file.read', [
+                'contents' => null,
+            ]))
+            ->push(setup_workspace_agent_response('env-file.read', [
+                'contents' => null,
+            ]))
+            ->push(setup_workspace_agent_response('env-file.write', [
+                'bytes' => 0,
+            ]))
             ->push(setup_workspace_agent_response('workspace-runtime-container-apply', [
                 'outcome' => 'created',
             ]))
@@ -777,10 +787,10 @@ it('starts configured app processes for the workspace after rendering runtime un
             'names' => ['vite'],
         ])
         ->and($requests)
-        ->toHaveCount(6)
-        ->and(array_slice($requests[4]['argv'] ?? [], offset: 0, length: 3))
+        ->toHaveCount(9)
+        ->and(array_slice($requests[7]['argv'] ?? [], offset: 0, length: 3))
         ->toBe(['internal:process-systemd-service', 'apply', 'orbit_demo_development_feature-a_vite.service'])
-        ->and(array_slice($requests[5]['argv'] ?? [], offset: 0, length: 3))
+        ->and(array_slice($requests[8]['argv'] ?? [], offset: 0, length: 3))
         ->toBe(['internal:process-systemd-service', 'start', 'orbit_demo_development_feature-a_vite.service'])
         ->and($shell->scripts)
         ->not
@@ -842,6 +852,51 @@ it('skips setup steps when none are configured', function (): void {
 
     expect($result['setup_steps']['status'])->toBe('skipped');
     expect($result['setup_steps']['count'])->toBe(0);
+});
+
+it('continues with workspace-owned env initialization after migration removes an unsafe legacy setup step', function (): void {
+    $path = storage_path('framework/testing/workspace-env-migration-upgrade');
+    File::deleteDirectory($path);
+    File::ensureDirectoryExists($path);
+    File::put("{$path}/.env.example", "APP_NAME=WorkspaceOwned\n");
+
+    try {
+        $workspace = Workspace::create([
+            'app_id' => 1,
+            'app_instance_id' => 1,
+            'name' => 'feature-a',
+            'path' => $path,
+            'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+        ]);
+        $unsafeStep = WorkspaceStep::create([
+            'app_id' => 1,
+            'app_instance_id' => 1,
+            'phase' => WorkspaceLifecyclePhase::Setup,
+            'sort_order' => 1,
+            'command' => 'cp "$ORBIT_APP_PATH/.env" .env',
+            'timeout_seconds' => 60,
+        ]);
+        /** @var mixed $migration */
+        $migration = require
+            database_path(
+                'migrations/2026_07_16_191349_remove_parent_env_workspace_steps.php',
+            );
+
+        expect($migration)->toBeInstanceOf(Illuminate\Database\Migrations\Migration::class);
+        $migration->up();
+
+        $app = App::query()->with('node')->firstOrFail();
+        $result = app(SetupWorkspace::class)->handle($app, $workspace, $app->node);
+
+        expect(WorkspaceStep::query()->whereKey($unsafeStep->id)->exists())
+            ->toBeFalse()
+            ->and($result['setup_steps']['status'])
+            ->toBe('skipped')
+            ->and(File::get("{$path}/.env"))
+            ->toContain('APP_NAME=WorkspaceOwned');
+    } finally {
+        File::deleteDirectory($path);
+    }
 });
 
 it('runs setup steps when configured', function (): void {

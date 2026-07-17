@@ -15,6 +15,7 @@ use App\Services\Apps\AppCommandRouter;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
 use App\Services\Tools\ToolScriptDispatcher;
+use App\Services\Workspaces\WorkspaceEnvInheritanceGuard;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
@@ -141,6 +142,18 @@ final readonly class RemoveWorkspace
             }
 
             foreach ($teardownSteps as $teardownStep) {
+                if (app(WorkspaceEnvInheritanceGuard::class)->consumesParentEnv($teardownStep->command)) {
+                    $warnings[] = [
+                        'code' => 'workspace.teardown_step_unsafe',
+                        'family' => 'workspace',
+                        'message' => "Workspace teardown step {$teardownStep->id} was skipped because it consumes the parent app .env file.",
+                        'next_command' => "workspace-teardown-step:list --app={$appName}.{$appInstanceName}",
+                        'step_id' => (string) $teardownStep->id,
+                    ];
+
+                    continue;
+                }
+
                 $teardownStepsRun++;
                 $command = $app instanceof App
                     ? app(AppCommandRouter::class)->routeLifecycleForNodePath(
