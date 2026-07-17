@@ -59,13 +59,7 @@ final class GlobalUnicastIpAddress
     /** @param list<string> $ranges */
     private static function matchesAnyRange(string $packed, array $ranges): bool
     {
-        foreach ($ranges as $range) {
-            if (self::matchesCidr($packed, $range)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($ranges, fn (string $range): bool => self::matchesCidr($packed, $range));
     }
 
     private static function matchesCidr(string $packed, string $cidr): bool
