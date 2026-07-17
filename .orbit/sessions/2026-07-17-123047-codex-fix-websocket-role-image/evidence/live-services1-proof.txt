@@ -1,0 +1,46 @@
+Live deployment proof
+Date: 2026-07-17
+Node: services1
+Public address: 46.224.166.1
+WireGuard address: 10.6.0.14
+Redis provider: database1 / node id 15 / 10.6.0.4:6379
+
+Landed main:
+  521d530d628a4e6433a612d96c5c170eecf7d4f4
+
+Candidate:
+  state=/Users/nckrtl/orbit/.orbit/release-candidates/20260717T102206Z-521d530d6
+  manifest=https://s3.hardimpact.dev/orbit/channels/live-test/orbit-release-manifest.json
+  websocket_image=ghcr.io/hardimpactdev/orbit-reverb:0.1.190-candidate-20260717T102206Z-521d530d6@sha256:0793c7b8027d1fe80b98322033d59f15d4714f49d29d43c96de5fe27be1a1916
+  websocket_artifact=https://s3.hardimpact.dev/orbit/candidates/20260717T102206Z-521d530d6/orbit-reverb-linux-amd64.tar
+  websocket_artifact_sha256=6a5bfe14261cef4451af794dbd9d3d77cd3d7200c9e55f317e25643410671c08
+
+Fleet update:
+  gateway service healthy
+  gateway Swarm stack converged
+  unrelated beast Agent listener remained unreachable
+  services1 Agent artifact confirmation remained unsuccessful after CLI install
+
+Command:
+  orbit node role:remove services1 websocket --force --json
+Result:
+  success; role removed
+
+Command:
+  orbit node role:add services1 websocket --redis-node=database1 --json
+Result:
+  success; role=websocket status=active redis_node_id=15 last_error=null converged_at=2026-07-17T10:27:06Z
+
+Activity correlation:
+  004c8a8d-40ed-469f-ae73-aa668b8cac6c
+  internal:websocket-runtime operations completed successfully
+  node.role.added activity id=191871
+
+Dependency proof:
+  Redis RESP PING to 10.6.0.4:6379 => +PONG
+
+Runtime proof:
+  https://10.6.0.14:8080 => HTTP 404
+  repeated after stability interval => HTTP 404
+  role status remained active
+  last_error remained null
