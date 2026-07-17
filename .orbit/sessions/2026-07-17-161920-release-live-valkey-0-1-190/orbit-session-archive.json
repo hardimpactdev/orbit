@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-17T14:19:21+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/release-live-valkey-0-1-190/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-17-161920-release-live-valkey-0-1-190",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-valkey-websocket-proof.txt",
+        "evidence/valkey-websocket-restore-proof.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/retained-valkey-websocket-proof.txt": "4f63ed24c4b7a1cad844f5659dfabf67768e6b0fdd47494da1d1425d6c60ab7d",
+        "evidence/valkey-websocket-restore-proof.txt": "958b9f473337e86549725d2ed073c66c85b33df9ef63bb1484780c0558b3e57b",
+        "loop.md": "20ae667f369123a29b7eb55f5cf424f2d576c8d57337ddb85e819b07cdb88888"
+    },
+    "branch": "release-live-valkey-0-1-190",
+    "candidate_commit": "2aa8666e5bf1408f28fc33aa76d3cd511ffdf59a",
+    "accepted_feature_tip": "2aa8666e5bf1408f28fc33aa76d3cd511ffdf59a",
+    "accepted_main_tip": "a3d280b960858f7ba70cae84c6555fc927e02e60",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
