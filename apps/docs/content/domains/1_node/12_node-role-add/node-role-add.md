@@ -33,7 +33,9 @@ This command validates the role assignment, applies role-local options, and repo
   `database` role and Valkey expected or installed.
 - `analytics` requires `--postgres-node` and `--clickhouse-node`; the selected
   nodes must have active `database` roles and PostgreSQL or ClickHouse expected
-  or installed. The same database node can satisfy both options.
+  or installed. The same database node can satisfy both options. A second
+  fleet analytics role is rejected before provisioning. Success means both
+  Plausible and the private `analytics.orbit` route with TLS converged.
 - `s3` accepts optional `--s3-data-path`; it defaults to
   `/srv/orbit/s3/data`, must be a canonical path under an approved persistent
   data root (`/media`, `/mnt`, `/opt/orbit`, `/srv`, or `/var/lib/orbit`), and

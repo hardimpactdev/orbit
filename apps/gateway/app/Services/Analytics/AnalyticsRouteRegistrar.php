@@ -4,18 +4,21 @@ declare(strict_types=1);
 
 namespace App\Services\Analytics;
 
+use App\Data\Doctor\DriftEntry;
+use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
-use App\Enums\Nodes\NodeStatus;
 use App\Models\App;
 use App\Models\AppAnalyticsBinding;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\IngressResolver;
+use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
+/** @mago-expect lint:kan-defect */
 class AnalyticsRouteRegistrar
 {
     public const string ServiceDomain = 'analytics.orbit';
@@ -30,11 +33,12 @@ class AnalyticsRouteRegistrar
         private readonly NodeRoleAssignments $nodeRoleAssignments,
         private readonly IngressResolver $ingressResolver,
         private readonly ProxyRouteRenderer $proxyRouteRenderer,
+        private readonly ProxyRouteFixer $proxyRouteFixer,
     ) {}
 
-    public function syncServiceRoute(): ProxyRoute
+    public function syncServiceRoute(?Node $backend = null): ProxyRoute
     {
-        $intent = $this->serviceRouteIntent();
+        $intent = $this->serviceRouteIntent($backend);
 
         $route = ProxyRoute::query()->updateOrCreate(
             ['domain' => self::ServiceDomain],
@@ -52,10 +56,61 @@ class AnalyticsRouteRegistrar
         return $route->refresh();
     }
 
-    public function serviceRouteIntent(): ProxyRoute
+    public function convergeServiceRoute(?Node $backend = null): ProxyRoute
+    {
+        $route = $this->syncServiceRoute($backend);
+        $result = $this->proxyRouteFixer->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_missing',
+            kind: DriftKind::Missing,
+            summary: 'The private analytics route must be enacted.',
+            detail: ['domain' => self::ServiceDomain],
+        ));
+
+        if (($result['status'] ?? null) !== 'completed') {
+            throw new RuntimeException('The private analytics route could not be enacted.');
+        }
+
+        return $route->refresh();
+    }
+
+    public function requireServiceRoute(): ProxyRoute
+    {
+        $route = ProxyRoute::query()
+            ->where('domain', self::ServiceDomain)
+            ->where('owner_type', 'router')
+            ->first();
+
+        if (! $route instanceof ProxyRoute) {
+            throw new RuntimeException('The analytics role must be deployed before enabling app analytics.');
+        }
+
+        return $route;
+    }
+
+    public function removeServiceRoute(): void
+    {
+        $route = ProxyRoute::query()
+            ->with('node')
+            ->where('domain', self::ServiceDomain)
+            ->first();
+
+        if (! $route instanceof ProxyRoute) {
+            return;
+        }
+
+        if (! $route->node instanceof Node) {
+            throw new RuntimeException('The private analytics route has no serving router node.');
+        }
+
+        $this->proxyRouteFixer->removeExtra($route->node, self::ServiceDomain);
+        $route->delete();
+    }
+
+    public function serviceRouteIntent(?Node $backend = null): ProxyRoute
     {
         $router = $this->routerNode();
-        $config = $this->serviceRouteConfig($router, $this->analyticsBackends());
+        $config = $this->serviceRouteConfig($router, $this->analyticsBackends($backend));
 
         return new ProxyRoute([
             'node_id' => $router->id,
@@ -277,11 +332,14 @@ class AnalyticsRouteRegistrar
     /**
      * @return list<Node>
      */
-    private function analyticsBackends(): array
+    private function analyticsBackends(?Node $backend = null): array
     {
+        if ($backend instanceof Node) {
+            return [$backend];
+        }
+
         /** @var list<Node> $nodes */
         $nodes = Node::query()
-            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $this->nodeRoleAssignments->activeNodeIdsForRole(NodeRoleName::Analytics->value))
             ->orderBy('name')
             ->get()
@@ -317,7 +375,7 @@ class AnalyticsRouteRegistrar
             'router_backend_pool' => $this->backendPool($upstreams),
             'upstreams' => $upstreams,
             'tls' => [
-                'managed_by' => 'internal',
+                'managed_by' => 'orbit',
                 'trusted_by_gateway_ca' => true,
                 'cert_path' => $certificatePaths['cert_path'],
                 'key_path' => $certificatePaths['key_path'],

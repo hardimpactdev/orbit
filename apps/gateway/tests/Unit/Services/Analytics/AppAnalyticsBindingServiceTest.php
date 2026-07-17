@@ -6,6 +6,7 @@ use App\Models\App;
 use App\Models\AppAnalyticsBinding;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Analytics\AppAnalyticsBindingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -98,9 +99,22 @@ describe('AppAnalyticsBindingService', function (): void {
             ->and(ProxyRoute::query()->where('domain', 'analytics.orbit')->where('owner_type', 'router')->exists())
             ->toBeTrue();
     });
+
+    it('requires role deployment to create the private analytics route', function (): void {
+        createAnalyticsRoutePrerequisites(createServiceRoute: false);
+        $app = createAnalyticsApp();
+
+        expect(fn () => app(AppAnalyticsBindingService::class)->enable($app, []))
+            ->toThrow(RuntimeException::class, 'The analytics role must be deployed before enabling app analytics.');
+
+        expect(ProxyRoute::query()->where('domain', 'analytics.orbit')->exists())
+            ->toBeFalse()
+            ->and(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
+            ->toBeFalse();
+    });
 });
 
-function createAnalyticsRoutePrerequisites(): void
+function createAnalyticsRoutePrerequisites(bool $createServiceRoute = true): void
 {
     Node::factory()
         ->router()
@@ -115,6 +129,10 @@ function createAnalyticsRoutePrerequisites(): void
             'name' => 'analytics-1',
             'wireguard_address' => '10.6.0.50',
         ]);
+
+    if ($createServiceRoute) {
+        app(AnalyticsRouteRegistrar::class)->syncServiceRoute();
+    }
 }
 
 function createAnalyticsApp(?string $domain = 'docs.test', bool $withIngress = true): App

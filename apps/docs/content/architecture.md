@@ -212,6 +212,13 @@ credentials in encrypted gateway storage. The database processes may live on
 the same node as each other, and may live on the analytics node only when that
 node also has the active `database` role.
 
+The fleet supports exactly one analytics role assignment. Analytics role
+convergence verifies the Plausible runtime, then creates and enacts the
+router-owned `analytics.orbit` route and its Orbit-managed TLS before the
+assignment succeeds. Proxy doctor owns route and certificate drift repair.
+Removing the analytics role removes both the runtime and the private route with
+its rendered artifacts and TLS material.
+
 The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics`, or `analytics`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
 
 Roles compose only where the role matrix allows it. In v1, `gateway`, `vpn`,

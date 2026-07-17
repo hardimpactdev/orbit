@@ -23,7 +23,7 @@ final readonly class AppAnalyticsBindingService
     public function enable(App $app, array $publicHosts): AppAnalyticsBinding
     {
         return DB::transaction(function () use ($app, $publicHosts): AppAnalyticsBinding {
-            $this->routes->syncServiceRoute();
+            $this->routes->requireServiceRoute();
 
             $binding = $this->existingBinding($app);
             $attributes = [

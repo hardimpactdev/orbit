@@ -27,15 +27,17 @@ hosts forward Plausible script and event-ingest paths through
 
 The Plausible dashboard and admin UI remain private at `analytics.orbit`. V1
 does not inject tracking scripts, create Plausible sites, or manage Plausible
-credentials. App owners add the Plausible script manually.
+credentials. This command consumes the private service route created by role
+deployment; it does not create that route. App owners add the Plausible script
+manually.
 
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
 - The current node identity holds `app:write` on the app's owning node.
 - The app exists in the gateway registry.
-- An active router node and at least one active analytics backend node exist in
-  the fleet.
+- The singleton analytics role is deployed and its private `analytics.orbit`
+  service route exists.
 - Public tracking hosts require an active ingress path for the app's production
   traffic.
 

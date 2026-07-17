@@ -14,6 +14,10 @@ These rules define the analytics command domain and its role boundary.
   process-owned Docker container, publishes only on the node's WireGuard
   address, and receives traffic through router-owned analytics routes.
 - The private dashboard and admin endpoint is `https://analytics.orbit`.
+- Exactly one `analytics` role assignment may exist fleet-wide. Pending,
+  active, errored, and removing assignments reserve that singleton slot so a
+  failed deployment or cleanup is completed instead of duplicated on another
+  node.
 - Public app analytics hosts, such as `https://analytics.example.com`, are
   tracking-only routes created from app analytics bindings. They proxy Plausible
   script and event paths only and must not expose the dashboard publicly.
@@ -29,11 +33,14 @@ These rules define the analytics command domain and its role boundary.
   `clickhouse/clickhouse-server:24.12-alpine`. Plausible reads the selected
   process endpoints over their WireGuard addresses with authentication;
   Docker-local service aliases are not cross-node dependency addresses.
-- Analytics role convergence installs and verifies Docker, then applies and
-  starts the Plausible Docker container before the role assignment becomes
-  active. Apply or start failure keeps provisioning incomplete.
-- Removing the analytics role removes its live Plausible Docker container before
-  deleting the process and role records.
+- Analytics role convergence installs and verifies Docker, applies and starts
+  Plausible, then creates and enacts the router-owned `analytics.orbit` route
+  and Orbit-managed TLS before the role assignment succeeds. Runtime, route,
+  certificate, or Caddy reload failure leaves the assignment in `error` and
+  keeps provisioning incomplete.
+- Removing the analytics role removes its live Plausible Docker container, the
+  `analytics.orbit` route row, rendered Caddy site, certificate, and key before
+  completing role removal.
 - The analytics command family coordinates node, process, proxy, and app-owned
   binding state. It does not own an independent `doctor --family=analytics`
   state family in v1.
@@ -54,7 +61,8 @@ state owned by node, app, process, and proxy families.
 - [`proxy`](../8_proxy/README.md) owns `analytics.orbit`, public app analytics
   route rows, route artifacts, TLS material, and analytics backend pools.
   [`doctor --family=proxy`](../8_proxy/proxy-doctor.md) owns route artifact
-  drift.
+  drift and restores a missing or divergent private analytics route from the
+  singleton active role assignment.
 - [`app`](../5_app/README.md) owns binding state for each app and public
   tracking host intent. [`doctor --family=app`](../5_app/app-doctor.md) owns
   app binding drift.

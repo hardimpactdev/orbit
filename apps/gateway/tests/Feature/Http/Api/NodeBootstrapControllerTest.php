@@ -71,6 +71,50 @@ beforeEach(function (): void {
     Process::preventStrayProcesses();
 });
 
+it('rejects a second analytics bootstrap before reserving the target node', function (): void {
+    [, $caller] = nodeBootstrapGatewayAndCaller();
+
+    $databaseNode = Node::factory()
+        ->database()
+        ->create(['name' => 'database-1']);
+
+    foreach (['postgres', 'clickhouse'] as $service) {
+        \App\Models\Process::factory()
+            ->forOwner($databaseNode)
+            ->create(['runtime_config' => ['service' => $service]]);
+    }
+
+    $existingAnalyticsNode = Node::factory()->create(['name' => 'analytics-1']);
+    NodeRoleAssignment::factory()->for($existingAnalyticsNode)->create([
+        'role' => 'analytics',
+        'status' => NodeRoleStatus::Error,
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap', [
+            'name' => 'analytics-2',
+            'roles' => ['analytics'],
+            'host' => '192.0.2.30',
+            'user' => 'root',
+            'tld' => 'analytics-2',
+            'platform' => 'ubuntu_24-04',
+            'architecture' => 'amd64',
+            'postgres_node' => 'database-1',
+            'clickhouse_node' => 'database-1',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath('error.message', "Role 'analytics' is already assigned to node 'analytics-1'.")
+        ->assertJsonPath('error.meta.field', 'roles')
+        ->assertJsonPath('error.meta.role', 'analytics');
+
+    expect(Node::query()->where('name', 'analytics-2')->exists())
+        ->toBeFalse()
+        ->and(NodeBootstrap::query()->exists())
+        ->toBeFalse();
+});
+
 it('keeps bootstrap pending when the WireGuard-bound Agent is not ready', function (): void {
     [$gateway, $caller] = nodeBootstrapGatewayAndCaller();
 

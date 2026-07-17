@@ -31,6 +31,7 @@ use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Contracts\Process\InvokedProcess;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -50,6 +51,69 @@ afterEach(function (): void {
 });
 
 describe('node role assignment service', function (): void {
+    it('rejects a second analytics role assignment before provisioning', function (): void {
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger {
+            public function __construct() {}
+
+            public function converge(Node $node, NodeRoleAssignment $assignment): void {}
+        });
+
+        $databaseNode = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'database-1',
+                'status' => 'active',
+            ]);
+
+        foreach (['postgres', 'clickhouse'] as $service) {
+            Process::factory()
+                ->forOwner($databaseNode)
+                ->create(['runtime_config' => ['service' => $service]]);
+        }
+
+        $existingAnalyticsNode = Node::factory()->create([
+            'name' => 'analytics-1',
+            'status' => 'active',
+        ]);
+        NodeRoleAssignment::factory()->for($existingAnalyticsNode)->create([
+            'role' => 'analytics',
+            'status' => NodeRoleStatus::Error,
+        ]);
+
+        $target = Node::factory()->create([
+            'name' => 'analytics-2',
+            'platform' => 'ubuntu',
+            'status' => 'active',
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($target, 'analytics', [
+            'postgres_node_id' => $databaseNode->id,
+            'clickhouse_node_id' => $databaseNode->id,
+        ]))
+            ->toThrow(
+                InvalidArgumentException::class,
+                "Role 'analytics' is already assigned to node 'analytics-1'.",
+            );
+
+        expect($target->roleAssignments()->where('role', 'analytics')->exists())->toBeFalse();
+    });
+
+    it('enforces the analytics singleton in the database', function (): void {
+        $firstNode = Node::factory()->create();
+        $secondNode = Node::factory()->create();
+
+        NodeRoleAssignment::factory()->for($firstNode)->create([
+            'role' => 'analytics',
+            'status' => NodeRoleStatus::Error,
+        ]);
+
+        expect(fn () => NodeRoleAssignment::factory()->for($secondNode)->create([
+            'role' => 'analytics',
+            'status' => NodeRoleStatus::Pending,
+        ]))
+            ->toThrow(QueryException::class);
+    });
+
     it('activates a compatible role after convergence succeeds', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',

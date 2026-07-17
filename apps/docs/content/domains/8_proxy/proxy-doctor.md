@@ -6,7 +6,7 @@ The proxy family doctor implements the
 [Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
 `key()` returns `proxy`.
 
-`doctor --family=proxy` verifies whether gateway proxy route configuration still matches node proxy and TLS reality. It covers all Orbit-owned routes — app, workspace, gateway API, websocket, S3, tool-owned, and custom proxy routes — and their TLS material.
+`doctor --family=proxy` verifies whether gateway proxy route configuration still matches node proxy and TLS reality. It covers all Orbit-owned routes — app, workspace, gateway API, websocket, S3, analytics, tool-owned, and custom proxy routes — and their TLS material.
 
 When Doctor is scoped with `--app` or `--workspace`, route-specific probing,
 planning, and restore/adopt actions are limited to that owner. Shared
@@ -99,6 +99,8 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.s3.router_backend_invalid` | The `s3.orbit` route exists and matches intent structurally, but its backend pool is invalid: the upstreams list is empty or contains a non-SeaweedFS host. Route absence is covered by `proxy.s3.router_route_missing`. |
 | `proxy.s3.public_route_missing` | An active seaweedfs tool row lists public hosts, but the ingress public S3 route for a host is absent or diverges from expected ingress route intent. |
 | `proxy.s3.router_route_orphaned` | The private `s3.orbit` service route row exists, but no active `s3` role assignment remains in the topology. Service routes exist only while a matching role is active. |
+| `proxy.analytics.router_route_missing` | The private `analytics.orbit` route is absent or differs from canonical route intent for the singleton active analytics assignment. |
+| `proxy.analytics.router_route_orphaned` | The private `analytics.orbit` route row exists, but no active analytics role assignment remains. |
 | `proxy.tls_missing` | Gateway configuration expects Orbit-managed TLS material, but it is absent from node reality. |
 | `proxy.tls_mismatch` | Managed TLS material exists but does not match the expected route policy. |
 | `proxy.route_extra` | An Orbit-owned backend route has no matching gateway proxy route row, or an explicitly selected observed backend route has no matching gateway proxy route row during adoption scope. |
@@ -126,6 +128,8 @@ only when that readback is clean.
 | `proxy.s3.router_backend_invalid` | Re-sync the `s3.orbit` service route to rebuild the backend pool from active SeaweedFS backends. |
 | `proxy.s3.public_route_missing` | Re-sync public S3 ingress routes from the owning seaweedfs tool row. |
 | `proxy.s3.router_route_orphaned` | Remove the orphaned `s3.orbit` service route row and its rendered artifacts. |
+| `proxy.analytics.router_route_missing` | Re-sync and enact the private `analytics.orbit` route and Orbit-managed TLS from gateway analytics intent. |
+| `proxy.analytics.router_route_orphaned` | Remove the orphaned `analytics.orbit` route row, rendered site, certificate, and key. |
 | `proxy.tls_missing` | Recreate Orbit-managed TLS material for the selected route when prerequisites are available. |
 | `proxy.tls_mismatch` | Replace or relink Orbit-managed TLS material to match gateway configuration. Repair must converge to gateway-issued route leaf certificates when the node serves Caddy-local or intermediate-CA-issued material outside Orbit policy. |
 | `proxy.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |
@@ -152,5 +156,6 @@ Required test files:
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for proxy family scope, proxy drift reporting, and restore behavior. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | In-memory proxy probe diff behavior for registry configuration, owner eligibility, node eligibility, conflict boundaries, missing routes, mismatched routes, incomplete enactment, TLS drift, and selected extra routes in adoption scope. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` | Restore behavior for complete app-route re-enactment and layer-specific artifact repairs. |
+| `apps/gateway/tests/Unit/Services/Analytics/AnalyticsProxyDoctorProbeTest.php` | Analytics service-route registry drift, orphan detection, and restore behavior. |
 
 No current E2E test is mapped for proxy-family doctor coverage.

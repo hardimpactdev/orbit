@@ -10,11 +10,14 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
+use App\Models\ProxyRoute;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\RoleBaselines\RoleRuntimeConverger;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\S3\S3ServiceConfigurator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -34,7 +37,9 @@ it('enacts Docker and the SeaweedFS runtime before activating the S3 role', func
         'data_path' => '/var/lib/orbit/s3',
     ]);
 
-    expect($assignment->status)
+    expect($assignment->last_error)
+        ->toBeNull()
+        ->and($assignment->status)
         ->toBe(NodeRoleStatus::Active)
         ->and($runtime->tools)
         ->toBe(['docker'])
@@ -81,9 +86,20 @@ it('publishes the active s3 backend into gateway dns during role activation', fu
     \Illuminate\Support\Facades\File::deleteDirectory($configRoot);
 });
 
-it('enacts Docker and Plausible before activating the analytics role', function (): void {
+it('enacts Docker, Plausible, and the private route before activating the analytics role', function (): void {
     $runtime = new ProvisionedServiceRoleRecordingRuntime;
+    $executor = new ProvisionedServiceRoleInternalExecutor;
     app()->instance(RoleRuntimeConverger::class, $runtime);
+    app()->instance(RunsInternalCommands::class, $executor);
+    app()->instance(OrbitCaService::class, new ProvisionedServiceRoleFakeCa);
+
+    Node::factory()
+        ->router()
+        ->create([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.2',
+            'status' => NodeStatus::Active,
+        ]);
 
     $databaseNode = provisioned_service_role_database_node();
     $node = Node::factory()->create([
@@ -98,12 +114,20 @@ it('enacts Docker and Plausible before activating the analytics role', function 
         'clickhouse_node_id' => $databaseNode->id,
     ]);
 
-    expect($assignment->status)
+    expect($assignment->last_error)
+        ->toBeNull()
+        ->and($assignment->status)
         ->toBe(NodeRoleStatus::Active)
         ->and($runtime->tools)
         ->toBe(['docker'])
         ->and($runtime->processes)
-        ->toBe(['analytics:plausible']);
+        ->toBe(['analytics:plausible'])
+        ->and($executor->analyticsStatusAtCaddyWrite)
+        ->toBe(NodeRoleStatus::Pending)
+        ->and(ProxyRoute::query()->where('domain', 'analytics.orbit')->where('owner_type', 'router')->exists())
+        ->toBeTrue()
+        ->and($executor->commands)
+        ->toContain('internal:managed-file', 'internal:caddy-config');
 });
 
 it('keeps provisioning incomplete when a service runtime cannot start', function (string $role): void {
@@ -135,6 +159,77 @@ it('keeps provisioning incomplete when a service runtime cannot start', function
         ->and($node->fresh()->status)
         ->toBe(NodeStatus::Provisioning);
 })->with(['analytics', 's3']);
+
+it('keeps analytics provisioning incomplete when the private route cannot be enacted', function (): void {
+    $runtime = new ProvisionedServiceRoleRecordingRuntime;
+    $executor = new ProvisionedServiceRoleInternalExecutor(failCaddyWrite: true);
+    app()->instance(RoleRuntimeConverger::class, $runtime);
+    app()->instance(RunsInternalCommands::class, $executor);
+    app()->instance(OrbitCaService::class, new ProvisionedServiceRoleFakeCa);
+
+    Node::factory()
+        ->router()
+        ->create([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.2',
+            'status' => NodeStatus::Active,
+        ]);
+
+    $databaseNode = provisioned_service_role_database_node();
+    $node = Node::factory()->create([
+        'name' => 'services1',
+        'platform' => 'ubuntu_26-04',
+        'wireguard_address' => '10.6.0.14',
+        'status' => NodeStatus::Provisioning,
+    ]);
+
+    $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'analytics', [
+        'postgres_node_id' => $databaseNode->id,
+        'clickhouse_node_id' => $databaseNode->id,
+    ]);
+
+    expect($assignment->status)
+        ->toBe(NodeRoleStatus::Error)
+        ->and($assignment->last_error)
+        ->toBe('Failed to write Caddy site analytics.orbit on gateway-1: Caddy write failed.')
+        ->and($runtime->processes)
+        ->toBe(['analytics:plausible']);
+});
+
+it('removes the private analytics route and its artifacts with the role', function (): void {
+    $runtime = new ProvisionedServiceRoleRecordingRuntime;
+    $executor = new ProvisionedServiceRoleInternalExecutor;
+    app()->instance(RoleRuntimeConverger::class, $runtime);
+    app()->instance(RunsInternalCommands::class, $executor);
+    app()->instance(OrbitCaService::class, new ProvisionedServiceRoleFakeCa);
+
+    Node::factory()
+        ->router()
+        ->create([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.2',
+            'status' => NodeStatus::Active,
+        ]);
+
+    $databaseNode = provisioned_service_role_database_node();
+    $node = Node::factory()->create([
+        'name' => 'services1',
+        'platform' => 'ubuntu_26-04',
+        'wireguard_address' => '10.6.0.14',
+        'status' => NodeStatus::Active,
+    ]);
+
+    app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'analytics', [
+        'postgres_node_id' => $databaseNode->id,
+        'clickhouse_node_id' => $databaseNode->id,
+    ]);
+    app(NodeRoleAssignmentService::class)->remove($node, 'analytics', force: true);
+
+    expect(ProxyRoute::query()->where('domain', 'analytics.orbit')->exists())
+        ->toBeFalse()
+        ->and($executor->caddyActions)
+        ->toContain('write-site', 'remove-site');
+});
 
 it('applies and starts the node-owned SeaweedFS Docker runtime', function (NodeRoleStatus $status): void {
     $executor = new ProvisionedServiceRoleInternalExecutor;
@@ -438,7 +533,28 @@ final class ProvisionedServiceRoleRecordingRuntime extends RoleRuntimeConverger
     }
 }
 
-/** @mago-expect lint:single-class-per-file */
+final readonly class ProvisionedServiceRoleFakeCa extends OrbitCaService
+{
+    /** @return array{cert: string, key: string} */
+    #[\Override]
+    public function issueLeaf(string $host, array $additionalSans = []): array
+    {
+        $directory = storage_path('framework/testing/provisioned-service-role-ca');
+        File::ensureDirectoryExists($directory);
+        File::put("{$directory}/{$host}.crt", "certificate-for-{$host}");
+        File::put("{$directory}/{$host}.key", "key-for-{$host}");
+
+        return [
+            'cert' => "{$directory}/{$host}.crt",
+            'key' => "{$directory}/{$host}.key",
+        ];
+    }
+}
+
+/**
+ * @mago-expect lint:single-class-per-file
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final class ProvisionedServiceRoleInternalExecutor implements RunsInternalCommands
 {
     /**
@@ -466,8 +582,16 @@ final class ProvisionedServiceRoleInternalExecutor implements RunsInternalComman
      */
     public array $managedFilePayloads = [];
 
+    /**
+     * @var list<string>
+     */
+    public array $caddyActions = [];
+
+    public ?NodeRoleStatus $analyticsStatusAtCaddyWrite = null;
+
     public function __construct(
         private readonly bool $failStart = false,
+        private readonly bool $failCaddyWrite = false,
     ) {}
 
     public function runInternal(
@@ -510,6 +634,24 @@ final class ProvisionedServiceRoleInternalExecutor implements RunsInternalComman
                     ? $this->successResult(['exists' => false])
                     : $this->successResult(['outcome' => 'written'])
             );
+        }
+
+        if ($commandName === 'internal:caddy-config') {
+            $action = is_string($arguments[0] ?? null) ? $arguments[0] : '';
+            $this->caddyActions[] = $action;
+
+            if ($action === 'write-site') {
+                $this->analyticsStatusAtCaddyWrite = NodeRoleAssignment::query()
+                    ->where('role', 'analytics')
+                    ->first()
+                    ?->status;
+            }
+
+            if ($this->failCaddyWrite && $action === 'write-site') {
+                return new RemoteShellResult(1, '', 'Caddy write failed.', 1);
+            }
+
+            return $this->successResult(['action' => $action]);
         }
 
         return new RemoteShellResult(0, '', '', 1);
