@@ -464,6 +464,7 @@ describe('ProxyRouteFixer', function (): void {
                     'ca_path' => '/etc/orbit/ca/root.crt',
                 ],
                 'tls' => [
+                    'managed_by' => 'internal',
                     'trusted_by_gateway_ca' => true,
                     'cert_path' => '/etc/orbit/certs/websocket.orbit.crt',
                     'key_path' => '/etc/orbit/certs/websocket.orbit.key',

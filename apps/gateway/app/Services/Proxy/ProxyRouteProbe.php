@@ -1243,7 +1243,7 @@ final readonly class ProxyRouteProbe
             return false;
         }
 
-        return $managedBy === 'orbit';
+        return in_array($managedBy, ['orbit', 'internal'], true);
     }
 
     /**

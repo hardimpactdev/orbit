@@ -386,7 +386,7 @@ final readonly class ProxyRouteFixer
             ? $tls['managed_by'] ?? $config['tls_managed_by'] ?? 'orbit'
             : $config['tls_managed_by'] ?? 'orbit';
 
-        return $managedBy === 'orbit';
+        return in_array($managedBy, ['orbit', 'internal'], true);
     }
 
     private function usesIngressPlacement(ProxyRoute $route): bool

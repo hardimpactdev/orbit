@@ -216,6 +216,8 @@ describe('proxy registry probe foundation', function (): void {
             'websocket.orbit' => [
                 'route_exists' => true,
                 'route_hash' => $route->source_hash,
+                'cert_path' => '/etc/orbit/certs/websocket.orbit.crt',
+                'key_path' => '/etc/orbit/certs/websocket.orbit.key',
                 'cert_exists' => true,
                 'key_exists' => true,
             ],
@@ -1207,6 +1209,39 @@ describe('proxy backend and TLS reality', function (): void {
                 'route_hash' => str_repeat('a', 64),
                 'cert_exists' => false,
                 'key_exists' => true,
+            ],
+        ]);
+
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.tls_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects missing TLS material for internally managed websocket routes', function (): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'websocket.orbit',
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'https://10.6.0.14:8080'],
+                'upstream' => 'https://10.6.0.14:8080',
+                'tls' => [
+                    'managed_by' => 'internal',
+                    'cert_path' => '/etc/orbit/certs/websocket.orbit.crt',
+                    'key_path' => '/etc/orbit/certs/websocket.orbit.key',
+                ],
+            ],
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'websocket.orbit' => [
+                'route_exists' => true,
+                'route_hash' => str_repeat('a', 64),
+                'cert_exists' => false,
+                'key_exists' => false,
             ],
         ]);
 
