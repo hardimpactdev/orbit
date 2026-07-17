@@ -80,7 +80,7 @@ test('groups apps, processes, and tools by node', () => {
     assert.equal(production?.statusTone, 'offline');
 });
 
-test('detects database tools as database inventory', () => {
+test('detects Valkey but not Redis as database inventory', () => {
     const summary = createDashboardSummary({
         nodes: { data: { nodes: [{ name: 'storage-1', status: 'active' }] } },
         apps: { data: { apps: [] } },
@@ -88,7 +88,8 @@ test('detects database tools as database inventory', () => {
         tools: {
             data: {
                 tools: [
-                    { name: 'postgresql', node_name: 'storage-1', expected_state: 'installed' },
+                    { name: 'valkey', node_name: 'storage-1', expected_state: 'installed' },
+                    { name: 'redis', node_name: 'storage-1', expected_state: 'installed' },
                     { name: 'composer', node_name: 'storage-1', expected_state: 'installed' },
                 ],
             },
@@ -96,7 +97,7 @@ test('detects database tools as database inventory', () => {
     });
 
     assert.equal(summary.totals.databases, 1);
-    assert.equal(summary.nodeGroups[0]?.databases[0]?.engine, 'postgresql');
+    assert.equal(summary.nodeGroups[0]?.databases[0]?.engine, 'valkey');
 });
 
 test('reads Scramble node role payloads', () => {
