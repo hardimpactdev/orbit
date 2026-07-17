@@ -15,6 +15,8 @@ describe('internal managed file command', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,
         ]));
+        $hostPathPrefix = getenv('ORBIT_HOST_PATH_PREFIX');
+        $this->originalHostPathPrefix = is_string($hostPathPrefix) ? $hostPathPrefix : null;
     });
 
     afterEach(function (): void {
@@ -24,6 +26,10 @@ describe('internal managed file command', function (): void {
             putenv("PATH={$originalPath}");
             putenv('ORBIT_MANAGED_FILE_ORIGINAL_PATH');
         }
+
+        $this->originalHostPathPrefix === null
+            ? putenv('ORBIT_HOST_PATH_PREFIX')
+            : putenv("ORBIT_HOST_PATH_PREFIX={$this->originalHostPathPrefix}");
     });
 
     it('rejects a missing operation token before reading stdin', function (): void {
@@ -163,6 +169,58 @@ describe('internal managed file command', function (): void {
             ->and($commands)
             ->toContain('-n chmod 0644 /etc/apt/apt.conf.d/20auto-upgrades');
     });
+
+    it('maps gateway host paths through the mounted host path prefix', function (): void {
+        putenv('ORBIT_HOST_PATH_PREFIX=/mnt/orbit-host');
+        $log = fake_managed_file_sudo_binary(pathType: 'missing');
+
+        [$exitCode, $output] = run_internal_managed_file_command(
+            [
+                'action' => 'write',
+                '--operation-token' => managed_file_signed_operation_token(),
+                '--json' => true,
+            ],
+            json_encode([
+                'path' => '/etc/orbit/certs/s3.orbit.crt',
+                'content' => "certificate\n",
+                'mode' => '0644',
+                'directory_mode' => '0755',
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $commands = file($log, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        expect($commands)->toBeArray();
+        /** @var list<string> $commands */
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('"path":"/mnt/orbit-host/etc/orbit/certs/s3.orbit.crt"')
+            ->and($commands)
+            ->toContain('-n install -d -m 0755 /mnt/orbit-host/etc/orbit/certs')
+            ->toContain('-n tee /mnt/orbit-host/etc/orbit/certs/s3.orbit.crt')
+            ->toContain('-n chmod 0644 /mnt/orbit-host/etc/orbit/certs/s3.orbit.crt')
+            ->not->toContain('-n tee /etc/orbit/certs/s3.orbit.crt');
+    });
+
+    it('rejects an invalid mounted host path prefix', function (string $prefix): void {
+        putenv("ORBIT_HOST_PATH_PREFIX={$prefix}");
+
+        [$exitCode, $output] = run_internal_managed_file_command(
+            [
+                'action' => 'probe',
+                '--operation-token' => managed_file_signed_operation_token(),
+                '--json' => true,
+            ],
+            json_encode(['path' => '/etc/orbit/certs/s3.orbit.crt'], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('"code":"managed_file.host_path_invalid"')
+            ->toContain('"message":"Managed file host path mapping is invalid."');
+    })->with(['mnt/orbit-host', '/mnt/orbit-host/../escape']);
 
     it('replaces an existing empty directory at the managed file path', function (): void {
         $path = '/srv/orbit/s3/config/s3.json';

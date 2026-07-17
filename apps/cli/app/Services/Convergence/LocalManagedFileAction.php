@@ -30,7 +30,7 @@ final readonly class LocalManagedFileAction
     public function run(mixed $action, array $payload): array
     {
         $action = $this->action($action);
-        $path = $this->path($payload['path'] ?? null);
+        $path = $this->accessibleHostPath($this->path($payload['path'] ?? null));
 
         if ($action === 'probe') {
             return $this->probe($path);
@@ -145,6 +145,35 @@ final readonly class LocalManagedFileAction
     private function containsPathTraversal(string $path): bool
     {
         return array_any(explode('/', $path), static fn ($segment) => $segment === '.' || $segment === '..');
+    }
+
+    private function accessibleHostPath(string $path): string
+    {
+        $prefix = getenv('ORBIT_HOST_PATH_PREFIX');
+
+        if (! is_string($prefix) || trim($prefix) === '') {
+            return $path;
+        }
+
+        $prefix = rtrim(string: trim($prefix), characters: '/');
+
+        if (
+            ! str_starts_with($prefix, '/')
+            || str_contains($prefix, "\0")
+            || $this->containsPathTraversal($prefix)
+        ) {
+            throw new LocalManagedFileFailure(
+                errorCode: 'managed_file.host_path_invalid',
+                message: 'Managed file host path mapping is invalid.',
+                meta: [],
+            );
+        }
+
+        if ($path === $prefix || str_starts_with($path, "{$prefix}/")) {
+            return $path;
+        }
+
+        return $prefix.$path;
     }
 
     private function isUserOrbitPath(string $path): bool
