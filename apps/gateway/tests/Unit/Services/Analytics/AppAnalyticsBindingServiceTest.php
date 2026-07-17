@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\AnalyticsDomainRequired;
+use App\Exceptions\AnalyticsMutationBusy;
 use App\Models\App;
 use App\Models\AppAnalyticsBinding;
 use App\Models\Node;
@@ -13,11 +14,36 @@ use App\Services\Analytics\AnalyticsPublicHostNormalizer;
 use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Analytics\AppAnalyticsBindingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
 describe('AppAnalyticsBindingService', function (): void {
+    it('fails before mutation when another analytics binding mutation holds the lease', function (): void {
+        createAnalyticsRoutePrerequisites();
+        $app = createAnalyticsApp();
+        $lock = Cache::lock('orbit:app-analytics:mutation', 60);
+
+        expect($lock->get())->toBeTrue();
+
+        try {
+            $service = new AppAnalyticsBindingService(
+                app(AnalyticsRouteRegistrar::class),
+                new AnalyticsPublicHostNormalizer,
+                lockSeconds: 60,
+                lockWaitSeconds: 0,
+            );
+
+            expect(fn () => $service->enable($app, []))
+                ->toThrow(AnalyticsMutationBusy::class, 'Another app analytics mutation is still running.');
+        } finally {
+            $lock->release();
+        }
+
+        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())->toBeFalse();
+    });
+
     it('creates enabled bindings with a default analytics host derived from the app domain', function (): void {
         createAnalyticsRoutePrerequisites();
         $app = createAnalyticsApp();

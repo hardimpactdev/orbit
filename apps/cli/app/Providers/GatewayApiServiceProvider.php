@@ -6,6 +6,12 @@ namespace App\Providers;
 
 use App\Enums\Trust\TrustStoreInstallReason;
 use App\Exceptions\OrbitConfigStoreException;
+use App\Services\Analytics\AnalyticsReadinessVerifier;
+use App\Services\Analytics\AppAnalyticsReadinessVerifier;
+use App\Services\Analytics\CurlHttpsProbe;
+use App\Services\Analytics\HttpsProbe;
+use App\Services\Analytics\NativePublicDnsResolver;
+use App\Services\Analytics\PublicDnsResolver;
 use App\Services\Dns\LocalResolver;
 use App\Services\Dns\ResolvesLocalDns;
 use App\Services\Gateway\FetchesGatewayRootCa;
@@ -47,6 +53,10 @@ final class GatewayApiServiceProvider extends ServiceProvider
     #[\Override]
     public function register(): void
     {
+        $this->app->bind(PublicDnsResolver::class, NativePublicDnsResolver::class);
+        $this->app->bind(HttpsProbe::class, CurlHttpsProbe::class);
+        $this->app->bind(AnalyticsReadinessVerifier::class, AppAnalyticsReadinessVerifier::class);
+
         $this->app->bind(ResolvesLocalDns::class, fn (): ResolvesLocalDns => new LocalResolver);
 
         $this->app->bind(ProfileRequestProfiler::class, CurlProfileRequestProfiler::class);

@@ -76,6 +76,8 @@ function createAppAnalyticsApp(?string $domain = 'docs.test', bool $withIngress 
             ->create([
                 'name' => 'edge-1',
                 'wireguard_address' => '10.6.0.10',
+                'public_ipv4' => '203.0.113.10',
+                'public_ipv6' => '2001:db8::10',
             ])
         : null;
 
@@ -165,6 +167,7 @@ describe('AppAnalyticsController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.binding.app', 'docs')
             ->assertJsonPath('success.data.binding.enabled', true)
+            ->assertJsonPath('success.data.binding.site_domain', 'docs.test')
             ->assertJsonPath('success.data.binding.internal_host', 'analytics.orbit')
             ->assertJsonPath('success.data.binding.dashboard_url', 'https://analytics.orbit')
             ->assertJsonPath('success.data.binding.public_hosts', ['analytics.docs.test'])
@@ -172,9 +175,34 @@ describe('AppAnalyticsController', function (): void {
             ->assertJsonPath('success.data.binding.tracking_endpoints.0.host', 'analytics.docs.test')
             ->assertJsonPath('success.data.binding.tracking_endpoints.0.script_base_url', 'https://analytics.docs.test')
             ->assertJsonPath(
+                'success.data.binding.tracking_endpoints.0.script_url',
+                'https://analytics.docs.test/js/script.js',
+            )
+            ->assertJsonPath(
                 'success.data.binding.tracking_endpoints.0.event_endpoint',
                 'https://analytics.docs.test/api/event',
-            );
+            )
+            ->assertJsonPath('success.data.binding.tracking_endpoints.0.data_domain', 'docs.test')
+            ->assertJsonPath(
+                'success.data.binding.tracking_endpoints.0.snippet',
+                '<script defer data-domain="docs.test" src="https://analytics.docs.test/js/script.js"></script>',
+            )
+            ->assertJsonPath('success.data.route_enactment.status', 'completed')
+            ->assertJsonPath('success.data.route_enactment.placements', ['router', 'ingress'])
+            ->assertJsonPath('success.data.dns_expectation.ingress_node', 'edge-1')
+            ->assertJsonPath('success.data.dns_expectation.targets', [
+                ['type' => 'A', 'value' => '203.0.113.10'],
+                ['type' => 'AAAA', 'value' => '2001:db8::10'],
+            ])
+            ->assertJsonPath('success.data.dns_expectation.provider_managed', false)
+            ->assertJsonPath('success.data.public_readiness.status', 'not_verified')
+            ->assertJsonPath('success.data.public_readiness.event', 'not_run')
+            ->assertJsonPath('success.data.remaining_actions', [
+                'configure_provider_dns',
+                'ensure_plausible_site',
+                'integrate_application_script',
+                'verify_public_readiness',
+            ]);
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->where('enabled', true)->exists())
             ->toBeTrue()
@@ -368,5 +396,55 @@ describe('AppAnalyticsController', function (): void {
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.binding_missing')
             ->assertJsonPath('error.meta.app', 'docs');
+    });
+
+    it('returns read-only public verification context for authorized callers', function (): void {
+        $caller = createAppAnalyticsCallerNode();
+        createAppAnalyticsRoutePrerequisites();
+        $app = createAppAnalyticsApp();
+        grantAppAnalyticsAccess($caller, $app->node, ['app:read', 'app:write']);
+
+        app(AppAnalyticsBindingService::class)->enable($app, ['analytics.docs.test']);
+
+        $bindingUpdatedAt = AppAnalyticsBinding::query()->where('app_id', $app->id)->value('updated_at');
+        $routeUpdatedAt = ProxyRoute::query()->where('domain', 'analytics.docs.test')->value('updated_at');
+
+        $response = getAppAnalyticsJson('/api/apps/docs/analytics/verify');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.verification_context.binding.app', 'docs')
+            ->assertJsonPath('success.data.verification_context.binding.enabled', true)
+            ->assertJsonPath('success.data.verification_context.routes.0.host', 'analytics.docs.test')
+            ->assertJsonPath('success.data.verification_context.routes.0.status', 'registered')
+            ->assertJsonPath('success.data.verification_context.dns_expectation.ingress_node', 'edge-1')
+            ->assertJsonPath('success.data.verification_context.dns_expectation.targets', [
+                ['type' => 'A', 'value' => '203.0.113.10'],
+                ['type' => 'AAAA', 'value' => '2001:db8::10'],
+            ]);
+
+        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->value('updated_at'))
+            ->toEqual($bindingUpdatedAt)
+            ->and(ProxyRoute::query()->where('domain', 'analytics.docs.test')->value('updated_at'))
+            ->toEqual($routeUpdatedAt);
+    });
+
+    it('reports divergent stored route intent without repairing it', function (): void {
+        $caller = createAppAnalyticsCallerNode();
+        createAppAnalyticsRoutePrerequisites();
+        $app = createAppAnalyticsApp();
+        grantAppAnalyticsAccess($caller, $app->node, ['app:read', 'app:write']);
+
+        app(AppAnalyticsBindingService::class)->enable($app, ['analytics.docs.test']);
+        ProxyRoute::query()->where('domain', 'analytics.docs.test')->update(['source_hash' => 'divergent']);
+
+        $response = getAppAnalyticsJson('/api/apps/docs/analytics/verify');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.verification_context.routes.0.status', 'divergent');
+
+        expect(ProxyRoute::query()->where('domain', 'analytics.docs.test')->value('source_hash'))
+            ->toBe('divergent');
     });
 });

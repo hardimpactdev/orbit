@@ -47,6 +47,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   Return `app.not_found` when no match exists.
 - Create the app analytics binding when none exists, or update the existing
   binding in place.
+- Serialize analytics binding mutations at the gateway so concurrent enable or
+  disable requests do not compete for SQLite writes. Return a retryable busy
+  failure when the bounded lock wait expires before any mutation begins.
 - Set `enabled=true`.
 - Store public tracking hosts. When the request omits hosts and the app has a
   hostname, store `analytics.<app-domain>`.
@@ -62,7 +65,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   before deleting their route rows. A cleanup failure leaves the previous
   binding unchanged.
 - Return one tracking endpoint object per public host with the public script
-  base URL and `/api/event` endpoint needed to adapt Plausible's snippet.
+  base URL, exact generic `/js/script.js` URL, canonical app `data-domain`,
+  exact script snippet, and `/api/event` endpoint.
+- Return the selected ingress node and its configured public IPv4/IPv6 values
+  as provider-neutral expected `A`/`AAAA` targets. Do not claim that provider
+  records exist or prescribe provider record IDs, TTL, or proxy state.
+- Return completed router and ingress enactment separately from public
+  readiness. Public readiness is always `not_verified` on enable because the
+  command does not query public DNS, TLS, Plausible site state, or app source.
 - Return `analytics.prerequisite_failed` when the fleet has no active router,
   active analytics backend, or required ingress placement.
 
@@ -70,7 +80,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 `app:analytics enable` must not create Plausible sites, generate Plausible API
 tokens, inject tracking scripts, expose the dashboard publicly, or mutate the
-Plausible CE process version.
+Plausible CE process version. It must not mutate provider DNS or claim that an
+accepted event was stored by Plausible.
 
 ## Renderer Contracts
 
@@ -89,13 +100,18 @@ The request body is `{"public_hosts": ["<host>", ...]}`. The array is optional.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `app` | string | App identity slug. |
-| `enabled` | boolean | Whether the binding is enabled. |
-| `internal_host` | string | Private dashboard host, always `analytics.orbit`. |
-| `dashboard_url` | string | Private dashboard URL, always `https://analytics.orbit`. |
-| `public_hosts` | array | Public tracking hostnames bound to this app. |
-| `tracking_paths` | array | Plausible script and event-ingest paths served by public routes. |
-| `tracking_endpoints` | array | Per-host objects containing `host`, `script_base_url`, and `event_endpoint`. |
+| `binding.app` | string | App identity slug. |
+| `binding.enabled` | boolean | Whether the binding is enabled. |
+| `binding.site_domain` | string | Canonical app domain used as Plausible `data-domain`. |
+| `binding.internal_host` | string | Private dashboard host, always `analytics.orbit`. |
+| `binding.dashboard_url` | string | Private dashboard URL, always `https://analytics.orbit`. |
+| `binding.public_hosts` | array | Public tracking hostnames bound to this app. |
+| `binding.tracking_paths` | array | Plausible script and event-ingest paths served by public routes. |
+| `binding.tracking_endpoints` | array | Per-host objects containing `host`, compatible `script_base_url`, exact `script_url`, `event_endpoint`, `data_domain`, and `snippet`. |
+| `route_enactment` | object | `status=completed` plus the enacted `router` and `ingress` placements. |
+| `dns_expectation` | object | Public hosts, ingress node, configured address targets, and `provider_managed=false`. |
+| `public_readiness` | object | Explicit `not_verified` state with unchecked DNS, TLS, script, dashboard, event, and Plausible-site facts. |
+| `remaining_actions` | array | Stable action codes for provider DNS, Plausible site, app integration, and public verification. |
 
 ## Failure Semantics
 
@@ -108,6 +124,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Analytics prerequisite failed | Required router, ingress, or analytics backend is missing. | `error.code=analytics.prerequisite_failed` |
 | Route cleanup failed | Obsolete ingress or router artifacts cannot be removed before a host replacement. The previous binding remains unchanged. | `error.code=analytics.route_cleanup_failed` |
 | Route enactment failed | Router or ingress route application/reload fails. Durable binding and route intent remain available for doctor repair. | `error.code=analytics.route_enactment_failed` |
+| Analytics mutation busy | Another analytics binding mutation still holds the gateway mutation lease after the bounded wait. | `error.code=analytics.mutation_busy` |
 
 ## Doctor Relationship
 
@@ -132,6 +149,6 @@ enable attempt.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/AppAnalyticsControllerTest.php` | Enable binding creation, default host derivation, domain-required rejection, endpoint payload, prerequisite failure, enactment failure, authorization check, and `app.not_found` path. |
+| `apps/gateway/tests/Feature/Http/Api/AppAnalyticsControllerTest.php` | Enable binding creation, exact integration and DNS expectation payload, default host derivation, domain-required rejection, prerequisite failure, enactment failure, authorization check, and `app.not_found` path. |
 | `apps/gateway/tests/Unit/Services/Analytics/AppAnalyticsBindingServiceTest.php` | Domain prerequisite, hostname validation, lifecycle ordering, binding creation vs update, and cleanup failure rollback. |
 | `apps/cli/tests/Feature/Commands/App/AppAnalyticsEnableCommandTest.php` | CLI input validation, typed gateway request payload, progress tree, endpoint guidance, and JSON passthrough. |

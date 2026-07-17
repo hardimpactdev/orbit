@@ -26,9 +26,15 @@ hosts forward Plausible script and event-ingest paths through
 `ingress -> router -> analytics backend pool`.
 
 The app must have a configured public domain. When `--host` is omitted, Orbit
-derives `analytics.<app-domain>`. Success includes a script base URL and event
-endpoint for each public host so operators can replace the private
-`analytics.orbit` hostname in the Plausible-generated snippet.
+derives `analytics.<app-domain>`. Success includes an exact generic
+`/js/script.js` snippet with the canonical app domain as `data-domain`, the
+event endpoint, the selected ingress node's configured public address targets,
+and an explicit `not_verified` public-readiness state.
+
+Command success means Orbit stored the binding and enacted the router and
+ingress routes. It does not mean provider DNS, public ACME/TLS, the Plausible
+site, or application integration is ready. Use `app:analytics verify` after
+provider DNS is configured.
 
 The Plausible dashboard and admin UI remain private at `analytics.orbit`. V1
 does not inject tracking scripts, create Plausible sites, or manage Plausible
@@ -51,9 +57,9 @@ manually.
 
 ## Output Summary
 
-Human output describes the resulting binding, public tracking hosts, script
-base URLs, and event endpoints. JSON output returns the same binding payload in
-the standard machine-readable envelope.
+Human output describes the resulting binding, exact integration snippet,
+provider-neutral DNS targets, route enactment, and unverified public state.
+JSON output returns the same fields in the standard machine-readable envelope.
 
 ## Examples
 
@@ -68,5 +74,6 @@ orbit app:analytics enable docs --json
 
 - [`app:analytics disable`](../17_app-analytics-disable/app-analytics-disable.md)
 - [`app:analytics show`](../18_app-analytics-show/app-analytics-show.md)
+- [`app:analytics verify`](../21_app-analytics-verify/app-analytics-verify.md)
 - [`analytics:update`](../../21_analytics/1_analytics-update/analytics-update.md)
 - [Technical contract](technical/1_app-analytics-enable.md)

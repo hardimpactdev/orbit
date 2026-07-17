@@ -10,6 +10,7 @@ use App\Commands\App\AppAgentIdeCommand;
 use App\Commands\App\AppAnalyticsDisableCommand;
 use App\Commands\App\AppAnalyticsEnableCommand;
 use App\Commands\App\AppAnalyticsShowCommand;
+use App\Commands\App\AppAnalyticsVerifyCommand;
 use App\Commands\App\AppEnvCommand;
 use App\Commands\App\AppInstanceCommand;
 use App\Commands\App\AppListCommand;
@@ -233,6 +234,7 @@ return [
         AppAnalyticsDisableCommand::class,
         AppAnalyticsEnableCommand::class,
         AppAnalyticsShowCommand::class,
+        AppAnalyticsVerifyCommand::class,
         AppEnvCommand::class,
         AppInstanceCommand::class,
         AppListCommand::class,

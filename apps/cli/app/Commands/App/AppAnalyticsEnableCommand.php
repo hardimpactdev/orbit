@@ -84,6 +84,7 @@ final class AppAnalyticsEnableCommand extends AppGatewayCommand
         }
 
         $this->renderAnalyticsBindingWithDashboard($response);
+        $this->renderAnalyticsEnableGuidance($response);
 
         return self::SUCCESS;
     }

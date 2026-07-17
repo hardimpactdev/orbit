@@ -316,8 +316,9 @@ Use these commands for analytics, app instances, and env values.
 1. [`orbit app:analytics enable [app]`](16_app-analytics-enable/app-analytics-enable.md)
 2. [`orbit app:analytics disable [app]`](17_app-analytics-disable/app-analytics-disable.md)
 3. [`orbit app:analytics show [app]`](18_app-analytics-show/app-analytics-show.md)
-4. [`orbit app:instance list|show|add|remove [app]`](19_app-instance/app-instance.md)
-5. [`orbit app:env list|set|render [app]`](20_app-env/app-env.md)
+4. [`orbit app:analytics verify [app]`](21_app-analytics-verify/app-analytics-verify.md)
+5. [`orbit app:instance list|show|add|remove [app]`](19_app-instance/app-instance.md)
+6. [`orbit app:env list|set|render [app]`](20_app-env/app-env.md)
 
 ### App tooling and setup
 

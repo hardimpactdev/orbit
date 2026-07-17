@@ -44,6 +44,13 @@
       "reason": "App analytics binding is optional analytics-role surface and is not part of the first macOS dashboard SDK set."
     },
     {
+      "operation": "GET /apps/{app}/analytics/verify",
+      "operation_id": "appAnalytics.verify",
+      "classification": "deferred_optional",
+      "group": "app_analytics",
+      "reason": "App analytics verification context is optional analytics-role surface and is not part of the first macOS dashboard SDK set."
+    },
+    {
       "operation": "GET /codex/projects",
       "operation_id": "appCodex.list",
       "classification": "deferred_optional",

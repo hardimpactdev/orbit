@@ -11,6 +11,7 @@ describe('AppAnalyticsEnableCommand', function (): void {
             'binding' => [
                 'app' => 'docs',
                 'enabled' => true,
+                'site_domain' => 'docs.test',
                 'internal_host' => 'analytics.orbit',
                 'dashboard_url' => 'https://analytics.orbit',
                 'public_hosts' => ['analytics.docs.test', 'metrics.docs.test'],
@@ -51,6 +52,7 @@ describe('AppAnalyticsEnableCommand', function (): void {
             'binding' => [
                 'app' => 'docs',
                 'enabled' => true,
+                'site_domain' => 'docs.test',
                 'internal_host' => 'analytics.orbit',
                 'dashboard_url' => 'https://analytics.orbit',
                 'public_hosts' => ['analytics.docs.test'],
@@ -58,9 +60,21 @@ describe('AppAnalyticsEnableCommand', function (): void {
                 'tracking_endpoints' => [[
                     'host' => 'analytics.docs.test',
                     'script_base_url' => 'https://analytics.docs.test',
+                    'script_url' => 'https://analytics.docs.test/js/script.js',
                     'event_endpoint' => 'https://analytics.docs.test/api/event',
+                    'data_domain' => 'docs.test',
+                    'snippet' => '<script defer data-domain="docs.test" src="https://analytics.docs.test/js/script.js"></script>',
                 ]],
             ],
+            'route_enactment' => ['status' => 'completed', 'placements' => ['router', 'ingress']],
+            'dns_expectation' => [
+                'hosts' => ['analytics.docs.test'],
+                'ingress_node' => 'edge-1',
+                'targets' => [['type' => 'A', 'value' => '203.0.113.10']],
+                'provider_managed' => false,
+            ],
+            'public_readiness' => ['status' => 'not_verified'],
+            'remaining_actions' => ['configure_provider_dns', 'verify_public_readiness'],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'app:analytics enable', [
@@ -72,6 +86,7 @@ describe('AppAnalyticsEnableCommand', function (): void {
             'binding:',
             '  app: docs',
             '  enabled: true',
+            '  site_domain: docs.test',
             '  internal_host: analytics.orbit',
             '  dashboard_url: https://analytics.orbit',
             '  public_hosts:',
@@ -79,7 +94,25 @@ describe('AppAnalyticsEnableCommand', function (): void {
             '  tracking_endpoints:',
             '    - host: analytics.docs.test',
             '      script_base_url: https://analytics.docs.test',
+            '      script_url: https://analytics.docs.test/js/script.js',
             '      event_endpoint: https://analytics.docs.test/api/event',
+            '      data_domain: docs.test',
+            '      snippet: <script defer data-domain="docs.test" src="https://analytics.docs.test/js/script.js"></script>',
+            'route_enactment:',
+            '  status: completed',
+            '  placements:',
+            '    - router',
+            '    - ingress',
+            'dns_expectation:',
+            '  ingress_node: edge-1',
+            '  targets:',
+            '    - type: A',
+            '      value: 203.0.113.10',
+            'public_readiness:',
+            '  status: not_verified',
+            'remaining_actions:',
+            '  - configure_provider_dns',
+            '  - verify_public_readiness',
         ]);
 
         expect($exitCode)

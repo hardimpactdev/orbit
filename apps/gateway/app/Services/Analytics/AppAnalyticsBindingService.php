@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services\Analytics;
 
+use App\Exceptions\AnalyticsMutationBusy;
 use App\Exceptions\AnalyticsRouteCleanupFailed;
 use App\Exceptions\AnalyticsRouteEnactmentFailed;
 use App\Models\App;
 use App\Models\AppAnalyticsBinding;
+use Closure;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -16,12 +20,20 @@ final readonly class AppAnalyticsBindingService
     public function __construct(
         private AnalyticsRouteRegistrar $routes,
         private AnalyticsPublicHostNormalizer $publicHostNormalizer,
+        private int $lockSeconds = 120,
+        private int $lockWaitSeconds = 10,
     ) {}
 
     /**
      * @param  array<int, mixed>  $publicHosts
      */
     public function enable(App $app, array $publicHosts): AppAnalyticsBinding
+    {
+        return $this->withMutationLock(fn (): AppAnalyticsBinding => $this->enableUnlocked($app, $publicHosts));
+    }
+
+    /** @param array<int, mixed> $publicHosts */
+    private function enableUnlocked(App $app, array $publicHosts): AppAnalyticsBinding
     {
         $hosts = $this->publicHostNormalizer->normalize($app, $publicHosts);
         $this->routes->requireServiceRoute();
@@ -68,6 +80,11 @@ final readonly class AppAnalyticsBindingService
 
     public function disable(App $app): AppAnalyticsBinding
     {
+        return $this->withMutationLock(fn (): AppAnalyticsBinding => $this->disableUnlocked($app));
+    }
+
+    private function disableUnlocked(App $app): AppAnalyticsBinding
+    {
         $this->binding($app);
 
         try {
@@ -76,7 +93,8 @@ final readonly class AppAnalyticsBindingService
             throw new AnalyticsRouteCleanupFailed($exception->getMessage(), previous: $exception);
         }
 
-        return DB::transaction(function () use ($app): AppAnalyticsBinding {
+        /** @var AppAnalyticsBinding $binding */
+        $binding = DB::transaction(function () use ($app): AppAnalyticsBinding {
             $binding = $this->binding($app);
 
             $binding->fill([
@@ -87,6 +105,8 @@ final readonly class AppAnalyticsBindingService
 
             return $binding->refresh();
         });
+
+        return $binding;
     }
 
     public function show(App $app): AppAnalyticsBinding
@@ -112,5 +132,22 @@ final readonly class AppAnalyticsBindingService
         }
 
         return $binding;
+    }
+
+    /** @param Closure(): AppAnalyticsBinding $mutation */
+    private function withMutationLock(Closure $mutation): AppAnalyticsBinding
+    {
+        try {
+            /** @var AppAnalyticsBinding $binding */
+            $binding = Cache::lock('orbit:app-analytics:mutation', $this->lockSeconds)
+                ->block($this->lockWaitSeconds, $mutation);
+
+            return $binding;
+        } catch (LockTimeoutException $exception) {
+            throw new AnalyticsMutationBusy(
+                'Another app analytics mutation is still running.',
+                previous: $exception,
+            );
+        }
     }
 }

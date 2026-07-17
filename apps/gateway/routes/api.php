@@ -289,6 +289,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/apps/{app}/agent-ide', AppAgentIdeController::class);
         Route::post('/apps/{app}/analytics/enable', [AppAnalyticsController::class, 'enable']);
         Route::post('/apps/{app}/analytics/disable', [AppAnalyticsController::class, 'disable']);
+        Route::get('/apps/{app}/analytics/verify', [AppAnalyticsController::class, 'verify']);
         Route::get('/apps/{app}/analytics', [AppAnalyticsController::class, 'show']);
         Route::post('/apps/{app}/root', AppRootController::class);
         Route::post('/apps/{app}/setup', AppSetupController::class);

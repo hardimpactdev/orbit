@@ -11,6 +11,7 @@ describe('AppAnalyticsShowCommand', function (): void {
             'binding' => [
                 'app' => 'docs',
                 'enabled' => true,
+                'site_domain' => 'docs.test',
                 'internal_host' => 'analytics.orbit',
                 'dashboard_url' => 'https://analytics.orbit',
                 'public_hosts' => ['analytics.docs.test'],
@@ -18,7 +19,10 @@ describe('AppAnalyticsShowCommand', function (): void {
                 'tracking_endpoints' => [[
                     'host' => 'analytics.docs.test',
                     'script_base_url' => 'https://analytics.docs.test',
+                    'script_url' => 'https://analytics.docs.test/js/script.js',
                     'event_endpoint' => 'https://analytics.docs.test/api/event',
+                    'data_domain' => 'docs.test',
+                    'snippet' => '<script defer data-domain="docs.test" src="https://analytics.docs.test/js/script.js"></script>',
                 ]],
             ],
         ]));
@@ -51,6 +55,7 @@ describe('AppAnalyticsShowCommand', function (): void {
             'binding' => [
                 'app' => 'docs',
                 'enabled' => true,
+                'site_domain' => 'docs.test',
                 'internal_host' => 'analytics.orbit',
                 'dashboard_url' => 'https://analytics.orbit',
                 'public_hosts' => ['analytics.docs.test'],
@@ -58,7 +63,10 @@ describe('AppAnalyticsShowCommand', function (): void {
                 'tracking_endpoints' => [[
                     'host' => 'analytics.docs.test',
                     'script_base_url' => 'https://analytics.docs.test',
+                    'script_url' => 'https://analytics.docs.test/js/script.js',
                     'event_endpoint' => 'https://analytics.docs.test/api/event',
+                    'data_domain' => 'docs.test',
+                    'snippet' => '<script defer data-domain="docs.test" src="https://analytics.docs.test/js/script.js"></script>',
                 ]],
             ],
         ]));
@@ -71,6 +79,7 @@ describe('AppAnalyticsShowCommand', function (): void {
             'binding:',
             '  app: docs',
             '  enabled: true',
+            '  site_domain: docs.test',
             '  internal_host: analytics.orbit',
             '  dashboard_url: https://analytics.orbit',
             '  public_hosts:',
@@ -78,7 +87,10 @@ describe('AppAnalyticsShowCommand', function (): void {
             '  tracking_endpoints:',
             '    - host: analytics.docs.test',
             '      script_base_url: https://analytics.docs.test',
+            '      script_url: https://analytics.docs.test/js/script.js',
             '      event_endpoint: https://analytics.docs.test/api/event',
+            '      data_domain: docs.test',
+            '      snippet: <script defer data-domain="docs.test" src="https://analytics.docs.test/js/script.js"></script>',
         ]);
 
         expect($exitCode)

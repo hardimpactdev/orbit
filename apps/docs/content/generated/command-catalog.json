@@ -700,6 +700,70 @@
                 "response_dto": null
             }
         },
+        "app:analytics verify": {
+            "name": "app:analytics verify",
+            "slug": "app-analytics-verify",
+            "family": "app",
+            "arguments": [
+                "app"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/5_app/21_app-analytics-verify",
+                "public": "domains/5_app/21_app-analytics-verify/app-analytics-verify.md",
+                "technical": "domains/5_app/21_app-analytics-verify/technical/1_app-analytics-verify.md",
+                "repo_directory": "apps/docs/content/domains/5_app/21_app-analytics-verify",
+                "repo_public": "apps/docs/content/domains/5_app/21_app-analytics-verify/app-analytics-verify.md",
+                "repo_technical": "apps/docs/content/domains/5_app/21_app-analytics-verify/technical/1_app-analytics-verify.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/App/AppAnalyticsVerifyCommandTest.php",
+                "apps/cli/tests/Feature/Services/Analytics/AppAnalyticsReadinessVerifierTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppAnalyticsControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppAnalyticsVerifyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/App/AppAnalyticsVerifyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppAnalyticsVerifyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Services/Analytics/AppAnalyticsReadinessVerifierTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Services/Analytics/AppAnalyticsReadinessVerifierTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Services/Analytics/AppAnalyticsReadinessVerifierTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppAnalyticsControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/AppAnalyticsControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppAnalyticsControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
         "app:env": {
             "name": "app:env",
             "slug": "app-env",

@@ -10,9 +10,8 @@ use App\Exceptions\AnalyticsOperationFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
-use App\Models\AppAnalyticsBinding;
-use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Analytics\AppAnalyticsBindingService;
+use App\Services\Analytics\AppAnalyticsPayloadFactory;
 use App\Services\Apps\AppSelectorResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -20,10 +19,12 @@ use Illuminate\Http\Request;
 use InvalidArgumentException;
 use RuntimeException;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final class AppAnalyticsController implements Loggable
 {
     public function __construct(
         private readonly AppSelectorResolver $appSelectorResolver,
+        private readonly AppAnalyticsPayloadFactory $payloads,
     ) {}
 
     private ?App $activitySubject = null;
@@ -102,7 +103,7 @@ final class AppAnalyticsController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'binding' => $this->bindingPayload($binding),
+                    ...$this->payloads->enableResult($binding),
                 ],
             ],
         ]);
@@ -151,7 +152,7 @@ final class AppAnalyticsController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'binding' => $this->bindingPayload($binding),
+                    'binding' => $this->payloads->binding($binding),
                 ],
             ],
         ]);
@@ -193,7 +194,49 @@ final class AppAnalyticsController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'binding' => $this->bindingPayload($binding),
+                    'binding' => $this->payloads->binding($binding),
+                ],
+            ],
+        ]);
+    }
+
+    #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
+    public function verify(string $app, AppAnalyticsBindingService $service): JsonResponse
+    {
+        $this->activityTargetName = $app;
+        $this->activityEffect = ActivityLogType::Read;
+        $this->activityType = 'api:GET /apps/{app}/analytics/verify';
+        $this->activityAction = 'verify';
+
+        $targetApp = $this->resolveApp($app);
+
+        if (! $targetApp instanceof App) {
+            return $this->error(
+                code: 'app.not_found',
+                message: "App '{$app}' not found.",
+                meta: ['app' => $app],
+                status: 404,
+            );
+        }
+
+        try {
+            $binding = $service->show($targetApp);
+        } catch (RuntimeException $exception) {
+            return $this->error(
+                code: 'analytics.binding_missing',
+                message: $exception->getMessage(),
+                meta: ['app' => $targetApp->name],
+                status: 422,
+            );
+        }
+
+        $this->activitySubject = $targetApp->refresh();
+        $this->activityPublicHosts = $this->stringList($binding->public_hosts);
+
+        return response()->json([
+            'success' => [
+                'data' => [
+                    'verification_context' => $this->payloads->verificationContext($binding),
                 ],
             ],
         ]);
@@ -202,39 +245,6 @@ final class AppAnalyticsController implements Loggable
     private function resolveApp(string $selector): ?App
     {
         return $this->appSelectorResolver->resolve($selector)?->app;
-    }
-
-    /**
-     * @return array{
-     *     app: string,
-     *     enabled: bool,
-     *     internal_host: string,
-     *     dashboard_url: string,
-     *     public_hosts: list<string>,
-     *     tracking_paths: list<string>,
-     *     tracking_endpoints: list<array{host: string, script_base_url: string, event_endpoint: string}>,
-     * }
-     */
-    private function bindingPayload(AppAnalyticsBinding $binding): array
-    {
-        $binding->loadMissing('app');
-
-        return [
-            'app' => $binding->app->name,
-            'enabled' => $binding->enabled,
-            'internal_host' => AnalyticsRouteRegistrar::ServiceDomain,
-            'dashboard_url' => 'https://'.AnalyticsRouteRegistrar::ServiceDomain,
-            'public_hosts' => $this->stringList($binding->public_hosts),
-            'tracking_paths' => AnalyticsRouteRegistrar::TrackingPaths,
-            'tracking_endpoints' => array_map(
-                static fn (string $host): array => [
-                    'host' => $host,
-                    'script_base_url' => "https://{$host}",
-                    'event_endpoint' => "https://{$host}/api/event",
-                ],
-                $this->stringList($binding->public_hosts),
-            ),
-        ];
     }
 
     /**
