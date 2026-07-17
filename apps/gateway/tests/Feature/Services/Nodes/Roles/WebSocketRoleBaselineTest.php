@@ -172,20 +172,21 @@ it('preserves source fallback when the release manifest is unreachable', functio
         ->not->toContain('image-ensure');
 });
 
-it('rejects mutable manifest websocket images before target convergence', function (): void {
+it('does not install legacy mutable manifest websocket images', function (): void {
     $node = webSocketBaselineNode();
     $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
     app()->instance(ReleaseManifestResolver::class, new WebSocketRoleBaselineTestManifestResolver([
         'orbit-websocket' => 'orbit-reverb:current',
     ]));
 
-    expect(fn () => app(NodeRoleBaselineConverger::class)->converge($node, $assignment))
-        ->toThrow(RuntimeException::class, 'Release manifest orbit-websocket role image must be digest-pinned.');
+    app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
     Http::assertNotSent(fn (Request $request): bool => webSocketBaselineRuntimeRequestMatches(
         request: $request,
         action: 'image:ensure',
     ));
+    expect(array_column(app(WebSocketRoleBaselineTiming::class)->records(), 'step'))
+        ->toContain('source-install');
 });
 
 it('starts an existing matching websocket runtime container when it is stopped', function (): void {

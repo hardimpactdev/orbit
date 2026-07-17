@@ -514,7 +514,9 @@ application lives at `apps/reverb/` and is packaged as the
 image build time. During role convergence, Orbit resolves the selected release
 manifest's `orbit-websocket` image, pulls that digest-pinned image on the target
 node, verifies its self-contained label, and only then updates the local
-`orbit-reverb:current` runtime alias. Mutable image references are rejected.
+`orbit-reverb:current` runtime alias. Newly generated manifests reject mutable
+websocket image references. Legacy manifests remain parseable, but convergence
+never installs a mutable websocket reference.
 If the manifest endpoint is unreachable, convergence continues with the
 existing local alias inspection and source-checkout fallback.
 Source sync to

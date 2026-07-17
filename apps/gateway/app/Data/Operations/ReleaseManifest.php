@@ -232,10 +232,6 @@ final readonly class ReleaseManifest
             $role = trim($role);
             $image = trim($image);
 
-            if ($role === 'orbit-websocket' && preg_match('/\A[^@\s]+@sha256:[0-9a-f]{64}\z/i', $image) !== 1) {
-                throw new RuntimeException('Release manifest orbit-websocket role image must be digest-pinned.');
-            }
-
             $validated[$role] = $image;
         }
 

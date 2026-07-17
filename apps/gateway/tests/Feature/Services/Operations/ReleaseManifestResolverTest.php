@@ -23,14 +23,16 @@ beforeEach(function (): void {
     );
 });
 
-it('rejects mutable websocket role images at the manifest boundary', function (): void {
-    expect(fn () => ReleaseManifest::fromArray(releaseManifestResolverFixture([
+it('parses legacy mutable websocket role images for safe consumer fallback', function (): void {
+    $manifest = ReleaseManifest::fromArray(releaseManifestResolverFixture([
         'role_images' => [
             'orbit-caddy' => 'caddy:2-alpine',
             'orbit-websocket' => 'hardimpact/orbit-reverb:latest',
         ],
-    ])))
-        ->toThrow(RuntimeException::class, 'orbit-websocket role image must be digest-pinned');
+    ]));
+
+    expect($manifest->roleImages['orbit-websocket'])
+        ->toBe('hardimpact/orbit-reverb:latest');
 });
 
 it('downloads validates and exposes a release manifest from the configured GitHub release asset', function (): void {

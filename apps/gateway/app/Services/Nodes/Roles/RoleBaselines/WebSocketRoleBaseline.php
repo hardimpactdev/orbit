@@ -140,7 +140,7 @@ class WebSocketRoleBaseline implements RoleBaseline
             $image !== $trimmedImage
             || preg_match('/\A[^@\s]+@sha256:[0-9a-f]{64}\z/i', $image) !== 1
         ) {
-            throw new RuntimeException('Websocket runtime manifest image must be digest-pinned.');
+            return;
         }
 
         /** @var RemoteShellResult $result */
