@@ -118,6 +118,82 @@ describe('internal websocket runtime command', function (): void {
             );
     });
 
+    it('loads verified manifest websocket image artifacts without registry credentials', function (): void {
+        $archive = 'websocket-image-archive';
+        $bin = install_websocket_runtime_fake_bin([
+            'self_contained_image' => true,
+            'image_archive' => $archive,
+        ]);
+        $image = 'ghcr.io/hardimpactdev/orbit-reverb:0.1.190-candidate-build@sha256:'.str_repeat('b', times: 64);
+        $sourceImage = strstr($image, '@', before_needle: true);
+        $url = 'https://artifacts.example.test/orbit-reverb-linux-amd64.tar';
+
+        [$exitCode, $output] = run_websocket_runtime_command(
+            action: 'image:ensure',
+            payload: [
+                'image' => $image,
+                'artifact' => [
+                    'url' => $url,
+                    'sha256' => hash('sha256', $archive),
+                ],
+            ],
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(websocket_runtime_success_data($output))
+            ->toBe([
+                'image' => $image,
+                'alias' => 'orbit-reverb:current',
+                'self_contained' => true,
+            ]);
+
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($calls)
+            ->toContain('curl --fail --silent --show-error --location --output ')
+            ->toContain($url)
+            ->toContain('docker load --input ')
+            ->toContain('docker image inspect --format {{ index .Config.Labels "orbit.websocket.self_contained" }} '
+            .$sourceImage)
+            ->toContain("docker tag {$sourceImage} orbit-reverb:current")
+            ->not->toContain('docker pull');
+    });
+
+    it('does not load or alias websocket image artifacts with a mismatched checksum', function (): void {
+        $bin = install_websocket_runtime_fake_bin([
+            'image_archive' => 'tampered-websocket-image-archive',
+        ]);
+        $image = 'ghcr.io/hardimpactdev/orbit-reverb:0.1.190-candidate-build@sha256:'.str_repeat('c', times: 64);
+        $url = 'https://artifacts.example.test/orbit-reverb-linux-amd64.tar';
+
+        [$exitCode, $output] = run_websocket_runtime_command(
+            action: 'image:ensure',
+            payload: [
+                'image' => $image,
+                'artifact' => [
+                    'url' => $url,
+                    'sha256' => str_repeat('f', times: 64),
+                ],
+            ],
+        );
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
+                'websocket_runtime_image_artifact_invalid',
+                'Websocket runtime image artifact checksum does not match.',
+                ['url' => $url],
+            ));
+
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($calls)
+            ->not->toContain('docker load')
+            ->not->toContain('docker tag');
+    });
+
     it('rejects mutable manifest image references before pulling', function (): void {
         $bin = install_websocket_runtime_fake_bin();
 
@@ -465,7 +541,7 @@ function websocket_runtime_container_spec_payload(): array
 }
 
 /**
- * @param  array{self_contained_image?: bool, app_key_exists?: bool, app_key?: string, container_exists?: bool, container_running?: bool, env_host?: string, cmd?: string, network_exists?: bool, source_hash?: string}  $options
+ * @param  array{self_contained_image?: bool, image_archive?: string, app_key_exists?: bool, app_key?: string, container_exists?: bool, container_running?: bool, env_host?: string, cmd?: string, network_exists?: bool, source_hash?: string}  $options
  */
 function install_websocket_runtime_fake_bin(array $options = []): string
 {
@@ -485,6 +561,7 @@ function install_websocket_runtime_fake_bin(array $options = []): string
     file_put_contents("{$dir}/container-exists", $containerExists ? '1' : '0');
     file_put_contents("{$dir}/container-running", $containerRunning ? 'true' : 'false');
     file_put_contents("{$dir}/env-host", $options['env_host'] ?? '');
+    file_put_contents("{$dir}/image.tar", $options['image_archive'] ?? '');
     file_put_contents("{$dir}/network-exists", $networkExists ? '1' : '0');
     file_put_contents("{$dir}/redis-probe.php", '');
     file_put_contents("{$dir}/self-contained-image", $selfContainedImage ? 'true' : 'false');
@@ -537,6 +614,23 @@ function install_websocket_runtime_fake_bin(array $options = []): string
         esac
         BASH);
     chmod(filename: "{$dir}/docker", permissions: 0o755);
+
+    file_put_contents("{$dir}/curl", <<<'BASH'
+        #!/usr/bin/env bash
+        dir="$(cd "$(dirname "$0")" && pwd)"
+        printf 'curl %s\n' "$*" >>"$dir/calls.log"
+        target=''
+        while [ "$#" -gt 0 ]; do
+            if [ "$1" = '--output' ]; then
+                target="$2"
+                break
+            fi
+            shift
+        done
+        [ -n "$target" ] || exit 1
+        cp "$dir/image.tar" "$target"
+        BASH);
+    chmod(filename: "{$dir}/curl", permissions: 0o755);
 
     file_put_contents("{$dir}/sudo", <<<'BASH'
         #!/usr/bin/env bash
@@ -600,6 +694,7 @@ function delete_websocket_runtime_fake_bin(string $path): void
 {
     foreach ([
         'docker',
+        'curl',
         'sudo',
         'calls.log',
         'app-key',
@@ -611,6 +706,7 @@ function delete_websocket_runtime_fake_bin(string $path): void
         'container-running',
         'env-host',
         'installed-source-hash',
+        'image.tar',
         'network-exists',
         'redis-probe.php',
         'self-contained-image',

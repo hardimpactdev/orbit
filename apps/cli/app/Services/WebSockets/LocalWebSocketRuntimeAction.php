@@ -48,17 +48,12 @@ final readonly class LocalWebSocketRuntimeAction
     {
         $image = $this->image($payload['image'] ?? null);
         $alias = 'orbit-reverb:current';
-        $pull = $this->runProcess(['docker', 'pull', $image]);
+        $artifact = $this->imageArtifact($payload['artifact'] ?? null);
+        $sourceImage = $artifact === null
+            ? $this->pullImage($image)
+            : $this->loadImageArtifact($image, $artifact);
 
-        if (! $pull->isSuccessful()) {
-            throw new LocalWebSocketRuntimeFailure(
-                errorCode: 'websocket_runtime_image_pull_failed',
-                message: 'Websocket runtime image pull failed.',
-                meta: ['image' => $image, 'output' => $this->output($pull)],
-            );
-        }
-
-        if ($this->imageIsSelfContained($image)['self_contained'] !== true) {
+        if ($this->imageIsSelfContained($sourceImage)['self_contained'] !== true) {
             throw new LocalWebSocketRuntimeFailure(
                 errorCode: 'websocket_runtime_image_invalid',
                 message: 'Websocket runtime image is not self-contained.',
@@ -66,7 +61,7 @@ final readonly class LocalWebSocketRuntimeAction
             );
         }
 
-        $tag = $this->runProcess(['docker', 'tag', $image, $alias]);
+        $tag = $this->runProcess(['docker', 'tag', $sourceImage, $alias]);
 
         if (! $tag->isSuccessful()) {
             throw new LocalWebSocketRuntimeFailure(
@@ -81,6 +76,115 @@ final readonly class LocalWebSocketRuntimeAction
             'alias' => $alias,
             'self_contained' => true,
         ];
+    }
+
+    private function pullImage(string $image): string
+    {
+        $pull = $this->runProcess(['docker', 'pull', $image], timeout: 360);
+
+        if (! $pull->isSuccessful()) {
+            throw new LocalWebSocketRuntimeFailure(
+                errorCode: 'websocket_runtime_image_pull_failed',
+                message: 'Websocket runtime image pull failed.',
+                meta: ['image' => $image, 'output' => $this->output($pull)],
+            );
+        }
+
+        return $image;
+    }
+
+    /**
+     * @param  array{url: string, sha256: string}  $artifact
+     */
+    private function loadImageArtifact(string $image, array $artifact): string
+    {
+        $archive = tempnam(directory: sys_get_temp_dir(), prefix: 'orbit-websocket-image-');
+
+        if (! is_string($archive)) {
+            throw new LocalWebSocketRuntimeFailure(
+                errorCode: 'websocket_runtime_image_artifact_failed',
+                message: 'Websocket runtime image artifact could not be prepared.',
+            );
+        }
+
+        try {
+            $download = $this->runProcess([
+                'curl',
+                '--fail',
+                '--silent',
+                '--show-error',
+                '--location',
+                '--output',
+                $archive,
+                $artifact['url'],
+            ], timeout: 360);
+
+            if (! $download->isSuccessful()) {
+                throw new LocalWebSocketRuntimeFailure(
+                    errorCode: 'websocket_runtime_image_artifact_download_failed',
+                    message: 'Websocket runtime image artifact download failed.',
+                    meta: ['url' => $artifact['url'], 'output' => $this->output($download)],
+                );
+            }
+
+            $actualSha256 = hash_file('sha256', $archive);
+
+            if (! is_string($actualSha256) || ! hash_equals($artifact['sha256'], $actualSha256)) {
+                throw new LocalWebSocketRuntimeFailure(
+                    errorCode: 'websocket_runtime_image_artifact_invalid',
+                    message: 'Websocket runtime image artifact checksum does not match.',
+                    meta: ['url' => $artifact['url']],
+                );
+            }
+
+            $load = $this->runProcess(['docker', 'load', '--input', $archive], timeout: 360);
+
+            if (! $load->isSuccessful()) {
+                throw new LocalWebSocketRuntimeFailure(
+                    errorCode: 'websocket_runtime_image_artifact_load_failed',
+                    message: 'Websocket runtime image artifact could not be loaded.',
+                    meta: ['image' => $image, 'output' => $this->output($load)],
+                );
+            }
+        } finally {
+            if (is_file($archive)) {
+                unlink($archive);
+            }
+        }
+
+        $sourceImage = strstr(haystack: $image, needle: '@', before_needle: true);
+
+        if (! is_string($sourceImage) || $sourceImage === '') {
+            throw new InvalidArgumentException('Websocket runtime image tag is invalid.');
+        }
+
+        return $sourceImage;
+    }
+
+    /**
+     * @return array{url: string, sha256: string}|null
+     */
+    private function imageArtifact(mixed $artifact): ?array
+    {
+        if ($artifact === null) {
+            return null;
+        }
+
+        $url = is_array($artifact) ? $artifact['url'] ?? null : null;
+        $sha256 = is_array($artifact) ? $artifact['sha256'] ?? null : null;
+
+        if (
+            ! is_string($url)
+            || $url !== trim($url)
+            || filter_var($url, FILTER_VALIDATE_URL) === false
+            || parse_url($url, PHP_URL_SCHEME) !== 'https'
+            || ! is_string($sha256)
+            || preg_match('/\A[a-f0-9]{64}\z/', $sha256) !== 1
+        ) {
+            throw new InvalidArgumentException('Websocket runtime image artifact is invalid.');
+        }
+
+        return ['url' => $url, 'sha256' => $sha256];
     }
 
     /**
@@ -778,10 +882,10 @@ final readonly class LocalWebSocketRuntimeAction
     /**
      * @param  list<string>  $command
      */
-    private function runProcess(array $command): Process
+    private function runProcess(array $command, int $timeout = 15): Process
     {
         $process = new Process($command);
-        $process->setTimeout(15);
+        $process->setTimeout($timeout);
         $process->run();
 
         return $process;

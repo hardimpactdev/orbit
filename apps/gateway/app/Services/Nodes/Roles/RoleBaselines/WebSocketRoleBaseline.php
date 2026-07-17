@@ -122,10 +122,12 @@ class WebSocketRoleBaseline implements RoleBaseline
     private function ensureManifestRuntimeImage(Node $node): void
     {
         try {
-            $image = $this->manifests->resolve()->roleImages['orbit-websocket'] ?? null;
+            $manifest = $this->manifests->resolve();
         } catch (ConnectionException) {
             return;
         }
+
+        $image = $manifest->roleImages['orbit-websocket'] ?? null;
 
         if (
             ! is_string($image)
@@ -143,13 +145,20 @@ class WebSocketRoleBaseline implements RoleBaseline
             return;
         }
 
+        $payload = ['image' => $trimmedImage];
+        $artifact = $this->manifestRuntimeImageArtifact($manifest->snapshot());
+
+        if ($artifact !== null) {
+            $payload['artifact'] = $artifact;
+        }
+
         /** @var RemoteShellResult $result */
         $result = $this->timer()->measure(
             'image-ensure',
             fn (): RemoteShellResult => $this->runWebSocketRuntimeAction(
                 node: $node,
                 action: 'image:ensure',
-                payload: ['image' => $trimmedImage],
+                payload: $payload,
             ),
         );
 
@@ -162,6 +171,34 @@ class WebSocketRoleBaseline implements RoleBaseline
         if (($data['self_contained'] ?? null) !== true) {
             throw new RuntimeException("Websocket runtime image on {$node->name} is not self-contained.");
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $snapshot
+     * @return array{url: string, sha256: string}|null
+     */
+    private function manifestRuntimeImageArtifact(array $snapshot): ?array
+    {
+        $artifacts = $snapshot['role_image_artifacts'] ?? null;
+
+        if (! is_array($artifacts) || ! array_key_exists('orbit-websocket', $artifacts)) {
+            return null;
+        }
+
+        $artifact = $artifacts['orbit-websocket'];
+        $url = is_array($artifact) ? $artifact['url'] ?? null : null;
+        $sha256 = is_array($artifact) ? $artifact['sha256'] ?? null : null;
+
+        if (
+            ! is_string($url)
+            || trim($url) === ''
+            || ! is_string($sha256)
+            || preg_match('/\A[a-f0-9]{64}\z/', $sha256) !== 1
+        ) {
+            throw new RuntimeException('Websocket runtime manifest image artifact is invalid.');
+        }
+
+        return ['url' => trim($url), 'sha256' => $sha256];
     }
 
     private function ensureSelfContainedAppKey(Node $node): string

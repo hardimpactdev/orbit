@@ -68,8 +68,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Success returns the stored assignment payload after convergence completes with
   `status=active`.
 - Websocket convergence resolves the selected release manifest's
-  `orbit-websocket` image, pulls and aliases it on the target node, and verifies
-  that it is self-contained before applying the Reverb container. If the
+  `orbit-websocket` image. When its verified image archive is available,
+  convergence downloads it over HTTPS, verifies its SHA-256, and loads it
+  without registry credentials; otherwise it pulls the digest-pinned image.
+  The target verifies that the image is self-contained before updating the
+  runtime alias and applying the Reverb container. If the
   manifest endpoint is unreachable, convergence preserves the existing local
   alias inspection and source-checkout fallback. Existing mutable websocket
   references are never installed and use that same safe fallback; newly

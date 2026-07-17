@@ -512,8 +512,10 @@ and does not use the gateway or FrankenPHP runtime images. The Reverb runtime
 application lives at `apps/reverb/` and is packaged as the
 `hardimpact/orbit-reverb` image, where Composer dependencies are installed at
 image build time. During role convergence, Orbit resolves the selected release
-manifest's `orbit-websocket` image, pulls that digest-pinned image on the target
-node, verifies its self-contained label, and only then updates the local
+manifest's `orbit-websocket` image. The target prefers the manifest's HTTPS
+image archive, verifies its SHA-256, and loads it without registry credentials;
+manifests without that artifact pull the digest-pinned image. The target
+verifies the self-contained label and only then updates the local
 `orbit-reverb:current` runtime alias. Newly generated manifests reject mutable
 websocket image references. Legacy manifests remain parseable, but convergence
 never installs a mutable websocket reference.

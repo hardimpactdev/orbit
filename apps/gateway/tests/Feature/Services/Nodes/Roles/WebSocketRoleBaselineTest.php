@@ -135,9 +135,13 @@ it('ensures the manifest websocket image before inspecting the runtime alias', f
     $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
     $this->webSocketBaselineSelfContainedImage = true;
     $image = 'ghcr.io/hardimpactdev/orbit-reverb:0.1.190-candidate-build@sha256:'.str_repeat('a', times: 64);
+    $artifact = [
+        'url' => 'https://artifacts.example.test/orbit-reverb-linux-amd64.tar',
+        'sha256' => str_repeat('e', times: 64),
+    ];
     app()->instance(ReleaseManifestResolver::class, new WebSocketRoleBaselineTestManifestResolver([
         'orbit-websocket' => $image,
-    ]));
+    ], artifact: $artifact));
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
@@ -149,7 +153,10 @@ it('ensures the manifest websocket image before inspecting the runtime alias', f
                 request: $request,
                 action: 'image:ensure',
             )
-            && json_decode((string) $request['input'], associative: true) === ['image' => $image]
+            && json_decode((string) $request['input'], associative: true) === [
+                'image' => $image,
+                'artifact' => $artifact,
+            ]
         ),
     );
 });
@@ -352,6 +359,7 @@ final class WebSocketRoleBaselineTestManifestResolver extends ReleaseManifestRes
     public function __construct(
         private readonly array $roleImages,
         private readonly ?ConnectionException $exception = null,
+        private readonly ?array $artifact = null,
     ) {}
 
     #[\Override]
@@ -361,7 +369,7 @@ final class WebSocketRoleBaselineTestManifestResolver extends ReleaseManifestRes
             throw $this->exception;
         }
 
-        return ReleaseManifest::fromArray([
+        $manifest = [
             'schema_version' => 1,
             'version' => '0.1.190',
             'source' => 'topology-candidate',
@@ -377,7 +385,13 @@ final class WebSocketRoleBaselineTestManifestResolver extends ReleaseManifestRes
             ],
             'agent_artifacts' => [],
             'role_images' => array_merge(['orbit-caddy' => 'caddy:2-alpine'], $this->roleImages),
-        ]);
+        ];
+
+        if ($this->artifact !== null) {
+            $manifest['role_image_artifacts'] = ['orbit-websocket' => $this->artifact];
+        }
+
+        return ReleaseManifest::fromArray($manifest);
     }
 }
 
