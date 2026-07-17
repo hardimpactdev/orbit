@@ -27,7 +27,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record by name or hostname. Name match wins. |
-| `host` | `--host` | Optional. | Never. | `analytics.<app-domain>`. | Repeatable. Valid plain hostnames only. Duplicates and empty values are discarded. An explicit host does not bypass the app-domain prerequisite. |
+| `host` | `--host` | Optional. | Never. | `analytics.<app-domain>`. | Repeatable up to ten unique multi-label DNS hostnames. URLs, IP addresses, and single-label names are rejected. Duplicates and empty values are discarded. An explicit host does not bypass the app-domain prerequisite. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
@@ -49,7 +49,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   binding in place.
 - Serialize analytics binding mutations at the gateway so concurrent enable or
   disable requests do not compete for SQLite writes. Return a retryable busy
-  failure when the bounded lock wait expires before any mutation begins.
+  failure when the bounded lock wait expires before any mutation begins. The
+  one-hour lease covers the bounded maximum of ten current and ten obsolete
+  public-host route operations.
 - Set `enabled=true`.
 - Store public tracking hosts. When the request omits hosts and the app has a
   hostname, store `analytics.<app-domain>`.
@@ -150,5 +152,5 @@ enable attempt.
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/AppAnalyticsControllerTest.php` | Enable binding creation, exact integration and DNS expectation payload, default host derivation, domain-required rejection, prerequisite failure, enactment failure, authorization check, and `app.not_found` path. |
-| `apps/gateway/tests/Unit/Services/Analytics/AppAnalyticsBindingServiceTest.php` | Domain prerequisite, hostname validation, lifecycle ordering, binding creation vs update, and cleanup failure rollback. |
+| `apps/gateway/tests/Unit/Services/Analytics/AppAnalyticsBindingServiceTest.php` | Domain prerequisite, hostname and host-count validation, lease retention beyond the former 120-second boundary, lifecycle ordering, binding creation vs update, and cleanup failure rollback. |
 | `apps/cli/tests/Feature/Commands/App/AppAnalyticsEnableCommandTest.php` | CLI input validation, typed gateway request payload, progress tree, endpoint guidance, and JSON passthrough. |

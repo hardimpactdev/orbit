@@ -108,6 +108,7 @@ describe('AppAnalyticsEnableCommand', function (): void {
             '  targets:',
             '    - type: A',
             '      value: 203.0.113.10',
+            '  provider_managed: false',
             'public_readiness:',
             '  status: not_verified',
             'remaining_actions:',

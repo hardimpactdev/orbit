@@ -168,6 +168,9 @@ trait RendersAppAnalyticsBinding
 
         if (is_array($dns)) {
             $this->renderAnalyticsDnsTargets($dns['targets'] ?? null);
+            $this->line(
+                '  provider_managed: '.($this->analyticsBoolField($dns, 'provider_managed') ? 'true' : 'false'),
+            );
         }
 
         $this->line('public_readiness:');

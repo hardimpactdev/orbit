@@ -37,8 +37,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   Report matching answers as `routing=direct` and differing resolved answers
   as `routing=intermediary`; the comparison is diagnostic because a provider
   proxy can intentionally hide the origin ingress addresses.
+- Reject IP literals and single-label stored hosts before DNS resolution.
+  Discard private and reserved DNS answers; when no public answer remains,
+  report `dns.status=unsafe` and do not open a connection.
 - Probe exact HTTPS URLs only. Follow no redirects and verify the certificate
-  chain and hostname.
+  chain and hostname. Pin each request to the approved public DNS answers with
+  cURL resolve entries so a second resolver lookup cannot redirect the probe.
 - Require `GET /js/script.js` to complete with HTTP `200`.
 - Require `GET /` to complete with HTTP `404`; any successful dashboard or
   redirect response means the public dashboard boundary is not proven.
@@ -74,7 +78,7 @@ successful public-route check is not presented as event persistence proof.
 | App missing | No app record matches `app`. | `error.code=app.not_found` |
 | Binding missing | The app has no analytics binding. | `error.code=analytics.binding_missing` |
 | Binding disabled | The stored binding is disabled or has no public hosts. | `error.code=analytics.public_not_ready` with verification data. |
-| Public readiness incomplete | Route intent, DNS, TLS, script, or dashboard boundary is incomplete. | `error.code=analytics.public_not_ready` with verification data. |
+| Public readiness incomplete | Route intent, public-safe DNS, TLS, script, or dashboard boundary is incomplete. | `error.code=analytics.public_not_ready` with verification data. |
 
 ## Doctor Relationship
 
@@ -98,4 +102,4 @@ repair surface for router and ingress artifacts.
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/AppAnalyticsControllerTest.php` | Verification context, route-intent status, DNS targets, binding errors, authorization, and no gateway mutation. |
 | `apps/cli/tests/Feature/Commands/App/AppAnalyticsVerifyCommandTest.php` | Gateway request, caller-side probe rendering, success and not-ready exits, JSON payload, and no event request. |
-| `apps/cli/tests/Feature/Services/Analytics/AppAnalyticsReadinessVerifierTest.php` | DNS comparison, TLS/script/root rules, multi-host aggregation, and read-only probe paths. |
+| `apps/cli/tests/Feature/Services/Analytics/AppAnalyticsReadinessVerifierTest.php` | DNS comparison, private/reserved-answer rejection, pinned HTTPS addresses, TLS/script/root rules, multi-host aggregation, and read-only probe paths. |

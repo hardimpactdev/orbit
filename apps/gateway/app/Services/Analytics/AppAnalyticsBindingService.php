@@ -17,10 +17,12 @@ use RuntimeException;
 
 final readonly class AppAnalyticsBindingService
 {
+    public const int MUTATION_LOCK_SECONDS = 3600;
+
     public function __construct(
         private AnalyticsRouteRegistrar $routes,
         private AnalyticsPublicHostNormalizer $publicHostNormalizer,
-        private int $lockSeconds = 120,
+        private int $lockSeconds = self::MUTATION_LOCK_SECONDS,
         private int $lockWaitSeconds = 10,
     ) {}
 

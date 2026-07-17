@@ -14,6 +14,7 @@ use App\Services\Analytics\AnalyticsPublicHostNormalizer;
 use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Analytics\AppAnalyticsBindingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
@@ -39,6 +40,36 @@ describe('AppAnalyticsBindingService', function (): void {
                 ->toThrow(AnalyticsMutationBusy::class, 'Another app analytics mutation is still running.');
         } finally {
             $lock->release();
+        }
+
+        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())->toBeFalse();
+    });
+
+    it('keeps a second mutation out after the former 120 second lease boundary', function (): void {
+        createAnalyticsRoutePrerequisites();
+        $app = createAnalyticsApp();
+        Carbon::setTestNow('2026-07-17 12:00:00');
+        $lock = Cache::lock(
+            'orbit:app-analytics:mutation',
+            AppAnalyticsBindingService::MUTATION_LOCK_SECONDS,
+        );
+
+        expect($lock->get())->toBeTrue();
+
+        try {
+            Carbon::setTestNow(now()->addSeconds(121));
+
+            $service = new AppAnalyticsBindingService(
+                app(AnalyticsRouteRegistrar::class),
+                new AnalyticsPublicHostNormalizer,
+                lockWaitSeconds: 0,
+            );
+
+            expect(fn () => $service->enable($app, []))
+                ->toThrow(AnalyticsMutationBusy::class, 'Another app analytics mutation is still running.');
+        } finally {
+            $lock->release();
+            Carbon::setTestNow();
         }
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())->toBeFalse();
@@ -80,7 +111,31 @@ describe('AppAnalyticsBindingService', function (): void {
         $app = createAnalyticsApp();
 
         expect(fn () => app(AppAnalyticsBindingService::class)->enable($app, ['analytics.docs.test/path']))
-            ->toThrow(InvalidArgumentException::class, 'Analytics public hosts must be valid hostnames.');
+            ->toThrow(InvalidArgumentException::class, 'Analytics public hosts must be public DNS hostnames.');
+
+        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
+            ->toBeFalse()
+            ->and(ProxyRoute::query()->where('owner_type', 'app-analytics')->exists())
+            ->toBeFalse();
+    });
+
+    it('rejects IP, single-label, and excessive public host lists before route enactment', function (): void {
+        createAnalyticsRoutePrerequisites();
+        $app = createAnalyticsApp();
+        $service = app(AppAnalyticsBindingService::class);
+
+        expect(fn () => $service->enable($app, ['127.0.0.1']))
+            ->toThrow(InvalidArgumentException::class, 'Analytics public hosts must be public DNS hostnames.')
+            ->and(fn () => $service->enable($app, ['localhost']))
+            ->toThrow(InvalidArgumentException::class, 'Analytics public hosts must be public DNS hostnames.')
+            ->and(fn () => $service->enable($app, array_map(
+                static fn (int $index): string => "analytics-{$index}.docs.test",
+                range(1, AnalyticsPublicHostNormalizer::MAXIMUM_HOSTS + 1),
+            )))
+            ->toThrow(
+                InvalidArgumentException::class,
+                'Analytics supports at most '.AnalyticsPublicHostNormalizer::MAXIMUM_HOSTS.' public hosts.',
+            );
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
             ->toBeFalse()

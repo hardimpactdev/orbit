@@ -9,7 +9,7 @@ use App\Services\Analytics\PublicDnsResolver;
 describe('AppAnalyticsReadinessVerifier', function (): void {
     it('reports direct public readiness without sending an event', function (): void {
         $dns = new FakePublicDnsResolver([
-            'analytics.docs.test' => [['type' => 'A', 'value' => '203.0.113.10']],
+            'analytics.docs.test' => [['type' => 'A', 'value' => '93.184.216.34']],
         ]);
         $https = new FakeHttpsProbe([
             'https://analytics.docs.test/js/script.js' => successfulProbe(200),
@@ -28,18 +28,18 @@ describe('AppAnalyticsReadinessVerifier', function (): void {
             ->toBe('not_run')
             ->and($verification['hosts'][0]['plausible_site']['status'])
             ->toBe('unchecked')
-            ->and($https->requestedUrls)
+            ->and($https->requests)
             ->toBe([
-                'https://analytics.docs.test/js/script.js',
-                'https://analytics.docs.test/',
+                ['url' => 'https://analytics.docs.test/js/script.js', 'addresses' => ['93.184.216.34']],
+                ['url' => 'https://analytics.docs.test/', 'addresses' => ['93.184.216.34']],
             ]);
     });
 
     it('accepts a verified intermediary such as a proxied DNS provider', function (): void {
         $dns = new FakePublicDnsResolver([
             'analytics.docs.test' => [
-                ['type' => 'A', 'value' => '198.51.100.20'],
-                ['type' => 'AAAA', 'value' => '2001:db8::20'],
+                ['type' => 'A', 'value' => '104.16.132.229'],
+                ['type' => 'AAAA', 'value' => '2606:4700::6810:84e5'],
             ],
         ]);
         $https = new FakeHttpsProbe([
@@ -80,8 +80,8 @@ describe('AppAnalyticsReadinessVerifier', function (): void {
 
     it('requires every configured analytics host to be ready', function (): void {
         $dns = new FakePublicDnsResolver([
-            'analytics.docs.test' => [['type' => 'A', 'value' => '203.0.113.10']],
-            'metrics.docs.test' => [['type' => 'A', 'value' => '203.0.113.10']],
+            'analytics.docs.test' => [['type' => 'A', 'value' => '93.184.216.34']],
+            'metrics.docs.test' => [['type' => 'A', 'value' => '93.184.216.34']],
         ]);
         $https = new FakeHttpsProbe([
             'https://analytics.docs.test/js/script.js' => successfulProbe(200),
@@ -101,13 +101,80 @@ describe('AppAnalyticsReadinessVerifier', function (): void {
             ->toHaveCount(2)
             ->and($verification['hosts'][1]['ready'])
             ->toBeFalse()
-            ->and($https->requestedUrls)
+            ->and(array_column($https->requests, 'url'))
             ->each->not->toContain('/api/event');
+    });
+
+    it('refuses private and reserved DNS answers without making an HTTPS request', function (): void {
+        $dns = new FakePublicDnsResolver([
+            'analytics.docs.test' => [
+                ['type' => 'A', 'value' => '127.0.0.1'],
+                ['type' => 'A', 'value' => '10.6.0.5'],
+                ['type' => 'AAAA', 'value' => '::1'],
+            ],
+        ]);
+        $https = new FakeHttpsProbe([]);
+
+        $verification = new AppAnalyticsReadinessVerifier($dns, $https)->verify(readinessContext());
+
+        expect($verification['ready'])
+            ->toBeFalse()
+            ->and($verification['hosts'][0]['dns']['status'])
+            ->toBe('unsafe')
+            ->and($verification['hosts'][0]['dns']['answers'])
+            ->toBe([])
+            ->and($https->requests)
+            ->toBe([]);
+    });
+
+    it('pins HTTPS requests to the approved public DNS answers only', function (): void {
+        $dns = new FakePublicDnsResolver([
+            'analytics.docs.test' => [
+                ['type' => 'A', 'value' => '10.6.0.5'],
+                ['type' => 'A', 'value' => '93.184.216.34'],
+            ],
+        ]);
+        $https = new FakeHttpsProbe([
+            'https://analytics.docs.test/js/script.js' => successfulProbe(200),
+            'https://analytics.docs.test/' => successfulProbe(404),
+        ]);
+
+        $verification = new AppAnalyticsReadinessVerifier($dns, $https)->verify(readinessContext());
+
+        expect($verification['ready'])
+            ->toBeTrue()
+            ->and($https->requests)
+            ->toBe([
+                ['url' => 'https://analytics.docs.test/js/script.js', 'addresses' => ['93.184.216.34']],
+                ['url' => 'https://analytics.docs.test/', 'addresses' => ['93.184.216.34']],
+            ]);
+    });
+
+    it('refuses a single-label stored host before DNS or HTTPS probing', function (): void {
+        $dns = new FakePublicDnsResolver(['localhost' => [['type' => 'A', 'value' => '93.184.216.34']]]);
+        $https = new FakeHttpsProbe([]);
+        $context = readinessContext();
+        $context['binding']['public_hosts'] = ['localhost'];
+        $context['routes'] = [['host' => 'localhost', 'status' => 'registered']];
+
+        $verification = new AppAnalyticsReadinessVerifier($dns, $https)->verify($context);
+
+        expect($verification['ready'])
+            ->toBeFalse()
+            ->and($verification['hosts'][0]['dns']['status'])
+            ->toBe('unsafe')
+            ->and($dns->resolvedHosts)
+            ->toBe([])
+            ->and($https->requests)
+            ->toBe([]);
     });
 });
 
 final class FakePublicDnsResolver implements PublicDnsResolver
 {
+    /** @var list<string> */
+    public array $resolvedHosts = [];
+
     /** @param array<string, list<array{type: string, value: string}>> $answers */
     public function __construct(
         private readonly array $answers,
@@ -115,23 +182,25 @@ final class FakePublicDnsResolver implements PublicDnsResolver
 
     public function resolve(string $host): array
     {
+        $this->resolvedHosts[] = $host;
+
         return $this->answers[$host] ?? [];
     }
 }
 
 final class FakeHttpsProbe implements HttpsProbe
 {
-    /** @var list<string> */
-    public array $requestedUrls = [];
+    /** @var list<array{url: string, addresses: list<string>}> */
+    public array $requests = [];
 
     /** @param array<string, array{completed: bool, http_status: int|null, tls_verified: bool, error: string|null}> $responses */
     public function __construct(
         private readonly array $responses,
     ) {}
 
-    public function get(string $url): array
+    public function get(string $url, array $addresses): array
     {
-        $this->requestedUrls[] = $url;
+        $this->requests[] = ['url' => $url, 'addresses' => $addresses];
 
         return $this->responses[$url] ?? failedProbe('No fake response configured.');
     }
@@ -149,7 +218,7 @@ function readinessContext(): array
         ],
         'routes' => [['host' => 'analytics.docs.test', 'status' => 'registered']],
         'dns_expectation' => [
-            'targets' => [['type' => 'A', 'value' => '203.0.113.10']],
+            'targets' => [['type' => 'A', 'value' => '93.184.216.34']],
         ],
     ];
 }

@@ -13,8 +13,9 @@ orbit app:analytics enable [app] [--host=<host>] [--json]
 ## Arguments and options
 
 - `app`: app name or hostname. Required.
-- `--host`: public analytics tracking hostname to bind. Repeatable. Values
-  must be plain hostnames, not URLs. When omitted and the app has a public
+- `--host`: public analytics tracking hostname to bind. Repeatable up to ten
+  unique hosts. Values must be multi-label DNS hostnames, not URLs, IP
+  addresses, or single-label names. When omitted and the app has a public
   hostname, Orbit defaults to `analytics.<app-domain>`.
 - `--json`: Output JSON.
 

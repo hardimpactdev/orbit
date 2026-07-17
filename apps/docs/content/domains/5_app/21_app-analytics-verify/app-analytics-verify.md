@@ -24,7 +24,9 @@ the selected ingress node to distinguish direct from intermediary routing,
 verifies HTTPS, requires `/js/script.js` to return `200`, and requires `/` to
 return `404` so the Plausible dashboard stays private. A provider-proxied DNS
 answer can therefore be ready even when it differs from the origin ingress
-address.
+address. Orbit discards private and reserved DNS answers and pins HTTPS probes
+to the approved public answers so verification cannot drift to another address
+between DNS resolution and connection.
 
 The command is read-only. It follows no redirects, sends no analytics event,
 does not repair route intent, and does not query or create Plausible sites.

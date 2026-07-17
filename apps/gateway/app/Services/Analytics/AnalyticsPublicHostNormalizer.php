@@ -11,6 +11,8 @@ use InvalidArgumentException;
 
 final readonly class AnalyticsPublicHostNormalizer
 {
+    public const int MAXIMUM_HOSTS = 10;
+
     /**
      * @param  array<int, mixed>  $publicHosts
      * @return list<string>
@@ -35,12 +37,18 @@ final readonly class AnalyticsPublicHostNormalizer
                 throw new InvalidArgumentException('Analytics public hosts must be hostnames, not URLs.');
             }
 
-            if (filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) {
-                throw new InvalidArgumentException('Analytics public hosts must be valid hostnames.');
+            if (! $this->isPublicDnsHostname($host)) {
+                throw new InvalidArgumentException('Analytics public hosts must be public DNS hostnames.');
             }
 
             if (! in_array(needle: $host, haystack: $hosts, strict: true)) {
                 $hosts[] = $host;
+
+                if (count($hosts) > self::MAXIMUM_HOSTS) {
+                    throw new InvalidArgumentException(
+                        'Analytics supports at most '.self::MAXIMUM_HOSTS.' public hosts.',
+                    );
+                }
             }
         }
 
@@ -51,12 +59,21 @@ final readonly class AnalyticsPublicHostNormalizer
     {
         $domain = is_string($app->domain) ? trim($app->domain) : '';
 
-        if ($domain === '' || filter_var($domain, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) {
+        if (! $this->isPublicDnsHostname($domain)) {
             throw new AnalyticsDomainRequired(
                 "App '{$app->name}' requires a configured valid public domain before analytics can be enabled.",
             );
         }
 
         return Str::lower($domain);
+    }
+
+    private function isPublicDnsHostname(string $host): bool
+    {
+        return (
+            str_contains($host, '.')
+            && filter_var($host, FILTER_VALIDATE_IP) === false
+            && filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false
+        );
     }
 }
