@@ -2005,6 +2005,82 @@ describe('DoctorReportRunner', function (): void {
             ]);
     });
 
+    it('keeps persistent websocket drift visible after restore verification', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'realtime-1',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'host' => '10.0.0.44',
+            'wireguard_address' => '10.6.0.44',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'websocket',
+            'status' => 'active',
+            'settings' => [],
+        ]);
+        app()->instance(RemoteShell::class, new class implements RemoteShell {
+            public function run(Node $node, string $script, array $options = []): RemoteShellResult
+            {
+                return new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "cert_exists=1\nkey_exists=1\ncert_matches=1\nexists=1\nrunning=true\nenv_host=10.6.0.44\ncmd_host=10.6.0.44\npublished_bindings=[]\n",
+                    stderr: '',
+                    durationMs: 1,
+                );
+            }
+
+            public function start(Node $node, string $script, array $options = []): InvokedProcess
+            {
+                throw new RuntimeException('not used');
+            }
+        });
+
+        $runner = app(DoctorReportRunner::class);
+        $probe = $runner->probe(
+            $node,
+            families: ['node'],
+            key: 'node.websocket.bind_public_interface',
+        );
+
+        expect($runner->restoreRequiresVerification(
+            'restore',
+            'node.websocket.bind_public_interface',
+            $probe,
+        ))->toBeTrue();
+
+        $report = $runner->finalizeRestore(
+            $node,
+            ['node'],
+            'node.websocket.bind_public_interface',
+            DoctorTargetScope::none(),
+            [[
+                'family' => 'node',
+                'node' => 'realtime-1',
+                'key' => 'node.websocket.bind_public_interface',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'summary' => 'Re-converged the WebSocket role baseline.',
+                'details' => [],
+            ]],
+        );
+
+        expect($report['healthy'])
+            ->toBeFalse()
+            ->and($report['issues'])
+            ->toHaveCount(1)
+            ->and($report['issues'][0]['key'])
+            ->toBe('node.websocket.bind_public_interface')
+            ->and($report['actions'][0])
+            ->toMatchArray([
+                'family' => 'node',
+                'node' => 'realtime-1',
+                'key' => 'node.websocket.bind_public_interface',
+                'mode' => 'restore',
+                'status' => 'failed',
+            ]);
+    });
+
     it('uses the node-level TLD when role settings omit TLD during restore', function (): void {
         $node = Node::factory()->create([
             'name' => 'app-1',

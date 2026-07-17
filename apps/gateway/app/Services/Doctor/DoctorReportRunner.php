@@ -135,6 +135,11 @@ final readonly class DoctorReportRunner
 
     private const array WEBSOCKET_CATEGORIES = ['node', 'tool'];
 
+    private const array VERIFIED_WEBSOCKET_RESTORE_KEYS = [
+        'node.websocket.backend_cert_missing',
+        'node.websocket.bind_public_interface',
+    ];
+
     private const array S3_CATEGORIES = ['node', 'tool', 'proxy'];
 
     private const array METRICS_CATEGORIES = ['node', 'tool', 'process', 'proxy'];
@@ -1125,7 +1130,7 @@ final readonly class DoctorReportRunner
         return $this->finalize(
             $probe,
             'restore',
-            $this->markCompletedProxyActionsWithRemainingDriftAsFailed(
+            $this->markVerifiedRestoreActionsWithRemainingDriftAsFailed(
                 $actions,
                 $this->issuesFromProbe($probe),
             ),
@@ -1148,7 +1153,22 @@ final readonly class DoctorReportRunner
         $scope = is_array($probe['scope'] ?? null) ? $probe['scope'] : [];
         $families = is_array($scope['families'] ?? null) ? $scope['families'] : [];
 
-        return in_array('proxy', $families, true);
+        if (in_array('proxy', $families, true)) {
+            return true;
+        }
+
+        if (is_string($key) && in_array($key, self::VERIFIED_WEBSOCKET_RESTORE_KEYS, true)) {
+            return true;
+        }
+
+        return array_any(
+            $this->issuesFromProbe($probe),
+            fn (array $issue): bool => in_array(
+                $issue['key'] ?? null,
+                self::VERIFIED_WEBSOCKET_RESTORE_KEYS,
+                true,
+            ),
+        );
     }
 
     /**
@@ -4156,14 +4176,17 @@ final readonly class DoctorReportRunner
      * @param  list<array<string, mixed>>  $remainingIssues
      * @return list<array<string, mixed>>
      */
-    private function markCompletedProxyActionsWithRemainingDriftAsFailed(
+    private function markVerifiedRestoreActionsWithRemainingDriftAsFailed(
         array $actions,
         array $remainingIssues,
     ): array {
         $verifiedActions = [];
 
         foreach ($actions as $action) {
-            $verifiedActions[] = $this->verifyCompletedProxyAction($action, $remainingIssues);
+            $verifiedActions[] = $this->verifyCompletedWebSocketAction(
+                $this->verifyCompletedProxyAction($action, $remainingIssues),
+                $remainingIssues,
+            );
         }
 
         return $verifiedActions;
@@ -4192,6 +4215,55 @@ final readonly class DoctorReportRunner
         }
 
         return $this->failedProxyAction($action, $remainingIssue);
+    }
+
+    /**
+     * @param  array<string, mixed>  $action
+     * @param  list<array<string, mixed>>  $remainingIssues
+     * @return array<string, mixed>
+     */
+    private function verifyCompletedWebSocketAction(array $action, array $remainingIssues): array
+    {
+        if (
+            ($action['status'] ?? null) !== 'completed'
+            || ($action['family'] ?? null) !== 'node'
+            || ! in_array($action['key'] ?? null, self::VERIFIED_WEBSOCKET_RESTORE_KEYS, true)
+        ) {
+            return $action;
+        }
+
+        $remainingIssue = collect($remainingIssues)->first(
+            fn (array $issue): bool => (
+                ($issue['family'] ?? null) === 'node'
+                && (
+                    $this->stringValue($action, 'node') === null
+                    || $this->stringValue($action, 'node') === $this->stringValue($issue, 'node')
+                )
+                && $this->issueResolutionId($action) === $this->issueResolutionId($issue)
+            ),
+        );
+
+        if (! is_array($remainingIssue)) {
+            return $action;
+        }
+
+        $node = $this->stringValue($remainingIssue, 'node') ?? $this->stringValue($action, 'node') ?? 'unknown';
+        $key = $this->stringValue($remainingIssue, 'key') ?? $this->stringValue($action, 'key') ?? 'unknown';
+        $issueDetail = is_array($remainingIssue['detail'] ?? null) ? $remainingIssue['detail'] : [];
+        $details = is_array($action['details'] ?? null) ? $action['details'] : [];
+
+        return [
+            ...$action,
+            'status' => 'failed',
+            'summary' => "WebSocket restore verification failed on node '{$node}'.",
+            'details' => [
+                ...$details,
+                ...$issueDetail,
+                'node' => $node,
+                'operation' => "verify {$key}",
+                'error' => "WebSocket drift '{$key}' remained after restore on node '{$node}'.",
+            ],
+        ];
     }
 
     /**

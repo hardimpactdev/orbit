@@ -267,8 +267,8 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.access_permission_invalid` | Re-normalize the stored permission set on the grant when it can be reduced to a valid set without changing intent; otherwise leave the drift visible for explicit operator action through `node:permissions`. |
 | `node.role_convergence_failed` | Retry synchronous convergence for error role assignments on the selected node and leave an assignment in `error` again if the retry fails. |
 | `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments through the shared convergence path, including role-owned derived artifacts such as development DNS mappings. |
-| `node.websocket.backend_cert_missing` | Re-apply the active `websocket` role baseline, including backend certificate material and the Reverb runtime definition. |
-| `node.websocket.bind_public_interface` | Re-apply the active `websocket` role baseline so Reverb listens on the container-wide interface and Docker publishes port `8080` only on the node's WireGuard address. |
+| `node.websocket.backend_cert_missing` | Re-apply the active `websocket` role baseline, then re-probe the backend certificate and keep the issue visible if drift remains. |
+| `node.websocket.bind_public_interface` | Re-apply the active `websocket` role baseline, then re-probe Reverb's container bind and WireGuard-only Docker publication and keep the issue visible if drift remains. |
 | `node.managed_agent_intent_invalid` | Clear the invalid `managed` flag; workload role intent remains derived from active roles. |
 | `node.agent_expectation_stale` | Clear stale installed-Agent expectation metadata after Agent intent is absent. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway service artifacts required by Orbit API readiness. |
