@@ -16,7 +16,7 @@ orbit firewall:allow [name] --port=<port> [--node=<node>] [--direction=<incoming
 
 ```bash
 orbit firewall:allow local-vite --node=app-1 --port=5173 --from=10.6.0.0/24
-orbit firewall:allow redis-internal --node=app-1 --port=6379 --from=10.6.0.0/24 --reason="internal cache"
+orbit firewall:allow valkey-internal --node=app-1 --port=6379 --from=10.6.0.0/24 --reason="internal cache"
 orbit firewall:allow public-http --node=gateway --port=80 --json
 ```
 

@@ -307,7 +307,7 @@ it('does not erase trusted gateway CA config when switching the operator to the 
         ->not->toContain('local_gateway_settings');
 });
 
-it('does not seed database and redis fixture state in the plain app-dev provisioning stage', function (): void {
+it('does not seed database and Valkey fixture state in the plain app-dev provisioning stage', function (): void {
     $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyBuilder.php'));
 
     expect($source)->toBeString();
@@ -320,7 +320,7 @@ it('does not seed database and redis fixture state in the plain app-dev provisio
 
     expect($matches[0] ?? '')
         ->toContain('dev.node-new')
-        ->not->toContain('seedAppdevDatabaseAndRedis');
+        ->not->toContain('seedAppdevDatabaseAndValkey');
 });
 
 it('rebuilds prerequisites when no complete reusable base exists', function (): void {
@@ -655,7 +655,7 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
         $wireGuardPhase = array_search('prepared.downstream.real-wireguard', $phaseNames, true);
         $runtimePrerequisitesPhase = array_search('prepared.dev.runtime-prerequisites', $phaseNames, true);
         $bakePhase = array_search('prepared.downstream.bake', $phaseNames, true);
-        $redisSeedPhase = array_search('dev.database-redis-seed', $phaseNames, true);
+        $valkeySeedPhase = array_search('dev.database-valkey-seed', $phaseNames, true);
         $wireGuardCommandPosition = strpos($commandOutput, 'wg-quick up wg-orbit');
         $runtimePrerequisiteCommandPosition = strpos($commandOutput, 'sudo -u "$runtime_user" docker image inspect');
         $runtimeSshAuthorizeCommandPosition = strpos(
@@ -796,7 +796,7 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             )->toContain('apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io')->and($commandOutput)
             ->not->toContain('supervisor.service')->and($wireGuardPhase)->toBeInt()->and(
                 $runtimePrerequisitesPhase,
-            )->toBeInt()->and($bakePhase)->toBeInt()->and($redisSeedPhase)->toBeInt()->and($phaseNames)->toContain(
+            )->toBeInt()->and($bakePhase)->toBeInt()->and($valkeySeedPhase)->toBeInt()->and($phaseNames)->toContain(
                 'prepared.downstream.prepare.dev.launch',
             )->and($phaseNames)->toContain('prepared.downstream.prepare.dev.agent-ready')->and($phaseNames)->toContain(
                 'prepared.downstream.prepare.dev.orbit-binary',
@@ -814,7 +814,7 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
                 'prepared.downstream.bake.agent.total',
             )->and($wireGuardPhase)->toBeLessThan($runtimePrerequisitesPhase)->and(
                 $runtimePrerequisitesPhase,
-            )->toBeLessThan($bakePhase)->and($runtimePrerequisitesPhase)->toBeLessThan($redisSeedPhase);
+            )->toBeLessThan($bakePhase)->and($runtimePrerequisitesPhase)->toBeLessThan($valkeySeedPhase);
         expect(substr_count($commandOutput, 'orbit-template-gateway-base/root/.ssh/id_ed25519'))->toBe(4);
     });
 });
@@ -986,7 +986,7 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
                 $commandOutput,
             )->toContain('--wireguard-address=')->and($commandOutput)->toContain('10.6.0.4')->and(
                 $commandOutput,
-            )->toContain('--redis-node=')->and($commandOutput)->toContain('app-dev-1')->and($commandOutput)->toContain(
+            )->toContain('--valkey-node=')->and($commandOutput)->toContain('app-dev-1')->and($commandOutput)->toContain(
                 'incus file push',
             )->and($commandOutput)->toContain('orbit-gateway-current.tar')->and($commandOutput)->toContain(
                 'caddy-2-alpine.tar',
@@ -1463,7 +1463,7 @@ it('retries websocket bake when all concrete role checkpoints are valid but the 
             ->and($phaseNames)
             ->toContain('prepared-websocket.downstream.real-wireguard')
             ->and($phaseNames)
-            ->toContain('prepared-websocket.dev.database-redis-seed')
+            ->toContain('prepared-websocket.dev.database-valkey-seed')
             ->and($phaseNames)
             ->toContain('prepared-websocket.websocket.bake')
             ->and($commandOutput)
@@ -2101,7 +2101,7 @@ it('builds prepared topology templates through staged internal gateway baking', 
         )->toContain('artisan orbit:internal:bootstrap-gateway-local gateway')->and($commandOutput)->toContain(
             'artisan tinker --execute=',
         )->and($commandOutput)
-        ->not->toContain('/tmp/orbit-e2e-appdev-database-redis.php')->and($commandOutput)
+        ->not->toContain('/tmp/orbit-e2e-appdev-database-valkey.php')->and($commandOutput)
         ->not->toContain('cd /home/orbit/orbit && php artisan')->and($commandOutput)->toContain('app-dev-1')->and(
             $commandOutput,
         )->toContain('10.201.0.12')->and($commandOutput)->toContain('--user=')->and($commandOutput)->toContain(

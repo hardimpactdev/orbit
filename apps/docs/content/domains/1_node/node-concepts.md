@@ -86,9 +86,10 @@ Each term below has a precise meaning in the node command family.
   gateway service publishes gateway HTTPS directly.
 - **WebSocket role:** Private workload role for Orbit-managed realtime
   infrastructure. A websocket node runs Laravel Reverb in a Docker runtime
-  container managed by Orbit, binds only to its WireGuard address, receives
-  traffic through router-owned private service routes, and uses Redis selected
-  from a `database` role node.
+  container managed by Orbit. Reverb listens on the isolated container
+  interface, Docker publishes port `8080` only on the node's WireGuard address,
+  and the role receives traffic through router-owned private service routes. It
+  uses Valkey selected from a `database` role node.
 - **S3 role:** Private workload role for object storage with an S3-compatible
   API. An S3 node runs one SeaweedFS instance in a Docker runtime container
   rendered by Orbit, binds the S3 API only to the node's WireGuard address, and
@@ -202,7 +203,7 @@ not transfer ownership to the role.
 | `gateway` | — | — |
 | `agent` | — | `tld` |
 | `ingress` | — | — |
-| `websocket` | `redis_node_id` | — |
+| `websocket` | `valkey_node_id` | — |
 | `s3` | `data_path` | — |
 | `metrics` | — | — |
 | `analytics` | `postgres_node_id`, `clickhouse_node_id` | — |
@@ -229,9 +230,9 @@ adding the role.
 `dns_ip` defaults to `10.6.0.1` and is the DNS endpoint written into peer
 configs. In v1 the DNS resolver runtime is coupled to the `vpn` role.
 
-`redis_node_id` references the active `database` role node whose managed Redis
+`valkey_node_id` references the active `database` role node whose managed Valkey
 service backs Reverb scaling for the `websocket` role. The websocket role uses
-that Redis service but does not install or own Redis.
+that Valkey service but does not install or own Valkey.
 
 `data_path` defaults to `/srv/orbit/s3/data`. It is the host path mounted into
 the SeaweedFS container as `/data` and is role-owned persistent data. Removing the
@@ -258,7 +259,7 @@ Role baselines are code-defined desired state, not editable package lists.
 | `database` | Docker running as the substrate for managed database process units and related tool capabilities |
 | `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping derived from the node's `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
-| `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
+| `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Valkey-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
 | `metrics` | Docker substrate, node-exporter binary, Prometheus/Grafana Swarm processes, node-exporter systemd processes on metrics/workload nodes, `metrics.orbit`, and Grafana credentials |
 | `analytics` | Plausible CE in a process-owned WireGuard-bound Docker container, private `analytics.orbit` router route, per-app public tracking route support, analytics backend pool registration, and authenticated runtime configuration derived from PostgreSQL and ClickHouse process endpoints |

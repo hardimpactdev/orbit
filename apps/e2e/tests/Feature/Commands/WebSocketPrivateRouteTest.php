@@ -6,8 +6,7 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
 it('routes the private websocket service to a websocket-role backend through the router', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevWebsocket)
-        ->withCurrentCheckout(roles: ['gateway']);
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevWebsocket)->withCurrentCheckout(roles: ['gateway']);
 
     try {
         expect($topology->lease()->prodApp())
@@ -36,7 +35,7 @@ it('routes the private websocket service to a websocket-role backend through the
                 'role' => 'websocket',
                 'status' => 'active',
             ])
-            ->and($snapshot['redis_node'])
+            ->and($snapshot['valkey_node'])
             ->toBe('app-dev-1')
             ->and($route)
             ->toMatchArray([
@@ -113,7 +112,7 @@ it('routes the private websocket service to a websocket-role backend through the
             ->and($runtime['backend_name'])
             ->toBe('10.6.0.4')
             ->and($runtime['command'])
-            ->toBe('php '.'artisan reverb:start --host=10.6.0.4 --port=8080 --hostname=10.6.0.4')
+            ->toBe('php '.'artisan reverb:start --host=0.0.0.0 --port=8080 --hostname=10.6.0.4')
             ->and($runtime['network_aliases'])
             ->toContain($runtime['name'])
             ->and(implode(' ', $runtime['network_aliases']))
@@ -125,7 +124,7 @@ it('routes the private websocket service to a websocket-role backend through the
                 'ORBIT_WEBSOCKET_APPS_CONFIG' => '/etc/orbit/websocket/apps.php',
                 'REDIS_HOST' => '10.6.0.4',
                 'REVERB_HOST' => 'websocket.orbit',
-                'REVERB_SERVER_HOST' => '10.6.0.4',
+                'REVERB_SERVER_HOST' => '0.0.0.0',
                 'REVERB_SERVER_PORT' => '8080',
                 'REVERB_TLS_CERT' => '/etc/orbit/certs/10.6.0.4.crt',
                 'REVERB_TLS_KEY' => '/etc/orbit/certs/10.6.0.4.key',
@@ -139,7 +138,7 @@ it('routes the private websocket service to a websocket-role backend through the
  * @return array{
  *     schema: array{nodes_role_column: bool, nodes_environment_column: bool},
  *     websocket_role_assignment: array{role: string, status: string, settings: array<string, mixed>},
- *     redis_node: string|null,
+ *     valkey_node: string|null,
  *     route: array{
  *         domain: string,
  *         node: string,
@@ -176,9 +175,9 @@ function websocketPrivateRouteSnapshot(E2ETopologyHarness $topology): array
             ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
             ->firstOrFail();
         $settings = is_array($assignment->settings) ? $assignment->settings : [];
-        $redisNodeId = $settings['redis_node_id'] ?? null;
-        $redisNode = is_int($redisNodeId)
-            ? \App\Models\Node::query()->find($redisNodeId)
+        $valkeyNodeId = $settings['valkey_node_id'] ?? null;
+        $valkeyNode = is_int($valkeyNodeId)
+            ? \App\Models\Node::query()->find($valkeyNodeId)
             : null;
         $runtime = app(\App\Services\WebSockets\WebSocketRuntimeContainerRenderer::class)
             ->render($websocketNode, \App\Data\Nodes\RoleSettings\WebSocketRoleSettings::fromArray($settings));
@@ -193,7 +192,7 @@ function websocketPrivateRouteSnapshot(E2ETopologyHarness $topology): array
                 'status' => $assignment->status,
                 'settings' => $settings,
             ],
-            'redis_node' => $redisNode?->name,
+            'valkey_node' => $valkeyNode?->name,
             'route' => [
                 'domain' => $route->domain,
                 'node' => $route->node->name,

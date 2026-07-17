@@ -23,7 +23,7 @@ final readonly class NodeBootstrapArguments
             '--host' => 'host',
             '--ingress' => 'ingress_node',
             '--tld' => 'tld',
-            '--redis-node' => 'redis_node',
+            '--valkey-node' => 'valkey_node',
             '--postgres-node' => 'postgres_node',
             '--clickhouse-node' => 'clickhouse_node',
             '--s3-data-path' => 's3_data_path',

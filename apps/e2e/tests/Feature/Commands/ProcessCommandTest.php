@@ -324,8 +324,6 @@ it('manages a node owned systemd process through process commands on an Incus ap
     try {
         e2eRestartGatewayApi($topology, 'process-command-systemd');
         processCommandCleanupSystemdRuntime($topology, $runtimeUnit);
-        processCommandRemovePreparedRedis($topology);
-
         $add = $topology->ssh(
             'gateway',
             "cd {$checkout} && orbit process:add {$runtimeUnit} "
@@ -675,33 +673,6 @@ function processCommandCleanupSystemdRuntime(E2ETopologyHarness $topology, strin
         str_replace('__RUNTIME_UNIT__', str_replace("'", "\\'", $runtimeUnit), $script),
         allowFailure: true,
     );
-}
-
-function processCommandRemovePreparedRedis(E2ETopologyHarness $topology): void
-{
-    $checkout = escapeshellarg($topology->checkout('gateway'));
-
-    $topology->ssh(
-        'gateway',
-        "cd {$checkout} && orbit process:remove redis --node=app-dev-1 --force --json >/dev/null 2>&1 || true",
-        timeoutSeconds: 180,
-        allowFailure: true,
-    );
-
-    $topology->ssh(
-        'dev',
-        'docker service rm orbit-redis >/dev/null 2>&1 || true; docker rm -f orbit-redis >/dev/null 2>&1 || true',
-        timeoutSeconds: 120,
-        allowFailure: true,
-    );
-
-    $script = <<<'PHP'
-        if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
-            $node->processes()->where('name', 'redis')->delete();
-        }
-        PHP;
-
-    processCommandRunGatewayTinker($topology, $script, allowFailure: true);
 }
 
 function processCommandSystemdDiagnostics(

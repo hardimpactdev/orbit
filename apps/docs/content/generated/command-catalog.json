@@ -5146,7 +5146,7 @@
                 "role"
             ],
             "options": [
-                "redis-node",
+                "valkey-node",
                 "postgres-node",
                 "clickhouse-node",
                 "s3-data-path",
@@ -5666,7 +5666,7 @@
                 "user",
                 "gateway-endpoint",
                 "ingress",
-                "redis-node",
+                "valkey-node",
                 "postgres-node",
                 "clickhouse-node",
                 "s3-data-path",

@@ -6,7 +6,7 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 use Illuminate\Contracts\Process\ProcessResult;
 
-it('creates MySQL and Redis node managed services through process commands on a prepared topology', function (): void {
+it('creates MySQL and Valkey node managed services through process commands on a prepared topology', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
     $checkout = escapeshellarg($topology->checkout('gateway'));
@@ -39,17 +39,17 @@ it('creates MySQL and Redis node managed services through process commands on a 
             'healthcheck_command' => 'mysqladmin ping -horbit -porbit',
         ],
         [
-            'name' => "redis7-{$suffix}",
-            'service' => 'redis',
-            'version_input' => '7',
-            'version_family' => '7',
-            'version' => '7.2',
-            'command' => 'redis-server --appendonly yes --bind 0.0.0.0 --protected-mode no',
-            'image' => 'redis:7.2',
+            'name' => "valkey8-{$suffix}",
+            'service' => 'valkey',
+            'version_input' => '8',
+            'version_family' => '8',
+            'version' => '8.1',
+            'command' => 'valkey-server --appendonly yes --bind 0.0.0.0 --protected-mode no',
+            'image' => 'valkey/valkey:8.1',
             'port' => 6379,
             'target_port' => 6379,
             'credential_fields' => [],
-            'healthcheck_command' => 'redis-cli ping',
+            'healthcheck_command' => 'valkey-cli ping',
         ],
     ];
     $names = array_column($services, 'name');
@@ -57,7 +57,7 @@ it('creates MySQL and Redis node managed services through process commands on a 
     try {
         e2eRestartGatewayApi($topology, 'process-managed-services');
         processManagedServiceCommandCleanup($topology, $names);
-        processManagedServiceCommandRemovePreparedRedis($topology);
+        process_managed_service_command_remove_prepared_valkey($topology);
 
         $serviceHost = processManagedServiceCommandNodeServiceHost($topology);
 
@@ -627,27 +627,27 @@ function processManagedServiceCommandSnapshot(E2ETopologyHarness $topology, arra
     );
 }
 
-function processManagedServiceCommandRemovePreparedRedis(E2ETopologyHarness $topology): void
+function process_managed_service_command_remove_prepared_valkey(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit process:remove redis --node=app-dev-1 --force --json >/dev/null 2>&1 || true",
+        "cd {$checkout} && orbit process:remove valkey --node=app-dev-1 --force --json >/dev/null 2>&1 || true",
         timeoutSeconds: 180,
         allowFailure: true,
     );
 
     $topology->ssh(
         'dev',
-        'docker service rm orbit-redis >/dev/null 2>&1 || true; docker rm -f orbit-redis >/dev/null 2>&1 || true',
+        'docker service rm orbit-valkey >/dev/null 2>&1 || true; docker rm -f orbit-valkey >/dev/null 2>&1 || true',
         timeoutSeconds: 120,
         allowFailure: true,
     );
 
     $script = <<<'PHP'
         if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
-            $node->processes()->where('name', 'redis')->delete();
+            $node->processes()->where('name', 'valkey')->delete();
         }
         PHP;
 

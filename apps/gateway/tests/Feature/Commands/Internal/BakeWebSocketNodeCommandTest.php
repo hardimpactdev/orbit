@@ -44,8 +44,8 @@ describe('orbit:internal:bake-websocket-node', function (): void {
         app()->instance(SshHostKeyPinner::class, $this->hostKeyPinner);
     });
 
-    it('adds the websocket role to an existing app-dev Redis node', function (): void {
-        $redis = createBakeWebSocketRedisNode();
+    it('adds the websocket role to an existing app-dev Valkey node', function (): void {
+        $valkey = createBakeWebSocketValkeyNode();
 
         $this
             ->artisan('orbit:internal:bake-websocket-node', [
@@ -55,9 +55,9 @@ describe('orbit:internal:bake-websocket-node', function (): void {
                 '--wireguard-address' => '10.6.0.4',
                 '--gateway-endpoint' => 'gateway',
                 '--user' => 'orbit',
-                '--redis-node' => 'app-dev-1',
+                '--valkey-node' => 'app-dev-1',
             ])
-            ->expectsOutputToContain('__orbit_bake_timing websocket redis-node')
+            ->expectsOutputToContain('__orbit_bake_timing websocket valkey-node')
             ->expectsOutputToContain('__orbit_bake_timing websocket host-key')
             ->expectsOutputToContain('__orbit_bake_timing websocket registry')
             ->expectsOutputToContain('__orbit_bake_timing websocket role-assignment')
@@ -70,7 +70,7 @@ describe('orbit:internal:bake-websocket-node', function (): void {
             ->first();
 
         expect($node->getAttributes())
-            ->not->toHaveKeys(['role', 'environment'])->and($node->id)->toBe($redis->id)->and($node->tld)->toBe(
+            ->not->toHaveKeys(['role', 'environment'])->and($node->id)->toBe($valkey->id)->and($node->tld)->toBe(
                 'test',
             )->and($node->host)->toBe('dev')->and($node->wireguard_address)->toBe(
                 '10.6.0.4',
@@ -89,12 +89,12 @@ describe('orbit:internal:bake-websocket-node', function (): void {
                 ['host' => '10.6.0.4', 'expected' => null],
             ])->and($assignment)
             ->not->toBeNull()->and($assignment?->status)->toBe(NodeRoleStatus::Active)->and($assignment?->settings)->toBe([
-                'redis_node_id' => $redis->id,
+                'valkey_node_id' => $valkey->id,
             ])->and($assignment?->last_error)->toBeNull()->and($assignment?->converged_at)
             ->not->toBeNull();
     });
 
-    it('requires an active database node with a Redis process', function (): void {
+    it('requires an active database node with a Valkey process', function (): void {
         Node::factory()
             ->database()
             ->create([
@@ -109,14 +109,14 @@ describe('orbit:internal:bake-websocket-node', function (): void {
                 '--wireguard-address' => '10.6.0.8',
                 '--gateway-endpoint' => '10.6.0.2',
                 '--user' => 'orbit',
-                '--redis-node' => 'app-dev-1',
+                '--valkey-node' => 'app-dev-1',
             ])->run(),
         )
-            ->toThrow(RuntimeException::class, 'Active Redis node [app-dev-1] was not found.');
+            ->toThrow(RuntimeException::class, 'Active Valkey node [app-dev-1] was not found.');
     });
 
     it('converges the websocket runtime baseline when requested', function (): void {
-        $redis = createBakeWebSocketRedisNode();
+        $valkey = createBakeWebSocketValkeyNode();
         $timing = app(WebSocketRoleBaselineTiming::class);
         $converger = m::mock(NodeRoleBaselineConverger::class);
         $converger
@@ -127,7 +127,7 @@ describe('orbit:internal:bake-websocket-node', function (): void {
                 m::on(
                     fn (NodeRoleAssignment $assignment): bool => (
                         $assignment->role === NodeRoleName::WebSocket->value
-                        && $assignment->settings === ['redis_node_id' => $redis->id]
+                        && $assignment->settings === ['valkey_node_id' => $valkey->id]
                     ),
                 ),
             )
@@ -145,7 +145,7 @@ describe('orbit:internal:bake-websocket-node', function (): void {
                 '--wireguard-address' => '10.6.0.4',
                 '--gateway-endpoint' => '10.6.0.2',
                 '--user' => 'orbit',
-                '--redis-node' => 'app-dev-1',
+                '--valkey-node' => 'app-dev-1',
                 '--converge-runtime' => true,
             ])
             ->expectsOutputToContain('__orbit_bake_timing websocket runtime-converge')
@@ -158,7 +158,7 @@ describe('orbit:internal:bake-websocket-node', function (): void {
     });
 });
 
-function createBakeWebSocketRedisNode(): Node
+function createBakeWebSocketValkeyNode(): Node
 {
     $node = Node::factory()
         ->appDev(['tld' => 'test'])
@@ -175,8 +175,8 @@ function createBakeWebSocketRedisNode(): Node
     Process::factory()
         ->forOwner($node)
         ->create([
-            'name' => 'redis',
-            'runtime_config' => ['service' => 'redis'],
+            'name' => 'valkey',
+            'runtime_config' => ['service' => 'valkey'],
         ]);
 
     return $node;

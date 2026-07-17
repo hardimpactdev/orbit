@@ -19,7 +19,7 @@ orbit process:add feedback "php artisan feedback:work" --app=feedback.developmen
 orbit process:add opencode-server "opencode serve -a" --node=app-dev-1 --runtime=systemd --tool=opencode-cli
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3 --image=docker.io/library/mysql:8.3
-orbit process:add redis --node=database-1 --service=redis --runtime=docker --version=7
+orbit process:add valkey --node=database-1 --service=valkey --runtime=docker --version=8
 orbit process:add mailpit --node=beast --service=mailpit --runtime=docker
 orbit process:add mailpit --node=beast --service=mailpit --runtime=docker --replace-container=dngdmt-mailpit-1 --force
 orbit process:add file-watcher "watch.sh" --app=static-site.production --runtime=systemd

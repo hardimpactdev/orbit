@@ -9,10 +9,10 @@ use InvalidArgumentException;
 final readonly class WebSocketRoleSettings implements NodeRoleSettings
 {
     public function __construct(
-        public int $redisNodeId,
+        public int $valkeyNodeId,
     ) {
-        if ($redisNodeId < 1) {
-            throw new InvalidArgumentException('The websocket role requires a valid redis_node_id setting.');
+        if ($valkeyNodeId < 1) {
+            throw new InvalidArgumentException('The websocket role requires a valid valkey_node_id setting.');
         }
     }
 
@@ -21,24 +21,24 @@ final readonly class WebSocketRoleSettings implements NodeRoleSettings
      */
     public static function fromArray(array $settings): self
     {
-        $unknownKeys = array_diff(array_keys($settings), ['redis_node_id']);
+        $unknownKeys = array_diff(array_keys($settings), ['valkey_node_id']);
 
         if ($unknownKeys !== []) {
             throw new InvalidArgumentException('The websocket role does not accept unknown settings.');
         }
 
-        $redisNodeId = $settings['redis_node_id'] ?? null;
+        $valkeyNodeId = $settings['valkey_node_id'] ?? null;
 
-        if (! is_int($redisNodeId) || $redisNodeId < 1) {
-            throw new InvalidArgumentException('The websocket role requires a valid redis_node_id setting.');
+        if (! is_int($valkeyNodeId) || $valkeyNodeId < 1) {
+            throw new InvalidArgumentException('The websocket role requires a valid valkey_node_id setting.');
         }
 
-        return new self($redisNodeId);
+        return new self($valkeyNodeId);
     }
 
     #[\Override]
     public function toArray(): array
     {
-        return ['redis_node_id' => $this->redisNodeId];
+        return ['valkey_node_id' => $this->valkeyNodeId];
     }
 }

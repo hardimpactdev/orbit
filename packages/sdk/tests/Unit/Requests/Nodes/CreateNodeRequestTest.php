@@ -73,6 +73,25 @@ it('includes an expected host key fingerprint when supplied', function (): void 
     ]);
 });
 
+it('serializes the selected Valkey provider for websocket nodes', function (): void {
+    $request = new CreateNodeRequest(
+        name: 'websocket-1',
+        roles: ['websocket'],
+        host: '192.0.2.30',
+        tld: 'websocket',
+        user: 'orbit',
+        valkeyNode: 'database-1',
+    );
+
+    expect($request->body()->all())
+        ->toMatchArray([
+            'name' => 'websocket-1',
+            'roles' => ['websocket'],
+            'valkey_node' => 'database-1',
+        ])
+        ->not->toHaveKey('redis_node');
+});
+
 it('returns a NodeCreateResponse DTO with gateway data', function (): void {
     $mock = new MockClient([
         CreateNodeRequest::class => MockResponse::make([

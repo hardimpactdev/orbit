@@ -67,7 +67,7 @@ describe('NodeConverger', function (): void {
                 'laravel-installer',
                 'php-cli',
             ])
-            ->and(collect($result->actions())->pluck('details.tool')->filter()->contains('redis'))
+            ->and(collect($result->actions())->pluck('details.tool')->filter()->contains('valkey'))
             ->toBeFalse()
             ->and(File::exists(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf'))
             ->toBeTrue()

@@ -144,7 +144,7 @@ describe('FirewallRuleIntent', function (): void {
 
         app(FirewallRuleIntent::class)->store(
             'deny',
-            'block-redis',
+            'block-valkey',
             'app-1',
             'incoming',
             'any',
@@ -155,7 +155,7 @@ describe('FirewallRuleIntent', function (): void {
             $caller,
         );
 
-        expect(FirewallRule::query()->where('name', 'block-redis')->exists())->toBeTrue();
+        expect(FirewallRule::query()->where('name', 'block-valkey')->exists())->toBeTrue();
     });
 
     it('denies non-gateway callers that only have firewall read permission', function (): void {
@@ -165,7 +165,7 @@ describe('FirewallRuleIntent', function (): void {
 
         app(FirewallRuleIntent::class)->store(
             'deny',
-            'block-redis',
+            'block-valkey',
             'app-1',
             'incoming',
             'any',

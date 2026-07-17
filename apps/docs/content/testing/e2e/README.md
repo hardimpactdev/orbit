@@ -151,7 +151,7 @@ The ephemeral E2E suite is split into two explicit Pest group lanes:
 - `composer test:e2e:provision:incus` runs the `e2e-provision` Pest group in an
   isolated namespace. It launches a fresh base VM, installs Orbit on the
   operator, provisions the gateway, runs `node:new` for app-dev, app-prod, and
-  agent in parallel, and bakes websocket against app-dev Redis. For a manual
+  agent in parallel, and bakes websocket against app-dev Valkey. For a manual
   full Incus proof, this follows the Incus feature lane backed by a prepared
   source.
 

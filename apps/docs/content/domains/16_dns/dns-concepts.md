@@ -61,7 +61,7 @@ These terms define what the DNS command domain must not touch.
   created during app-role provisioning and repaired by
   `doctor --family=node --restore`. DNS commands must not create, inspect, or
   repair these mappings.
-- **Private `.orbit` service name:** Stable service name such as `redis.orbit`,
+- **Private `.orbit` service name:** Stable service name such as `valkey.orbit`,
   `postgres.orbit`, or `websocket.orbit` that resolves inside the Orbit network.
   The gateway-coupled `router` role owns this service contract. DNS commands
   must not create, inspect, or repair these service names.

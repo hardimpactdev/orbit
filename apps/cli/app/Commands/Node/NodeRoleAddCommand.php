@@ -29,7 +29,12 @@ final class NodeRoleAddCommand extends GatewayCommand
 
         $this->addArgument('node', InputArgument::REQUIRED, 'Name of the node');
         $this->addArgument('role', InputArgument::REQUIRED, 'Role to add');
-        $this->addOption('redis-node', null, InputOption::VALUE_REQUIRED, 'Existing database node for websocket Redis');
+        $this->addOption(
+            'valkey-node',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'Existing database node for websocket Valkey',
+        );
         $this->addOption(
             'postgres-node',
             null,
@@ -54,7 +59,7 @@ final class NodeRoleAddCommand extends GatewayCommand
         try {
             $payload = $payloadBuilder->build(
                 role: $role,
-                redisNode: $this->stringOption('redis-node'),
+                valkeyNode: $this->stringOption('valkey-node'),
                 postgresNode: $this->stringOption('postgres-node'),
                 clickhouseNode: $this->stringOption('clickhouse-node'),
                 s3DataPath: $this->stringOption('s3-data-path'),

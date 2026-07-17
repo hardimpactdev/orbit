@@ -326,12 +326,12 @@ describe('node role registry', function (): void {
     it('hydrates websocket settings dtos', function (): void {
         $settings = new NodeRoleRegistry()
             ->definition('websocket')
-            ->settingsFromArray(['redis_node_id' => 12]);
+            ->settingsFromArray(['valkey_node_id' => 12]);
 
         expect($settings)
             ->toBeInstanceOf(WebSocketRoleSettings::class)
             ->and($settings->toArray())
-            ->toBe(['redis_node_id' => 12]);
+            ->toBe(['valkey_node_id' => 12]);
     });
 
     it('hydrates analytics settings dtos', function (): void {

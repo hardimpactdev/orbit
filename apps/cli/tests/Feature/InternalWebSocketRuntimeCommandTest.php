@@ -43,12 +43,7 @@ describe('internal websocket runtime command', function (): void {
             '--json' => true,
         ]);
 
-        expect(Artisan::output())
-            ->json()
-            ->toBe(JsonEnvelope::failure(
-                'missing_token',
-                'Operation token is required.',
-            ));
+        expect(Artisan::output())->json()->toBe(JsonEnvelope::failure('missing_token', 'Operation token is required.'));
     });
 
     it('rejects invalid actions after token validation', function (): void {
@@ -60,11 +55,9 @@ describe('internal websocket runtime command', function (): void {
 
         expect(Artisan::output())
             ->json()
-            ->toBe(JsonEnvelope::failure(
-                'validation_failed',
-                'Websocket runtime action is invalid.',
-                ['field' => 'action'],
-            ));
+            ->toBe(JsonEnvelope::failure('validation_failed', 'Websocket runtime action is invalid.', [
+                'field' => 'action',
+            ]));
     });
 
     it('inspects self-contained websocket images through fixed argv', function (): void {
@@ -311,13 +304,10 @@ describe('internal websocket runtime command', function (): void {
             'container_exists' => true,
         ]);
 
-        [$exitCode, $output] = run_websocket_runtime_command(
-            action: 'app-config:sync',
-            payload: [
-                'content' => "<?php\n\nreturn ['docs'];\n",
-                'container' => 'orbit-websocket-app-dev-1',
-            ],
-        );
+        [$exitCode, $output] = run_websocket_runtime_command(action: 'app-config:sync', payload: [
+            'content' => "<?php\n\nreturn ['docs'];\n",
+            'container' => 'orbit-websocket-app-dev-1',
+        ]);
 
         expect($exitCode)
             ->toBe(0)
@@ -342,13 +332,10 @@ describe('internal websocket runtime command', function (): void {
             'source_hash' => str_repeat('a', 64),
         ]);
 
-        [$exitCode, $output] = run_websocket_runtime_command(
-            action: 'source:install',
-            payload: [
-                'source_hash' => str_repeat('a', 64),
-                'archive_base64' => base64_encode('tar-bytes'),
-            ],
-        );
+        [$exitCode, $output] = run_websocket_runtime_command(action: 'source:install', payload: [
+            'source_hash' => str_repeat('a', 64),
+            'archive_base64' => base64_encode('tar-bytes'),
+        ]);
         $calls = file_get_contents("{$bin}/calls.log");
 
         expect($exitCode)
@@ -368,7 +355,9 @@ describe('internal websocket runtime command', function (): void {
             ->toContain('sudo tee /etc/orbit/websocket/apps.php')
             ->toContain('sudo rm -rf /opt/orbit/websocket/releases/'.str_repeat('a', 64))
             ->toContain('sudo tar -xf - -C /opt/orbit/websocket/releases/'.str_repeat('a', 64))
-            ->toContain('sudo find /opt/orbit/websocket/releases/'.str_repeat('a', 64).' -type d -exec chmod 0755 {} +')
+            ->toContain(
+                'sudo find /opt/orbit/websocket/releases/'.str_repeat('a', 64).' -type d -exec chmod 0755 {} +',
+            )
             ->toContain('sudo chmod 0755 /opt/orbit/websocket/releases/'.str_repeat('a', 64).'/artisan')
             ->toContain('composer --version')
             ->toContain(
@@ -389,12 +378,9 @@ describe('internal websocket runtime command', function (): void {
             'cmd' => 'reverb:start --host=10.6.0.44 --port=8080',
         ]);
 
-        [$exitCode, $output] = run_websocket_runtime_command(
-            action: 'doctor:runtime-probe',
-            payload: [
-                'container' => 'orbit-websocket-app-dev-1',
-            ],
-        );
+        [$exitCode, $output] = run_websocket_runtime_command(action: 'doctor:runtime-probe', payload: [
+            'container' => 'orbit-websocket-app-dev-1',
+        ]);
 
         expect($exitCode)
             ->toBe(0)
@@ -417,15 +403,12 @@ describe('internal websocket runtime command', function (): void {
             );
     });
 
-    it('probes websocket Redis reachability through docker exec stdin', function (): void {
+    it('probes websocket Valkey reachability through docker exec stdin', function (): void {
         $bin = install_websocket_runtime_fake_bin();
 
-        [$exitCode, $output] = run_websocket_runtime_command(
-            action: 'doctor:redis-probe',
-            payload: [
-                'container' => 'orbit-websocket-app-dev-1',
-            ],
-        );
+        [$exitCode, $output] = run_websocket_runtime_command(action: 'doctor:valkey-probe', payload: [
+            'container' => 'orbit-websocket-app-dev-1',
+        ]);
 
         expect($exitCode)
             ->toBe(0)
@@ -433,7 +416,7 @@ describe('internal websocket runtime command', function (): void {
             ->toBe(['ok' => true])
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('docker exec -i orbit-websocket-app-dev-1 php')
-            ->and(file_get_contents("{$bin}/redis-probe.php"))
+            ->and(file_get_contents("{$bin}/valkey-probe.php"))
             ->toContain('fsockopen($host, $port, $errno, $errstr, 2)');
     });
 
@@ -443,12 +426,9 @@ describe('internal websocket runtime command', function (): void {
             'network_exists' => false,
         ]);
 
-        [$exitCode, $output] = run_websocket_runtime_command(
-            action: 'container:apply',
-            payload: [
-                'spec' => websocket_runtime_container_spec_payload(),
-            ],
-        );
+        [$exitCode, $output] = run_websocket_runtime_command(action: 'container:apply', payload: [
+            'spec' => websocket_runtime_container_spec_payload(),
+        ]);
 
         expect($exitCode)
             ->toBe(0)
@@ -469,8 +449,9 @@ describe('internal websocket runtime command', function (): void {
             ->toContain('docker run -d --pull never --name orbit-websocket-app-dev-1')
             ->toContain('--label orbit.container.kind=websocket-runtime')
             ->toContain('--label orbit.websocket.spec_hash='.str_repeat('b', 64))
+            ->toContain('--publish 10.6.0.44:8080:8080')
             ->toContain('--entrypoint sh')
-            ->toContain('-lc php artisan reverb:start --host=10.6.0.44 --port=8080');
+            ->toContain('-lc php artisan reverb:start --host=0.0.0.0 --port=8080');
     });
 });
 
@@ -563,9 +544,9 @@ function websocket_runtime_container_spec_payload(): array
         'network' => 'orbit-network',
         'restart_policy' => 'unless-stopped',
         'backend_name' => '10.6.0.44',
-        'redis_node_id' => 123,
+        'valkey_node_id' => 123,
         'working_directory' => '/app',
-        'command' => 'php artisan reverb:start --host=10.6.0.44 --port=8080',
+        'command' => 'php artisan reverb:start --host=0.0.0.0 --port=8080',
         'environment' => [
             'REVERB_SERVER_HOST' => '10.6.0.44',
         ],
@@ -577,6 +558,7 @@ function websocket_runtime_container_spec_payload(): array
             ],
         ],
         'network_aliases' => ['orbit-websocket-app-dev-1'],
+        'published_ports' => ['10.6.0.44:8080:8080'],
         'expected_hash' => str_repeat('b', 64),
     ];
 }
@@ -605,7 +587,7 @@ function install_websocket_runtime_fake_bin(array $options = []): string
     file_put_contents("{$dir}/image.tar", websocket_runtime_image_archive($options));
     file_put_contents("{$dir}/image-manifest.json", websocket_runtime_image_manifest($options));
     file_put_contents("{$dir}/network-exists", $networkExists ? '1' : '0');
-    file_put_contents("{$dir}/redis-probe.php", '');
+    file_put_contents("{$dir}/valkey-probe.php", '');
     file_put_contents("{$dir}/self-contained-image", $selfContainedImage ? 'true' : 'false');
     file_put_contents("{$dir}/source-hash", $sourceHash);
     file_put_contents("{$dir}/source.tar", '');
@@ -643,7 +625,7 @@ function install_websocket_runtime_fake_bin(array $options = []): string
                 cat "$dir/cmd"
                 ;;
             'exec -i orbit-websocket-app-dev-1 php')
-                cat >"$dir/redis-probe.php"
+                cat >"$dir/valkey-probe.php"
                 ;;
             'restart orbit-websocket-app-dev-1')
                 ;;
@@ -779,7 +761,7 @@ function delete_websocket_runtime_fake_bin(string $path): void
         'image.tar',
         'image-manifest.json',
         'network-exists',
-        'redis-probe.php',
+        'valkey-probe.php',
         'self-contained-image',
         'shared.env',
         'source-hash',

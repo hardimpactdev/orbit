@@ -85,7 +85,7 @@ function websocket_runtime_manager_container(): WebSocketRuntimeContainer
         network: 'orbit-network',
         restartPolicy: 'unless-stopped',
         backendName: '10.6.0.44',
-        redisNodeId: 123,
+        valkeyNodeId: 123,
         workingDirectory: WebSocketRuntimeContainer::SourceTarget,
         command: 'php artisan reverb:start --host=10.6.0.44 --port=8080',
         environment: [

@@ -10,7 +10,7 @@ You can run this command to add an additional role assignment to an
 existing node.
 
 ```bash
-orbit node role:add [node] [role] [--redis-node=] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
+orbit node role:add [node] [role] [--valkey-node=] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
 ```
 
 ## Behavior
@@ -29,8 +29,8 @@ This command validates the role assignment, applies role-local options, and repo
 - App-development convergence uses direct gateway-pushed command envelopes.
   An active workload role supplies Agent intent; no duplicated capability flag
   is required.
-- `websocket` requires `--redis-node`; the selected node must have an active
-  `database` role and Redis expected or installed.
+- `websocket` requires `--valkey-node`; the selected node must have an active
+  `database` role and Valkey expected or installed.
 - `analytics` requires `--postgres-node` and `--clickhouse-node`; the selected
   nodes must have active `database` roles and PostgreSQL or ClickHouse expected
   or installed. The same database node can satisfy both options.

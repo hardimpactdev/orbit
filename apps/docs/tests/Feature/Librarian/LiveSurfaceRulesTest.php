@@ -96,14 +96,14 @@ it('maps space-namespaced command names onto command doc slugs', function (): vo
     config()->set('librarian.rules', [CommandSurfaceCoverageRule::class]);
     bindLiveSurfaceFake([
         new CliCommand(name: 'node:new', arguments: ['name'], options: ['json']),
-        new CliCommand(name: 'node role:add', arguments: ['node', 'role'], options: ['json', 'redis-node']),
+        new CliCommand(name: 'node role:add', arguments: ['node', 'role'], options: ['json', 'valkey-node']),
     ]);
     writeLiveSurfaceFamily($this->fixtureRoot);
     writeLiveSurfaceCommandDirectory(
         $this->fixtureRoot,
         'domains/1_node/2_node-role-add',
         'node-role-add',
-        'orbit node role:add <node> <role> [--redis-node=<node>] [--json]',
+        'orbit node role:add <node> <role> [--valkey-node=<node>] [--json]',
     );
 
     $payload = runLiveSurfaceLint();
@@ -253,7 +253,7 @@ it('maps process add internal service version option onto the public signature',
         $this->fixtureRoot,
         'domains/7_process/1_process-add',
         'process-add',
-        'orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<mysql|redis>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--start] [--no-start] [--json]',
+        'orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<mysql|valkey>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--start] [--no-start] [--json]',
     );
 
     $payload = runLiveSurfaceLint();

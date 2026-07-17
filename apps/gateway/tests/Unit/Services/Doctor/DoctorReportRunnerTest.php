@@ -1512,15 +1512,15 @@ describe('DoctorReportRunner', function (): void {
         $process = \App\Models\Process::factory()
             ->forOwner($node)
             ->create([
-                'name' => 'redis',
+                'name' => 'valkey',
                 'runtime' => ProcessRuntime::Docker,
-                'command' => 'redis-server --appendonly yes',
+                'command' => 'valkey-server --appendonly yes',
                 'restart_policy' => 'always',
                 'crash_notification' => 'none',
                 'runtime_config' => [
-                    'service' => 'redis',
-                    'version_family' => '7',
-                    'version' => '7.2',
+                    'service' => 'valkey',
+                    'version_family' => '8',
+                    'version' => '8.1',
                 ],
                 'sort_order' => 1,
             ]);
@@ -1529,7 +1529,7 @@ describe('DoctorReportRunner', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such network', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container: redis', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container: valkey', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
@@ -1563,22 +1563,22 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
                 'details' => [
                     'node' => 'database-1',
-                    'process' => 'redis',
-                    'service' => 'redis',
-                    'version' => '7.2',
+                    'process' => 'valkey',
+                    'service' => 'valkey',
+                    'version' => '8.1',
                     'runtime' => 'docker',
-                    'runtime_unit' => 'redis',
+                    'runtime_unit' => 'valkey',
                 ],
             ])
             ->and($process->runtime_config)
             ->toMatchArray([
-                'service' => 'redis',
-                'version_family' => '7',
-                'version' => '7.2',
-                'image' => 'redis:7.2',
-                'service_name' => 'orbit-redis',
+                'service' => 'valkey',
+                'version_family' => '8',
+                'version' => '8.1',
+                'image' => 'valkey/valkey:8.1',
+                'service_name' => 'orbit-valkey',
                 'endpoint' => [
-                    'name' => 'redis',
+                    'name' => 'valkey',
                     'kind' => 'tcp',
                     'host' => '10.6.0.7',
                     'port' => 6379,
@@ -1596,11 +1596,11 @@ describe('DoctorReportRunner', function (): void {
             ->toContain('internal:process-docker-container')
             ->and($create)
             ->not
-            ->toContain('type=bind,source=/var/lib/orbit/processes/redis,target=/data')
+            ->toContain('type=bind,source=/var/lib/orbit/processes/valkey,target=/data')
             ->and($process->runtime_config)
-            ->toHaveKey('service_name', 'orbit-redis');
+            ->toHaveKey('service_name', 'orbit-valkey');
 
-        expect($shell->scripts)->not->toContain("sudo mkdir -p '/var/lib/orbit/processes/redis'");
+        expect($shell->scripts)->not->toContain("sudo mkdir -p '/var/lib/orbit/processes/valkey'");
     });
 
     it('restores missing and stopped orbit-caddy containers through restore mode family dispatch', function (

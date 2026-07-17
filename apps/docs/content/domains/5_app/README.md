@@ -143,7 +143,7 @@ runtime unit is process-owned. The runtime container uses a
 path-derived app user, must not grant that user Docker group or Docker socket
 access, and may bind mount only the app source or active release path plus
 explicitly managed shared paths. Runnable services such as MySQL, PostgreSQL,
-Redis, SeaweedFS, and Reverb are modeled as process-backed long-running units,
+Valkey, SeaweedFS, and Reverb are modeled as process-backed long-running units,
 with tool capability records only where a process depends on an installed host
 capability; they are not owned by `app-prod`.
 

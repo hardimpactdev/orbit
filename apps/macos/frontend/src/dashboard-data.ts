@@ -100,7 +100,6 @@ const databaseToolNames = new Set([
     'mysql8',
     'postgres',
     'postgresql',
-    'redis',
     'valkey',
 ]);
 
@@ -307,7 +306,7 @@ function isDatabaseTool(name: string): boolean {
     return databaseToolNames.has(normalizedName)
         || normalizedName.includes('mysql')
         || normalizedName.includes('postgres')
-        || normalizedName.includes('redis');
+        || normalizedName.includes('valkey');
 }
 
 function statusTone(status: string): StatusTone {

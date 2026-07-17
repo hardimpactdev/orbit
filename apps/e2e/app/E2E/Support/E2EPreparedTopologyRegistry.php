@@ -6,18 +6,35 @@ namespace App\E2E\Support;
 
 final readonly class E2EPreparedTopologyRegistry
 {
-    public static function appdevDatabaseAndRedisPhp(string $nodeName = 'app-dev-1'): string
-    {
+    public static function appdevDatabaseAndValkeyPhp(
+        string $nodeName = 'app-dev-1',
+        bool $convergeRuntime = false,
+    ): string {
         $nodeNameValue = var_export($nodeName, true);
+        $removeLegacyRuntime = $convergeRuntime
+            ? "                app(\\App\\Services\\Nodes\\Roles\\RoleBaselines\\RoleRuntimeConverger::class)->removeProcess(\$node, \$legacyRedis, 'redis');\n"
+            : '';
+        $convergeValkeyRuntime = $convergeRuntime
+            ? "\n            app(\\App\\Services\\Nodes\\Roles\\RoleBaselines\\RoleRuntimeConverger::class)->convergeProcess(\$node, \$valkey, 'valkey');"
+            : '';
 
         return <<<PHP
             \$node = \\App\\Models\\Node::query()->where('name', {$nodeNameValue})->firstOrFail();
-            \$descriptor = app(\\App\\Services\\Processes\\ProcessServiceCatalog::class)->resolve(
-                service: 'redis',
-                version: '7',
+            \$legacyRedisProcesses = \\App\\Models\\Process::query()
+                ->ownedBy(\$node)
+                ->where('runtime_config->service', 'redis')
+                ->get();
+
+            foreach (\$legacyRedisProcesses as \$legacyRedis) {
+            {$removeLegacyRuntime}                \$legacyRedis->delete();
+            }
+
+            \$valkeyDescriptor = app(\\App\\Services\\Processes\\ProcessServiceCatalog::class)->resolve(
+                service: 'valkey',
+                version: '8',
                 runtime: \\App\\Enums\\Processes\\ProcessRuntime::Docker,
                 node: \$node,
-                processName: 'redis',
+                processName: 'valkey',
             );
 
             \\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
@@ -33,23 +50,23 @@ final readonly class E2EPreparedTopologyRegistry
                 ],
             );
 
-            \\App\\Models\\Process::query()->updateOrCreate(
+            \$valkey = \\App\\Models\\Process::query()->updateOrCreate(
                 [
                     'owner_type' => \$node->getMorphClass(),
                     'owner_id' => \$node->id,
-                    'name' => 'redis',
+                    'name' => 'valkey',
                 ],
                 [
                     'node_id' => \$node->id,
-                    'command' => \$descriptor->command,
+                    'command' => \$valkeyDescriptor->command,
                     'restart_policy' => \\App\\Enums\\ProcessRestartPolicy::Always->value,
                     'crash_notification' => \\App\\Enums\\ProcessCrashNotification::None->value,
                     'runtime' => \\App\\Enums\\Processes\\ProcessRuntime::Docker->value,
                     'tool' => null,
-                    'runtime_config' => \$descriptor->runtimeConfig,
+                    'runtime_config' => \$valkeyDescriptor->runtimeConfig,
                     'sort_order' => 10,
                 ],
-            );
+            );{$convergeValkeyRuntime}
             PHP;
     }
 }

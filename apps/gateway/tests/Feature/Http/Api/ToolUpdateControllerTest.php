@@ -162,6 +162,7 @@ it('does not update database and cache services through tool updates', function 
     'mysql',
     'postgres',
     'redis',
+    'valkey',
 ]);
 
 it('treats service-style instance selectors as missing tool rows', function (): void {

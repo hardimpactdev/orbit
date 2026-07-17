@@ -13,48 +13,62 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-it('seeds app-dev redis with renderable process runtime config', function (): void {
-    Node::factory()
+it('seeds app-dev Valkey with renderable process runtime config', function (): void {
+    $node = Node::factory()
         ->appDev()
         ->create([
             'name' => 'app-dev-1',
             'wireguard_address' => '10.6.0.4',
         ]);
+    Process::factory()->for($node, 'owner')->create([
+        'node_id' => $node->id,
+        'name' => 'redis',
+        'runtime' => ProcessRuntime::Docker,
+        'runtime_config' => [
+            'service' => 'redis',
+        ],
+    ]);
 
-    eval(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp());
+    eval(E2EPreparedTopologyRegistry::appdevDatabaseAndValkeyPhp());
 
-    $node = Node::query()->where('name', 'app-dev-1')->sole();
+    $node->refresh();
     $databaseRole = NodeRoleAssignment::query()
         ->where('node_id', $node->id)
         ->where('role', NodeRoleName::Database->value)
         ->sole();
-    $process = Process::query()
-        ->where('node_id', $node->id)
-        ->where('name', 'redis')
-        ->sole();
+    $valkey = Process::query()->where('node_id', $node->id)->where('name', 'valkey')->sole();
 
     expect($databaseRole->status)
         ->toBe(NodeRoleStatus::Active)
-        ->and($process->runtime)
+        ->and($valkey->runtime)
         ->toBe(ProcessRuntime::Docker)
-        ->and($process->command)
-        ->toBe('redis-server --appendonly yes --bind 0.0.0.0 --protected-mode no')
-        ->and($process->runtime_config)
+        ->and($valkey->command)
+        ->toBe('valkey-server --appendonly yes --bind 0.0.0.0 --protected-mode no')
+        ->and($valkey->runtime_config)
         ->toMatchArray([
-            'service' => 'redis',
-            'version_family' => '7',
-            'version' => '7.2',
-            'image' => 'redis:7.2',
-            'service_name' => 'orbit-redis',
+            'service' => 'valkey',
+            'version_family' => '8',
+            'version' => '8.1',
+            'image' => 'valkey/valkey:8.1',
+            'service_name' => 'orbit-valkey',
             'endpoint' => [
                 'kind' => 'tcp',
-                'name' => 'redis',
+                'name' => 'valkey',
                 'host' => '10.6.0.4',
                 'port' => 6379,
             ],
         ])
-        ->and($process->runtime_config['labels']['orbit.process'])
-        ->toBe('redis')
-        ->and($process->runtime_config['mounts'][0]['source'])
-        ->toBe('/var/lib/orbit/processes/redis');
+        ->and($valkey->runtime_config['labels']['orbit.process'])
+        ->toBe('valkey')
+        ->and($valkey->runtime_config['mounts'][0]['source'])
+        ->toBe('/var/lib/orbit/processes/valkey')
+        ->and(Process::query()->where('runtime_config->service', 'redis')->exists())
+        ->toBeFalse();
+});
+
+it('can include Valkey runtime convergence in prepared topology fixture code', function (): void {
+    expect(E2EPreparedTopologyRegistry::appdevDatabaseAndValkeyPhp(convergeRuntime: true))
+        ->toContain('RoleRuntimeConverger')
+        ->toContain("convergeProcess(\$node, \$valkey, 'valkey')")
+        ->toContain("removeProcess(\$node, \$legacyRedis, 'redis')");
 });

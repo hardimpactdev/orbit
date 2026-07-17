@@ -61,12 +61,12 @@ These rules govern what the tool command family owns and what it may not touch.
   gateway-local DNS runtime is the deliberate local-execution exception.
   Process-backed commands dispatch through the owning `process:*` action.
 - Tool-specific and capability-specific command families are opt-in product
-  surfaces. The tool catalog does not automatically create `redis:*`,
+  surfaces. The tool catalog does not automatically create `valkey:*`,
   `mysql:*`, `postgres:*`, or other top-level command families. Generic tool
   lifecycle and inventory remain under `tool:*`; separate command families are
   admitted only when the workflow is clearer as its own Orbit product surface.
-  PHP runtime selection is admitted as `php:*`. Redis-native data-plane
-  operations may use `redis:*`. Database connection inventory, env convergence,
+  PHP runtime selection is admitted as `php:*`. Valkey-native data-plane
+  operations may use `valkey:*`. Database connection inventory, env convergence,
   schema inspection, audited SQL execution, and backup/restore where
   applicable belong to the `database:*` family, not per-database command
   families. S3 publication and service credential workflows belong to the

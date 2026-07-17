@@ -35,7 +35,6 @@ it('serves a registered app on a prepared app-dev topology', function (): void {
         );
 
         appServingGrantAccess($topology);
-        appServingPrepareRedisProbe($topology);
         appServingRestoreDoctorFamily($topology, 'tool');
 
         $topology->ssh(
@@ -156,11 +155,7 @@ it('serves a registered app on a prepared app-dev topology', function (): void {
     } finally {
         $topology->ssh(
             'dev',
-            'sudo rm -rf '
-            .escapeshellarg($appPath)
-            .' && sudo systemctl disable --now redis-server >/dev/null 2>&1 || true'
-            .' && sudo rm -f /etc/systemd/system/redis-server.service /usr/local/bin/redis-server'
-            .' && sudo systemctl daemon-reload >/dev/null 2>&1 || true',
+            'sudo rm -rf '.escapeshellarg($appPath),
             timeoutSeconds: 60,
         );
         $topology->cleanup();
@@ -205,47 +200,6 @@ function appServingAssertDoctorHealthy(E2ETopologyHarness $topology, string $fam
         ->toBeTrue(
             "plain doctor --family={$family} check was unhealthy: ".json_encode($doctorData, JSON_PRETTY_PRINT),
         );
-}
-
-function appServingPrepareRedisProbe(E2ETopologyHarness $topology): void
-{
-    $redisServer = <<<'BASH'
-        #!/usr/bin/env bash
-        set -euo pipefail
-
-        if [ "${1:-}" = "--version" ]; then
-            echo 'Redis server v=7.2.0'
-            exit 0
-        fi
-
-        exec sleep infinity
-        BASH;
-
-    $service = <<<'SYSTEMD'
-        [Unit]
-        Description=Orbit E2E Redis probe service
-
-        [Service]
-        ExecStart=/usr/local/bin/redis-server
-        Restart=always
-
-        [Install]
-        WantedBy=multi-user.target
-        SYSTEMD;
-
-    $topology->ssh(
-        'dev',
-        sprintf(
-            'printf %%s %s | sudo tee /usr/local/bin/redis-server >/dev/null'
-            .' && sudo chmod 0755 /usr/local/bin/redis-server'
-            .' && printf %%s %s | sudo tee /etc/systemd/system/redis-server.service >/dev/null'
-            .' && sudo systemctl daemon-reload'
-            .' && sudo systemctl enable --now redis-server',
-            escapeshellarg($redisServer),
-            escapeshellarg($service),
-        ),
-        timeoutSeconds: 60,
-    );
 }
 
 function appServingGrantAccess(E2ETopologyHarness $topology): void

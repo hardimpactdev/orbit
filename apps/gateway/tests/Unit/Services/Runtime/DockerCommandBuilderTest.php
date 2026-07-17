@@ -183,7 +183,7 @@ it('uses the managed target node namespace for Docker E2E Caddy and websocket co
             network: 'orbit-e2e-run123',
             restartPolicy: 'unless-stopped',
             backendName: '10.6.0.4',
-            redisNodeId: 1,
+            valkeyNodeId: 1,
             workingDirectory: '/app',
             command: 'php artisan reverb:start --host=10.6.0.4 --port=8080 --hostname=10.6.0.4',
             environment: [],

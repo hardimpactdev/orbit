@@ -298,7 +298,7 @@ frames. Scoped streams forward raw stdout and stderr chunks.
 Gateway operations WebSocket/Reverb is the gateway-role progress plane. The
 gateway Swarm stack runs one `orbit-operations-reverb` service from the
 `orbit-reverb` image. It has its own operations application config, needs no
-Redis or database-role node, and is separate from app WebSocket bindings.
+Valkey or a database-role node, and is separate from app WebSocket bindings.
 Operation producers persist each frame in the durable journal before
 publishing it. Subscribers replay gaps by cursor and then follow live frames.
 Direct SSE remains exact-marked transitional transport for operation commands
@@ -526,8 +526,9 @@ Source sync to
 fallback for non-self-contained local runtime images; packaged production
 gateways do not carry the Reverb source tree.
 The long-running service is `php artisan reverb:start` inside the Reverb runtime
-container. The container binds only to that node's WireGuard address, and the
-router targets the backend as `https://<wireguard-ip>:8080`. Backend
+container. Reverb listens on `0.0.0.0:8080` inside that isolated container, and
+Docker publishes the port only on the node's WireGuard address. The router
+targets the backend as `https://<wireguard-ip>:8080`. Backend
 certificates and runtime identity use the backend WireGuard IP, not per-node
 websocket DNS.
 
@@ -537,13 +538,15 @@ private router-to-websocket TLS verification. Apps publish to
 hosts such as `wss://ws.example.com`; `ingress` terminates public TLS and
 forwards those WebSocket routes to `router`, never directly to websocket nodes.
 
-The websocket role requires Redis-backed scaling configuration from day one.
-Its `redis_node_id` setting points at a node with the `database` role and a
-managed Redis service. The websocket role consumes Redis; it does not install
-or own Redis. The default prepared E2E topology colocates `websocket`,
-`app-dev`, and `database` on `app-dev-1`, so the websocket Redis dependency
+The websocket role requires Valkey-backed scaling configuration from day one.
+Its `valkey_node_id` setting points at a node with the `database` role and a
+managed Valkey service. The websocket role consumes Valkey; it does not install
+or own Valkey. Reverb's upstream configuration still names its compatible
+broker connection `REDIS_*`; Orbit supplies the selected Valkey endpoint through
+those keys. The default prepared E2E topology colocates `websocket`,
+`app-dev`, and `database` on `app-dev-1`, so the websocket Valkey dependency
 points back to that same node. Dedicated websocket nodes remain valid when they
-are reachable over WireGuard and point their Redis dependency at a database-role
+are reachable over WireGuard and point their Valkey dependency at a database-role
 node.
 
 Current product support is one active websocket backend. Route internals keep a
@@ -553,7 +556,7 @@ websocket backends fail clearly instead of silently fanning out.
 The gateway-owned operations Reverb service is intentionally outside this
 app-facing websocket role. It is colocated with the gateway Swarm services and
 does not use `websocket.orbit`, app WebSocket bindings, or the websocket role's
-Redis scaling dependency in v1.
+Valkey scaling dependency in v1.
 
 ### S3 runtime
 

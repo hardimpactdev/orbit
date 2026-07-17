@@ -27,7 +27,7 @@ use RuntimeException;
     {--wireguard-address= : Node WireGuard address}
     {--gateway-endpoint= : Gateway endpoint address}
     {--user=orbit : Runtime user}
-    {--redis-node= : Existing database node name for Redis}
+    {--valkey-node= : Existing database node name for Valkey}
     {--converge-runtime : Converge the WebSocket Reverb runtime baseline after registry bake}')]
 #[Description('Bake websocket role registry state for prepared E2E topology images')]
 class BakeWebSocketNodeCommand extends Command
@@ -46,15 +46,15 @@ class BakeWebSocketNodeCommand extends Command
         $wireguardAddress = $this->stringOption('wireguard-address');
         $gatewayEndpoint = $this->stringOption('gateway-endpoint');
         $user = $this->stringOption('user') ?? 'orbit';
-        $redisNodeName = $this->stringOption('redis-node');
+        $valkeyNodeName = $this->stringOption('valkey-node');
 
-        if ($name === null || $host === null || $wireguardAddress === null || $redisNodeName === null) {
-            throw new RuntimeException('Name, host, wireguard-address, and redis-node are required.');
+        if ($name === null || $host === null || $wireguardAddress === null || $valkeyNodeName === null) {
+            throw new RuntimeException('Name, host, wireguard-address, and valkey-node are required.');
         }
 
-        $redisNode = $this->measureBakeStep(
-            'redis-node',
-            fn (): Node => $this->activeRedisNode($redisNodeName),
+        $valkeyNode = $this->measureBakeStep(
+            'valkey-node',
+            fn (): Node => $this->activeValkeyNode($valkeyNodeName),
         );
         $hostKey = $this->measureBakeStep(
             'host-key',
@@ -83,7 +83,7 @@ class BakeWebSocketNodeCommand extends Command
                 ],
                 [
                     'status' => NodeRoleStatus::Active->value,
-                    'settings' => ['redis_node_id' => $redisNode->id],
+                    'settings' => ['valkey_node_id' => $valkeyNode->id],
                     'last_error' => null,
                     'converged_at' => now(),
                 ],
@@ -106,7 +106,7 @@ class BakeWebSocketNodeCommand extends Command
         return self::SUCCESS;
     }
 
-    private function activeRedisNode(string $name): Node
+    private function activeValkeyNode(string $name): Node
     {
         $node = Node::query()
             ->where('name', $name)
@@ -117,16 +117,16 @@ class BakeWebSocketNodeCommand extends Command
             ->first();
 
         if (! $node instanceof Node) {
-            throw new RuntimeException("Active Redis node [{$name}] was not found.");
+            throw new RuntimeException("Active Valkey node [{$name}] was not found.");
         }
 
-        $hasRedis = Process::query()
+        $hasValkey = Process::query()
             ->ownedBy($node)
-            ->withRuntimeService('redis')
+            ->withRuntimeService('valkey')
             ->exists();
 
-        if (! $hasRedis) {
-            throw new RuntimeException("Active Redis node [{$name}] was not found.");
+        if (! $hasValkey) {
+            throw new RuntimeException("Active Valkey node [{$name}] was not found.");
         }
 
         return $node;

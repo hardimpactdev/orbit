@@ -11,7 +11,7 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
-it('resolves MySQL and Redis managed services into process runtime config', function (): void {
+it('resolves a MySQL managed service into process runtime config', function (): void {
     $node = Node::factory()->create([
         'name' => 'database-1',
         'wireguard_address' => '10.6.0.44',
@@ -23,14 +23,6 @@ it('resolves MySQL and Redis managed services into process runtime config', func
         runtime: ProcessRuntime::DockerSwarm,
         node: $node,
         processName: 'mysql8',
-    );
-
-    $redis = app(ProcessServiceCatalog::class)->resolve(
-        service: 'redis',
-        version: '7',
-        runtime: ProcessRuntime::Docker,
-        node: $node,
-        processName: 'redis',
     );
 
     expect($mysql->command)
@@ -73,23 +65,59 @@ it('resolves MySQL and Redis managed services into process runtime config', func
         ->and($mysql->runtimeConfig['volumes'][0]['name'])
         ->toBe('orbit-mysql8')
         ->and($mysql->runtimeConfig['mounts'][0]['source'])
-        ->toBe('/var/lib/orbit/processes/mysql8')
-        ->and($redis->command)
-        ->toContain('redis-server')
-        ->and($redis->runtimeConfig)
-        ->toMatchArray([
-            'service' => 'redis',
-            'version_family' => '7',
-            'version' => '7.2',
-            'image' => 'redis:7.2',
-        ])
-        ->and($redis->runtimeConfig['endpoint']['name'])
-        ->toBe('redis')
-        ->and($redis->runtimeConfig['endpoint']['host'])
-        ->toBe('10.6.0.44')
-        ->and($redis->runtimeConfig['endpoint']['port'])
-        ->toBe(6379);
+        ->toBe('/var/lib/orbit/processes/mysql8');
 });
+
+it('resolves Valkey as the managed websocket broker service', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'database-1',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+
+    $valkey = app(ProcessServiceCatalog::class)->resolve(
+        service: 'valkey',
+        version: null,
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'valkey',
+    );
+
+    expect($valkey->command)
+        ->toBe('valkey-server --appendonly yes --bind 0.0.0.0 --protected-mode no')
+        ->and($valkey->versionFamily)
+        ->toBe('8')
+        ->and($valkey->version)
+        ->toBe('8.1')
+        ->and($valkey->runtimeConfig)
+        ->toMatchArray([
+            'service' => 'valkey',
+            'version_family' => '8',
+            'version' => '8.1',
+            'image' => 'valkey/valkey:8.1',
+            'service_name' => 'orbit-valkey',
+        ])
+        ->and($valkey->runtimeConfig['endpoint'])
+        ->toMatchArray([
+            'name' => 'valkey',
+            'host' => '10.6.0.44',
+            'port' => 6379,
+        ]);
+});
+
+it('rejects the retired Redis managed service', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'database-1',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+
+    app(ProcessServiceCatalog::class)->resolve(
+        service: 'redis',
+        version: '7',
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'redis',
+    );
+})->throws(GatewayApiException::class, "Managed service 'redis' is not supported.");
 
 it('keeps MySQL 8 and MySQL 9 managed services distinct', function (): void {
     $node = Node::factory()->create(['wireguard_address' => '10.6.0.44']);
@@ -310,11 +338,11 @@ it('requires service process endpoints to use the owner node WireGuard address',
     ]);
 
     $descriptor = app(ProcessServiceCatalog::class)->resolve(
-        service: 'redis',
-        version: '7',
+        service: 'valkey',
+        version: '8',
         runtime: ProcessRuntime::Docker,
         node: $node,
-        processName: 'redis',
+        processName: 'valkey',
     );
 
     expect($descriptor->runtimeConfig['endpoint']['host'])
@@ -399,7 +427,7 @@ it('allows database services on macos through Docker but not Docker Swarm', func
 })->with([
     'mysql' => ['mysql', '8'],
     'postgres' => ['postgres', '16'],
-    'redis' => ['redis', '7'],
+    'valkey' => ['valkey', '8'],
 ]);
 
 it('rejects service process endpoints when the owning node has no WireGuard address', function (): void {
@@ -410,11 +438,11 @@ it('rejects service process endpoints when the owning node has no WireGuard addr
     ]);
 
     app(ProcessServiceCatalog::class)->resolve(
-        service: 'redis',
-        version: '7',
+        service: 'valkey',
+        version: '8',
         runtime: ProcessRuntime::Docker,
         node: $node,
-        processName: 'redis',
+        processName: 'valkey',
     );
 })->throws(
     GatewayApiException::class,
@@ -549,11 +577,11 @@ it('rejects unsupported managed service inputs', function (Closure $operation, s
     ],
     'runtime unsupported' => [
         fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve(
-            'redis',
-            '7',
+            'valkey',
+            '8',
             ProcessRuntime::Systemd,
             $node,
-            'redis',
+            'valkey',
         ),
         'runtime',
         'process_service_runtime_unsupported',

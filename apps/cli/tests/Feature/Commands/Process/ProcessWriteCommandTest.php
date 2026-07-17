@@ -205,11 +205,11 @@ describe('process write commands', function (): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, 'process:add', [
-            'name' => 'redis',
+            'name' => 'valkey',
             '--node' => 'database-1',
-            '--service' => 'redis',
-            '--version' => '7',
-            '--tool' => 'redis',
+            '--service' => 'valkey',
+            '--version' => '8',
+            '--tool' => 'valkey',
             '--json' => true,
         ]);
 

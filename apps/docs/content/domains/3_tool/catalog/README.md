@@ -29,7 +29,7 @@ generation, persistence, repair, and credential rendering.
 
 HTTP and WebSocket tools expose tool-owned `proxy` routes, such as
 `mailpit.<node-tld>`. TCP endpoints for runnable services such as MySQL,
-PostgreSQL, and Redis are process-owned service endpoints. They are protected by
+PostgreSQL, and Valkey are process-owned service endpoints. They are protected by
 the firewall policy that Orbit manages, not represented as HTTP proxy routes.
 
 Catalog routes use `<node-tld>`, the mandatory TLD stored on the target node.
@@ -46,8 +46,8 @@ Admitted examples:
 
 - `php:*` owns PHP image selection across app configuration and workspace
   overrides.
-- Future Redis data-plane operations may use `redis:*`, such as a
-  Redis-specific flush command.
+- Future Valkey data-plane operations may use `valkey:*`, such as a
+  Valkey-specific flush command.
 - Database connection inventory, env convergence, schema inspection, audited
   SQL execution, and database backup/restore workflows belong to `database:*`,
   not separate `mysql:*` and `postgres:*` families.
@@ -99,7 +99,7 @@ tool supports removal, and verified by `doctor --family=tool`.
 ### Runtime and communication
 
 These installable tools cover the PHP runtime and mail. MySQL, PostgreSQL,
-Redis, and fleet realtime are process- or role-owned services, not separate
+Valkey, and fleet realtime are process- or role-owned services, not separate
 tool installs. Fleet realtime uses the `websocket` role and its Laravel Reverb
 runtime.
 

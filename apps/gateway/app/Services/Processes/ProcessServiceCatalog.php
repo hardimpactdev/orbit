@@ -256,22 +256,22 @@ final readonly class ProcessServiceCatalog
                     ],
                 ],
             ],
-            'redis' => [
+            'valkey' => [
                 'runtimes' => [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
-                'image' => 'redis',
-                'command' => 'redis-server --appendonly yes --bind 0.0.0.0 --protected-mode no',
+                'image' => 'valkey/valkey',
+                'command' => 'valkey-server --appendonly yes --bind 0.0.0.0 --protected-mode no',
                 'target_port' => 6379,
                 'data_path' => '/data',
                 'environment' => [],
                 'credentials' => [],
                 'healthcheck' => [
-                    'command' => 'redis-cli ping',
+                    'command' => 'valkey-cli ping',
                     'kind' => 'command',
                 ],
                 'versions' => [
-                    '7' => [
-                        'default' => '7.2',
-                        'versions' => ['7.2'],
+                    '8' => [
+                        'default' => '8.1',
+                        'versions' => ['8.1'],
                         'port' => 6379,
                     ],
                 ],

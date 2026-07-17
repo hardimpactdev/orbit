@@ -62,7 +62,7 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   analytics backend pools, private router-to-Plausible routing, and public
   tracking-only path selection.
 - Tool-owned `proxy` routes are HTTP or WebSocket ingress routes only. TCP
-  service endpoints such as PostgreSQL, MySQL, and Redis are WireGuard service
+  service endpoints such as PostgreSQL, MySQL, and Valkey are WireGuard service
   endpoints owned by process definitions and do not appear as HTTP proxy
   routes.
 - Custom routes are created, updated, and removed through `proxy:add` and

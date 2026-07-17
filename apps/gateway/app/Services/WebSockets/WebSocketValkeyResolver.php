@@ -9,13 +9,13 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 
-final readonly class WebSocketRedisResolver
+final readonly class WebSocketValkeyResolver
 {
     public function __construct(
         private NodeRoleAssignments $roles,
     ) {}
 
-    public function usableRedisNode(int $nodeId): ?Node
+    public function usableValkeyNode(int $nodeId): ?Node
     {
         $node = Node::query()->find($nodeId);
 
@@ -31,11 +31,11 @@ final readonly class WebSocketRedisResolver
             return null;
         }
 
-        $hasRedis = Process::query()
+        $hasValkey = Process::query()
             ->ownedBy($node)
-            ->withRuntimeService('redis')
+            ->withRuntimeService('valkey')
             ->exists();
 
-        return $hasRedis ? $node : null;
+        return $hasValkey ? $node : null;
     }
 }

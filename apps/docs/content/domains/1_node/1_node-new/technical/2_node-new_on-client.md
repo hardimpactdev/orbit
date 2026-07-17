@@ -98,7 +98,7 @@ When a gateway is configured:
   - `node_new.host` and `node_new.user` for gateway convergence or adoption;
   - canonical `roles[]` arrays for role requests;
   - `node_new.tld` for development app-role and agent provisioning;
-  - `node_new.redis_node` for future websocket role provisioning;
+  - `node_new.valkey_node` for future websocket role provisioning;
   - `node_new.s3_data_path` for S3 role provisioning;
   - host and user fields for metrics role provisioning.
 - Use the CLI's WireGuard identity for gateway API authorization.

@@ -172,14 +172,20 @@ final readonly class DockerTopologyBuilder
             foreach (array_keys($containers) as $role) {
                 $container = "{$network}-{$role}";
 
-                $this->run(sprintf(
-                    'docker rm -f %s >/dev/null 2>&1 || true',
-                    implode(' ', array_map(escapeshellarg(...), $this->managedContainerNames($container, $role))),
-                ), timeoutSeconds: 120);
-                $this->run(sprintf(
-                    'docker volume rm -f %s >/dev/null 2>&1 || true',
-                    implode(' ', array_map(escapeshellarg(...), $this->managedVolumeNames($container))),
-                ), timeoutSeconds: 120);
+                $this->run(
+                    sprintf('docker rm -f %s >/dev/null 2>&1 || true', implode(' ', array_map(
+                        escapeshellarg(...),
+                        $this->managedContainerNames($container, $role),
+                    ))),
+                    timeoutSeconds: 120,
+                );
+                $this->run(
+                    sprintf('docker volume rm -f %s >/dev/null 2>&1 || true', implode(' ', array_map(
+                        escapeshellarg(...),
+                        $this->managedVolumeNames($container),
+                    ))),
+                    timeoutSeconds: 120,
+                );
             }
 
             $this->run(
@@ -314,9 +320,7 @@ final readonly class DockerTopologyBuilder
 
     private function runCommand(string $container, string $network, string $role, string $ip, string $mode): string
     {
-        $networkAlias = $mode === 'dns-alias'
-            ? ' --network-alias '.escapeshellarg($role)
-            : '';
+        $networkAlias = $mode === 'dns-alias' ? ' --network-alias '.escapeshellarg($role) : '';
         $gatewayContainerEnv = self::roleUsesGatewaySibling($role)
             ? ' --env '.escapeshellarg("ORBIT_GATEWAY_CONTAINER={$this->gatewayContainerName($container)}")
             : '';
@@ -908,10 +912,7 @@ final readonly class DockerTopologyBuilder
         ];
 
         $environmentFlags = implode(' ', [
-            ...array_map(
-                fn (string $value): string => '--env '.escapeshellarg($value),
-                $environment,
-            ),
+            ...array_map(fn (string $value): string => '--env '.escapeshellarg($value), $environment),
             ...E2EGitHubAuth::dockerEnvOptions(),
         ]);
 
@@ -1048,9 +1049,7 @@ final readonly class DockerTopologyBuilder
     {
         $basePath = self::OrbitConfigRoot;
 
-        return $suffix === ''
-            ? $basePath
-            : "{$basePath}/{$suffix}";
+        return $suffix === '' ? $basePath : "{$basePath}/{$suffix}";
     }
 
     private function userForRole(string $role): string
@@ -1079,9 +1078,7 @@ final readonly class DockerTopologyBuilder
         $operatorHost = $this->hostForRole('operator', $networkPlan, $mode);
         $operatorWireGuardAddress = $this->wireGuardAddressForRole('operator', $networkPlan, $mode);
         $gatewayEndpoint = $this->gatewayEndpoint($networkPlan, $mode);
-        $gatewayReachabilityHost = $mode === 'dns-alias'
-            ? 'gateway'
-            : $networkPlan->ipForRole('gateway');
+        $gatewayReachabilityHost = $mode === 'dns-alias' ? 'gateway' : $networkPlan->ipForRole('gateway');
 
         E2ECommand::ssh(
             $gateway,
@@ -1158,7 +1155,7 @@ final readonly class DockerTopologyBuilder
                     $gatewayEndpoint,
                 ),
                 'php apps/gateway/artisan tinker --execute='
-                    .escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
+                    .escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndValkeyPhp(convergeRuntime: true)),
             ]);
         }
 
@@ -1228,7 +1225,7 @@ final readonly class DockerTopologyBuilder
             $hostKeyHost = $this->hostKeyHostOption('dev', $networkPlan, $mode);
             $wireGuardAddress = $this->wireGuardAddressForRole('dev', $networkPlan, $mode);
             $afterSuccessfulTasks['websocket'] = sprintf(
-                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node app-dev-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1',
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node app-dev-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --valkey-node=app-dev-1',
                 $host,
                 $hostKeyHost,
                 $wireGuardAddress,
@@ -1358,12 +1355,8 @@ final readonly class DockerTopologyBuilder
     private function clientGatewaySettingsPhp(string $mode, DockerTopologyNetworkPlan $networkPlan): string
     {
         $gatewayIp = $this->wireGuardAddressForRole('gateway', $networkPlan, $mode);
-        $gatewayUrl = $mode === 'dns-alias'
-            ? 'https://gateway'
-            : "https://{$gatewayIp}";
-        $gatewayCaUrl = $mode === 'dns-alias'
-            ? 'http://gateway/api/ca/root'
-            : "http://{$gatewayIp}/api/ca/root";
+        $gatewayUrl = $mode === 'dns-alias' ? 'https://gateway' : "https://{$gatewayIp}";
+        $gatewayCaUrl = $mode === 'dns-alias' ? 'http://gateway/api/ca/root' : "http://{$gatewayIp}/api/ca/root";
 
         return <<<PHP
             if (\\Illuminate\\Support\\Facades\\Schema::hasTable('local_gateway_settings')) {
@@ -1448,14 +1441,7 @@ final readonly class DockerTopologyBuilder
         do {
             $this->persistRuntimeSource($gateway->name(), 'gateway');
 
-            $last = E2ECommand::ssh(
-                $gateway,
-                'orbit',
-                $key,
-                $command,
-                timeoutSeconds: 120,
-                allowFailure: true,
-            );
+            $last = E2ECommand::ssh($gateway, 'orbit', $key, $command, timeoutSeconds: 120, allowFailure: true);
 
             if ($last->successful()) {
                 return;
@@ -1594,13 +1580,7 @@ final readonly class DockerTopologyBuilder
             done
             SH;
 
-        E2ECommand::ssh(
-            $gateway,
-            'orbit',
-            new SshKeyPair('/dev/null', '/dev/null'),
-            $command,
-            timeoutSeconds: 120,
-        );
+        E2ECommand::ssh($gateway, 'orbit', new SshKeyPair('/dev/null', '/dev/null'), $command, timeoutSeconds: 120);
     }
 
     /**
@@ -1624,16 +1604,12 @@ final readonly class DockerTopologyBuilder
 
     private function hostForRole(string $role, DockerTopologyNetworkPlan $networkPlan, string $mode): string
     {
-        return $mode === 'dns-alias'
-            ? $role
-            : $networkPlan->ipForRole($role);
+        return $mode === 'dns-alias' ? $role : $networkPlan->ipForRole($role);
     }
 
     private function hostKeyHostOption(string $role, DockerTopologyNetworkPlan $networkPlan, string $mode): string
     {
-        return $mode === 'dns-alias'
-            ? ' --host-key-host='.$this->containerIpForRole($role, $networkPlan)
-            : '';
+        return $mode === 'dns-alias' ? ' --host-key-host='.$this->containerIpForRole($role, $networkPlan) : '';
     }
 
     private function containerIpForRole(string $role, DockerTopologyNetworkPlan $networkPlan): string
@@ -1643,16 +1619,12 @@ final readonly class DockerTopologyBuilder
 
     private function wireGuardAddressForRole(string $role, DockerTopologyNetworkPlan $networkPlan, string $mode): string
     {
-        return $mode === 'dns-alias'
-            ? $this->canonicalWireGuardAddressForRole($role)
-            : $networkPlan->ipForRole($role);
+        return $mode === 'dns-alias' ? $this->canonicalWireGuardAddressForRole($role) : $networkPlan->ipForRole($role);
     }
 
     private function gatewayEndpoint(DockerTopologyNetworkPlan $networkPlan, string $mode): string
     {
-        return $mode === 'dns-alias'
-            ? 'gateway'
-            : $networkPlan->ipForRole('gateway');
+        return $mode === 'dns-alias' ? 'gateway' : $networkPlan->ipForRole('gateway');
     }
 
     private function canonicalWireGuardAddressForRole(string $role): string
@@ -1694,9 +1666,7 @@ final readonly class DockerTopologyBuilder
 
     private function certSanSetForMode(string $mode, DockerTopologyNetworkPlan $networkPlan): string
     {
-        return $mode === 'dns-alias'
-            ? 'DNS:gateway,IP:10.6.0.2'
-            : "IP:{$networkPlan->ipForRole('gateway')}";
+        return $mode === 'dns-alias' ? 'DNS:gateway,IP:10.6.0.2' : "IP:{$networkPlan->ipForRole('gateway')}";
     }
 
     /**
@@ -1857,14 +1827,11 @@ final readonly class DockerBuildInstance implements E2EInstance
 
     public function delete(): void
     {
-        $this->run(sprintf(
-            'docker rm -f %s >/dev/null 2>&1 || true',
-            implode(' ', array_map(escapeshellarg(...), [
-                "{$this->name}-orbit-gateway",
-                "{$this->name}-orbit-caddy",
-                $this->name,
-            ])),
-        ), timeoutSeconds: 60);
+        $this->run(sprintf('docker rm -f %s >/dev/null 2>&1 || true', implode(' ', array_map(escapeshellarg(...), [
+            "{$this->name}-orbit-gateway",
+            "{$this->name}-orbit-caddy",
+            $this->name,
+        ]))), timeoutSeconds: 60);
     }
 
     private function run(string $command, ?int $timeoutSeconds = null): ProcessResult

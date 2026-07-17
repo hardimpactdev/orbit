@@ -81,12 +81,7 @@ describe('node write commands', function (): void {
             ),
         );
 
-        expect($exitCode)
-            ->toBe(0)
-            ->and($decoded['event'])
-            ->toBe('complete')
-            ->and($decoded['data'])
-            ->toBe($complete);
+        expect($exitCode)->toBe(0)->and($decoded['event'])->toBe('complete')->and($decoded['data'])->toBe($complete);
     });
 
     it('normalizes comma-separated node:new roles for programmatic callers', function (): void {
@@ -172,6 +167,15 @@ describe('node write commands', function (): void {
         $command = $this->app->make(\App\Commands\Node\NodeRoleAddCommand::class);
 
         expect($command->getDefinition()->hasOption('tld'))->toBeFalse();
+    });
+
+    it('uses Valkey as the websocket role broker input', function (): void {
+        $command = $this->app->make(\App\Commands\Node\NodeRoleAddCommand::class);
+
+        expect($command->getDefinition()->hasOption('valkey-node'))
+            ->toBeTrue()
+            ->and($command->getDefinition()->hasOption('redis-node'))
+            ->toBeFalse();
     });
 
     it('runs the bootstrap path for first gateway node creation when no gateway is configured', function (): void {
@@ -671,12 +675,7 @@ describe('node write commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)
-            ->toBe(1)
-            ->and($output)
-            ->toContain('not authorized')
-            ->and($output)
-            ->not->toContain('"error"');
+        expect($exitCode)->toBe(1)->and($output)->toContain('not authorized')->and($output)->not->toContain('"error"');
     });
 
     it('posts node:grant payloads to the typed gateway API', function (): void {
@@ -1069,10 +1068,7 @@ describe('node write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)
-            ->toBe(0)
-            ->and($decoded['success']['data'])
-            ->not->toHaveKey('agent_job');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data'])->not->toHaveKey('agent_job');
     });
 
     it('renders node role:add human output as a progress tree with a success footer', function (): void {
@@ -1666,11 +1662,6 @@ describe('node write commands', function (): void {
             '--host' => '192.0.2.21',
         ]);
 
-        expect($exitCode)
-            ->toBe(1)
-            ->and($output)
-            ->toContain('not authorized')
-            ->and($output)
-            ->not->toContain('"error"');
+        expect($exitCode)->toBe(1)->and($output)->toContain('not authorized')->and($output)->not->toContain('"error"');
     });
 });

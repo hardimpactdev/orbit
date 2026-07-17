@@ -8041,19 +8041,19 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 1
 
 [[issues]]
-file = "app/Services/WebSockets/WebSocketRedisResolver.php"
+file = "app/Services/WebSockets/WebSocketValkeyResolver.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]
-file = "app/Services/WebSockets/WebSocketRedisResolver.php"
+file = "app/Services/WebSockets/WebSocketValkeyResolver.php"
 code = "mixed-method-access"
 message = "Attempting to access a method on a non-object type (`mixed`)."
 count = 2
 
 [[issues]]
-file = "app/Services/WebSockets/WebSocketRedisResolver.php"
+file = "app/Services/WebSockets/WebSocketValkeyResolver.php"
 code = "non-documented-method"
 message = 'Ambiguous method call to `ownedby` on class `Illuminate\Database\Eloquent\Builder`.'
 count = 1

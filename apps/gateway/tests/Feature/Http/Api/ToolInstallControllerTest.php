@@ -663,6 +663,7 @@ describe('ToolInstallController', function (): void {
         'mysql',
         'postgres',
         'redis',
+        'valkey',
     ]);
 
     it('persists claude-code install config with node default user and sanitized additional users', function (): void {

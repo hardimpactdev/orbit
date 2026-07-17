@@ -18,29 +18,29 @@ it('keeps managed service runtime selection independent of node tool platform ro
     ]);
 
     $descriptor = app(ProcessServiceCatalog::class)->resolve(
-        service: 'redis',
-        version: '7',
+        service: 'valkey',
+        version: '8',
         runtime: ProcessRuntime::DockerSwarm,
         node: $node,
-        processName: 'redis',
+        processName: 'valkey',
     );
 
     expect($descriptor->runtimeConfig['image'])
-        ->toBe('redis:7.2')
+        ->toBe('valkey/valkey:8.1')
         ->and($descriptor->runtimeConfig['endpoint']['host'])
         ->toBe('10.6.0.44')
         ->and($descriptor->runtimeConfig['labels']['orbit.process.service'])
-        ->toBe('redis');
+        ->toBe('valkey');
 });
 
 it('rejects unsupported managed service runtimes through the service catalog', function (): void {
     $node = Node::factory()->create();
 
     app(ProcessServiceCatalog::class)->resolve(
-        service: 'redis',
-        version: '7',
+        service: 'valkey',
+        version: '8',
         runtime: ProcessRuntime::Systemd,
         node: $node,
-        processName: 'redis',
+        processName: 'valkey',
     );
-})->throws(GatewayApiException::class, "Managed service 'redis' does not support runtime 'systemd'.");
+})->throws(GatewayApiException::class, "Managed service 'valkey' does not support runtime 'systemd'.");

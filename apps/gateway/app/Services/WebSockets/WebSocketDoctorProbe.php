@@ -21,7 +21,7 @@ final readonly class WebSocketDoctorProbe
         private RunsInternalCommands $localExecutor,
         private WebSocketRuntimeContainerRenderer $runtimeRenderer,
         private WebSocketBackendName $backendName,
-        private WebSocketRedisResolver $redisResolver,
+        private WebSocketValkeyResolver $valkeyResolver,
     ) {}
 
     /**
@@ -79,7 +79,7 @@ final readonly class WebSocketDoctorProbe
         if (! $settings instanceof WebSocketRoleSettings) {
             return [
                 ...$drift,
-                $this->redisUnavailableEntry(
+                $this->valkeyUnavailableEntry(
                     node: $node,
                     assignment: $assignment,
                     detail: [
@@ -90,17 +90,17 @@ final readonly class WebSocketDoctorProbe
             ];
         }
 
-        $redisNode = $this->redisResolver->usableRedisNode($settings->redisNodeId);
+        $valkeyNode = $this->valkeyResolver->usableValkeyNode($settings->valkeyNodeId);
 
-        if (! $redisNode instanceof Node) {
+        if (! $valkeyNode instanceof Node) {
             return [
                 ...$drift,
-                $this->redisUnavailableEntry(
+                $this->valkeyUnavailableEntry(
                     node: $node,
                     assignment: $assignment,
                     detail: [
-                        'reason' => 'redis_node_unavailable',
-                        'redis_node_id' => $settings->redisNodeId,
+                        'reason' => 'valkey_node_unavailable',
+                        'valkey_node_id' => $settings->valkeyNodeId,
                     ],
                     kind: DriftKind::Divergent,
                 ),
@@ -111,23 +111,23 @@ final readonly class WebSocketDoctorProbe
             return $drift;
         }
 
-        $redis = $this->redisProbe($node);
+        $valkey = $this->valkeyProbe($node);
 
-        if ($redis->successful()) {
+        if ($valkey->successful()) {
             return $drift;
         }
 
         return [
             ...$drift,
-            $this->redisUnavailableEntry(
+            $this->valkeyUnavailableEntry(
                 node: $node,
                 assignment: $assignment,
                 detail: [
-                    'reason' => 'redis_probe_failed',
-                    'redis_node' => $redisNode->name,
-                    'redis_node_id' => $redisNode->id,
-                    'exit_code' => $redis->exitCode,
-                    'stderr' => trim($redis->stderr),
+                    'reason' => 'valkey_probe_failed',
+                    'valkey_node' => $valkeyNode->name,
+                    'valkey_node_id' => $valkeyNode->id,
+                    'exit_code' => $valkey->exitCode,
+                    'stderr' => trim($valkey->stderr),
                 ],
                 kind: DriftKind::Unverifiable,
             ),
@@ -222,7 +222,7 @@ final readonly class WebSocketDoctorProbe
         }
 
         $state = $this->probeState($probe);
-        $expectedBind = trim((string) $node->wireguard_address);
+        $expectedBind = '0.0.0.0';
         $observedBind = $this->observedBindAddress($state);
 
         if ($observedBind === null || $observedBind === $expectedBind) {
@@ -234,7 +234,7 @@ final readonly class WebSocketDoctorProbe
                 family: 'node',
                 key: 'node.websocket.bind_public_interface',
                 kind: DriftKind::Divergent,
-                summary: "WebSocket runtime on node {$node->name} is not bound to its WireGuard address.",
+                summary: "WebSocket runtime on node {$node->name} is not bound to its expected container interface.",
                 detail: [
                     'role' => $assignment->role,
                     'container' => $this->runtimeRenderer->containerName($node),
@@ -302,13 +302,13 @@ final readonly class WebSocketDoctorProbe
         );
     }
 
-    private function redisProbe(Node $node): RemoteShellResult
+    private function valkeyProbe(Node $node): RemoteShellResult
     {
         return $this->runRuntimeAction(
             node: $node,
-            action: 'doctor:redis-probe',
+            action: 'doctor:valkey-probe',
             payload: ['container' => $this->runtimeRenderer->containerName($node)],
-            operation: 'websocket-redis-doctor-probe',
+            operation: 'websocket-valkey-doctor-probe',
         );
     }
 
@@ -422,7 +422,7 @@ final readonly class WebSocketDoctorProbe
     /**
      * @param  array<string, mixed>  $detail
      */
-    private function redisUnavailableEntry(
+    private function valkeyUnavailableEntry(
         Node $node,
         NodeRoleAssignment $assignment,
         array $detail,
@@ -430,9 +430,9 @@ final readonly class WebSocketDoctorProbe
     ): DriftEntry {
         return new DriftEntry(
             family: 'tool',
-            key: 'tool.websocket.redis_unavailable',
+            key: 'tool.websocket.valkey_unavailable',
             kind: $kind,
-            summary: "WebSocket Redis is unavailable to the Reverb runtime on node {$node->name}.",
+            summary: "WebSocket Valkey is unavailable to the Reverb runtime on node {$node->name}.",
             detail: [
                 'role' => $assignment->role,
                 ...$detail,

@@ -1848,7 +1848,7 @@ final class GatewayNodeCreator
             'operator-name',
             'operator-tld',
             'ingress',
-            'redis-node',
+            'valkey-node',
             'postgres-node',
             'clickhouse-node',
             's3-data-path',

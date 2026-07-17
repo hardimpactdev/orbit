@@ -32,7 +32,7 @@ describe(NodeWireGuardServiceAddress::class, function (): void {
             'wireguard_address' => '10.6.0.9',
         ]);
 
-        $address = app(NodeWireGuardServiceAddress::class)->forServiceOn($node, $node, 'redis');
+        $address = app(NodeWireGuardServiceAddress::class)->forServiceOn($node, $node, 'valkey');
 
         expect($address)->toBe('10.6.0.9');
     });

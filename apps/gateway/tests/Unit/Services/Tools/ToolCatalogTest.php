@@ -252,6 +252,7 @@ describe('tool catalog definitions', function (): void {
         'plausible',
         'postgres',
         'redis',
+        'valkey',
         'supervisor',
     ]);
 
@@ -266,8 +267,10 @@ describe('tool catalog definitions', function (): void {
             ->toBeTrue()
             ->and($registry->supports('postgres'))
             ->toBeTrue()
+            ->and($registry->supports('valkey'))
+            ->toBeTrue()
             ->and($registry->supports('redis'))
-            ->toBeTrue();
+            ->toBeFalse();
     });
 
     it('catalogs node-exporter as a host binary tool with process-owned lifecycle', function (): void {

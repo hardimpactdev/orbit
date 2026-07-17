@@ -139,11 +139,12 @@ The node probe reads gateway node records and checks these layers:
    artifacts, and forwarding readiness to the active `router`. Backend-pool
    selection belongs to the `router` role.
 
-   For `websocket`, assignments have a valid `redis_node_id` setting that
-   references an active `database` role node with Redis expected or installed.
+   For `websocket`, assignments have a valid `valkey_node_id` setting that
+   references an active `database` role node with Valkey expected or installed.
    The node baseline owns Laravel Reverb in a Docker runtime container managed
-   by Orbit, private backend certificate material, WireGuard-only binding, and
-   router-facing readiness. The websocket role does not install or own Redis.
+   by Orbit, private backend certificate material, a container-wide internal
+   listener published only on WireGuard, and router-facing readiness. The
+   websocket role does not install or own Valkey.
 
    For `s3`, assignments have a valid absolute `data_path` setting, a supported
    platform, WireGuard identity, and role convergence status. The node family

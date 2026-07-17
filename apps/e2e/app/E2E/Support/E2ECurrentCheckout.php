@@ -163,9 +163,17 @@ final class E2ECurrentCheckout
             return false;
         }
 
+        $targetInstanceNames = [];
+
         foreach ($roles as $role) {
             [$instance, $user] = self::topologyRoleTarget($topology, $role, $users);
             $hostLauncher = self::topologyRoleUsesHostLauncher($role);
+
+            if (in_array($instance->name(), $targetInstanceNames, true)) {
+                return false;
+            }
+
+            $targetInstanceNames[] = $instance->name();
 
             if (self::usesDockerRuntime($instance)) {
                 return false;
@@ -468,10 +476,8 @@ final class E2ECurrentCheckout
         return "/home/{$user}/orbit-run";
     }
 
-    public static function sourceMountedRuntimeOverlayCommand(
-        string $sourcePath,
-        string $targetPath,
-    ): string {
+    public static function sourceMountedRuntimeOverlayCommand(string $sourcePath, string $targetPath): string
+    {
         return self::sourceMountedRuntimeOverlayMountCommand(
             sourcePath: $sourcePath,
             targetPath: $targetPath,
@@ -479,10 +485,8 @@ final class E2ECurrentCheckout
         );
     }
 
-    public static function sourceMountedRuntimeOverlayRestoreCommand(
-        string $sourcePath,
-        string $targetPath,
-    ): string {
+    public static function sourceMountedRuntimeOverlayRestoreCommand(string $sourcePath, string $targetPath): string
+    {
         return self::sourceMountedRuntimeOverlayMountCommand(
             sourcePath: $sourcePath,
             targetPath: $targetPath,
@@ -535,17 +539,13 @@ final class E2ECurrentCheckout
         string $targetPath,
         ?E2EPhaseTimer $timer,
     ): void {
-        self::runTimed(
-            $timer,
-            'checkout.source-overlay',
-            fn () => E2ECommand::ssh(
-                $instance,
-                $user,
-                $keyPair,
-                self::sourceMountedRuntimeOverlayCommand($sourcePath, $targetPath),
-                timeoutSeconds: 120,
-            ),
-        );
+        self::runTimed($timer, 'checkout.source-overlay', fn () => E2ECommand::ssh(
+            $instance,
+            $user,
+            $keyPair,
+            self::sourceMountedRuntimeOverlayCommand($sourcePath, $targetPath),
+            timeoutSeconds: 120,
+        ));
     }
 
     public static function useNowResolverForTests(?callable $resolver): void
@@ -560,9 +560,7 @@ final class E2ECurrentCheckout
 
     public static function useTreeHashResolverForTests(?callable $resolver): void
     {
-        self::$treeHashResolverForTests = $resolver !== null
-            ? static fn (): string => (string) $resolver()
-            : null;
+        self::$treeHashResolverForTests = $resolver !== null ? static fn (): string => (string) $resolver() : null;
     }
 
     public static function orbitWrapperScript(
@@ -987,10 +985,7 @@ final class E2ECurrentCheckout
         ];
 
         $environmentFlags = implode(' ', [
-            ...array_map(
-                fn (string $value): string => '--env '.escapeshellarg($value),
-                $environment,
-            ),
+            ...array_map(fn (string $value): string => '--env '.escapeshellarg($value), $environment),
             ...E2EGitHubAuth::dockerEnvOptions(),
         ]);
 
@@ -1341,17 +1336,13 @@ final class E2ECurrentCheckout
         ?E2EPhaseTimer $timer,
         bool $sourceMountedCheckout = false,
     ): void {
-        self::runTimed(
-            $timer,
-            'checkout.gateway-settings',
-            fn () => E2ECommand::ssh(
-                $instance,
-                $user,
-                $keyPair,
-                self::localGatewaySettingsCommand($remotePath, $gatewayApiIp, $sourceMountedCheckout),
-                timeoutSeconds: 120,
-            ),
-        );
+        self::runTimed($timer, 'checkout.gateway-settings', fn () => E2ECommand::ssh(
+            $instance,
+            $user,
+            $keyPair,
+            self::localGatewaySettingsCommand($remotePath, $gatewayApiIp, $sourceMountedCheckout),
+            timeoutSeconds: 120,
+        ));
     }
 
     private static function localGatewaySettingsCommand(
@@ -1508,24 +1499,20 @@ final class E2ECurrentCheckout
         bool $hostLauncher = false,
         bool $sourceMountedCheckout = false,
     ): void {
-        self::runTimed(
-            $timer,
-            'checkout.host-keys',
-            fn () => E2ECommand::ssh(
-                $instance,
-                $user,
-                $keyPair,
-                self::hostKeyRefreshCommand(
-                    $remotePath,
-                    self::usesDockerRuntime($instance) && ! $hostLauncher,
-                    self::usesDockerRuntime($instance) && ! $hostLauncher
-                        ? self::dockerRuntimeContainerName($instance)
-                        : null,
-                    $sourceMountedCheckout,
-                ),
-                timeoutSeconds: 120,
+        self::runTimed($timer, 'checkout.host-keys', fn () => E2ECommand::ssh(
+            $instance,
+            $user,
+            $keyPair,
+            self::hostKeyRefreshCommand(
+                $remotePath,
+                self::usesDockerRuntime($instance) && ! $hostLauncher,
+                self::usesDockerRuntime($instance) && ! $hostLauncher
+                    ? self::dockerRuntimeContainerName($instance)
+                    : null,
+                $sourceMountedCheckout,
             ),
-        );
+            timeoutSeconds: 120,
+        ));
     }
 
     private static function hostKeyRefreshCommand(
@@ -2183,8 +2170,6 @@ final class E2ECurrentCheckout
 
     private static function now(): float
     {
-        return self::$nowResolver !== null
-            ? (self::$nowResolver)()
-            : microtime(true);
+        return self::$nowResolver !== null ? (self::$nowResolver)() : microtime(true);
     }
 }

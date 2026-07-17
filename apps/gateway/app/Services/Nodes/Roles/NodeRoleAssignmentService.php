@@ -10,7 +10,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Analytics\AnalyticsDatabaseResolver;
 use App\Services\S3\S3RouteRegistrar;
-use App\Services\WebSockets\WebSocketRedisResolver;
+use App\Services\WebSockets\WebSocketValkeyResolver;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Throwable;
@@ -23,7 +23,7 @@ class NodeRoleAssignmentService
         private readonly NodeRoleBaselineConverger $converger,
         private readonly NodeRoleDependencyInspector $dependencyInspector,
         private readonly RoleSelfGrantMaterializer $roleSelfGrantMaterializer,
-        private readonly WebSocketRedisResolver $webSocketRedisResolver,
+        private readonly WebSocketValkeyResolver $webSocketValkeyResolver,
         private readonly AnalyticsDatabaseResolver $analyticsDatabaseResolver,
         private readonly S3RouteRegistrar $s3RouteRegistrar,
     ) {}
@@ -75,7 +75,7 @@ class NodeRoleAssignmentService
         $this->guardAgainstConflicts($node, $definition);
 
         $settingsData = $definition->settingsFromArray($settings)->toArray();
-        $this->guardWebSocketRedisNode($role, $settingsData);
+        $this->guardWebSocketValkeyNode($role, $settingsData);
         $this->guardAnalyticsDatabaseNodes($role, $settingsData);
         $this->guardAppProductionIngressNode($node, $role, $settingsData);
 
@@ -113,7 +113,7 @@ class NodeRoleAssignmentService
         $this->guardAgainstConflicts($node, $definition);
 
         $settingsData = $definition->settingsFromArray($settings)->toArray();
-        $this->guardWebSocketRedisNode($role, $settingsData);
+        $this->guardWebSocketValkeyNode($role, $settingsData);
         $this->guardAnalyticsDatabaseNodes($role, $settingsData);
         $this->guardAppProductionIngressNode($node, $role, $settingsData);
 
@@ -354,20 +354,20 @@ class NodeRoleAssignmentService
     /**
      * @param  array<string, mixed>  $settings
      */
-    private function guardWebSocketRedisNode(string $role, array $settings): void
+    private function guardWebSocketValkeyNode(string $role, array $settings): void
     {
         if ($role !== NodeRoleName::WebSocket->value) {
             return;
         }
 
-        $redisNodeId = $settings['redis_node_id'] ?? null;
+        $valkeyNodeId = $settings['valkey_node_id'] ?? null;
 
-        if (is_int($redisNodeId) && $this->webSocketRedisResolver->usableRedisNode($redisNodeId) instanceof Node) {
+        if (is_int($valkeyNodeId) && $this->webSocketValkeyResolver->usableValkeyNode($valkeyNodeId) instanceof Node) {
             return;
         }
 
         throw new InvalidArgumentException(
-            'The websocket role requires redis_node_id to reference an active database node with a Redis process.',
+            'The websocket role requires valkey_node_id to reference an active database node with a Valkey process.',
         );
     }
 

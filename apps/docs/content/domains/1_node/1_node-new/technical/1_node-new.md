@@ -20,7 +20,7 @@
 ## Signature
 
 ```bash
-orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--gateway-endpoint=<endpoint>] [--ingress=<node>] [--redis-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--host-key-fingerprint=<fingerprint>] [--self-grant=<mode>] [--self-grant-permissions=<permissions>] [--grant-to=<node>] [--grant-to-preset=<preset>] [--grant-to-permissions=<permissions>] [--grant-from=<node>] [--grant-from-preset=<preset>] [--grant-from-permissions=<permissions>] [--agent-tool=<tool>] [--json|--stream-json]
+orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--gateway-endpoint=<endpoint>] [--ingress=<node>] [--valkey-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--host-key-fingerprint=<fingerprint>] [--self-grant=<mode>] [--self-grant-permissions=<permissions>] [--grant-to=<node>] [--grant-to-preset=<preset>] [--grant-to-permissions=<permissions>] [--grant-from=<node>] [--grant-from-preset=<preset>] [--grant-from-permissions=<permissions>] [--agent-tool=<tool>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -41,7 +41,7 @@ This command follows the shared
 | `user` | `--user` | Never required from the operator; resolved when SSH bootstrap is used. | Client identity with no host provisioning. | `root`. | Bootstrap SSH user used by the initiating CLI. The gateway never receives or uses that user's private key and stores the steady-state runtime user after provisioning. |
 | `gateway_endpoint` | `--gateway-endpoint` | Never required. | Client identity with no roles or `--operator`. | Gateway VPN public endpoint. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `ingress_node` | `--ingress` | Private `app-prod` placement. | Every path other than private `app-prod` placement. | None. | Must match an active node with the `ingress` role. |
-| `redis_node` | `--redis-node` | `websocket`. | Every path that does not include `websocket`. | None. | Must match an active node with the `database` role and Redis expected or installed. |
+| `valkey_node` | `--valkey-node` | `websocket`. | Every path that does not include `websocket`. | None. | Must match an active node with the `database` role and Valkey expected or installed. |
 | `postgres_node` | `--postgres-node` | `analytics`. | Every path that does not include `analytics`. | None. | Must match an active node with the `database` role and PostgreSQL expected or installed. |
 | `clickhouse_node` | `--clickhouse-node` | `analytics`. | Every path that does not include `analytics`. | None. | Must match an active node with the `database` role and ClickHouse expected or installed. |
 | `s3_data_path` | `--s3-data-path` | Never. | Every path that does not include `s3`. | `/srv/orbit/s3/data`. | Canonical host path under `/media`, `/mnt`, `/opt/orbit`, `/srv`, or `/var/lib/orbit`, mounted into SeaweedFS as `/data`. |
@@ -109,7 +109,7 @@ implementation lands.
      production placement choice.
    - For `ingress`, resolve `node_new.host` and `node_new.user`.
    - For `websocket`, resolve `node_new.host`, `node_new.user`, and
-     `node_new.redis_node`.
+     `node_new.valkey_node`.
    - For `s3`, resolve `node_new.host`, `node_new.user`, and
      `node_new.s3_data_path`.
    - For `metrics`, resolve `node_new.host` and `node_new.user`.
@@ -206,7 +206,7 @@ Caller-path behavior is split out into:
   provisioning.
 - Create the node identity first, then add each requested role. Role settings
   stay minimal: `app-prod` assignments store `settings.ingress_node_id`,
-  `websocket` assignments store `settings.redis_node_id`, `s3` assignments
+  `websocket` assignments store `settings.valkey_node_id`, `s3` assignments
   store `settings.data_path`, and `analytics` assignments store
   `settings.postgres_node_id` and `settings.clickhouse_node_id`. `database`
   and `metrics` assignments use empty settings. The
@@ -221,7 +221,7 @@ Caller-path behavior is split out into:
   other; `analytics` may combine with `app-dev`, `database`, `websocket`, `s3`,
   and `metrics`; `metrics` may be combined with any non-agent role.
   WebSocket assignments require
-  `settings.redis_node_id` to reference an active database role node with Redis
+  `settings.valkey_node_id` to reference an active database role node with Valkey
   expected or installed. Reverb runs in a Docker runtime container managed by
   Orbit and binds only to the node's WireGuard address.
 

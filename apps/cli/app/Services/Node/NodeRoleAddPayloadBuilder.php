@@ -13,7 +13,7 @@ class NodeRoleAddPayloadBuilder
      */
     public function build(
         string $role,
-        ?string $redisNode,
+        ?string $valkeyNode,
         ?string $postgresNode,
         ?string $clickhouseNode,
         ?string $s3DataPath,
@@ -37,16 +37,16 @@ class NodeRoleAddPayloadBuilder
         $settings = [];
 
         if ($role === 'websocket') {
-            if ($redisNode === null) {
-                throw new NodeWriteInputException('validation_failed', 'The websocket role requires --redis-node.', [
-                    'field' => 'redis_node',
+            if ($valkeyNode === null) {
+                throw new NodeWriteInputException('validation_failed', 'The websocket role requires --valkey-node.', [
+                    'field' => 'valkey_node',
                 ]);
             }
 
-            $settings['redis_node'] = $redisNode;
-        } elseif ($redisNode !== null) {
-            throw new NodeWriteInputException('validation_failed', "Role '{$role}' does not accept --redis-node.", [
-                'field' => 'redis_node',
+            $settings['valkey_node'] = $valkeyNode;
+        } elseif ($valkeyNode !== null) {
+            throw new NodeWriteInputException('validation_failed', "Role '{$role}' does not accept --valkey-node.", [
+                'field' => 'valkey_node',
                 'role' => $role,
             ]);
         }

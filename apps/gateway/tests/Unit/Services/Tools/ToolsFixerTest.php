@@ -549,6 +549,8 @@ describe('ToolsFixer', function (): void {
     })->with([
         'redis capability' => ['redis', 'tool.capability_missing'],
         'redis container' => ['redis', 'tool.container_missing'],
+        'valkey capability' => ['valkey', 'tool.capability_missing'],
+        'valkey container' => ['valkey', 'tool.container_missing'],
         'mysql capability' => ['mysql', 'tool.capability_missing'],
         'mysql container' => ['mysql', 'tool.container_missing'],
     ]);

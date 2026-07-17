@@ -169,7 +169,7 @@ function expectPreparedDevTopology(E2ETopologyLease $topology, E2EConfig $config
     $devNode = E2EGatewayApi::getNode($gateway, 'app-dev-1');
 
     expectPreparedAppNode($devNode, 'app-dev', 'test', expectedPreparedGatewayEndpoint());
-    expectPreparedDevDatabaseAndRedis($topology);
+    expect_prepared_dev_database_and_valkey($topology);
 }
 
 function expectPreparedProdTopology(E2ETopologyLease $topology, E2EConfig $config): void
@@ -331,7 +331,7 @@ function expectPreparedFullWebSocketTopology(E2ETopologyLease $topology, E2EConf
     $prodNode = E2EGatewayApi::getNode($gateway, 'app-prod-1');
     $state = readPreparedFullWebSocketState($gateway);
 
-    expectPreparedDevDatabaseAndRedis($topology);
+    expect_prepared_dev_database_and_valkey($topology);
     expectPreparedAppNode($prodNode, 'app-prod', null, expectedPreparedGatewayEndpoint());
 
     expect($agentNode['tld'])
@@ -364,7 +364,7 @@ function expectPreparedFullWebSocketTopology(E2ETopologyLease $topology, E2EConf
         ->toContain('database')
         ->and($state['app_dev_roles'])
         ->toContain('websocket')
-        ->and($state['websocket_redis_node'])
+        ->and($state['websocket_valkey_node'])
         ->toBe('app-dev-1')
         ->and($state['node_names'])
         ->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'gateway', 'operator-1']);
@@ -372,12 +372,7 @@ function expectPreparedFullWebSocketTopology(E2ETopologyLease $topology, E2EConf
 
 function expectPreparedOrbitCli(E2EInstance $instance, string $user, SshKeyPair $key): void
 {
-    $result = E2ECommand::ssh(
-        $instance,
-        $user,
-        $key,
-        '/usr/local/bin/orbit --version',
-    );
+    $result = E2ECommand::ssh($instance, $user, $key, '/usr/local/bin/orbit --version');
 
     expect(trim($result->output()))->not->toBe('');
 }
@@ -396,7 +391,7 @@ function expectPreparedOrbitSourceCheckout(E2EInstance $instance, string $user, 
     expect(trim($result->output()))->not->toBe('');
 }
 
-function expectPreparedDevDatabaseAndRedis(E2ETopologyLease $topology): void
+function expect_prepared_dev_database_and_valkey(E2ETopologyLease $topology): void
 {
     $gateway = $topology->gateway();
 
@@ -410,24 +405,24 @@ function expectPreparedDevDatabaseAndRedis(E2ETopologyLease $topology): void
         ->toContain('app-dev')
         ->and($state['roles'])
         ->toContain('database')
-        ->and($state['redis_process_service'])
-        ->toBe('redis');
+        ->and($state['valkey_process_service'])
+        ->toBe('valkey');
 }
 
 /**
- * @return array{roles: list<string>, redis_process_service: string|null}
+ * @return array{roles: list<string>, valkey_process_service: string|null}
  */
 function readPreparedDevServiceState(E2EInstance $gateway): array
 {
     $php = <<<'PHP'
         $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-        $redisRuntimeConfig = \App\Models\Process::query()
+        $valkeyRuntimeConfig = \App\Models\Process::query()
             ->ownedBy($node)
-            ->where('name', 'redis')
+            ->where('name', 'valkey')
             ->value('runtime_config');
 
-        if (is_string($redisRuntimeConfig)) {
-            $redisRuntimeConfig = json_decode($redisRuntimeConfig, associative: true, flags: JSON_THROW_ON_ERROR);
+        if (is_string($valkeyRuntimeConfig)) {
+            $valkeyRuntimeConfig = json_decode($valkeyRuntimeConfig, associative: true, flags: JSON_THROW_ON_ERROR);
         }
 
         echo json_encode([
@@ -437,8 +432,8 @@ function readPreparedDevServiceState(E2EInstance $gateway): array
                 ->pluck('role')
                 ->values()
                 ->all(),
-            'redis_process_service' => is_array($redisRuntimeConfig)
-                ? ($redisRuntimeConfig['service'] ?? null)
+            'valkey_process_service' => is_array($valkeyRuntimeConfig)
+                ? ($valkeyRuntimeConfig['service'] ?? null)
                 : null,
         ], JSON_THROW_ON_ERROR);
         PHP;
@@ -449,7 +444,7 @@ function readPreparedDevServiceState(E2EInstance $gateway): array
         'Could not read prepared appdev service state',
     );
 
-    /** @var array{roles: list<string>, redis_process_service: string|null} $state */
+    /** @var array{roles: list<string>, valkey_process_service: string|null} $state */
     $state = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
     return $state;
@@ -527,7 +522,7 @@ function readPreparedProdIngressState(E2EInstance $gateway): array
 }
 
 /**
- * @return array{app_dev_roles: list<string>, websocket_redis_node: string|null, node_names: list<string>}
+ * @return array{app_dev_roles: list<string>, websocket_valkey_node: string|null, node_names: list<string>}
  */
 function readPreparedFullWebSocketState(E2EInstance $gateway): array
 {
@@ -540,16 +535,16 @@ function readPreparedFullWebSocketState(E2EInstance $gateway): array
 
         $websocket = $assignments->firstWhere('role', \App\Enums\Nodes\NodeRoleName::WebSocket->value);
         $websocketSettings = $websocket === null ? [] : ($websocket->settings ?? []);
-        $redisNodeId = $websocketSettings['redis_node_id'] ?? null;
-        $redisNodeName = null;
+        $valkeyNodeId = $websocketSettings['valkey_node_id'] ?? null;
+        $valkeyNodeName = null;
 
-        if ($redisNodeId !== null) {
-            $redisNodeName = \App\Models\Node::query()->whereKey($redisNodeId)->value('name');
+        if ($valkeyNodeId !== null) {
+            $valkeyNodeName = \App\Models\Node::query()->whereKey($valkeyNodeId)->value('name');
         }
 
         echo json_encode([
             'app_dev_roles' => $assignments->pluck('role')->values()->all(),
-            'websocket_redis_node' => $redisNodeName,
+            'websocket_valkey_node' => $valkeyNodeName,
             'node_names' => \App\Models\Node::query()->orderBy('name')->pluck('name')->values()->all(),
         ], JSON_THROW_ON_ERROR);
         PHP;
@@ -560,7 +555,7 @@ function readPreparedFullWebSocketState(E2EInstance $gateway): array
         'Could not read prepared websocket state',
     );
 
-    /** @var array{app_dev_roles: list<string>, websocket_redis_node: string|null, node_names: list<string>} $state */
+    /** @var array{app_dev_roles: list<string>, websocket_valkey_node: string|null, node_names: list<string>} $state */
     $state = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
     return $state;

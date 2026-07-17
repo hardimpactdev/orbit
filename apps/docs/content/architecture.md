@@ -144,7 +144,7 @@ before following live frames. The gateway Swarm stack renders a single
 `orbit-operations-reverb` service on the gateway role, using the same
 `orbit-reverb` runtime image as the workload websocket role. This service is
 separate from app WebSocket bindings and `websocket.orbit`: it has its own
-operations app config path, does not depend on Redis or a database-role node,
+operations app config path, does not depend on Valkey or a database-role node,
 and does not move non-stream command APIs off gateway API plus Agent push.
 Direct SSE is exact-marked transitional transport and disappears as each
 operation-backed command moves to this durable stream.
@@ -171,12 +171,13 @@ Lanes](execution-lanes.md).
 
 The `websocket` role is a private workload role for Orbit-managed realtime
 infrastructure. A websocket node runs Laravel Reverb in a Docker runtime
-container managed by Orbit, binds only to its WireGuard address, and receives traffic
-through router-owned private service routes. Public WebSocket traffic enters
+container managed by Orbit. Reverb listens on the isolated container interface,
+while Docker publishes port `8080` only on the node's WireGuard address. The role
+receives traffic through router-owned private service routes. Public WebSocket traffic enters
 through `ingress`, then flows to `router`, then to the websocket backend pool.
 Apps use the stable `websocket.orbit` endpoint and never target a concrete
-websocket node. The role depends on a Redis service selected from a
-`database` role node and does not install or own Redis itself.
+websocket node. The role depends on a Valkey service selected from a
+`database` role node and does not install or own Valkey itself.
 
 The `s3` role is a private workload role for Orbit-managed S3-compatible object
 storage. An S3 node runs one SeaweedFS instance in a Docker runtime container

@@ -41,7 +41,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         {--user=root : Bootstrap SSH user for provisioning}
         {--gateway-endpoint= : WireGuard endpoint host this node should use to reach the gateway}
         {--ingress= : Existing ingress node for private app-prod placement}
-        {--redis-node= : Existing database node for websocket Redis}
+        {--valkey-node= : Existing database node for websocket Valkey}
         {--postgres-node= : Existing database node for analytics PostgreSQL}
         {--clickhouse-node= : Existing database node for analytics ClickHouse}
         {--s3-data-path= : Host data path for the s3 role}
@@ -93,7 +93,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
                 user: $this->stringOption('user'),
                 gatewayEndpoint: $this->stringOption('gateway-endpoint'),
                 ingressNode: $this->stringOption('ingress'),
-                redisNode: $this->stringOption('redis-node'),
+                valkeyNode: $this->stringOption('valkey-node'),
                 postgresNode: $this->stringOption('postgres-node'),
                 clickhouseNode: $this->stringOption('clickhouse-node'),
                 s3DataPath: $this->stringOption('s3-data-path'),
@@ -193,9 +193,10 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         unset($preparePayload['host_key_fingerprint']);
 
         try {
-            $resumeResponse = $gatewayClient
-                ->withMinimumTimeout(self::BOOTSTRAP_TIMEOUT_SECONDS)
-                ->post('/api/nodes/bootstrap/resume', $preparePayload);
+            $resumeResponse = $gatewayClient->withMinimumTimeout(self::BOOTSTRAP_TIMEOUT_SECONDS)->post(
+                '/api/nodes/bootstrap/resume',
+                $preparePayload,
+            );
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -220,35 +221,23 @@ final class NodeNewCommand extends BootstrapGatewayCommand
                 expectedFingerprint: $this->stringOption('host-key-fingerprint'),
             );
         } catch (NodeBootstrapHostKeyMismatch $exception) {
-            return $this->renderFailure(
-                'node.host_key_mismatch',
-                $exception->getMessage(),
-                [
-                    'host' => $payload['host'],
-                    'step' => 'client_ssh_host_key',
-                ],
-            );
+            return $this->renderFailure('node.host_key_mismatch', $exception->getMessage(), [
+                'host' => $payload['host'],
+                'step' => 'client_ssh_host_key',
+            ]);
         } catch (NodeBootstrapUnsupportedPlatform $exception) {
-            return $this->renderFailure(
-                'node.unsupported_platform',
-                $exception->getMessage(),
-                [
-                    'host' => $payload['host'],
-                    'platform' => $exception->platform,
-                    'architecture' => $exception->architecture,
-                    'step' => 'client_ssh_preflight',
-                ],
-            );
+            return $this->renderFailure('node.unsupported_platform', $exception->getMessage(), [
+                'host' => $payload['host'],
+                'platform' => $exception->platform,
+                'architecture' => $exception->architecture,
+                'step' => 'client_ssh_preflight',
+            ]);
         } catch (RuntimeException $exception) {
-            return $this->renderFailure(
-                'node.bootstrap_ssh_failed',
-                $exception->getMessage(),
-                [
-                    'host' => $payload['host'],
-                    'user' => $payload['user'] ?? 'root',
-                    'step' => 'client_ssh_preflight',
-                ],
-            );
+            return $this->renderFailure('node.bootstrap_ssh_failed', $exception->getMessage(), [
+                'host' => $payload['host'],
+                'user' => $payload['user'] ?? 'root',
+                'step' => 'client_ssh_preflight',
+            ]);
         }
 
         $preparePayload = [
@@ -258,9 +247,10 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         ];
 
         try {
-            $response = $gatewayClient
-                ->withMinimumTimeout(self::BOOTSTRAP_TIMEOUT_SECONDS)
-                ->post('/api/nodes/bootstrap', $preparePayload);
+            $response = $gatewayClient->withMinimumTimeout(self::BOOTSTRAP_TIMEOUT_SECONDS)->post(
+                '/api/nodes/bootstrap',
+                $preparePayload,
+            );
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -268,10 +258,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         $bootstrap = $this->bootstrapPayload($response);
 
         if ($bootstrap === null) {
-            return $this->renderFailure(
-                'node.gateway_api_error',
-                'Gateway node bootstrap response is incomplete.',
-            );
+            return $this->renderFailure('node.gateway_api_error', 'Gateway node bootstrap response is incomplete.');
         }
 
         try {
@@ -282,24 +269,16 @@ final class NodeNewCommand extends BootstrapGatewayCommand
                 expectedFingerprint: $this->stringOption('host-key-fingerprint'),
             );
         } catch (NodeBootstrapHostKeyMismatch $exception) {
-            return $this->renderFailure(
-                'node.host_key_mismatch',
-                $exception->getMessage(),
-                [
-                    'host' => $bootstrap['host'],
-                    'step' => 'client_ssh_host_key',
-                ],
-            );
+            return $this->renderFailure('node.host_key_mismatch', $exception->getMessage(), [
+                'host' => $bootstrap['host'],
+                'step' => 'client_ssh_host_key',
+            ]);
         } catch (RuntimeException $exception) {
-            return $this->renderFailure(
-                'node.bootstrap_ssh_failed',
-                $exception->getMessage(),
-                [
-                    'host' => $bootstrap['host'],
-                    'user' => $bootstrap['user'],
-                    'step' => 'client_ssh_bootstrap',
-                ],
-            );
+            return $this->renderFailure('node.bootstrap_ssh_failed', $exception->getMessage(), [
+                'host' => $bootstrap['host'],
+                'user' => $bootstrap['user'],
+                'step' => 'client_ssh_bootstrap',
+            ]);
         }
 
         if (! $result->successful()) {
@@ -321,11 +300,10 @@ final class NodeNewCommand extends BootstrapGatewayCommand
 
     private function completeBootstrap(string $bootstrapId): int
     {
-        return $this->streamProgress(
-            '/api/nodes/bootstrap/'.rawurlencode($bootstrapId).'/complete',
-            [],
-            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
-        );
+        return $this->streamProgress('/api/nodes/bootstrap/'.rawurlencode($bootstrapId).'/complete', [], fn (
+            ProgressEventType $type,
+            array $payload,
+        ): int => $this->renderProgressTerminalFrame($type, $payload));
     }
 
     /**

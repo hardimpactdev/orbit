@@ -60,8 +60,8 @@ These rules govern every command contract in this directory.
   A tool-specific or capability-specific family is valid only when it owns a
   distinct Orbit workflow whose natural operator vocabulary is the tool or
   capability name. `php:*` owns PHP image selection across apps and
-  workspaces; future Redis data-plane operations may use
-  `redis:*`. Database connection inventory, env convergence, schema
+  workspaces; future Valkey data-plane operations may use
+  `valkey:*`. Database connection inventory, env convergence, schema
   inspection, audited SQL execution, and database backup/restore workflows
   belong to `database:*` instead of `mysql:*` or `postgres:*` command
   families.

@@ -74,10 +74,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             return ProviderAvailability::available("warm prepared topology {$kind->value} is available on {$host}");
         }
 
-        $availability = IncusHostPool::fromEnvironment($this->config)->availabilityFor(
-            $kind,
-            checkCapacity: false,
-        );
+        $availability = IncusHostPool::fromEnvironment($this->config)->availabilityFor($kind, checkCapacity: false);
         $host = $availability['host'];
 
         if ($host === null) {
@@ -119,13 +116,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             $sourcePath = $options->sourceMountedCheckout
                 ? $this->sourceSyncer()->sourcePath($host->config->host, 'incus', $runId)
                 : null;
-            $sourcePath = $this->syncSourcePath(
-                $host,
-                $runId,
-                $timer,
-                $options->sourceMountedCheckout,
-                $sourcePath,
-            );
+            $sourcePath = $this->syncSourcePath($host, $runId, $timer, $options->sourceMountedCheckout, $sourcePath);
 
             $instances = IncusTopologyTemplate::clone(
                 $host,
@@ -172,13 +163,11 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         ): array {
             $cycleTimer->measure('reset.worker-network', fn () => $workerNetwork->ensureOn($host));
 
-            $sourcePath = self::sourcePathResult(
-                $cycleTimer->measure('reset.source-sync', fn (): string => $this->sourceSyncer()->sync(
-                    $host->config->host,
-                    'incus',
-                    scope: $options->sourceMountedCheckout ? $runId : null,
-                )),
-            );
+            $sourcePath = self::sourcePathResult($cycleTimer->measure('reset.source-sync', fn (): string => $this->sourceSyncer()->sync(
+                $host->config->host,
+                'incus',
+                scope: $options->sourceMountedCheckout ? $runId : null,
+            )));
 
             $newInstances = IncusTopologyTemplate::clone(
                 $host,
@@ -225,11 +214,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             sshKeyPair: $sshKeyPair,
             rebuild: $rebuild,
             snapshotReset: $snapshotReset,
-            bulkCleanup: $this->bulkCleanupFor(
-                $host,
-                $instances,
-                $options->sourceMountedCheckout ? $sourcePath : null,
-            ),
+            bulkCleanup: $this->bulkCleanupFor($host, $instances, $options->sourceMountedCheckout ? $sourcePath : null),
             gatewayApiIp: self::GatewayWireGuardIp,
             resourceLease: $resourceLease,
             agent: $leaseInstances['agent'] ?? null,
@@ -266,10 +251,11 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                         throw new \LogicException('Scoped source cleanup requires an active mutation generation.');
                     }
 
-                    $cycleTimer->measure(
-                        'cleanup.source',
-                        fn () => $this->removeScopedSourcePath($host, $sourcePath, $mutationFence),
-                    );
+                    $cycleTimer->measure('cleanup.source', fn () => $this->removeScopedSourcePath(
+                        $host,
+                        $sourcePath,
+                        $mutationFence,
+                    ));
                 }
             };
 
@@ -329,10 +315,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
     /** @return list<string> */
     private function cloneNames(E2ETopologyKind $kind, string $runId): array
     {
-        return array_map(
-            static fn (string $role): string => IncusTopologyTemplate::cloneName($runId, $role),
-            IncusTopologyTemplate::rolesFor($kind),
-        );
+        return array_map(static fn (string $role): string => IncusTopologyTemplate::cloneName(
+            $runId,
+            $role,
+        ), IncusTopologyTemplate::rolesFor($kind));
     }
 
     /**
@@ -340,15 +326,9 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
      * @param  \Closure(?SourceMountedCheckoutMutationFence): TResult  $operation
      * @return TResult
      */
-    private function withScopedSourceLock(
-        IncusHost $host,
-        ?string $sourcePath,
-        \Closure $operation,
-    ): mixed {
-        if (
-            $sourcePath === null
-            || basename(dirname(rtrim(string: $sourcePath, characters: '/'))) !== 'retained'
-        ) {
+    private function withScopedSourceLock(IncusHost $host, ?string $sourcePath, \Closure $operation): mixed
+    {
+        if ($sourcePath === null || basename(dirname(rtrim(string: $sourcePath, characters: '/'))) !== 'retained') {
             return $operation(null);
         }
 
@@ -362,13 +342,11 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         bool $sourceMounted,
         ?string $expectedPath,
     ): string {
-        $syncedPath = self::sourcePathResult(
-            $timer->measure('incus.source-sync', fn (): string => $this->sourceSyncer()->sync(
-                $host->config->host,
-                'incus',
-                scope: $sourceMounted ? $runId : null,
-            )),
-        );
+        $syncedPath = self::sourcePathResult($timer->measure('incus.source-sync', fn (): string => $this->sourceSyncer()->sync(
+            $host->config->host,
+            'incus',
+            scope: $sourceMounted ? $runId : null,
+        )));
 
         if ($expectedPath !== null && ! hash_equals($expectedPath, $syncedPath)) {
             throw new \RuntimeException(
@@ -398,9 +376,9 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         $result = $host->run(
-            $mutationFence->guardedScript(
-                SourceMountedCheckoutMutationFence::protectedSourceCleanupScript($sourcePath),
-            ),
+            $mutationFence->guardedScript(SourceMountedCheckoutMutationFence::protectedSourceCleanupScript(
+                $sourcePath,
+            )),
             timeoutSeconds: 120,
         );
 
@@ -469,17 +447,14 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             $workerNetwork = IncusWorkerNetwork::forSlot($this->config, $slot);
             $timer->measure("warm.network.slot-{$slot}", fn () => $workerNetwork->ensureOn($host));
 
-            $instances = $timer->measure(
-                "warm.clone.slot-{$slot}",
-                fn (): array => IncusTopologyTemplate::clone(
-                    $host,
-                    $kind,
-                    $runId,
-                    $timer->child("warm.slot-{$slot}"),
-                    stateful: true,
-                    network: $workerNetwork,
-                ),
-            );
+            $instances = $timer->measure("warm.clone.slot-{$slot}", fn (): array => IncusTopologyTemplate::clone(
+                $host,
+                $kind,
+                $runId,
+                $timer->child("warm.slot-{$slot}"),
+                stateful: true,
+                network: $workerNetwork,
+            ));
 
             $sshKeyPair = $this->createSshKeyPair($host, $runId);
             $this->prepareInstances(
@@ -487,10 +462,9 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $this->config,
                 $sshKeyPair,
                 $timer->child("warm.slot-{$slot}"),
-                new E2ETopologyAcquisitionOptions(
-                    sshUsers: ['operator' => $this->config->operatorUser],
-                    startGatewayApi: true,
-                ),
+                new E2ETopologyAcquisitionOptions(sshUsers: [
+                    'operator' => $this->config->operatorUser,
+                ], startGatewayApi: true),
                 $kind,
             );
 
@@ -556,10 +530,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 throw new \RuntimeException("No warm prepared topology {$kind->value} slots are available on {$host}.");
             }
 
-            $warmLease = $pool->acquire(
-                IncusWarmTopologyPool::backend($kind),
-                [$host => $warmSlots],
-            );
+            $warmLease = $pool->acquire(IncusWarmTopologyPool::backend($kind), [$host => $warmSlots]);
         } catch (\Throwable $exception) {
             $capacityLease->release();
 
@@ -581,14 +552,11 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         try {
             $timer->measure('warm.network', fn () => $workerNetwork->ensureOn($host));
 
-            $result = $timer->measure(
-                'warm.restore',
-                fn () => $host->restoreSnapshotsConcurrently(
-                    $names,
-                    IncusWarmTopologyPool::SnapshotName,
-                    stateful: true,
-                ),
-            );
+            $result = $timer->measure('warm.restore', fn () => $host->restoreSnapshotsConcurrently(
+                $names,
+                IncusWarmTopologyPool::SnapshotName,
+                stateful: true,
+            ));
 
             if (! $result->successful()) {
                 throw new \RuntimeException("Could not restore warm topology {$kind->value}: {$result->errorOutput()}");
@@ -682,14 +650,11 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 array_values($instances),
             );
 
-            $result = $cycleTimer->measure(
-                'warm.reset.restore-stateful.all',
-                fn () => $host->restoreSnapshotsConcurrently(
-                    $names,
-                    IncusWarmTopologyPool::SnapshotName,
-                    stateful: true,
-                ),
-            );
+            $result = $cycleTimer->measure('warm.reset.restore-stateful.all', fn () => $host->restoreSnapshotsConcurrently(
+                $names,
+                IncusWarmTopologyPool::SnapshotName,
+                stateful: true,
+            ));
 
             if (! $result->successful()) {
                 throw new \RuntimeException("Could not restore warm topology snapshots: {$result->errorOutput()}");
@@ -1033,10 +998,11 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             }
 
             if ($sourceMountedCheckout) {
-                $cycleTimer->measure(
-                    'reset.source-mounted-launchers',
-                    fn () => $this->activateSourceMountedLaunchers($instances, $this->config, $cycleTimer),
-                );
+                $cycleTimer->measure('reset.source-mounted-launchers', fn () => $this->activateSourceMountedLaunchers(
+                    $instances,
+                    $this->config,
+                    $cycleTimer,
+                ));
             }
 
             $cycleTimer->measure('reset.wireguard', fn () => $this->retargetRealWireGuard($instances, $cycleTimer));
@@ -1092,17 +1058,11 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         SshKeyPair $sshKeyPair,
     ): \Closure {
         return function (E2EPhaseTimer $cycleTimer) use ($host, $instances, $primaryUsers, $sshKeyPair): void {
-            $result = $cycleTimer->measure(
-                'reset.restore-stateful.all',
-                fn () => $host->restoreSnapshotsConcurrently(
-                    array_map(
-                        fn (IncusInstance $instance): string => $instance->name(),
-                        array_values($instances),
-                    ),
-                    'lease-warm',
-                    stateful: true,
-                ),
-            );
+            $result = $cycleTimer->measure('reset.restore-stateful.all', fn () => $host->restoreSnapshotsConcurrently(
+                array_map(fn (IncusInstance $instance): string => $instance->name(), array_values($instances)),
+                'lease-warm',
+                stateful: true,
+            ));
 
             if (! $result->successful()) {
                 throw new \RuntimeException("Could not restore stateful topology snapshots: {$result->errorOutput()}");
@@ -1281,7 +1241,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         if (isset($instances['dev'])) {
-            $this->seedAppdevDatabaseAndRedis($gateway, $sshKeyPair, $sourceMountedCheckout);
+            $this->seedAppdevDatabaseAndValkey($gateway, $sshKeyPair, $sourceMountedCheckout);
         }
 
         if (self::websocketTopologyKind($kind) && isset($instances['dev'])) {
@@ -1289,7 +1249,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $gateway,
                 $sshKeyPair,
                 sprintf(
-                    'orbit:internal:bake-websocket-node app-dev-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1 --converge-runtime',
+                    'orbit:internal:bake-websocket-node app-dev-1 --host=%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --valkey-node=app-dev-1 --converge-runtime',
                     escapeshellarg(self::DevWireGuardIp),
                     escapeshellarg(self::DevWireGuardIp),
                     escapeshellarg(self::GatewayWireGuardIp),
@@ -1564,13 +1524,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             sprintf('chmod 0600 %s', escapeshellarg($configPath)),
         ];
 
-        E2ECommand::ssh(
-            $operator,
-            $config->operatorUser,
-            $sshKeyPair,
-            implode(' && ', $commands),
-            timeoutSeconds: 60,
-        );
+        E2ECommand::ssh($operator, $config->operatorUser, $sshKeyPair, implode(' && ', $commands), timeoutSeconds: 60);
     }
 
     private function cliJsonConfigBody(string $gatewayUrl): string
@@ -1600,7 +1554,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         ], JSON_THROW_ON_ERROR);
     }
 
-    private function seedAppdevDatabaseAndRedis(
+    private function seedAppdevDatabaseAndValkey(
         IncusInstance $gateway,
         SshKeyPair $sshKeyPair,
         bool $sourceMountedCheckout,
@@ -1608,7 +1562,8 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $this->runGatewayArtisan(
             $gateway,
             $sshKeyPair,
-            'tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
+            'tinker --execute='
+                .escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndValkeyPhp(convergeRuntime: true)),
             $sourceMountedCheckout,
             timeoutSeconds: 120,
         );
@@ -1714,33 +1669,30 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
     private function gatewaySshAuthorizeScript(string $publicKey): string
     {
-        return sprintf(
-            <<<'SH'
-                set -euo pipefail
-                install -d -m 700 -o orbit -g orbit /home/orbit/.ssh
-                touch /home/orbit/.ssh/authorized_keys
-                chown orbit:orbit /home/orbit/.ssh/authorized_keys
-                chmod 600 /home/orbit/.ssh/authorized_keys
-                grep -qxF %1$s /home/orbit/.ssh/authorized_keys || printf "%%s\n" %1$s >> /home/orbit/.ssh/authorized_keys
+        return sprintf(<<<'SH'
+            set -euo pipefail
+            install -d -m 700 -o orbit -g orbit /home/orbit/.ssh
+            touch /home/orbit/.ssh/authorized_keys
+            chown orbit:orbit /home/orbit/.ssh/authorized_keys
+            chmod 600 /home/orbit/.ssh/authorized_keys
+            grep -qxF %1$s /home/orbit/.ssh/authorized_keys || printf "%%s\n" %1$s >> /home/orbit/.ssh/authorized_keys
 
-                if ! (systemctl restart ssh || systemctl restart sshd || systemctl start ssh || systemctl start sshd); then
+            if ! (systemctl restart ssh || systemctl restart sshd || systemctl start ssh || systemctl start sshd); then
+                systemctl status ssh sshd --no-pager || true
+                exit 1
+            fi
+
+            deadline=$((SECONDS+60))
+            until ss -ltn | grep -Eq '(^|[[:space:]])LISTEN[[:space:]].*:22[[:space:]]'; do
+                if [ "$SECONDS" -ge "$deadline" ]; then
                     systemctl status ssh sshd --no-pager || true
+                    ss -ltn || true
                     exit 1
                 fi
 
-                deadline=$((SECONDS+60))
-                until ss -ltn | grep -Eq '(^|[[:space:]])LISTEN[[:space:]].*:22[[:space:]]'; do
-                    if [ "$SECONDS" -ge "$deadline" ]; then
-                        systemctl status ssh sshd --no-pager || true
-                        ss -ltn || true
-                        exit 1
-                    fi
-
-                    sleep 1
-                done
-                SH,
-            escapeshellarg($publicKey),
-        );
+                sleep 1
+            done
+            SH, escapeshellarg($publicKey));
     }
 
     /**
@@ -1872,11 +1824,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                         escapeshellarg($localBinDirectory),
                     ),
                     'ln -sfn '.escapeshellarg($sourceLauncher).' '.escapeshellarg($localLauncher),
-                    sprintf(
-                        'chown -h %1$s:%1$s %2$s',
-                        escapeshellarg($user),
-                        escapeshellarg($localLauncher),
-                    ),
+                    sprintf('chown -h %1$s:%1$s %2$s', escapeshellarg($user), escapeshellarg($localLauncher)),
                 ])),
             );
         }
@@ -1893,31 +1841,28 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
     private function gatewaySshProbeTask(IncusInstance $gateway, string $wireGuardIp): string
     {
-        $probe = sprintf(
-            <<<'SH'
-                deadline=$((SECONDS+180))
-                successes=0
+        $probe = sprintf(<<<'SH'
+            deadline=$((SECONDS+180))
+            successes=0
 
-                until [ "$successes" -ge 3 ]; do
-                    if ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 orbit@%s true; then
-                        successes=$((successes+1))
-                    else
-                        successes=0
-                    fi
+            until [ "$successes" -ge 3 ]; do
+                if ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 orbit@%s true; then
+                    successes=$((successes+1))
+                else
+                    successes=0
+                fi
 
-                    if [ "$successes" -ge 3 ]; then
-                        exit 0
-                    fi
+                if [ "$successes" -ge 3 ]; then
+                    exit 0
+                fi
 
-                    if [ "$SECONDS" -ge "$deadline" ]; then
-                        exit 1
-                    fi
+                if [ "$SECONDS" -ge "$deadline" ]; then
+                    exit 1
+                fi
 
-                    sleep 2
-                done
-                SH,
-            escapeshellarg($wireGuardIp),
-        );
+                sleep 2
+            done
+            SH, escapeshellarg($wireGuardIp));
 
         return sprintf(
             'incus exec %s -- runuser -u orbit -- bash -lc %s',

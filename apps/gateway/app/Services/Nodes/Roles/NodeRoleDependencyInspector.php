@@ -29,7 +29,7 @@ class NodeRoleDependencyInspector
     private const array DatabaseProcessServices = [
         'mysql',
         'postgres',
-        'redis',
+        'valkey',
         'clickhouse',
     ];
 

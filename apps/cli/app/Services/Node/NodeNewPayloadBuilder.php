@@ -53,7 +53,7 @@ class NodeNewPayloadBuilder
         ?string $user,
         ?string $gatewayEndpoint,
         ?string $ingressNode,
-        ?string $redisNode,
+        ?string $valkeyNode,
         ?string $postgresNode,
         ?string $clickhouseNode,
         ?string $s3DataPath,
@@ -163,7 +163,7 @@ class NodeNewPayloadBuilder
         $this->putString($payload, 'user', $user);
         $this->putString($payload, 'gateway_endpoint', $gatewayEndpoint);
         $this->putString($payload, 'ingress_node', $ingressNode);
-        $this->putString($payload, 'redis_node', $redisNode);
+        $this->putString($payload, 'valkey_node', $valkeyNode);
         $this->putString($payload, 'postgres_node', $postgresNode);
         $this->putString($payload, 'clickhouse_node', $clickhouseNode);
         $this->putString($payload, 's3_data_path', $s3DataPath);
@@ -220,7 +220,7 @@ class NodeNewPayloadBuilder
             'user' => 'user',
             'gateway_endpoint' => 'gateway-endpoint',
             'ingress_node' => 'ingress',
-            'redis_node' => 'redis-node',
+            'valkey_node' => 'valkey-node',
             'postgres_node' => 'postgres-node',
             'clickhouse_node' => 'clickhouse-node',
             's3_data_path' => 's3-data-path',

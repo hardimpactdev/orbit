@@ -51,8 +51,8 @@ on macOS.
 
 ## Orbit Notes
 
-Docker is the infrastructure substrate for process-defined services such as MySQL
-and Redis, app/workspace runtime containers, the `websocket` role's Laravel Reverb
+Docker is the infrastructure substrate for process-defined services such as MySQL and
+Valkey, app/workspace runtime containers, the `websocket` role's Laravel Reverb
 runtime, the `s3` role's SeaweedFS runtime, and `dns`. Mailpit remains a tool-backed
 Docker service; Reverb is owned by the websocket role rather than a separate Tool
 row. Docker is not itself a database, cache, mail, realtime, object-storage, or DNS

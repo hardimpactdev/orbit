@@ -167,10 +167,7 @@ it('generates Incus worker network names that fit the Linux interface limit', fu
 
     $network = IncusWorkerNetwork::forSlot($config, 200);
 
-    expect($network->name)
-        ->toBe('orbit-e2e-n-200')
-        ->and(strlen($network->name))
-        ->toBeLessThanOrEqual(15);
+    expect($network->name)->toBe('orbit-e2e-n-200')->and(strlen($network->name))->toBeLessThanOrEqual(15);
 });
 
 it('opens worker network forwarding ahead of host firewall drops without enabling dnsmasq dns', function (): void {
@@ -258,10 +255,7 @@ it('uses artifact-set suffixes for branch-specific Incus templates and snapshots
 
 it('returns false when any template instance is missing', function (): void {
     $host = m::mock(IncusHost::class);
-    $host
-        ->shouldReceive('run')
-        ->once()
-        ->andReturn(failedProcessResult());
+    $host->shouldReceive('run')->once()->andReturn(failedProcessResult());
 
     expect(IncusTopologyTemplate::availableOn($host, E2ETopologyKind::OperatorGateway))->toBeFalse();
 });
@@ -508,9 +502,7 @@ it('bypasses warm snapshot acquisition for source-mounted retained Incus request
             $method = new ReflectionMethod($provider, 'shouldAcquireWarmSnapshots');
             $method->setAccessible(true);
 
-            expect($method->invoke($provider, new E2ETopologyAcquisitionOptions(
-                sourceMountedCheckout: true,
-            )))
+            expect($method->invoke($provider, new E2ETopologyAcquisitionOptions(sourceMountedCheckout: true)))
                 ->toBeFalse()
                 ->and($method->invoke($provider, new E2ETopologyAcquisitionOptions))
                 ->toBeTrue();
@@ -587,10 +579,9 @@ it('can restrict availability checks to a leased incus host', function (): void 
     $host2->shouldReceive('run')->andReturn(successfulProcessResult());
     $host2->shouldReceive('runningE2EInstanceCount')->andReturn(0);
 
-    $availability = new IncusHostPool([$host1, $host2])->availabilityFor(
-        E2ETopologyKind::OperatorGateway,
-        hostNames: ['sidecar2'],
-    );
+    $availability = new IncusHostPool([$host1, $host2])->availabilityFor(E2ETopologyKind::OperatorGateway, hostNames: [
+        'sidecar2',
+    ]);
 
     expect($availability['host'])->toBe($host2)->and($availability['reason'])->toBeNull();
 });
@@ -709,27 +700,26 @@ it('falls back from branch-specific Incus snapshots to base snapshots per role',
         $host = m::mock(IncusHost::class, [$config])->makePartial();
         $checks = [];
 
-        $host->shouldReceive('run')
-            ->andReturnUsing(function (string $command) use (&$checks): ProcessResult {
-                if (str_contains($command, '__orbit_snapshot_source')) {
-                    $checks[] = $command;
+        $host->shouldReceive('run')->andReturnUsing(function (string $command) use (&$checks): ProcessResult {
+            if (str_contains($command, '__orbit_snapshot_source')) {
+                $checks[] = $command;
 
-                    $result = m::mock(ProcessResult::class);
-                    $result->shouldReceive('successful')->andReturn(true);
-                    $result->shouldReceive('errorOutput')->andReturn('');
-                    $result
-                        ->shouldReceive('output')
-                        ->andReturn(implode("\n", [
-                            '__orbit_snapshot_source operator orbit-template-operator-branch-a-b clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b',
-                            '__orbit_snapshot_source gateway orbit-template-gateway-branch-a-b clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b',
-                            '__orbit_snapshot_source agent orbit-template-agent-base clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
-                        ]));
+                $result = m::mock(ProcessResult::class);
+                $result->shouldReceive('successful')->andReturn(true);
+                $result->shouldReceive('errorOutput')->andReturn('');
+                $result
+                    ->shouldReceive('output')
+                    ->andReturn(implode("\n", [
+                        '__orbit_snapshot_source operator orbit-template-operator-branch-a-b clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b',
+                        '__orbit_snapshot_source gateway orbit-template-gateway-branch-a-b clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b',
+                        '__orbit_snapshot_source agent orbit-template-agent-base clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+                    ]));
 
-                    return $result;
-                }
+                return $result;
+            }
 
-                return successfulProcessResult();
-            });
+            return successfulProcessResult();
+        });
 
         $script = IncusTopologyTemplate::buildBatchScript(
             $host,
@@ -875,14 +865,13 @@ it('clones only requested Incus roles from the prepared full snapshot', function
         $host = m::mock(IncusHost::class, [$config])->makePartial();
         $snapshotChecks = [];
 
-        $host->shouldReceive('run')
-            ->andReturnUsing(function (string $command) use (&$snapshotChecks): ProcessResult {
-                if (str_contains($command, '/snapshots/')) {
-                    $snapshotChecks[] = $command;
-                }
+        $host->shouldReceive('run')->andReturnUsing(function (string $command) use (&$snapshotChecks): ProcessResult {
+            if (str_contains($command, '/snapshots/')) {
+                $snapshotChecks[] = $command;
+            }
 
-                return successfulProcessResult();
-            });
+            return successfulProcessResult();
+        });
 
         $script = IncusTopologyTemplate::buildBatchScript(
             $host,
@@ -930,7 +919,7 @@ it('prepared Incus acquisition retargets selected snapshot roles without dynamic
         ->toContain('/.config/orbit')
         ->toContain('config.json')
         ->toContain('orbit:internal:bake-app-node app-dev-1 --role=app-dev')
-        ->toContain('seedAppdevDatabaseAndRedis($gateway')
+        ->toContain('seedAppdevDatabaseAndValkey($gateway')
         ->toContain('orbit:internal:bake-ingress-node app-prod-1')
         ->toContain('E2EPreparedTopology::prodHostsIngressRole($kind)')
         ->toContain('orbit:internal:bake-app-node app-prod-1 --role=app-prod')
@@ -1040,8 +1029,7 @@ it('clones runs the batch script through the host and waits for each agent', fun
             return str_contains($command, 'incus copy');
         })
         ->andReturn(successfulProcessResult());
-    $host->shouldReceive('run')
-        ->andReturn(successfulProcessResult());
+    $host->shouldReceive('run')->andReturn(successfulProcessResult());
 
     $instances = IncusTopologyTemplate::clone($host, E2ETopologyKind::OperatorGateway, 'runY');
 

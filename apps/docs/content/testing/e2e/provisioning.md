@@ -55,7 +55,7 @@ The Incus provision gate has one supported shape:
    the operator opens the client-local SSH edge, streams the gateway-authored
    minimal bundle, waits for Agent readiness, and lets the gateway complete
    convergence through Agent push.
-5. Bake websocket against app-dev Redis as soon as the app-dev role succeeds,
+5. Bake websocket against app-dev Valkey as soon as the app-dev role succeeds,
    app-dev runtime services are ready, and the provisioning-owned
    gateway/app-dev WireGuard route is ready. Websocket does not wait for
    app-prod or agent unless a future contract adds a real dependency.
@@ -120,10 +120,10 @@ DAG `operator -> gateway -> {dev, prod, agent}`. Dev, prod, and agent launch and
 client-bootstrap tasks run independently from the operator; post-readiness bake
 commands are gateway-authored Agent-push convergence. In the websocket-capable
 topology, websocket is a dev-dependent task. It starts after app-dev is baked,
-app-dev Docker, Caddy, FrankenPHP, and Redis services are ready, and the
+app-dev Docker, Caddy, FrankenPHP, and Valkey services are ready, and the
 provisioning-owned gateway/app-dev WireGuard route is ready. It does not wait
 for app-prod or agent completion. After websocket completes, the development
-app node seeds database and Redis registry state before the full source snapshot
+app node seeds database and Valkey registry state before the full source snapshot
 is taken.
 
 The prepared base image's preloaded Docker, Swarm, PHP, Composer, and container
@@ -132,9 +132,9 @@ images are harness-only fixture acceleration. They do not redefine the public
 
 Feature tests clone only their requested roles from that full prepared source.
 
-App-dev carries database, Redis, Caddy, and FrankenPHP app-serving readiness by
+App-dev carries database, Valkey, Caddy, and FrankenPHP app-serving readiness by
 default. App-prod carries the ingress role by default. Websocket carries the
-Reverb runtime baseline and uses app-dev Redis.
+Reverb runtime baseline and uses app-dev Valkey.
 
 The shared prepared Incus artifact set is `base`: role templates are named
 `orbit-template-<role>-base`, and source snapshots are named

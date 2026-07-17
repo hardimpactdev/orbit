@@ -15,6 +15,7 @@ final readonly class LocalWebSocketRuntimeContainerSpec
      * @param  array<string, string>  $environment
      * @param  list<array{source: string, target: string, read_only: bool}>  $mounts
      * @param  list<string>  $networkAliases
+     * @param  list<string>  $publishedPorts
      */
     private function __construct(
         public string $name,
@@ -22,12 +23,13 @@ final readonly class LocalWebSocketRuntimeContainerSpec
         public string $network,
         public string $restartPolicy,
         public string $backendName,
-        public int $redisNodeId,
+        public int $valkeyNodeId,
         public string $workingDirectory,
         public string $command,
         public array $environment,
         public array $mounts,
         public array $networkAliases,
+        public array $publishedPorts,
         public string $expectedHash,
     ) {}
 
@@ -43,12 +45,13 @@ final readonly class LocalWebSocketRuntimeContainerSpec
             network: self::identifier($value, 'network'),
             restartPolicy: self::restartPolicy($value['restart_policy'] ?? null),
             backendName: self::identifier($value, 'backend_name'),
-            redisNodeId: self::positiveInteger($value['redis_node_id'] ?? null, 'redis_node_id'),
+            valkeyNodeId: self::positiveInteger($value['valkey_node_id'] ?? null, 'valkey_node_id'),
             workingDirectory: self::absolutePath($value, 'working_directory'),
             command: self::nonEmptyString($value, 'command'),
             environment: self::environment($value['environment'] ?? null),
             mounts: self::mounts($value['mounts'] ?? null),
             networkAliases: self::networkAliases($value['network_aliases'] ?? []),
+            publishedPorts: self::publishedPorts($value['published_ports'] ?? []),
             expectedHash: self::hash($value['expected_hash'] ?? null),
         );
     }
@@ -77,6 +80,11 @@ final readonly class LocalWebSocketRuntimeContainerSpec
         ];
 
         if (! $this->usesE2eNodeNetwork()) {
+            foreach ($this->publishedPorts as $port) {
+                $command[] = '--publish';
+                $command[] = $port;
+            }
+
             foreach ($this->networkAliases as $alias) {
                 $command[] = '--network-alias';
                 $command[] = $alias;
@@ -344,6 +352,30 @@ final readonly class LocalWebSocketRuntimeContainerSpec
         sort($aliases);
 
         return array_values(array_unique($aliases));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function publishedPorts(mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw self::validationFailure('published_ports');
+        }
+
+        $ports = [];
+
+        foreach ($value as $port) {
+            if (! is_string($port) || preg_match('/^[0-9a-fA-F:.]+:\d{1,5}:\d{1,5}(?:\/(?:tcp|udp))?$/', $port) !== 1) {
+                throw self::validationFailure('published_ports');
+            }
+
+            $ports[] = $port;
+        }
+
+        sort($ports);
+
+        return array_values(array_unique($ports));
     }
 
     private static function hash(mixed $value): string

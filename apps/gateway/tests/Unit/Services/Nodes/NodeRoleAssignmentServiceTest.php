@@ -470,20 +470,20 @@ describe('node role assignment service', function (): void {
             ->toBeNull();
     });
 
-    it('rejects websocket assignment when redis node is not an active database node with a Redis process', function (callable $createRedisNode): void {
+    it('rejects websocket assignment when valkey node is not an active database node with a Valkey process', function (callable $createValkeyNode): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
             'status' => 'active',
         ]);
-        $redisNode = $createRedisNode();
+        $valkeyNode = $createValkeyNode();
 
         expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'websocket', [
-            'redis_node_id' => $redisNode->id,
-        ]))->toThrow(InvalidArgumentException::class, 'The websocket role requires redis_node_id to reference an active database node with a Redis process.');
+            'valkey_node_id' => $valkeyNode->id,
+        ]))->toThrow(InvalidArgumentException::class, 'The websocket role requires valkey_node_id to reference an active database node with a Valkey process.');
 
         expect($node->roleAssignments()->where('role', 'websocket')->exists())->toBeFalse();
     })->with([
-        'non-database node with redis process' => fn (): Node => tap(
+        'non-database node with Valkey process' => fn (): Node => tap(
             Node::factory()->create([
                 'platform' => 'ubuntu',
                 'status' => 'active',
@@ -492,12 +492,12 @@ describe('node role assignment service', function (): void {
                 Process::factory()
                     ->forOwner($node)
                     ->create([
-                        'name' => 'redis',
-                        'runtime_config' => ['service' => 'redis'],
+                        'name' => 'valkey',
+                        'runtime_config' => ['service' => 'valkey'],
                     ]);
             },
         ),
-        'inactive database node with redis process' => fn (): Node => tap(
+        'inactive database node with Valkey process' => fn (): Node => tap(
             Node::factory()
                 ->database()
                 ->create([
@@ -508,18 +508,34 @@ describe('node role assignment service', function (): void {
                 Process::factory()
                     ->forOwner($node)
                     ->create([
+                        'name' => 'valkey',
+                        'runtime_config' => ['service' => 'valkey'],
+                    ]);
+            },
+        ),
+        'database node with retired Redis process' => fn (): Node => tap(
+            Node::factory()
+                ->database()
+                ->create([
+                    'platform' => 'ubuntu',
+                    'status' => 'active',
+                ]),
+            function (Node $node): void {
+                Process::factory()
+                    ->forOwner($node)
+                    ->create([
                         'name' => 'redis',
                         'runtime_config' => ['service' => 'redis'],
                     ]);
             },
         ),
-        'database node without redis process' => fn (): Node => Node::factory()
+        'database node without Valkey process' => fn (): Node => Node::factory()
             ->database()
             ->create([
                 'platform' => 'ubuntu',
                 'status' => 'active',
             ]),
-        'database node with legacy redis tool row only' => fn (): Node => tap(
+        'database node with legacy Redis tool row only' => fn (): Node => tap(
             Node::factory()
                 ->database()
                 ->create([
@@ -536,7 +552,7 @@ describe('node role assignment service', function (): void {
         ),
     ]);
 
-    it('allows websocket assignment when redis node is an active database node with a Redis process', function (): void {
+    it('allows websocket assignment when valkey node is an active database node with a Valkey process', function (): void {
         app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger {
             public function __construct() {}
 
@@ -552,8 +568,8 @@ describe('node role assignment service', function (): void {
         Process::factory()
             ->forOwner($databaseNode)
             ->create([
-                'name' => 'redis',
-                'runtime_config' => ['service' => 'redis'],
+                'name' => 'valkey',
+                'runtime_config' => ['service' => 'valkey'],
             ]);
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
@@ -561,40 +577,40 @@ describe('node role assignment service', function (): void {
         ]);
 
         $assignment = app(NodeRoleAssignmentService::class)->add($node, 'websocket', [
-            'redis_node_id' => $databaseNode->id,
+            'valkey_node_id' => $databaseNode->id,
         ]);
 
         expect($assignment->status)
             ->toBe(NodeRoleStatus::Active)
             ->and($assignment->settings)
-            ->toBe(['redis_node_id' => $databaseNode->id]);
+            ->toBe(['valkey_node_id' => $databaseNode->id]);
     });
 
-    it('rejects websocket updates with an invalid redis node and preserves the existing assignment', function (): void {
+    it('rejects websocket updates with an invalid valkey node and preserves the existing assignment', function (): void {
         app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger {
             public function __construct() {}
 
             public function converge(Node $node, NodeRoleAssignment $assignment): void {}
         });
 
-        $validRedisNode = Node::factory()
+        $validValkeyNode = Node::factory()
             ->database()
             ->create([
                 'platform' => 'ubuntu',
                 'status' => 'active',
             ]);
         Process::factory()
-            ->forOwner($validRedisNode)
+            ->forOwner($validValkeyNode)
             ->create([
-                'name' => 'redis',
-                'runtime_config' => ['service' => 'redis'],
+                'name' => 'valkey',
+                'runtime_config' => ['service' => 'valkey'],
             ]);
-        $invalidRedisNode = Node::factory()->create([
+        $invalidValkeyNode = Node::factory()->create([
             'platform' => 'ubuntu',
             'status' => 'active',
         ]);
         NodeTool::factory()->create([
-            'node_id' => $invalidRedisNode->id,
+            'node_id' => $invalidValkeyNode->id,
             'name' => 'redis',
             'expected_state' => 'installed',
         ]);
@@ -606,15 +622,15 @@ describe('node role assignment service', function (): void {
             'node_id' => $node->id,
             'role' => 'websocket',
             'status' => NodeRoleStatus::Active->value,
-            'settings' => ['redis_node_id' => $validRedisNode->id],
+            'settings' => ['valkey_node_id' => $validValkeyNode->id],
         ]);
 
         expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'websocket', [
-            'redis_node_id' => $invalidRedisNode->id,
-        ]))->toThrow(InvalidArgumentException::class, 'The websocket role requires redis_node_id to reference an active database node with a Redis process.');
+            'valkey_node_id' => $invalidValkeyNode->id,
+        ]))->toThrow(InvalidArgumentException::class, 'The websocket role requires valkey_node_id to reference an active database node with a Valkey process.');
 
         expect($assignment->fresh()->settings)
-            ->toBe(['redis_node_id' => $validRedisNode->id])
+            ->toBe(['valkey_node_id' => $validValkeyNode->id])
             ->and($assignment->fresh()->status)
             ->toBe(NodeRoleStatus::Active)
             ->and($assignment->fresh()->last_error)

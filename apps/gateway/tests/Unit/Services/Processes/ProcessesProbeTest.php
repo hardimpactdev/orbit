@@ -231,13 +231,13 @@ describe('WireGuard self-route diagnostics', function (): void {
         $process = Process::factory()
             ->forOwner($node)
             ->create([
-                'name' => 'redis',
-                'command' => 'redis-server --appendonly yes',
+                'name' => 'valkey',
+                'command' => 'valkey-server --appendonly yes',
                 'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => [
-                    'service' => 'redis',
+                    'service' => 'valkey',
                     'endpoint' => [
-                        'name' => 'redis',
+                        'name' => 'valkey',
                         'kind' => 'tcp',
                         'host' => '10.6.0.7',
                         'port' => 6379,
@@ -265,9 +265,9 @@ describe('WireGuard self-route diagnostics', function (): void {
             ->toBe(DriftKind::Unverifiable)
             ->and(issue($drift, 'process.wireguard_self_route_unavailable')?->detail)
             ->toMatchArray([
-                'process' => 'redis',
+                'process' => 'valkey',
                 'node' => 'database-1',
-                'endpoint' => 'redis',
+                'endpoint' => 'valkey',
                 'host' => '10.6.0.7',
                 'port' => 6379,
                 'wireguard_address' => '10.6.0.7',
@@ -291,12 +291,12 @@ describe('WireGuard self-route diagnostics', function (): void {
         $process = Process::factory()
             ->forOwner($node)
             ->create([
-                'name' => 'redis',
-                'command' => 'redis-server --appendonly yes',
+                'name' => 'valkey',
+                'command' => 'valkey-server --appendonly yes',
                 'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => [
                     'endpoint' => [
-                        'name' => 'redis',
+                        'name' => 'valkey',
                         'kind' => 'tcp',
                         'host' => '10.6.0.7',
                         'port' => 6379,
@@ -331,12 +331,12 @@ describe('WireGuard self-route diagnostics', function (): void {
         $process = Process::factory()
             ->forOwner($node)
             ->create([
-                'name' => 'redis',
-                'command' => 'redis-server --appendonly yes',
+                'name' => 'valkey',
+                'command' => 'valkey-server --appendonly yes',
                 'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => [
                     'endpoint' => [
-                        'name' => 'redis',
+                        'name' => 'valkey',
                         'kind' => 'tcp',
                         'host' => '10.6.0.7',
                         'port' => 6379,
@@ -1037,27 +1037,27 @@ describe('docker runtime probe scope', function (): void {
         $process = Process::factory()
             ->forOwner($node)
             ->create([
-                'name' => 'redis',
-                'command' => 'redis-server --appendonly yes',
+                'name' => 'valkey',
+                'command' => 'valkey-server --appendonly yes',
                 'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => [
-                    'service' => 'redis',
+                    'service' => 'valkey',
                     'version_family' => '7',
-                    'version' => '7.2',
-                    'image' => 'redis:7.2',
+                    'version' => '8.1',
+                    'image' => 'valkey/valkey:8.1',
                     'spec_hash' => 'managed-service-hash',
                     'endpoint' => [
-                        'name' => 'redis',
+                        'name' => 'valkey',
                         'kind' => 'tcp',
                         'host' => '10.6.0.7',
                         'port' => 6379,
                     ],
                     'labels' => [
                         'orbit.managed' => 'true',
-                        'orbit.process' => 'redis',
-                        'orbit.process.service' => 'redis',
+                        'orbit.process' => 'valkey',
+                        'orbit.process.service' => 'valkey',
                         'orbit.process.version_family' => '7',
-                        'orbit.process.version' => '7.2',
+                        'orbit.process.version' => '8.1',
                         'orbit.process.spec_hash' => 'managed-service-hash',
                     ],
                 ],
@@ -1075,7 +1075,7 @@ describe('docker runtime probe scope', function (): void {
                 stderr: '',
                 durationMs: 1,
             ),
-            new RemoteShellResult(exitCode: 0, stdout: "redis-old\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "valkey-old\n", stderr: '', durationMs: 1),
         ]);
 
         $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
@@ -1083,23 +1083,23 @@ describe('docker runtime probe scope', function (): void {
         expect($shell->nodes[0]->is($node))
             ->toBeTrue()
             ->and($shell->scripts[0])
-            ->toContain("docker container inspect --format '{{json .}}' 'redis'")
+            ->toContain("docker container inspect --format '{{json .}}' 'valkey'")
             ->and($shell->scripts[1])
-            ->toContain("--filter label=orbit.process='redis'")
+            ->toContain("--filter label=orbit.process='valkey'")
             ->and($shell->scripts[1])
             ->not
             ->toContain('label=orbit.app=')
-            ->and($snapshot->get('redis'))
+            ->and($snapshot->get('valkey'))
             ->toMatchArray([
                 'runtime_backend_available' => true,
                 'runtime_units' => [
-                    'redis' => [
+                    'valkey' => [
                         'config_exists' => true,
                         'config_matches' => true,
                         'container_state' => 'running',
                     ],
                 ],
-                'runtime_unit_extras' => ['redis-old'],
+                'runtime_unit_extras' => ['valkey-old'],
             ]);
     });
 
@@ -1114,13 +1114,13 @@ describe('docker runtime probe scope', function (): void {
         $process = Process::factory()
             ->forOwner($node)
             ->create([
-                'name' => 'redis',
-                'command' => 'redis-server --appendonly yes',
+                'name' => 'valkey',
+                'command' => 'valkey-server --appendonly yes',
                 'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => [
-                    'service' => 'redis',
+                    'service' => 'valkey',
                     'version_family' => '7',
-                    'version' => '7.2',
+                    'version' => '8.1',
                 ],
             ]);
 
@@ -1131,11 +1131,11 @@ describe('docker runtime probe scope', function (): void {
             ->toBe(DriftKind::Unverifiable)
             ->and(issue($drift, 'process.runtime_unit_unrenderable')?->detail)
             ->toMatchArray([
-                'process' => 'redis',
+                'process' => 'valkey',
                 'runtime' => 'docker',
-                'service' => 'redis',
+                'service' => 'valkey',
                 'version_family' => '7',
-                'version' => '7.2',
+                'version' => '8.1',
             ])
             ->and(issue($drift, 'process.runtime_unit_unrenderable')?->detail['reason'] ?? null)
             ->toContain('missing runtime_config.image');

@@ -16,7 +16,7 @@ orbit firewall:deny [name] --port=<port> [--node=<node>] [--direction=<incoming|
 
 ```bash
 orbit firewall:deny block-vite --node=app-1 --port=5173 --from=0.0.0.0/0
-orbit firewall:deny redis-public --node=app-1 --port=6379 --from=0.0.0.0/0 --reason="internal only"
+orbit firewall:deny valkey-public --node=app-1 --port=6379 --from=0.0.0.0/0 --reason="internal only"
 orbit firewall:deny admin-ui --node=gateway --port=8080 --json
 ```
 

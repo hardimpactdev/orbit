@@ -22,7 +22,7 @@ describe('internal process Docker Swarm service command', function (): void {
     it('rejects a missing operation token before running Docker', function (): void {
         $exitCode = Artisan::call('internal:process-docker-swarm-service', [
             'action' => 'start',
-            'service' => 'orbit-redis-7',
+            'service' => 'orbit-valkey-8',
             '--json' => true,
         ]);
 
@@ -51,7 +51,7 @@ describe('internal process Docker Swarm service command', function (): void {
     it('rejects invalid lifecycle actions after token validation', function (): void {
         $exitCode = Artisan::call('internal:process-docker-swarm-service', [
             'action' => 'scale',
-            'service' => 'orbit-redis-7',
+            'service' => 'orbit-valkey-8',
             '--operation-token' => process_docker_swarm_service_signed_operation_token(),
             '--json' => true,
         ]);
@@ -67,7 +67,7 @@ describe('internal process Docker Swarm service command', function (): void {
     it('requires a service spec for apply actions', function (): void {
         $exitCode = Artisan::call('internal:process-docker-swarm-service', [
             'action' => 'apply',
-            'service' => 'orbit-redis-7',
+            'service' => 'orbit-valkey-8',
             '--operation-token' => process_docker_swarm_service_signed_operation_token(),
             '--json' => true,
         ]);

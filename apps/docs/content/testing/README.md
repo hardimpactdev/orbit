@@ -73,7 +73,7 @@ provider actually changed:
   host pool.
 - `composer test:e2e:provision:incus` runs the fresh Incus VM provision gate:
   base VM, Orbit install, gateway provisioning, parallel `node:new` for app-dev,
-  app-prod, and agent, then websocket runtime baking against app-dev Redis.
+  app-prod, and agent, then websocket runtime baking against app-dev Valkey.
 
 `composer test:e2e:provision` is a convenience alias reserved for humans who
 want to run both provider provision commands. Agents must not run the aggregate.

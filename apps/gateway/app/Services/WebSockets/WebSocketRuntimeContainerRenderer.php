@@ -15,10 +15,12 @@ class WebSocketRuntimeContainerRenderer
 {
     public const string RuntimeImage = 'orbit-reverb:current';
 
+    private const string ServerBindHost = '0.0.0.0';
+
     public function __construct(
         private readonly OrbitContainerNames $names,
         private readonly WebSocketBackendName $backendName,
-        private readonly WebSocketRedisResolver $redisResolver,
+        private readonly WebSocketValkeyResolver $valkeyResolver,
         private readonly NodeWireGuardServiceAddress $serviceAddress,
     ) {}
 
@@ -29,22 +31,26 @@ class WebSocketRuntimeContainerRenderer
         string $image = self::RuntimeImage,
         ?string $appKey = null,
     ): WebSocketRuntimeContainer {
-        $wireGuardAddress = $this->wireGuardAddress($node);
         $backendName = $this->backendName->forNode($node);
-        $redisAddress = $this->redisAddress($settings, $node);
+        $valkeyAddress = $this->valkeyAddress($settings, $node);
 
         return new WebSocketRuntimeContainer(
             name: $this->containerName($node),
             image: $image,
-            network: 'host',
+            network: $this->names->network(),
             restartPolicy: 'unless-stopped',
             backendName: $backendName,
-            redisNodeId: $settings->redisNodeId,
+            valkeyNodeId: $settings->valkeyNodeId,
             workingDirectory: WebSocketRuntimeContainer::SourceTarget,
-            command: $this->command($wireGuardAddress, $backendName),
-            environment: $this->environment($wireGuardAddress, $backendName, $redisAddress, $appKey),
+            command: $this->command($backendName),
+            environment: $this->environment($backendName, $valkeyAddress, $appKey),
             mounts: $this->mounts($sourcePath),
-            networkAliases: [],
+            networkAliases: [
+                $this->containerName($node),
+            ],
+            publishedPorts: [
+                "{$backendName}:8080:8080",
+            ],
         );
     }
 
@@ -68,32 +74,29 @@ class WebSocketRuntimeContainerRenderer
             throw new InvalidArgumentException('The websocket runtime container requires a node name.');
         }
 
-        return OrbitContainerNames::forNodeScope($this->containerScopeForNode($node))
-            ->e2eScopedName("orbit-websocket-{$name}");
+        return OrbitContainerNames::forNodeScope($this->containerScopeForNode($node))->e2eScopedName(
+            "orbit-websocket-{$name}",
+        );
     }
 
     /**
      * @return array<string, string>
      */
-    private function environment(
-        string $wireGuardAddress,
-        string $backendName,
-        string $redisAddress,
-        ?string $appKey = null,
-    ): array {
+    private function environment(string $backendName, string $valkeyAddress, ?string $appKey = null): array
+    {
         $environment = [
             'APP_DEBUG' => 'false',
             'APP_ENV' => 'production',
             'BROADCAST_CONNECTION' => 'reverb',
             'CACHE_STORE' => 'array',
             'ORBIT_WEBSOCKET_APPS_CONFIG' => WebSocketRuntimeSourceInstaller::AppsConfigPath,
-            'REDIS_HOST' => $redisAddress,
+            'REDIS_HOST' => $valkeyAddress,
             'REDIS_PORT' => '6379',
             'REVERB_HOST' => 'websocket.orbit',
             'REVERB_PORT' => '443',
             'REVERB_SCALING_ENABLED' => 'true',
             'REVERB_SCHEME' => 'https',
-            'REVERB_SERVER_HOST' => $wireGuardAddress,
+            'REVERB_SERVER_HOST' => self::ServerBindHost,
             'REVERB_SERVER_PORT' => '8080',
             'REVERB_TLS_CERT' => "/etc/orbit/certs/{$backendName}.crt",
             'REVERB_TLS_KEY' => "/etc/orbit/certs/{$backendName}.key",
@@ -106,9 +109,9 @@ class WebSocketRuntimeContainerRenderer
         return $environment;
     }
 
-    private function command(string $wireGuardAddress, string $backendName): string
+    private function command(string $backendName): string
     {
-        return "php artisan reverb:start --host={$wireGuardAddress} --port=8080 --hostname={$backendName}";
+        return 'php artisan reverb:start --host='.self::ServerBindHost." --port=8080 --hostname={$backendName}";
     }
 
     /**
@@ -135,30 +138,17 @@ class WebSocketRuntimeContainerRenderer
         return $mounts;
     }
 
-    private function wireGuardAddress(Node $node): string
+    private function valkeyAddress(WebSocketRoleSettings $settings, Node $node): string
     {
-        $wireGuardAddress = trim((string) $node->wireguard_address);
+        $valkeyNode = $this->valkeyResolver->usableValkeyNode($settings->valkeyNodeId);
 
-        if ($wireGuardAddress === '') {
+        if (! $valkeyNode instanceof Node) {
             throw new RuntimeException(
-                'The websocket role requires a WireGuard address before runtime config can be rendered.',
+                'The websocket role requires an active Valkey node before runtime config can be rendered.',
             );
         }
 
-        return $wireGuardAddress;
-    }
-
-    private function redisAddress(WebSocketRoleSettings $settings, Node $node): string
-    {
-        $redisNode = $this->redisResolver->usableRedisNode($settings->redisNodeId);
-
-        if (! $redisNode instanceof Node) {
-            throw new RuntimeException(
-                'The websocket role requires an active Redis node before runtime config can be rendered.',
-            );
-        }
-
-        return $this->serviceAddress->forServiceOn($redisNode, $node, 'redis');
+        return $this->serviceAddress->forServiceOn($valkeyNode, $node, 'valkey');
     }
 
     private function normalizeSourcePath(string $sourcePath): string

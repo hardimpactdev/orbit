@@ -26,7 +26,7 @@ Use this table to choose the smallest active node set for a feature test.
 | `operator_gateway_app-dev_app-prod_ingress` | operator + gateway + dev + prod + 1 ingress node | Full app topology with ingress on a dedicated edge node instead of app-prod. |
 | `operator_gateway_agent` | operator + gateway + 1 agent | Use for agent-node assertions that do not need app-dev or app-prod nodes. |
 | `operator_gateway_app-prod_ingress` | operator + gateway + 1 prod app carrying ingress | Use for public production ingress and private app-prod backend flows that do not need dev or agent nodes. |
-| `operator_gateway_app-dev_websocket` | operator + gateway + dev + 1 websocket node | Use for private websocket runtime and publishing flows that only need a development app Redis provider. |
+| `operator_gateway_app-dev_websocket` | operator + gateway + dev + 1 websocket node | Use for private websocket runtime and publishing flows that only need a development app Valkey provider. |
 | `operator_gateway_app-dev_app-prod_websocket` | operator + gateway + dev + prod + 1 websocket node | Use for public app WebSocket flows through app-prod's colocated ingress. |
 | `operator_gateway_app-dev_app-prod_agent_websocket` | operator + gateway + dev + prod + agent + 1 websocket node | Full websocket-capable source topology. Use for artifact preparation or cross-role assertions that need every current workload role. |
 
@@ -330,7 +330,7 @@ base, runtime Docker acquisition reseeds the requested downstream app, ingress,
 agent, and websocket registry rows on the gateway. Independent downstream role
 bakes run in one parallel script on the gateway. Bakes with dependencies stay
 ordered: app-prod waits for the dedicated ingress bake before referencing
-`edge-1`, and websocket waits for app-dev because it depends on the Redis state
+`edge-1`, and websocket waits for app-dev because it depends on the Valkey state
 registered for app-dev.
 
 The Incus provider clones only selected roles from the prepared
@@ -356,7 +356,7 @@ Required prepared sources for feature lanes:
 - Docker role images for the composable gateway-backed set: operator and
   gateway from `operator_gateway`; app-dev, app-prod, and agent from
   `operator_gateway_app-dev_app-prod_agent_websocket`; dedicated ingress from
-  `operator_gateway_app-dev_app-prod_ingress`. App-dev carries database, Redis,
+  `operator_gateway_app-dev_app-prod_ingress`. App-dev carries database, Valkey,
   and the websocket role registry state by default; app-prod carries the ingress
   role unless the dedicated-ingress topology is requested. Canonical base role
   images are `orbit-e2e:operator_base`, `orbit-e2e:gateway_base`,
@@ -509,7 +509,7 @@ Each topology kind adds the handles and seeded state that tests can rely on.
 | `operator_gateway_app-dev_app-prod_ingress` | Adds a dedicated ingress clone named `edge-1`; app-prod remains `app-prod-1` and points its production ingress setting at `edge-1`. |
 | `operator_gateway_agent` | Adds one agent clone named `agent-1` and skips development and production app clones. |
 | `operator_gateway_app-prod_ingress` | Uses one production app clone that also carries the ingress role. Public production HTTP assertions preserve the path `ingress -> router -> backend`. |
-| `operator_gateway_app-dev_websocket` | Adds the websocket role to `app-dev-1`, alongside `app-dev` and `database`; Redis for websocket points to the same app-dev node. |
+| `operator_gateway_app-dev_websocket` | Adds the websocket role to `app-dev-1`, alongside `app-dev` and `database`; Valkey for websocket points to the same app-dev node. |
 | `operator_gateway_app-dev_app-prod_websocket` | Adds a production app clone that carries ingress for public app WebSocket assertions while keeping websocket on `app-dev-1`. |
 | `operator_gateway_app-dev_app-prod_agent_websocket` | Adds dev, prod, and agent workload nodes, with websocket colocated on `app-dev-1`. Use as the full websocket-capable artifact source. |
 
@@ -517,7 +517,7 @@ Each topology kind adds the handles and seeded state that tests can rely on.
 
 Prepared E2E topologies keep hosted service assertions on the owning app node:
 
-- app-dev carries database and Redis registry state by default;
+- app-dev carries database and Valkey registry state by default;
 - app-prod carries the ingress role by default;
 - `operator_gateway_app-dev_app-prod_ingress` moves ingress from app-prod to
   `edge-1`;

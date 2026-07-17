@@ -23,10 +23,14 @@ class WebSocketRuntimeContainer
     /** @var list<string> */
     private readonly array $networkAliases;
 
+    /** @var list<string> */
+    private readonly array $publishedPorts;
+
     /**
      * @param  array<string, string>  $environment
      * @param  list<array{source: string, target: string, read_only?: bool}>  $mounts
      * @param  list<string>  $networkAliases
+     * @param  list<string>  $publishedPorts
      */
     public function __construct(
         private readonly string $name,
@@ -34,16 +38,18 @@ class WebSocketRuntimeContainer
         private readonly string $network,
         private readonly string $restartPolicy,
         private readonly string $backendName,
-        private readonly int $redisNodeId,
+        private readonly int $valkeyNodeId,
         private readonly string $workingDirectory,
         private readonly string $command,
         array $environment,
         array $mounts,
         array $networkAliases,
+        array $publishedPorts = [],
     ) {
         $this->environment = $this->normalizeEnvironment($environment);
         $this->mounts = $this->normalizeMounts($mounts);
         $this->networkAliases = $this->normalizeNetworkAliases($networkAliases);
+        $this->publishedPorts = $this->normalizePublishedPorts($publishedPorts);
     }
 
     public function name(): string
@@ -71,9 +77,9 @@ class WebSocketRuntimeContainer
         return $this->backendName;
     }
 
-    public function redisNodeId(): int
+    public function valkeyNodeId(): int
     {
-        return $this->redisNodeId;
+        return $this->valkeyNodeId;
     }
 
     public function workingDirectory(): string
@@ -104,6 +110,12 @@ class WebSocketRuntimeContainer
         return $this->networkAliases;
     }
 
+    /** @return list<string> */
+    public function publishedPorts(): array
+    {
+        return $this->publishedPorts;
+    }
+
     /** @return array<string, string> */
     public function labels(): array
     {
@@ -131,12 +143,13 @@ class WebSocketRuntimeContainer
      *     network: string,
      *     restart_policy: string,
      *     backend_name: string,
-     *     redis_node_id: int,
+     *     valkey_node_id: int,
      *     working_directory: string,
      *     command: string,
      *     environment: array<string, string>,
      *     mounts: list<array{source: string, target: string, read_only: bool}>,
-     *     network_aliases: list<string>
+     *     network_aliases: list<string>,
+     *     published_ports: list<string>
      * }
      */
     public function spec(): array
@@ -147,12 +160,13 @@ class WebSocketRuntimeContainer
             'network' => $this->network,
             'restart_policy' => $this->restartPolicy,
             'backend_name' => $this->backendName,
-            'redis_node_id' => $this->redisNodeId,
+            'valkey_node_id' => $this->valkeyNodeId,
             'working_directory' => $this->workingDirectory,
             'command' => $this->command,
             'environment' => $this->environment,
             'mounts' => $this->mounts,
             'network_aliases' => $this->networkAliases,
+            'published_ports' => $this->publishedPorts,
         ];
     }
 
@@ -205,5 +219,24 @@ class WebSocketRuntimeContainer
         sort($aliases);
 
         return $aliases;
+    }
+
+    /**
+     * @param  list<string>  $publishedPorts
+     * @return list<string>
+     */
+    private function normalizePublishedPorts(array $publishedPorts): array
+    {
+        $ports = array_values(array_unique(array_map(trim(...), $publishedPorts)));
+
+        foreach ($ports as $port) {
+            if (preg_match('/^[0-9a-fA-F:.]+:\d{1,5}:\d{1,5}(?:\/(?:tcp|udp))?$/', $port) !== 1) {
+                throw new InvalidArgumentException("Invalid WebSocket runtime published port: {$port}");
+            }
+        }
+
+        sort($ports);
+
+        return $ports;
     }
 }

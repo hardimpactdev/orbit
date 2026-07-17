@@ -39,7 +39,7 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
         public readonly ?string $template = null,
         public readonly ?string $operatorName = null,
         public readonly ?string $operatorTld = null,
-        public readonly ?string $redisNode = null,
+        public readonly ?string $valkeyNode = null,
         public readonly ?string $s3DataPath = null,
     ) {}
 
@@ -121,8 +121,8 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
             $body['operator_tld'] = $this->operatorTld;
         }
 
-        if ($this->redisNode !== null) {
-            $body['redis_node'] = $this->redisNode;
+        if ($this->valkeyNode !== null) {
+            $body['valkey_node'] = $this->valkeyNode;
         }
 
         if ($this->s3DataPath !== null) {
@@ -134,9 +134,6 @@ final class CreateNodeRequest extends GatewayRequest implements HasBody
 
     public function createDtoFromResponse(Response $response): NodeCreateResponse
     {
-        return new NodeCreateResponse(
-            data: $this->unwrapData($response),
-            meta: $this->unwrapMeta($response),
-        );
+        return new NodeCreateResponse(data: $this->unwrapData($response), meta: $this->unwrapMeta($response));
     }
 }

@@ -59,7 +59,7 @@ afterEach(function (): void {
 
 it('converges websocket backend TLS material and runtime container through the role converger', function (): void {
     $node = webSocketBaselineNode();
-    $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
+    $assignment = webSocketBaselineAssignment($node, valkeyNode: webSocketBaselineValkeyNode());
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
@@ -104,7 +104,7 @@ it('converges websocket backend TLS material and runtime container through the r
 
 it('uses self-contained websocket images without installing source on the node', function (): void {
     $node = webSocketBaselineNode();
-    $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
+    $assignment = webSocketBaselineAssignment($node, valkeyNode: webSocketBaselineValkeyNode());
     $this->webSocketBaselineSelfContainedImage = true;
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
@@ -198,7 +198,7 @@ it('does not install legacy mutable manifest websocket images', function (): voi
 
 it('starts an existing matching websocket runtime container when it is stopped', function (): void {
     $node = webSocketBaselineNode();
-    $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
+    $assignment = webSocketBaselineAssignment($node, valkeyNode: webSocketBaselineValkeyNode());
     $container = app(WebSocketRuntimeContainerRenderer::class)->render(
         $node,
         WebSocketRoleSettings::fromArray($assignment->settings),
@@ -225,7 +225,7 @@ it('starts an existing matching websocket runtime container when it is stopped',
 
 it('removes websocket runtime containers through the role converger', function (): void {
     $node = webSocketBaselineNode();
-    $assignment = webSocketBaselineAssignment($node, NodeRoleStatus::Active, webSocketBaselineRedisNode());
+    $assignment = webSocketBaselineAssignment($node, NodeRoleStatus::Active, webSocketBaselineValkeyNode());
 
     $this->webSocketBaselineShell->containerInspection = [
         'Config' => [
@@ -486,14 +486,14 @@ function webSocketBaselineCertificateRequestMatches(Request $request): bool
     ];
 }
 
-function webSocketBaselineRedisNode(array $overrides = []): Node
+function webSocketBaselineValkeyNode(array $overrides = []): Node
 {
     $node = Node::factory()
         ->database()
         ->create(array_merge([
-            'name' => 'redis-1',
+            'name' => 'valkey-1',
             'platform' => 'ubuntu',
-            'host' => 'redis-1.example.com',
+            'host' => 'valkey-1.example.com',
             'wireguard_address' => '10.6.0.3',
             'status' => NodeStatus::Active,
         ], $overrides));
@@ -501,8 +501,8 @@ function webSocketBaselineRedisNode(array $overrides = []): Node
     Process::factory()
         ->forOwner($node)
         ->create([
-            'name' => 'redis',
-            'runtime_config' => ['service' => 'redis'],
+            'name' => 'valkey',
+            'runtime_config' => ['service' => 'valkey'],
         ]);
 
     return $node;
@@ -511,12 +511,12 @@ function webSocketBaselineRedisNode(array $overrides = []): Node
 function webSocketBaselineAssignment(
     Node $node,
     NodeRoleStatus $status = NodeRoleStatus::Pending,
-    ?Node $redisNode = null,
+    ?Node $valkeyNode = null,
 ): NodeRoleAssignment {
     return NodeRoleAssignment::factory()->for($node)->create([
         'role' => NodeRoleName::WebSocket->value,
         'status' => $status->value,
-        'settings' => ['redis_node_id' => ($redisNode ?? webSocketBaselineRedisNode())->id],
+        'settings' => ['valkey_node_id' => ($valkeyNode ?? webSocketBaselineValkeyNode())->id],
     ]);
 }
 

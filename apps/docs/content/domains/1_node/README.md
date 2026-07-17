@@ -41,8 +41,9 @@ Orbit distinguishes these concepts:
   `ingress`, `websocket`, `s3`, `metrics`, and `analytics`.
   `agent` is exclusive during `node:new`; `node role:add` rejects it.
 
-  `websocket` is a private workload role for Laravel Reverb; it binds only to
-  WireGuard and receives traffic through router-owned private service routes.
+  `websocket` is a private workload role for Laravel Reverb; its isolated
+  container listener is published only on WireGuard and receives traffic
+  through router-owned private service routes.
   `s3` is a private workload role for SeaweedFS object storage; it binds only to
   WireGuard and receives traffic through router-owned S3 service routes.
 
@@ -132,7 +133,7 @@ Roles materialize baseline tool intent when a role assignment converges.
 | `database` | Docker running as the substrate for managed database service processes |
 | `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping derived from the node's `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
-| `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
+| `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Valkey-backed scaling configuration |
 | `s3` | Docker installation and verification, SeaweedFS Docker runtime apply/start, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
 | `metrics` | Docker substrate, node-exporter binary, Prometheus/Grafana Swarm processes, node-exporter systemd processes on metrics/workload nodes, `metrics.orbit`, and Grafana credentials |
 | `analytics` | Docker verification, WireGuard-bound Plausible CE Docker apply/start, private routing, public tracking route support, backend pool registration, and authenticated PostgreSQL/ClickHouse endpoint configuration |
@@ -260,7 +261,7 @@ These rules apply to all node commands and define the invariants the family enfo
   a time. `vpn` stores `public_endpoint`, `wireguard_cidr`,
   `wireguard_port`, and `dns_ip` as role-assignment settings.
   `app-prod` stores `ingress_node_id`; `websocket` stores
-  `redis_node_id`, which points at the `database` role node whose managed Redis
+  `valkey_node_id`, which points at the `database` role node whose managed Valkey
   service backs Reverb scaling; `database`, `gateway`, and `metrics` have no
   role-assignment settings. `s3` stores `data_path`, which defaults to
   `/srv/orbit/s3/data` and is mounted into the SeaweedFS container as `/data`.

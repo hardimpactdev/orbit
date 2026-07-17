@@ -32,7 +32,7 @@ These terms define how process definitions are identified, scoped, and ordered.
   runtime/process model admits lifecycle ownership in Orbit. This is distinct
   from Orbit-owned `launchd` process units.
 - **Managed service:** Catalog entry selected with `process:add --service` for
-  a runnable service such as MySQL, PostgreSQL, Redis, ClickHouse, Prometheus,
+  a runnable service such as MySQL, PostgreSQL, Valkey, ClickHouse, Prometheus,
   Grafana, node-exporter, or Plausible CE. Service version, runtime, endpoint,
   credentials, lifecycle, and logs belong to the process row. The process name
   does not imply the managed service identifier. The service endpoint host is
@@ -61,7 +61,7 @@ These terms describe the runtime objects that Orbit derives from process definit
   agent, app, and workspace runtime units.
 - **Docker Swarm process runtime:** Runtime backend that runs a node-owned
   managed service process as an Orbit-managed Swarm service. It is currently
-  admitted for managed-service MySQL, PostgreSQL, Redis, ClickHouse,
+  admitted for managed-service MySQL, PostgreSQL, Valkey, ClickHouse,
   Prometheus, Grafana, and Plausible CE processes.
   App/workspace Swarm runtime remains deferred and is rejected before runtime
   side effects.

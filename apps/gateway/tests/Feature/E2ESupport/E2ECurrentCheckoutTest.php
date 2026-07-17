@@ -42,11 +42,8 @@ function currentCheckoutProcessResult(bool $successful = true): ProcessResult
     return $result;
 }
 
-function current_checkout_overlay_fake_bin(
-    string $root,
-    int $mountpointExitCode,
-    int $unmountExitCode,
-): string {
+function current_checkout_overlay_fake_bin(string $root, int $mountpointExitCode, int $unmountExitCode): string
+{
     $bin = "{$root}/bin";
     File::ensureDirectoryExists($bin);
     $scripts = [
@@ -317,10 +314,7 @@ it('runs source-mounted Incus checkouts from a VM-local overlay runtime path', f
 });
 
 it('avoids recursively changing overlay directories during source sync', function (): void {
-    $command = E2ECurrentCheckout::sourceMountedRuntimeOverlayCommand(
-        '/home/orbit/orbit',
-        '/home/orbit/orbit-run',
-    );
+    $command = E2ECurrentCheckout::sourceMountedRuntimeOverlayCommand('/home/orbit/orbit', '/home/orbit/orbit-run');
 
     expect($command)
         ->toContain('while mountpoint -q "$target"; do')
@@ -342,11 +336,7 @@ it('resets a synced overlay so the transport checkout stays authoritative', func
     ];
 
     try {
-        $bin = current_checkout_overlay_fake_bin(
-            root: $root,
-            mountpointExitCode: 1,
-            unmountExitCode: 0,
-        );
+        $bin = current_checkout_overlay_fake_bin(root: $root, mountpointExitCode: 1, unmountExitCode: 0);
         $path = getenv('PATH');
         $staleSource = "{$upper}/apps/e2e/app/stale.php";
         $targetMarker = "{$target}/keep.txt";
@@ -360,20 +350,14 @@ it('resets a synced overlay so the transport checkout stays authoritative', func
             file_put_contents(filename: "{$upper}/{$relative}", data: $contents);
         }
 
-        $process = new SymfonyProcess(
-            [
-                '/bin/bash',
-                '-c',
-                E2ECurrentCheckout::sourceMountedRuntimeOverlayCommand(
-                    "{$root}/source",
-                    $target,
-                ),
-            ],
-            env: [
-                'OVERLAY_MOUNT_LOG' => $mountLog,
-                'PATH' => "{$bin}:".(is_string($path) ? $path : ''),
-            ],
-        );
+        $process = new SymfonyProcess([
+            '/bin/bash',
+            '-c',
+            E2ECurrentCheckout::sourceMountedRuntimeOverlayCommand("{$root}/source", $target),
+        ], env: [
+            'OVERLAY_MOUNT_LOG' => $mountLog,
+            'PATH' => "{$bin}:".(is_string($path) ? $path : ''),
+        ]);
         $process->mustRun();
 
         expect($staleSource)
@@ -398,26 +382,16 @@ it('refuses to stack an overlay when the runtime checkout stays busy', function 
     $mountLog = "{$root}/mount.log";
 
     try {
-        $bin = current_checkout_overlay_fake_bin(
-            root: $root,
-            mountpointExitCode: 0,
-            unmountExitCode: 1,
-        );
+        $bin = current_checkout_overlay_fake_bin(root: $root, mountpointExitCode: 0, unmountExitCode: 1);
         $path = getenv('PATH');
-        $process = new SymfonyProcess(
-            [
-                '/bin/bash',
-                '-c',
-                E2ECurrentCheckout::sourceMountedRuntimeOverlayCommand(
-                    "{$root}/source",
-                    $target,
-                ),
-            ],
-            env: [
-                'OVERLAY_MOUNT_LOG' => $mountLog,
-                'PATH' => "{$bin}:".(is_string($path) ? $path : ''),
-            ],
-        );
+        $process = new SymfonyProcess([
+            '/bin/bash',
+            '-c',
+            E2ECurrentCheckout::sourceMountedRuntimeOverlayCommand("{$root}/source", $target),
+        ], env: [
+            'OVERLAY_MOUNT_LOG' => $mountLog,
+            'PATH' => "{$bin}:".(is_string($path) ? $path : ''),
+        ]);
         $process->run();
 
         expect($process->isSuccessful())
@@ -479,15 +453,7 @@ it('writes source-mounted gateway state under the node config root instead of th
     $method = new ReflectionMethod(E2ECurrentCheckout::class, 'runtimeStateCommand');
     $method->setAccessible(true);
 
-    $command = $method->invoke(
-        null,
-        '/home/orbit/orbit',
-        '/home/orbit/orbit',
-        false,
-        null,
-        false,
-        true,
-    );
+    $command = $method->invoke(null, '/home/orbit/orbit', '/home/orbit/orbit', false, null, false, true);
 
     $removeTmpPosition = strpos($command, "rm -f '/home/orbit/.config/orbit/.env.tmp'");
     $rewritePosition = strpos($command, "grep -Ev '^(DB_DATABASE|SESSION_DRIVER)='");
@@ -515,15 +481,7 @@ it('keeps gateway state in the node config root for regular checkouts', function
     $method = new ReflectionMethod(E2ECurrentCheckout::class, 'runtimeStateCommand');
     $method->setAccessible(true);
 
-    $command = $method->invoke(
-        null,
-        '/home/orbit/orbit',
-        null,
-        false,
-        null,
-        false,
-        false,
-    );
+    $command = $method->invoke(null, '/home/orbit/orbit', null, false, null, false, false);
 
     expect($command)
         ->toContain('/home/orbit/.config/orbit/.env')
@@ -879,13 +837,10 @@ it('marks Docker topology checkout env files with the Docker provider', function
 
     $nodeInstallCommands = implode(
         "\n",
-        array_values(array_filter(
-            $commands,
-            fn (string $command): bool => str_starts_with(
-                $command,
-                "docker exec --user 'orbit' 'orbit-e2e-run123-operator'",
-            ),
-        )),
+        array_values(array_filter($commands, fn (string $command): bool => str_starts_with(
+            $command,
+            "docker exec --user 'orbit' 'orbit-e2e-run123-operator'",
+        ))),
     );
 
     $removeTmpPosition = strpos($nodeInstallCommands, 'rm -f');
@@ -922,13 +877,10 @@ it('keeps Docker seeded gateway state in the node local config root', function (
 
     $nodeInstallCommands = implode(
         "\n",
-        array_values(array_filter(
-            $commands,
-            fn (string $command): bool => str_starts_with(
-                $command,
-                "docker exec --user 'orbit' 'orbit-e2e-run123-operator'",
-            ),
-        )),
+        array_values(array_filter($commands, fn (string $command): bool => str_starts_with(
+            $command,
+            "docker exec --user 'orbit' 'orbit-e2e-run123-operator'",
+        ))),
     );
 
     expect($nodeInstallCommands)
@@ -982,13 +934,10 @@ it('installs the current checkout on Docker topology nodes through the runtime c
 
     $nodeInstallCommands = implode(
         "\n",
-        array_values(array_filter(
-            $commands,
-            fn (string $command): bool => str_starts_with(
-                $command,
-                "docker exec --user 'orbit' 'orbit-e2e-run123-operator'",
-            ),
-        )),
+        array_values(array_filter($commands, fn (string $command): bool => str_starts_with(
+            $command,
+            "docker exec --user 'orbit' 'orbit-e2e-run123-operator'",
+        ))),
     );
     $wrapperCopyCommands = array_values(array_filter(
         $commands,
@@ -1052,13 +1001,10 @@ it('bootstraps gateway app state for Docker host launcher checkout nodes through
 
     $nodeInstallCommands = implode(
         "\n",
-        array_values(array_filter(
-            $commands,
-            fn (string $command): bool => str_starts_with(
-                $command,
-                "docker exec --user 'orbit' 'orbit-e2e-run123-dev'",
-            ),
-        )),
+        array_values(array_filter($commands, fn (string $command): bool => str_starts_with(
+            $command,
+            "docker exec --user 'orbit' 'orbit-e2e-run123-dev'",
+        ))),
     );
     $allCommands = implode("\n", $commands);
 
@@ -1119,33 +1065,24 @@ it('uses the host launcher for Docker operator gateway and app-node checkouts', 
 
     $operatorInstallCommands = implode(
         "\n",
-        array_values(array_filter(
-            $commands,
-            fn (string $command): bool => str_starts_with(
-                $command,
-                "docker exec --user 'orbit' 'orbit-e2e-run123-operator'",
-            ),
-        )),
+        array_values(array_filter($commands, fn (string $command): bool => str_starts_with(
+            $command,
+            "docker exec --user 'orbit' 'orbit-e2e-run123-operator'",
+        ))),
     );
     $gatewayInstallCommands = implode(
         "\n",
-        array_values(array_filter(
-            $commands,
-            fn (string $command): bool => str_starts_with(
-                $command,
-                "docker exec --user 'orbit' 'orbit-e2e-run123-gateway'",
-            ),
-        )),
+        array_values(array_filter($commands, fn (string $command): bool => str_starts_with(
+            $command,
+            "docker exec --user 'orbit' 'orbit-e2e-run123-gateway'",
+        ))),
     );
     $devInstallCommands = implode(
         "\n",
-        array_values(array_filter(
-            $commands,
-            fn (string $command): bool => str_starts_with(
-                $command,
-                "docker exec --user 'orbit' 'orbit-e2e-run123-dev'",
-            ),
-        )),
+        array_values(array_filter($commands, fn (string $command): bool => str_starts_with(
+            $command,
+            "docker exec --user 'orbit' 'orbit-e2e-run123-dev'",
+        ))),
     );
 
     expect($operatorInstallCommands)
@@ -1221,13 +1158,10 @@ it('refreshes Docker gateway checkout host keys through explicit host Artisan', 
 
     $gatewayInstallCommands = implode(
         "\n",
-        array_values(array_filter(
-            $commands,
-            fn (string $command): bool => str_starts_with(
-                $command,
-                "docker exec --user 'orbit' 'orbit-e2e-run123-gateway'",
-            ),
-        )),
+        array_values(array_filter($commands, fn (string $command): bool => str_starts_with(
+            $command,
+            "docker exec --user 'orbit' 'orbit-e2e-run123-gateway'",
+        ))),
     );
     $wrapperSymlinkCommandIndex = array_find_key(
         $commands,
@@ -1236,10 +1170,10 @@ it('refreshes Docker gateway checkout host keys through explicit host Artisan', 
             && str_contains($command, '/usr/local/bin/orbit')
         ),
     );
-    $hostKeyRefreshCommandIndex = array_find_key(
-        $commands,
-        fn (string $command): bool => str_contains($command, 'orbit:internal:pin-node-host-keys --json'),
-    );
+    $hostKeyRefreshCommandIndex = array_find_key($commands, fn (string $command): bool => str_contains(
+        $command,
+        'orbit:internal:pin-node-host-keys --json',
+    ));
 
     expect($gatewayInstallCommands)
         ->toContain('php apps/gateway/artisan key:generate')
@@ -1602,11 +1536,33 @@ it('installs source-mounted topology roles concurrently when fork workers are av
         ->and($elapsed)
         ->toBeLessThan(0.65)
         ->and(array_column($timer->events(), 'name'))
-        ->toContain(
-            'operator checkout.test-worker',
-            'gateway checkout.test-worker',
-            'dev checkout.test-worker',
-        );
+        ->toContain('operator checkout.test-worker', 'gateway checkout.test-worker', 'dev checkout.test-worker');
+});
+
+it('does not install topology roles concurrently when they share a target instance', function (): void {
+    $operatorCommands = [];
+    $gatewayCommands = [];
+    $devCommands = [];
+    $websocketCommands = [];
+    $key = new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub');
+    $topology = new E2ETopologyLease(
+        kind: E2ETopologyKind::OperatorGatewayAppdevWebsocket,
+        operator: currentCheckoutFakeSourceMountedInstance($operatorCommands, 'operator'),
+        gateway: currentCheckoutFakeSourceMountedInstance($gatewayCommands, 'gateway'),
+        dev: currentCheckoutFakeSourceMountedInstance($devCommands, 'app-dev'),
+        prod: null,
+        sshKeyPair: $key,
+        rebuild: fn () => throw new RuntimeException('not expected'),
+        additionalInstances: [
+            'websocket' => currentCheckoutFakeSourceMountedInstance($websocketCommands, 'websocket'),
+        ],
+    );
+    $method = new ReflectionMethod(E2ECurrentCheckout::class, 'canInstallTopologyRolesConcurrently');
+    $method->setAccessible(true);
+
+    E2ECurrentCheckout::useInstallerForTests(fn (string $role): string => "/home/orbit/orbit-run-{$role}");
+
+    expect($method->invoke(null, $topology, ['dev', 'websocket'], []))->toBeFalse();
 });
 
 it('streams checkout timings from the topology harness timer child', function (): void {
@@ -1626,12 +1582,9 @@ it('streams checkout timings from the topology harness timer child', function ()
         rebuild: fn () => throw new RuntimeException('not expected'),
     );
     $lines = [];
-    $timer = new E2EPhaseTimer(
-        stream: true,
-        writer: function (string $line) use (&$lines): void {
-            $lines[] = $line;
-        },
-    );
+    $timer = new E2EPhaseTimer(stream: true, writer: function (string $line) use (&$lines): void {
+        $lines[] = $line;
+    });
 
     new E2ETopologyHarness($topology)
         ->setTimer($timer)

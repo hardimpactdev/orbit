@@ -36,20 +36,13 @@ it('defines the Docker topology host PHP 8.5 CLI baseline without ad hoc helper 
         ->toContain('php8.5-sqlite3')
         ->toContain('php8.5-xml')
         ->toContain('iproute2')
-        ->toContain('redis-server')
-        ->toContain('redis-server --daemonize yes --bind 0.0.0.0 --protected-mode no')
-        ->toContain('update-alternatives --set php /usr/bin/php8.5')
-        ->toContain('php --version')
-        ->toContain('PHP 8.5.')
-        ->toContain('["pdo_sqlite", "openssl", "curl", "mbstring", "json", "xml"]')
-        ->toContain('pdo_sqlite')
-        ->toContain('openssl')
-        ->toContain('curl')
-        ->toContain('mbstring')
-        ->toContain('json')
-        ->toContain('socket_gid="$(stat -c %g /var/run/docker.sock')
-        ->toContain('groupmod -g "$socket_gid" docker')
-        ->toContain('usermod -aG "$socket_group" orbit')
+        ->not->toContain('redis-server')->toContain('update-alternatives --set php /usr/bin/php8.5')->toContain(
+            'php --version',
+        )->toContain('PHP 8.5.')->toContain('["pdo_sqlite", "openssl", "curl", "mbstring", "json", "xml"]')->toContain(
+            'pdo_sqlite',
+        )->toContain('openssl')->toContain('curl')->toContain('mbstring')->toContain('json')->toContain(
+            'socket_gid="$(stat -c %g /var/run/docker.sock',
+        )->toContain('groupmod -g "$socket_gid" docker')->toContain('usermod -aG "$socket_group" orbit')
         ->not->toContain('COPY . /opt/orbit')
         ->not->toContain('COPY . /opt/orbit-source')
         ->not->toContain('/opt/orbit-source')
@@ -1048,7 +1041,7 @@ it('does not accept bare client aliases for downstream small topology fixtures',
     expect(E2ETopologyKind::tryFromInput('client-gateway-appdev'))->toBeNull();
 });
 
-it('seeds appdev docker topology with database role and Redis process for downstream service tests', function (): void {
+it('seeds appdev docker topology with database role and Valkey process for downstream service tests', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -1077,9 +1070,9 @@ it('seeds appdev docker topology with database role and Redis process for downst
         ->toContain('NodeRoleName::Database')
         ->toContain('ProcessServiceCatalog::class')
         ->toContain('Process::query()->updateOrCreate')
-        ->toContain('redis')
+        ->toContain('valkey')
         ->toContain('ProcessRuntime::Docker')
-        ->toContain('$descriptor->runtimeConfig');
+        ->toContain('$valkeyDescriptor->runtimeConfig');
 });
 
 it('provisions Docker downstream role source images in parallel after the gateway baseline', function (): void {
@@ -1161,7 +1154,7 @@ it('provisions Docker downstream role source images in parallel after the gatewa
     );
 });
 
-it('bakes the Docker websocket role onto app-dev after app development Redis is registered', function (): void {
+it('bakes the Docker websocket role onto app-dev after app development Valkey is registered', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -1198,7 +1191,7 @@ it('bakes the Docker websocket role onto app-dev after app development Redis is 
         ->toContain('--host-key-host=')
         ->toContain('--wireguard-address=10.6.0.4')
         ->toContain('--gateway-endpoint=gateway')
-        ->toContain('--redis-node=app-dev-1')
+        ->toContain('--valkey-node=app-dev-1')
         ->toContain('PID_NODE_NEW_WEBSOCKET=$!')
         ->toContain('wait "$PID_NODE_NEW_WEBSOCKET"')
         ->toContain('/tmp/orbit-e2e-docker-node-new-websocket.log');

@@ -13,19 +13,19 @@ it('does not rely on removed tool backfills for managed service processes', func
     $node = Node::factory()->create(['wireguard_address' => '10.6.0.44']);
 
     $descriptor = app(ProcessServiceCatalog::class)->resolve(
-        service: 'redis',
-        version: '7',
+        service: 'valkey',
+        version: '8',
         runtime: ProcessRuntime::Docker,
         node: $node,
-        processName: 'redis',
+        processName: 'valkey',
     );
 
     expect(class_exists('App\\Services\\Tools\\ManagedServiceToolProcessBackfill', false))
         ->toBeFalse()
         ->and($descriptor->runtimeConfig)
         ->toMatchArray([
-            'service' => 'redis',
-            'version' => '7.2',
-            'image' => 'redis:7.2',
+            'service' => 'valkey',
+            'version' => '8.1',
+            'image' => 'valkey/valkey:8.1',
         ]);
 });

@@ -1552,7 +1552,7 @@ it('registers websocket on the app-dev node for docker prepared topologies', fun
         ->toContain('orbit:internal:bake-websocket-node app-dev-1')
         ->toContain('--host=dev')
         ->toContain('--wireguard-address=10.6.0.4')
-        ->toContain('--redis-node=app-dev-1')
+        ->toContain('--valkey-node=app-dev-1')
         ->toContain('/home/orbit/.ssh/authorized_keys')
         ->not->toContain('--environment=');
 

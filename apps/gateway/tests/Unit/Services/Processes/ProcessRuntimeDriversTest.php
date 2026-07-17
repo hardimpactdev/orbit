@@ -130,21 +130,21 @@ it('applies node owned docker service processes from runtime config', function (
     $process = Process::factory()
         ->forOwner($node)
         ->create([
-            'name' => 'redis',
-            'command' => 'redis-server --bind 0.0.0.0 --protected-mode no',
+            'name' => 'valkey',
+            'command' => 'valkey-server --bind 0.0.0.0 --protected-mode no',
             'runtime' => ProcessRuntime::Docker,
             'runtime_config' => [
-                'image' => 'redis:7.2',
+                'image' => 'valkey/valkey:8.1',
                 'environment' => [
                     'ALLOW_EMPTY_PASSWORD' => 'yes',
                 ],
                 'mounts' => [
                     [
-                        'source' => '/var/lib/orbit/redis',
+                        'source' => '/var/lib/orbit/valkey',
                         'target' => '/data',
                     ],
                 ],
-                'network_aliases' => ['redis'],
+                'network_aliases' => ['valkey'],
             ],
         ]);
 
@@ -152,7 +152,7 @@ it('applies node owned docker service processes from runtime config', function (
     $runtimeUnit = $driver->runtimeUnitName($app, $process);
 
     expect($runtimeUnit)
-        ->toBe('redis')
+        ->toBe('valkey')
         ->and($driver->apply($node, $app, $process))
         ->toBeTrue()
         ->and($driver->start($node, $runtimeUnit))
@@ -162,7 +162,7 @@ it('applies node owned docker service processes from runtime config', function (
         ->and($driver->restart($node, $runtimeUnit))
         ->toBeTrue()
         ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, false))
-        ->toBe("docker logs --tail 25 'redis' 2>&1");
+        ->toBe("docker logs --tail 25 'valkey' 2>&1");
 
     $payloads = docker_process_driver_agent_payloads();
     $apply = $payloads[0];
@@ -170,14 +170,14 @@ it('applies node owned docker service processes from runtime config', function (
     expect($apply['prepare_prerequisites'])
         ->toBeTrue()
         ->and($apply['spec']['name'])
-        ->toBe('redis')
+        ->toBe('valkey')
         ->and($apply['spec']['image'])
-        ->toBe('redis:7.2')
+        ->toBe('valkey/valkey:8.1')
         ->and($apply['spec']['environment'])
         ->toBe([implode('_', ['ALLOW', 'EMPTY', 'PASSWORD']) => implode('', ['y', 'e', 's'])])
         ->and($apply['spec']['mounts'][0])
         ->toMatchArray([
-            'source' => '/var/lib/orbit/redis',
+            'source' => '/var/lib/orbit/valkey',
             'target' => '/data',
         ]);
 
@@ -302,11 +302,11 @@ it('runs docker swarm process lifecycle through the docker swarm runtime driver'
     $process = Process::factory()
         ->forOwner($node)
         ->create([
-            'name' => 'redis7',
-            'command' => 'redis-server --bind 0.0.0.0 --protected-mode no',
+            'name' => 'valkey7',
+            'command' => 'valkey-server --bind 0.0.0.0 --protected-mode no',
             'runtime' => ProcessRuntime::DockerSwarm,
             'runtime_config' => [
-                'service_name' => 'orbit-redis-7',
+                'service_name' => 'orbit-valkey-7',
             ],
         ]);
 
@@ -314,7 +314,7 @@ it('runs docker swarm process lifecycle through the docker swarm runtime driver'
     $runtimeUnit = $driver->runtimeUnitName($app, $process);
 
     expect($runtimeUnit)
-        ->toBe('orbit-redis-7')
+        ->toBe('orbit-valkey-7')
         ->and($driver->start($node, $runtimeUnit))
         ->toBeTrue()
         ->and($driver->stop($node, $runtimeUnit))
@@ -322,9 +322,9 @@ it('runs docker swarm process lifecycle through the docker swarm runtime driver'
         ->and($driver->restart($node, $runtimeUnit))
         ->toBeTrue()
         ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, false))
-        ->toBe("docker service logs --tail 25 'orbit-redis-7' 2>&1")
+        ->toBe("docker service logs --tail 25 'orbit-valkey-7' 2>&1")
         ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, true))
-        ->toBe("docker service logs --tail 25 --follow 'orbit-redis-7' 2>&1");
+        ->toBe("docker service logs --tail 25 --follow 'orbit-valkey-7' 2>&1");
 
     expect(process_driver_agent_actions('internal:process-docker-swarm-service'))
         ->toBe(['start', 'stop', 'restart']);

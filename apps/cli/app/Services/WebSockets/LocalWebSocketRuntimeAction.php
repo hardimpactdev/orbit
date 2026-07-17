@@ -31,7 +31,7 @@ final readonly class LocalWebSocketRuntimeAction
             'container:remove' => $this->removeContainer($payload),
             'app-config:sync' => $this->syncAppConfig($payload),
             'doctor:backend-cert-probe' => $this->backendCertificateProbe($payload),
-            'doctor:redis-probe' => $this->redisProbe($payload),
+            'doctor:valkey-probe' => $this->valkeyProbe($payload),
             'doctor:runtime-probe' => $this->runtimeProbe($payload),
             default => throw new LocalWebSocketRuntimeFailure(
                 errorCode: 'validation_failed',
@@ -513,21 +513,21 @@ final readonly class LocalWebSocketRuntimeAction
      * @param  array<string, mixed>  $payload
      * @return array{ok: true}
      */
-    private function redisProbe(array $payload): array
+    private function valkeyProbe(array $payload): array
     {
         $container = $this->container($payload['container'] ?? null);
         $process = new Process(['docker', 'exec', '-i', $container, 'php']);
         $process->setInput(<<<'PHP'
             <?php
 
-            $host = getenv('REDIS_HOST') ?: 'redis.orbit';
+            $host = getenv('REDIS_HOST') ?: 'valkey.orbit';
             $port = (int) (getenv('REDIS_PORT') ?: 6379);
             $errno = 0;
             $errstr = '';
             $socket = @fsockopen($host, $port, $errno, $errstr, 2);
 
             if (! $socket) {
-                fwrite(STDERR, $errstr !== '' ? $errstr : 'redis unavailable');
+                fwrite(STDERR, $errstr !== '' ? $errstr : 'valkey unavailable');
                 exit(1);
             }
 
@@ -541,8 +541,8 @@ final readonly class LocalWebSocketRuntimeAction
         }
 
         throw new LocalWebSocketRuntimeFailure(
-            errorCode: 'websocket_runtime_redis_unavailable',
-            message: 'Websocket runtime Redis probe failed.',
+            errorCode: 'websocket_runtime_valkey_unavailable',
+            message: 'Websocket runtime Valkey probe failed.',
             meta: [
                 'exit_code' => $process->getExitCode(),
                 'output' => $this->output($process),

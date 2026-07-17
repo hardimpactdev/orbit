@@ -12,4 +12,5 @@ it('does not catalog database server processes as installable tools', function (
     'mysql',
     'postgres',
     'redis',
+    'valkey',
 ]);

@@ -187,10 +187,11 @@ function decodeDoctorNdjson(string $output): array
 {
     $lines = array_values(array_filter(explode("\n", $output)));
 
-    return array_map(
-        fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR),
-        $lines,
-    );
+    return array_map(fn (string $line): array => json_decode(
+        $line,
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    ), $lines);
 }
 
 /**
@@ -369,22 +370,20 @@ describe('doctor human panel', function (): void {
         $initialPanelLineCount = count(app(DoctorPanelRenderer::class)->lines($initialProgress));
         $finalReport = doctorVerifyReport([], ['families' => $families]);
 
-        fakeDoctorRunStream(
-            gatewayProgressFrame('tree', [
-                'title' => 'Running Doctor',
-                'steps' => array_map(fn (string $family): array => [
-                    'key' => $family,
-                    'label' => "Check {$family}",
-                ], $families),
-            ]).doctorRunProgressFrame($initialProgress)
-                .gatewayProgressFrame('complete', [
-                    'exit_code' => 0,
-                    'data' => [
-                        'footer' => 'Doctor completed.',
-                        'doctor' => $finalReport,
-                    ],
-                ]),
-        );
+        fakeDoctorRunStream(gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => array_map(fn (string $family): array => [
+                'key' => $family,
+                'label' => "Check {$family}",
+            ], $families),
+        ]).doctorRunProgressFrame($initialProgress)
+            .gatewayProgressFrame('complete', [
+                'exit_code' => 0,
+                'data' => [
+                    'footer' => 'Doctor completed.',
+                    'doctor' => $finalReport,
+                ],
+            ]));
 
         [$exitCode, $output] = runDecoratedCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -426,11 +425,7 @@ describe('doctor human panel', function (): void {
         ]);
 
         $terminalMarker = 'D O C T O R - R E S U L T';
-        $inProgressOutput = stripAnsi(substr(
-            $output,
-            0,
-            (int) strrpos($output, $terminalMarker),
-        ));
+        $inProgressOutput = stripAnsi(substr($output, 0, (int) strrpos($output, $terminalMarker)));
 
         expect($exitCode)
             ->toBe(0)
@@ -496,12 +491,7 @@ describe('doctor human panel', function (): void {
 
         $plain = stripAnsi($output);
 
-        expect($exitCode)
-            ->toBe(0)
-            ->and($plain)
-            ->toContain('Checking')
-            ->and($plain)
-            ->not->toContain('Checking -');
+        expect($exitCode)->toBe(0)->and($plain)->toContain('Checking')->and($plain)->not->toContain('Checking -');
     });
 
     it('keeps the doctor progress panel spinner blinking during idle waits', function (): void {
@@ -721,10 +711,7 @@ describe('doctor human panel', function (): void {
     });
 
     it('truncates single-node verify issue bullets to ten per family with overflow line', function (): void {
-        $report = doctorVerifyReport(
-            issues: doctorIssuesForFamily('app', 11),
-            scopeOverrides: ['families' => ['app']],
-        );
+        $report = doctorVerifyReport(issues: doctorIssuesForFamily('app', 11), scopeOverrides: ['families' => ['app']]);
 
         fakeDoctorRunStream(doctorRunDriftStream($report, ['app']));
 
@@ -790,27 +777,25 @@ describe('doctor human panel', function (): void {
             ],
         ];
 
-        fakeDoctorRunStream(
-            gatewayProgressFrame('tree', [
-                'title' => 'Running Doctor',
-                'steps' => [
-                    ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
-                    ['key' => 'gateway-1', 'label' => 'Check gateway-1'],
-                ],
+        fakeDoctorRunStream(gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [
+                ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
+                ['key' => 'gateway-1', 'label' => 'Check gateway-1'],
+            ],
+        ])
+            .gatewayProgressFrame('step', [
+                'key' => 'app-prod-1',
+                'status' => 'running',
+                'message' => 'Checking app-prod-1',
             ])
-                .gatewayProgressFrame('step', [
-                    'key' => 'app-prod-1',
-                    'status' => 'running',
-                    'message' => 'Checking app-prod-1',
-                ])
-                .gatewayProgressFrame('complete', [
-                    'exit_code' => 0,
-                    'data' => [
-                        'footer' => 'Doctor completed.',
-                        'doctor' => $finalReport,
-                    ],
-                ]),
-        );
+            .gatewayProgressFrame('complete', [
+                'exit_code' => 0,
+                'data' => [
+                    'footer' => 'Doctor completed.',
+                    'doctor' => $finalReport,
+                ],
+            ]));
 
         [$exitCode, $output] = runDecoratedCommand($this, 'doctor', [
             '--all' => true,
@@ -832,15 +817,11 @@ describe('doctor human panel', function (): void {
             ->and($inProgressOutput)
             ->toContain('D O C T O R')
             ->and($inProgressOutput)
-            ->toContain(
-                'Performing check-up on fleet',
-            )
+            ->toContain('Performing check-up on fleet')
             ->and($inProgressOutput)
             ->toMatch('/app-prod-1\s+Checking/')
             ->and($inProgressOutput)
-            ->toMatch(
-                '/gateway-1\s+Queued/',
-            )
+            ->toMatch('/gateway-1\s+Queued/')
             ->and($inProgressOutput)
             ->not->toContain('Check app-prod-1')->and($inProgressOutput)
             ->not->toContain('Check gateway-1')->and($inProgressOutput)
@@ -850,63 +831,58 @@ describe('doctor human panel', function (): void {
     });
 
     it('renders completed-node issue details in fleet in-progress panel while later nodes remain queued', function (): void {
-        $partialReport = doctorPartialFleetProgressReport(
-            issues: [[
-                'family' => 'proxy',
-                'node' => 'app-dev-1',
-                'key' => 'proxy.node_probe_failed',
-                'code' => 'proxy.node_probe_failed',
-                'kind' => 'unverifiable',
-                'summary' => 'Proxy route scan failed on app-dev-1.',
-                'detail' => [],
-                'restorable' => false,
-                'adoptable' => false,
-            ]],
-            progressNodes: [
-                ['node' => 'app-dev-1', 'status' => 'done'],
-                ['node' => 'app-prod-1', 'status' => 'queued'],
-            ],
-        );
+        $partialReport = doctorPartialFleetProgressReport(issues: [[
+            'family' => 'proxy',
+            'node' => 'app-dev-1',
+            'key' => 'proxy.node_probe_failed',
+            'code' => 'proxy.node_probe_failed',
+            'kind' => 'unverifiable',
+            'summary' => 'Proxy route scan failed on app-dev-1.',
+            'detail' => [],
+            'restorable' => false,
+            'adoptable' => false,
+        ]], progressNodes: [
+            ['node' => 'app-dev-1', 'status' => 'done'],
+            ['node' => 'app-prod-1', 'status' => 'queued'],
+        ]);
         $finalReport = doctorFleetDriftReport($partialReport['issues']);
         $finalReport['scope']['targets'] = ['app-dev-1', 'app-prod-1'];
         $finalReport['nodes'] = $partialReport['nodes'];
 
-        fakeDoctorRunStream(
-            gatewayProgressFrame('tree', [
-                'title' => 'Running Doctor',
-                'steps' => [
-                    ['key' => 'app-dev-1', 'label' => 'Check app-dev-1'],
-                    ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
-                ],
+        fakeDoctorRunStream(gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [
+                ['key' => 'app-dev-1', 'label' => 'Check app-dev-1'],
+                ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
+            ],
+        ])
+            .gatewayProgressFrame('step', [
+                'key' => 'app-dev-1',
+                'status' => 'running',
+                'message' => 'Checking app-dev-1',
             ])
-                .gatewayProgressFrame('step', [
-                    'key' => 'app-dev-1',
-                    'status' => 'running',
-                    'message' => 'Checking app-dev-1',
-                ])
-                .gatewayProgressFrame('step', [
-                    'key' => 'app-dev-1',
-                    'status' => 'done',
-                    'message' => 'app-dev-1 checked',
-                    'doctor' => $partialReport,
-                ])
-                .gatewayProgressFrame('step', [
-                    'key' => 'app-prod-1',
-                    'status' => 'running',
-                    'message' => 'Checking app-prod-1',
-                ])
-                .gatewayProgressFrame('error', [
-                    'exit_code' => 1,
+            .gatewayProgressFrame('step', [
+                'key' => 'app-dev-1',
+                'status' => 'done',
+                'message' => 'app-dev-1 checked',
+                'doctor' => $partialReport,
+            ])
+            .gatewayProgressFrame('step', [
+                'key' => 'app-prod-1',
+                'status' => 'running',
+                'message' => 'Checking app-prod-1',
+            ])
+            .gatewayProgressFrame('error', [
+                'exit_code' => 1,
+                'message' => 'Doctor detected drift.',
+                'data' => [
+                    'code' => 'drift_detected',
                     'message' => 'Doctor detected drift.',
-                    'data' => [
-                        'code' => 'drift_detected',
-                        'message' => 'Doctor detected drift.',
-                        'meta' => [],
-                        'data' => ['doctor' => $finalReport],
-                        'footer' => 'Doctor detected drift.',
-                    ],
-                ]),
-        );
+                    'meta' => [],
+                    'data' => ['doctor' => $finalReport],
+                    'footer' => 'Doctor detected drift.',
+                ],
+            ]));
 
         [$exitCode, $output] = runDecoratedCommand($this, 'doctor', [
             '--all' => true,
@@ -927,9 +903,7 @@ describe('doctor human panel', function (): void {
             ->toBeInt()
             ->and($inProgressOutput)
             ->toContain('Proxy route scan failed on app-dev-1.')
-            ->and(
-                $inProgressOutput,
-            )
+            ->and($inProgressOutput)
             ->toMatch('/app-prod-1\s+Checking/')
             ->and($inProgressOutput)
             ->not->toContain('S U M M A R Y')->and($inProgressOutput)
@@ -952,39 +926,37 @@ describe('doctor human panel', function (): void {
         $finalReport['scope']['targets'] = ['agent-1', 'app-dev-1', 'app-prod-1', 'gateway'];
         $finalReport['nodes'] = $completedReport['nodes'];
 
-        fakeDoctorRunStream(
-            gatewayProgressFrame('tree', [
-                'title' => 'Running Doctor',
-                'steps' => [
-                    ['key' => 'agent-1', 'label' => 'Check agent-1'],
-                    ['key' => 'app-dev-1', 'label' => 'Check app-dev-1'],
-                    ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
-                    ['key' => 'gateway', 'label' => 'Check gateway'],
-                ],
+        fakeDoctorRunStream(gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [
+                ['key' => 'agent-1', 'label' => 'Check agent-1'],
+                ['key' => 'app-dev-1', 'label' => 'Check app-dev-1'],
+                ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
+                ['key' => 'gateway', 'label' => 'Check gateway'],
+            ],
+        ])
+            .gatewayProgressFrame('step', [
+                'key' => 'agent-1',
+                'status' => 'done',
+                'message' => 'agent-1 checked',
+                'doctor' => $completedReport,
             ])
-                .gatewayProgressFrame('step', [
-                    'key' => 'agent-1',
-                    'status' => 'done',
-                    'message' => 'agent-1 checked',
-                    'doctor' => $completedReport,
-                ])
-                .gatewayProgressFrame('step', [
-                    'key' => 'app-dev-1',
-                    'status' => 'running',
-                    'message' => 'Checking app-dev-1',
-                ])
-                .gatewayProgressFrame('error', [
-                    'exit_code' => 1,
+            .gatewayProgressFrame('step', [
+                'key' => 'app-dev-1',
+                'status' => 'running',
+                'message' => 'Checking app-dev-1',
+            ])
+            .gatewayProgressFrame('error', [
+                'exit_code' => 1,
+                'message' => 'Doctor detected drift.',
+                'data' => [
+                    'code' => 'drift_detected',
                     'message' => 'Doctor detected drift.',
-                    'data' => [
-                        'code' => 'drift_detected',
-                        'message' => 'Doctor detected drift.',
-                        'meta' => [],
-                        'data' => ['doctor' => $finalReport],
-                        'footer' => 'Doctor detected drift.',
-                    ],
-                ]),
-        );
+                    'meta' => [],
+                    'data' => ['doctor' => $finalReport],
+                    'footer' => 'Doctor detected drift.',
+                ],
+            ]));
 
         [$exitCode, $output] = runDecoratedCommand($this, 'doctor', [
             '--all' => true,
@@ -992,11 +964,7 @@ describe('doctor human panel', function (): void {
         ]);
 
         $terminalMarker = 'D O C T O R - R E S U L T';
-        $inProgressOutput = stripAnsi(substr(
-            $output,
-            0,
-            (int) strrpos($output, $terminalMarker),
-        ));
+        $inProgressOutput = stripAnsi(substr($output, 0, (int) strrpos($output, $terminalMarker)));
 
         expect($exitCode)
             ->toBe(1)
@@ -1010,28 +978,26 @@ describe('doctor human panel', function (): void {
     });
 
     it('renders plain Checking on active fleet node rows when per-node progress totals are absent', function (): void {
-        fakeDoctorRunStream(
-            gatewayProgressFrame('tree', [
-                'title' => 'Running Doctor',
-                'steps' => [
-                    ['key' => 'agent-1', 'label' => 'Check agent-1'],
-                    ['key' => 'app-dev-1', 'label' => 'Check app-dev-1'],
-                    ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
-                ],
+        fakeDoctorRunStream(gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [
+                ['key' => 'agent-1', 'label' => 'Check agent-1'],
+                ['key' => 'app-dev-1', 'label' => 'Check app-dev-1'],
+                ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
+            ],
+        ])
+            .gatewayProgressFrame('step', [
+                'key' => 'app-dev-1',
+                'status' => 'running',
+                'message' => 'Checking app-dev-1',
             ])
-                .gatewayProgressFrame('step', [
-                    'key' => 'app-dev-1',
-                    'status' => 'running',
-                    'message' => 'Checking app-dev-1',
-                ])
-                .gatewayProgressFrame('complete', [
-                    'exit_code' => 0,
-                    'data' => [
-                        'footer' => 'Doctor completed.',
-                        'doctor' => doctorFleetReport(),
-                    ],
-                ]),
-        );
+            .gatewayProgressFrame('complete', [
+                'exit_code' => 0,
+                'data' => [
+                    'footer' => 'Doctor completed.',
+                    'doctor' => doctorFleetReport(),
+                ],
+            ]));
 
         [$exitCode, $output] = runDecoratedCommand($this, 'doctor', [
             '--all' => true,
@@ -1039,11 +1005,7 @@ describe('doctor human panel', function (): void {
         ]);
 
         $terminalMarker = 'D O C T O R - R E S U L T';
-        $inProgressOutput = stripAnsi(substr(
-            $output,
-            0,
-            (int) strrpos($output, $terminalMarker),
-        ));
+        $inProgressOutput = stripAnsi(substr($output, 0, (int) strrpos($output, $terminalMarker)));
 
         expect($exitCode)
             ->toBe(0)
@@ -1065,30 +1027,28 @@ describe('doctor human panel', function (): void {
             targets: ['agent-1', 'app-dev-1', 'app-prod-1', 'gateway'],
         );
 
-        fakeDoctorRunStream(
-            gatewayProgressFrame('tree', [
-                'title' => 'Running Doctor',
-                'steps' => [
-                    ['key' => 'agent-1', 'label' => 'Check agent-1'],
-                    ['key' => 'app-dev-1', 'label' => 'Check app-dev-1'],
-                    ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
-                    ['key' => 'gateway', 'label' => 'Check gateway'],
-                ],
+        fakeDoctorRunStream(gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [
+                ['key' => 'agent-1', 'label' => 'Check agent-1'],
+                ['key' => 'app-dev-1', 'label' => 'Check app-dev-1'],
+                ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
+                ['key' => 'gateway', 'label' => 'Check gateway'],
+            ],
+        ])
+            .gatewayProgressFrame('step', [
+                'key' => 'app-dev-1',
+                'status' => 'running',
+                'message' => 'Checking app-dev-1',
+                'doctor' => $partialReport,
             ])
-                .gatewayProgressFrame('step', [
-                    'key' => 'app-dev-1',
-                    'status' => 'running',
-                    'message' => 'Checking app-dev-1',
-                    'doctor' => $partialReport,
-                ])
-                .gatewayProgressFrame('complete', [
-                    'exit_code' => 0,
-                    'data' => [
-                        'footer' => 'Doctor completed.',
-                        'doctor' => doctorFleetReport(),
-                    ],
-                ]),
-        );
+            .gatewayProgressFrame('complete', [
+                'exit_code' => 0,
+                'data' => [
+                    'footer' => 'Doctor completed.',
+                    'doctor' => doctorFleetReport(),
+                ],
+            ]));
 
         [$exitCode, $output] = runDecoratedCommand($this, 'doctor', [
             '--all' => true,
@@ -1096,11 +1056,7 @@ describe('doctor human panel', function (): void {
         ]);
 
         $terminalMarker = 'D O C T O R - R E S U L T';
-        $inProgressOutput = stripAnsi(substr(
-            $output,
-            0,
-            (int) strrpos($output, $terminalMarker),
-        ));
+        $inProgressOutput = stripAnsi(substr($output, 0, (int) strrpos($output, $terminalMarker)));
 
         expect($exitCode)
             ->toBe(0)
@@ -1115,48 +1071,43 @@ describe('doctor human panel', function (): void {
 
     it('caps completed-node fleet in-progress issue bullets at ten with overflow line', function (): void {
         $issues = doctorIssuesForFamily('proxy', 11, 'app-dev-1');
-        $partialReport = doctorPartialFleetProgressReport(
-            issues: $issues,
-            progressNodes: [
-                ['node' => 'app-dev-1', 'status' => 'done'],
-                ['node' => 'app-prod-1', 'status' => 'running'],
-            ],
-        );
+        $partialReport = doctorPartialFleetProgressReport(issues: $issues, progressNodes: [
+            ['node' => 'app-dev-1', 'status' => 'done'],
+            ['node' => 'app-prod-1', 'status' => 'running'],
+        ]);
         $finalReport = doctorFleetDriftReport($issues);
         $finalReport['scope']['targets'] = ['app-dev-1', 'app-prod-1'];
         $finalReport['nodes'] = $partialReport['nodes'];
 
-        fakeDoctorRunStream(
-            gatewayProgressFrame('tree', [
-                'title' => 'Running Doctor',
-                'steps' => [
-                    ['key' => 'app-dev-1', 'label' => 'Check app-dev-1'],
-                    ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
-                ],
+        fakeDoctorRunStream(gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [
+                ['key' => 'app-dev-1', 'label' => 'Check app-dev-1'],
+                ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
+            ],
+        ])
+            .gatewayProgressFrame('step', [
+                'key' => 'app-dev-1',
+                'status' => 'done',
+                'message' => 'app-dev-1 checked',
+                'doctor' => $partialReport,
             ])
-                .gatewayProgressFrame('step', [
-                    'key' => 'app-dev-1',
-                    'status' => 'done',
-                    'message' => 'app-dev-1 checked',
-                    'doctor' => $partialReport,
-                ])
-                .gatewayProgressFrame('step', [
-                    'key' => 'app-prod-1',
-                    'status' => 'running',
-                    'message' => 'Checking app-prod-1',
-                ])
-                .gatewayProgressFrame('error', [
-                    'exit_code' => 1,
+            .gatewayProgressFrame('step', [
+                'key' => 'app-prod-1',
+                'status' => 'running',
+                'message' => 'Checking app-prod-1',
+            ])
+            .gatewayProgressFrame('error', [
+                'exit_code' => 1,
+                'message' => 'Doctor detected drift.',
+                'data' => [
+                    'code' => 'drift_detected',
                     'message' => 'Doctor detected drift.',
-                    'data' => [
-                        'code' => 'drift_detected',
-                        'message' => 'Doctor detected drift.',
-                        'meta' => [],
-                        'data' => ['doctor' => $finalReport],
-                        'footer' => 'Doctor detected drift.',
-                    ],
-                ]),
-        );
+                    'meta' => [],
+                    'data' => ['doctor' => $finalReport],
+                    'footer' => 'Doctor detected drift.',
+                ],
+            ]));
 
         [$exitCode, $output] = runDecoratedCommand($this, 'doctor', [
             '--all' => true,
@@ -1164,11 +1115,7 @@ describe('doctor human panel', function (): void {
         ]);
 
         $terminalMarker = 'D O C T O R - R E S U L T';
-        $inProgressOutput = stripAnsi(substr(
-            $output,
-            0,
-            (int) strrpos($output, $terminalMarker),
-        ));
+        $inProgressOutput = stripAnsi(substr($output, 0, (int) strrpos($output, $terminalMarker)));
 
         expect($exitCode)
             ->toBe(1)
@@ -1283,10 +1230,7 @@ describe('doctor human panel', function (): void {
     });
 
     it('keeps complete issue payloads in --json when human bullets are truncated', function (): void {
-        $report = doctorVerifyReport(
-            issues: doctorIssuesForFamily('app', 11),
-            scopeOverrides: ['families' => ['app']],
-        );
+        $report = doctorVerifyReport(issues: doctorIssuesForFamily('app', 11), scopeOverrides: ['families' => ['app']]);
 
         fakeDoctorRunStream(doctorRunDriftStream($report, ['app']));
 
@@ -1299,53 +1243,43 @@ describe('doctor human panel', function (): void {
         $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
         $issues = $payload['data']['data']['data']['doctor']['issues'] ?? [];
 
-        expect($exitCode)
-            ->toBe(1)
-            ->and($issues)
-            ->toHaveCount(11)
-            ->and($output)
-            ->not->toContain('+ 1 more issue');
+        expect($exitCode)->toBe(1)->and($issues)->toHaveCount(11)->and($output)->not->toContain('+ 1 more issue');
     });
 
     it('keeps complete partial fleet doctor payloads in --stream-json when human bullets are truncated', function (): void {
         $issues = doctorIssuesForFamily('proxy', 11, 'app-dev-1');
-        $partialReport = doctorPartialFleetProgressReport(
-            issues: $issues,
-            progressNodes: [
-                ['node' => 'app-dev-1', 'status' => 'done'],
-                ['node' => 'app-prod-1', 'status' => 'running'],
-            ],
-        );
+        $partialReport = doctorPartialFleetProgressReport(issues: $issues, progressNodes: [
+            ['node' => 'app-dev-1', 'status' => 'done'],
+            ['node' => 'app-prod-1', 'status' => 'running'],
+        ]);
         $finalReport = doctorFleetDriftReport($issues);
         $finalReport['scope']['targets'] = ['app-dev-1', 'app-prod-1'];
         $finalReport['nodes'] = $partialReport['nodes'];
 
-        fakeDoctorRunStream(
-            gatewayProgressFrame('tree', [
-                'title' => 'Running Doctor',
-                'steps' => [
-                    ['key' => 'app-dev-1', 'label' => 'Check app-dev-1'],
-                    ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
-                ],
+        fakeDoctorRunStream(gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [
+                ['key' => 'app-dev-1', 'label' => 'Check app-dev-1'],
+                ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
+            ],
+        ])
+            .gatewayProgressFrame('step', [
+                'key' => 'app-dev-1',
+                'status' => 'done',
+                'message' => 'app-dev-1 checked',
+                'doctor' => $partialReport,
             ])
-                .gatewayProgressFrame('step', [
-                    'key' => 'app-dev-1',
-                    'status' => 'done',
-                    'message' => 'app-dev-1 checked',
-                    'doctor' => $partialReport,
-                ])
-                .gatewayProgressFrame('error', [
-                    'exit_code' => 1,
+            .gatewayProgressFrame('error', [
+                'exit_code' => 1,
+                'message' => 'Doctor detected drift.',
+                'data' => [
+                    'code' => 'drift_detected',
                     'message' => 'Doctor detected drift.',
-                    'data' => [
-                        'code' => 'drift_detected',
-                        'message' => 'Doctor detected drift.',
-                        'meta' => [],
-                        'data' => ['doctor' => $finalReport],
-                        'footer' => 'Doctor detected drift.',
-                    ],
-                ]),
-        );
+                    'meta' => [],
+                    'data' => ['doctor' => $finalReport],
+                    'footer' => 'Doctor detected drift.',
+                ],
+            ]));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--all' => true,
@@ -1373,10 +1307,7 @@ describe('doctor human panel', function (): void {
     });
 
     it('keeps complete issue payloads in --stream-json when human bullets are truncated', function (): void {
-        $report = doctorVerifyReport(
-            issues: doctorIssuesForFamily('app', 11),
-            scopeOverrides: ['families' => ['app']],
-        );
+        $report = doctorVerifyReport(issues: doctorIssuesForFamily('app', 11), scopeOverrides: ['families' => ['app']]);
 
         fakeDoctorRunStream(doctorRunDriftStream($report, ['app']));
 
@@ -1449,98 +1380,95 @@ describe('doctor human panel', function (): void {
     });
 
     it('renders verify-mode family issues as readable bullet details in active-role order', function (): void {
-        $report = doctorVerifyReport(
-            issues: [
-                [
-                    'family' => 'app',
-                    'node' => 'beast',
-                    'key' => 'app.http_error',
-                    'code' => 'app.http_error',
-                    'kind' => 'divergent',
-                    'summary' => 'https://nckrtl.test returned a 500 error response',
-                    'detail' => ['app' => 'nckrtl'],
-                    'restorable' => false,
-                    'adoptable' => false,
-                ],
-                [
-                    'family' => 'workspace',
-                    'node' => 'beast',
-                    'key' => 'workspace.missing',
-                    'code' => 'workspace.missing',
-                    'kind' => 'missing',
-                    'summary' => 'Workspace should exist on node but is missing',
-                    'detail' => ['workspace' => 'abc123.nckrtl.test', 'app' => 'nckrtl'],
-                    'restorable' => true,
-                    'adoptable' => false,
-                ],
-                [
-                    'family' => 'workspace',
-                    'node' => 'beast',
-                    'key' => 'workspace.extra',
-                    'code' => 'workspace.extra',
-                    'kind' => 'extra',
-                    'summary' => 'Workspace exists on node but is not expected',
-                    'detail' => ['workspace' => 'ui-redesign.hauser.test', 'app' => 'hauser'],
-                    'restorable' => false,
-                    'adoptable' => true,
-                ],
-                [
-                    'family' => 'process',
-                    'node' => 'beast',
-                    'key' => 'process.runtime_unit_missing',
-                    'code' => 'process.runtime_unit_missing',
-                    'kind' => 'missing',
-                    'summary' => 'process.runtime_unit_missing',
-                    'detail' => ['app' => 'nckrtl', 'process' => 'queue-worker'],
-                    'restorable' => true,
-                    'adoptable' => false,
-                ],
-                [
-                    'family' => 'database_connection',
-                    'node' => 'beast',
-                    'key' => 'database_connection.env_mismatch',
-                    'code' => 'database_connection.env_mismatch',
-                    'kind' => 'divergent',
-                    'summary' => 'database_connection.env_mismatch',
-                    'detail' => ['connection' => 'ditis_hr'],
-                    'restorable' => true,
-                    'adoptable' => true,
-                ],
-                [
-                    'family' => 'database_connection',
-                    'node' => 'beast',
-                    'key' => 'database_connection.env_mismatch',
-                    'code' => 'database_connection.env_mismatch',
-                    'kind' => 'divergent',
-                    'summary' => 'database_connection.env_mismatch',
-                    'detail' => ['target_type' => 'app', 'app' => 'nckrtl', 'env_prefix' => 'REPORTING'],
-                    'restorable' => true,
-                    'adoptable' => true,
-                ],
-                [
-                    'family' => 'schedule',
-                    'node' => 'beast',
-                    'key' => 'schedule.lock_stuck',
-                    'code' => 'schedule.lock_stuck',
-                    'kind' => 'divergent',
-                    'summary' => 'schedule.lock_stuck',
-                    'detail' => ['schedule_key' => 'app:docs:laravel-scheduler'],
-                    'restorable' => true,
-                    'adoptable' => false,
-                ],
+        $report = doctorVerifyReport(issues: [
+            [
+                'family' => 'app',
+                'node' => 'beast',
+                'key' => 'app.http_error',
+                'code' => 'app.http_error',
+                'kind' => 'divergent',
+                'summary' => 'https://nckrtl.test returned a 500 error response',
+                'detail' => ['app' => 'nckrtl'],
+                'restorable' => false,
+                'adoptable' => false,
             ],
-            scopeOverrides: ['families' => [
-                'node',
-                'app',
-                'workspace',
-                'process',
-                'proxy',
-                'firewall_rule',
-                'tool',
-                'schedule',
-                'database_connection',
-            ]],
-        );
+            [
+                'family' => 'workspace',
+                'node' => 'beast',
+                'key' => 'workspace.missing',
+                'code' => 'workspace.missing',
+                'kind' => 'missing',
+                'summary' => 'Workspace should exist on node but is missing',
+                'detail' => ['workspace' => 'abc123.nckrtl.test', 'app' => 'nckrtl'],
+                'restorable' => true,
+                'adoptable' => false,
+            ],
+            [
+                'family' => 'workspace',
+                'node' => 'beast',
+                'key' => 'workspace.extra',
+                'code' => 'workspace.extra',
+                'kind' => 'extra',
+                'summary' => 'Workspace exists on node but is not expected',
+                'detail' => ['workspace' => 'ui-redesign.hauser.test', 'app' => 'hauser'],
+                'restorable' => false,
+                'adoptable' => true,
+            ],
+            [
+                'family' => 'process',
+                'node' => 'beast',
+                'key' => 'process.runtime_unit_missing',
+                'code' => 'process.runtime_unit_missing',
+                'kind' => 'missing',
+                'summary' => 'process.runtime_unit_missing',
+                'detail' => ['app' => 'nckrtl', 'process' => 'queue-worker'],
+                'restorable' => true,
+                'adoptable' => false,
+            ],
+            [
+                'family' => 'database_connection',
+                'node' => 'beast',
+                'key' => 'database_connection.env_mismatch',
+                'code' => 'database_connection.env_mismatch',
+                'kind' => 'divergent',
+                'summary' => 'database_connection.env_mismatch',
+                'detail' => ['connection' => 'ditis_hr'],
+                'restorable' => true,
+                'adoptable' => true,
+            ],
+            [
+                'family' => 'database_connection',
+                'node' => 'beast',
+                'key' => 'database_connection.env_mismatch',
+                'code' => 'database_connection.env_mismatch',
+                'kind' => 'divergent',
+                'summary' => 'database_connection.env_mismatch',
+                'detail' => ['target_type' => 'app', 'app' => 'nckrtl', 'env_prefix' => 'REPORTING'],
+                'restorable' => true,
+                'adoptable' => true,
+            ],
+            [
+                'family' => 'schedule',
+                'node' => 'beast',
+                'key' => 'schedule.lock_stuck',
+                'code' => 'schedule.lock_stuck',
+                'kind' => 'divergent',
+                'summary' => 'schedule.lock_stuck',
+                'detail' => ['schedule_key' => 'app:docs:laravel-scheduler'],
+                'restorable' => true,
+                'adoptable' => false,
+            ],
+        ], scopeOverrides: ['families' => [
+            'node',
+            'app',
+            'workspace',
+            'process',
+            'proxy',
+            'firewall_rule',
+            'tool',
+            'schedule',
+            'database_connection',
+        ]]);
 
         fakeDoctorRunStream(doctorRunDriftStream($report, [
             'node',
@@ -1612,22 +1540,19 @@ describe('doctor human panel', function (): void {
     });
 
     it('dims the outer border and dashed issue separator when a category has issues', function (): void {
-        $report = doctorVerifyReport(
-            issues: [
-                [
-                    'family' => 'database_connection',
-                    'node' => 'beast',
-                    'key' => 'database_connection.missing',
-                    'code' => 'database_connection.missing',
-                    'kind' => 'missing',
-                    'summary' => 'Database connection ditis_hr is missing from the node.',
-                    'detail' => ['connection' => 'ditis_hr'],
-                    'restorable' => true,
-                    'adoptable' => false,
-                ],
+        $report = doctorVerifyReport(issues: [
+            [
+                'family' => 'database_connection',
+                'node' => 'beast',
+                'key' => 'database_connection.missing',
+                'code' => 'database_connection.missing',
+                'kind' => 'missing',
+                'summary' => 'Database connection ditis_hr is missing from the node.',
+                'detail' => ['connection' => 'ditis_hr'],
+                'restorable' => true,
+                'adoptable' => false,
             ],
-            scopeOverrides: ['families' => ['node', 'database_connection']],
-        );
+        ], scopeOverrides: ['families' => ['node', 'database_connection']]);
 
         fakeDoctorRunStream(doctorRunDriftStream($report, ['node', 'database_connection']));
 
@@ -1661,24 +1586,21 @@ describe('doctor human panel', function (): void {
     });
 
     it('summarizes unverifiable tool probe failures as issue count with details below the separator', function (): void {
-        $summary = 'WebSocket Redis is unavailable to the Reverb runtime on node app-dev-1.';
+        $summary = 'WebSocket Valkey is unavailable to the Reverb runtime on node app-dev-1.';
 
-        $report = doctorVerifyReport(
-            issues: [
-                [
-                    'family' => 'tool',
-                    'node' => 'app-dev-1',
-                    'key' => 'tool.websocket_redis_unavailable',
-                    'code' => 'tool.websocket_redis_unavailable',
-                    'kind' => 'unverifiable',
-                    'summary' => $summary,
-                    'detail' => [],
-                    'restorable' => false,
-                    'adoptable' => false,
-                ],
+        $report = doctorVerifyReport(issues: [
+            [
+                'family' => 'tool',
+                'node' => 'app-dev-1',
+                'key' => 'tool.websocket_valkey_unavailable',
+                'code' => 'tool.websocket_valkey_unavailable',
+                'kind' => 'unverifiable',
+                'summary' => $summary,
+                'detail' => [],
+                'restorable' => false,
+                'adoptable' => false,
             ],
-            scopeOverrides: ['node' => 'app-dev-1', 'families' => ['node', 'tool']],
-        );
+        ], scopeOverrides: ['node' => 'app-dev-1', 'families' => ['node', 'tool']]);
 
         fakeDoctorRunStream(doctorRunDriftStream($report, ['node', 'tool']));
 
@@ -1694,7 +1616,7 @@ describe('doctor human panel', function (): void {
             ->and($plain)
             ->toContain("\n●  Tools         1 issue detected:")
             ->and($plain)
-            ->not->toContain('Unavailable, WebSocket Redis')->and($plain)->toContain(
+            ->not->toContain('Unavailable, WebSocket Valkey')->and($plain)->toContain(
                 "\n│  ".str_repeat('-', 74).'  │',
             )->and($plain)->toContain("\n│  - {$summary}")->and($plain)
             ->not->toContain("\n│   - {$summary}");
@@ -1703,33 +1625,30 @@ describe('doctor human panel', function (): void {
     });
 
     it('keeps every stripped human doctor panel line within the panel width', function (): void {
-        $report = doctorVerifyReport(
-            issues: [
-                [
-                    'family' => 'node',
-                    'node' => 'beast',
-                    'key' => 'node.wireguard_peer_missing',
-                    'code' => 'node.wireguard_peer_missing',
-                    'kind' => 'missing',
-                    'summary' => 'WireGuard peer for node beast is missing.',
-                    'detail' => [],
-                    'restorable' => true,
-                    'adoptable' => false,
-                ],
-                [
-                    'family' => 'tool',
-                    'node' => 'beast',
-                    'key' => 'tool.websocket_redis_unavailable',
-                    'code' => 'tool.websocket_redis_unavailable',
-                    'kind' => 'unverifiable',
-                    'summary' => 'WebSocket Redis is unavailable to the Reverb runtime on node beast.',
-                    'detail' => [],
-                    'restorable' => false,
-                    'adoptable' => false,
-                ],
+        $report = doctorVerifyReport(issues: [
+            [
+                'family' => 'node',
+                'node' => 'beast',
+                'key' => 'node.wireguard_peer_missing',
+                'code' => 'node.wireguard_peer_missing',
+                'kind' => 'missing',
+                'summary' => 'WireGuard peer for node beast is missing.',
+                'detail' => [],
+                'restorable' => true,
+                'adoptable' => false,
             ],
-            scopeOverrides: ['families' => ['node', 'tool']],
-        );
+            [
+                'family' => 'tool',
+                'node' => 'beast',
+                'key' => 'tool.websocket_valkey_unavailable',
+                'code' => 'tool.websocket_valkey_unavailable',
+                'kind' => 'unverifiable',
+                'summary' => 'WebSocket Valkey is unavailable to the Reverb runtime on node beast.',
+                'detail' => [],
+                'restorable' => false,
+                'adoptable' => false,
+            ],
+        ], scopeOverrides: ['families' => ['node', 'tool']]);
 
         fakeDoctorRunStream(doctorRunDriftStream($report, ['node', 'tool']));
 
@@ -1744,15 +1663,15 @@ describe('doctor human panel', function (): void {
     });
 
     it('wraps long unavailable category status text inside the panel', function (): void {
-        $longReason = 'WebSocket Redis is unavailable to the Reverb runtime on node app-dev-1 because the connection pool is exhausted and retries failed.';
+        $longReason = 'WebSocket Valkey is unavailable to the Reverb runtime on node app-dev-1 because the connection pool is exhausted and retries failed.';
 
         $report = doctorVerifyReport(
             issues: [
                 [
                     'family' => 'tool',
                     'node' => 'app-dev-1',
-                    'key' => 'tool.websocket_redis_unavailable',
-                    'code' => 'tool.websocket_redis_unavailable',
+                    'key' => 'tool.websocket_valkey_unavailable',
+                    'code' => 'tool.websocket_valkey_unavailable',
                     'kind' => 'unverifiable',
                     'summary' => $longReason,
                     'detail' => [],
@@ -1778,7 +1697,7 @@ describe('doctor human panel', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and($plain)
-            ->toContain('Unavailable, WebSocket Redis is unavailable')
+            ->toContain('Unavailable, WebSocket Valkey is unavailable')
             ->and($plain)
             ->toContain('because the connection pool is')
             ->and($plain)
@@ -1831,20 +1750,16 @@ describe('doctor human panel', function (): void {
     });
 
     it('renders restore-mode action results and title', function (): void {
-        $report = doctorVerifyReport(
-            issues: [],
-            mode: 'restore',
-            actions: [
-                [
-                    'family' => 'node',
-                    'node' => 'beast',
-                    'key' => 'node.config',
-                    'mode' => 'restore',
-                    'status' => 'completed',
-                    'summary' => 'Node config restored.',
-                ],
+        $report = doctorVerifyReport(issues: [], mode: 'restore', actions: [
+            [
+                'family' => 'node',
+                'node' => 'beast',
+                'key' => 'node.config',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'summary' => 'Node config restored.',
             ],
-        );
+        ]);
         $report['healthy'] = true;
         $report['summary']['fixed'] = 1;
 
@@ -1882,19 +1797,17 @@ describe('doctor human panel', function (): void {
             ],
         ];
 
-        fakeDoctorRunStream(
-            gatewayProgressFrame('tree', [
-                'title' => 'Running Doctor',
-                'steps' => [['key' => 'workspace', 'label' => 'Check workspace']],
-            ]).doctorRunProgressFrame($progress)
-                .gatewayProgressFrame('complete', [
-                    'exit_code' => 0,
-                    'data' => [
-                        'footer' => 'Doctor completed.',
-                        'doctor' => doctorVerifyReport([], ['families' => ['workspace']]),
-                    ],
-                ]),
-        );
+        fakeDoctorRunStream(gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [['key' => 'workspace', 'label' => 'Check workspace']],
+        ]).doctorRunProgressFrame($progress)
+            .gatewayProgressFrame('complete', [
+                'exit_code' => 0,
+                'data' => [
+                    'footer' => 'Doctor completed.',
+                    'doctor' => doctorVerifyReport([], ['families' => ['workspace']]),
+                ],
+            ]));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -1924,19 +1837,17 @@ describe('doctor human panel', function (): void {
         ];
         $report = doctorVerifyReport([], ['families' => ['workspace']]);
 
-        fakeDoctorRunStream(
-            gatewayProgressFrame('tree', [
-                'title' => 'Running Doctor',
-                'steps' => [['key' => 'workspace', 'label' => 'Check workspace']],
-            ]).doctorRunProgressFrame($progress)
-                .gatewayProgressFrame('complete', [
-                    'exit_code' => 0,
-                    'data' => [
-                        'footer' => 'Doctor completed.',
-                        'doctor' => $report,
-                    ],
-                ]),
-        );
+        fakeDoctorRunStream(gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [['key' => 'workspace', 'label' => 'Check workspace']],
+        ]).doctorRunProgressFrame($progress)
+            .gatewayProgressFrame('complete', [
+                'exit_code' => 0,
+                'data' => [
+                    'footer' => 'Doctor completed.',
+                    'doctor' => $report,
+                ],
+            ]));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -1954,19 +1865,17 @@ describe('doctor human panel', function (): void {
     });
 
     it('keeps --json output exactly unchanged', function (): void {
-        fakeDoctorRunStream(
-            gatewayProgressFrame('tree', [
-                'title' => 'Running Doctor',
-                'steps' => [['key' => 'node', 'label' => 'Check node']],
-            ]).gatewayProgressFrame('step', ['key' => 'node', 'status' => 'running', 'message' => 'Checking node'])
-                .gatewayProgressFrame('complete', [
-                    'exit_code' => 0,
-                    'data' => [
-                        'footer' => 'Doctor completed.',
-                        'doctor' => doctorVerifyReport([]),
-                    ],
-                ]),
-        );
+        fakeDoctorRunStream(gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [['key' => 'node', 'label' => 'Check node']],
+        ]).gatewayProgressFrame('step', ['key' => 'node', 'status' => 'running', 'message' => 'Checking node'])
+            .gatewayProgressFrame('complete', [
+                'exit_code' => 0,
+                'data' => [
+                    'footer' => 'Doctor completed.',
+                    'doctor' => doctorVerifyReport([]),
+                ],
+            ]));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -2031,19 +1940,17 @@ describe('doctor human panel', function (): void {
     it('streams doctor progress frames as newline-delimited JSON', function (): void {
         $report = doctorVerifyReport([]);
 
-        fakeDoctorRunStream(
-            gatewayProgressFrame('tree', [
-                'title' => 'Running Doctor',
-                'steps' => [['key' => 'node', 'label' => 'Check node']],
-            ]).gatewayProgressFrame('step', ['key' => 'node', 'status' => 'running', 'message' => 'Checking node'])
-                .gatewayProgressFrame('complete', [
-                    'exit_code' => 0,
-                    'data' => [
-                        'footer' => 'Doctor completed.',
-                        'doctor' => $report,
-                    ],
-                ]),
-        );
+        fakeDoctorRunStream(gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [['key' => 'node', 'label' => 'Check node']],
+        ]).gatewayProgressFrame('step', ['key' => 'node', 'status' => 'running', 'message' => 'Checking node'])
+            .gatewayProgressFrame('complete', [
+                'exit_code' => 0,
+                'data' => [
+                    'footer' => 'Doctor completed.',
+                    'doctor' => $report,
+                ],
+            ]));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -2313,23 +2220,21 @@ describe('doctor human panel', function (): void {
             ],
         ]);
 
-        fakeDoctorRunStream(
-            gatewayProgressFrame('tree', [
-                'title' => 'Running Doctor',
-                'steps' => [['key' => 'node', 'label' => 'Check node']],
-            ]).gatewayProgressFrame('step', ['key' => 'node', 'status' => 'failed', 'message' => 'Drift detected'])
-                .gatewayProgressFrame('error', [
-                    'exit_code' => 1,
+        fakeDoctorRunStream(gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [['key' => 'node', 'label' => 'Check node']],
+        ]).gatewayProgressFrame('step', ['key' => 'node', 'status' => 'failed', 'message' => 'Drift detected'])
+            .gatewayProgressFrame('error', [
+                'exit_code' => 1,
+                'message' => 'Doctor detected drift.',
+                'data' => [
+                    'code' => 'drift_detected',
                     'message' => 'Doctor detected drift.',
-                    'data' => [
-                        'code' => 'drift_detected',
-                        'message' => 'Doctor detected drift.',
-                        'meta' => [],
-                        'data' => ['doctor' => $report],
-                        'footer' => 'Doctor detected drift.',
-                    ],
-                ]),
-        );
+                    'meta' => [],
+                    'data' => ['doctor' => $report],
+                    'footer' => 'Doctor detected drift.',
+                ],
+            ]));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -2442,11 +2347,7 @@ describe('doctor human panel', function (): void {
             '--stream-json' => true,
         ]);
 
-        expect($output)
-            ->not
-            ->toContain("\0")
-            ->and(ltrim($output, "\0"))
-            ->toBe($output);
+        expect($output)->not->toContain("\0")->and(ltrim($output, "\0"))->toBe($output);
 
         $lines = array_values(array_filter(explode("\n", rtrim($output, "\n"))));
 

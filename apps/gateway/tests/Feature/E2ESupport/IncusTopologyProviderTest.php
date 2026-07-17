@@ -106,8 +106,8 @@ it('waits for gateway host-key reachability before incus bake commands pin host 
         ->and($websocketBakeTask)
         ->toBe([])
         ->and(strpos($source, 'retargetBakeTasks($instances, $gateway, $kind, $sourceMountedCheckout)'))
-        ->toBeLessThan(strpos($source, 'seedAppdevDatabaseAndRedis($gateway, $sshKeyPair, $sourceMountedCheckout)'))
-        ->and(strpos($source, 'seedAppdevDatabaseAndRedis($gateway, $sshKeyPair, $sourceMountedCheckout)'))
+        ->toBeLessThan(strpos($source, 'seedAppdevDatabaseAndValkey($gateway, $sshKeyPair, $sourceMountedCheckout)'))
+        ->and(strpos($source, 'seedAppdevDatabaseAndValkey($gateway, $sshKeyPair, $sourceMountedCheckout)'))
         ->toBeLessThan(strpos($source, 'orbit:internal:bake-websocket-node app-dev-1'));
 });
 

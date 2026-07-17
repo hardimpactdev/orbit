@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit node role:add [node] [role] [--redis-node=] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
+orbit node role:add [node] [role] [--valkey-node=] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
 ```
 
 ## Input Contract
@@ -26,7 +26,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `node` | `[node]` | Always. | Never. | None. | Must match an active node record. |
 | `role` | `[role]` | Always. | Never. | None. | `gateway`, `vpn`, `router`, and `agent` are rejected. |
-| `redis_node` | `--redis-node` | Required for `websocket`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and Redis expected or installed. |
+| `valkey_node` | `--valkey-node` | Required for `websocket`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and Valkey expected or installed. |
 | `postgres_node` | `--postgres-node` | Required for `analytics`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and PostgreSQL expected or installed. |
 | `clickhouse_node` | `--clickhouse-node` | Required for `analytics`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and ClickHouse expected or installed. |
 | `s3_data_path` | `--s3-data-path` | Never. | Forbidden for roles that do not support it. | `/srv/orbit/s3/data` for `s3`. | Canonical host path under `/media`, `/mnt`, `/opt/orbit`, `/srv`, or `/var/lib/orbit`, mounted into SeaweedFS as `/data`. |
@@ -46,8 +46,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   path that may create an agent role assignment.
 - `app-dev` accepts no role-local settings and consumes the target node's
   mandatory node-owned TLD.
-- `websocket` requires `--redis-node`. The resolved node must have an active
-  `database` role and Redis expected or installed.
+- `websocket` requires `--valkey-node`. The resolved node must have an active
+  `database` role and Valkey expected or installed.
 - `analytics` requires `--postgres-node` and `--clickhouse-node`. The resolved
   nodes must have active `database` roles and matching PostgreSQL and ClickHouse
   service processes expected or installed. Both options may point at the same

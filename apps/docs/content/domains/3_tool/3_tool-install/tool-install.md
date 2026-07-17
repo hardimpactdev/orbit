@@ -9,7 +9,7 @@ records gateway configuration for that node. When the tool backs a singleton
 service (such as `opencode-cli` backing `opencode-server`), install also configures that tool's
 related process by default so the capability comes up running; pass
 `--no-process` to install the capability only. Multi-instance services such as
-MySQL or Redis are not tool installs; use `process:add --service=<identifier>` for those.
+MySQL or Valkey are not tool installs; use `process:add --service=<identifier>` for those.
 
 ## Usage
 

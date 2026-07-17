@@ -1149,17 +1149,28 @@ describe('ProcessStoreController', function (): void {
             ->assertJsonPath('error.meta.field', $field)
             ->assertJsonPath('error.meta.reason', $reason);
 
-        expect(Process::query()->whereIn('name', ['redis', 'mysql8'])->exists())
+        expect(Process::query()->whereIn('name', ['redis', 'valkey', 'mysql8'])->exists())
             ->toBeFalse()
             ->and($remoteShell->scripts)
             ->toBe([]);
     })->with([
-        'app owner' => [
+        'retired Redis service' => [
             [
-                'app' => 'docs',
+                'node' => 'database-1',
                 'name' => 'redis',
                 'service' => 'redis',
                 'version' => '7',
+                'runtime' => 'docker',
+            ],
+            'service',
+            'unsupported_value',
+        ],
+        'app owner' => [
+            [
+                'app' => 'docs',
+                'name' => 'valkey',
+                'service' => 'valkey',
+                'version' => '8',
                 'runtime' => 'docker',
             ],
             'service',
@@ -1168,11 +1179,11 @@ describe('ProcessStoreController', function (): void {
         'tool dependency' => [
             [
                 'node' => 'database-1',
-                'name' => 'redis',
-                'service' => 'redis',
-                'version' => '7',
+                'name' => 'valkey',
+                'service' => 'valkey',
+                'version' => '8',
                 'runtime' => 'docker',
-                'tool' => 'redis',
+                'tool' => 'valkey',
             ],
             'tool',
             'process_service_cannot_reference_tool',
@@ -1221,11 +1232,11 @@ describe('ProcessStoreController', function (): void {
         Process::factory()
             ->forOwner($node)
             ->create([
-                'name' => 'existing-redis',
+                'name' => 'existing-valkey',
                 'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => [
                     'endpoints' => [
-                        ['name' => 'existing-redis', 'kind' => 'tcp', 'host' => '10.6.0.44', 'port' => 6379],
+                        ['name' => 'existing-valkey', 'kind' => 'tcp', 'host' => '10.6.0.44', 'port' => 6379],
                     ],
                 ],
             ]);
@@ -1237,9 +1248,9 @@ describe('ProcessStoreController', function (): void {
             '/api/processes',
             [
                 'node' => 'database-1',
-                'name' => 'redis',
-                'service' => 'redis',
-                'version' => '7',
+                'name' => 'valkey',
+                'service' => 'valkey',
+                'version' => '8',
                 'runtime' => 'docker',
             ],
             [],
@@ -1251,10 +1262,10 @@ describe('ProcessStoreController', function (): void {
             ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', 'endpoint_conflict')
-            ->assertJsonPath('error.meta.existing_process', 'existing-redis')
+            ->assertJsonPath('error.meta.existing_process', 'existing-valkey')
             ->assertJsonPath('error.meta.port', 6379);
 
-        expect(Process::query()->where('name', 'redis')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->where('name', 'valkey')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
     });
 
     it('returns duplicate process conflicts', function (): void {

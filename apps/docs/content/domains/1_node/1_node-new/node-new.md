@@ -19,7 +19,7 @@ initiating client and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json|--stream-json]
+orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--ingress=<node>] [--valkey-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json|--stream-json]
 orbit node:new
 ```
 
@@ -40,7 +40,7 @@ orbit node:new dev-1 --roles=app-dev --host=app-1.ssh.example.com --tld=test
 orbit node:new edge-1 --template=ingress --host=203.0.113.20 --tld=edge
 orbit node:new web-1 --template=app-production --host=203.0.113.21 --tld=web
 orbit node:new web-2 --roles=app-prod --ingress=edge-1 --host=203.0.113.22 --tld=web-two
-orbit node:new realtime-1 --template=websocket --host=203.0.113.30 --redis-node=db-1 --tld=realtime
+orbit node:new realtime-1 --template=websocket --host=203.0.113.30 --valkey-node=db-1 --tld=realtime
 orbit node:new storage-1 --template=s3 --host=203.0.113.31 --s3-data-path=/srv/orbit/s3/data --tld=storage
 orbit node:new metrics-1 --template=metrics --host=203.0.113.40 --tld=metrics
 orbit node:new app-1 --roles=app-dev,metrics --host=203.0.113.41 --tld=test
@@ -100,7 +100,7 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=al
 - `--ingress`: existing active `ingress` node to use when
   creating a private `app-prod` backend node that does not serve public
   traffic itself.
-- `--redis-node`: existing active `database` node whose Redis service backs a
+- `--valkey-node`: existing active `database` node whose Valkey service backs a
   requested `websocket` role. Required when `--roles` includes `websocket`.
 - `--postgres-node`: existing active `database` node whose PostgreSQL service
   backs a requested `analytics` role. Required when `--roles` includes
@@ -200,9 +200,9 @@ Requires `--host` when the template provisions a host.
 **`websocket` template**
 
 Provisions a private realtime node and creates an active `websocket` role
-assignment whose settings point at the selected Redis node.
+assignment whose settings point at the selected Valkey node.
 
-Requires `--host` and `--redis-node`. Implementation pending.
+Requires `--host` and `--valkey-node`. Implementation pending.
 
 **`s3` template**
 

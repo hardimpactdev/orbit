@@ -104,6 +104,13 @@ class DockerCommandBuilder
             }
         }
 
+        if ($container instanceof WebSocketRuntimeContainer && ! $this->usesE2eNodeNetwork($container)) {
+            foreach ($container->publishedPorts() as $port) {
+                $parts[] = '--publish';
+                $parts[] = $this->quote($port);
+            }
+        }
+
         if (
             ($container instanceof AppRuntimeContainer
             || $container instanceof WorkspaceRuntimeContainer)
