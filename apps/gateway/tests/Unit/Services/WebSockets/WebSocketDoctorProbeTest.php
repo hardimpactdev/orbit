@@ -118,7 +118,7 @@ it('accepts a container-wide Reverb listener behind a WireGuard-only Docker publ
         ),
         new RemoteShellResult(
             exitCode: 0,
-            stdout: "exists=1\nrunning=true\nenv_host=0.0.0.0\ncmd_host=0.0.0.0\npublished_host=10.6.0.44\npublished_port=8080\n",
+            stdout: "exists=1\nrunning=true\nenv_host=0.0.0.0\ncmd_host=0.0.0.0\npublished_bindings=[{\"host\":\"10.6.0.44\",\"port\":\"8080\"}]\n",
             stderr: '',
             durationMs: 1,
         ),
@@ -151,7 +151,7 @@ it('reports a missing WireGuard-only Docker publication', function (): void {
         ),
         new RemoteShellResult(
             exitCode: 0,
-            stdout: "exists=1\nrunning=true\nenv_host=0.0.0.0\ncmd_host=0.0.0.0\npublished_host=\npublished_port=\n",
+            stdout: "exists=1\nrunning=true\nenv_host=0.0.0.0\ncmd_host=0.0.0.0\npublished_bindings=[]\n",
             stderr: '',
             durationMs: 1,
         ),
@@ -171,10 +171,8 @@ it('reports a missing WireGuard-only Docker publication', function (): void {
         ->toBe(\App\Enums\DriftKind::Divergent)
         ->and($drift[0]->detail)
         ->toMatchArray([
-            'expected_published_host' => '10.6.0.44',
-            'expected_published_port' => '8080',
-            'observed_published_host' => '',
-            'observed_published_port' => '',
+            'expected_published_bindings' => [['host' => '10.6.0.44', 'port' => '8080']],
+            'observed_published_bindings' => [],
         ]);
 })->group('websocket', 'doctor');
 
@@ -198,7 +196,7 @@ it('reports a Docker publication exposed on all host interfaces', function (): v
         ),
         new RemoteShellResult(
             exitCode: 0,
-            stdout: "exists=1\nrunning=true\nenv_host=0.0.0.0\ncmd_host=0.0.0.0\npublished_host=0.0.0.0\npublished_port=8080\n",
+            stdout: "exists=1\nrunning=true\nenv_host=0.0.0.0\ncmd_host=0.0.0.0\npublished_bindings=[{\"host\":\"0.0.0.0\",\"port\":\"8080\"}]\n",
             stderr: '',
             durationMs: 1,
         ),
@@ -214,8 +212,51 @@ it('reports a Docker publication exposed on all host interfaces', function (): v
         ->toHaveCount(1)
         ->and($drift[0]->kind)
         ->toBe(\App\Enums\DriftKind::Divergent)
-        ->and($drift[0]->detail['observed_published_host'])
-        ->toBe('0.0.0.0');
+        ->and($drift[0]->detail['observed_published_bindings'])
+        ->toBe([['host' => '0.0.0.0', 'port' => '8080']]);
+})->group('websocket', 'doctor');
+
+it('reports an additional Docker publication outside WireGuard', function (): void {
+    $websocketNode = Node::factory()->create([
+        'name' => 'realtime-1',
+        'status' => 'active',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+    $assignment = NodeRoleAssignment::factory()->create([
+        'node_id' => $websocketNode->id,
+        'role' => 'websocket',
+        'status' => 'active',
+    ]);
+    $shell = new WebSocketDoctorProbeTestTransport([
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: "cert_exists=1\nkey_exists=1\ncert_matches=1\n",
+            stderr: '',
+            durationMs: 1,
+        ),
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: "exists=1\nrunning=true\nenv_host=0.0.0.0\ncmd_host=0.0.0.0\npublished_bindings=[{\"host\":\"10.6.0.44\",\"port\":\"8080\"},{\"host\":\"0.0.0.0\",\"port\":\"8080\"}]\n",
+            stderr: '',
+            durationMs: 1,
+        ),
+    ]);
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        new RemoteExecutorBackedInternalExecutor($shell),
+    );
+
+    $drift = app(WebSocketDoctorProbe::class)->nodeDrift($websocketNode, $assignment);
+
+    expect($drift)
+        ->toHaveCount(1)
+        ->and($drift[0]->kind)
+        ->toBe(\App\Enums\DriftKind::Divergent)
+        ->and($drift[0]->detail['observed_published_bindings'])
+        ->toBe([
+            ['host' => '10.6.0.44', 'port' => '8080'],
+            ['host' => '0.0.0.0', 'port' => '8080'],
+        ]);
 })->group('websocket', 'doctor');
 
 function websocketDoctorProbeExecutor(WebSocketDoctorProbeTestTransport $transport): RemoteLocalExecutor

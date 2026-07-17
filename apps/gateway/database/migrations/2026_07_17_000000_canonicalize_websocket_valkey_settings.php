@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessServiceCatalog;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
@@ -61,26 +62,25 @@ return new class extends Migration {
             );
         }
 
-        $valkeyProcess = Process::query()
-            ->ownedBy($node)
-            ->withRuntimeService('valkey')
-            ->first();
+        $valkeyProcess = $this->managedProcesses($node, 'valkey')->first();
 
         if ($valkeyProcess instanceof Process) {
-            $redisProcesses = Process::query()
-                ->ownedBy($node)
-                ->withRuntimeService('redis')
-                ->get();
+            $redisProcesses = $this->managedProcesses($node, 'redis');
 
             if ($redisProcesses->isNotEmpty()) {
-                if ($redisProcesses->count() > 1 || $redisProcesses->first()->runtime !== $valkeyProcess->runtime) {
+                $redisProcess = $redisProcesses->first();
+
+                if (
+                    $redisProcesses->count() > 1
+                    || $redisProcess->runtime !== $valkeyProcess->runtime
+                ) {
                     throw new RuntimeException(
                         "Websocket role assignment [{$assignmentId}] cannot safely replace its duplicate managed Redis runtime.",
                     );
                 }
 
                 $runtimeConfig = $valkeyProcess->runtime_config;
-                $runtimeConfig['replaces_runtime_unit'] = $this->runtimeUnit($redisProcesses->first());
+                $runtimeConfig['replaces_runtime_unit'] = $this->runtimeUnit($redisProcess);
                 $valkeyProcess->forceFill(['runtime_config' => $runtimeConfig])->save();
                 Process::query()->whereKey($redisProcesses->modelKeys())->delete();
             }
@@ -88,10 +88,7 @@ return new class extends Migration {
             return;
         }
 
-        $redisProcesses = Process::query()
-            ->ownedBy($node)
-            ->withRuntimeService('redis')
-            ->get();
+        $redisProcesses = $this->managedProcesses($node, 'redis');
 
         if ($redisProcesses->isEmpty()) {
             throw new RuntimeException(
@@ -107,9 +104,16 @@ return new class extends Migration {
 
         $redisProcess = $redisProcesses->first();
 
+        if (! $redisProcess instanceof Process) {
+            throw new RuntimeException(
+                "Websocket role assignment [{$assignmentId}] references node [{$nodeId}] without a managed Redis process.",
+            );
+        }
+
         $processName = $redisProcess->name === 'redis' ? 'valkey' : $redisProcess->name;
         $nameConflict = Process::query()
-            ->ownedBy($node)
+            ->where('owner_type', $node->getMorphClass())
+            ->where('owner_id', $node->getKey())
             ->where('name', $processName)
             ->whereKeyNot($redisProcess->id)
             ->exists();
@@ -137,6 +141,21 @@ return new class extends Migration {
             'runtime_config' => $runtimeConfig,
             'credentials' => $descriptor->credentials,
         ])->save();
+    }
+
+    /**
+     * @return Collection<int, Process>
+     */
+    private function managedProcesses(Node $node, string $service): Collection
+    {
+        /** @var Collection<int, Process> $processes */
+        $processes = Process::query()
+            ->where('owner_type', $node->getMorphClass())
+            ->where('owner_id', $node->getKey())
+            ->where('runtime_config->service', $service)
+            ->get();
+
+        return $processes;
     }
 
     private function runtimeUnit(Process $process): string

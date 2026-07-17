@@ -376,8 +376,10 @@ describe('internal websocket runtime command', function (): void {
             'container_running' => true,
             'env_host' => '10.6.0.44',
             'cmd' => 'reverb:start --host=10.6.0.44 --port=8080',
-            'published_host' => '10.6.0.44',
-            'published_port' => '8080',
+            'published_bindings' => [
+                ['host' => '10.6.0.44', 'port' => '8080'],
+                ['host' => '0.0.0.0', 'port' => '8080'],
+            ],
         ]);
 
         [$exitCode, $output] = run_websocket_runtime_command(action: 'doctor:runtime-probe', payload: [
@@ -392,9 +394,8 @@ describe('internal websocket runtime command', function (): void {
                 'running' => 'true',
                 'env_host' => '10.6.0.44',
                 'cmd_host' => '10.6.0.44',
-                'published_host' => '10.6.0.44',
-                'published_port' => '8080',
-                'stdout' => "exists=1\nrunning=true\nenv_host=10.6.0.44\ncmd_host=10.6.0.44\npublished_host=10.6.0.44\npublished_port=8080\n",
+                'published_bindings' => '[{"host":"10.6.0.44","port":"8080"},{"host":"0.0.0.0","port":"8080"}]',
+                'stdout' => "exists=1\nrunning=true\nenv_host=10.6.0.44\ncmd_host=10.6.0.44\npublished_bindings=[{\"host\":\"10.6.0.44\",\"port\":\"8080\"},{\"host\":\"0.0.0.0\",\"port\":\"8080\"}]\n",
             ])
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('docker container inspect orbit-websocket-app-dev-1')
@@ -571,7 +572,9 @@ function websocket_runtime_container_spec_payload(): array
 }
 
 /**
- * @param  array{self_contained_image?: bool, image_archive?: string, image_archive_tags?: list<string>, app_key_exists?: bool, app_key?: string, container_exists?: bool, container_running?: bool, env_host?: string, cmd?: string, published_host?: string, published_port?: string, network_exists?: bool, source_hash?: string}  $options
+ * @param  array{self_contained_image?: bool, image_archive?: string, image_archive_tags?: list<string>, app_key_exists?: bool, app_key?: string, container_exists?: bool, container_running?: bool, env_host?: string, cmd?: string, published_bindings?: list<array{host: string, port: string}>, network_exists?: bool, source_hash?: string}  $options
+ *
+ * @mago-expect lint:cyclomatic-complexity
  */
 function install_websocket_runtime_fake_bin(array $options = []): string
 {
@@ -593,8 +596,11 @@ function install_websocket_runtime_fake_bin(array $options = []): string
     file_put_contents("{$dir}/env-host", $options['env_host'] ?? '');
     file_put_contents("{$dir}/image.tar", websocket_runtime_image_archive($options));
     file_put_contents("{$dir}/image-manifest.json", websocket_runtime_image_manifest($options));
-    file_put_contents("{$dir}/published-host", $options['published_host'] ?? '');
-    file_put_contents("{$dir}/published-port", $options['published_port'] ?? '');
+    $publishedBindings = array_map(
+        static fn (array $binding): string => "{$binding['host']} | {$binding['port']}",
+        $options['published_bindings'] ?? [],
+    );
+    file_put_contents("{$dir}/published-bindings", implode("\n", $publishedBindings));
     file_put_contents("{$dir}/network-exists", $networkExists ? '1' : '0');
     file_put_contents("{$dir}/valkey-probe.php", '');
     file_put_contents("{$dir}/self-contained-image", $selfContainedImage ? 'true' : 'false');
@@ -634,9 +640,7 @@ function install_websocket_runtime_fake_bin(array $options = []): string
                 cat "$dir/cmd"
                 ;;
             'container inspect --format {{with (index .NetworkSettings.Ports "8080/tcp")}}{{range .}}{{println .HostIp "|" .HostPort}}{{end}}{{end}} orbit-websocket-app-dev-1')
-                host="$(cat "$dir/published-host")"
-                port="$(cat "$dir/published-port")"
-                [ -z "$host" ] || printf '%s | %s\n' "$host" "$port"
+                cat "$dir/published-bindings"
                 ;;
             'exec -i orbit-websocket-app-dev-1 php')
                 cat >"$dir/valkey-probe.php"
@@ -775,8 +779,7 @@ function delete_websocket_runtime_fake_bin(string $path): void
         'image.tar',
         'image-manifest.json',
         'network-exists',
-        'published-host',
-        'published-port',
+        'published-bindings',
         'valkey-probe.php',
         'self-contained-image',
         'shared.env',

@@ -450,7 +450,7 @@ final readonly class LocalWebSocketRuntimeAction
 
     /**
      * @param  array<string, mixed>  $payload
-     * @return array{exists: string, running: string, env_host: string, cmd_host: string, published_host: string, published_port: string, stdout: string}
+     * @return array{exists: string, running: string, env_host: string, cmd_host: string, published_bindings: string, stdout: string}
      */
     private function runtimeProbe(array $payload): array
     {
@@ -463,8 +463,7 @@ final readonly class LocalWebSocketRuntimeAction
                 'running' => 'false',
                 'env_host' => '',
                 'cmd_host' => '',
-                'published_host' => '',
-                'published_port' => '',
+                'published_bindings' => '[]',
             ]);
         }
 
@@ -475,15 +474,14 @@ final readonly class LocalWebSocketRuntimeAction
             $container,
             '{{with (index .NetworkSettings.Ports "8080/tcp")}}{{range .}}{{println .HostIp "|" .HostPort}}{{end}}{{end}}',
         );
-        [$publishedHost, $publishedPort] = $this->publishedAddress($publication);
+        $publishedBindings = json_encode($this->publishedAddresses($publication), JSON_THROW_ON_ERROR);
 
         return $this->runtimeProbePayload([
             'exists' => '1',
             'running' => $running !== '' ? $running : 'false',
             'env_host' => $this->envValue($env, 'REVERB_SERVER_HOST'),
             'cmd_host' => $this->commandHost($command),
-            'published_host' => $publishedHost,
-            'published_port' => $publishedPort,
+            'published_bindings' => $publishedBindings,
         ]);
     }
 
@@ -811,31 +809,44 @@ final readonly class LocalWebSocketRuntimeAction
     }
 
     /**
-     * @param  array{exists: string, running: string, env_host: string, cmd_host: string, published_host: string, published_port: string}  $state
-     * @return array{exists: string, running: string, env_host: string, cmd_host: string, published_host: string, published_port: string, stdout: string}
+     * @param  array{exists: string, running: string, env_host: string, cmd_host: string, published_bindings: string}  $state
+     * @return array{exists: string, running: string, env_host: string, cmd_host: string, published_bindings: string, stdout: string}
      */
     private function runtimeProbePayload(array $state): array
     {
         return [
             ...$state,
-            'stdout' => "exists={$state['exists']}\nrunning={$state['running']}\nenv_host={$state['env_host']}\ncmd_host={$state['cmd_host']}\npublished_host={$state['published_host']}\npublished_port={$state['published_port']}\n",
+            'stdout' => "exists={$state['exists']}\nrunning={$state['running']}\nenv_host={$state['env_host']}\ncmd_host={$state['cmd_host']}\npublished_bindings={$state['published_bindings']}\n",
         ];
     }
 
     /**
-     * @return array{string, string}
+     * @return list<array{host: string, port: string}>
      */
-    private function publishedAddress(string $publication): array
+    private function publishedAddresses(string $publication): array
     {
-        $line = trim((string) (preg_split('/\R/', trim($publication))[0] ?? ''));
+        $bindings = [];
+        $lines = preg_split('/\R/', trim($publication));
 
-        if ($line === '' || ! str_contains($line, '|')) {
-            return ['', ''];
+        foreach ($lines !== false ? $lines : [] as $line) {
+            $line = trim($line);
+
+            if ($line === '' || ! str_contains($line, '|')) {
+                continue;
+            }
+
+            [$host, $port] = array_pad(
+                explode(separator: '|', string: $line, limit: 2),
+                length: 2,
+                value: '',
+            );
+            $bindings[] = [
+                'host' => trim($host),
+                'port' => trim($port),
+            ];
         }
 
-        [$host, $port] = array_pad(explode('|', $line, 2), 2, '');
-
-        return [trim($host), trim($port)];
+        return $bindings;
     }
 
     private function envValue(string $env, string $name): string

@@ -223,16 +223,16 @@ final readonly class WebSocketDoctorProbe
 
         $state = $this->probeState($probe);
         $expectedBind = '0.0.0.0';
-        $expectedPublishedHost = $this->backendName->forNode($node);
-        $expectedPublishedPort = '8080';
+        $expectedPublishedBindings = [[
+            'host' => $this->backendName->forNode($node),
+            'port' => '8080',
+        ]];
         $observedBind = $this->observedBindAddress($state);
-        $observedPublishedHost = trim($state['published_host'] ?? '');
-        $observedPublishedPort = trim($state['published_port'] ?? '');
+        $observedPublishedBindings = $this->observedPublishedBindings($state);
 
         if (
             $observedBind === $expectedBind
-            && $observedPublishedHost === $expectedPublishedHost
-            && $observedPublishedPort === $expectedPublishedPort
+            && $observedPublishedBindings === $expectedPublishedBindings
         ) {
             return [];
         }
@@ -248,10 +248,8 @@ final readonly class WebSocketDoctorProbe
                     'container' => $this->runtimeRenderer->containerName($node),
                     'expected_bind' => $expectedBind,
                     'observed_bind' => $observedBind,
-                    'expected_published_host' => $expectedPublishedHost,
-                    'expected_published_port' => $expectedPublishedPort,
-                    'observed_published_host' => $observedPublishedHost,
-                    'observed_published_port' => $observedPublishedPort,
+                    'expected_published_bindings' => $expectedPublishedBindings,
+                    'observed_published_bindings' => $observedPublishedBindings,
                     'env_host' => $state['env_host'] ?? null,
                     'cmd_host' => $state['cmd_host'] ?? null,
                 ],
@@ -273,6 +271,38 @@ final readonly class WebSocketDoctorProbe
         $cmdHost = trim($state['cmd_host'] ?? '');
 
         return $cmdHost !== '' ? $cmdHost : null;
+    }
+
+    /**
+     * @param  array<string, string>  $state
+     * @return list<array{host: string, port: string}>
+     */
+    private function observedPublishedBindings(array $state): array
+    {
+        /** @var list<array{host?: mixed, port?: mixed}>|null $decoded */
+        $decoded = json_decode($state['published_bindings'] ?? '', associative: true);
+
+        if (! is_array($decoded)) {
+            return [];
+        }
+
+        $bindings = [];
+
+        foreach ($decoded as $binding) {
+            if (
+                ! is_string($binding['host'] ?? null)
+                || ! is_string($binding['port'] ?? null)
+            ) {
+                return [];
+            }
+
+            $bindings[] = [
+                'host' => trim($binding['host']),
+                'port' => trim($binding['port']),
+            ];
+        }
+
+        return $bindings;
     }
 
     /**
@@ -369,7 +399,16 @@ final readonly class WebSocketDoctorProbe
 
         $state = [];
 
-        foreach (['exists', 'running', 'env_host', 'cmd_host', 'cert_exists', 'key_exists', 'cert_matches'] as $key) {
+        foreach ([
+            'exists',
+            'running',
+            'env_host',
+            'cmd_host',
+            'published_bindings',
+            'cert_exists',
+            'key_exists',
+            'cert_matches',
+        ] as $key) {
             if (array_key_exists($key, $data) && is_string($data[$key])) {
                 $state[$key] = $data[$key];
             }
