@@ -7,6 +7,7 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeBootstrap;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Models\OperationRun;
 use App\Models\WireGuardPeer;
 use App\Services\Nodes\NodeBootstrapCompletionLock;
@@ -17,6 +18,7 @@ use App\Services\Vpn\VpnDnsSwarmInstaller;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Orbit\Core\Http\JsonEnvelope;
@@ -274,6 +276,94 @@ it('completes through the WireGuard Agent once and then returns the active resul
         fn ($process): bool => preg_match('/(?:^|\s)(?:ssh|scp)(?:\s|$)/', (string) $process->command) === 1,
         0,
     );
+});
+
+it('reconciles the s3 route and dns after the provisioned node becomes active', function (): void {
+    [$gateway, $caller] = nodeBootstrapGatewayAndCaller();
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gateway->id,
+        'role' => 'router',
+        'status' => NodeRoleStatus::Active,
+    ]);
+    WireGuardPeer::query()->create([
+        'node_id' => $gateway->id,
+        'public_key' => 'gateway-peer-public-key',
+        'private_key' => 'gateway-peer-private-key',
+        'pre_shared_key' => 'gateway-peer-preshared-key',
+        'allowed_ips' => '10.6.0.2/32',
+    ]);
+
+    $existingCaRoot = (string) config('orbit.paths.config_root').'/ca';
+    $configRoot = storage_path('framework/testing/node-bootstrap-s3-dns-'.uniqid());
+    File::copyDirectory($existingCaRoot, $configRoot.'/ca');
+    config()->set('orbit.paths.config_root', $configRoot);
+    app()->forgetInstance(\App\Services\Dns\DnsmasqReconciler::class);
+
+    $roleAssignments = new class extends NodeRoleAssignmentService {
+        public function __construct() {}
+
+        public function addDuringCreation(Node $node, string $role, array $settings): NodeRoleAssignment
+        {
+            $assignment = $node->roleAssignments()->create([
+                'role' => $role,
+                'status' => NodeRoleStatus::Active,
+                'settings' => $settings,
+                'last_error' => null,
+                'converged_at' => now(),
+            ]);
+            NodeTool::factory()->for($node)->create([
+                'name' => 'seaweedfs',
+                'config' => [
+                    'backend_host' => "{$node->name}.s3.orbit",
+                    'public_hosts' => [],
+                ],
+            ]);
+
+            return $assignment;
+        }
+
+        public function retryDuringCreation(Node $node, string $role, array $settings): NodeRoleAssignment
+        {
+            return $node->roleAssignments()->where('role', $role)->firstOrFail();
+        }
+    };
+    app()->instance(NodeRoleAssignmentService::class, $roleAssignments);
+    app()->instance(RunsInternalCommands::class, nodeBootstrapSuccessfulAgentExecutor());
+
+    $prepare = $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap', [
+            'name' => 'services1',
+            'roles' => ['s3'],
+            'host' => '192.0.2.31',
+            'user' => 'root',
+            'tld' => 'services1',
+            'platform' => 'ubuntu_26-04',
+            'architecture' => 'amd64',
+            's3_data_path' => '/var/lib/orbit/s3',
+        ])
+        ->assertOk();
+
+    Http::fake([
+        'http://10.6.0.3:9477/v1/commands' => Http::response([], 405),
+    ]);
+
+    $bootstrapId = $prepare->json('success.data.bootstrap.id');
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson("/api/nodes/bootstrap/{$bootstrapId}/complete")
+        ->assertOk()
+        ->assertJsonPath('success.data.node.status', 'active');
+
+    expect(Node::query()->where('name', 'services1')->firstOrFail()->isActive())
+        ->toBeTrue()
+        ->and(File::get($configRoot.'/dnsmasq.conf'))
+        ->toContain('address=/services1.s3.orbit/10.6.0.3')
+        ->toContain('address=/orbit/10.6.0.2');
+
+    File::deleteDirectory($configRoot);
 });
 
 it('serializes overlapping completion requests and records the winning transition once', function (): void {

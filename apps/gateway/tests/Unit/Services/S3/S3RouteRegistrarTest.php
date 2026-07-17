@@ -6,9 +6,12 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\S3\S3RouteRegistrar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -59,6 +62,41 @@ it('registers router-owned s3 service route to one seaweedfs backend', function 
                 ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
             ],
         ]);
+})->group('service');
+
+it('reconciles the persisted dnsmasq config after syncing the s3 service route', function (): void {
+    $configRoot = storage_path('framework/testing/s3-route-dns-'.uniqid());
+    config()->set('orbit.paths.config_root', $configRoot);
+    app()->forgetInstance(DnsmasqReconciler::class);
+    Process::fake();
+
+    $router = Node::factory()->create([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    s3AssignRole(node: $router, role: 'router');
+
+    $storage = Node::factory()->create([
+        'name' => 'storage-1',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+    s3AssignRole(node: $storage, role: 's3');
+    NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'seaweedfs',
+        'config' => [
+            'backend_host' => 'storage-1.s3.orbit',
+            'public_hosts' => [],
+        ],
+    ]);
+
+    app(S3RouteRegistrar::class)->syncServiceRoute();
+
+    expect(File::get($configRoot.'/dnsmasq.conf'))
+        ->toContain('address=/storage-1.s3.orbit/10.6.0.44')
+        ->toContain('address=/orbit/10.6.0.1');
+
+    File::deleteDirectory($configRoot);
 })->group('service');
 
 it('stores the pool shape even for a single seaweedfs backend', function (): void {

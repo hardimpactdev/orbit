@@ -8,6 +8,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Database\Eloquent\Collection;
@@ -22,6 +23,7 @@ final readonly class S3RouteRegistrar
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
         private ProxyRouteRenderer $proxyRouteRenderer,
+        private DnsmasqReconciler $dnsmasqReconciler,
     ) {}
 
     /**
@@ -48,7 +50,21 @@ final readonly class S3RouteRegistrar
             ],
         );
 
+        $this->dnsmasqReconciler->reconcile();
+
         return $route->refresh();
+    }
+
+    public function syncServiceRouteAfterBackendChange(): void
+    {
+        if ($this->nodeRoleAssignments->activeNodeIdsForRole(NodeRoleName::S3->value) !== []) {
+            $this->syncServiceRoute();
+
+            return;
+        }
+
+        ProxyRoute::query()->where('domain', self::ServiceDomain)->delete();
+        $this->dnsmasqReconciler->reconcile();
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Analytics\AnalyticsDatabaseResolver;
+use App\Services\S3\S3RouteRegistrar;
 use App\Services\WebSockets\WebSocketRedisResolver;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -24,6 +25,7 @@ class NodeRoleAssignmentService
         private readonly RoleSelfGrantMaterializer $roleSelfGrantMaterializer,
         private readonly WebSocketRedisResolver $webSocketRedisResolver,
         private readonly AnalyticsDatabaseResolver $analyticsDatabaseResolver,
+        private readonly S3RouteRegistrar $s3RouteRegistrar,
     ) {}
 
     /**
@@ -190,6 +192,10 @@ class NodeRoleAssignmentService
         try {
             $this->converger->remove($node, $removingAssignment, $purgeData);
             $this->completeRemoval($node, $assignment, $dependentPolicy, $role);
+
+            if ($role === NodeRoleName::S3->value && $this->hasActiveRouter()) {
+                $this->s3RouteRegistrar->syncServiceRouteAfterBackendChange();
+            }
         } catch (Throwable $throwable) {
             NodeRoleAssignment::query()
                 ->whereKey($assignment->id)
@@ -297,6 +303,14 @@ class NodeRoleAssignmentService
                 'last_error' => null,
             ])->save();
 
+            if (
+                $assignment->role === NodeRoleName::S3->value
+                && $node->isActive()
+                && $this->hasActiveRouter()
+            ) {
+                $this->s3RouteRegistrar->syncServiceRoute();
+            }
+
             $this->roleSelfGrantMaterializer->materializeOnRoleApplied($node, NodeRoleName::from($assignment->role));
         } catch (Throwable $throwable) {
             $assignment->forceFill([
@@ -306,10 +320,13 @@ class NodeRoleAssignmentService
             ])->save();
         }
 
-        /** @var NodeRoleAssignment $freshAssignment */
-        $freshAssignment = $assignment->fresh();
+        /** @var NodeRoleAssignment */
+        return $assignment->fresh();
+    }
 
-        return $freshAssignment;
+    private function hasActiveRouter(): bool
+    {
+        return $this->assignments->activeRouterNodeQuery()->exists();
     }
 
     private function guardSupportedPlatform(Node $node, NodeRoleDefinition $definition): void

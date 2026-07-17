@@ -101,6 +101,36 @@ it('emits router-owned orbit service routes as an orbit tld mapping to the route
         ->not->toContain('address=/metrics.orbit/');
 });
 
+it('emits concrete s3 backend records before the router orbit wildcard', function (): void {
+    $router = dnsmasq_node(['name' => 'gateway', 'tld' => null, 'wireguard_address' => '10.6.0.2']);
+    $storage = dnsmasq_node(
+        ['name' => 'services1', 'tld' => 'services1', 'wireguard_address' => '10.6.0.14'],
+        [NodeRoleName::S3],
+    );
+    $route = new ProxyRoute([
+        'domain' => 's3.orbit',
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'config' => [
+            'protocol' => 's3',
+            'upstreams' => [
+                ['scheme' => 'http', 'host' => 'services1.s3.orbit', 'port' => 8333],
+            ],
+        ],
+    ]);
+    $route->setRelation('node', $router);
+
+    $config = new DnsmasqConfigBuilder()->build(
+        new Collection([$router, $storage]),
+        new Collection([$route]),
+    );
+
+    expect($config)
+        ->toContain('address=/services1.s3.orbit/10.6.0.14')
+        ->and(strpos(haystack: $config, needle: 'address=/services1.s3.orbit/10.6.0.14'))
+        ->toBeLessThan(strpos(haystack: $config, needle: 'address=/orbit/10.6.0.2'));
+});
+
 it('emits a single private orbit tld mapping for multiple router-owned orbit service routes', function (): void {
     $router = dnsmasq_node(['name' => 'gateway', 'tld' => null, 'wireguard_address' => '10.6.0.2']);
     $metricsRoute = new ProxyRoute([

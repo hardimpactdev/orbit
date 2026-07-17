@@ -10,8 +10,12 @@ use App\Models\ProxyRoute;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Enumerable;
 
-final class DnsmasqConfigBuilder
+final readonly class DnsmasqConfigBuilder
 {
+    public function __construct(
+        private S3BackendDnsRecords $s3BackendDnsRecords = new S3BackendDnsRecords,
+    ) {}
+
     /**
      * @param  Enumerable<int, Node>|iterable<int, Node>  $nodes
      * @param  Enumerable<int, ProxyRoute>|iterable<int, ProxyRoute>  $serviceRoutes
@@ -41,8 +45,11 @@ final class DnsmasqConfigBuilder
             ->sortBy(fn (Node $node): string => (string) $node->wireguard_address)
             ->values();
 
+        $s3BackendLines = $this->s3BackendDnsRecords->build($routes, $allNodes);
+
         $lines = [
             ...$resolvable->flatMap($this->nodeLines(...))->all(),
+            ...$s3BackendLines->all(),
             ...$orbitRouters->flatMap($this->routerLines(...))->all(),
             'no-resolv',
             'server=1.1.1.1',

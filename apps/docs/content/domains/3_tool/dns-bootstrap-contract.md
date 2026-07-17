@@ -28,8 +28,8 @@ service or command that owns it.
 | ----------------------------------------------- | --------------------------------------------------------------------- |
 | Installing `wg-easy` on the gateway             | `BootstrapGatewayLocalCommand` → `WgEasyServiceInstaller`             |
 | Installing `orbit-dns` on the gateway           | `BootstrapGatewayLocalCommand` → `OrbitDnsServiceInstaller`           |
-| Generating `dnsmasq.conf` from fleet state      | `DnsmasqConfigBuilder` (pure function over `Node` rows)               |
-| Reconciling `dnsmasq.conf` after fleet changes  | `DnsmasqReconciler` invoked from gateway-side `node:new/:update/:remove` actions |
+| Generating `dnsmasq.conf` from fleet state      | `DnsmasqConfigBuilder` (pure function over `Node` and router-owned `ProxyRoute` rows) |
+| Reconciling `dnsmasq.conf` after fleet changes  | `DnsmasqReconciler` invoked from gateway-side node actions and S3 route/backend transitions |
 | Probing runtime drift                           | Doctor `dns` runtime probe under `doctor --family=tool`               |
 | Restoring `dns` drift                           | The same probe's restore path; DNS runtime drift is never adoptable   |
 
@@ -127,8 +127,8 @@ because DNS mappings for the node family changed.
 
 ## `dnsmasq.conf` Shape
 
-Rendered by `DnsmasqConfigBuilder::build(Collection $nodes): string`. The
-output is deterministic and contains:
+Rendered by `DnsmasqConfigBuilder::build(iterable $nodes, iterable $serviceRoutes): string`.
+The output is deterministic and contains:
 
 - One `address=/{tld}/{wireguard_address}` line per active node with both
   `tld` and `wireguard_address` set. Nodes missing either field are skipped.
@@ -141,18 +141,25 @@ output is deterministic and contains:
 - Optional `local=/{tld}/` companions per TLD.
 - Router-owned `.orbit` private service routes continue to emit
   `address=/orbit/{router_wireguard_address}` and `local=/orbit/`.
+- The canonical router-owned `s3.orbit` route emits one exact
+  `address=/{node}.s3.orbit/{node_wireguard_address}` record per matching
+  active S3-role backend. Exact backend records are emitted before the generic
+  `address=/orbit/{router_wireguard_address}` rule so SeaweedFS traffic reaches
+  the workload node instead of looping back through the router.
 - `no-resolv` + upstream resolvers (`server=1.1.1.1`, `server=8.8.8.8`).
 - `conf-dir=/etc/dnsmasq.d/,*.conf` (preserves operator drop-ins, if any).
 - `log-queries` + `log-facility=-`.
 
-Lines are emitted in stable order (alphabetical by TLD) so two builder calls
-on the same inputs produce byte-identical output.
+Lines are emitted in stable order (node TLDs, exact S3 backend hostnames, then
+router wildcard rules) so two builder calls on the same inputs produce
+byte-identical output.
 
 ## Reconciliation
 
 `DnsmasqReconciler::reconcile()`:
 
-1. Reads current `Node` rows and active role assignments.
+1. Reads current `Node`, active role-assignment, and router-owned `ProxyRoute`
+   rows.
 2. Builds a candidate `dnsmasq.conf` via `DnsmasqConfigBuilder`.
 3. If different from the on-disk file, writes the new content.
 4. Restarts dnsmasq by forcing the `orbit_orbit-dns` Swarm service update when
@@ -168,6 +175,14 @@ Triggers in the gateway application:
 - `node:remove` for any node.
 - `node role:add` when the added role depends on `tld` (`app-dev` or `agent`).
 - `node role:remove` when removing the last TLD-supporting role from a node.
+- S3 role activation after the SeaweedFS runtime and tool row are ready. This
+  syncs the canonical `s3.orbit` route and reconciles its exact backend DNS
+  record immediately for an active node. Client-owned `node:new` repeats that
+  sync after its Provisioning-to-Active terminal transition.
+- S3 role removal, which updates the remaining backend pool or removes the
+  canonical service route when no active S3 backend remains.
+- `S3RouteRegistrar::syncServiceRoute()` during S3 publication or proxy-doctor
+  restoration.
 
 The reconciler is idempotent: running it twice in a row is a no-op for the
 second call.

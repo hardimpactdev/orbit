@@ -42,6 +42,45 @@ it('enacts Docker and the SeaweedFS runtime before activating the S3 role', func
         ->toBe(['s3:seaweedfs']);
 });
 
+it('publishes the active s3 backend into gateway dns during role activation', function (): void {
+    $runtime = new ProvisionedServiceRoleRecordingRuntime;
+    app()->instance(RoleRuntimeConverger::class, $runtime);
+
+    $configRoot = storage_path('framework/testing/s3-role-dns-'.uniqid());
+    config()->set('orbit.paths.config_root', $configRoot);
+    app()->forgetInstance(\App\Services\Dns\DnsmasqReconciler::class);
+    \Illuminate\Support\Facades\Process::fake();
+
+    $router = Node::factory()->create([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+        'status' => NodeStatus::Active,
+    ]);
+    NodeRoleAssignment::factory()->for($router)->create([
+        'role' => 'router',
+        'status' => NodeRoleStatus::Active,
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'services1',
+        'platform' => 'ubuntu_26-04',
+        'wireguard_address' => '10.6.0.14',
+        'status' => NodeStatus::Active,
+    ]);
+
+    $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, 's3', [
+        'data_path' => '/var/lib/orbit/s3',
+    ]);
+
+    expect($assignment->status)
+        ->toBe(NodeRoleStatus::Active)
+        ->and(\Illuminate\Support\Facades\File::get($configRoot.'/dnsmasq.conf'))
+        ->toContain('address=/services1.s3.orbit/10.6.0.14')
+        ->toContain('address=/orbit/10.6.0.1');
+
+    \Illuminate\Support\Facades\File::deleteDirectory($configRoot);
+});
+
 it('enacts Docker and Plausible before activating the analytics role', function (): void {
     $runtime = new ProvisionedServiceRoleRecordingRuntime;
     app()->instance(RoleRuntimeConverger::class, $runtime);

@@ -21,6 +21,7 @@ use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\RoleSelfGrantMaterializer;
+use App\Services\S3\S3RouteRegistrar;
 use App\Services\Security\HomeDirectoryLockdownInstaller;
 use App\Services\Security\PublicSshDenyInstaller;
 use App\Services\Security\SecurityInstaller;
@@ -51,6 +52,10 @@ use function Laravel\Prompts\text;
 
 final class GatewayNodeCreator
 {
+    public function __construct(
+        private readonly S3RouteRegistrar $s3RouteRegistrar,
+    ) {}
+
     private const string BOOTSTRAP_PHASE_NONE = 'none';
 
     private const string BOOTSTRAP_PHASE_PREPARE = 'prepare';
@@ -221,6 +226,8 @@ final class GatewayNodeCreator
         }
 
         if ($bootstrap->status === 'completed' && $node instanceof Node && $node->isActive()) {
+            $this->syncActiveS3ServiceRoute($node);
+
             return new NodeBootstrapCompletionResult(
                 result: $this->completedBootstrapResult($bootstrap, $node),
                 completedNow: false,
@@ -347,6 +354,8 @@ final class GatewayNodeCreator
                 );
             }
 
+            $this->syncActiveS3ServiceRoute($node);
+
             return new NodeBootstrapCompletionResult(
                 result: $result,
                 completedNow: true,
@@ -372,6 +381,21 @@ final class GatewayNodeCreator
             result: $result,
             completedNow: false,
         );
+    }
+
+    private function syncActiveS3ServiceRoute(Node $node): void
+    {
+        $hasActiveS3Role = $node
+            ->roleAssignments()
+            ->where('role', NodeRoleName::S3->value)
+            ->where('status', NodeRoleStatus::Active->value)
+            ->exists();
+
+        if (! $hasActiveS3Role) {
+            return;
+        }
+
+        $this->s3RouteRegistrar->syncServiceRoute();
     }
 
     private function refreshCompletedBootstrap(
