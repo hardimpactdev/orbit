@@ -46,8 +46,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Removal without `--force` blocks when dependents exist and returns `node_role.remove_blocked`.
 - `--force` removes Orbit-owned dependents while preserving user data.
 - `--force --purge-data` requests purge cleanup.
+- Removal first commits the assignment's `removing` state, then performs role
+  baseline and remote runtime cleanup without holding a gateway database
+  transaction open. Orbit-owned dependents and the role assignment are deleted
+  only after that cleanup succeeds.
 - If cleanup fails after removal starts, the role assignment remains in `error`
-  with the cleanup error recorded and the command returns `node_role.remove_failed`.
+  with the cleanup error recorded. The dependent records owned by Orbit remain
+  intact, and the command returns `node_role.remove_failed`.
 
 ### Caller Path Rules
 

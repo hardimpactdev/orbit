@@ -32,6 +32,7 @@ use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
@@ -1103,6 +1104,42 @@ describe('node role assignment service', function (): void {
             ->toHaveCount(0);
     });
 
+    it('removes the role baseline outside the database transaction after marking the assignment as removing', function (): void {
+        $node = Node::factory()->create(['platform' => 'ubuntu']);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'app-dev',
+            'status' => NodeRoleStatus::Active->value,
+        ]);
+
+        $observed = new ArrayObject;
+
+        app()->instance(NodeRoleBaselineConverger::class, new class($observed) extends NodeRoleBaselineConverger {
+            public function __construct(
+                private readonly ArrayObject $observed,
+            ) {}
+
+            public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
+            {
+                $this->observed['transaction_level'] = DB::transactionLevel();
+                $this->observed['status'] = $assignment->fresh()->status;
+            }
+        });
+
+        $initialTransactionLevel = DB::transactionLevel();
+
+        app(NodeRoleAssignmentService::class)->remove($node, 'app-dev', force: true);
+
+        expect($observed->getArrayCopy())
+            ->toBe([
+                'transaction_level' => $initialTransactionLevel,
+                'status' => NodeRoleStatus::Removing,
+            ])
+            ->and($node->fresh()->roleAssignments)
+            ->toHaveCount(0);
+    });
+
     it('blocks ingress removal while public proxy route records depend on it', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
         $backendNode = Node::factory()->create(['platform' => 'ubuntu']);
@@ -1235,7 +1272,7 @@ describe('node role assignment service', function (): void {
             ->toHaveCount(0);
     });
 
-    it('removes Orbit-owned dependents before removing role baselines', function (): void {
+    it('removes role baselines before deleting Orbit-owned dependents', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 
         NodeRoleAssignment::factory()->create([
@@ -1282,7 +1319,7 @@ describe('node role assignment service', function (): void {
 
         app(NodeRoleAssignmentService::class)->remove($node, 'app-dev', force: true);
 
-        expect($events->getArrayCopy())->toBe(['dependents', 'baseline']);
+        expect($events->getArrayCopy())->toBe(['baseline', 'dependents']);
     });
 
     it('removes app dependents and passes purge intent when purge data is requested', function (): void {
@@ -1432,7 +1469,7 @@ describe('node role assignment service', function (): void {
             ->and($assignment->fresh()->last_error)
             ->toBe('Cleanup failed.')
             ->and($inspector->removed)
-            ->toBeTrue()
+            ->toBeFalse()
             ->and(App::query()->whereKey($app->id)->exists())
             ->toBeTrue()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())

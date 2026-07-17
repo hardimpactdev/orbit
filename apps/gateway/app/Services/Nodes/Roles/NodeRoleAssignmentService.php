@@ -184,35 +184,12 @@ class NodeRoleAssignmentService
             throw new InvalidArgumentException("Role '{$role}' cannot be removed while dependents exist.");
         }
 
+        $dependentPolicy = $force ? 'remove' : 'block';
+        $removingAssignment = $this->markAssignmentRemoving($node, $assignment, $dependentPolicy, $role);
+
         try {
-            DB::transaction(function () use ($node, $assignment, $force, $purgeData, $role): void {
-                $transactionAssignment = NodeRoleAssignment::query()
-                    ->lockForUpdate()
-                    ->findOrFail($assignment->id);
-
-                $transactionDependents = $this->dependencyInspector->dependentSummaries($node, $transactionAssignment);
-
-                if ($transactionDependents !== [] && ! $force) {
-                    throw new InvalidArgumentException("Role '{$role}' cannot be removed while dependents exist.");
-                }
-
-                $transactionAssignment->forceFill([
-                    'status' => NodeRoleStatus::Removing->value,
-                    'last_error' => null,
-                ])->save();
-
-                if ($force && $transactionDependents !== []) {
-                    $this->dependencyInspector->removeOrbitOwnedDependents($node, $transactionAssignment);
-                }
-
-                $this->converger->remove($node, $transactionAssignment, $purgeData);
-
-                $transactionAssignment->delete();
-
-                $this->roleSelfGrantMaterializer->reconcileOnRoleRemoved($node, NodeRoleName::from($role));
-            });
-        } catch (InvalidArgumentException $exception) {
-            throw $exception;
+            $this->converger->remove($node, $removingAssignment, $purgeData);
+            $this->completeRemoval($node, $assignment, $dependentPolicy, $role);
         } catch (Throwable $throwable) {
             NodeRoleAssignment::query()
                 ->whereKey($assignment->id)
@@ -223,6 +200,58 @@ class NodeRoleAssignmentService
 
             throw $throwable;
         }
+    }
+
+    private function markAssignmentRemoving(
+        Node $node,
+        NodeRoleAssignment $assignment,
+        string $dependentPolicy,
+        string $role,
+    ): NodeRoleAssignment {
+        return DB::transaction(function () use ($node, $assignment, $dependentPolicy, $role): NodeRoleAssignment {
+            $transactionAssignment = NodeRoleAssignment::query()
+                ->lockForUpdate()
+                ->findOrFail($assignment->id);
+
+            $transactionDependents = $this->dependencyInspector->dependentSummaries($node, $transactionAssignment);
+
+            if ($transactionDependents !== [] && $dependentPolicy === 'block') {
+                throw new InvalidArgumentException("Role '{$role}' cannot be removed while dependents exist.");
+            }
+
+            $transactionAssignment->forceFill([
+                'status' => NodeRoleStatus::Removing->value,
+                'last_error' => null,
+            ])->save();
+
+            return $transactionAssignment;
+        });
+    }
+
+    private function completeRemoval(
+        Node $node,
+        NodeRoleAssignment $assignment,
+        string $dependentPolicy,
+        string $role,
+    ): void {
+        DB::transaction(function () use ($node, $assignment, $dependentPolicy, $role): void {
+            $transactionAssignment = NodeRoleAssignment::query()
+                ->lockForUpdate()
+                ->findOrFail($assignment->id);
+            $transactionDependents = $this->dependencyInspector->dependentSummaries($node, $transactionAssignment);
+
+            if ($transactionDependents !== [] && $dependentPolicy === 'block') {
+                throw new InvalidArgumentException("Role '{$role}' cannot be removed while dependents exist.");
+            }
+
+            if ($dependentPolicy === 'remove' && $transactionDependents !== []) {
+                $this->dependencyInspector->removeOrbitOwnedDependents($node, $transactionAssignment);
+            }
+
+            $transactionAssignment->delete();
+
+            $this->roleSelfGrantMaterializer->reconcileOnRoleRemoved($node, NodeRoleName::from($role));
+        });
     }
 
     private function guardNotGatewayCoupledInfrastructureRole(string $role): void
