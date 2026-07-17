@@ -119,7 +119,7 @@ final readonly class LocalDockerContainerAction
 
         $sources = array_values(array_filter(
             $spec->bindMountSources(),
-            static fn (string $source): bool => ! file_exists($source) && ! is_link($source),
+            fn (string $source): bool => ! $this->privilegedPathExists($source),
         ));
 
         if ($sources === []) {
@@ -131,6 +131,15 @@ final readonly class LocalDockerContainerAction
         if (! $mkdir->isSuccessful()) {
             throw $this->applyFailure('prepare mount sources', $spec, $mkdir, false);
         }
+    }
+
+    private function privilegedPathExists(string $path): bool
+    {
+        if ($this->runProcess(['sudo', 'test', '-e', $path])->isSuccessful()) {
+            return true;
+        }
+
+        return $this->runProcess(['sudo', 'test', '-L', $path])->isSuccessful();
     }
 
     /**

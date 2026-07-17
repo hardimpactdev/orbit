@@ -176,7 +176,7 @@ describe('internal process Docker container command', function (): void {
             ->not->toContain('/var/run/docker.sock');
     });
 
-    it('does not prepare an existing managed file bind source as a directory', function (): void {
+    it('checks an existing managed file bind source with elevated privileges before preparing directories', function (): void {
         $home = process_docker_container_fake_home();
         $socket = process_docker_container_fake_orbstack_socket($home);
         $configPath = "{$home}/s3.json";
@@ -213,8 +213,9 @@ describe('internal process Docker container command', function (): void {
             ->toBe('created')
             ->and(is_file($configPath))
             ->toBeTrue()
-            ->and(file_exists("{$bin}/sudo-calls.log"))
-            ->toBeFalse();
+            ->and(file_get_contents("{$bin}/sudo-calls.log"))
+            ->toContain("test -e {$configPath}")
+            ->not->toContain("mkdir -p {$configPath}");
     });
 });
 
