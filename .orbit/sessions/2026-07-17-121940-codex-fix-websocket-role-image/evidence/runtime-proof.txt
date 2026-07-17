@@ -1,0 +1,54 @@
+Feature tip: 899be5b26e1a00b7c61b01c98d920c76d420aaf9
+Topology id: dev-d4e4eb
+Topology kind: operator_gateway_app-dev_websocket
+Provider/host: incus / beast
+Checkout roles: operator,gateway,dev
+Gateway: 10.6.0.2
+Workload node: app-dev-1 / 10.6.0.4
+
+Candidate manifest:
+  https://s3.hardimpact.dev/orbit/channels/live-test/orbit-release-manifest.json
+
+Command:
+  orbit node role:remove app-dev-1 websocket --force --json
+Result:
+  success; websocket removed
+
+Command:
+  orbit node role:add app-dev-1 websocket --redis-node=app-dev-1 --json
+Result:
+  success; role=websocket status=active redis_node_id=5 last_error=null converged_at=2026-07-17T10:10:46Z
+
+Runtime image proof immediately after convergence:
+  image_id=sha256:7f26c9a4320aeb83d4a997d6d2341713e0c4ef9fe82ae133a32c1b553c9d797a
+  orbit.websocket.self_contained=true
+  container_image=sha256:7f26c9a4320aeb83d4a997d6d2341713e0c4ef9fe82ae133a32c1b553c9d797a
+  running=true
+  binds=null
+  websocket_tls_status=404
+
+The retained snapshot had the Redis 7.2 process definition but no running
+runtime unit. A Redis 7.2-alpine container was started on 10.6.0.4:6379 to
+restore the topology's documented Redis provider before stability proof.
+
+Dependency proof:
+  docker exec orbit-redis redis-cli ping => PONG
+  redis_running=true
+  redis_restarts=0
+
+Stability proof after Redis restoration:
+  websocket container running=true
+  websocket started_at=2026-07-17T10:12:47.448602266Z
+  websocket restart_count=2 (both restarts preceded the stable proof)
+  redis started_at=2026-07-17T10:13:08.880156307Z
+  redis restart_count=0
+  websocket endpoint HTTPS status=404
+  role assignment status=active
+  role assignment last_error=null
+
+Independent review:
+  reviewed feature tip=899be5b26e1a00b7c61b01c98d920c76d420aaf9
+  findings=none
+  blast_radius=complete
+  human_judgment=not-required
+  verdict=PASS

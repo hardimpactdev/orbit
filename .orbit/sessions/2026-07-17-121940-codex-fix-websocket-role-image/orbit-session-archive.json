@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-17T10:21:42+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/.codex/worktrees/fix-websocket-role-image/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-17-121940-codex-fix-websocket-role-image",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-17T101744Z-a20208499686.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "9c43911ea8b2fc408d172a5dee56f979250dd7fa927fc258c58a31836f2336c6",
+        "loop.md": "a672eb208a112ed107bae4aa87672314afd420f024ebc54e234de628f7ad89d7",
+        "quality-gates/quality-check-2026-07-17T101744Z-a20208499686.json": "ee24269a56ab5a8c6e35123b39c14dd06f969627b99402be7d4ca86816eeaf06"
+    },
+    "branch": "codex/fix-websocket-role-image",
+    "candidate_commit": "899be5b26e1a00b7c61b01c98d920c76d420aaf9",
+    "accepted_feature_tip": "899be5b26e1a00b7c61b01c98d920c76d420aaf9",
+    "accepted_main_tip": "7741a5524d574d805f8f5d5cc85c892a6504c86b",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
