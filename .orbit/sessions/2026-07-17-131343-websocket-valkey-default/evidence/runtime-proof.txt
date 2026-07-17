@@ -1,0 +1,65 @@
+Valkey-only WebSocket retained-topology proof
+Date: 2026-07-17
+Checkout: /Users/nckrtl/orbit/.worktrees/websocket-valkey-default
+Proven code tip: 02f2c327d9fd49417dd56d04e4d760eeaa894d6e
+Integrated main tip: 01ae9c9e080a32ce5d689ac433e696fd27251648
+Topology id: dev-e07ce3
+Topology kind: operator_gateway_app-dev_websocket
+Provider/host: incus / beast
+Checkout roles: gateway, dev, websocket
+Instances:
+- operator: orbit-e2e-dev-e07ce3-operator
+- gateway: orbit-e2e-dev-e07ce3-gateway
+- dev/websocket/database: orbit-e2e-dev-e07ce3-dev
+
+Acquisition result:
+- The topology acquired successfully from the integrated feature worktree, was
+  synced after the archive-only main update and again at the final feature tip;
+  the isolated gateway API was restarted before API-backed checks were repeated.
+- app-dev-1 roles are active: app-dev, database, websocket.
+- WebSocket role settings are {"valkey_node_id":5}.
+
+Existing Redis migration proof:
+- The retained node was placed into a controlled legacy state with role settings
+  {"redis_node_id":5}, a managed Redis 7.2 process row, and a running redis:7.2
+  container on 10.6.0.4:6379; process:list reported service=redis and redis-cli
+  ping returned PONG while Reverb remained running with zero restarts.
+- Running `php artisan migrate --force --no-interaction` in the isolated gateway
+  applied `2026_07_17_000000_canonicalize_websocket_valkey_settings`.
+- The migration changed the role settings to {"valkey_node_id":5}, replaced the
+  managed process descriptor with Valkey 8.1, and marked the Redis runtime unit
+  for replacement. Process doctor first reported the missing Valkey unit, then
+  `doctor --family=process --restore` removed Redis and restored Valkey.
+- After `process:start valkey`, the only broker container was
+  valkey/valkey:8.1, valkey-cli returned PONG, the replacement marker was cleared,
+  and Reverb remained running with zero restarts.
+
+Managed-service registry proof:
+- process:list --node=app-dev-1 returned exactly one process.
+- name/service/version/runtime: valkey / valkey / 8.1 / docker.
+- command: valkey-server --appendonly yes --bind 0.0.0.0 --protected-mode no.
+- endpoint: 10.6.0.4:6379.
+- No Redis process or managed-service entry was returned.
+
+Runtime proof:
+- orbit-websocket-app-dev-1 | orbit-reverb:current | Up.
+- valkey | valkey/valkey:8.1 | Up.
+- orbit-caddy | caddy:2-alpine | Up.
+- docker exec valkey valkey-cli ping returned PONG.
+- Reverb inspect: running=true, RestartCount=0.
+- Reverb port binding: 8080/tcp -> HostIp 10.6.0.4, HostPort 8080.
+- Reverb env: REDIS_HOST=10.6.0.4, REDIS_PORT=6379, REVERB_SERVER_HOST=0.0.0.0, REVERB_SCALING_ENABLED=true.
+- Reverb log: Starting secure server on 0.0.0.0:8080 (10.6.0.4).
+
+Reachability proof:
+- TLS connection from the dev host to 10.6.0.4:8080 succeeded.
+- TLS connection from the gateway host to 10.6.0.4:8080 succeeded.
+- Both observed subject CN=10.6.0.4 and issuer CN=Orbit Root CA, O=Orbit.
+
+Doctor proof from the isolated gateway checkout:
+- doctor --node=app-dev-1 --family=process --json: healthy=true, issues=0.
+- doctor --node=app-dev-1 --family=tool --json: healthy=true, issues=0.
+- doctor --node=app-dev-1 --family=node --key=node.websocket.bind_public_interface --json: healthy=true, issues=0.
+
+Secrets:
+- No APP_KEY, Reverb secret, or other credential values were captured.

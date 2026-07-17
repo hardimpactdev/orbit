@@ -1,0 +1,29 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-17T11:13:43+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/websocket-valkey-default/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-17-131343-websocket-valkey-default",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/profiles/2026-07-17T11-07-55Z-02f2c327d9fd/cli_pest.log",
+        "quality-gates/profiles/2026-07-17T11-07-55Z-02f2c327d9fd/core_pest.log",
+        "quality-gates/profiles/2026-07-17T11-07-55Z-02f2c327d9fd/gateway_pest.log"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "bdcfd89402fb44aa3543d7d88ff7e7d462f4bb6740d1cf00ae8924c3288416b3",
+        "loop.md": "1dbf5df342ae92f63180e2b3028d4385995f4363044e9b5a0b4d81897d7bc752",
+        "quality-gates/profiles/2026-07-17T11-07-55Z-02f2c327d9fd/cli_pest.log": "5187f1d116ee638a97b9b32882eae7720d45c44ce5c526d3013aeb003d98aec7",
+        "quality-gates/profiles/2026-07-17T11-07-55Z-02f2c327d9fd/core_pest.log": "3b599ff6e09c2d8febc7c3c19bee4223e63748212f468287af9874e282c324b5",
+        "quality-gates/profiles/2026-07-17T11-07-55Z-02f2c327d9fd/gateway_pest.log": "714e2966e7a5a989a541e5034d23a2d46d1a06de1f7090292de504e1f7b60852"
+    },
+    "branch": "websocket-valkey-default",
+    "candidate_commit": "02f2c327d9fd49417dd56d04e4d760eeaa894d6e",
+    "accepted_feature_tip": "02f2c327d9fd49417dd56d04e4d760eeaa894d6e",
+    "accepted_main_tip": "01ae9c9e080a32ce5d689ac433e696fd27251648",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
