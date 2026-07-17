@@ -1,0 +1,44 @@
+Retained Incus runtime proof
+
+Feature HEAD: 0c61ba11be9ad42fec4aedbea4ff15d43ea4999f
+Venue: retained-incus on beast
+Topology: dev-31c2f9 (operator_gateway_app-dev_app-prod)
+Source-mounted roles: operator,gateway
+Released: yes
+
+Acquisition
+- `composer e2e:incus -- --start --topology=operator_gateway_app-dev_app-prod --checkout-roles=operator,gateway --json --no-interaction`
+- Result: success; the exact committed feature source was overlaid before the gateway API and workload nodes started.
+
+Unmasked topology setup
+- Added PostgreSQL service version 16 and ClickHouse service version 24.12 to database-role node `app-dev-1`; both runtime units started without warnings.
+- Removed the prepared `app-prod` and `ingress` roles from `app-prod-1`, leaving it active with no workload role assignments.
+- Added `analytics` first to the roleless `app-prod-1`, referencing `app-dev-1` for PostgreSQL and ClickHouse: active.
+- Added `s3` second with `/srv/orbit/s3/data`: active.
+- This order proves analytics Docker authorization without an already-active S3 or app role.
+
+Runtime observations
+- Plausible image: `ghcr.io/plausible/community-edition:v3.2.1`.
+- PostgreSQL image: `postgres:16-alpine`.
+- ClickHouse image: `clickhouse/clickhouse-server:24.12-alpine`.
+- SeaweedFS image: `chrislusf/seaweedfs:4.33`.
+- Published listeners were limited to WireGuard addresses:
+  database node `10.6.0.4` exposed PostgreSQL `5432` and ClickHouse `8123`;
+  service node `10.6.0.5` exposed Plausible `8000` and SeaweedFS S3 `8333`.
+- Plausible returned HTTP 302 at `http://10.6.0.5:8000/`.
+- SeaweedFS returned HTTP 403 for an unauthenticated request at `http://10.6.0.5:8333/`.
+- `/srv/orbit/s3/data/s3.json` was a root-owned regular file with mode `0600`.
+
+Lifecycle
+- Removed `analytics` with `--force`: success; Plausible container absent afterward.
+- Removed `s3` last with `--force`: success while S3 was the node's only remaining workload role; SeaweedFS container absent afterward.
+- The final removal proves both internal-command authorization and Agent transport remain available while the last role is `removing`.
+- PostgreSQL and ClickHouse containers remained running after service-role removal.
+- Non-purged S3 data/config remained present; `s3.json` remained root-owned mode `0600`.
+- Released with `composer e2e:incus -- --stop --id=dev-31c2f9 --json --no-interaction`.
+
+Acceptance infrastructure repair
+- An unused DOWN Incus bridge, `orbit-e2e-p-n-1`, duplicated the live `10.232.1.0/24` route and prevented workload egress.
+- `incus network show orbit-e2e-p-n-1` reported `used_by: []`; deleting only that orphaned network restored the live `orbit-e2e-n-1` route before this clean exact-head run.
+
+No generated credential values or secret material were printed or retained in this evidence.

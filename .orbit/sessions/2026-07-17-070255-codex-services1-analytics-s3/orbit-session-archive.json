@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-17T05:02:55+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/.codex/worktrees/services1-analytics-s3/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-17-070255-codex-services1-analytics-s3",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-17T045947Z-71e6250b1f75.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "d0220bb36508d56dc683665c39403cfc9e17cc97b8a1174143743e50dbb11d67",
+        "loop.md": "9b36b70175f592daaab53bfb190ae68ea79fa85b8ac14fcb6ad52166d8721172",
+        "quality-gates/quality-check-2026-07-17T045947Z-71e6250b1f75.json": "9e4eeec8b8282721d3c188f1540b9cd19a1c699233ddee98104845f3aaa6327c"
+    },
+    "branch": "codex/services1-analytics-s3",
+    "candidate_commit": "0c61ba11be9ad42fec4aedbea4ff15d43ea4999f",
+    "accepted_feature_tip": "0c61ba11be9ad42fec4aedbea4ff15d43ea4999f",
+    "accepted_main_tip": "7b7b5fd27d6e9957ee201519ee6afc9e678cd6ae",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
