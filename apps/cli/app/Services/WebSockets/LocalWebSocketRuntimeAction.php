@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\WebSockets;
 
 use InvalidArgumentException;
+use JsonException;
 use Symfony\Component\Process\Process;
 
 final readonly class LocalWebSocketRuntimeAction
@@ -98,6 +99,7 @@ final readonly class LocalWebSocketRuntimeAction
      */
     private function loadImageArtifact(string $image, array $artifact): string
     {
+        $sourceImage = $this->sourceImage($image);
         $archive = tempnam(directory: sys_get_temp_dir(), prefix: 'orbit-websocket-image-');
 
         if (! is_string($archive)) {
@@ -137,6 +139,8 @@ final readonly class LocalWebSocketRuntimeAction
                 );
             }
 
+            $this->validateImageArchive($archive, $image, $sourceImage);
+
             $load = $this->runProcess(['docker', 'load', '--input', $archive], timeout: 360);
 
             if (! $load->isSuccessful()) {
@@ -152,13 +156,78 @@ final readonly class LocalWebSocketRuntimeAction
             }
         }
 
+        return $sourceImage;
+    }
+
+    private function sourceImage(string $image): string
+    {
         $sourceImage = strstr(haystack: $image, needle: '@', before_needle: true);
 
-        if (! is_string($sourceImage) || $sourceImage === '') {
+        if (! is_string($sourceImage) || $sourceImage === '' || $sourceImage === 'orbit-reverb:current') {
             throw new InvalidArgumentException('Websocket runtime image tag is invalid.');
         }
 
         return $sourceImage;
+    }
+
+    private function validateImageArchive(string $archive, string $image, string $sourceImage): void
+    {
+        $manifest = $this->runProcess([
+            'tar',
+            '--extract',
+            '--to-stdout',
+            '--file',
+            $archive,
+            'manifest.json',
+        ]);
+
+        if (! $manifest->isSuccessful()) {
+            throw new LocalWebSocketRuntimeFailure(
+                errorCode: 'websocket_runtime_image_artifact_invalid',
+                message: 'Websocket runtime image artifact does not contain a readable Docker manifest.',
+                meta: ['image' => $image],
+            );
+        }
+
+        try {
+            $entries = json_decode($manifest->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            throw new LocalWebSocketRuntimeFailure(
+                errorCode: 'websocket_runtime_image_artifact_invalid',
+                message: 'Websocket runtime image artifact does not contain a readable Docker manifest.',
+                meta: ['image' => $image],
+            );
+        }
+
+        $tags = [];
+
+        if (is_array($entries) && array_is_list($entries)) {
+            foreach ($entries as $entry) {
+                $repoTags = is_array($entry) ? $entry['RepoTags'] ?? null : null;
+
+                if (! is_array($repoTags) || ! array_is_list($repoTags)) {
+                    $tags = [];
+                    break;
+                }
+
+                foreach ($repoTags as $tag) {
+                    if (! is_string($tag)) {
+                        $tags = [];
+                        break 2;
+                    }
+
+                    $tags[] = $tag;
+                }
+            }
+        }
+
+        if ($tags !== [$sourceImage]) {
+            throw new LocalWebSocketRuntimeFailure(
+                errorCode: 'websocket_runtime_image_artifact_invalid',
+                message: 'Websocket runtime image artifact does not contain exactly the expected image tag.',
+                meta: ['image' => $image],
+            );
+        }
     }
 
     /**

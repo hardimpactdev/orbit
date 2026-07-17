@@ -120,12 +120,13 @@ describe('internal websocket runtime command', function (): void {
 
     it('loads verified manifest websocket image artifacts without registry credentials', function (): void {
         $archive = 'websocket-image-archive';
+        $image = 'ghcr.io/hardimpactdev/orbit-reverb:0.1.190-candidate-build@sha256:'.str_repeat('b', times: 64);
+        $sourceImage = strstr(haystack: $image, needle: '@', before_needle: true);
         $bin = install_websocket_runtime_fake_bin([
             'self_contained_image' => true,
             'image_archive' => $archive,
+            'image_archive_tags' => [$sourceImage],
         ]);
-        $image = 'ghcr.io/hardimpactdev/orbit-reverb:0.1.190-candidate-build@sha256:'.str_repeat('b', times: 64);
-        $sourceImage = strstr($image, '@', before_needle: true);
         $url = 'https://artifacts.example.test/orbit-reverb-linux-amd64.tar';
 
         [$exitCode, $output] = run_websocket_runtime_command(
@@ -158,6 +159,46 @@ describe('internal websocket runtime command', function (): void {
             .$sourceImage)
             ->toContain("docker tag {$sourceImage} orbit-reverb:current")
             ->not->toContain('docker pull');
+    });
+
+    it('rejects image artifacts whose archive tags could replace another runtime image', function (): void {
+        $archive = 'websocket-image-archive';
+        $bin = install_websocket_runtime_fake_bin([
+            'image_archive' => $archive,
+            'image_archive_tags' => [
+                'ghcr.io/hardimpactdev/orbit-reverb:unexpected',
+                'orbit-reverb:current',
+            ],
+        ]);
+        $image = 'ghcr.io/hardimpactdev/orbit-reverb:0.1.190-candidate-build@sha256:'.str_repeat('e', times: 64);
+        $url = 'https://artifacts.example.test/orbit-reverb-linux-amd64.tar';
+
+        [$exitCode, $output] = run_websocket_runtime_command(
+            action: 'image:ensure',
+            payload: [
+                'image' => $image,
+                'artifact' => [
+                    'url' => $url,
+                    'sha256' => hash('sha256', $archive),
+                ],
+            ],
+        );
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
+                'websocket_runtime_image_artifact_invalid',
+                'Websocket runtime image artifact does not contain exactly the expected image tag.',
+                ['image' => $image],
+            ));
+
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($calls)
+            ->toContain('tar --extract --to-stdout --file ')
+            ->not->toContain('docker load')
+            ->not->toContain('docker tag');
     });
 
     it('does not load or alias websocket image artifacts with a mismatched checksum', function (): void {
@@ -541,7 +582,7 @@ function websocket_runtime_container_spec_payload(): array
 }
 
 /**
- * @param  array{self_contained_image?: bool, image_archive?: string, app_key_exists?: bool, app_key?: string, container_exists?: bool, container_running?: bool, env_host?: string, cmd?: string, network_exists?: bool, source_hash?: string}  $options
+ * @param  array{self_contained_image?: bool, image_archive?: string, image_archive_tags?: list<string>, app_key_exists?: bool, app_key?: string, container_exists?: bool, container_running?: bool, env_host?: string, cmd?: string, network_exists?: bool, source_hash?: string}  $options
  */
 function install_websocket_runtime_fake_bin(array $options = []): string
 {
@@ -561,7 +602,8 @@ function install_websocket_runtime_fake_bin(array $options = []): string
     file_put_contents("{$dir}/container-exists", $containerExists ? '1' : '0');
     file_put_contents("{$dir}/container-running", $containerRunning ? 'true' : 'false');
     file_put_contents("{$dir}/env-host", $options['env_host'] ?? '');
-    file_put_contents("{$dir}/image.tar", $options['image_archive'] ?? '');
+    file_put_contents("{$dir}/image.tar", websocket_runtime_image_archive($options));
+    file_put_contents("{$dir}/image-manifest.json", websocket_runtime_image_manifest($options));
     file_put_contents("{$dir}/network-exists", $networkExists ? '1' : '0');
     file_put_contents("{$dir}/redis-probe.php", '');
     file_put_contents("{$dir}/self-contained-image", $selfContainedImage ? 'true' : 'false');
@@ -632,6 +674,14 @@ function install_websocket_runtime_fake_bin(array $options = []): string
         BASH);
     chmod(filename: "{$dir}/curl", permissions: 0o755);
 
+    file_put_contents("{$dir}/tar", <<<'BASH'
+        #!/usr/bin/env bash
+        dir="$(cd "$(dirname "$0")" && pwd)"
+        printf 'tar %s\n' "$*" >>"$dir/calls.log"
+        cat "$dir/image-manifest.json"
+        BASH);
+    chmod(filename: "{$dir}/tar", permissions: 0o755);
+
     file_put_contents("{$dir}/sudo", <<<'BASH'
         #!/usr/bin/env bash
         dir="$(cd "$(dirname "$0")" && pwd)"
@@ -690,6 +740,26 @@ function install_websocket_runtime_fake_bin(array $options = []): string
     return $dir;
 }
 
+/**
+ * @param  array{image_archive_tags?: list<string>}  $options
+ */
+function websocket_runtime_image_manifest(array $options): string
+{
+    return json_encode([[
+        'Config' => 'config.json',
+        'RepoTags' => $options['image_archive_tags'] ?? [],
+        'Layers' => ['layer.tar'],
+    ]], JSON_THROW_ON_ERROR);
+}
+
+/**
+ * @param  array{image_archive?: string}  $options
+ */
+function websocket_runtime_image_archive(array $options): string
+{
+    return $options['image_archive'] ?? '';
+}
+
 function delete_websocket_runtime_fake_bin(string $path): void
 {
     foreach ([
@@ -707,12 +777,14 @@ function delete_websocket_runtime_fake_bin(string $path): void
         'env-host',
         'installed-source-hash',
         'image.tar',
+        'image-manifest.json',
         'network-exists',
         'redis-probe.php',
         'self-contained-image',
         'shared.env',
         'source-hash',
         'source.tar',
+        'tar',
     ] as $file) {
         $filePath = "{$path}/{$file}";
 
