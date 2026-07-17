@@ -24,6 +24,21 @@ it('derives managed Agent eligibility from a supported workload role', function 
     expect($node->fresh()->isAgentEligible())->toBeTrue();
 });
 
+it('preserves Agent eligibility while the last workload role is being removed', function (): void {
+    $node = Node::factory()->create([
+        'platform' => 'ubuntu_24-04',
+        'managed' => false,
+        'wireguard_address' => '10.6.0.48',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 's3',
+        'status' => 'removing',
+    ]);
+
+    expect($node->fresh()->isAgentEligible())->toBeTrue();
+});
+
 it('accepts explicit managed opt-in only for a roleless supported operator identity', function (): void {
     $operator = Node::factory()->create([
         'platform' => 'macos_26-5-1',
