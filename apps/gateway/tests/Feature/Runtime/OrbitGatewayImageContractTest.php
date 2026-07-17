@@ -98,7 +98,12 @@ it('builds the managed FrankenPHP runtime images from upstream with Orbit baseli
 
     expect($dockerfile)
         ->toContain('ARG PHP_VERSION=8.5')
+        ->toContain('FROM node:22-bookworm-slim AS node')
         ->toContain('FROM dunglas/frankenphp:1-php${PHP_VERSION}-bookworm')
+        ->toContain('COPY --from=node /usr/local/bin/node /usr/local/bin/node')
+        ->toContain('COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules')
+        ->toContain('apt-get install -y --no-install-recommends chromium')
+        ->toContain('ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium')
         ->toContain('RUN install-php-extensions')
         ->toContain('bcmath')
         ->toContain('exif')
