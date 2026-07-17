@@ -160,6 +160,46 @@ describe('NodeRoleAddController', function (): void {
             ->toBe('Docker is missing.');
     });
 
+    it('resolves a websocket Redis node name to its node id', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
+        $database = createNodeRoleApiContractTarget([
+            'name' => 'database-1',
+            'host' => '10.6.0.30',
+            'wireguard_address' => '10.6.0.30',
+        ]);
+        createNodeRoleApiContractAssignment($database, role: 'database');
+
+        Process::factory()
+            ->forOwner($database)
+            ->create([
+                'name' => 'redis',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => ['service' => 'redis'],
+            ]);
+
+        app()->instance(NodeRoleBaselineConverger::class, new NodeRoleAddNoopConverger);
+
+        $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
+            'role' => 'websocket',
+            'settings' => ['redis_node' => 'database-1'],
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.assignment.role', 'websocket')
+            ->assertJsonPath('success.data.assignment.status', 'active')
+            ->assertJsonPath('success.data.assignment.settings.redis_node_id', $database->id)
+            ->assertJsonMissingPath('success.data.assignment.settings.redis_node');
+
+        expect(
+            $target
+                ->roleAssignments()
+                ->where('role', 'websocket')
+                ->where('settings->redis_node_id', $database->id)
+                ->exists(),
+        )->toBeTrue();
+    });
+
     it('rejects an unsafe S3 data path before assigning the role', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
 

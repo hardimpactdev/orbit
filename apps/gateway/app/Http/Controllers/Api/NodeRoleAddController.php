@@ -15,6 +15,7 @@ use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleSettingsResolver;
+use App\Services\Nodes\Roles\WebSocketRoleSettingsResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use InvalidArgumentException;
@@ -27,6 +28,7 @@ final class NodeRoleAddController implements Loggable
     public function __construct(
         private readonly NodeRoleAssignmentService $service,
         private readonly NodeRoleSettingsResolver $settingsResolver,
+        private readonly WebSocketRoleSettingsResolver $webSocketSettingsResolver,
     ) {}
 
     public function __invoke(AddNodeRoleApiRequest $request, string $name): JsonResponse
@@ -80,6 +82,14 @@ final class NodeRoleAddController implements Loggable
 
         if ($request->role() === 'analytics') {
             $settings = $this->settingsResolver->resolveAnalytics($settings, $postgresNode, $clickhouseNode);
+
+            if ($settings instanceof JsonResponse) {
+                return $settings;
+            }
+        }
+
+        if ($request->role() === 'websocket') {
+            $settings = $this->webSocketSettingsResolver->resolve($settings);
 
             if ($settings instanceof JsonResponse) {
                 return $settings;

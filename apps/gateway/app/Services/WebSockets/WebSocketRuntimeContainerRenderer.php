@@ -36,7 +36,7 @@ class WebSocketRuntimeContainerRenderer
         return new WebSocketRuntimeContainer(
             name: $this->containerName($node),
             image: $image,
-            network: $this->names->network(),
+            network: 'host',
             restartPolicy: 'unless-stopped',
             backendName: $backendName,
             redisNodeId: $settings->redisNodeId,
@@ -44,9 +44,7 @@ class WebSocketRuntimeContainerRenderer
             command: $this->command($wireGuardAddress, $backendName),
             environment: $this->environment($wireGuardAddress, $backendName, $redisAddress, $appKey),
             mounts: $this->mounts($sourcePath),
-            networkAliases: [
-                $this->containerName($node),
-            ],
+            networkAliases: [],
         );
     }
 

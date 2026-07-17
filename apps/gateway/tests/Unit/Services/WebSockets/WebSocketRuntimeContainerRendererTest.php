@@ -123,7 +123,7 @@ it('renders a deterministic WebSocket runtime container', function (): void {
         ->and($container->image())
         ->toBe('orbit-reverb:current')
         ->and($container->network())
-        ->toBe('orbit-network')
+        ->toBe('host')
         ->and($container->restartPolicy())
         ->toBe('unless-stopped')
         ->and($container->backendName())
@@ -135,9 +135,7 @@ it('renders a deterministic WebSocket runtime container', function (): void {
         ->and($container->command())
         ->toBe('php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44')
         ->and($container->networkAliases())
-        ->toBe([
-            'orbit-websocket-app-dev-1',
-        ])
+        ->toBeEmpty()
         ->and($container->mounts())
         ->toContain([
             'source' => '/opt/orbit/websocket/current',
@@ -194,9 +192,9 @@ it('scopes the runtime container to the websocket node inside Docker E2E', funct
         expect($container->name())
             ->toBe('orbit-e2e-run-123-dev-orbit-websocket-app-dev-1')
             ->and($container->networkAliases())
-            ->toContain('orbit-e2e-run-123-dev-orbit-websocket-app-dev-1')
+            ->toBeEmpty()
             ->and($container->network())
-            ->toBe('orbit-e2e-run-123');
+            ->toBe('host');
     } finally {
         if ($previousNetwork === false) {
             putenv('ORBIT_E2E_DOCKER_NETWORK');
@@ -237,12 +235,12 @@ it('renders docker run with the private Reverb bind environment and shell comman
     $command = new DockerCommandBuilder()->runDetached($container);
 
     expect($command)
-        ->toContain("--env 'REVERB_SERVER_HOST=10.6.0.44'")
-        ->and($command)
-        ->toContain("--entrypoint 'sh'")
-        ->and($command)
-        ->toContain("'-lc' 'php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44'")
-        ->and($command)
+        ->toContain("--network 'host'")
+        ->not->toContain('--network-alias')->and($command)->toContain("--env 'REVERB_SERVER_HOST=10.6.0.44'")->and(
+            $command,
+        )->toContain("--entrypoint 'sh'")->and($command)->toContain(
+            "'-lc' 'php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44'",
+        )->and($command)
         ->not->toContain('.websocket.orbit')->and($command)
         ->not->toContain('0.0.0.0');
 });
