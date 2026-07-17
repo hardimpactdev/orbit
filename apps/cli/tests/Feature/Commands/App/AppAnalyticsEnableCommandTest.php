@@ -68,6 +68,20 @@ describe('AppAnalyticsEnableCommand', function (): void {
             '--host' => ['analytics.docs.test'],
         ]);
 
+        $expectedBinding = implode(PHP_EOL, [
+            'binding:',
+            '  app: docs',
+            '  enabled: true',
+            '  internal_host: analytics.orbit',
+            '  dashboard_url: https://analytics.orbit',
+            '  public_hosts:',
+            '    - analytics.docs.test',
+            '  tracking_endpoints:',
+            '    - host: analytics.docs.test',
+            '      script_base_url: https://analytics.docs.test',
+            '      event_endpoint: https://analytics.docs.test/api/event',
+        ]);
+
         expect($exitCode)
             ->toBe(0)
             ->and($output)
@@ -77,27 +91,7 @@ describe('AppAnalyticsEnableCommand', function (): void {
             ->and($output)
             ->toContain("Analytics enabled for app 'docs'")
             ->and($output)
-            ->toContain('binding:')
-            ->and($output)
-            ->toContain('  app: docs')
-            ->and($output)
-            ->toContain('  enabled: true')
-            ->and($output)
-            ->toContain('  internal_host: analytics.orbit')
-            ->and($output)
-            ->toContain('  dashboard_url: https://analytics.orbit')
-            ->and($output)
-            ->toContain('  public_hosts:')
-            ->and($output)
-            ->toContain('    - analytics.docs.test')
-            ->and($output)
-            ->toContain('  tracking_endpoints:')
-            ->and($output)
-            ->toContain('    - host: analytics.docs.test')
-            ->and($output)
-            ->toContain('    script_base_url: https://analytics.docs.test')
-            ->and($output)
-            ->toContain('    event_endpoint: https://analytics.docs.test/api/event')
+            ->toContain($expectedBinding)
             ->and($output)
             ->not->toContain('{');
     });

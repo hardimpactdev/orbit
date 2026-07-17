@@ -123,8 +123,8 @@ trait RendersAppAnalyticsBinding
             }
 
             $this->line('    - host: '.$this->analyticsStringField($endpoint, 'host'));
-            $this->line('    script_base_url: '.$this->analyticsStringField($endpoint, 'script_base_url'));
-            $this->line('    event_endpoint: '.$this->analyticsStringField($endpoint, 'event_endpoint'));
+            $this->line('      script_base_url: '.$this->analyticsStringField($endpoint, 'script_base_url'));
+            $this->line('      event_endpoint: '.$this->analyticsStringField($endpoint, 'event_endpoint'));
         }
     }
 }
