@@ -183,12 +183,9 @@ final readonly class ProxyRouteRenderer
         $tls = $this->tlsDirective($route);
         $encode = $this->isWebSocketProtocol($route) || $this->isS3Protocol($route) ? "\n" : "    encode gzip\n\n";
         $streaming = $this->uploadSafeStreamingDirectives($route);
-        $analyticsMatcher = $this->isPublicAnalyticsRoute($route) ? $this->analyticsTrackingMatcher($route) : '';
-        $analyticsProxyMatcher = $this->isPublicAnalyticsRoute($route) ? ' @plausible_tracking' : '';
         $analyticsForwardedFor = $this->isAnalyticsProtocol($route)
             ? '        header_up X-Forwarded-For {remote_host}'."\n"
             : '';
-        $analyticsFallback = $this->isPublicAnalyticsRoute($route) ? '    respond 404'."\n" : '';
 
         if (! is_array($routerUpstream)) {
             throw new RuntimeException("Proxy route '{$route->domain}' is missing a router upstream.");
@@ -202,15 +199,37 @@ final readonly class ProxyRouteRenderer
 
         $routerUrl = $this->validatedRouterUrl($routerUrl);
 
+        if ($this->isPublicAnalyticsRoute($route)) {
+            $analyticsMatcher = $this->analyticsTrackingMatcher($route);
+
+            return <<<CADDY
+                {$route->domain} {
+                    {$tls}
+                {$encode}{$analyticsMatcher}    handle @plausible_tracking {
+                        reverse_proxy {$routerUrl} {
+                            header_up Host {host}
+                            header_up X-Forwarded-Host {host}
+                            header_up X-Forwarded-Proto {scheme}
+                            header_up X-Forwarded-For {remote_host}
+                        }
+                    }
+                    handle {
+                        respond 404
+                    }
+                }
+
+                CADDY;
+        }
+
         return <<<CADDY
             {$route->domain} {
                 {$tls}
-            {$encode}{$analyticsMatcher}    reverse_proxy{$analyticsProxyMatcher} {$routerUrl} {
+            {$encode}    reverse_proxy {$routerUrl} {
             {$streaming}        header_up Host {host}
                     header_up X-Forwarded-Host {host}
                     header_up X-Forwarded-Proto {scheme}
             {$analyticsForwardedFor}    }
-            {$analyticsFallback}}
+            }
 
             CADDY;
     }
@@ -265,22 +284,41 @@ final readonly class ProxyRouteRenderer
         $siteAddress = $this->routerSiteAddress($route);
         $siteTls = $this->routerSiteTlsDirective($route);
         $backendTransport = $this->routerBackendTransportDirectives($route);
-        $analyticsMatcher = $this->isPublicAnalyticsRoute($route) ? $this->analyticsTrackingMatcher($route) : '';
-        $analyticsProxyMatcher = $this->isPublicAnalyticsRoute($route) ? ' @plausible_tracking' : '';
         $analyticsForwardedFor = $this->isAnalyticsProtocol($route)
             ? '        header_up X-Forwarded-For {http.request.header.X-Forwarded-For}'."\n"
             : '';
-        $analyticsFallback = $this->isPublicAnalyticsRoute($route) ? '    respond 404'."\n" : '';
+
+        if ($this->isPublicAnalyticsRoute($route)) {
+            $analyticsMatcher = $this->analyticsTrackingMatcher($route);
+
+            return <<<CADDY
+                {$siteAddress} {
+                {$siteTls}{$encode}{$analyticsMatcher}    handle @plausible_tracking {
+                        reverse_proxy {$upstreams} {
+                            lb_policy first
+                            header_up Host {host}
+                            header_up X-Forwarded-Host {host}
+                            header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+                            header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+                        }
+                    }
+                    handle {
+                        respond 404
+                    }
+                }
+
+                CADDY;
+        }
 
         return <<<CADDY
             {$siteAddress} {
-            {$siteTls}{$encode}{$analyticsMatcher}    reverse_proxy{$analyticsProxyMatcher} {$upstreams} {
+            {$siteTls}{$encode}    reverse_proxy {$upstreams} {
                     lb_policy first
             {$streaming}        header_up Host {host}
                     header_up X-Forwarded-Host {host}
                     header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
             {$analyticsForwardedFor}{$backendTransport}    }
-            {$analyticsFallback}}
+            }
 
             CADDY;
     }

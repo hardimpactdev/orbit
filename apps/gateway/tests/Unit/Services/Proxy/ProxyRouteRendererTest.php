@@ -495,13 +495,17 @@ describe('ProxyRouteRenderer', function (): void {
                 encode gzip
 
                 @plausible_tracking path /js/* /api/event
-                reverse_proxy @plausible_tracking http://10.6.0.2:80 {
-                    header_up Host {host}
-                    header_up X-Forwarded-Host {host}
-                    header_up X-Forwarded-Proto {scheme}
-                    header_up X-Forwarded-For {remote_host}
+                handle @plausible_tracking {
+                    reverse_proxy http://10.6.0.2:80 {
+                        header_up Host {host}
+                        header_up X-Forwarded-Host {host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Forwarded-For {remote_host}
+                    }
                 }
-                respond 404
+                handle {
+                    respond 404
+                }
             }
 
             CADDY);
@@ -511,14 +515,18 @@ describe('ProxyRouteRenderer', function (): void {
                 encode gzip
 
                 @plausible_tracking path /js/* /api/event
-                reverse_proxy @plausible_tracking http://10.6.0.50:8000 {
-                    lb_policy first
-                    header_up Host {host}
-                    header_up X-Forwarded-Host {host}
-                    header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
-                    header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+                handle @plausible_tracking {
+                    reverse_proxy http://10.6.0.50:8000 {
+                        lb_policy first
+                        header_up Host {host}
+                        header_up X-Forwarded-Host {host}
+                        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+                        header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+                    }
                 }
-                respond 404
+                handle {
+                    respond 404
+                }
             }
 
             CADDY);
