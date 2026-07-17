@@ -168,7 +168,13 @@ describe('AppAnalyticsController', function (): void {
             ->assertJsonPath('success.data.binding.internal_host', 'analytics.orbit')
             ->assertJsonPath('success.data.binding.dashboard_url', 'https://analytics.orbit')
             ->assertJsonPath('success.data.binding.public_hosts', ['analytics.docs.test'])
-            ->assertJsonPath('success.data.binding.tracking_paths', ['/js/*', '/api/event']);
+            ->assertJsonPath('success.data.binding.tracking_paths', ['/js/*', '/api/event'])
+            ->assertJsonPath('success.data.binding.tracking_endpoints.0.host', 'analytics.docs.test')
+            ->assertJsonPath('success.data.binding.tracking_endpoints.0.script_base_url', 'https://analytics.docs.test')
+            ->assertJsonPath(
+                'success.data.binding.tracking_endpoints.0.event_endpoint',
+                'https://analytics.docs.test/api/event',
+            );
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->where('enabled', true)->exists())
             ->toBeTrue()
@@ -216,6 +222,95 @@ describe('AppAnalyticsController', function (): void {
             ->assertJsonPath('error.meta.app', 'docs');
 
         expect(AppAnalyticsBinding::query()->count())->toBe(0);
+    });
+
+    it('rejects enablement before mutation when the app has no configured domain', function (): void {
+        $caller = createAppAnalyticsCallerNode();
+        createAppAnalyticsRoutePrerequisites();
+        $app = createAppAnalyticsApp(domain: null);
+        grantAppAnalyticsAccess($caller, $app->node);
+
+        $response = postAppAnalyticsEnableJson('/api/apps/docs/analytics/enable', [
+            'public_hosts' => ['analytics.docs.test'],
+        ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'analytics.domain_required')
+            ->assertJsonPath('error.meta.app', 'docs');
+
+        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
+            ->toBeFalse()
+            ->and(ProxyRoute::query()->where('owner_type', 'app-analytics')->exists())
+            ->toBeFalse();
+    });
+
+    it('returns a repairable failure when public route enactment fails', function (): void {
+        $caller = createAppAnalyticsCallerNode();
+        $app = createAppAnalyticsApp();
+        grantAppAnalyticsAccess($caller, $app->node);
+        $registrar = new class extends AnalyticsRouteRegistrar {
+            public function __construct() {}
+
+            public function requireServiceRoute(): ProxyRoute
+            {
+                return new ProxyRoute(['domain' => self::ServiceDomain]);
+            }
+
+            public function assertPublicHostsAvailable(App $app, array $hosts): void {}
+
+            public function removeObsoletePublicHosts(App $app, array $desiredHosts): void {}
+
+            public function syncPublicHosts(AppAnalyticsBinding $binding): void {}
+
+            public function convergePublicHosts(AppAnalyticsBinding $binding): void
+            {
+                throw new RuntimeException('Ingress Caddy reload failed.');
+            }
+        };
+        app()->instance(AnalyticsRouteRegistrar::class, $registrar);
+
+        $response = postAppAnalyticsEnableJson('/api/apps/docs/analytics/enable', [
+            'public_hosts' => [],
+        ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'analytics.route_enactment_failed')
+            ->assertJsonPath('error.meta.app', 'docs');
+
+        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->where('enabled', true)->exists())
+            ->toBeTrue();
+    });
+
+    it('keeps the binding enabled when route cleanup fails during disable', function (): void {
+        $caller = createAppAnalyticsCallerNode();
+        $app = createAppAnalyticsApp();
+        grantAppAnalyticsAccess($caller, $app->node);
+        AppAnalyticsBinding::query()->create([
+            'app_id' => $app->id,
+            'enabled' => true,
+            'public_hosts' => ['analytics.docs.test'],
+        ]);
+        $registrar = new class extends AnalyticsRouteRegistrar {
+            public function __construct() {}
+
+            public function removeObsoletePublicHosts(App $app, array $desiredHosts): void
+            {
+                throw new RuntimeException('Ingress Caddy cleanup failed.');
+            }
+        };
+        app()->instance(AnalyticsRouteRegistrar::class, $registrar);
+
+        $response = postAppAnalyticsDisableJson('/api/apps/docs/analytics/disable');
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'analytics.route_cleanup_failed')
+            ->assertJsonPath('error.meta.app', 'docs');
+
+        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->where('enabled', true)->exists())
+            ->toBeTrue();
     });
 
     it('disables app analytics bindings for authorized callers', function (): void {

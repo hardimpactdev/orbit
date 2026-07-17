@@ -33,9 +33,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Resolve the app by name or hostname.
 - Return `app.not_found` when no app matches.
 - Return `analytics.binding_missing` when the app has no analytics binding.
-- Set `enabled=false`.
-- Clear `public_hosts`.
-- Remove active public `app-analytics` routes for the binding.
+- Remove active public `app-analytics` ingress and router artifacts, then their
+  route rows.
+- Set `enabled=false` and clear `public_hosts` only after cleanup succeeds.
+- Leave the binding enabled with its previous hosts when cleanup fails.
 - Keep the private `analytics.orbit` service route intact while an active
   analytics role exists.
 
@@ -57,6 +58,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | App not found | No app record matches `app`. | `error.code=app.not_found` |
 | Binding missing | The app has no analytics binding. | `error.code=analytics.binding_missing` |
+| Route cleanup failed | An ingress or router artifact cannot be removed. | `error.code=analytics.route_cleanup_failed` |
 
 ## Doctor Relationship
 
@@ -78,5 +80,5 @@ owns route drift.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/AppAnalyticsControllerTest.php` | Disable success, route removal, binding-missing failure, authorization check, and `app.not_found` path. |
-| `apps/cli/tests/Feature/Commands/App/AppAnalyticsDisableCommandTest.php` | CLI input validation, gateway request payload, human output, and JSON passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/AppAnalyticsControllerTest.php` | Disable success, route removal, cleanup-failure rollback, binding-missing failure, authorization check, and `app.not_found` path. |
+| `apps/cli/tests/Feature/Commands/App/AppAnalyticsDisableCommandTest.php` | CLI input validation, gateway request payload, progress tree, human output, and JSON passthrough. |

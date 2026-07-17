@@ -15,6 +15,11 @@ describe('AppAnalyticsShowCommand', function (): void {
                 'dashboard_url' => 'https://analytics.orbit',
                 'public_hosts' => ['analytics.docs.test'],
                 'tracking_paths' => ['/js/*', '/api/event'],
+                'tracking_endpoints' => [[
+                    'host' => 'analytics.docs.test',
+                    'script_base_url' => 'https://analytics.docs.test',
+                    'event_endpoint' => 'https://analytics.docs.test/api/event',
+                ]],
             ],
         ]));
 
@@ -50,6 +55,11 @@ describe('AppAnalyticsShowCommand', function (): void {
                 'dashboard_url' => 'https://analytics.orbit',
                 'public_hosts' => ['analytics.docs.test'],
                 'tracking_paths' => ['/js/*', '/api/event'],
+                'tracking_endpoints' => [[
+                    'host' => 'analytics.docs.test',
+                    'script_base_url' => 'https://analytics.docs.test',
+                    'event_endpoint' => 'https://analytics.docs.test/api/event',
+                ]],
             ],
         ]));
 
@@ -57,22 +67,24 @@ describe('AppAnalyticsShowCommand', function (): void {
             'app' => 'docs',
         ]);
 
+        $expectedBinding = implode(PHP_EOL, [
+            'binding:',
+            '  app: docs',
+            '  enabled: true',
+            '  internal_host: analytics.orbit',
+            '  dashboard_url: https://analytics.orbit',
+            '  public_hosts:',
+            '    - analytics.docs.test',
+            '  tracking_endpoints:',
+            '    - host: analytics.docs.test',
+            '      script_base_url: https://analytics.docs.test',
+            '      event_endpoint: https://analytics.docs.test/api/event',
+        ]);
+
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('binding:')
-            ->and($output)
-            ->toContain('  app: docs')
-            ->and($output)
-            ->toContain('  enabled: true')
-            ->and($output)
-            ->toContain('  internal_host: analytics.orbit')
-            ->and($output)
-            ->toContain('  dashboard_url: https://analytics.orbit')
-            ->and($output)
-            ->toContain('  public_hosts:')
-            ->and($output)
-            ->toContain('    - analytics.docs.test')
+            ->toContain($expectedBinding)
             ->and($output)
             ->not->toContain('{');
     });

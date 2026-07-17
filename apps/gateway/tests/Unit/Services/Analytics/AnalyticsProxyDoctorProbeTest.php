@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
+use App\Models\App;
+use App\Models\AppAnalyticsBinding;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
 use App\Services\Analytics\AnalyticsProxyDoctorProbe;
+use App\Services\Analytics\AnalyticsPublicProxyDoctorProbe;
 use App\Services\Analytics\AnalyticsRouteRegistrar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -90,6 +93,50 @@ it('reports and removes an orphaned private analytics route', function (): void 
         ->toBeFalse();
 });
 
+it('reports a missing public analytics route for an enabled app binding', function (): void {
+    analyticsProxyRouter();
+    analyticsProxyBackend();
+    [$ingress, $app, $binding] = analyticsPublicBinding();
+    app(AnalyticsRouteRegistrar::class)->syncPublicHosts($binding);
+    ProxyRoute::query()->where('domain', 'analytics.docs.test')->delete();
+
+    $drift = app(AnalyticsPublicProxyDoctorProbe::class)->drift($ingress, 'docs');
+
+    expect($drift)
+        ->toHaveCount(1)
+        ->and($drift[0]->key)
+        ->toBe(AnalyticsPublicProxyDoctorProbe::PUBLIC_ROUTE_KEY)
+        ->and($drift[0]->kind)
+        ->toBe(DriftKind::Missing)
+        ->and($drift[0]->detail['binding_id'] ?? null)
+        ->toBe($binding->id)
+        ->and($drift[0]->detail['domain'] ?? null)
+        ->toBe('analytics.docs.test');
+});
+
+it('restores public analytics route intent from the enabled app binding', function (): void {
+    analyticsProxyRouter();
+    analyticsProxyBackend();
+    [$ingress, $app, $binding] = analyticsPublicBinding();
+    $entry = new DriftEntry(
+        family: 'proxy',
+        key: AnalyticsPublicProxyDoctorProbe::PUBLIC_ROUTE_KEY,
+        kind: DriftKind::Missing,
+        summary: 'Missing public analytics route.',
+        detail: [
+            'binding_id' => $binding->id,
+            'domain' => 'analytics.docs.test',
+        ],
+    );
+
+    $result = app(AnalyticsPublicProxyDoctorProbe::class)->restore($ingress, $entry);
+
+    expect($result['status'] ?? null)
+        ->toBe('completed')
+        ->and(ProxyRoute::query()->where('domain', 'analytics.docs.test')->exists())
+        ->toBeTrue();
+});
+
 function analyticsProxyRouter(): Node
 {
     $router = Node::factory()->create([
@@ -118,4 +165,39 @@ function analyticsProxyBackend(): Node
     ]);
 
     return $backend;
+}
+
+/**
+ * @return array{Node, App, AppAnalyticsBinding}
+ */
+function analyticsPublicBinding(): array
+{
+    $ingress = Node::factory()
+        ->ingress()
+        ->create([
+            'name' => 'edge-1',
+            'wireguard_address' => '10.6.0.10',
+        ]);
+    $appNode = Node::factory()
+        ->appProd()
+        ->create([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.21',
+        ]);
+    $appNode
+        ->roleAssignments()
+        ->where('role', 'app-prod')
+        ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'domain' => 'docs.test',
+        'node_id' => $appNode->id,
+    ]);
+    $binding = AppAnalyticsBinding::query()->create([
+        'app_id' => $app->id,
+        'enabled' => true,
+        'public_hosts' => ['analytics.docs.test'],
+    ]);
+
+    return [$ingress, $app, $binding];
 }

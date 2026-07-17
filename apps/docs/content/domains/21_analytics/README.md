@@ -21,6 +21,11 @@ These rules define the analytics command domain and its role boundary.
 - Public app analytics hosts, such as `https://analytics.example.com`, are
   tracking-only routes created from app analytics bindings. They proxy Plausible
   script and event paths only and must not expose the dashboard publicly.
+- Enabling app analytics requires the app to have a configured public domain.
+  Orbit defaults the tracking host to `analytics.<app-domain>`, enacts the
+  router and ingress artifacts before reporting success, and returns the
+  app-specific script base URL and event endpoint operators use to adapt the
+  Plausible-generated snippet.
 - Plausible version, environment, lifecycle, logs, and endpoint state belong to
   the process row generated for the analytics role. There is no
   `--plausible-version` option; commands use the generic `--version` field.
@@ -85,7 +90,9 @@ The analytics family provides the following command.
 
 V1 does not inject tracking scripts, provision Plausible sites, expose public
 dashboards, create Plausible API tokens for each app, provide analytics data
-export, or implement a separate analytics doctor family.
+export, or implement a separate analytics doctor family. Plausible site
+creation remains manual; Orbit returns proxy endpoint guidance after binding
+convergence.
 
 ## Related
 
