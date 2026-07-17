@@ -35,6 +35,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Return `analytics.binding_missing` when the app has no analytics binding.
 - Return the stored binding state without probing route or Plausible runtime
   reality.
+- Derive one tracking endpoint object per stored public host.
 
 ### Scope Boundaries
 

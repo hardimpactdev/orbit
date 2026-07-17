@@ -136,8 +136,6 @@ class AnalyticsRouteRegistrar
         $hosts = $this->publicHosts($binding);
 
         if (! $binding->enabled || $hosts === []) {
-            $this->deletePublicRoutes($app);
-
             return;
         }
 
@@ -145,12 +143,93 @@ class AnalyticsRouteRegistrar
         $router = $this->ingressResolver->router();
 
         DB::transaction(function () use ($app, $hosts, $ingress, $router): void {
-            $this->deleteStalePublicRoutes($app, $hosts);
-
             foreach ($hosts as $host) {
                 $this->syncPublicHost($app, $ingress, $router, $host);
             }
         });
+    }
+
+    /**
+     * @param  list<string>  $hosts
+     */
+    public function assertPublicHostsAvailable(App $app, array $hosts): void
+    {
+        foreach ($hosts as $host) {
+            $existingRoute = ProxyRoute::query()
+                ->where('domain', $host)
+                ->first();
+
+            if (
+                $existingRoute instanceof ProxyRoute
+                && ($existingRoute->owner_type !== 'app-analytics'
+                || $existingRoute->app_id !== $app->id)
+            ) {
+                throw new RuntimeException("Analytics public host '{$host}' conflicts with an existing proxy route.");
+            }
+        }
+    }
+
+    /**
+     * @param  list<string>  $desiredHosts
+     */
+    public function removeObsoletePublicHosts(App $app, array $desiredHosts): void
+    {
+        $routes = ProxyRoute::all()
+            ->filter(
+                fn (ProxyRoute $route): bool => (
+                    $route->app_id === $app->id
+                    && $route->owner_type === 'app-analytics'
+                    && ($desiredHosts === [] || ! in_array($route->domain, $desiredHosts, strict: true))
+                ),
+            )
+            ->sortBy('domain');
+
+        foreach ($routes as $route) {
+            /** @var ProxyRoute $route */
+            $route->loadMissing('node');
+
+            if (! $route->node instanceof Node) {
+                throw new RuntimeException("Analytics public route '{$route->domain}' has no serving ingress node.");
+            }
+
+            $ingress = $route->node;
+            $domain = $route->domain;
+            $router = $this->routerNodeForPublicRoute($route);
+            $this->proxyRouteFixer->removeExtra($ingress, $domain);
+            $this->proxyRouteFixer->removeExtra($router, $domain);
+            $route->delete();
+        }
+    }
+
+    public function convergePublicHosts(AppAnalyticsBinding $binding): void
+    {
+        foreach ($this->publicRouteIntents($binding) as $intent) {
+            $route = ProxyRoute::query()->where('domain', $intent->domain)->first();
+
+            if (! $route instanceof ProxyRoute) {
+                throw new RuntimeException(
+                    "Analytics public route '{$intent->domain}' is missing from gateway intent.",
+                );
+            }
+
+            $routerResult = $this->proxyRouteFixer->fix($route, new DriftEntry(
+                family: 'proxy',
+                key: 'proxy.router_route_missing',
+                kind: DriftKind::Missing,
+                summary: "The private analytics router route for {$route->domain} must be enacted.",
+                detail: ['domain' => $route->domain],
+            ));
+            $this->requireCompleted($routerResult, $route, 'router');
+
+            $ingressResult = $this->proxyRouteFixer->fix($route->refresh(), new DriftEntry(
+                family: 'proxy',
+                key: 'proxy.public_route_missing',
+                kind: DriftKind::Missing,
+                summary: "The public analytics ingress route for {$route->domain} must be enacted.",
+                detail: ['domain' => $route->domain],
+            ));
+            $this->requireCompleted($ingressResult, $route, 'ingress');
+        }
     }
 
     /**
@@ -200,26 +279,6 @@ class AnalyticsRouteRegistrar
         return $hosts;
     }
 
-    private function deletePublicRoutes(App $app): void
-    {
-        ProxyRoute::query()
-            ->where('app_id', $app->id)
-            ->where('owner_type', 'app-analytics')
-            ->delete();
-    }
-
-    /**
-     * @param  list<string>  $hosts
-     */
-    private function deleteStalePublicRoutes(App $app, array $hosts): void
-    {
-        ProxyRoute::query()
-            ->where('app_id', $app->id)
-            ->where('owner_type', 'app-analytics')
-            ->whereNotIn('domain', $hosts)
-            ->delete();
-    }
-
     private function syncPublicHost(App $app, Node $ingress, Node $router, string $host): void
     {
         $existingRoute = ProxyRoute::query()
@@ -248,6 +307,32 @@ class AnalyticsRouteRegistrar
                 'source_hash' => $intent->source_hash,
             ],
         );
+    }
+
+    private function routerNodeForPublicRoute(ProxyRoute $route): Node
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $artifact = is_array($config['router_artifact'] ?? null) ? $config['router_artifact'] : [];
+        $nodeId = $artifact['node_id'] ?? null;
+        $router = is_int($nodeId) ? Node::query()->find($nodeId) : null;
+
+        if (! $router instanceof Node) {
+            throw new RuntimeException("Analytics public route '{$route->domain}' has no serving router node.");
+        }
+
+        return $router;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $result
+     */
+    private function requireCompleted(?array $result, ProxyRoute $route, string $placement): void
+    {
+        if (($result['status'] ?? null) !== 'completed') {
+            throw new RuntimeException(
+                "Analytics public route '{$route->domain}' could not be enacted on the {$placement} node.",
+            );
+        }
     }
 
     private function publicRouteIntent(App $app, Node $ingress, Node $router, string $host): ProxyRoute

@@ -19,7 +19,8 @@ orbit app:analytics show [app] [--json]
 
 `app:analytics show` reads the app analytics binding and reports whether it is
 enabled, the private dashboard host, public tracking hosts, and the tracking
-paths public routes serve.
+paths public routes serve. It also reports the script base URL and event
+endpoint for each public host.
 
 This is a gateway database read. It does not probe Plausible CE, inspect app
 source, or check whether the app has installed the Plausible script.

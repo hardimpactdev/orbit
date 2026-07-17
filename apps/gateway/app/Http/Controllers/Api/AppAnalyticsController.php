@@ -6,13 +6,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Exceptions\AnalyticsOperationFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
 use App\Models\AppAnalyticsBinding;
 use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Analytics\AppAnalyticsBindingService;
-use DomainException;
+use App\Services\Apps\AppSelectorResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,10 @@ use RuntimeException;
 
 final class AppAnalyticsController implements Loggable
 {
+    public function __construct(
+        private readonly AppSelectorResolver $appSelectorResolver,
+    ) {}
+
     private ?App $activitySubject = null;
 
     private ?string $activityTargetName = null;
@@ -68,6 +73,13 @@ final class AppAnalyticsController implements Loggable
 
         try {
             $binding = $service->enable($targetApp, $publicHosts);
+        } catch (AnalyticsOperationFailed $exception) {
+            return $this->error(
+                code: $exception->errorCode(),
+                message: $exception->getMessage(),
+                meta: ['app' => $targetApp->name],
+                status: 422,
+            );
         } catch (InvalidArgumentException $exception) {
             return $this->error(
                 code: 'validation_failed',
@@ -75,7 +87,7 @@ final class AppAnalyticsController implements Loggable
                 meta: ['field' => 'public_hosts'],
                 status: 422,
             );
-        } catch (DomainException|RuntimeException $exception) {
+        } catch (RuntimeException $exception) {
             return $this->error(
                 code: 'analytics.prerequisite_failed',
                 message: $exception->getMessage(),
@@ -117,6 +129,13 @@ final class AppAnalyticsController implements Loggable
 
         try {
             $binding = $service->disable($targetApp);
+        } catch (AnalyticsOperationFailed $exception) {
+            return $this->error(
+                code: $exception->errorCode(),
+                message: $exception->getMessage(),
+                meta: ['app' => $targetApp->name],
+                status: 422,
+            );
         } catch (RuntimeException $exception) {
             return $this->error(
                 code: 'analytics.binding_missing',
@@ -182,19 +201,7 @@ final class AppAnalyticsController implements Loggable
 
     private function resolveApp(string $selector): ?App
     {
-        return App::query()
-            ->with('node')
-            ->get()
-            ->filter(
-                fn (App $app): bool => (
-                    $app->name === $selector
-                    || $app->domain === $selector
-                    || $app->url() === "https://{$selector}"
-                    || $app->url() === $selector
-                ),
-            )
-            ->values()
-            ->first();
+        return $this->appSelectorResolver->resolve($selector)?->app;
     }
 
     /**
@@ -205,6 +212,7 @@ final class AppAnalyticsController implements Loggable
      *     dashboard_url: string,
      *     public_hosts: list<string>,
      *     tracking_paths: list<string>,
+     *     tracking_endpoints: list<array{host: string, script_base_url: string, event_endpoint: string}>,
      * }
      */
     private function bindingPayload(AppAnalyticsBinding $binding): array
@@ -218,6 +226,14 @@ final class AppAnalyticsController implements Loggable
             'dashboard_url' => 'https://'.AnalyticsRouteRegistrar::ServiceDomain,
             'public_hosts' => $this->stringList($binding->public_hosts),
             'tracking_paths' => AnalyticsRouteRegistrar::TrackingPaths,
+            'tracking_endpoints' => array_map(
+                static fn (string $host): array => [
+                    'host' => $host,
+                    'script_base_url' => "https://{$host}",
+                    'event_endpoint' => "https://{$host}/api/event",
+                ],
+                $this->stringList($binding->public_hosts),
+            ),
         ];
     }
 

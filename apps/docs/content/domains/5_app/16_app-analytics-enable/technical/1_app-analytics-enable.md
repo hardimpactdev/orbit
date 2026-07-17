@@ -10,6 +10,7 @@
 - The CLI caller can reach the Orbit gateway.
 - The authenticated peer holds `app:write` on the app's owning node.
 - The target app exists in the gateway registry.
+- The target app has a configured public domain.
 - The singleton analytics role is active and its router-owned
   `analytics.orbit` service route exists.
 
@@ -26,7 +27,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record by name or hostname. Name match wins. |
-| `host` | `--host` | Optional. | Never. | `analytics.<app-domain>` when the app has a hostname and no hosts are supplied; otherwise `[]`. | Repeatable. Plain hostnames only. Duplicates and empty values are discarded. |
+| `host` | `--host` | Optional. | Never. | `analytics.<app-domain>`. | Repeatable. Valid plain hostnames only. Duplicates and empty values are discarded. An explicit host does not bypass the app-domain prerequisite. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
@@ -49,11 +50,19 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Set `enabled=true`.
 - Store public tracking hosts. When the request omits hosts and the app has a
   hostname, store `analytics.<app-domain>`.
+- Reject the operation before creating or updating binding state when the app
+  has no configured public domain, including when explicit hosts were supplied.
 - Require the private `analytics.orbit` service route created by analytics role
   deployment. App binding enable must not create or own that route.
-- Register one public `app-analytics` route for each public host. Public routes
-  must proxy only Plausible script and event paths and must preserve forwarding
-  identity for event attribution.
+- Register one public `app-analytics` route for each public host, apply its
+  router artifact before its ingress artifact, and report success only after
+  both Caddy reloads complete. Public routes must proxy only Plausible script
+  and event paths and must preserve forwarding identity for event attribution.
+- When a re-enable replaces hosts, remove obsolete ingress and router artifacts
+  before deleting their route rows. A cleanup failure leaves the previous
+  binding unchanged.
+- Return one tracking endpoint object per public host with the public script
+  base URL and `/api/event` endpoint needed to adapt Plausible's snippet.
 - Return `analytics.prerequisite_failed` when the fleet has no active router,
   active analytics backend, or required ingress placement.
 
@@ -86,6 +95,7 @@ The request body is `{"public_hosts": ["<host>", ...]}`. The array is optional.
 | `dashboard_url` | string | Private dashboard URL, always `https://analytics.orbit`. |
 | `public_hosts` | array | Public tracking hostnames bound to this app. |
 | `tracking_paths` | array | Plausible script and event-ingest paths served by public routes. |
+| `tracking_endpoints` | array | Per-host objects containing `host`, `script_base_url`, and `event_endpoint`. |
 
 ## Failure Semantics
 
@@ -94,11 +104,14 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | App not found | No app record matches `app`. | `error.code=app.not_found` |
+| Public domain required | The app has no configured public domain. | `error.code=analytics.domain_required` |
 | Analytics prerequisite failed | Required router, ingress, or analytics backend is missing. | `error.code=analytics.prerequisite_failed` |
+| Route cleanup failed | Obsolete ingress or router artifacts cannot be removed before a host replacement. The previous binding remains unchanged. | `error.code=analytics.route_cleanup_failed` |
+| Route enactment failed | Router or ingress route application/reload fails. Durable binding and route intent remain available for doctor repair. | `error.code=analytics.route_enactment_failed` |
 
 ## Doctor Relationship
 
-`app:analytics enable` writes app-owned binding intent and syncs only public
+`app:analytics enable` writes app-owned binding intent and converges only public
 app analytics routes.
 [`doctor --family=app`](../../app-doctor.md) owns app binding drift and
 [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md) owns route drift.
@@ -119,6 +132,6 @@ enable attempt.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/AppAnalyticsControllerTest.php` | Enable binding creation, default host derivation, public host forwarding, prerequisite failure, authorization check, and `app.not_found` path. |
-| `apps/gateway/tests/Unit/Services/Analytics/AppAnalyticsBindingServiceTest.php` | Service-level binding creation vs update, public host normalization, and disabled-to-enabled transitions. |
-| `apps/cli/tests/Feature/Commands/App/AppAnalyticsEnableCommandTest.php` | CLI input validation, typed gateway request payload, human output, and JSON passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/AppAnalyticsControllerTest.php` | Enable binding creation, default host derivation, domain-required rejection, endpoint payload, prerequisite failure, enactment failure, authorization check, and `app.not_found` path. |
+| `apps/gateway/tests/Unit/Services/Analytics/AppAnalyticsBindingServiceTest.php` | Domain prerequisite, hostname validation, lifecycle ordering, binding creation vs update, and cleanup failure rollback. |
+| `apps/cli/tests/Feature/Commands/App/AppAnalyticsEnableCommandTest.php` | CLI input validation, typed gateway request payload, progress tree, endpoint guidance, and JSON passthrough. |

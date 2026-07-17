@@ -4,12 +4,18 @@ declare(strict_types=1);
 
 namespace App\Commands\App;
 
+use App\Commands\App\Concerns\RendersAppAnalyticsBinding;
+use App\Commands\Concerns\WithStepTree;
 use App\Exceptions\GatewayApiException;
+use RuntimeException;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputOption;
 
 final class AppAnalyticsDisableCommand extends AppGatewayCommand
 {
+    use RendersAppAnalyticsBinding;
+    use WithStepTree;
+
     #[\Override]
     protected $name = 'app:analytics disable';
 
@@ -33,86 +39,50 @@ final class AppAnalyticsDisableCommand extends AppGatewayCommand
             return $this->failValidation('app', 'App is required.');
         }
 
-        try {
-            $response = $this->gatewayPost($this->apiAppPath($selector, '/analytics/disable'));
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
         if ($this->wantsJson()) {
+            try {
+                $response = $this->disableAnalytics($selector);
+            } catch (GatewayApiException $exception) {
+                return $this->renderGatewayFailure($exception);
+            }
+
             return $this->renderSuccess($response);
         }
 
-        $binding = $this->bindingData($response);
+        $response = [];
+        $outcome = $this->runStepOperation(
+            'Disabling App Analytics',
+            [
+                ['label' => 'Resolve app analytics binding'],
+                ['label' => 'Remove ingress tracking routes'],
+                ['label' => 'Remove router tracking routes'],
+                ['label' => 'Disable analytics binding'],
+            ],
+            work: function () use ($selector, &$response): array {
+                try {
+                    return $response = $this->disableAnalytics($selector);
+                } catch (GatewayApiException $exception) {
+                    throw new RuntimeException(
+                        $exception->gatewayErrorMessage() ?? $exception->getMessage(),
+                        previous: $exception,
+                    );
+                }
+            },
+            doneFooter: "Analytics disabled for app '{$selector}'",
+        );
 
-        $this->line('binding:');
-        $this->line('  app: '.$this->stringField($binding, 'app'));
-        $this->line('  enabled: '.($this->boolField($binding, 'enabled') ? 'true' : 'false'));
-        $this->line('  internal_host: '.$this->stringField($binding, 'internal_host'));
-        $this->renderHostList($this->listField($binding, 'public_hosts'));
+        if (! $outcome->isCompleted()) {
+            return self::FAILURE;
+        }
+
+        $this->renderAnalyticsBinding($response);
 
         return self::SUCCESS;
     }
 
-    /**
-     * @param  array<string, mixed>  $response
-     * @return array<string, mixed>
-     */
-    private function bindingData(array $response): array
+    /** @return array<string, mixed> */
+    private function disableAnalytics(string $selector): array
     {
-        $binding = $this->successData($response)['binding'] ?? null;
-
-        return is_array($binding) ? $binding : [];
-    }
-
-    /**
-     * @param  array<string, mixed>  $binding
-     */
-    private function stringField(array $binding, string $key): string
-    {
-        $value = $binding[$key] ?? null;
-
-        return is_string($value) ? $value : '';
-    }
-
-    /**
-     * @param  array<string, mixed>  $binding
-     */
-    private function boolField(array $binding, string $key): bool
-    {
-        return (bool) ($binding[$key] ?? false);
-    }
-
-    /**
-     * @param  array<string, mixed>  $binding
-     * @return list<string>
-     */
-    private function listField(array $binding, string $key): array
-    {
-        $value = $binding[$key] ?? null;
-
-        if (! is_array($value)) {
-            return [];
-        }
-
-        return array_values(array_filter($value, is_string(...)));
-    }
-
-    /**
-     * @param  list<string>  $hosts
-     */
-    private function renderHostList(array $hosts): void
-    {
-        if ($hosts === []) {
-            $this->line('  public_hosts: []');
-
-            return;
-        }
-
-        $this->line('  public_hosts:');
-
-        foreach ($hosts as $host) {
-            $this->line('    - '.$host);
-        }
+        return $this->gatewayPost($this->apiAppPath($selector, '/analytics/disable'));
     }
 }

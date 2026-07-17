@@ -21,9 +21,14 @@ orbit app:analytics enable [app] [--host=<host>] [--json]
 ## Behavior Summary
 
 `app:analytics enable` creates or updates the app analytics binding, records the
-public tracking hosts, and syncs tracking-only proxy routes. Public analytics
+public tracking hosts, and enacts tracking-only proxy routes. Public analytics
 hosts forward Plausible script and event-ingest paths through
 `ingress -> router -> analytics backend pool`.
+
+The app must have a configured public domain. When `--host` is omitted, Orbit
+derives `analytics.<app-domain>`. Success includes a script base URL and event
+endpoint for each public host so operators can replace the private
+`analytics.orbit` hostname in the Plausible-generated snippet.
 
 The Plausible dashboard and admin UI remain private at `analytics.orbit`. V1
 does not inject tracking scripts, create Plausible sites, or manage Plausible
@@ -36,16 +41,19 @@ manually.
 - The CLI caller can reach the Orbit gateway.
 - The current node identity holds `app:write` on the app's owning node.
 - The app exists in the gateway registry.
+- The app has a configured public domain.
 - The singleton analytics role is deployed and its private `analytics.orbit`
   service route exists.
 - Public tracking hosts require an active ingress path for the app's production
   traffic.
+- Public DNS for each tracking host points at that ingress before public ACME
+  and browser traffic can succeed.
 
 ## Output Summary
 
-Human output describes the resulting binding with the private dashboard host and
-public tracking hosts. JSON output returns the binding payload in the standard
-machine-readable envelope.
+Human output describes the resulting binding, public tracking hosts, script
+base URLs, and event endpoints. JSON output returns the same binding payload in
+the standard machine-readable envelope.
 
 ## Examples
 

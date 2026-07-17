@@ -27,9 +27,12 @@ These terms describe the analytics role and the routes around it.
   route and its rendered artifacts.
 - **Public app analytics host:** App-owned public hostname such as
   `analytics.example.com` that proxies Plausible script and event-ingest paths
-  only.
+  only. The default is `analytics.<app-domain>`, so the app must have a
+  configured public domain before analytics can be enabled.
 - **App analytics binding:** App-owned state that records whether analytics is
-  enabled for an app and which public tracking hosts should exist.
+  enabled for an app and which public tracking hosts should exist. Enabling a
+  binding converges router and ingress artifacts before success; disabling or
+  replacing hosts removes obsolete artifacts before clearing their intent.
 
 ## Boundaries
 

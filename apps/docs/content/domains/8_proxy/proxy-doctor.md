@@ -100,6 +100,7 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.s3.public_route_missing` | An active seaweedfs tool row lists public hosts, but the ingress public S3 route for a host is absent or diverges from expected ingress route intent. |
 | `proxy.s3.router_route_orphaned` | The private `s3.orbit` service route row exists, but no active `s3` role assignment remains in the topology. Service routes exist only while a matching role is active. |
 | `proxy.analytics.router_route_missing` | The private `analytics.orbit` route is absent or differs from canonical route intent for the singleton active analytics assignment. |
+| `proxy.analytics.public_route_missing` | An enabled app analytics binding expects a public tracking route, but its route row is absent or differs from canonical app analytics intent. |
 | `proxy.analytics.router_route_orphaned` | The private `analytics.orbit` route row exists, but no active analytics role assignment remains. |
 | `proxy.tls_missing` | Gateway configuration expects Orbit-managed TLS material, but it is absent from node reality. |
 | `proxy.tls_mismatch` | Managed TLS material exists but does not match the expected route policy. |
@@ -129,6 +130,7 @@ only when that readback is clean.
 | `proxy.s3.public_route_missing` | Re-sync public S3 ingress routes from the owning seaweedfs tool row. |
 | `proxy.s3.router_route_orphaned` | Remove the orphaned `s3.orbit` service route row and its rendered artifacts. |
 | `proxy.analytics.router_route_missing` | Re-sync and enact the private `analytics.orbit` route and Orbit-managed TLS from gateway analytics intent. |
+| `proxy.analytics.public_route_missing` | Re-sync and enact the public ingress and router tracking routes from the owning app analytics binding. |
 | `proxy.analytics.router_route_orphaned` | Remove the orphaned `analytics.orbit` route row, rendered site, certificate, and key. |
 | `proxy.tls_missing` | Recreate Orbit-managed TLS material for the selected route when prerequisites are available. |
 | `proxy.tls_mismatch` | Replace or relink Orbit-managed TLS material to match gateway configuration. Repair must converge to gateway-issued route leaf certificates when the node serves Caddy-local or intermediate-CA-issued material outside Orbit policy. |

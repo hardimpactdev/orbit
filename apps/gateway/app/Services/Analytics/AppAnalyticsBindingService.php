@@ -4,17 +4,18 @@ declare(strict_types=1);
 
 namespace App\Services\Analytics;
 
+use App\Exceptions\AnalyticsRouteCleanupFailed;
+use App\Exceptions\AnalyticsRouteEnactmentFailed;
 use App\Models\App;
 use App\Models\AppAnalyticsBinding;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use InvalidArgumentException;
 use RuntimeException;
 
 final readonly class AppAnalyticsBindingService
 {
     public function __construct(
         private AnalyticsRouteRegistrar $routes,
+        private AnalyticsPublicHostNormalizer $publicHostNormalizer,
     ) {}
 
     /**
@@ -22,13 +23,22 @@ final readonly class AppAnalyticsBindingService
      */
     public function enable(App $app, array $publicHosts): AppAnalyticsBinding
     {
-        return DB::transaction(function () use ($app, $publicHosts): AppAnalyticsBinding {
-            $this->routes->requireServiceRoute();
+        $hosts = $this->publicHostNormalizer->normalize($app, $publicHosts);
+        $this->routes->requireServiceRoute();
+        $this->routes->assertPublicHostsAvailable($app, $hosts);
 
+        try {
+            $this->routes->removeObsoletePublicHosts($app, $hosts);
+        } catch (RuntimeException $exception) {
+            throw new AnalyticsRouteCleanupFailed($exception->getMessage(), previous: $exception);
+        }
+
+        /** @var AppAnalyticsBinding $binding */
+        $binding = DB::transaction(function () use ($app, $hosts): AppAnalyticsBinding {
             $binding = $this->existingBinding($app);
             $attributes = [
                 'enabled' => true,
-                'public_hosts' => $this->normalizePublicHosts($app, $publicHosts),
+                'public_hosts' => $hosts,
             ];
 
             if ($binding instanceof AppAnalyticsBinding) {
@@ -46,10 +56,26 @@ final readonly class AppAnalyticsBindingService
 
             return $binding->refresh();
         });
+
+        try {
+            $this->routes->convergePublicHosts($binding);
+        } catch (RuntimeException $exception) {
+            throw new AnalyticsRouteEnactmentFailed($exception->getMessage(), previous: $exception);
+        }
+
+        return $binding->refresh();
     }
 
     public function disable(App $app): AppAnalyticsBinding
     {
+        $this->binding($app);
+
+        try {
+            $this->routes->removeObsoletePublicHosts($app, []);
+        } catch (RuntimeException $exception) {
+            throw new AnalyticsRouteCleanupFailed($exception->getMessage(), previous: $exception);
+        }
+
         return DB::transaction(function () use ($app): AppAnalyticsBinding {
             $binding = $this->binding($app);
 
@@ -58,9 +84,6 @@ final readonly class AppAnalyticsBindingService
                 'public_hosts' => [],
             ]);
             $binding->save();
-
-            $binding = $binding->refresh();
-            $this->routes->syncPublicHosts($binding);
 
             return $binding->refresh();
         });
@@ -89,46 +112,5 @@ final readonly class AppAnalyticsBindingService
         }
 
         return $binding;
-    }
-
-    /**
-     * @param  array<int, mixed>  $publicHosts
-     * @return list<string>
-     */
-    private function normalizePublicHosts(App $app, array $publicHosts): array
-    {
-        $hosts = [];
-
-        foreach ($publicHosts as $publicHost) {
-            if (! is_string($publicHost)) {
-                throw new InvalidArgumentException('Analytics public hosts must be strings.');
-            }
-
-            $host = Str::lower(trim($publicHost));
-
-            if ($host === '') {
-                continue;
-            }
-
-            if (str_contains($host, '://')) {
-                throw new InvalidArgumentException('Analytics public hosts must be hostnames, not URLs.');
-            }
-
-            if (! in_array($host, $hosts, true)) {
-                $hosts[] = $host;
-            }
-        }
-
-        if ($hosts !== []) {
-            return $hosts;
-        }
-
-        $domain = is_string($app->domain) ? trim($app->domain) : '';
-
-        if ($domain === '') {
-            return [];
-        }
-
-        return ["analytics.{$domain}"];
     }
 }

@@ -15,6 +15,11 @@ describe('AppAnalyticsShowCommand', function (): void {
                 'dashboard_url' => 'https://analytics.orbit',
                 'public_hosts' => ['analytics.docs.test'],
                 'tracking_paths' => ['/js/*', '/api/event'],
+                'tracking_endpoints' => [[
+                    'host' => 'analytics.docs.test',
+                    'script_base_url' => 'https://analytics.docs.test',
+                    'event_endpoint' => 'https://analytics.docs.test/api/event',
+                ]],
             ],
         ]));
 
@@ -50,6 +55,11 @@ describe('AppAnalyticsShowCommand', function (): void {
                 'dashboard_url' => 'https://analytics.orbit',
                 'public_hosts' => ['analytics.docs.test'],
                 'tracking_paths' => ['/js/*', '/api/event'],
+                'tracking_endpoints' => [[
+                    'host' => 'analytics.docs.test',
+                    'script_base_url' => 'https://analytics.docs.test',
+                    'event_endpoint' => 'https://analytics.docs.test/api/event',
+                ]],
             ],
         ]));
 
@@ -73,6 +83,14 @@ describe('AppAnalyticsShowCommand', function (): void {
             ->toContain('  public_hosts:')
             ->and($output)
             ->toContain('    - analytics.docs.test')
+            ->and($output)
+            ->toContain('  tracking_endpoints:')
+            ->and($output)
+            ->toContain('    - host: analytics.docs.test')
+            ->and($output)
+            ->toContain('    script_base_url: https://analytics.docs.test')
+            ->and($output)
+            ->toContain('    event_endpoint: https://analytics.docs.test/api/event')
             ->and($output)
             ->not->toContain('{');
     });

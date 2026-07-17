@@ -17,9 +17,10 @@ orbit app:analytics disable [app] [--json]
 
 ## Behavior Summary
 
-`app:analytics disable` marks the app analytics binding disabled and removes
-active public tracking host route intent. The binding record remains so a later
-enable can reuse the same app-level state.
+`app:analytics disable` removes active public tracking host artifacts from
+ingress and router, removes their route intent, and then marks the app analytics
+binding disabled. A cleanup failure leaves the binding enabled for repair. The
+binding record remains so a later enable can reuse the same app-level state.
 
 The command does not remove Plausible sites, delete analytics data, stop the
 fleet analytics service, or remove the private `analytics.orbit` endpoint.
