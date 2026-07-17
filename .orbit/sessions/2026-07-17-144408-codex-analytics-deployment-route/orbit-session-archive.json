@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-17T12:44:08+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-analytics-deployment-route/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-17-144408-codex-analytics-deployment-route",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "3e282235c42d5bb70b12c88f19c9740340e1c671b61b2a64b68d81f017c57228",
+        "loop.md": "b07f6166b2373ddbc1bca60ab801b1c4d0f36708227f834519b6b73f8fa21625"
+    },
+    "branch": "codex/analytics-deployment-route",
+    "candidate_commit": "4dc3974db001fc44ffd9d82e3590ec67c46692fc",
+    "accepted_feature_tip": "4dc3974db001fc44ffd9d82e3590ec67c46692fc",
+    "accepted_main_tip": "b222087151acfb8cbd92c26dd44996efb1bf1afd",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

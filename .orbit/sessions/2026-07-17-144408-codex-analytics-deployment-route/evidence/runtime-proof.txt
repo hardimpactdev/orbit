@@ -1,0 +1,97 @@
+FEATURE TIP
+4dc3974db001fc44ffd9d82e3590ec67c46692fc
+
+FOCUSED AND BROAD PROOF
+- Analytics route/runtime/binding focused suite: 22 tests, 101 assertions, PASS.
+- Gateway suite at the exact feature tip: 4,920 tests, 28,591 assertions, PASS.
+- Sequential CLI suite: 2,293 tests, 9,568 assertions, PASS.
+- Docs lint, Mago format, and git diff check: PASS.
+- Full quality profiles 2026-07-17T11-56-57Z-4dc3974db001,
+  2026-07-17T12-04-33Z-4dc3974db001, and
+  2026-07-17T12-13-46Z-4dc3974db001 completed every non-CLI component.
+  Their parallel CLI lane was terminated externally (exit 143 twice; one
+  unchanged certificate-test child received signal 9 once). The same complete
+  CLI corpus passed sequentially with the counts above.
+
+INDEPENDENT REVIEW
+- Reviewer checkout: codex/analytics-deployment-route at
+  4dc3974db001fc44ffd9d82e3590ec67c46692fc against
+  b222087151acfb8cbd92c26dd44996efb1bf1afd.
+- Findings: none after the activation-order correction.
+- Blast radius: complete.
+- Human judgment: not required.
+- Verdict: PASS.
+
+RETAINED INCUS PROBE
+- Topology: dev-8910d1, operator_gateway_app-dev, provider incus, host beast.
+- Source-mounted checkout: 4dc3974db001fc44ffd9d82e3590ec67c46692fc.
+- Added node-owned PostgreSQL 16 and ClickHouse 24.12 processes on app-dev-1.
+- `node role:add app-dev-1 analytics --postgres-node=app-dev-1
+  --clickhouse-node=app-dev-1 --json` started PostgreSQL, ClickHouse, and
+  Plausible, then correctly kept the analytics assignment in error instead of
+  active when gateway certificate convergence could not run.
+- Harness boundary: the retained gateway HTTP container did not mount host
+  `/etc/orbit` or `/etc/caddy` and did not set `ORBIT_HOST_PATH_PREFIX`; the
+  production gateway stack owns all three. Therefore the retained topology
+  cannot enact any real gateway-managed certificate/Caddy artifact.
+- The topology was released with
+  `composer e2e:incus -- --stop --id=dev-8910d1 --json`; all three instances
+  were reaped.
+
+LIVE BASELINE BEFORE DEPLOYMENT
+- gateway: active router at WireGuard 10.6.0.2.
+- services1: active analytics role at WireGuard 10.6.0.14; Plausible responds
+  on http://10.6.0.14:8000 with HTTP 302.
+- `orbit proxy:list --json`: no analytics.orbit route row.
+- `curl https://analytics.orbit`: SSL hostname mismatch because the gateway
+  serves a certificate without analytics.orbit in its SAN.
+
+LIVE ACCEPTANCE AFTER DEPLOYMENT
+- Pre-merge acceptance used the already-released route convergence surface,
+  because release candidates must be reachable from origin/main while feature
+  acceptance must precede merge.
+- `orbit proxy:add analytics.orbit --node=gateway
+  --upstream=http://10.6.0.14:8000 --json --no-interaction` persisted the live
+  route intent.
+- `orbit doctor --family=proxy --restore --node=gateway --stream-json`
+  completed and reported `proxy.route_missing` restored for analytics.orbit.
+- The live leaf certificate has subject CN=analytics.orbit, issuer
+  CN=Orbit Root CA/O=Orbit, and SAN DNS:analytics.orbit.
+- The gateway root at `~/.config/orbit/ca/root.crt` verifies successfully and
+  `curl --cacert ~/.config/orbit/ca/root.crt https://analytics.orbit/` returns
+  HTTP/2 302 with Location: /register from Cowboy via Caddy.
+- The current Homebrew curl binary does not consume the macOS System keychain
+  and therefore still needs `--cacert`; the matching gateway root is installed
+  in the System keychain for browser/system clients.
+- Before the new candidate is deployed the route is intentionally generic
+  custom intent. Post-deployment analytics doctor must adopt the reviewed
+  router-owned analytics intent and finish healthy.
+
+LIVE CANDIDATE DEPLOYMENT
+- Landed main: 410ad96f9ebd1cf8177035d938fd5a26075f333b, pushed to
+  origin/main.
+- Candidate build: 20260717T123254Z-410ad96f9, version 0.1.190.
+- Gateway and scheduler image:
+  ghcr.io/hardimpactdev/orbit-gateway:0.1.190-candidate-20260717T123254Z-410ad96f9@sha256:4f2a79e62f4751f5adf3640571ed5f84c4032a2091049487662653479f2df69c
+- Both live Swarm services report that exact tag and digest.
+- `update:all` operation 683eabed-07f6-49de-a694-ffaf7f9464c6 updated the
+  gateway, scheduler, Swarm stack, and six workload nodes. The overall fleet
+  operation remained failed because beast's pre-existing local executor was
+  unreachable and services1's generic Agent-config install step called missing
+  `php`; neither failure changed the running analytics role or Plausible.
+
+POST-DEPLOYMENT ANALYTICS ACCEPTANCE
+- The deployed analytics doctor initially detected the deliberately generic
+  pre-merge route as divergent. `orbit doctor --node=gateway --family=proxy
+  --key=proxy.analytics.router_route_missing --restore --json` fixed exactly
+  one issue by re-syncing and enacting router-owned analytics intent.
+- The same targeted doctor verification then reported healthy with zero issues.
+- `orbit proxy:list --json` reports analytics.orbit with owner type `router`,
+  owner name `analytics.orbit`, target type `upstream`, target value
+  `analytics.orbit`, and Orbit-managed gateway-CA TLS.
+- services1 still reports its analytics role active with no last error;
+  PostgreSQL and ClickHouse role settings remain assigned.
+- The live leaf SAN is DNS:analytics.orbit. The gateway CA verifies the request,
+  and HTTPS returns HTTP/2 302 with Location: /register.
+- The post-deployment fleet-wide doctor reports the same 22 issues as the
+  pre-deployment baseline and no analytics route issue.
