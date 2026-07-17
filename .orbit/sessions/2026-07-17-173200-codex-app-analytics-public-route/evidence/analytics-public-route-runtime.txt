@@ -1,0 +1,87 @@
+Orbit app analytics public-route retained-topology proof
+
+Candidate
+- Current feature commit: 3943994d9 (rebased onto current main)
+- Current CLI normalization fix: 889dc1eec7cbd06ab83fbd2e000c34f8527b9668
+- Exact candidate after review fix: afa8320dd651c0822ed7d61a68d571587c234f7d
+- Runtime was exercised before the identity-only rebase at equivalent commits ba9c91ffce870dae6931654321e7ec493f37dfb3 and 9fab0358410deee3abbde1bce1691148e7593aca; source hashes below prove the enacted feature content is unchanged.
+- Runtime command SHA-256: 5fc390670a2b5b5b7dee143e8f033b02bf590715afb1d77e1ea7db4a7ac0009a
+- Runtime/local AnalyticsPublicHostNormalizer SHA-256: 6c3c19e700cb3dafaefd9e01062e57e3cc6238e231d8b89a0b3898ae37640429
+
+Venue
+- Topology id: dev-950d00
+- Topology kind: operator_gateway_app-prod_ingress
+- Provider: Incus on beast
+- Gateway: orbit-e2e-dev-950d00-gateway (http://10.6.0.2)
+- Operator: orbit-e2e-dev-950d00-operator
+- Router + ingress: orbit-e2e-dev-950d00-prod
+- Solo process: 1086 (project 4, analytics-route-proof)
+
+Configured fixture
+- Registry app: mealou-production
+- App instance: production
+- Analytics backend fixture: operator-1
+- Private dashboard route: https://analytics.orbit
+- The disposable fixture did not run a real Plausible process; this proof exercises Orbit's persisted intent, API/CLI contract, Caddy enactment, validation, and cleanup lifecycle.
+
+Domain prerequisite
+- With no configured app domain, `orbit app:analytics enable mealou-production --json` returned `analytics.domain_required`.
+- The database then contained zero analytics bindings and zero public analytics routes.
+- After configuring `mealou.app`, enable derived `analytics.mealou.app`.
+- An explicit public analytics host cannot bypass the configured-domain prerequisite; this is covered by the focused gateway regression suite.
+
+Enabled contract
+- Human enable completed every progress step successfully.
+- JSON enable/show returned:
+  internal_host=analytics.orbit
+  public_hosts=[analytics.mealou.app]
+  tracking_paths=[/js/*,/api/event]
+  script_base_url=https://analytics.mealou.app
+  event_endpoint=https://analytics.mealou.app/api/event
+- Persisted route intent:
+  owner_type=app-analytics
+  app=mealou-production
+  placement=ingress
+  target=https://analytics.orbit
+  tracking_paths=[/js/*,/api/event]
+
+Enacted Caddy route
+- Public file: /etc/caddy/sites/analytics.mealou.app.caddy
+- Private file: /etc/caddy/sites/analytics.orbit.caddy
+- Public route shape:
+  analytics.mealou.app {
+      @analytics_tracking path /js/* /api/event
+      reverse_proxy @analytics_tracking https://analytics.orbit
+      respond 404
+  }
+- `docker exec orbit-caddy caddy validate --config /etc/caddy/Caddyfile` returned `Valid configuration`.
+- The prepared topology co-locates router and ingress on the app-prod node; both route layers were enacted through that supported managed-Caddy surface.
+
+Disable and cleanup
+- Human disable completed every progress step successfully.
+- Final database state:
+  binding.enabled=false
+  binding.public_hosts=[]
+  public_route_exists=false
+  private_route.domain=analytics.orbit
+  private_route.owner_type=router
+- Final host state:
+  analytics.mealou.app artifact absent
+  analytics.orbit artifact present
+  Caddy configuration valid
+
+Network boundary
+- There was no public DNS record for analytics.mealou.app, so public ACME/TLS could not complete in this disposable topology. Orbit intentionally does not mutate DNS; public DNS and ACME reachability remain deployment prerequisites.
+
+Verification
+- Exact accepted candidate aggregate gate passed every component with CPU budget 1: profile 2026-07-17T15-15-44Z-afa8320dd651.
+- Post-rebase focused gateway diff suite: 25 passed, 108 assertions.
+- Post-review CLI analytics and compatibility suite: 25 passed, 75 assertions; enable/show now assert the complete nested binding frame.
+- Full CLI isolated at 9fab0358410d: 2,286 passed, 9,548 assertions.
+- Full core isolated at 9fab0358410d: 129 passed, 538 assertions.
+- Aggregate profile 2026-07-17T14-55-10Z-9fab0358410d passed every component except CLI/core processes terminated by SIGTERM 15 under parallel resource pressure; both affected lanes passed in isolation at the same commit.
+- Earlier aggregate profile 2026-07-17T14-14-20Z-ba9c91ffce87 passed completely before the CLI-only normalization follow-up.
+
+Verdict
+- ACCEPTED at the configuration, API/CLI, managed-Caddy enactment, validation, drift/cleanup, and retained-topology lifecycle level.
+- Public DNS/TLS and a real Plausible response were not claimed because those external prerequisites were intentionally absent from the fixture.

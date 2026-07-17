@@ -1,0 +1,27 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-17T15:32:01+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-app-analytics-public-route/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-17-173200-codex-app-analytics-public-route",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/analytics-public-route-runtime.txt",
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-17T152227Z-e83190eb00f5.json"
+    ],
+    "entry_digests": {
+        "evidence/analytics-public-route-runtime.txt": "fb2a11fb04bdf5c5b04ba9254f966bdd638f9c6f9326075cf851c8a36a165cfb",
+        "feedback.jsonl": "d0fb202c210fcefd9f4cb136f62a66d74a6013e6bf1a64a3eb4ebeaa3a6d2596",
+        "loop.md": "a09c2e9425d391a583c16df9ccf5dfb6c3e0471fd24ff77e1dc9be55b0910a44",
+        "quality-gates/quality-check-2026-07-17T152227Z-e83190eb00f5.json": "594cad1bf29c38fd8e3817d4cec1714e51c6b4f6c1cbaad36c30a063859dd1b3"
+    },
+    "branch": "codex/app-analytics-public-route",
+    "candidate_commit": "afa8320dd651c0822ed7d61a68d571587c234f7d",
+    "accepted_feature_tip": "afa8320dd651c0822ed7d61a68d571587c234f7d",
+    "accepted_main_tip": "327a9a6eb3d190d7333dc7283e5810a691029495",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
