@@ -28,7 +28,28 @@ describe('native multi-token command normalization', function (): void {
         expect(normalizeNativeMultiTokenCommandArgv(['orbit', 'node', 'role:add', 'app-1', 'app-dev', '--json']))
             ->toBe(['orbit', 'node role:add', 'app-1', 'app-dev', '--json'])
             ->and(normalizeNativeMultiTokenCommandArgv(['orbit', 'node', 'role:remove', 'app-1', 'database', '--json']))
-            ->toBe(['orbit', 'node role:remove', 'app-1', 'database', '--json']);
+            ->toBe(['orbit', 'node role:remove', 'app-1', 'database', '--json'])
+            ->and(normalizeNativeMultiTokenCommandArgv([
+                'orbit',
+                'app:analytics',
+                'enable',
+                'mealou-production',
+                '--json',
+            ]))
+            ->toBe(['orbit', 'app:analytics enable', 'mealou-production', '--json'])
+            ->and(normalizeNativeMultiTokenCommandArgv([
+                'orbit',
+                'app:analytics',
+                'disable',
+                'mealou-production',
+                '--json',
+            ]))
+            ->toBe(['orbit', 'app:analytics disable', 'mealou-production', '--json']);
+    });
+
+    it('normalizes native multi-token analytics reads before Laravel Zero handles argv', function (): void {
+        expect(normalizeNativeMultiTokenCommandArgv(['orbit', 'app:analytics', 'show', 'mealou-production', '--json']))
+            ->toBe(['orbit', 'app:analytics show', 'mealou-production', '--json']);
     });
 
     it('preserves leading options when normalizing native multi-token commands', function (): void {

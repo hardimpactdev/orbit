@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 const ORBIT_NATIVE_MULTI_TOKEN_COMMANDS = [
+    'app:analytics disable',
+    'app:analytics enable',
+    'app:analytics show',
     'node role:add',
     'node role:list',
     'node role:remove',
@@ -62,7 +65,7 @@ function normalizeNativeVersionCommandArgv(array $argv): array
     $rewritten = [$argv[0], 'version'];
 
     foreach (array_slice($argv, 1) as $index => $argument) {
-        if ($index + 1 === $versionOptionIndex) {
+        if (($index + 1) === $versionOptionIndex) {
             continue;
         }
 
@@ -190,7 +193,12 @@ function normalizeNativeToolInstallVersionArgv(array $argv): array
             continue;
         }
 
-        if ($insideToolInstall && $argument === '--version' && $index + 1 < $count && ! str_starts_with($argv[$index + 1], '-')) {
+        if (
+            $insideToolInstall
+            && $argument === '--version'
+            && ($index + 1) < $count
+            && ! str_starts_with($argv[$index + 1], '-')
+        ) {
             $rewritten[] = '--tool-version='.$argv[$index + 1];
             $index++;
 
@@ -262,7 +270,12 @@ function normalizeNativeProcessAddVersionArgv(array $argv): array
             continue;
         }
 
-        if ($insideProcessAdd && $argument === '--version' && $index + 1 < $count && ! str_starts_with($argv[$index + 1], '-')) {
+        if (
+            $insideProcessAdd
+            && $argument === '--version'
+            && ($index + 1) < $count
+            && ! str_starts_with($argv[$index + 1], '-')
+        ) {
             $rewritten[] = '--service-version='.$argv[$index + 1];
             $index++;
 
@@ -328,7 +341,12 @@ function normalizeNativeAnalyticsUpdateVersionArgv(array $argv): array
             continue;
         }
 
-        if ($insideAnalyticsUpdate && $argument === '--version' && $index + 1 < $count && ! str_starts_with($argv[$index + 1], '-')) {
+        if (
+            $insideAnalyticsUpdate
+            && $argument === '--version'
+            && ($index + 1) < $count
+            && ! str_starts_with($argv[$index + 1], '-')
+        ) {
             $rewritten[] = '--requested-version='.$argv[$index + 1];
             $index++;
 
