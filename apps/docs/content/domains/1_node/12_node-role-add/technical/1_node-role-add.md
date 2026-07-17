@@ -69,7 +69,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   `status=active`.
 - Websocket convergence resolves the selected release manifest's
   `orbit-websocket` image, pulls and aliases it on the target node, and verifies
-  that it is self-contained before applying the Reverb container.
+  that it is self-contained before applying the Reverb container. If the
+  manifest endpoint is unreachable, convergence preserves the existing local
+  alias inspection and source-checkout fallback.
 - App-development convergence runs as direct gateway-pushed command envelopes.
 - Active workload roles supply Agent intent. A roleless non-gateway operator
   may instead opt in through `managed`; platform and WireGuard eligibility

@@ -19,6 +19,7 @@ use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\WebSockets\WebSocketRuntimeContainerManager;
 use App\Services\WebSockets\WebSocketRuntimeContainerRenderer;
 use App\Services\WebSockets\WebSocketRuntimeSourceInstaller;
+use Illuminate\Http\Client\ConnectionException;
 use RuntimeException;
 
 class WebSocketRoleBaseline implements RoleBaseline
@@ -120,7 +121,11 @@ class WebSocketRoleBaseline implements RoleBaseline
 
     private function ensureManifestRuntimeImage(Node $node): void
     {
-        $image = $this->manifests->resolve()->roleImages['orbit-websocket'] ?? null;
+        try {
+            $image = $this->manifests->resolve()->roleImages['orbit-websocket'] ?? null;
+        } catch (ConnectionException) {
+            return;
+        }
 
         if (
             ! is_string($image)

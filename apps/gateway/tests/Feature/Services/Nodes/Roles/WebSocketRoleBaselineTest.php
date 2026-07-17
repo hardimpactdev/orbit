@@ -20,6 +20,7 @@ use App\Services\WebSockets\WebSocketRoleBaselineTiming;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\WebSockets\WebSocketRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -151,6 +152,24 @@ it('ensures the manifest websocket image before inspecting the runtime alias', f
             && json_decode((string) $request['input'], associative: true) === ['image' => $image]
         ),
     );
+});
+
+it('preserves source fallback when the release manifest is unreachable', function (): void {
+    $node = webSocketBaselineNode();
+    $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
+    app()->instance(
+        ReleaseManifestResolver::class,
+        new WebSocketRoleBaselineTestManifestResolver([], new ConnectionException('manifest unavailable')),
+    );
+
+    app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
+
+    $timingSteps = array_column(app(WebSocketRoleBaselineTiming::class)->records(), 'step');
+
+    expect($timingSteps)
+        ->toContain('source-install');
+    expect($timingSteps)
+        ->not->toContain('image-ensure');
 });
 
 it('rejects mutable manifest websocket images before target convergence', function (): void {
@@ -331,11 +350,16 @@ final class WebSocketRoleBaselineTestManifestResolver extends ReleaseManifestRes
      */
     public function __construct(
         private readonly array $roleImages,
+        private readonly ?ConnectionException $exception = null,
     ) {}
 
     #[\Override]
     public function resolve(): ReleaseManifest
     {
+        if ($this->exception instanceof ConnectionException) {
+            throw $this->exception;
+        }
+
         return ReleaseManifest::fromArray([
             'schema_version' => 1,
             'version' => '0.1.190',

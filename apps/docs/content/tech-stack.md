@@ -515,6 +515,8 @@ image build time. During role convergence, Orbit resolves the selected release
 manifest's `orbit-websocket` image, pulls that digest-pinned image on the target
 node, verifies its self-contained label, and only then updates the local
 `orbit-reverb:current` runtime alias. Mutable image references are rejected.
+If the manifest endpoint is unreachable, convergence continues with the
+existing local alias inspection and source-checkout fallback.
 Source sync to
 `/opt/orbit/websocket/current` and host Composer install remain a source-checkout
 fallback for non-self-contained local runtime images; packaged production
