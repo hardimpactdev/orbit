@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-17T14:32:06+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-macos-php-runtime-reconciliation/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-17-163205-fix-macos-php-runtime-reconciliation",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/profiles/2026-07-17T14-26-28Z-494378859072/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "b68c632967e66d8c28ba30cca354aaa697a4404a67dd93f73cf06be29bc253d9",
+        "loop.md": "5d2befd8a60c1455aabc093807c57461a946fd3e6081e4e0569f95be093bc09a",
+        "quality-gates/profiles/2026-07-17T14-26-28Z-494378859072/gateway_pest.junit.xml": "689a1ac0197beaa18dee68164bc1ef518243e887cadd79d04567f021222c6ea2"
+    },
+    "branch": "fix-macos-php-runtime-reconciliation",
+    "candidate_commit": "4943788590720f6e09a69019113ea46c9ddbbe92",
+    "accepted_feature_tip": "4943788590720f6e09a69019113ea46c9ddbbe92",
+    "accepted_main_tip": "5831ec8f4d35403002df7334cba5c360486cb79c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

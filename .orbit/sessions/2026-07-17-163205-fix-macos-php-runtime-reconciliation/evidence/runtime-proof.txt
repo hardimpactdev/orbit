@@ -1,0 +1,38 @@
+Orbit macOS PHP runtime reconciliation acceptance
+Date: 2026-07-17
+Live-tested candidate: 3e8e96115b84ff432cc79a51c629192763aa43a9
+Final rebased feature tip: 4943788590720f6e09a69019113ea46c9ddbbe92 (same feature changes, current origin/main integrated)
+Topology: host-macos
+Implementing host: NMBP (macos_26-5-1, WireGuard 10.6.0.3)
+Candidate gateway: temporary container on gateway WireGuard 10.6.0.2:18080 using the live gateway database
+
+Command:
+ORBIT_GATEWAY_URL=http://10.6.0.2:18080 apps/cli/orbit php:list --app=nckrtl.nmbp --live --json
+Result: exit 0; node=NMBP; available_images=[8.5,8.4,8.3]; image_inventory_status=confirmed; app PHP=8.5.
+
+Commands (run twice):
+ORBIT_GATEWAY_URL=http://10.6.0.2:18080 apps/cli/orbit php:use 8.5 --app=nckrtl.nmbp --json
+Result: both exit 0; image=ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm; previous=8.5; version=8.5; changed=false. Both runs emitted unrelated existing primary-instance warnings for unreachable node beast; neither reported a PHP image failure.
+
+Command:
+ORBIT_GATEWAY_URL=http://10.6.0.2:18080 apps/cli/orbit tool:show php --node=NMBP --live --json
+Result: exit 0; expected_state=installed; observed_state=installed; observed_version=8.5; managed=true.
+
+Command:
+ORBIT_GATEWAY_URL=http://10.6.0.2:18080 apps/cli/orbit doctor --node=NMBP --family=process --json
+Result: exit 1 with one deterministic restorable issue: process.runtime_unit_missing for mealou.nmbp, process frankenphp-mealou, runtime unit orbit-app-mealou-nmbp.
+
+Command:
+ORBIT_GATEWAY_URL=http://10.6.0.2:18080 apps/cli/orbit doctor --node=NMBP --family=process --restore --json
+Result: exit 0; fixed=1; restored managed FrankenPHP runtime container for mealou.nmbp; outcome=recreated.
+
+Command:
+ORBIT_GATEWAY_URL=http://10.6.0.2:18080 apps/cli/orbit doctor --node=NMBP --family=process --json
+Result: exit 0; healthy=true; issues=0; fixed=0; failed=0.
+
+Commands:
+docker inspect orbit-app-mealou-nmbp --format '{{.Config.Image}} {{.State.Status}}'
+docker inspect orbit-app-nckrtl-nmbp --format '{{.Config.Image}} {{.State.Status}}'
+Result: both containers use ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm and are running.
+
+No composer test:e2e* command was run. The temporary candidate gateway did not replace or publish the production gateway service.
