@@ -4055,6 +4055,8 @@ final readonly class DoctorReportRunner
             'schedule.lock_stuck',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',
+            'node.websocket.backend_cert_missing',
+            'node.websocket.bind_public_interface',
             'node.security.sshd_config',
             'node.security.sshd_listen',
             'node.security.public_ssh_deny',

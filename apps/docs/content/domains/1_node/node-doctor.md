@@ -216,6 +216,8 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.role_settings_invalid` | A role assignment's typed settings cannot be hydrated or contain unsupported role-local values. Node TLD is node-owned and never role-local. |
 | `node.role_convergence_failed` | A role assignment is left in `error` after synchronous convergence failed. |
 | `node.role_baseline_mismatch` | Active role-owned baseline artifacts do not match the role assignment's desired state. |
+| `node.websocket.backend_cert_missing` | An active `websocket` role node is missing its backend certificate or key, or the certificate does not match the expected backend name. |
+| `node.websocket.bind_public_interface` | The Reverb runtime for an active `websocket` role does not listen on the container-wide interface with its host port published only on the node's WireGuard address. |
 | `node.managed_agent_intent_invalid` | `managed=true` is stored on a gateway or another role-bearing node even though managed intent is reserved for roleless operators. |
 | `node.agent_expectation_stale` | Installed Agent expectation remains after the node has neither an active workload role nor explicit roleless managed intent. |
 | `node.access_grant_invalid` | A node access grant references a missing or non-active consuming or serving node. |
@@ -265,6 +267,8 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.access_permission_invalid` | Re-normalize the stored permission set on the grant when it can be reduced to a valid set without changing intent; otherwise leave the drift visible for explicit operator action through `node:permissions`. |
 | `node.role_convergence_failed` | Retry synchronous convergence for error role assignments on the selected node and leave an assignment in `error` again if the retry fails. |
 | `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments through the shared convergence path, including role-owned derived artifacts such as development DNS mappings. |
+| `node.websocket.backend_cert_missing` | Re-apply the active `websocket` role baseline, including backend certificate material and the Reverb runtime definition. |
+| `node.websocket.bind_public_interface` | Re-apply the active `websocket` role baseline so Reverb listens on the container-wide interface and Docker publishes port `8080` only on the node's WireGuard address. |
 | `node.managed_agent_intent_invalid` | Clear the invalid `managed` flag; workload role intent remains derived from active roles. |
 | `node.agent_expectation_stale` | Clear stale installed-Agent expectation metadata after Agent intent is absent. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway service artifacts required by Orbit API readiness. |

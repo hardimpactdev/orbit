@@ -1112,6 +1112,8 @@ final readonly class NodesProbe
             'node.access_grant_invalid',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',
+            'node.websocket.backend_cert_missing',
+            'node.websocket.bind_public_interface',
             'node.security.sshd_config',
             'node.security.sshd_listen',
             'node.security.public_ssh_deny',
@@ -1136,7 +1138,10 @@ final readonly class NodesProbe
             'node.gateway_runtime_unready' => $this->reconcileGatewayService($node),
             'node.access_grant_invalid' => $this->reconcileAccessGrants($node),
             'node.role_convergence_failed' => $this->reconcileRoleConvergenceFailures($node, $entry),
-            'node.role_baseline_mismatch' => $this->reconcileRoleBaselineMismatch($node, $entry),
+            'node.role_baseline_mismatch',
+            'node.websocket.backend_cert_missing',
+            'node.websocket.bind_public_interface',
+                => $this->reconcileRoleBaselineMismatch($node, $entry),
             default => throw new RuntimeException("NodesProbe cannot reconcile drift key '{$entry->key}'."),
         };
     }

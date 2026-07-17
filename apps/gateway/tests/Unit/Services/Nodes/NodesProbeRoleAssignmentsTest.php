@@ -524,6 +524,56 @@ it('only re-converges the role assignment that owns a baseline mismatch', functi
     expect($converger->convergedRoles)->toBe(['app-dev']);
 });
 
+it('re-converges the websocket role for restorable websocket node drift', function (string $key): void {
+    $node = Node::factory()->create([
+        'name' => 'realtime-1',
+        'tld' => 'realtime-1',
+        'status' => 'active',
+        'platform' => 'ubuntu_24-04',
+        'host' => '10.0.0.44',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'websocket',
+        'status' => NodeRoleStatus::Active->value,
+        'settings' => [],
+    ]);
+
+    $converger = new class extends NodeRoleBaselineConverger {
+        public array $convergedRoles = [];
+
+        public function __construct() {}
+
+        public function converge(Node $node, NodeRoleAssignment $assignment): void
+        {
+            $this->convergedRoles[] = $assignment->role;
+        }
+
+        public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
+        {
+            throw new RuntimeException('not used');
+        }
+    };
+
+    $this->app->instance(NodeRoleBaselineConverger::class, $converger);
+
+    $this->probe->reconcile($node, new DriftEntry(
+        family: 'nodes',
+        key: $key,
+        kind: DriftKind::Divergent,
+        summary: 'restore websocket role baseline',
+        detail: [
+            'role' => 'websocket',
+        ],
+    ));
+
+    expect($converger->convergedRoles)->toBe(['websocket']);
+})->with([
+    'backend certificate' => ['node.websocket.backend_cert_missing'],
+    'runtime bind' => ['node.websocket.bind_public_interface'],
+]);
+
 final class NodesProbeRoleAssignmentsRemoteShell implements RemoteShell
 {
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
