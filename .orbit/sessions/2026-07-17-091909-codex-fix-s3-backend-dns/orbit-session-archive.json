@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-17T07:19:09+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/.codex/worktrees/fix-s3-backend-dns/.orbit",
+    "archive_dir": "/Users/nckrtl/.codex/worktrees/fix-s3-backend-dns/.orbit/sessions/2026-07-17-091909-codex-fix-s3-backend-dns",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-07-17T071737Z-cb71c8f1f6ad.json"
+    ],
+    "entry_digests": {
+        "loop.md": "095fccc9e26d779b3696ac7ec9b75408976a1bf2502aacae985670e99a89700d",
+        "quality-gates/quality-check-2026-07-17T071737Z-cb71c8f1f6ad.json": "d655ca6d4cc6ff41e2acf3f84f11f54da7121a78f5ade3fdabc728ebf08dadb8"
+    },
+    "branch": "codex/fix-s3-backend-dns",
+    "candidate_commit": "10341ef02b3dcce4271714c74cd86a08e5ff4bd0",
+    "accepted_feature_tip": "10341ef02b3dcce4271714c74cd86a08e5ff4bd0",
+    "accepted_main_tip": "62150d794ce11128e129210d1f444db2c394973b",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
