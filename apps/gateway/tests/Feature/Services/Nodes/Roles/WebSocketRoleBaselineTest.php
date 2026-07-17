@@ -132,7 +132,7 @@ it('uses self-contained websocket images without installing source on the node',
 
 it('ensures the manifest websocket image before inspecting the runtime alias', function (): void {
     $node = webSocketBaselineNode();
-    $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
+    $assignment = webSocketBaselineAssignment($node, valkeyNode: webSocketBaselineValkeyNode());
     $this->webSocketBaselineSelfContainedImage = true;
     $image = 'ghcr.io/hardimpactdev/orbit-reverb:0.1.190-candidate-build@sha256:'.str_repeat('a', times: 64);
     $artifact = [
@@ -163,7 +163,7 @@ it('ensures the manifest websocket image before inspecting the runtime alias', f
 
 it('preserves source fallback when the release manifest is unreachable', function (): void {
     $node = webSocketBaselineNode();
-    $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
+    $assignment = webSocketBaselineAssignment($node, valkeyNode: webSocketBaselineValkeyNode());
     app()->instance(
         ReleaseManifestResolver::class,
         new WebSocketRoleBaselineTestManifestResolver([], new ConnectionException('manifest unavailable')),
@@ -181,7 +181,7 @@ it('preserves source fallback when the release manifest is unreachable', functio
 
 it('does not install legacy mutable manifest websocket images', function (): void {
     $node = webSocketBaselineNode();
-    $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
+    $assignment = webSocketBaselineAssignment($node, valkeyNode: webSocketBaselineValkeyNode());
     app()->instance(ReleaseManifestResolver::class, new WebSocketRoleBaselineTestManifestResolver([
         'orbit-websocket' => 'orbit-reverb:current',
     ]));
