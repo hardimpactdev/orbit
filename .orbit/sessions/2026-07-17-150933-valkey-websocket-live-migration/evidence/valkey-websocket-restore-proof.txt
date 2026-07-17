@@ -1,0 +1,21 @@
+Feature tip: 2aa8666e5bf1408f28fc33aa76d3cd511ffdf59a
+Base tip: a3d280b960858f7ba70cae84c6555fc927e02e60
+
+Diff-routed proof
+
+- RED: DoctorReportRunnerTest asserted the public-bind issue was restorable and failed because restorable was false.
+- RED: NodesProbeRoleAssignmentsTest exercised both WebSocket runtime issue keys and failed because the keys were unsupported.
+- RED after review: persistent WebSocket drift was incorrectly treated as resolved because restore did not re-probe the runtime.
+- GREEN after review: persistent drift remains visible, the report remains unhealthy, and the action is failed after verification: 1 test, 14 assertions.
+- GREEN: focused new regression tests passed.
+- GREEN: WebSocketDoctorProbe and WebSocketRoleBaseline coverage passed: 15 tests, 51 assertions.
+- GREEN: affected full test files passed: 118 tests, 819 assertions.
+- GREEN: gateway Mago format check passed.
+- GREEN: composer docs-lint passed with zero errors.
+- GREEN: git diff --check a3d280b960858f7ba70cae84c6555fc927e02e60..2aa8666e5bf1408f28fc33aa76d3cd511ffdf59a passed.
+- GREEN: ORBIT_QUALITY_CHECK_CPU_BUDGET=1 composer quality-check passed all ten apps/packages on the final-main feature tip.
+  Profile: .orbit/quality-gates/profiles/2026-07-17T12-51-05Z-2aa8666e5bf1
+
+Runtime boundary
+
+The committed change only makes the two already-detected WebSocket runtime issues restorable by the existing role-baseline convergence path. Candidate publication and live topology convergence require the source commit to be landed on origin/main, so live deployment proof is collected after landing as release-candidate evidence rather than used to accept this code delta.

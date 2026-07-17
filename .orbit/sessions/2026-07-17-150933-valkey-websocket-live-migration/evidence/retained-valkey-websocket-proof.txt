@@ -1,0 +1,52 @@
+Retained topology proof
+
+Feature tip: 2aa8666e5bf1408f28fc33aa76d3cd511ffdf59a
+Topology id: dev-514ae4
+Topology kind: operator_gateway_app-dev_websocket
+Provider: incus
+Host: beast
+Source overlays: operator,gateway
+Runtime checkout: /home/orbit/orbit-run
+WebSocket and Valkey node: app-dev-1 (10.6.0.4)
+
+Acquisition
+
+composer e2e:incus -- --start --topology=operator_gateway_app-dev_websocket --checkout-roles=operator,gateway --json --no-interaction
+
+The retained topology acquired successfully and reported id dev-514ae4. The active websocket role settings contained valkey_node_id=5. The only declared database process was valkey 8.1 with command `valkey-server --appendonly yes --bind 0.0.0.0 --protected-mode no`.
+
+Precondition
+
+- The keyed certificate doctor probe was healthy before drift.
+- The Reverb container was running as orbit-websocket-app-dev-1 and published 10.6.0.4:8080->8080/tcp.
+- `orbit process:start valkey --node=app-dev-1 --json` started runtime unit valkey, event id 1.
+- The running database container was `valkey valkey/valkey:8.1` published as 10.6.0.4:6379->6379/tcp.
+
+Isolated drift
+
+Removed `/etc/orbit/certs/10.6.0.4.crt` inside the retained app-dev VM. Then ran:
+
+./apps/cli/orbit doctor --node=app-dev-1 --family=node --key=node.websocket.backend_cert_missing --json
+
+The command detected exactly one issue: node.websocket.backend_cert_missing. It reported cert_exists=0, key_exists=1, restorable=true.
+
+Supported restore
+
+./apps/cli/orbit doctor --node=app-dev-1 --family=node --key=node.websocket.backend_cert_missing --restore --json
+
+Result: exit 0; healthy=true; mode=restore; summary issues=0, fixed=1, failed=0; one completed node.websocket.backend_cert_missing action. The restore path re-probed before producing this healthy result.
+
+Independent post-restore checks
+
+- node.websocket.backend_cert_missing: healthy=true, issues=0.
+- node.websocket.bind_public_interface: healthy=true, issues=0.
+- tool.websocket.valkey_unavailable: healthy=true, issues=0.
+- tool.websocket.reverb_unavailable: healthy=true, issues=0.
+- `/etc/orbit/certs/10.6.0.4.crt` and `.key` both exist after restore.
+- Reverb remains published only at 10.6.0.4:8080->8080/tcp.
+- Valkey remains running from valkey/valkey:8.1 at 10.6.0.4:6379->6379/tcp.
+- `process:list --node=app-dev-1 --json` contains one database process named valkey and no Redis process.
+
+Release command
+
+composer e2e:incus -- --stop --id=dev-514ae4
