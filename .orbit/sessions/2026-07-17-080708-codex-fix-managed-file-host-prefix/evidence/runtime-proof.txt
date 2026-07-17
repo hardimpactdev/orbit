@@ -1,0 +1,18 @@
+RUNTIME_PROOF: PASS
+topology=dev-4d1309
+kind=operator_gateway
+provider=incus
+host=beast
+role=gateway
+launcher=/home/orbit/orbit-run/apps/cli/orbit
+candidate=25e14550e9a93f933cfa42b207d03ccbecb18688
+local_launcher_sha256=eb19bf3561cf7627029de7e9b105b1460b72dacbf0511adb9004727c4fd4068a
+remote_launcher_sha256=eb19bf3561cf7627029de7e9b105b1460b72dacbf0511adb9004727c4fd4068a
+local_changed_file_sha256=e05ad5d56293f04b975f6a64084d705965095be8254cc4ae692982e58c4e392a
+remote_changed_file_sha256=e05ad5d56293f04b975f6a64084d705965095be8254cc4ae692982e58c4e392a
+command=internal:managed-file write, probe, repeated write, and invalid-prefix probe under ORBIT_HOST_PATH_PREFIX=/tmp/orbit-host-prefix-dev-4d1309
+mapped_path=/tmp/orbit-host-prefix-dev-4d1309/etc/orbit/certs/orbit-runtime-proof.crt
+logical_path_absent=true
+mode=0644
+idempotent=true
+invalid_prefix_rejected=true

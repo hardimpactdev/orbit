@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-17T06:07:08+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/.codex/worktrees/fix-managed-file-host-prefix/.orbit",
+    "archive_dir": "/Users/nckrtl/.codex/worktrees/fix-managed-file-host-prefix/.orbit/sessions/2026-07-17-080708-codex-fix-managed-file-host-prefix",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-17T055637Z-8961d6322bbc.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "bf0113b48bf983d032142355ddf9027f34736a3bb732b294c13921d68706ed5a",
+        "loop.md": "847feb3263e1faa9204ecf7ec2f487b77a6edcd48c9544657245e62e7a80fc4e",
+        "quality-gates/quality-check-2026-07-17T055637Z-8961d6322bbc.json": "f4bf749b0a6007a5f9d8d840c39b909109226c3cbcec9e09f3305098ed49dfd5"
+    },
+    "branch": "codex/fix-managed-file-host-prefix",
+    "candidate_commit": "25e14550e9a93f933cfa42b207d03ccbecb18688",
+    "accepted_feature_tip": "25e14550e9a93f933cfa42b207d03ccbecb18688",
+    "accepted_main_tip": "d8cb57585cda82ce711b8bd23468b9a2da7692bc",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
