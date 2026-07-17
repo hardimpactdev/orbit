@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\WebSockets;
 
+use InvalidArgumentException;
 use Symfony\Component\Process\Process;
 
 final readonly class LocalWebSocketRuntimeAction
@@ -21,6 +22,7 @@ final readonly class LocalWebSocketRuntimeAction
     public function run(mixed $action, array $payload = []): array
     {
         return match ($action) {
+            'image:ensure' => $this->ensureImage($payload),
             'image:is-self-contained' => $this->imageIsSelfContained(),
             'app-key:ensure' => $this->ensureAppKey(),
             'source:install' => $this->installSource($payload),
@@ -36,6 +38,49 @@ final readonly class LocalWebSocketRuntimeAction
                 meta: ['field' => 'action'],
             ),
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{image: string, alias: string, self_contained: true}
+     */
+    private function ensureImage(array $payload): array
+    {
+        $image = $this->image($payload['image'] ?? null);
+        $alias = 'orbit-reverb:current';
+        $pull = $this->runProcess(['docker', 'pull', $image]);
+
+        if (! $pull->isSuccessful()) {
+            throw new LocalWebSocketRuntimeFailure(
+                errorCode: 'websocket_runtime_image_pull_failed',
+                message: 'Websocket runtime image pull failed.',
+                meta: ['image' => $image, 'output' => $this->output($pull)],
+            );
+        }
+
+        if ($this->imageIsSelfContained($image)['self_contained'] !== true) {
+            throw new LocalWebSocketRuntimeFailure(
+                errorCode: 'websocket_runtime_image_invalid',
+                message: 'Websocket runtime image is not self-contained.',
+                meta: ['image' => $image],
+            );
+        }
+
+        $tag = $this->runProcess(['docker', 'tag', $image, $alias]);
+
+        if (! $tag->isSuccessful()) {
+            throw new LocalWebSocketRuntimeFailure(
+                errorCode: 'websocket_runtime_image_tag_failed',
+                message: 'Websocket runtime image alias could not be updated.',
+                meta: ['image' => $image, 'alias' => $alias, 'output' => $this->output($tag)],
+            );
+        }
+
+        return [
+            'image' => $image,
+            'alias' => $alias,
+            'self_contained' => true,
+        ];
     }
 
     /**
@@ -335,7 +380,7 @@ final readonly class LocalWebSocketRuntimeAction
     /**
      * @return array{self_contained: bool, output: string}
      */
-    private function imageIsSelfContained(): array
+    private function imageIsSelfContained(string $image = 'orbit-reverb:current'): array
     {
         $result = $this->runProcess([
             'docker',
@@ -343,13 +388,33 @@ final readonly class LocalWebSocketRuntimeAction
             'inspect',
             '--format',
             '{{ index .Config.Labels "orbit.websocket.self_contained" }}',
-            'orbit-reverb:current',
+            $image,
         ]);
 
         return [
             'self_contained' => $result->isSuccessful() && trim($result->getOutput()) === 'true',
             'output' => $this->output($result),
         ];
+    }
+
+    private function image(mixed $image): string
+    {
+        if (! is_string($image)) {
+            throw new InvalidArgumentException('Websocket runtime image must be a string.');
+        }
+
+        $trimmedImage = trim($image);
+
+        if (
+            $image !== $trimmedImage
+            || preg_match('/\A[^@\s]+@sha256:[0-9a-f]{64}\z/i', $image) !== 1
+        ) {
+            throw new InvalidArgumentException(
+                'Websocket runtime image must be a digest-pinned Docker image reference.',
+            );
+        }
+
+        return $image;
     }
 
     /**

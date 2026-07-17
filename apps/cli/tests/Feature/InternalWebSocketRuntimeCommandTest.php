@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Commands\Internal\WebSocketRuntimeCommand;
+use App\Services\Executor\OperationTokenGuard;
 use Illuminate\Support\Facades\Artisan;
 use LaravelZero\Framework\Application as LaravelZeroApplication;
 use Orbit\Core\Http\JsonEnvelope;
@@ -12,7 +13,7 @@ use Symfony\Component\Console\Output\BufferedOutput;
 
 describe('internal websocket runtime command', function (): void {
     beforeEach(function (): void {
-        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        app()->forgetInstance(OperationTokenGuard::class);
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,
         ]));
@@ -88,6 +89,80 @@ describe('internal websocket runtime command', function (): void {
             ->toContain(
                 'docker image inspect --format {{ index .Config.Labels "orbit.websocket.self_contained" }} orbit-reverb:current',
             );
+    });
+
+    it('pulls and aliases manifest websocket images through fixed argv', function (): void {
+        $bin = install_websocket_runtime_fake_bin([
+            'self_contained_image' => true,
+        ]);
+        $image = 'ghcr.io/hardimpactdev/orbit-reverb:0.1.190-candidate-build@sha256:'.str_repeat('a', times: 64);
+
+        [$exitCode, $output] = run_websocket_runtime_command(
+            action: 'image:ensure',
+            payload: ['image' => $image],
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(websocket_runtime_success_data($output))
+            ->toBe([
+                'image' => $image,
+                'alias' => 'orbit-reverb:current',
+                'self_contained' => true,
+            ])
+            ->and(file_get_contents("{$bin}/calls.log"))
+            ->toContain("docker pull {$image}")
+            ->toContain("docker tag {$image} orbit-reverb:current")
+            ->toContain(
+                'docker image inspect --format {{ index .Config.Labels "orbit.websocket.self_contained" }} '.$image,
+            );
+    });
+
+    it('rejects mutable manifest image references before pulling', function (): void {
+        $bin = install_websocket_runtime_fake_bin();
+
+        [$exitCode, $output] = run_websocket_runtime_command(
+            action: 'image:ensure',
+            payload: ['image' => 'ghcr.io/hardimpactdev/orbit-reverb:latest'],
+        );
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
+                'validation_failed',
+                'Websocket runtime payload is invalid.',
+            ))
+            ->and(file_exists("{$bin}/calls.log"))
+            ->toBeFalse();
+    });
+
+    it('does not replace the runtime alias when the pulled image is not self-contained', function (): void {
+        $bin = install_websocket_runtime_fake_bin();
+        $image = 'ghcr.io/hardimpactdev/orbit-reverb:0.1.190-candidate-build@sha256:'.str_repeat('d', times: 64);
+
+        [$exitCode, $output] = run_websocket_runtime_command(
+            action: 'image:ensure',
+            payload: ['image' => $image],
+        );
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
+                'websocket_runtime_image_invalid',
+                'Websocket runtime image is not self-contained.',
+                ['image' => $image],
+            ));
+
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($calls)
+            ->toContain("docker pull {$image}")
+            ->toContain(
+                'docker image inspect --format {{ index .Config.Labels "orbit.websocket.self_contained" }} '.$image,
+            )
+            ->not->toContain("docker tag {$image} orbit-reverb:current");
     });
 
     it('ensures and reads the websocket app key through fixed argv', function (): void {
@@ -402,7 +477,7 @@ function install_websocket_runtime_fake_bin(array $options = []): string
     $containerExists = $options['container_exists'] ?? false;
     $containerRunning = $options['container_running'] ?? false;
     $networkExists = $options['network_exists'] ?? true;
-    $sourceHash = $options['source_hash'] ?? str_repeat('a', 64);
+    $sourceHash = $options['source_hash'] ?? str_repeat('a', times: 64);
     file_put_contents("{$dir}/app-key", $appKey);
     file_put_contents("{$dir}/app-key-exists", $appKeyExists ? '1' : '0');
     file_put_contents("{$dir}/apps.php", '');

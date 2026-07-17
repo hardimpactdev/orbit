@@ -511,8 +511,14 @@ on the node that carries the websocket role; it is not a host systemd command pr
 and does not use the gateway or FrankenPHP runtime images. The Reverb runtime
 application lives at `apps/reverb/` and is packaged as the
 `hardimpact/orbit-reverb` image, where Composer dependencies are installed at
-image build time. Source sync to `/opt/orbit/websocket/current` and host
-Composer install remain a fallback for non-self-contained local runtime images.
+image build time. During role convergence, Orbit resolves the selected release
+manifest's `orbit-websocket` image, pulls that digest-pinned image on the target
+node, verifies its self-contained label, and only then updates the local
+`orbit-reverb:current` runtime alias. Mutable image references are rejected.
+Source sync to
+`/opt/orbit/websocket/current` and host Composer install remain a source-checkout
+fallback for non-self-contained local runtime images; packaged production
+gateways do not carry the Reverb source tree.
 The long-running service is `php artisan reverb:start` inside the Reverb runtime
 container. The container binds only to that node's WireGuard address, and the
 router targets the backend as `https://<wireguard-ip>:8080`. Backend

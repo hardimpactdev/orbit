@@ -9,6 +9,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Operations\ReleaseManifestResolver;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\Tools\ToolCatalog;
@@ -29,6 +30,7 @@ class WebSocketRoleBaseline implements RoleBaseline
         private readonly WebSocketRuntimeContainerManager $runtimeManager,
         private readonly WebSocketCertificateInstaller $certificateInstaller,
         private readonly WebSocketRuntimeSourceInstaller $sourceInstaller,
+        private readonly ReleaseManifestResolver $manifests,
         private readonly ?RemoteLocalExecutor $localExecutor = null,
         private readonly ?NodeRoleAssignments $nodeRoleAssignments = null,
         private readonly ?ToolCatalog $toolCatalog = null,
@@ -50,6 +52,7 @@ class WebSocketRoleBaseline implements RoleBaseline
         }
 
         $this->timer()->measure('tools', fn () => $this->convergeTools($node, ['docker']));
+        $this->ensureManifestRuntimeImage($node);
         $selfContainedImage = $this->timer()->measure('image', fn (): bool => $this->runtimeImageIsSelfContained(
             $node,
         ));
@@ -115,6 +118,47 @@ class WebSocketRoleBaseline implements RoleBaseline
         return RemoteShellSuccessData::fromJsonEnvelope($result)['self_contained'] === true;
     }
 
+    private function ensureManifestRuntimeImage(Node $node): void
+    {
+        $image = $this->manifests->resolve()->roleImages['orbit-websocket'] ?? null;
+
+        if (
+            ! is_string($image)
+            || trim($image) === ''
+        ) {
+            return;
+        }
+
+        $trimmedImage = trim($image);
+
+        if (
+            $image !== $trimmedImage
+            || preg_match('/\A[^@\s]+@sha256:[0-9a-f]{64}\z/i', $image) !== 1
+        ) {
+            throw new RuntimeException('Websocket runtime manifest image must be digest-pinned.');
+        }
+
+        /** @var RemoteShellResult $result */
+        $result = $this->timer()->measure(
+            'image-ensure',
+            fn (): RemoteShellResult => $this->runWebSocketRuntimeAction(
+                node: $node,
+                action: 'image:ensure',
+                payload: ['image' => $trimmedImage],
+            ),
+        );
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Could not install websocket runtime image on {$node->name}.");
+        }
+
+        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
+
+        if (($data['self_contained'] ?? null) !== true) {
+            throw new RuntimeException("Websocket runtime image on {$node->name} is not self-contained.");
+        }
+    }
+
     private function ensureSelfContainedAppKey(Node $node): string
     {
         $result = $this->runWebSocketRuntimeAction(
@@ -133,19 +177,28 @@ class WebSocketRoleBaseline implements RoleBaseline
         return trim($appKey);
     }
 
-    private function runWebSocketRuntimeAction(Node $node, string $action): RemoteShellResult
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function runWebSocketRuntimeAction(Node $node, string $action, array $payload = []): RemoteShellResult
     {
+        $transportOptions = [
+            'metadata' => [
+                'ORBIT_OPERATION_ID' => "websocket-runtime.{$action}",
+            ],
+            'timeout' => $action === 'image:ensure' ? 360 : 30,
+            'throw' => false,
+        ];
+
+        if ($payload !== []) {
+            $transportOptions['input'] = json_encode($payload, JSON_THROW_ON_ERROR);
+        }
+
         return $this->localExecutor()->runInternal(
             node: $node,
             commandName: 'internal:websocket-runtime',
             arguments: [$action],
-            transportOptions: [
-                'metadata' => [
-                    'ORBIT_OPERATION_ID' => "websocket-runtime.{$action}",
-                ],
-                'timeout' => 30,
-                'throw' => false,
-            ],
+            transportOptions: $transportOptions,
         );
     }
 

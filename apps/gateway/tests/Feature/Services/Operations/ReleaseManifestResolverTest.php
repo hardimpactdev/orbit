@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Operations\ReleaseManifest;
 use App\Models\OperationRun;
 use App\Models\ReleaseManifestSource;
 use App\Services\Operations\OperationRunRecorder;
@@ -20,6 +21,16 @@ beforeEach(function (): void {
         'orbit.updates.release_manifest_url',
         'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json',
     );
+});
+
+it('rejects mutable websocket role images at the manifest boundary', function (): void {
+    expect(fn () => ReleaseManifest::fromArray(releaseManifestResolverFixture([
+        'role_images' => [
+            'orbit-caddy' => 'caddy:2-alpine',
+            'orbit-websocket' => 'hardimpact/orbit-reverb:latest',
+        ],
+    ])))
+        ->toThrow(RuntimeException::class, 'orbit-websocket role image must be digest-pinned');
 });
 
 it('downloads validates and exposes a release manifest from the configured GitHub release asset', function (): void {

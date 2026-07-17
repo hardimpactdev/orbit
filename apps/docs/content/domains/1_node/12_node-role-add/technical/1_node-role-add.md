@@ -67,6 +67,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Adding a role triggers convergence through `NodeRoleAssignmentService`.
 - Success returns the stored assignment payload after convergence completes with
   `status=active`.
+- Websocket convergence resolves the selected release manifest's
+  `orbit-websocket` image, pulls and aliases it on the target node, and verifies
+  that it is self-contained before applying the Reverb container.
 - App-development convergence runs as direct gateway-pushed command envelopes.
 - Active workload roles supply Agent intent. A roleless non-gateway operator
   may instead opt in through `managed`; platform and WireGuard eligibility

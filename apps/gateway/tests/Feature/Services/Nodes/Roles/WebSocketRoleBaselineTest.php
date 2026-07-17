@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\Nodes\RoleSettings\WebSocketRoleSettings;
+use App\Data\Operations\ReleaseManifest;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
@@ -14,6 +15,7 @@ use App\Models\NodeTool;
 use App\Models\Process;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
+use App\Services\Operations\ReleaseManifestResolver;
 use App\Services\WebSockets\WebSocketRoleBaselineTiming;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\WebSockets\WebSocketRuntimeContainerRenderer;
@@ -36,6 +38,7 @@ beforeEach(function (): void {
 
     $this->webSocketBaselineShell = new WebSocketRoleBaselineTestShell;
     app()->instance(RemoteShell::class, $this->webSocketBaselineShell);
+    app()->instance(ReleaseManifestResolver::class, new WebSocketRoleBaselineTestManifestResolver([]));
     $this->webSocketBaselineSelfContainedImage = false;
     Http::preventStrayRequests();
     Http::fake(fn (Request $request) => webSocketBaselineAgentResponse(
@@ -124,6 +127,46 @@ it('uses self-contained websocket images without installing source on the node',
         action: 'container:apply',
     ));
     Http::assertSent(fn (Request $request): bool => webSocketBaselineCertificateRequestMatches($request));
+});
+
+it('ensures the manifest websocket image before inspecting the runtime alias', function (): void {
+    $node = webSocketBaselineNode();
+    $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
+    $this->webSocketBaselineSelfContainedImage = true;
+    $image = 'ghcr.io/hardimpactdev/orbit-reverb:0.1.190-candidate-build@sha256:'.str_repeat('a', times: 64);
+    app()->instance(ReleaseManifestResolver::class, new WebSocketRoleBaselineTestManifestResolver([
+        'orbit-websocket' => $image,
+    ]));
+
+    app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
+
+    expect(array_column(app(WebSocketRoleBaselineTiming::class)->records(), 'step'))
+        ->toBe(['tools', 'image-ensure', 'image', 'env', 'render', 'certificates', 'container-apply']);
+    Http::assertSent(
+        fn (Request $request): bool => (
+            webSocketBaselineRuntimeRequestMatches(
+                request: $request,
+                action: 'image:ensure',
+            )
+            && json_decode((string) $request['input'], associative: true) === ['image' => $image]
+        ),
+    );
+});
+
+it('rejects mutable manifest websocket images before target convergence', function (): void {
+    $node = webSocketBaselineNode();
+    $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
+    app()->instance(ReleaseManifestResolver::class, new WebSocketRoleBaselineTestManifestResolver([
+        'orbit-websocket' => 'orbit-reverb:current',
+    ]));
+
+    expect(fn () => app(NodeRoleBaselineConverger::class)->converge($node, $assignment))
+        ->toThrow(RuntimeException::class, 'Release manifest orbit-websocket role image must be digest-pinned.');
+
+    Http::assertNotSent(fn (Request $request): bool => webSocketBaselineRuntimeRequestMatches(
+        request: $request,
+        action: 'image:ensure',
+    ));
 });
 
 it('starts an existing matching websocket runtime container when it is stopped', function (): void {
@@ -234,6 +277,11 @@ function webSocketBaselineRuntimeAgentResponse(Request $request, bool $selfConta
 {
     $action = is_array($request['argv'] ?? null) ? $request['argv'][1] ?? null : null;
     $data = match ($action) {
+        'image:ensure' => [
+            'image' => 'manifest-image',
+            'alias' => 'orbit-reverb:current',
+            'self_contained' => true,
+        ],
         'image:is-self-contained' => [
             'self_contained' => $selfContainedImage,
             'output' => $selfContainedImage ? 'true' : 'false',
@@ -274,6 +322,38 @@ function webSocketBaselineRuntimeAgentResponse(Request $request, bool $selfConta
             ],
         ],
     ]);
+}
+
+final class WebSocketRoleBaselineTestManifestResolver extends ReleaseManifestResolver
+{
+    /**
+     * @param  array<string, string>  $roleImages
+     */
+    public function __construct(
+        private readonly array $roleImages,
+    ) {}
+
+    #[\Override]
+    public function resolve(): ReleaseManifest
+    {
+        return ReleaseManifest::fromArray([
+            'schema_version' => 1,
+            'version' => '0.1.190',
+            'source' => 'topology-candidate',
+            'build_id' => 'test-build',
+            'images' => [
+                'gateway' => 'ghcr.io/hardimpactdev/orbit-gateway@sha256:'.str_repeat('b', times: 64),
+            ],
+            'cli_artifacts' => [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.example.test/orbit-linux-x64',
+                    'sha256' => str_repeat('c', times: 64),
+                ],
+            ],
+            'agent_artifacts' => [],
+            'role_images' => array_merge(['orbit-caddy' => 'caddy:2-alpine'], $this->roleImages),
+        ]);
+    }
 }
 
 function webSocketBaselineCertificateAgentResponse(): mixed
@@ -411,6 +491,7 @@ readonly class WebSocketRoleBaselineTestCa extends OrbitCaService
      * @param  list<string>  $additionalSans
      * @return array{cert: string, key: string}
      */
+    #[\Override]
     public function issueLeaf(string $host, array $additionalSans = []): array
     {
         $this->issued->append([

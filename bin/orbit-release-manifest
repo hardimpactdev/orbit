@@ -315,7 +315,14 @@ function role_images(array $values): array
             fail('Role images must use role=image format.');
         }
 
-        $images[trim($role)] = trim($image);
+        $role = trim($role);
+        $image = trim($image);
+
+        if ($role === 'orbit-websocket' && preg_match('/\A[^@\s]+@sha256:[0-9a-f]{64}\z/i', $image) !== 1) {
+            fail('The orbit-websocket role image must be digest-pinned.');
+        }
+
+        $images[$role] = $image;
     }
 
     ksort($images);
