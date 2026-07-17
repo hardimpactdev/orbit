@@ -1,0 +1,39 @@
+WebSocket Redis-name and runtime acceptance
+
+Feature tip: 5dc86c3f30f0380a4a7578a3d9aa9972fd0e7751
+Topology: dev-91cd83
+Kind: operator_gateway_app-dev
+Provider/host: incus / beast
+Instances: orbit-e2e-dev-91cd83-operator, orbit-e2e-dev-91cd83-gateway, orbit-e2e-dev-91cd83-dev
+Runtime checkout: /home/orbit/orbit-run
+Launcher: /home/orbit/orbit-run/apps/cli/orbit
+
+Precondition
+Command: orbit process:list --node=app-dev-1 --json
+Result: managed Redis process configured; service redis 7.2 at 10.6.0.4:6379.
+Command: orbit doctor --family=process --node=app-dev-1 --restore --json
+Result: restored the prepared topology's missing Redis runtime unit.
+Command: orbit process:start redis --node=app-dev-1 --json
+Result: Redis runtime running; durable started event id 1.
+Command: docker exec redis redis-cli ping
+Result: PONG; Redis published only on 10.6.0.4:6379.
+
+Assignment
+Command: orbit node role:add app-dev-1 websocket --redis-node=app-dev-1 --json
+Result: success; websocket active; settings.redis_node_id=5; converged_at=2026-07-17T08:21:25Z.
+
+Runtime
+Command: docker ps --filter name=orbit-websocket --format '{{json .}}'
+Result: orbit-websocket-app-dev-1 running; image orbit-reverb:current; network host; backend 10.6.0.4.
+Command: docker inspect --format '{{.State.Status}} restart_count={{.RestartCount}} exit={{.State.ExitCode}} error={{.State.Error}}' orbit-websocket-app-dev-1
+Result: running restart_count=12; started_at=2026-07-17T08:33:32.28865842Z. A second inspection more than one full 60-second Redis timeout window later remained running with restart_count=12 and the same started_at.
+Command: docker logs --tail 20 orbit-websocket-app-dev-1
+Result: INFO Starting secure server on 10.6.0.4:8080.
+Command from gateway: curl -k https://10.6.0.4:8080
+Result: TLS listener reachable; HTTP 404 in 0.030123s for the non-WebSocket root request.
+
+Persisted state and idempotency
+Command: orbit node role:list app-dev-1 --json
+Result: app-dev, database, and websocket active; websocket settings.redis_node_id=5.
+Command: orbit node role:add app-dev-1 websocket --redis-node=app-dev-1 --json
+Result: validation_failed; Role 'websocket' is already assigned to node 'app-dev-1'.

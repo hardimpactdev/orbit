@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-17T08:43:09+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/.codex/worktrees/fix-websocket-role-redis-resolution/.orbit",
+    "archive_dir": "/Users/nckrtl/.codex/worktrees/fix-websocket-role-redis-resolution/.orbit/sessions/2026-07-17-104309-codex-fix-websocket-role-redis-resolution",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-17T084146Z-baa84c696d70.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "c95089ecb4e49d8fd9f69821cc917692bfc11f93c40ad25895c86811e3f1a34f",
+        "loop.md": "71feeba9e98be013f305ae903bbb50bd2e1f2a3bda0ee08eab334943156ed70a",
+        "quality-gates/quality-check-2026-07-17T084146Z-baa84c696d70.json": "ae948e69219531dd805fc88ae6cd3999779d67b190cc153f39b3c815680d369b"
+    },
+    "branch": "codex/fix-websocket-role-redis-resolution",
+    "candidate_commit": "5dc86c3f30f0380a4a7578a3d9aa9972fd0e7751",
+    "accepted_feature_tip": "5dc86c3f30f0380a4a7578a3d9aa9972fd0e7751",
+    "accepted_main_tip": "f1d93735a09e8a17867dc071c1cbbef6fcf5260e",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
