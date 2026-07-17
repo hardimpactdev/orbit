@@ -138,13 +138,7 @@ final readonly class AppAnalyticsReadinessVerifier implements AnalyticsReadiness
 
     private function isPublicIp(string $value): bool
     {
-        return (
-            filter_var(
-                $value,
-                FILTER_VALIDATE_IP,
-                FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE,
-            ) !== false
-        );
+        return GlobalUnicastIpAddress::isGlobalUnicast($value);
     }
 
     /** @param array<array-key, mixed> $probe */

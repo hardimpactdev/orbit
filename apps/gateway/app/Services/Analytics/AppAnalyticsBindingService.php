@@ -9,6 +9,7 @@ use App\Exceptions\AnalyticsRouteCleanupFailed;
 use App\Exceptions\AnalyticsRouteEnactmentFailed;
 use App\Models\App;
 use App\Models\AppAnalyticsBinding;
+use App\Models\ProxyRoute;
 use Closure;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
@@ -18,6 +19,10 @@ use RuntimeException;
 final readonly class AppAnalyticsBindingService
 {
     public const int MUTATION_LOCK_SECONDS = 3600;
+
+    public const int ROUTE_MUTATION_BUDGET_SECONDS = 120;
+
+    public const int MUTATION_LOCK_BUFFER_SECONDS = 600;
 
     public function __construct(
         private AnalyticsRouteRegistrar $routes,
@@ -31,7 +36,7 @@ final readonly class AppAnalyticsBindingService
      */
     public function enable(App $app, array $publicHosts): AppAnalyticsBinding
     {
-        return $this->withMutationLock(fn (): AppAnalyticsBinding => $this->enableUnlocked($app, $publicHosts));
+        return $this->withMutationLock($app, fn (): AppAnalyticsBinding => $this->enableUnlocked($app, $publicHosts));
     }
 
     /** @param array<int, mixed> $publicHosts */
@@ -82,7 +87,7 @@ final readonly class AppAnalyticsBindingService
 
     public function disable(App $app): AppAnalyticsBinding
     {
-        return $this->withMutationLock(fn (): AppAnalyticsBinding => $this->disableUnlocked($app));
+        return $this->withMutationLock($app, fn (): AppAnalyticsBinding => $this->disableUnlocked($app));
     }
 
     private function disableUnlocked(App $app): AppAnalyticsBinding
@@ -137,11 +142,11 @@ final readonly class AppAnalyticsBindingService
     }
 
     /** @param Closure(): AppAnalyticsBinding $mutation */
-    private function withMutationLock(Closure $mutation): AppAnalyticsBinding
+    private function withMutationLock(App $app, Closure $mutation): AppAnalyticsBinding
     {
         try {
             /** @var AppAnalyticsBinding $binding */
-            $binding = Cache::lock('orbit:app-analytics:mutation', $this->lockSeconds)
+            $binding = Cache::lock('orbit:app-analytics:mutation', $this->mutationLockSeconds($app))
                 ->block($this->lockWaitSeconds, $mutation);
 
             return $binding;
@@ -151,5 +156,19 @@ final readonly class AppAnalyticsBindingService
                 previous: $exception,
             );
         }
+    }
+
+    private function mutationLockSeconds(App $app): int
+    {
+        $existingRouteCount = ProxyRoute::query()
+            ->where('app_id', $app->id)
+            ->where('owner_type', 'app-analytics')
+            ->count();
+
+        $routeBudgetSeconds =
+            (($existingRouteCount + AnalyticsPublicHostNormalizer::MAXIMUM_HOSTS) * self::ROUTE_MUTATION_BUDGET_SECONDS)
+            + self::MUTATION_LOCK_BUFFER_SECONDS;
+
+        return max($this->lockSeconds, $routeBudgetSeconds);
     }
 }

@@ -38,8 +38,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   as `routing=intermediary`; the comparison is diagnostic because a provider
   proxy can intentionally hide the origin ingress addresses.
 - Reject IP literals and single-label stored hosts before DNS resolution.
-  Discard private and reserved DNS answers; when no public answer remains,
-  report `dns.status=unsafe` and do not open a connection.
+  Retain only explicitly classified global-unicast DNS answers. Discard private,
+  shared, benchmark, documentation, multicast, reserved, and transition-range
+  answers; when no approved answer remains, report `dns.status=unsafe` and do
+  not open a connection.
 - Probe exact HTTPS URLs only. Follow no redirects and verify the certificate
   chain and hostname. Pin each request to the approved public DNS answers with
   cURL resolve entries so a second resolver lookup cannot redirect the probe.
@@ -52,7 +54,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Return `analytics.public_not_ready` with the full verification payload when
   any host is incomplete.
 
-### Read-only And Authority Boundaries
+### Read-only and authority boundaries
 
 The command must not write gateway intent, repair proxy artifacts, mutate
 provider DNS, change Cloudflare proxy state, create or inspect Plausible sites,
@@ -102,4 +104,5 @@ repair surface for router and ingress artifacts.
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/AppAnalyticsControllerTest.php` | Verification context, route-intent status, DNS targets, binding errors, authorization, and no gateway mutation. |
 | `apps/cli/tests/Feature/Commands/App/AppAnalyticsVerifyCommandTest.php` | Gateway request, caller-side probe rendering, success and not-ready exits, JSON payload, and no event request. |
-| `apps/cli/tests/Feature/Services/Analytics/AppAnalyticsReadinessVerifierTest.php` | DNS comparison, private/reserved-answer rejection, pinned HTTPS addresses, TLS/script/root rules, multi-host aggregation, and read-only probe paths. |
+| `apps/cli/tests/Feature/Services/Analytics/AppAnalyticsReadinessVerifierTest.php` | DNS comparison, unsafe-answer rejection, pinned HTTPS addresses, TLS/script/root rules, multi-host aggregation, and read-only probe paths. |
+| `apps/cli/tests/Feature/Services/Analytics/GlobalUnicastIpAddressTest.php` | Explicit global-unicast allow-list behavior across IPv4 and IPv6 special-purpose ranges. |

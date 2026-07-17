@@ -731,6 +731,7 @@
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/App/AppAnalyticsVerifyCommandTest.php",
                 "apps/cli/tests/Feature/Services/Analytics/AppAnalyticsReadinessVerifierTest.php",
+                "apps/cli/tests/Feature/Services/Analytics/GlobalUnicastIpAddressTest.php",
                 "apps/gateway/tests/Feature/Http/Api/AppAnalyticsControllerTest.php"
             ],
             "verification_hints": [
@@ -747,6 +748,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Services/Analytics/AppAnalyticsReadinessVerifierTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Services/Analytics/AppAnalyticsReadinessVerifierTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Services/Analytics/GlobalUnicastIpAddressTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Services/Analytics/GlobalUnicastIpAddressTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Services/Analytics/GlobalUnicastIpAddressTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppAnalyticsControllerTest.php",

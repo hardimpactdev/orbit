@@ -85,13 +85,7 @@ final readonly class CurlHttpsProbe implements HttpsProbe
 
     private function isPublicIp(string $value): bool
     {
-        return (
-            filter_var(
-                $value,
-                FILTER_VALIDATE_IP,
-                FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE,
-            ) !== false
-        );
+        return GlobalUnicastIpAddress::isGlobalUnicast($value);
     }
 
     /** @return array{completed: false, http_status: null, tls_verified: false, error: string} */

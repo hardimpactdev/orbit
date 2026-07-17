@@ -13,6 +13,7 @@ use App\Models\ProxyRoute;
 use App\Services\Analytics\AnalyticsPublicHostNormalizer;
 use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Analytics\AppAnalyticsBindingService;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -73,6 +74,47 @@ describe('AppAnalyticsBindingService', function (): void {
         }
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())->toBeFalse();
+    });
+
+    it('scales the mutation lease for legacy bindings with more than the current route limit', function (): void {
+        $app = createAnalyticsApp();
+
+        foreach (range(start: 1, end: 25) as $index) {
+            ProxyRoute::query()->create([
+                'node_id' => $app->node_id,
+                'domain' => "legacy-analytics-{$index}.docs.test",
+                'app_id' => $app->id,
+                'owner_type' => 'app-analytics',
+                'kind' => 'proxy',
+                'source_hash' => hash('sha256', "legacy-analytics-{$index}.docs.test"),
+                'config' => [],
+            ]);
+        }
+
+        $expectedLeaseSeconds =
+            (
+                (25 + AnalyticsPublicHostNormalizer::MAXIMUM_HOSTS)
+                * AppAnalyticsBindingService::ROUTE_MUTATION_BUDGET_SECONDS
+            )
+            + AppAnalyticsBindingService::MUTATION_LOCK_BUFFER_SECONDS;
+        $lock = Mockery::mock(Lock::class);
+
+        Cache::shouldReceive('lock')
+            ->once()
+            ->with('orbit:app-analytics:mutation', $expectedLeaseSeconds)
+            ->andReturn($lock);
+        $lock
+            ->shouldReceive('block')
+            ->once()
+            ->withArgs(fn (int $waitSeconds, Closure $mutation): bool => $waitSeconds === 10)
+            ->andReturnUsing(static fn (int $waitSeconds, Closure $mutation): AppAnalyticsBinding => $mutation());
+
+        $binding = new AppAnalyticsBindingService(
+            new AnalyticsBindingRecordingRegistrar,
+            new AnalyticsPublicHostNormalizer,
+        )->enable($app, []);
+
+        expect($binding->enabled)->toBeTrue();
     });
 
     it('creates enabled bindings with a default analytics host derived from the app domain', function (): void {

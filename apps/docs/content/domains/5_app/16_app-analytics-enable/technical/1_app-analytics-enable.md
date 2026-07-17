@@ -50,8 +50,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Serialize analytics binding mutations at the gateway so concurrent enable or
   disable requests do not compete for SQLite writes. Return a retryable busy
   failure when the bounded lock wait expires before any mutation begins. The
-  one-hour lease covers the bounded maximum of ten current and ten obsolete
-  public-host route operations.
+  lease is at least one hour and scales from the app's existing stored analytics
+  route count plus the current ten-host request limit, using a 120-second
+  per-route budget and a 600-second buffer. This also covers bindings whose
+  stored route count predates and exceeds the current input limit.
 - Set `enabled=true`.
 - Store public tracking hosts. When the request omits hosts and the app has a
   hostname, store `analytics.<app-domain>`.
