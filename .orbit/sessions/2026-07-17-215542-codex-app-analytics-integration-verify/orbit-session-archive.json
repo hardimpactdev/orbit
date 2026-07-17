@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-17T19:55:42+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-app-analytics-integration-verify/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-17-215542-codex-app-analytics-integration-verify",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "30c05103082e74f0b72396e43ea2ff92d5c9b5f0b9ef1bbe57f7f2f578e2fc9f",
+        "loop.md": "554fdaf18dbee3b00eb0d70287b3203e844e99134816684853449f595b5001de"
+    },
+    "branch": "codex/app-analytics-integration-verify",
+    "candidate_commit": "9d83270325140500414f5e0fc869af46d22545ba",
+    "accepted_feature_tip": "9d83270325140500414f5e0fc869af46d22545ba",
+    "accepted_main_tip": "dbfbe89412d8b518a7dbfc8b917e09fcccb17289",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

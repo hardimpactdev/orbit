@@ -1,0 +1,73 @@
+Orbit app analytics retained-Incus proof
+
+Candidate: 9d83270325140500414f5e0fc869af46d22545ba
+Topology: dev-8b4bb8
+Kind: operator_gateway_app-dev_app-prod
+Provider/host: incus / beast
+Roles exercised: operator CLI, gateway API/runtime
+Source checkout: /home/orbit/orbit-run
+Launcher: /usr/local/bin/orbit -> /home/orbit/orbit-run/apps/cli/orbit
+Candidate file identity:
+  local  sha256 GlobalUnicastIpAddress.php = ddca929c17396e56d432479dc886f4e9cd8aa098d125269ce762941ad7ac3b4d
+  remote sha256 GlobalUnicastIpAddress.php = ddca929c17396e56d432479dc886f4e9cd8aa098d125269ce762941ad7ac3b4d
+
+Acquisition and sync evidence:
+  bin/orbit-secret-scan
+  result: SECRET_SCAN: PASS
+
+  composer e2e:incus -- --sync --id=dev-8b4bb8 --json
+  result: success; all operator/gateway/dev/prod runtime checkouts are /home/orbit/orbit-run
+
+Command visibility:
+  /usr/local/bin/orbit list --raw | grep "app:analytics"
+  result includes:
+    app:analytics enable
+    app:analytics show
+    app:analytics disable
+    app:analytics verify
+
+Stored binding discovery:
+  /usr/local/bin/orbit "app:analytics show" docs --json
+  result: success; enabled=true; public_hosts=["example.com"]
+
+Public-not-ready JSON proof:
+  /usr/local/bin/orbit "app:analytics verify" docs --json
+  exit: non-zero, analytics.public_not_ready
+  observed:
+    host=example.com
+    route_intent.status=unverifiable
+    dns.status=ready
+    dns.routing=intermediary
+    TLS verified=true
+    script URL=https://example.com/js/script.js, HTTP 404
+    dashboard URL=https://example.com/, HTTP 200
+    event.status=not_run
+    plausible_site.status=unchecked
+    overall ready=false
+
+Public-not-ready human proof:
+  /usr/local/bin/orbit "app:analytics verify" docs
+  exit: non-zero
+  result: rendered the completed four-step verifier; reported route_intent=unverifiable,
+    dns=ready, tls=ready, script=unavailable (404), dashboard=unverified (200),
+    event=not_run, plausible_site=unchecked, ready=false; ended with "No state was changed."
+
+Unsafe DNS proof:
+  Test-only retained-topology binding host: 100.64.0.1.nip.io
+  Resolver proof: getent ahostsv4 returned 100.64.0.1
+  /usr/local/bin/orbit "app:analytics verify" docs --json
+  exit: non-zero, analytics.public_not_ready
+  observed:
+    dns.status=unsafe
+    dns.routing=unknown
+    dns.answers=[]
+    tls.verified=false
+    script.http_status=null
+    dashboard.http_status=null
+    both HTTPS results say the probe was skipped because DNS returned no approved public address
+  The binding was restored to public_hosts=["example.com"] and confirmed with app:analytics show.
+
+Expected retained-topology limitation:
+  The seeded docs binding intentionally has no enacted public analytics route and the prepared
+  topology has no converged analytics backend. This proof therefore exercises the exact diagnostic
+  and fail-closed surfaces; success-path aggregation is covered by focused CLI/gateway Pest tests.
