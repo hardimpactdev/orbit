@@ -208,7 +208,14 @@ class NodeRoleAssignmentService
         string $dependentPolicy,
         string $role,
     ): NodeRoleAssignment {
-        return DB::transaction(function () use ($node, $assignment, $dependentPolicy, $role): NodeRoleAssignment {
+        /** @var NodeRoleAssignment $removingAssignment */
+        $removingAssignment = DB::transaction(function () use (
+            $node,
+            $assignment,
+            $dependentPolicy,
+            $role,
+        ): NodeRoleAssignment {
+            /** @var NodeRoleAssignment $transactionAssignment */
             $transactionAssignment = NodeRoleAssignment::query()
                 ->lockForUpdate()
                 ->findOrFail($assignment->id);
@@ -226,6 +233,8 @@ class NodeRoleAssignmentService
 
             return $transactionAssignment;
         });
+
+        return $removingAssignment;
     }
 
     private function completeRemoval(
@@ -235,6 +244,7 @@ class NodeRoleAssignmentService
         string $role,
     ): void {
         DB::transaction(function () use ($node, $assignment, $dependentPolicy, $role): void {
+            /** @var NodeRoleAssignment $transactionAssignment */
             $transactionAssignment = NodeRoleAssignment::query()
                 ->lockForUpdate()
                 ->findOrFail($assignment->id);
