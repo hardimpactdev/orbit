@@ -192,6 +192,7 @@ class GatewaySwarmInstaller
         File::chmod($configRoot, 0o700);
         File::chmod("{$configRoot}/certs", 0o700);
         File::chmod("{$configRoot}/operations-websocket", 0o700);
+        $this->repairTlsKeyModes($configRoot);
 
         $database = "{$configRoot}/gateway.sqlite";
 
@@ -260,6 +261,24 @@ class GatewaySwarmInstaller
             ),
         );
         File::chmod($operationsWebSocketApps, 0o600);
+    }
+
+    private function repairTlsKeyModes(string $configRoot): void
+    {
+        $certificateDirectories = ["{$configRoot}/certs"];
+        $hostPathPrefix = getenv('ORBIT_HOST_PATH_PREFIX');
+
+        if (is_string($hostPathPrefix) && trim($hostPathPrefix) !== '') {
+            $certificateDirectories[] = rtrim($hostPathPrefix, '/').'/etc/orbit/certs';
+        }
+
+        foreach ($certificateDirectories as $certificates) {
+            foreach (File::glob("{$certificates}/*.key") ?: [] as $privateKey) {
+                if (is_string($privateKey) && File::isFile($privateKey)) {
+                    File::chmod($privateKey, 0o600);
+                }
+            }
+        }
     }
 
     /**

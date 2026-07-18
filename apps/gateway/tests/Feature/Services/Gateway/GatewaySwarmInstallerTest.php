@@ -199,6 +199,34 @@ it('fails explicitly instead of publishing gateway-direct through an unsupported
         ->toContain('Docker iptables firewall backend');
 });
 
+it('repairs pre-existing gateway-owned TLS private key modes during routine runtime convergence', function (): void {
+    $configKey = "{$this->configRoot}/certs/existing.key";
+    $hostRoot = "{$this->configRoot}/host-root";
+    $hostKey = "{$hostRoot}/etc/orbit/certs/gateway.key";
+    $previousHostPathPrefix = getenv('ORBIT_HOST_PATH_PREFIX');
+
+    File::ensureDirectoryExists(dirname($configKey));
+    File::ensureDirectoryExists(dirname($hostKey));
+    File::put($configKey, 'config private key');
+    File::put($hostKey, 'host private key');
+    File::chmod($configKey, 0o644);
+    File::chmod($hostKey, 0o644);
+    putenv("ORBIT_HOST_PATH_PREFIX={$hostRoot}");
+
+    try {
+        new GatewaySwarmInstaller()->bootstrapRuntimeConfig();
+    } finally {
+        $previousHostPathPrefix === false
+            ? putenv('ORBIT_HOST_PATH_PREFIX')
+            : putenv("ORBIT_HOST_PATH_PREFIX={$previousHostPathPrefix}");
+    }
+
+    expect(fileperms($configKey) & 0o777)
+        ->toBe(0o600)
+        ->and(fileperms($hostKey) & 0o777)
+        ->toBe(0o600);
+});
+
 it('pulls and inspects the gateway image before deploying the stack when no archive is staged', function (): void {
     $stackPath = "{$this->configRoot}/swarm/".GatewaySwarmManager::StackFile;
     $invocations = [];
