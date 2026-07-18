@@ -3983,9 +3983,9 @@
             "legacy": null
         },
         {
-            "archive": "2026-07-18-030322-security-audit",
-            "slug": "security-audit",
-            "timestamp": "2026-07-18-030322",
+            "archive": "2026-07-18-030411-fix-security-audit",
+            "slug": "fix-security-audit",
+            "timestamp": "2026-07-18-030411",
             "schema": "compact-v1",
             "archive_mode": "full",
             "state": "accepted",
