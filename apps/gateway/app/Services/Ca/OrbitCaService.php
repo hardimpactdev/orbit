@@ -14,7 +14,7 @@ readonly class OrbitCaService
 {
     private const int ROOT_VALIDITY_DAYS = 3650;
 
-    private const int LEAF_VALIDITY_DAYS = 3650;
+    private const int LEAF_VALIDITY_DAYS = 397;
 
     private const int RENEW_IF_WITHIN_SECONDS = 30 * 86400;
 
@@ -83,6 +83,11 @@ readonly class OrbitCaService
         $this->signLeaf($host, $sans, $certPath, $keyPath);
 
         return ['cert' => $certPath, 'key' => $keyPath];
+    }
+
+    public static function hasExpectedLeafValidity(int $days): bool
+    {
+        return $days >= (self::LEAF_VALIDITY_DAYS - 1) && $days <= self::LEAF_VALIDITY_DAYS;
     }
 
     public function rootCert(): string
@@ -180,7 +185,7 @@ readonly class OrbitCaService
         $expiresAt = new DateTimeImmutable($notAfter[1]);
         $days = $startsAt->diff($expiresAt)->days;
 
-        return is_int($days) && $days >= (self::LEAF_VALIDITY_DAYS - 1);
+        return is_int($days) && self::hasExpectedLeafValidity($days);
     }
 
     /**

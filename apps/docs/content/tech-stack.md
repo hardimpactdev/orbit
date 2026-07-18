@@ -389,7 +389,7 @@ capability flag.
 
 ### Proxy
 
-`orbit-caddy` is the standalone fleet proxy container on every node that needs HTTP routing. It terminates TLS for managed routes, fronts the gateway API only in `router-colocated` mode, serves public ingress routes on `ingress` nodes, serves private router/backend routes, and serves app and workspace routes on nodes with application roles. App-route certificates are issued by the Orbit root CA, so nodes serve HTTPS without ever holding the root CA private key or any general signing authority.
+`orbit-caddy` is the standalone fleet proxy container on every node that needs HTTP routing. It terminates TLS for managed routes, fronts the gateway API only in `router-colocated` mode, serves public ingress routes on `ingress` nodes, serves private router/backend routes, and serves app and workspace routes on nodes with application roles. Orbit-managed route leaf certificates are issued by the Orbit root CA for 397 days, so nodes serve HTTPS without ever holding the root CA private key or any general signing authority.
 
 `orbit-caddy` persists Caddy-generated storage, including public ACME account
 and certificate state, through Orbit-owned host paths under

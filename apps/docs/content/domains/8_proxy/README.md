@@ -77,6 +77,11 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - Orbit-managed TLS means gateway-issued route leaf certificate and key
   material on the serving node. Those certificates chain to the gateway root
   CA trusted by `gateway:add` and `gateway:trust`.
+- Every Orbit-managed route leaf is issued for 397 days. This applies to app,
+  workspace, gateway, router, service, tool, analytics, metrics, S3, WebSocket,
+  and custom proxy routes that use the Orbit root CA. Convergence replaces
+  leaves whose validity period is shorter or longer than the current issuance
+  window.
 - Orbit intentionally issues route leaf certificates directly from the gateway
   root CA. It must not issue nodes intermediate CA certificates for
   routine route serving, because a node with an app role with intermediate signing
@@ -158,7 +163,7 @@ Custom, redirect, and tool routes are separate route kinds. They may share TLS, 
 
 ## TLS Authority Model
 
-The gateway is the only Orbit certificate authority. For each managed route, it issues a leaf certificate whose SAN matches that route host or IP, then applies the certificate and private key on the serving node as route-scoped TLS material. The serving node configures `orbit-caddy` with that explicit certificate and key; it does not use Caddy's local CA for Orbit-managed routes.
+The gateway is the only Orbit certificate authority. For each managed route, it issues a 397-day leaf certificate whose SAN matches that route host or IP, then applies the certificate and private key on the serving node as route-scoped TLS material. The serving node configures `orbit-caddy` with that explicit certificate and key; it does not use Caddy's local CA for Orbit-managed routes.
 
 Orbit does not delegate intermediate CA authority to nodes. That delegation would make disconnected node-local certificate minting easier, but it would also expand the blast radius of a compromised node: the node could sign trusted certificates for hosts it should not control. Leaf certificates issued by the gateway for each route keep signing authority centralized on the gateway while still letting every node terminate HTTPS locally.
 

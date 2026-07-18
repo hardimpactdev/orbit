@@ -11,6 +11,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Gateway\CaddyGlobalSiteBlocks;
 use App\Services\Nodes\NodeContainerScope;
@@ -124,7 +125,7 @@ final readonly class ProxyRouteProbe
             path="/etc/caddy/sites/${domain}${suffix}.caddy"
 
             if [ "$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' orbit-caddy 2>/dev/null || true)" != "running" ]; then
-                printf '0\t\t\t\t0\t0\t\t\n'
+                printf '0\t\t\t\t0\t0\t\t\t\n'
                 exit 0
             fi
 
@@ -139,6 +140,7 @@ final readonly class ProxyRouteProbe
                 key_exists=0
                 runtime_reachable=""
                 runtime_error=""
+                cert_pem=""
 
                 if [ -f "$path" ]; then
                     exists=1
@@ -153,6 +155,10 @@ final readonly class ProxyRouteProbe
                     fi
                     [ -n "$cert" ] && [ -f "$cert" ] && cert_exists=1
                     [ -n "$key" ] && [ -f "$key" ] && key_exists=1
+
+                    if [ "$cert_exists" = "1" ]; then
+                        cert_pem=$(base64 < "$cert" | tr -d "\n")
+                    fi
 
                     if [ -n "$upstream" ]; then
                         if command -v curl >/dev/null 2>&1; then
@@ -189,7 +195,7 @@ final readonly class ProxyRouteProbe
                     fi
                 fi
 
-                printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$exists" "$hash" "$cert" "$key" "$cert_exists" "$key_exists" "$runtime_reachable" "$runtime_error"
+                printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$exists" "$hash" "$cert" "$key" "$cert_exists" "$key_exists" "$runtime_reachable" "$runtime_error" "$cert_pem"
             ' sh "$path" "$upstream"
             BASH;
 
@@ -203,15 +209,15 @@ final readonly class ProxyRouteProbe
 
         $result = $this->scripts()->run($node, 'orbit-proxy', 'probe', $script, throw: true);
 
-        $parts = explode("\t", trim($result->stdout), limit: 8);
+        $parts = explode("\t", trim($result->stdout), limit: 9);
 
         if (count($parts) < 6) {
             return [];
         }
 
-        [$exists, $hash, $cert, $key, $certExists, $keyExists, $runtimeReachable, $runtimeError] = array_pad(
+        [$exists, $hash, $cert, $key, $certExists, $keyExists, $runtimeReachable, $runtimeError, $certPem] = array_pad(
             $parts,
-            length: 8,
+            length: 9,
             value: '',
         );
 
@@ -222,6 +228,8 @@ final readonly class ProxyRouteProbe
             'key_path' => $key,
             'cert_exists' => $certExists === '1',
             'key_exists' => $keyExists === '1',
+            'cert_validity_observed' => $certPem !== '',
+            'cert_validity_days' => $this->certificateValidityDays($certPem),
             'runtime_upstream' => $runtimeUpstream,
             'runtime_upstream_reachable' => $runtimeReachable === '' ? null : $runtimeReachable === '1',
             'runtime_probe_error' => $runtimeError === '' ? null : base64_decode($runtimeError, true),
@@ -724,6 +732,34 @@ final readonly class ProxyRouteProbe
         return [];
     }
 
+    private function certificateValidityDays(string $encodedCertificate): ?int
+    {
+        if ($encodedCertificate === '') {
+            return null;
+        }
+
+        $certificate = base64_decode($encodedCertificate, true);
+
+        if (! is_string($certificate)) {
+            return null;
+        }
+
+        $parsed = @openssl_x509_parse($certificate, short_names: false);
+
+        if (! is_array($parsed)) {
+            return null;
+        }
+
+        $startsAt = $parsed['validFrom_time_t'] ?? null;
+        $expiresAt = $parsed['validTo_time_t'] ?? null;
+
+        if (! is_int($startsAt) || ! is_int($expiresAt) || $expiresAt < $startsAt) {
+            return null;
+        }
+
+        return intdiv($expiresAt - $startsAt, 86400);
+    }
+
     /**
      * @param  array<string, mixed>  $observed
      * @return list<DriftEntry>
@@ -1213,6 +1249,46 @@ final readonly class ProxyRouteProbe
                         'observed' => [
                             'cert' => $observed['cert_path'] ?? null,
                             'key' => $observed['key_path'] ?? null,
+                        ],
+                    ],
+                ),
+            ];
+        }
+
+        $validityDays = $observed['cert_validity_days'] ?? null;
+
+        if (($observed['cert_validity_observed'] ?? null) === true && ! is_int($validityDays)) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.tls_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "Proxy route {$route->domain} TLS certificate validity could not be verified.",
+                    detail: [
+                        'expected' => [
+                            'validity_days' => '396-397',
+                        ],
+                        'observed' => [
+                            'validity_days' => null,
+                        ],
+                    ],
+                ),
+            ];
+        }
+
+        if (is_int($validityDays) && ! OrbitCaService::hasExpectedLeafValidity($validityDays)) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.tls_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "Proxy route {$route->domain} TLS certificate validity does not match Orbit policy.",
+                    detail: [
+                        'expected' => [
+                            'validity_days' => '396-397',
+                        ],
+                        'observed' => [
+                            'validity_days' => $validityDays,
                         ],
                     ],
                 ),

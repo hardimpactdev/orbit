@@ -352,11 +352,11 @@ describe('OrbitCaService', function () {
             expect($text)->toContain('DNS:demo.beast');
         });
 
-        it('issues leaf certificates with the Orbit default ten year validity', function () {
+        it('issues leaf certificates with the Orbit default 397-day validity', function () {
             $service = new OrbitCaService;
             $paths = $service->issueLeaf('demo.beast');
 
-            expect(orbitCaServiceTestCertValidityDays($paths['cert']))->toBeGreaterThanOrEqual(3649);
+            expect(orbitCaServiceTestCertValidityDays($paths['cert']))->toBeIn([396, 397]);
         });
 
         it('reissues fresh leaves whose validity is shorter than the Orbit default', function () {
@@ -372,7 +372,7 @@ describe('OrbitCaService', function () {
 
             $shortSerial = orbitCaServiceTestCertSerial($paths['cert']);
 
-            expect(orbitCaServiceTestCertValidityDays($paths['cert']))->toBeLessThan(3650);
+            expect(orbitCaServiceTestCertValidityDays($paths['cert']))->toBeLessThan(396);
 
             $renewed = $service->issueLeaf('demo.beast');
 
@@ -380,7 +380,31 @@ describe('OrbitCaService', function () {
                 ->not
                 ->toBe($shortSerial)
                 ->and(orbitCaServiceTestCertValidityDays($renewed['cert']))
-                ->toBeGreaterThanOrEqual(3649);
+                ->toBeIn([396, 397]);
+        });
+
+        it('reissues fresh overlong leaves whose validity exceeds the Orbit default', function () {
+            $service = new OrbitCaService;
+            $paths = $service->issueLeaf('demo.beast');
+
+            orbitCaServiceTestSignLeafForDays(
+                host: 'demo.beast',
+                keyPath: $paths['key'],
+                certPath: $paths['cert'],
+                days: 3650,
+            );
+
+            $overlongSerial = orbitCaServiceTestCertSerial($paths['cert']);
+
+            expect(orbitCaServiceTestCertValidityDays($paths['cert']))->toBeGreaterThan(397);
+
+            $renewed = $service->issueLeaf('demo.beast');
+
+            expect(orbitCaServiceTestCertSerial($renewed['cert']))
+                ->not
+                ->toBe($overlongSerial)
+                ->and(orbitCaServiceTestCertValidityDays($renewed['cert']))
+                ->toBeIn([396, 397]);
         });
 
         it('embeds additional SANs when issuing a DNS host leaf', function () {

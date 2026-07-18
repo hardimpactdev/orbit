@@ -655,7 +655,7 @@ describe('ProxyRouteFixer', function (): void {
         'nonmatching backend node id' => [['backend_node_id' => 999_999]],
     ]);
 
-    it('repairs missing Orbit-managed TLS material for custom proxy routes', function (): void {
+    it('repairs Orbit-managed TLS drift for custom proxy routes', function (string $key, DriftKind $kind): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -675,16 +675,16 @@ describe('ProxyRouteFixer', function (): void {
             new SiteCertificateInstallerFake,
         )->fix($route, new DriftEntry(
             family: 'proxy',
-            key: 'proxy.tls_missing',
-            kind: DriftKind::Missing,
-            summary: 'tls missing',
+            key: $key,
+            kind: $kind,
+            summary: 'tls drift',
         ));
 
         expect($action)
             ->toMatchArray([
                 'family' => 'proxy',
                 'node' => 'app-1',
-                'key' => 'proxy.tls_missing',
+                'key' => $key,
                 'status' => 'completed',
             ])
             ->and(proxy_fixer_payload_paths($shell))
@@ -700,7 +700,10 @@ describe('ProxyRouteFixer', function (): void {
             ->not->toContain('chgrp')->and($shell->scripts[0])
             ->not->toContain("docker restart 'orbit-caddy'")->and($shell->scripts[0])
             ->not->toContain('sudo systemctl reload caddy');
-    });
+    })->with([
+        'missing material' => ['proxy.tls_missing', DriftKind::Missing],
+        'mismatched validity' => ['proxy.tls_mismatch', DriftKind::Divergent],
+    ]);
 
     it('repairs custom proxy TLS material through managed caddy host mount sources', function (): void {
         $node = createTestAppHostNode([

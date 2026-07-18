@@ -64,8 +64,9 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
    route's policy. For DNS hostname routes, this includes the app-role
    compatibility material used by Laravel Vite TLS detection. Internal IP-only
    routes skip hostname compatibility checks. Expected TLS material is a
-   gateway-issued route leaf certificate and key — not CA material issued locally by Caddy,
-   and not an app-role intermediate CA.
+   gateway-issued 397-day route leaf certificate and key — not CA material
+   issued locally by Caddy, and not an app-role intermediate CA. An otherwise
+   valid route leaf with a longer or shorter issuance lifetime is TLS drift.
 9. **Extra route ownership:** Orbit-owned backend routes without matching
    gateway configuration are reported as extra route drift.
 10. **Enactment state:** app routes whose persisted enactment state is failed,
@@ -103,7 +104,7 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.analytics.public_route_missing` | An enabled app analytics binding expects a public tracking route, but its route row is absent or differs from canonical app analytics intent. |
 | `proxy.analytics.router_route_orphaned` | The private `analytics.orbit` route row exists, but no active analytics role assignment remains. |
 | `proxy.tls_missing` | Gateway configuration expects Orbit-managed TLS material, but it is absent from node reality. |
-| `proxy.tls_mismatch` | Managed TLS material exists but does not match the expected route policy. |
+| `proxy.tls_mismatch` | Managed TLS material exists but its path, issuer policy, or 397-day issuance lifetime does not match the expected route policy. |
 | `proxy.route_extra` | An Orbit-owned backend route has no matching gateway proxy route row, or an explicitly selected observed backend route has no matching gateway proxy route row during adoption scope. |
 
 ## Proxy Fix Map
@@ -133,7 +134,7 @@ only when that readback is clean.
 | `proxy.analytics.public_route_missing` | Re-sync and enact the public ingress and router tracking routes from the owning app analytics binding. |
 | `proxy.analytics.router_route_orphaned` | Remove the orphaned `analytics.orbit` route row, rendered site, certificate, and key. |
 | `proxy.tls_missing` | Recreate Orbit-managed TLS material for the selected route when prerequisites are available. |
-| `proxy.tls_mismatch` | Replace or relink Orbit-managed TLS material to match gateway configuration. Repair must converge to gateway-issued route leaf certificates when the node serves Caddy-local or intermediate-CA-issued material outside Orbit policy. |
+| `proxy.tls_mismatch` | Reissue or relink the TLS material so its path and 397-day validity match Orbit policy. |
 | `proxy.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |
 
 `doctor --restore` does not handle `proxy.record_incomplete`, `proxy.owner_invalid`, `proxy.node_invalid`, `proxy.domain_conflict`, or `proxy.docker_runtime_unavailable`. The Docker runtime gap is a node-runtime concern; resolve it through `doctor --family=node --restore` before re-running proxy doctor.

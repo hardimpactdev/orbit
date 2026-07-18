@@ -488,7 +488,8 @@ describe('proxy backend and TLS reality', function (): void {
             ->and($shell->nodes[0]->is($node))
             ->toBeTrue()
             ->and($shell->scripts[0])
-            ->toContain("ORBIT_PROXY_DOMAIN='vite.docs.test'");
+            ->toContain("ORBIT_PROXY_DOMAIN='vite.docs.test'")
+            ->toContain('cert_pem=$(base64 < "$cert"');
     });
 
     it('introspects backend route artifacts through orbit-caddy container mounts', function (): void {
@@ -1340,6 +1341,106 @@ describe('proxy backend and TLS reality', function (): void {
         $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
         expect(proxyProbeIssue($drift, 'proxy.tls_mismatch')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('detects Orbit-managed TLS leaves issued outside the expected validity window', function (int $validityDays): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'analytics.orbit',
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://10.6.0.15:8000'],
+                'upstream' => 'http://10.6.0.15:8000',
+            ],
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'analytics.orbit' => [
+                'route_exists' => true,
+                'route_hash' => str_repeat('a', 64),
+                'cert_exists' => true,
+                'key_exists' => true,
+                'cert_path' => '/etc/orbit/certs/analytics.orbit.crt',
+                'key_path' => '/etc/orbit/certs/analytics.orbit.key',
+                'cert_validity_days' => $validityDays,
+            ],
+        ]);
+
+        $issue = proxyProbeIssue(new ProxyRouteProbe()->diff($route, $snapshot), 'proxy.tls_mismatch');
+
+        expect($issue?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and($issue?->detail['observed']['validity_days'] ?? null)
+            ->toBe($validityDays);
+    })->with([
+        'short-lived leaf' => 90,
+        'overlong leaf' => 3650,
+    ]);
+
+    it('accepts Orbit-managed TLS leaves in the expected validity window', function (int $validityDays): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'analytics.orbit',
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://10.6.0.15:8000'],
+                'upstream' => 'http://10.6.0.15:8000',
+            ],
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'analytics.orbit' => [
+                'route_exists' => true,
+                'route_hash' => str_repeat('a', 64),
+                'cert_exists' => true,
+                'key_exists' => true,
+                'cert_path' => '/etc/orbit/certs/analytics.orbit.crt',
+                'key_path' => '/etc/orbit/certs/analytics.orbit.key',
+                'cert_validity_days' => $validityDays,
+            ],
+        ]);
+
+        expect(proxyProbeIssue(new ProxyRouteProbe()->diff($route, $snapshot), 'proxy.tls_mismatch'))->toBeNull();
+    })->with([
+        '397-day leaf' => 397,
+        'rounding-tolerant 396-day leaf' => 396,
+    ]);
+
+    it('detects Orbit-managed TLS leaves whose validity cannot be parsed', function (): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'analytics.orbit',
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://10.6.0.15:8000'],
+                'upstream' => 'http://10.6.0.15:8000',
+            ],
+        ]);
+
+        $snapshot = new ProbeSnapshot([
+            'analytics.orbit' => [
+                'route_exists' => true,
+                'route_hash' => str_repeat('a', 64),
+                'cert_exists' => true,
+                'key_exists' => true,
+                'cert_path' => '/etc/orbit/certs/analytics.orbit.crt',
+                'key_path' => '/etc/orbit/certs/analytics.orbit.key',
+                'cert_validity_observed' => true,
+                'cert_validity_days' => null,
+            ],
+        ]);
+
+        expect(proxyProbeIssue(new ProxyRouteProbe()->diff($route, $snapshot), 'proxy.tls_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent);
     });
 
     it('skips TLS drift for externally managed routes', function (): void {

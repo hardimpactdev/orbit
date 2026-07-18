@@ -105,8 +105,9 @@ These terms define certificate authority, leaf certificate scope, and hostname c
   applied on the serving node. Certificates chain to the gateway root CA
   trusted through `gateway:add` and `gateway:trust`.
 - **Route leaf certificate:** A server certificate issued for one Orbit route
-  host or IP. It can terminate HTTPS for that route, but it cannot sign other
-  certificates.
+  host or IP with a 397-day validity period. It can terminate HTTPS for that
+  route, but it cannot sign other certificates. Proxy convergence replaces
+  leaves outside Orbit's current issuance window.
 - **Intermediate CA certificate:** A certificate with signing authority below
   the gateway root CA. Orbit does not issue intermediate CA certificates to app
   nodes for routine proxy serving because that would let a compromised node
