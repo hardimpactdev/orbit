@@ -260,7 +260,7 @@ describe('GatewayApiContainerInstaller orbit-caddy convergence', function (): vo
                 .escapeshellarg($caddyCertPath),
         );
         Process::assertRan(
-            'sudo install -m 0644 '.escapeshellarg("{$containerConfigRoot}/certs/10.6.0.2.key").' '
+            'sudo install -m 0600 '.escapeshellarg("{$containerConfigRoot}/certs/10.6.0.2.key").' '
                 .escapeshellarg($caddyKeyPath),
         );
     });

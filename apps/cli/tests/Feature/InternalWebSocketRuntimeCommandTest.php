@@ -296,6 +296,7 @@ describe('internal websocket runtime command', function (): void {
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('sudo install -d -m 0755 /etc/orbit/websocket')
             ->toContain('sudo test -f /etc/orbit/websocket/app.key')
+            ->toContain('sudo chmod 0600 /etc/orbit/websocket/app.key')
             ->toContain('sudo cat /etc/orbit/websocket/app.key');
     });
 
@@ -320,7 +321,7 @@ describe('internal websocket runtime command', function (): void {
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('sudo install -d -m 0755 /etc/orbit/websocket')
             ->toContain('sudo tee /etc/orbit/websocket/apps.php')
-            ->toContain('sudo chmod 0644 /etc/orbit/websocket/apps.php')
+            ->toContain('sudo chmod 0600 /etc/orbit/websocket/apps.php')
             ->toContain('docker container inspect orbit-websocket-app-dev-1')
             ->toContain('docker restart orbit-websocket-app-dev-1')
             ->and(file_get_contents("{$bin}/apps.php"))
@@ -353,6 +354,8 @@ describe('internal websocket runtime command', function (): void {
                 'sudo install -d -m 0755 /opt/orbit/websocket /opt/orbit/websocket/releases /opt/orbit/websocket/shared /etc/orbit/websocket',
             )
             ->toContain('sudo tee /etc/orbit/websocket/apps.php')
+            ->toContain('sudo chmod 0600 /etc/orbit/websocket/apps.php')
+            ->toContain('sudo chmod 0600 /opt/orbit/websocket/shared/.env')
             ->toContain('sudo rm -rf /opt/orbit/websocket/releases/'.str_repeat('a', 64))
             ->toContain('sudo tar -xf - -C /opt/orbit/websocket/releases/'.str_repeat('a', 64))
             ->toContain(

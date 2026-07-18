@@ -50,6 +50,8 @@ class GatewaySwarmInstaller
         $this->bootstrapConfigRoot($configRoot);
 
         $gatewayLeaf = $this->caService->issueLeaf('gateway', [$wireguardAddress]);
+        File::chmod($gatewayLeaf['cert'], 0o644);
+        File::chmod($gatewayLeaf['key'], 0o600);
         $this->imageAcquirer->ensure($image, $imageArchive);
 
         if ($exposureMode->isGatewayDirect()) {
@@ -137,7 +139,7 @@ class GatewaySwarmInstaller
             'install gateway certificate for router-owned orbit-caddy',
         );
         $this->runRequired(
-            sprintf('sudo install -m 0644 %s %s', escapeshellarg($leaf['key']), escapeshellarg(self::GatewayKeyPath)),
+            sprintf('sudo install -m 0600 %s %s', escapeshellarg($leaf['key']), escapeshellarg(self::GatewayKeyPath)),
             'install gateway certificate key for router-owned orbit-caddy',
         );
     }
@@ -187,12 +189,17 @@ class GatewaySwarmInstaller
         File::ensureDirectoryExists($configRoot, 0o700);
         File::ensureDirectoryExists("{$configRoot}/certs", 0o700);
         File::ensureDirectoryExists("{$configRoot}/operations-websocket", 0o700);
+        File::chmod($configRoot, 0o700);
+        File::chmod("{$configRoot}/certs", 0o700);
+        File::chmod("{$configRoot}/operations-websocket", 0o700);
 
         $database = "{$configRoot}/gateway.sqlite";
 
         if (! File::exists($database)) {
             File::put($database, '');
         }
+
+        File::chmod($database, 0o600);
 
         $envPath = "{$configRoot}/.env";
         $contents = File::exists($envPath) ? File::get($envPath) : '';
@@ -236,6 +243,7 @@ class GatewaySwarmInstaller
         }
 
         File::put($envPath, $contents);
+        File::chmod($envPath, 0o600);
 
         $operationsWebSocketApps = "{$configRoot}/operations-websocket/apps.php";
         $scheme = $operationsReverb['ORBIT_OPERATIONS_REVERB_SCHEME'];
@@ -251,6 +259,7 @@ class GatewaySwarmInstaller
                 scheme: $scheme,
             ),
         );
+        File::chmod($operationsWebSocketApps, 0o600);
     }
 
     /**

@@ -89,6 +89,22 @@ it('converges gateway-direct Swarm service with CA-rooted certs and Docker-aware
         ->toBe("issued-key\n")
         ->and(File::get("{$this->configRoot}/certs/gateway.sans"))
         ->toBe("gateway\n10.6.0.2\n")
+        ->and(fileperms($this->configRoot) & 0o777)
+        ->toBe(0o700)
+        ->and(fileperms("{$this->configRoot}/certs") & 0o777)
+        ->toBe(0o700)
+        ->and(fileperms("{$this->configRoot}/operations-websocket") & 0o777)
+        ->toBe(0o700)
+        ->and(fileperms("{$this->configRoot}/gateway.sqlite") & 0o777)
+        ->toBe(0o600)
+        ->and(fileperms("{$this->configRoot}/.env") & 0o777)
+        ->toBe(0o600)
+        ->and(fileperms("{$this->configRoot}/operations-websocket/apps.php") & 0o777)
+        ->toBe(0o600)
+        ->and(fileperms("{$this->configRoot}/certs/gateway.key") & 0o777)
+        ->toBe(0o600)
+        ->and(fileperms("{$this->configRoot}/certs/gateway.crt") & 0o777)
+        ->toBe(0o644)
         ->and(File::exists("{$this->configRoot}/gateway.sqlite"))
         ->toBeTrue()
         ->and(File::get("{$this->configRoot}/operations-websocket/apps.php"))
@@ -385,6 +401,11 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
         );
 
     Process::assertRan('sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null');
+    Process::assertRan(
+        'sudo install -m 0600 '
+        .escapeshellarg("{$this->configRoot}/certs/gateway.key")
+        ." '/etc/orbit/certs/gateway.key'",
+    );
     Process::assertRan($certReadableCommand);
     Process::assertRan($keyReadableCommand);
     Process::assertRan(CaddyTool::reloadCommand('orbit-caddy'));

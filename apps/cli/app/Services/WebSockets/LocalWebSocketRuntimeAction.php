@@ -282,12 +282,11 @@ final readonly class LocalWebSocketRuntimeAction
                 dirname(self::AppsConfigPath),
             ]);
 
-            if ($this->runProcess(['sudo', 'test', '-f', self::AppsConfigPath])->isSuccessful()) {
-                return;
+            if (! $this->runProcess(['sudo', 'test', '-f', self::AppsConfigPath])->isSuccessful()) {
+                $this->writeSudoFile(self::AppsConfigPath, "<?php return [];\n");
             }
 
-            $this->writeSudoFile(self::AppsConfigPath, "<?php return [];\n");
-            $this->mustRun(['sudo', 'chmod', '0644', self::AppsConfigPath]);
+            $this->mustRun(['sudo', 'chmod', '0600', self::AppsConfigPath]);
         });
 
         $currentHash = trim(
@@ -315,6 +314,7 @@ final readonly class LocalWebSocketRuntimeAction
                 $this->appendSudoFile($sharedEnv, 'APP_KEY='.$this->generateAppKey()."\n");
             }
 
+            $this->mustRun(['sudo', 'chmod', '0600', $sharedEnv]);
             $this->mustRun(['sudo', 'ln', '-sfn', $sharedEnv, "{$releaseDir}/.env"]);
         });
 
@@ -614,9 +614,9 @@ final readonly class LocalWebSocketRuntimeAction
         if (! $test->isSuccessful()) {
             $appKey = $this->generateAppKey();
             $this->writeAppKey($appKey);
-            $this->mustRun(['sudo', 'chmod', '0600', '/etc/orbit/websocket/app.key']);
         }
 
+        $this->mustRun(['sudo', 'chmod', '0600', '/etc/orbit/websocket/app.key']);
         $cat = $this->mustRun(['sudo', 'cat', '/etc/orbit/websocket/app.key']);
         $appKey = trim($cat->getOutput());
 
@@ -641,7 +641,7 @@ final readonly class LocalWebSocketRuntimeAction
 
         $this->mustRun(['sudo', 'install', '-d', '-m', '0755', '/etc/orbit/websocket']);
         $this->writeAppsConfig($content);
-        $this->mustRun(['sudo', 'chmod', '0644', self::AppsConfigPath]);
+        $this->mustRun(['sudo', 'chmod', '0600', self::AppsConfigPath]);
 
         $inspect = $this->runProcess(['docker', 'container', 'inspect', $container]);
 

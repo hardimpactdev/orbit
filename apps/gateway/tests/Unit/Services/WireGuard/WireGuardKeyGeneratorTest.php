@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Models\WireGuardPeer;
 use App\Services\WireGuard\WireGuardKeyGenerator;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
 
 beforeEach(function (): void {
@@ -53,6 +54,13 @@ describe('peer persistence', function (): void {
         expect($peer->private_key)->toBe('def456');
         expect($peer->pre_shared_key)->toBe('ghi789');
         expect($peer->allowed_ips)->toBe('10.0.0.2/32');
+
+        $storedPeer = DB::table('wireguard_peers')->where('id', $peer->id)->first();
+
+        expect($storedPeer)
+            ->not->toBeNull()->and($storedPeer->private_key)
+            ->not->toBe('def456')->and($storedPeer->pre_shared_key)
+            ->not->toBe('ghi789');
     });
 
     it('enforces unique node constraint', function (): void {

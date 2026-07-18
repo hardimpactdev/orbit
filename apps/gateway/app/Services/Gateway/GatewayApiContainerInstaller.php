@@ -87,7 +87,7 @@ class GatewayApiContainerInstaller
             escapeshellarg($caddyLeaf['cert']),
         ), 'install Orbit API certificate for orbit-caddy');
         $this->runRequired(sprintf(
-            'sudo install -m 0644 %s %s',
+            'sudo install -m 0600 %s %s',
             escapeshellarg($leaf['key']),
             escapeshellarg($caddyLeaf['key']),
         ), 'install Orbit API certificate key for orbit-caddy');

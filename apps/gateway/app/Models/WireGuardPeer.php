@@ -36,6 +36,15 @@ final class WireGuardPeer extends Model
         'allowed_ips',
     ];
 
+    #[\Override]
+    protected function casts(): array
+    {
+        return [
+            'private_key' => 'encrypted',
+            'pre_shared_key' => 'encrypted',
+        ];
+    }
+
     /**
      * @return BelongsTo<Node, $this>
      */

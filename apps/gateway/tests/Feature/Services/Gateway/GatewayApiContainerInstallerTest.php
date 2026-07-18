@@ -157,7 +157,7 @@ describe('GatewayApiContainerInstaller', function (): void {
             'sudo install -m 0644 '.escapeshellarg("{$certsDir}/10.6.0.2.crt")." '/etc/orbit/certs/10.6.0.2.crt'",
         );
         Process::assertRan(
-            'sudo install -m 0644 '.escapeshellarg("{$certsDir}/10.6.0.2.key")." '/etc/orbit/certs/10.6.0.2.key'",
+            'sudo install -m 0600 '.escapeshellarg("{$certsDir}/10.6.0.2.key")." '/etc/orbit/certs/10.6.0.2.key'",
         );
     });
 
@@ -385,7 +385,7 @@ describe('GatewayApiContainerInstaller', function (): void {
             'sudo install -m 0644 '.escapeshellarg("{$certsDir}/10.6.0.2.crt").' '.escapeshellarg($caddyCertPath),
         );
         Process::assertRan(
-            'sudo install -m 0644 '.escapeshellarg("{$certsDir}/10.6.0.2.key").' '.escapeshellarg($caddyKeyPath),
+            'sudo install -m 0600 '.escapeshellarg("{$certsDir}/10.6.0.2.key").' '.escapeshellarg($caddyKeyPath),
         );
     });
 

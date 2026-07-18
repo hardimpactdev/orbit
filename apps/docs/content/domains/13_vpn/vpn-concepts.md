@@ -74,6 +74,11 @@ These terms define how VPN clients are identified and classified.
   from operator machines and must not remove Orbit node records, grants, or
   active node peers.
 
+Orbit stores public peer keys as queryable identity material. The gateway
+encrypts private keys and pre-shared keys at rest with its application key.
+Model access decrypts that material for authorized provisioning and
+reconciliation work.
+
 ## Web UI Credential
 
 These terms cover the active `vpn` role runtime backend admin password and

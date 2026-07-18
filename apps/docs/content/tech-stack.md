@@ -121,6 +121,13 @@ gateway-local Orbit Scheduler. Both services mount the gateway config root
 material. Workload nodes run the public Orbit CLI as a gateway client and run
 workloads in role-specific runtime containers.
 
+The gateway config root and its credential-bearing files are owner-only. Its
+directories use mode `0700`; `.env`, `gateway.sqlite`, operations WebSocket app
+credentials, and TLS private keys use mode `0600`. Public certificate files may
+remain readable at mode `0644`. Gateway startup and convergence repair these
+modes on existing paths instead of applying them only when a path is first
+created.
+
 Gateway maintenance in production is containerized: migrations and update work
 run through the gateway container entrypoint or durable one-shot runner. Source
 development can still use `bin/orbit-gateway-artisan` or direct
@@ -531,6 +538,12 @@ Docker publishes the port only on the node's WireGuard address. The router
 targets the backend as `https://<wireguard-ip>:8080`. Backend
 certificates and runtime identity use the backend WireGuard IP, not per-node
 websocket DNS.
+
+Reverb reads app registrations from `/etc/orbit/websocket/apps.php` on the
+host. That file, `/etc/orbit/websocket/app.key`, and the shared `.env` used by
+the source fallback contain credentials and use mode `0600`. Convergence
+repairs those modes even when the files already exist. The Reverb container
+runs as root and receives the files through read-only bind mounts.
 
 The `router` role owns `websocket.orbit`, the websocket backend pool, and
 private router-to-websocket TLS verification. Apps publish to
