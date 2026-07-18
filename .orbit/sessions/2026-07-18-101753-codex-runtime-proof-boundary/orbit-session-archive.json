@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-18T08:17:53+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-runtime-proof-boundary/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-18-101753-codex-runtime-proof-boundary",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-07-18T080242Z-c67212a02d97.json"
+    ],
+    "entry_digests": {
+        "loop.md": "b367c87d2167ca26888e1d732a78fe6b6a98cab53854e65317ead7415fd79b7b",
+        "quality-gates/quality-check-2026-07-18T080242Z-c67212a02d97.json": "6318770c1ce3848c358112b72513b9d09a558e3c8840ff778f592327a7ea09b2"
+    },
+    "branch": "codex/runtime-proof-boundary",
+    "candidate_commit": "f9f7a62d91daed8944a584ab66ca0e2b4a40a2a0",
+    "accepted_feature_tip": "f9f7a62d91daed8944a584ab66ca0e2b4a40a2a0",
+    "accepted_main_tip": "8b950b8433928788ea8fdf992e9e6a8a52a49989",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
