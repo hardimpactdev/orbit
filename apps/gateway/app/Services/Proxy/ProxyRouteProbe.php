@@ -738,13 +738,13 @@ final readonly class ProxyRouteProbe
             return null;
         }
 
-        $certificate = base64_decode($encodedCertificate, true);
+        $certificate = base64_decode(string: $encodedCertificate, strict: true);
 
         if (! is_string($certificate)) {
             return null;
         }
 
-        $parsed = @openssl_x509_parse($certificate, short_names: false);
+        $parsed = openssl_x509_parse(certificate: $certificate, short_names: false);
 
         if (! is_array($parsed)) {
             return null;
@@ -757,7 +757,7 @@ final readonly class ProxyRouteProbe
             return null;
         }
 
-        return intdiv($expiresAt - $startsAt, 86400);
+        return intdiv(num1: $expiresAt - $startsAt, num2: 86400);
     }
 
     /**
