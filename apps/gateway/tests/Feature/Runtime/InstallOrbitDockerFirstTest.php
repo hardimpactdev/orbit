@@ -356,7 +356,7 @@ describe('install-orbit Docker-first gateway contract', function (): void {
             BASH);
         chmod("{$bin}/sudo", 0755);
 
-        file_put_contents("{$bin}/install", "#!/usr/bin/env bash\nexit 0\n");
+        file_put_contents("{$bin}/install", "#!/usr/bin/env bash\nexec /usr/bin/install \"\$@\"\n");
         chmod("{$bin}/install", 0755);
 
         $command = sprintf(
