@@ -1,0 +1,44 @@
+Retained topology: dev-f911ed
+Provider/host: Incus / beast
+Kind: operator_gateway_app-dev
+Candidate: 8fba5fd81e68759b6aaddfa6ffa27839827c4920
+Runtime checkout: /home/orbit/orbit
+Node under proof: dev (10.6.0.4)
+Domain: caddy-reload-proof.orbit
+
+Proof procedure:
+1. Issued Orbit-root-signed leaf A (serial A029), wrote a fixed Caddy site,
+   and loaded it for the initial controlled state.
+2. Replaced only the certificate file with Orbit-root-signed leaf B (serial
+   A02A), leaving the Caddyfile and site configuration unchanged.
+3. Confirmed the on-disk certificate was B while an SNI TLS handshake still
+   served cached leaf A.
+4. Ran the source-mounted internal:caddy-config reload action from the exact
+   candidate commit. It returned exit_code 0.
+5. Repeated the SNI TLS handshake and confirmed Caddy now served leaf B and
+   OpenSSL reported Verification: OK against the retained Orbit root.
+
+Initial served leaf A:
+serial=A029
+sha256 Fingerprint=B1:3F:CD:B8:B3:B8:87:55:C8:07:03:BC:4D:F7:D9:FE:50:F5:D9:26:AF:AE:55:1B:4F:67:D4:3F:6A:AF:DF:9C
+
+Replacement leaf B on disk before reload:
+serial=A02A
+sha256 Fingerprint=68:47:C0:25:7C:40:D2:70:0A:2B:B0:73:8D:AD:9D:EE:0E:05:FE:3F:5C:F2:51:97:07:E0:AA:81:82:A9:D5:63
+
+Served leaf before source reload (still cached A):
+serial=A029
+sha256 Fingerprint=B1:3F:CD:B8:B3:B8:87:55:C8:07:03:BC:4D:F7:D9:FE:50:F5:D9:26:AF:AE:55:1B:4F:67:D4:3F:6A:AF:DF:9C
+
+Actual source-mounted reload result:
+{"success":{"data":{"container":"orbit-caddy","exit_code":0},"meta":[]}}
+
+Served leaf after source reload (replacement B):
+serial=A02A
+sha256 Fingerprint=68:47:C0:25:7C:40:D2:70:0A:2B:B0:73:8D:AD:9D:EE:0E:05:FE:3F:5C:F2:51:97:07:E0:AA:81:82:A9:D5:63
+Protocol version: TLSv1.3
+Peer certificate: CN=caddy-reload-proof.orbit
+Verification: OK
+
+The final handshake directly proves that an unchanged Caddy configuration
+reprovisions manually loaded TLS material after Orbit's forced reload.

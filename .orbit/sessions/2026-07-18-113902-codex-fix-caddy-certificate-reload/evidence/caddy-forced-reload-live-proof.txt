@@ -1,0 +1,72 @@
+Live source identity
+====================
+
+Primary main: 8fba5fd81e68759b6aaddfa6ffa27839827c4920
+Origin main: 8fba5fd81e68759b6aaddfa6ffa27839827c4920
+Version: 0.1.190
+No-GitHub candidate build: 20260718T090815Z-8fba5fd81
+Gateway image digest: sha256:723f5715ed529cc6fd4e6327210fa0accc4b42e59c62525615e14ad2b0836999
+Candidate channel: https://s3.hardimpact.dev/orbit/channels/live-test/orbit-release-manifest.json
+
+Fleet rollout
+=============
+
+The candidate gateway and scheduler converged and verified. All selected
+workload nodes installed the candidate CLI and Orbit Agent; the second
+update:all verification passed gateway, scheduler, CLI, and Agent checks.
+The release runner stopped only at the unrelated required-role-image check
+because services1 could not pull the private candidate Reverb image from GHCR.
+Activity 203966 records `fleet_update.required_image_missing`; this does not
+affect Caddy configuration, route certificates, or the installed CLI used by
+the certificate repair path.
+
+Live Caddy reprovision
+======================
+
+Forced Caddy reprovision completed on every reachable Caddy host owning the
+private routes under test: NMBP, agent, beast, gateway, main1, and ingress1.
+Mini's Caddy rejected reprovision because its internal Caddy PKI intermediate
+lifetime exceeds the remaining local root lifetime; Mini owns no registered
+proxy route in the gateway route inventory. services1 also owns no registered
+proxy route.
+
+The two legacy `.agent` routes were outside the proxy Doctor node scope.
+`hermes.agent` and `openclaw.agent` were therefore explicitly repaired through
+the production `ProxyRouteFixer` TLS path, then force-reloaded. Both now use the
+current gateway Orbit root and 397-day leaves.
+
+Final direct outcome proof
+==========================
+
+The final sweep selected every registered private proxy route served by NMBP,
+agent, beast, or gateway. For every route it performed an SNI TLS handshake,
+required OpenSSL chain verification against
+`/Users/nckrtl/Downloads/orbit-root-ca.crt`, required hostname verification,
+and required the remaining validity to be between 390 and 399 days.
+
+Result: INTERNAL_ORBIT_ROUTE_SWEEP pass=47 fail=0
+
+Inventory covered:
+- NMBP: 6/6 routes
+- agent: 2/2 routes
+- beast: 35/35 routes
+- gateway: 4/4 routes
+
+Representative results:
+- analytics.orbit: Jul 18 2026 through Aug 19 2027, Orbit Root CA
+- metrics.orbit: Jul 18 2026 through Aug 19 2027, Orbit Root CA
+- s3.orbit: Jul 18 2026 through Aug 19 2027, Orbit Root CA
+- websocket.orbit: Jul 18 2026 through Aug 19 2027, Orbit Root CA
+- nckrtl.nmbp: Jul 18 2026 through Aug 19 2027, Orbit Root CA
+- new-design.dutchlaravelfoundation.test: Jul 18 2026 through Aug 19 2027,
+  Orbit Root CA
+- hermes.agent: Jul 18 2026 through Aug 19 2027, Orbit Root CA
+- openclaw.agent: Jul 18 2026 through Aug 19 2027, Orbit Root CA
+
+Gateway proxy Doctor finished healthy with zero issues. NMBP and Beast retain
+known non-TLS route/record drift, but the final SNI sweep proves their served
+certificate outcome independently of that unrelated drift.
+
+Public ingress domains are excluded from this private-root sweep because their
+phone/browser trust path is the public edge certificate, not the user-installed
+Orbit root.

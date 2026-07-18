@@ -1,0 +1,27 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-18T09:39:03+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-caddy-certificate-reload/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-18-113902-codex-fix-caddy-certificate-reload",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/caddy-forced-reload-live-proof.txt",
+        "evidence/caddy-forced-reload-retained-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-18T085230Z-d56541405321.json"
+    ],
+    "entry_digests": {
+        "evidence/caddy-forced-reload-live-proof.txt": "a0305dce5bfc869ef078ae3712c4d1f344de04c8ca84d802312122e5db36a72d",
+        "evidence/caddy-forced-reload-retained-proof.txt": "f50a0762ed91c1ace96364050f59814dd98ad415c29af69d3db951e70e20f383",
+        "loop.md": "cf8cd531c954e852e2f3183356c2a7805a7e72f4bd72576d31422acd7c47b1b2",
+        "quality-gates/quality-check-2026-07-18T085230Z-d56541405321.json": "87f501131024360d338c846fd708cbc8d8848c180f6858e8723876601848efa8"
+    },
+    "branch": "codex/fix-caddy-certificate-reload",
+    "candidate_commit": "8fba5fd81e68759b6aaddfa6ffa27839827c4920",
+    "accepted_feature_tip": "8fba5fd81e68759b6aaddfa6ffa27839827c4920",
+    "accepted_main_tip": "7ca2d6d195d01e35ab7096f334cbe4ce2fc46b92",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
