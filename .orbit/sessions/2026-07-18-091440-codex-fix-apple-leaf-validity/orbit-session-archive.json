@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-18T07:14:41+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-apple-leaf-validity/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-18-091440-codex-fix-apple-leaf-validity",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/apple-leaf-retained-proof.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/apple-leaf-retained-proof.txt": "8f359262c01506b47294f47440c79205b4b833d76c221638eab376b93dcd30c2",
+        "loop.md": "8b05bdfab586f1a36136367a8b009aa559b2e55089f4602e8aacf5143d445c25"
+    },
+    "branch": "codex/fix-apple-leaf-validity",
+    "candidate_commit": "0fee2b0066c0732cb7ee8e93c24aecbb9bd578cb",
+    "accepted_feature_tip": "0fee2b0066c0732cb7ee8e93c24aecbb9bd578cb",
+    "accepted_main_tip": "b01b74a62c9c4227d3ed97827fe23f9063971c23",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

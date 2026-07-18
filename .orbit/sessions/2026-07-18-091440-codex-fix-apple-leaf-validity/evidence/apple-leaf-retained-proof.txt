@@ -1,0 +1,40 @@
+Orbit Apple-compatible leaf retained topology proof
+
+Candidate: 0fee2b0066c0732cb7ee8e93c24aecbb9bd578cb
+Topology: dev-2b939e (operator_gateway_app-dev), host beast
+Roles/instances:
+- operator: orbit-e2e-dev-2b939e-operator
+- gateway: orbit-e2e-dev-2b939e-gateway
+- app-dev: orbit-e2e-dev-2b939e-dev / node app-dev-1
+Runtime checkout: /home/orbit/orbit-run
+Terminal: Solo project 4, process 1087 (Apple TLS retained proof)
+
+Exact source hashes observed in the operator runtime checkout:
+- ProxyRouteProbe.php: 941666fda129f5e97d93ab0207690ebeb149108d22bbfbb62a7e2bf405b9fc90
+- OrbitCaService.php: fcb00e59b3d9d84b37e2ea6dc7ec5a9cc7b92637585b4e9ab951e99dc72d1f36
+
+Route setup:
+- `orbit proxy:add apple-proof.orbit --node=app-dev-1 --upstream=http://127.0.0.1:80 --json`
+- `orbit doctor --family=proxy --restore --node=app-dev-1 --json`
+- Result: route created and enacted with Orbit-managed TLS.
+
+Injected retained-only drift:
+- Re-signed only `apple-proof.orbit` from the retained gateway root for 3650 days.
+- Installed that public leaf on the retained app-dev Caddy node and restarted its Caddy container.
+- OpenSSL observation: CN/SAN `apple-proof.orbit`; issuer `Orbit Root CA`; notBefore Jul 18 07:08:33 2026 GMT; notAfter Jul 15 07:08:33 2036 GMT.
+
+Detection:
+- `orbit doctor --family=proxy --node=app-dev-1 --json`
+- Exit 1, `proxy.tls_mismatch`, expected validity `396-397`, observed validity `3650`, restorable true.
+
+Repair:
+- `orbit doctor --family=proxy --restore --node=app-dev-1 --json`
+- Exit 0, fixed 1, action `proxy.tls_mismatch`, summary `Repaired Orbit-managed TLS material for proxy route apple-proof.orbit.`
+- Repaired OpenSSL observation: CN/SAN `apple-proof.orbit`; issuer `Orbit Root CA`; notBefore Jul 18 07:09:46 2026 GMT; notAfter Aug 19 07:09:46 2027 GMT (397 days).
+
+Idempotency and served TLS:
+- A following verify-mode proxy doctor exited 0 with issues 0 and actions 0.
+- `openssl s_client -connect 10.6.0.4:443 -servername apple-proof.orbit -CAfile /tmp/orbit-retained-root.crt -verify_hostname apple-proof.orbit -brief`
+- TLS 1.3 handshake established; peer CN `apple-proof.orbit`; `Verification: OK`; `Verified peername: apple-proof.orbit`.
+
+Verdict: PASS
