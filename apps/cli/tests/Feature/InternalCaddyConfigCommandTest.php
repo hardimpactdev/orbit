@@ -114,7 +114,7 @@ describe('internal caddy config command', function (): void {
         expect($bin)->not->toBeDirectory();
     });
 
-    it('writes site configs and reloads through fixed argv commands', function (): void {
+    it('writes site configs and force reloads unchanged TLS material through fixed argv commands', function (): void {
         $bin = install_caddy_config_fake_bin();
 
         [$writeExitCode, $writeOutput] = run_internal_caddy_config_command(
@@ -148,7 +148,7 @@ describe('internal caddy config command', function (): void {
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('tee /etc/caddy/sites/docs.test.caddy')
             ->toContain(
-                'docker exec orbit-caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --address localhost:2019',
+                'docker exec orbit-caddy caddy reload --force --config /etc/caddy/Caddyfile --adapter caddyfile --address localhost:2019',
             )
             ->and(file_get_contents("{$bin}/stdin.log"))
             ->toContain("docs.test {\n  respond ok\n}");
@@ -331,7 +331,7 @@ describe('internal caddy config command', function (): void {
                 'rm -f /etc/caddy/sites/docs.test.caddy /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key',
             )
             ->toContain(
-                'docker exec orbit-caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --address localhost:2019',
+                'docker exec orbit-caddy caddy reload --force --config /etc/caddy/Caddyfile --adapter caddyfile --address localhost:2019',
             );
     });
 

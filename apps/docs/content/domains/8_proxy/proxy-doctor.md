@@ -134,7 +134,7 @@ only when that readback is clean.
 | `proxy.analytics.public_route_missing` | Re-sync and enact the public ingress and router tracking routes from the owning app analytics binding. |
 | `proxy.analytics.router_route_orphaned` | Remove the orphaned `analytics.orbit` route row, rendered site, certificate, and key. |
 | `proxy.tls_missing` | Recreate Orbit-managed TLS material for the selected route when prerequisites are available. |
-| `proxy.tls_mismatch` | Reissue or relink the TLS material so its path and 397-day validity match Orbit policy. |
+| `proxy.tls_mismatch` | Reissue or relink the TLS material so its path and 397-day validity match Orbit policy, then force-reload Caddy so an unchanged route configuration reprovisions the active certificate from disk. |
 | `proxy.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |
 
 `doctor --restore` does not handle `proxy.record_incomplete`, `proxy.owner_invalid`, `proxy.node_invalid`, `proxy.domain_conflict`, or `proxy.docker_runtime_unavailable`. The Docker runtime gap is a node-runtime concern; resolve it through `doctor --family=node --restore` before re-running proxy doctor.

@@ -247,6 +247,7 @@ final readonly class LocalCaddyConfigAction
             $container,
             'caddy',
             'reload',
+            '--force',
             '--config',
             self::GLOBAL_CADDYFILE,
             '--adapter',
