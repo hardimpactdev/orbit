@@ -6,6 +6,7 @@ app_root="${ORBIT_GATEWAY_APP_ROOT:-/srv/orbit/apps/gateway}"
 config_root="${ORBIT_CONFIG_ROOT:-/home/orbit/.config/orbit}"
 env_path="${config_root}/.env"
 database_path="${config_root}/gateway.sqlite"
+operations_websocket_path="${config_root}/operations-websocket"
 invoked_as="$(basename "${0}")"
 
 read_env_value() {
@@ -31,13 +32,26 @@ set_env_value() {
 }
 
 ensure_gateway_state() {
-    install -d -m 700 "$config_root" "$config_root/certs"
+    install -d -m 0700 "$config_root" "$config_root/certs" "$operations_websocket_path"
+    chmod 0700 "$config_root" "$config_root/certs" "$operations_websocket_path"
 
     if [ ! -f "$env_path" ]; then
-        cp "${app_root}/.env.example" "$env_path"
+        install -m 0600 "${app_root}/.env.example" "$env_path"
+    else
+        chmod 0600 "$env_path"
     fi
 
-    touch "$database_path"
+    if [ ! -f "$database_path" ]; then
+        install -m 0600 /dev/null "$database_path"
+    else
+        chmod 0600 "$database_path"
+    fi
+
+    find "$config_root/certs" -maxdepth 1 -type f -name '*.key' -exec chmod 0600 {} +
+
+    if [ -f "$operations_websocket_path/apps.php" ]; then
+        chmod 0600 "$operations_websocket_path/apps.php"
+    fi
 
     set_env_value "APP_ENV" "${APP_ENV:-production}"
     set_env_value "APP_DEBUG" "${APP_DEBUG:-false}"

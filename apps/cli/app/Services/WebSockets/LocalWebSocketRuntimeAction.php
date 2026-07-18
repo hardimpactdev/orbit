@@ -309,9 +309,12 @@ final readonly class LocalWebSocketRuntimeAction
         $this->timed($timings, 'env', function () use ($releaseDir, $sharedEnv): void {
             if (! $this->runProcess(['sudo', 'test', '-f', $sharedEnv])->isSuccessful()) {
                 $this->writeSudoFile($sharedEnv, 'APP_KEY='.$this->generateAppKey()."\n");
+            } else {
                 $this->mustRun(['sudo', 'chmod', '0600', $sharedEnv]);
-            } elseif (! $this->runProcess(['sudo', 'grep', '-q', '^APP_KEY=', $sharedEnv])->isSuccessful()) {
-                $this->appendSudoFile($sharedEnv, 'APP_KEY='.$this->generateAppKey()."\n");
+
+                if (! $this->runProcess(['sudo', 'grep', '-q', '^APP_KEY=', $sharedEnv])->isSuccessful()) {
+                    $this->appendSudoFile($sharedEnv, 'APP_KEY='.$this->generateAppKey()."\n");
+                }
             }
 
             $this->mustRun(['sudo', 'chmod', '0600', $sharedEnv]);
@@ -898,6 +901,8 @@ final readonly class LocalWebSocketRuntimeAction
 
     private function writeSudoFile(string $path, string $content): void
     {
+        $this->mustRun(['sudo', 'install', '-m', '0600', '/dev/null', $path]);
+
         $process = new Process(['sudo', 'tee', $path]);
         $process->setInput($content);
         $process->setTimeout(10);
@@ -920,6 +925,8 @@ final readonly class LocalWebSocketRuntimeAction
 
     private function appendSudoFile(string $path, string $content): void
     {
+        $this->mustRun(['sudo', 'chmod', '0600', $path]);
+
         $process = new Process(['sudo', 'tee', '-a', $path]);
         $process->setInput($content);
         $process->setTimeout(10);

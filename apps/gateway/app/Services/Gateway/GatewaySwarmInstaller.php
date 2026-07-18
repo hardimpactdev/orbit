@@ -269,7 +269,22 @@ class GatewaySwarmInstaller
         $hostPathPrefix = getenv('ORBIT_HOST_PATH_PREFIX');
 
         if (is_string($hostPathPrefix) && trim($hostPathPrefix) !== '') {
-            $certificateDirectories[] = rtrim($hostPathPrefix, '/').'/etc/orbit/certs';
+            $hostPathPrefix = rtrim(trim($hostPathPrefix), '/');
+
+            if (
+                $hostPathPrefix === ''
+                || ! str_starts_with($hostPathPrefix, '/')
+                || str_contains($hostPathPrefix, "\0")
+                || array_any(
+                    explode('/', $hostPathPrefix),
+                    static fn (string $segment): bool => $segment === '.'
+                    || $segment === '..',
+                )
+            ) {
+                throw new RuntimeException('Gateway host path prefix is invalid.');
+            }
+
+            $certificateDirectories[] = $hostPathPrefix.'/etc/orbit/certs';
         }
 
         foreach ($certificateDirectories as $certificates) {

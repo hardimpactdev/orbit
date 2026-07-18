@@ -227,6 +227,23 @@ it('repairs pre-existing gateway-owned TLS private key modes during routine runt
         ->toBe(0o600);
 });
 
+it('rejects unsafe gateway host path prefixes during runtime convergence', function (string $prefix): void {
+    $previousHostPathPrefix = getenv('ORBIT_HOST_PATH_PREFIX');
+    putenv("ORBIT_HOST_PATH_PREFIX={$prefix}");
+
+    try {
+        expect(fn () => new GatewaySwarmInstaller()->bootstrapRuntimeConfig())
+            ->toThrow(RuntimeException::class, 'Gateway host path prefix is invalid.');
+    } finally {
+        $previousHostPathPrefix === false
+            ? putenv('ORBIT_HOST_PATH_PREFIX')
+            : putenv("ORBIT_HOST_PATH_PREFIX={$previousHostPathPrefix}");
+    }
+})->with([
+    'relative prefix' => 'mnt/orbit-host',
+    'traversal prefix' => '/mnt/../tmp',
+]);
+
 it('pulls and inspects the gateway image before deploying the stack when no archive is staged', function (): void {
     $stackPath = "{$this->configRoot}/swarm/".GatewaySwarmManager::StackFile;
     $invocations = [];

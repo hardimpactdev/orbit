@@ -300,6 +300,25 @@ describe('internal websocket runtime command', function (): void {
             ->toContain('sudo cat /etc/orbit/websocket/app.key');
     });
 
+    it('creates a missing websocket app key securely before writing its contents', function (): void {
+        $bin = install_websocket_runtime_fake_bin();
+
+        $exitCode = Artisan::call('internal:websocket-runtime', [
+            'action' => 'app-key:ensure',
+            '--operation-token' => websocket_runtime_signed_operation_token(),
+            '--json' => true,
+        ]);
+        $calls = file_get_contents("{$bin}/calls.log");
+        $secureCreate = strpos($calls, 'sudo install -m 0600 /dev/null /etc/orbit/websocket/app.key');
+        $write = strpos($calls, 'sudo tee /etc/orbit/websocket/app.key');
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($secureCreate)
+            ->not->toBeFalse()->and($write)
+            ->not->toBeFalse()->and($secureCreate)->toBeLessThan($write);
+    });
+
     it('syncs websocket app configuration and restarts the runtime container through fixed argv', function (): void {
         $bin = install_websocket_runtime_fake_bin([
             'container_exists' => true,
@@ -320,6 +339,7 @@ describe('internal websocket runtime command', function (): void {
             ])
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('sudo install -d -m 0755 /etc/orbit/websocket')
+            ->toContain('sudo install -m 0600 /dev/null /etc/orbit/websocket/apps.php')
             ->toContain('sudo tee /etc/orbit/websocket/apps.php')
             ->toContain('sudo chmod 0600 /etc/orbit/websocket/apps.php')
             ->toContain('docker container inspect orbit-websocket-app-dev-1')
@@ -353,7 +373,9 @@ describe('internal websocket runtime command', function (): void {
             ->toContain(
                 'sudo install -d -m 0755 /opt/orbit/websocket /opt/orbit/websocket/releases /opt/orbit/websocket/shared /etc/orbit/websocket',
             )
+            ->toContain('sudo install -m 0600 /dev/null /etc/orbit/websocket/apps.php')
             ->toContain('sudo tee /etc/orbit/websocket/apps.php')
+            ->toContain('sudo install -m 0600 /dev/null /opt/orbit/websocket/shared/.env')
             ->toContain('sudo chmod 0600 /etc/orbit/websocket/apps.php')
             ->toContain('sudo chmod 0600 /opt/orbit/websocket/shared/.env')
             ->toContain('sudo rm -rf /opt/orbit/websocket/releases/'.str_repeat('a', 64))
