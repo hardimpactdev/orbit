@@ -1,0 +1,27 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-18T01:03:22+00:00",
+    "mode": "created",
+    "archive_mode": "full",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-security-audit/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-18-030322-security-audit",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-18-030322-security-audit/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "evidence",
+        "loop.md",
+        "quality-gates"
+    ],
+    "entry_digests": {
+        "agent-sessions": "eb0a0a75b36d487e0e0b7b1b4144660420d362a363ca90f29d9459be1d8b4f1a",
+        "evidence": "99149c7b4a8ede7b6074e0d9e789639c7e18e4bc3c21e145b7886bfaa882736b",
+        "loop.md": "cc826b241677bdffb227e7b9baeb81664e6f9e4cddf378e6243d44a96b3a0554",
+        "quality-gates": "8d4857c563266cbd44524fb7a70c4455326963bf44ed79f4b7317d98955e73f3"
+    },
+    "branch": "fix-security-audit",
+    "candidate_commit": "093c6a3266fcd330c36f683a68094d26de655c06",
+    "accepted_feature_tip": "093c6a3266fcd330c36f683a68094d26de655c06",
+    "accepted_main_tip": "e057ec6db64eccf42babe2f73a31049ada4ddcc7",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

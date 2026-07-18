@@ -1,0 +1,86 @@
+Orbit retained-topology security proof
+Date: 2026-07-18
+Topology: dev-803eac
+Kind: operator_gateway_app-dev_websocket
+Provider: incus
+Host: beast
+Source-mounted checkout: /home/orbit/orbit
+Runtime checkout: /home/orbit/orbit-run
+Launcher: /home/orbit/orbit-run/apps/cli/orbit
+
+Preflight
+  composer e2e:preflight -- --json
+  Result: PASS; provider=incus; host=beast; Incus 6.0.0 reachable.
+
+Acquire
+  composer e2e:incus -- --start --topology=operator_gateway_app-dev_websocket
+  Result: Retained topology dev-803eac acquired; gateway API http://10.6.0.2; source overlay and migrations completed for operator, gateway, dev, and websocket roles.
+
+Gateway configuration drift repair
+  Disposable-topology setup: chmod gateway config root and certs directory to 0777, and .env plus gateway.sqlite to 0644.
+  Runtime surface: source-mounted GatewaySwarmInstaller::bootstrapRuntimeConfig('/home/orbit/.config/orbit').
+  Result:
+    700 /home/orbit/.config/orbit
+    700 /home/orbit/.config/orbit/certs
+    700 /home/orbit/.config/orbit/operations-websocket
+    600 /home/orbit/.config/orbit/.env
+    600 /home/orbit/.config/orbit/gateway.sqlite
+    600 /home/orbit/.config/orbit/operations-websocket/apps.php
+
+Gateway TLS private-key drift repair
+  Synced current checkout to the gateway role:
+    composer e2e:incus -- --sync --id=dev-803eac --checkout-roles=gateway
+  Disposable-topology setup: chmod the config-root leaf key and host Caddy leaf key to 0644.
+  Routine convergence surface: source-mounted GatewaySwarmInstaller::bootstrapRuntimeConfig with the gateway-container host-path prefix.
+  Result:
+    before 644 /home/orbit/.config/orbit/certs/10.6.0.2.key
+    before 644 /etc/orbit/certs/gateway.key
+    after 600 /home/orbit/.config/orbit/certs/10.6.0.2.key
+    after 600 /etc/orbit/certs/gateway.key
+
+Gateway image startup repair
+  Synced the corrected gateway checkout, loosened the live disposable config root, certs and operations-websocket directories to 0755, and loosened `.env`, `gateway.sqlite`, the TLS leaf key, and operations apps.php to 0644.
+  Runtime surface: `docker/orbit-gateway/entrypoint.sh artisan about` with the retained gateway app and config roots.
+  Result:
+    startup-after 700 /home/orbit/.config/orbit
+    startup-after 700 /home/orbit/.config/orbit/certs
+    startup-after 700 /home/orbit/.config/orbit/operations-websocket
+    startup-after 600 /home/orbit/.config/orbit/.env
+    startup-after 600 /home/orbit/.config/orbit/gateway.sqlite
+    startup-after 600 /home/orbit/.config/orbit/certs/10.6.0.2.key
+    startup-after 600 /home/orbit/.config/orbit/operations-websocket/apps.php
+
+Host installer secure gateway bootstrap
+  Synced the corrected checkout to the retained gateway role and sourced `/home/orbit/orbit-run/bin/install-orbit` as the `orbit` user with Docker calls stubbed so the real host-side `bootstrap_gateway_state` function owned the filesystem mutations.
+  Fresh-state result:
+    700 temporary config root
+    700 temporary certs directory
+    600 temporary .env containing a generated APP_KEY
+    600 temporary gateway.sqlite
+  Pre-existing drift setup: changed both directories to 0777 and both files to 0644, then ran the same bootstrap function again.
+  Existing-state result:
+    700 temporary config root
+    700 temporary certs directory
+    600 temporary .env retaining a non-empty APP_KEY
+    600 temporary gateway.sqlite
+
+Validated host-path mapping
+  Routine convergence with `ORBIT_HOST_PATH_PREFIX=/mnt/orbit-host` repaired both the config-root key and mapped host key to 0600.
+  A relative `ORBIT_HOST_PATH_PREFIX=mnt/orbit-host` exited 1 with `Gateway host path prefix is invalid.`
+
+Websocket credential drift repair
+  Disposable-topology setup: chmod /etc/orbit/websocket/app.key to 0644.
+  Runtime surfaces: source-mounted LocalWebSocketRuntimeAction app-key:ensure and app-config:sync for orbit-websocket-app-dev-1.
+  Result:
+    600 /etc/orbit/websocket/app.key
+    600 /etc/orbit/websocket/apps.php
+    orbit-websocket-app-dev-1 state: running
+    docker exec orbit-websocket-app-dev-1 test -r /etc/orbit/websocket/apps.php: PASS
+
+Websocket secure creation
+  Synced the corrected websocket checkout, temporarily moved the disposable topology app key aside, and ran source-mounted `LocalWebSocketRuntimeAction` action `app-key:ensure` as the orbit user.
+  Result: newly created `/etc/orbit/websocket/app.key` mode 0600; original 0600 key restored after proof. Fixed-argv tests separately prove secure 0600 creation precedes the credential write.
+
+Release command after acceptance
+  composer e2e:incus -- --stop --id=dev-803eac
+  Result: PASS; retained topology released and all 3 instances reaped.
