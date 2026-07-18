@@ -29,6 +29,7 @@ class GatewaySwarmInstaller
         private readonly GatewayExposureTransitionGuard $transitionGuard = new GatewayExposureTransitionGuard,
         private readonly CaddyTool $caddyTool = new CaddyTool,
         private readonly GatewayCaddyRouteRenderer $gatewayRouteRenderer = new GatewayCaddyRouteRenderer,
+        private readonly GatewayTlsKeyModeRepairer $tlsKeyModeRepairer = new GatewayTlsKeyModeRepairer,
     ) {}
 
     public function install(
@@ -192,7 +193,7 @@ class GatewaySwarmInstaller
         File::chmod($configRoot, 0o700);
         File::chmod("{$configRoot}/certs", 0o700);
         File::chmod("{$configRoot}/operations-websocket", 0o700);
-        $this->repairTlsKeyModes($configRoot);
+        $this->tlsKeyModeRepairer->repair($configRoot);
 
         $database = "{$configRoot}/gateway.sqlite";
 
@@ -261,39 +262,6 @@ class GatewaySwarmInstaller
             ),
         );
         File::chmod($operationsWebSocketApps, 0o600);
-    }
-
-    private function repairTlsKeyModes(string $configRoot): void
-    {
-        $certificateDirectories = ["{$configRoot}/certs"];
-        $hostPathPrefix = getenv('ORBIT_HOST_PATH_PREFIX');
-
-        if (is_string($hostPathPrefix) && trim($hostPathPrefix) !== '') {
-            $hostPathPrefix = rtrim(trim($hostPathPrefix), '/');
-
-            if (
-                $hostPathPrefix === ''
-                || ! str_starts_with($hostPathPrefix, '/')
-                || str_contains($hostPathPrefix, "\0")
-                || array_any(
-                    explode('/', $hostPathPrefix),
-                    static fn (string $segment): bool => $segment === '.'
-                    || $segment === '..',
-                )
-            ) {
-                throw new RuntimeException('Gateway host path prefix is invalid.');
-            }
-
-            $certificateDirectories[] = $hostPathPrefix.'/etc/orbit/certs';
-        }
-
-        foreach ($certificateDirectories as $certificates) {
-            foreach (File::glob("{$certificates}/*.key") ?: [] as $privateKey) {
-                if (is_string($privateKey) && File::isFile($privateKey)) {
-                    File::chmod($privateKey, 0o600);
-                }
-            }
-        }
     }
 
     /**
