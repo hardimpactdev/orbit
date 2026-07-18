@@ -78,6 +78,12 @@ diff-routed broader gate:
 - rendering/progress/stream/TTY/cadence/repaint/liveness risk: PTY capture;
 - integrated runtime behavior: the real proof venue after review.
 
+When the Goal claims runtime reachability or convergence, proof must directly
+exercise the claimed final outcome. Configuration validation, artifact
+presence, and successful intermediate hops are supporting evidence, not
+substitutes. A failed or explicitly excluded final hop means
+`Verification.runtime` cannot be recorded as `passed`.
+
 Promoted deterministic feedback protections are part of these normal gates
 when their surface matches. Do not invent a parallel pass-receipt system.
 

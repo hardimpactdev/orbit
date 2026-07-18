@@ -271,6 +271,37 @@ it('uses one general reviewer and no standing specialist reviewers in the active
         ->not->toContain('.agents/review-personas/tauri-agent.md');
 });
 
+it('requires direct final outcome proof for runtime claims before reviewer PASS', function (): void {
+    $harness = preg_replace('/\s+/', ' ', file_get_contents(repo_path('HARNESS.md')) ?: '') ?: '';
+    $skill = preg_replace(
+        '/\s+/',
+        ' ',
+        file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '',
+    ) ?: '';
+    $reviewer = preg_replace(
+        '/\s+/',
+        ' ',
+        file_get_contents(repo_path('.agents/review-personas/general.md')) ?: '',
+    ) ?: '';
+
+    expect($harness)
+        ->toContain('When the Goal claims runtime reachability or convergence')
+        ->toContain('directly exercise the claimed final outcome')
+        ->toContain('A failed or explicitly excluded final hop')
+        ->toContain('`Verification.runtime` cannot be recorded as `passed`')
+        ->and($skill)
+        ->toContain('When the Goal claims runtime reachability or convergence')
+        ->toContain('directly exercise the claimed final outcome')
+        ->toContain('A failed or explicitly excluded final hop')
+        ->toContain('`Verification.runtime` cannot be recorded as `passed`')
+        ->and($reviewer)
+        ->toContain('When the Goal claims runtime reachability or convergence')
+        ->toContain('directly exercises the claimed final outcome')
+        ->toContain('A failed or explicitly excluded final hop')
+        ->toContain('`Verification.runtime` cannot be recorded as `passed`')
+        ->toContain('return `FIX`');
+});
+
 it('keeps the current feature owner in charge with optional bounded workers', function (): void {
     $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
     $skill = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';

@@ -55,6 +55,12 @@ Run the smallest relevant checks first, then the diff-routed broader gate:
 - rendering, progress, streaming, TTY, cadence, repaint, or liveness risk:
   capture PTY evidence; ordinary commands do not pay a PTY tax.
 
+When the Goal claims runtime reachability or convergence, proof must directly
+exercise the claimed final outcome. Configuration validation, artifact
+presence, and successful intermediate hops are supporting evidence, not
+substitutes. A failed or explicitly excluded final hop means
+`Verification.runtime` cannot be recorded as `passed`.
+
 After focused checks pass, commit the candidate and confirm a clean worktree
 before the diff-routed broader gate, general review, and acceptance. Those
 artifacts and decisions bind the exact committed HEAD, not a dirty approximation.

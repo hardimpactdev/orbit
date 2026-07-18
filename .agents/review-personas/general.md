@@ -34,6 +34,12 @@ whole rendered frame against the selected UX primitive and raw user-provided
 column names or interaction examples. Do not accept a self-authored component
 name or word-presence assertions as proof of the requested primitive.
 
+When the Goal claims runtime reachability or convergence, require evidence that
+directly exercises the claimed final outcome. Configuration validation,
+artifact presence, and successful intermediate hops are supporting evidence,
+not substitutes. A failed or explicitly excluded final hop means
+`Verification.runtime` cannot be recorded as `passed`; return `FIX`.
+
 Classify `BLAST_RADIUS: complete` when the change affects a product decision, ownership boundary, transport, shared vocabulary, or shared schema. Before that
 classification, inspect beyond the candidate diff with one bounded
 repository-wide search, inventory, or lintable check and report the evidence
