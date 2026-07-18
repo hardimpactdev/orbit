@@ -489,7 +489,40 @@ describe('proxy backend and TLS reality', function (): void {
             ->toBeTrue()
             ->and($shell->scripts[0])
             ->toContain("ORBIT_PROXY_DOMAIN='vite.docs.test'")
+            ->toContain('cert_probe_attempted=1')
             ->toContain('cert_pem=$(base64 < "$cert"');
+    });
+
+    it('reports an existing empty certificate as unverifiable TLS validity drift', function (): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'analytics.orbit',
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://10.6.0.15:8000'],
+                'upstream' => 'http://10.6.0.15:8000',
+            ],
+        ]);
+        $shell = new ProxyProbeRecordingRemoteShell(
+            "1\t"
+            .str_repeat('a', 64)
+            ."\t/etc/orbit/certs/analytics.orbit.crt\t/etc/orbit/certs/analytics.orbit.key\t1\t1\t\t\t1\t\n",
+        );
+
+        $probe = proxyProbeWithRemoteShell($shell);
+        $snapshot = $probe->introspect($route);
+
+        expect($snapshot->get('analytics.orbit'))
+            ->toMatchArray([
+                'cert_exists' => true,
+                'cert_validity_observed' => true,
+                'cert_validity_days' => null,
+            ])
+            ->and(proxyProbeIssue($probe->diff($route, $snapshot), 'proxy.tls_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent);
     });
 
     it('introspects backend route artifacts through orbit-caddy container mounts', function (): void {
