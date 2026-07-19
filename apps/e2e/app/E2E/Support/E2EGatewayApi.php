@@ -16,6 +16,8 @@ final readonly class E2EGatewayApi
 
     private const string GatewayLocalExecutorContainer = 'orbit-gateway';
 
+    private const string SourceMountedGatewayContainerOrbitCliPath = '/srv/orbit/apps/cli/orbit';
+
     private const string GatewayWireGuardHttpUrl = 'http://10.6.0.2';
 
     private const string WgEasyStatePath = '/home/orbit/.wg-easy';
@@ -165,15 +167,11 @@ final readonly class E2EGatewayApi
             $gateway,
             $orbitPath,
         );
-        $hostCliPath = self::gatewayHostOrbitCliPath($hostOrbitPath);
-
         E2ECommand::exec(
             $gateway,
             self::gatewayE2eContainerCommand(
                 container: self::GatewayLocalExecutorContainer,
                 script: 'exec sleep infinity',
-                mountHostCli: true,
-                hostCliPath: $hostCliPath,
                 hostOrbitPath: $hostOrbitPath,
             ),
             'Could not start source-mounted gateway-local executor container',
@@ -183,11 +181,13 @@ final readonly class E2EGatewayApi
         E2ECommand::exec(
             $gateway,
             sprintf(
-                'docker exec %s test -x %s',
+                'docker exec --workdir %s %s %s list --raw | grep -q %s',
+                escapeshellarg(self::GatewayContainerOrbitPath.'/apps/gateway'),
                 escapeshellarg(self::GatewayLocalExecutorContainer),
-                escapeshellarg(self::GatewayContainerOrbitCliPath),
+                escapeshellarg(self::SourceMountedGatewayContainerOrbitCliPath),
+                escapeshellarg('^internal:wg-easy:state '),
             ),
-            'Source-mounted gateway-local executor CLI is not executable',
+            'Source-mounted gateway-local executor command is not available',
             timeoutSeconds: 30,
         );
     }
@@ -2340,14 +2340,16 @@ final readonly class E2EGatewayApi
     {
         $environmentPath = escapeshellarg(self::gatewayStatePath('.env'));
         $environmentLine = escapeshellarg(
-            'ORBIT_LOCAL_EXECUTOR_BINARY='.self::GatewayContainerOrbitCliPath,
+            'ORBIT_LOCAL_EXECUTOR_BINARY='.self::SourceMountedGatewayContainerOrbitCliPath,
         );
 
         return sprintf(
             "(grep -q '^ORBIT_LOCAL_EXECUTOR_BINARY=' %1\$s && sed -i %2\$s %1\$s || printf '%%s\\n' %3\$s >> %1\$s)",
             $environmentPath,
             escapeshellarg(
-                's|^ORBIT_LOCAL_EXECUTOR_BINARY=.*|ORBIT_LOCAL_EXECUTOR_BINARY='.self::GatewayContainerOrbitCliPath.'|',
+                's|^ORBIT_LOCAL_EXECUTOR_BINARY=.*|ORBIT_LOCAL_EXECUTOR_BINARY='
+                .self::SourceMountedGatewayContainerOrbitCliPath
+                .'|',
             ),
             $environmentLine,
         );

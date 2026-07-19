@@ -13,11 +13,12 @@ it('routes source-mounted gateway-local actions through the candidate orbit cli'
     $command = E2EGatewayApi::sourceMountedGatewayStateCommand();
 
     expect($command)
-        ->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/usr/local/bin/orbit-cli')
-        ->not
-        ->toContain('/opt/orbit/apps/cli/orbit')
-        ->and(strpos(haystack: $command, needle: 'ORBIT_LOCAL_EXECUTOR_BINARY=/usr/local/bin/orbit-cli'))
-        ->toBeLessThan(strpos(haystack: $command, needle: 'php apps/gateway/artisan migrate'));
+        ->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/srv/orbit/apps/cli/orbit')
+        ->not->toContain('/opt/orbit/apps/cli/orbit')
+        ->not->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/usr/local/bin/orbit-cli')->and(strpos(
+            haystack: $command,
+            needle: 'ORBIT_LOCAL_EXECUTOR_BINARY=/srv/orbit/apps/cli/orbit',
+        ))->toBeLessThan(strpos(haystack: $command, needle: 'php apps/gateway/artisan migrate'));
 });
 
 it('starts and preflights a source-mounted gateway-local executor shim', function (): void {
@@ -71,17 +72,19 @@ it('starts and preflights a source-mounted gateway-local executor shim', functio
 
     $joined = implode("\n", $gateway->execCommands);
     $start = strpos(haystack: $joined, needle: 'exec sleep infinity');
-    $preflight = strpos(haystack: $joined, needle: 'test -x');
+    $preflight = strpos(haystack: $joined, needle: 'internal:wg-easy:state');
 
     expect($joined)
         ->toContain('--name '.escapeshellarg('orbit-gateway'))
         ->toContain('--mount '.escapeshellarg('type=bind,source=/home/orbit/orbit,target=/srv/orbit'))
+        ->not
         ->toContain(escapeshellarg('/home/orbit/orbit/apps/cli/orbit:/usr/local/bin/orbit-cli:ro'))
-        ->toContain('--env '.escapeshellarg('ORBIT_LOCAL_EXECUTOR_BINARY=/usr/local/bin/orbit-cli'))
         ->toContain('exec sleep infinity')
         ->toContain(
-            'docker exec '.escapeshellarg('orbit-gateway').' test -x '.escapeshellarg('/usr/local/bin/orbit-cli'),
+            'docker exec --workdir '.escapeshellarg('/srv/orbit/apps/gateway').' '.escapeshellarg('orbit-gateway'),
         )
+        ->toContain(escapeshellarg('/srv/orbit/apps/cli/orbit').' list --raw')
+        ->toContain("grep -q '^internal:wg-easy:state '")
         ->and($start)
         ->toBeInt()
         ->and($preflight)
