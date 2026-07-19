@@ -191,6 +191,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Workspace not found | Resolved `name`/`--app` does not match an existing workspace record. Already-absent removal is not idempotent. | Failure (`error.code=workspace.not_found`). |
 | Ambiguous workspace name | `name` matches multiple workspaces and `--app` was not supplied. | Failure (`error.code=workspace.ambiguous_name`). |
 | `name` omitted and CWD not a workspace | CWD-based resolution found no registered workspace. | Failure (`error.code=workspace.unresolved_cwd`). |
+| Production app unsupported | The selected workspace belongs to an `app-prod` instance. | Failure (`error.code=workspace.unsupported_for_production`) before teardown, registry deletion, or node cleanup. |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 | Cancelled confirmation | Interactive mode where the operator declines the prompt. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 | Phase A (gateway configuration) failure | Deleting workspace-owned proxy route rows or the `workspace` row itself fails. No node-side side effects have occurred. | Failure (`error.code=workspace.removal_failed`). |

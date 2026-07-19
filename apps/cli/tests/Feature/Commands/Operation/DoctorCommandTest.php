@@ -1454,7 +1454,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'schedule.lock_stuck',
                 'kind' => 'divergent',
                 'summary' => 'schedule.lock_stuck',
-                'detail' => ['schedule_key' => 'app:docs:laravel-scheduler'],
+                'detail' => ['schedule_key' => 'app:docs.production:laravel-scheduler'],
                 'restorable' => true,
                 'adoptable' => false,
             ],
@@ -1517,7 +1517,7 @@ describe('doctor human panel', function (): void {
             ->and($plain)
             ->toContain("\n●  Scheduling    1 issue detected:")
             ->and($plain)
-            ->toContain('- Schedule app:docs:laravel-scheduler: Lock stuck.')
+            ->toContain('- Schedule app:docs.production:laravel-scheduler: Lock stuck.')
             ->and($plain)
             ->toContain("\n●  Databases     2 issues found:")
             ->and($plain)

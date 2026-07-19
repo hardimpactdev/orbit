@@ -192,7 +192,9 @@ describe('NodeRoleRemoveController', function (): void {
 
         $response
             ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node_role.remove_blocked')
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'force')
+            ->assertJsonPath('error.meta.reason', 'destructive_consent_required')
             ->assertJsonPath('error.meta.dependents.0', '1 development app record');
 
         $entry = Activity::query()->first();
@@ -202,6 +204,40 @@ describe('NodeRoleRemoveController', function (): void {
         expect($entry->subject_type)->toBe(Node::class);
         expect($entry->subject_id)->toBe($node->id);
         expect($entry->properties->get('dependents'))->toBe(['1 development app record']);
+    });
+
+    it('requires destructive consent when the role has no dependents', function (): void {
+        $callerId = createNodeRoleRemoveCaller();
+        createNodeRoleRemoveGateway();
+
+        $node = Node::query()->create(apiNodeRoleRemoveRow([
+            'name' => 'target-1',
+            'wireguard_address' => '10.6.0.20',
+        ]));
+        grantNodeRoleRemoveAccess($callerId, $node->id);
+
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'database',
+            'status' => 'active',
+        ]);
+
+        $response = deleteNodeRoleRemoveJson(
+            '/api/nodes/target-1/roles/database',
+            [],
+            [
+                'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+            ],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'force')
+            ->assertJsonPath('error.meta.reason', 'destructive_consent_required')
+            ->assertJsonPath('error.meta.dependents', []);
+
+        expect($node->roleAssignments()->where('role', 'database')->exists())->toBeTrue();
     });
 
     it('rejects gateway role removal before side effects', function (): void {
@@ -273,7 +309,9 @@ describe('NodeRoleRemoveController', function (): void {
 
         $response = deleteNodeRoleRemoveJson(
             '/api/nodes/target-1/roles/app-dev',
-            [],
+            [
+                'force' => true,
+            ],
             [
                 'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
             ],
@@ -372,8 +410,10 @@ describe('NodeRoleRemoveController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.message', 'The purge-data option requires --force.')
-            ->assertJsonPath('error.meta.field', 'purge_data');
+            ->assertJsonPath('error.message', 'Use --force to remove this node role.')
+            ->assertJsonPath('error.meta.field', 'force')
+            ->assertJsonPath('error.meta.reason', 'destructive_consent_required')
+            ->assertJsonPath('error.meta.dependents.0', '1 database process record');
 
         expect($node->roleAssignments()->where('role', 'database')->exists())
             ->toBeTrue()

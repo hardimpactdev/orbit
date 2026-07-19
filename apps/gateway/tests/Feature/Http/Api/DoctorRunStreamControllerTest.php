@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Platform\PlatformDetector;
@@ -399,19 +401,28 @@ it('streams node family completed and total for opaque composite checks', functi
     ))->toBeFalse();
 });
 
-it('streams app family totals that include app and runtime-config scans', function (): void {
+it('streams app family totals that include app-instance and runtime-config inventory scans', function (): void {
     createDoctorRunStreamCallerNode();
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-    App::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
     ]);
+    AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $appNode->id,
+            node: $appNode->name,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+        ),
+    ]);
     app()->instance(
         RemoteShell::class,
         new DoctorRunStreamRemoteShell([
-            "docs\t0\t0\t1\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\n",
+            "docs.development\t0\t0\t1\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\n",
         ]),
     );
 

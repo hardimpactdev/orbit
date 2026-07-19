@@ -8,9 +8,7 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Models\ProxyRoute;
 use App\Services\Convergence\ManagedFile;
-use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Proxy\RemoteCaddyConfig;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -24,7 +22,6 @@ final readonly class ToolsFixer
 {
     public function __construct(
         private ?ToolCatalog $catalog = null,
-        private ?ProxyRouteRenderer $proxyRouteRenderer = null,
         private ?RunsInternalCommands $localExecutor = null,
         private ?RemoteCaddyConfig $caddyConfig = null,
     ) {}
@@ -50,7 +47,6 @@ final readonly class ToolsFixer
             'tool.container_not_running',
             'tool.container_spec_mismatch',
                 => $this->repairContainer($tool, $entry),
-            'tool.agent_route_missing' => $this->fixAgentRoute($tool, $entry),
             'tool.agent_credentials_missing' => $this->fixAgentCredentials($tool, $entry),
             'tool.agent_user_missing' => $this->fixAgentUser($tool, $entry),
             default => $this->runRepairCommand($tool, $this->repairCommand($tool, $entry), $entry),
@@ -286,88 +282,6 @@ final readonly class ToolsFixer
         if (! $result->successful()) {
             throw new RuntimeException($result->summary);
         }
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function fixAgentRoute(NodeTool $tool, DriftEntry $entry): ?array
-    {
-        $catalog = $this->catalog ?? app(ToolCatalog::class);
-
-        if ($catalog->category($tool->name) !== 'agent') {
-            return null;
-        }
-
-        $tld = $this->agentTldForNode($tool->node);
-
-        if ($tld === null) {
-            return null;
-        }
-
-        $domain = "{$tool->name}.{$tld}";
-
-        $existing = ProxyRoute::query()
-            ->where('domain', $domain)
-            ->first();
-
-        if ($existing instanceof ProxyRoute) {
-            if ($existing->owner_type !== 'tool') {
-                return null;
-            }
-
-            $existingOwner = is_array($existing->config) ? $existing->config['owner_name'] ?? null : null;
-
-            if ($existingOwner !== $tool->name) {
-                return null;
-            }
-        }
-
-        $routeConfig = $this->agentProxyRouteConfig($tool->name);
-        $sourceHash = $this->agentProxyRouteSourceHash($tool->node, $domain, $routeConfig);
-
-        ProxyRoute::query()->updateOrCreate(
-            ['domain' => $domain],
-            [
-                'node_id' => $tool->node?->id,
-                'app_id' => null,
-                'workspace_id' => null,
-                'owner_type' => 'tool',
-                'kind' => 'proxy',
-                'config' => $routeConfig,
-                'source_hash' => $sourceHash,
-            ],
-        );
-
-        return $this->fixResult($tool, $entry);
-    }
-
-    /**
-     * @return array{target: array{type: string, value: string}, upstream: string, owner_name: string}
-     */
-    private function agentProxyRouteConfig(string $tool): array
-    {
-        $upstream = 'http://'.ProxyRouteRenderer::HostLoopbackHostname.':8080';
-
-        return [
-            'target' => ['type' => 'upstream', 'value' => $upstream],
-            'upstream' => $upstream,
-            'owner_name' => $tool,
-        ];
-    }
-
-    /**
-     * @param  array{target: array{type: string, value: string}, upstream: string, owner_name: string}  $config
-     */
-    private function agentProxyRouteSourceHash(Node $node, string $domain, array $config): string
-    {
-        return ($this->proxyRouteRenderer ?? app(ProxyRouteRenderer::class))->sourceHash(new ProxyRoute([
-            'node_id' => $node->id,
-            'domain' => $domain,
-            'kind' => 'proxy',
-            'owner_type' => 'tool',
-            'config' => $config,
-        ]));
     }
 
     /**

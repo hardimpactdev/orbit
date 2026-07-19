@@ -12,9 +12,12 @@ final readonly class RemoteShellAuditLogger
 {
     /**
      * @param  array<string, mixed>  $options
+     *
+     * @mago-expect lint:excessive-parameter-list
      */
     public function log(
         string $event,
+        string $transport,
         Node $node,
         string $script,
         array $options,
@@ -27,7 +30,7 @@ final readonly class RemoteShellAuditLogger
         $metadata = is_array($options['metadata'] ?? null) ? $options['metadata'] : [];
         $input = array_key_exists('input', $options) ? (string) $options['input'] : null;
 
-        activity('remote_shell')
+        activity('api')
             ->event($event)
             ->performedOn($node)
             ->withProperties(array_filter(
@@ -35,6 +38,7 @@ final readonly class RemoteShellAuditLogger
                     'type' => 'write',
                     'lane' => 'internal',
                     'category' => 'remote_execution',
+                    'transport' => $transport,
                     'node' => $node->name,
                     'script_sha256' => hash('sha256', $script),
                     'input_sha256' => $input === null ? null : hash('sha256', $input),

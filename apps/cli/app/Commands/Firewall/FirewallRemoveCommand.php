@@ -39,17 +39,17 @@ final class FirewallRemoveCommand extends FirewallGatewayCommand
         if (! $this->option('force')) {
             if (! $this->input->isInteractive() || $this->wantsJson()) {
                 return $this->renderFailure(
-                    'destructive_consent_required',
+                    'validation_failed',
                     'Use --force to remove this firewall rule.',
-                    ['field' => 'force'],
+                    ['field' => 'force', 'reason' => 'destructive_consent_required'],
                 );
             }
 
             if (! $this->confirm("Remove firewall rule '{$name}' from {$node}?", default: false)) {
                 return $this->renderFailure(
-                    'destructive_consent_required',
+                    'validation_failed',
                     'Operation cancelled.',
-                    ['field' => 'force'],
+                    ['field' => 'force', 'reason' => 'destructive_consent_required'],
                 );
             }
         }

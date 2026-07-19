@@ -43,7 +43,7 @@ it('stores gateway schedule locks by stable schedule key', function (): void {
 
     $firstLock = ScheduleLock::factory()->create([
         'node_id' => $gateway->id,
-        'schedule_key' => 'app:docs:laravel-scheduler',
+        'schedule_key' => 'app:docs.production:laravel-scheduler',
         'owner_token' => 'tick-1',
         'locked_at' => '2026-05-06 12:34:00',
         'expires_at' => '2026-05-06 12:39:00',

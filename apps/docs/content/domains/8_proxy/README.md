@@ -31,6 +31,12 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   route plus public app analytics host routes. They are not owner-enum mirrors.
   The router-owned `metrics.orbit` route is visible in the unified/default
   inventory; no dedicated metrics filter is exposed in this slice.
+- Workspace-owned routes are visible only when their serving node is active
+  `app-dev` and the caller is not `app-prod`. Broad proxy inventory omits a
+  forbidden workspace route while retaining supported app, custom, and service
+  routes. An explicit `proxy:list --filter=workspace` request fails with
+  `workspace.unsupported_for_production` before route facts are returned when
+  either side crosses that boundary.
 - App, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
 - App-owned primary routes may target the logical app or a concrete app
@@ -144,7 +150,9 @@ Custom, redirect, and tool routes are separate route kinds. They may share TLS, 
   reverse proxying to the backend pool.
 - **Private backend artifact:** `orbit-caddy` site rendered on an `app-prod`
   node. It listens on HTTP port `80` bound to the node's WireGuard address and
-  serves the app/workspace ingress contract to a backend FrankenPHP container.
+  serves the app ingress contract to a backend FrankenPHP container. Workspace
+  routes are an `app-dev`-only surface and never receive an `app-prod` backend
+  artifact.
 - **Router backend pool:** Ordered list of URLs for app-prod backends.
   The router owns this pool. V1 creates one target but stores a list.
 - **WebSocket backend pool:** Ordered list of TLS websocket backend URLs using

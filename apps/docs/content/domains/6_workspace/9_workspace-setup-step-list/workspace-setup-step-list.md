@@ -15,14 +15,14 @@ orbit workspace-setup-step:list [--app=<app.instance>] [--json]
 
 ```bash
 orbit workspace-setup-step:list
-orbit workspace-setup-step:list --app=my-app.production
+orbit workspace-setup-step:list --app=my-app.development
 orbit workspace-setup-step:list --json
 ```
 
 ## Arguments and options
 
 - `--app=<app.instance>`: Concrete dotted app-instance selector, such as
-  `my-app.production`. When omitted, Orbit may infer exactly one concrete
+  `my-app.development`. When omitted, Orbit may infer exactly one concrete
   instance
   using the same precedence chain as
   [`workspace:new`](../1_workspace-new/workspace-new.md): explicit flag →

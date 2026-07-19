@@ -696,8 +696,8 @@ function wgEasyServiceInstallerExceptionMeta(Throwable $exception): array
 function wgEasyServiceInstallerLocalExecutorDispatchingProperties(): array
 {
     return DB::table('activity_log')
-        ->where('log_name', 'local_executor')
-        ->where('event', 'local_executor.dispatching')
+        ->where('log_name', 'api')
+        ->where('event', 'agent_push.dispatching')
         ->orderBy('id')
         ->get()
         ->map(fn (object $activity): array => json_decode(
@@ -714,8 +714,8 @@ function wgEasyServiceInstallerLocalExecutorDispatchingProperties(): array
 function wgEasyServiceInstallerLocalExecutorCompletedProperties(): array
 {
     return DB::table('activity_log')
-        ->where('log_name', 'local_executor')
-        ->where('event', 'local_executor.completed')
+        ->where('log_name', 'api')
+        ->where('event', 'agent_push.completed')
         ->orderBy('id')
         ->get()
         ->map(fn (object $activity): array => json_decode(

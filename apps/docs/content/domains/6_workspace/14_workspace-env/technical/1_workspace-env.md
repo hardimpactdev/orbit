@@ -83,6 +83,7 @@ instance.
 | Workspace not found | No visible workspace matches. | `error.code=workspace.not_found`. |
 | Workspace ambiguous | Name matches more than one visible target. | `error.code=validation_failed`, `error.meta.field=workspace`. |
 | Instance without app | The raw API supplies `instance` without `app`. | `error.code=validation_failed`, `error.meta.field=app`. |
+| Production app unsupported | The selected workspace belongs to an `app-prod` instance. | `error.code=workspace.unsupported_for_production` before storage, file, cache, or runtime effects. |
 | Runtime apply failed | Gateway state saved but workspace file/cache/runtime application failed. | `error.code=workspace.env_apply_failed`. |
 
 ## Doctor Relationship

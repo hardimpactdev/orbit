@@ -4,7 +4,7 @@
 
 Show one gateway activity history entry.
 
-`activity:show` retrieves the full details for one activity entry and shows
+`activity:show` retrieves one canonical Activity DTO and shows
 other visible entries that share its correlation id. Use it when an operator
 needs to understand what a previous command, API call, or gateway apply
 changed.
@@ -42,9 +42,10 @@ live node state.
 ## Output
 
 Use `--json` for machine-readable output. Human output is a detail view with the activity's time, type, effect, subject,
-actor, command, correlation id, summary, details, and related activity.
+actor, command, correlation id, description, properties, channel, and related
+activity.
 
-Use `--json` for machine-readable selected-activity and related-entry details.
+Use `--json` for machine-readable selected and related Activity DTOs.
 
 ## Requirements
 

@@ -10,6 +10,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Apps\AppAgentIdeDefaults;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use RuntimeException;
 
 final readonly class PruneAppWorkspaces
@@ -18,6 +19,7 @@ final readonly class PruneAppWorkspaces
         private RemoveWorkspace $removeWorkspace,
         private AppAgentIdeDefaults $agentIdeDefaults,
         private AgentIdeMessageAdapter $adapter,
+        private WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     /**
@@ -31,6 +33,7 @@ final readonly class PruneAppWorkspaces
     public function handle(App $app, bool $dryRun = false, ?string $adapterName = null): array
     {
         $app->loadMissing('node');
+        $this->workspaceRoleGuard->ensureNodeSupportsWorkspaces($app, $app->node);
 
         $effectiveAdapter = $adapterName ?? $this->agentIdeDefaults->payloadFor($app)['effective_adapter'];
 

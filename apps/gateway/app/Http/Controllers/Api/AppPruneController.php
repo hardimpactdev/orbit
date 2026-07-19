@@ -7,10 +7,13 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Apps\PruneAppWorkspaces;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
+use App\Models\Node;
 use App\Services\Apps\AppAgentIdeDefaults;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,6 +26,7 @@ final class AppPruneController implements Loggable
     public function __construct(
         private readonly PruneAppWorkspaces $prune,
         private readonly AppAgentIdeDefaults $defaults,
+        private readonly WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -50,6 +54,19 @@ final class AppPruneController implements Loggable
         }
 
         $this->activitySubject = $app;
+
+        /** @var mixed $caller */
+        $caller = $request->user();
+
+        try {
+            if ($caller instanceof Node) {
+                $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($caller);
+            }
+
+            $this->workspaceRoleGuard->ensureNodeSupportsWorkspaces($app, $app->node);
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return $this->workspaceUnsupportedForProduction($exception);
+        }
 
         $effectiveAdapter = $this->defaults->payloadFor($app)['effective_adapter'];
 
@@ -118,6 +135,16 @@ final class AppPruneController implements Loggable
                 'meta' => $meta,
             ],
         ], $status);
+    }
+
+    private function workspaceUnsupportedForProduction(
+        WorkspaceUnsupportedForProduction $exception,
+    ): JsonResponse {
+        return $this->error(
+            $exception->errorCode(),
+            $exception->getMessage(),
+            $exception->meta,
+        );
     }
 
     public function effect(): ActivityLogType

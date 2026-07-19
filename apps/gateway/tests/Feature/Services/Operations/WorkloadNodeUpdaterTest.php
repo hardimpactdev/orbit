@@ -102,35 +102,35 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
             [
                 'target' => 'agent-1',
                 'node' => 'agent-1',
-                'role' => 'agent',
+                'roles' => ['agent'],
                 'status' => 'completed',
                 'doctor_issues' => 0,
             ],
             [
                 'target' => 'app-dev-1',
                 'node' => 'app-dev-1',
-                'role' => 'app-dev',
+                'roles' => ['app-dev'],
                 'status' => 'completed',
                 'doctor_issues' => 0,
             ],
             [
                 'target' => 'app-prod-1',
                 'node' => 'app-prod-1',
-                'role' => 'app-prod',
+                'roles' => ['app-prod', 'websocket'],
                 'status' => 'completed',
                 'doctor_issues' => 0,
             ],
             [
                 'target' => 'database-1',
                 'node' => 'database-1',
-                'role' => 'database',
+                'roles' => ['database'],
                 'status' => 'completed',
                 'doctor_issues' => 0,
             ],
             [
                 'target' => 'ingress-1',
                 'node' => 'ingress-1',
-                'role' => 'ingress',
+                'roles' => ['ingress'],
                 'status' => 'completed',
                 'doctor_issues' => 0,
             ],
@@ -507,13 +507,13 @@ it('skips a workload node already on the target version and runs no remote updat
             [
                 'target' => 'app-dev-1',
                 'node' => 'app-dev-1',
-                'role' => 'app-dev',
+                'roles' => ['app-dev'],
                 'status' => 'skipped',
             ],
             [
                 'target' => 'app-prod-1',
                 'node' => 'app-prod-1',
-                'role' => 'app-prod',
+                'roles' => ['app-prod'],
                 'status' => 'completed',
                 'doctor_issues' => 0,
             ],
@@ -551,7 +551,7 @@ it('runs workload installs through the typed Agent-push local executor', functio
             [
                 'target' => 'app-dev-1',
                 'node' => 'app-dev-1',
-                'role' => 'app-dev',
+                'roles' => ['app-dev'],
                 'status' => 'completed',
                 'doctor_issues' => 0,
             ],
@@ -595,7 +595,7 @@ it('retries workload CLI installs when the previous launcher exits during self u
             [
                 'target' => 'app-dev-1',
                 'node' => 'app-dev-1',
-                'role' => 'app-dev',
+                'roles' => ['app-dev'],
                 'status' => 'completed',
                 'doctor_issues' => 0,
             ],
@@ -644,7 +644,7 @@ it('records workload CLI installs when the Agent transport disconnects during se
             [
                 'target' => 'app-dev-1',
                 'node' => 'app-dev-1',
-                'role' => 'app-dev',
+                'roles' => ['app-dev'],
                 'status' => 'completed',
                 'doctor_issues' => 0,
             ],
@@ -682,7 +682,7 @@ it('keeps workload transport failures that are not agent restart disconnects fai
             [
                 'target' => 'app-dev-1',
                 'node' => 'app-dev-1',
-                'role' => 'app-dev',
+                'roles' => ['app-dev'],
                 'status' => 'failed',
                 'failed_step' => 'remote_update',
                 'output' => 'Remote local executor transport failed: cURL error 7: Failed to connect',
@@ -729,7 +729,7 @@ it('does not send role images to macos workload cli installers', function (): vo
             [
                 'target' => 'mini',
                 'node' => 'mini',
-                'role' => 'app-dev',
+                'roles' => ['app-dev'],
                 'status' => 'completed',
                 'doctor_issues' => 0,
             ],
@@ -781,7 +781,7 @@ it('updates topology candidate artifacts with the same version when the CLI hash
             [
                 'target' => 'app-dev-1',
                 'node' => 'app-dev-1',
-                'role' => 'app-dev',
+                'roles' => ['app-dev'],
                 'status' => 'completed',
                 'doctor_issues' => 0,
             ],
@@ -841,7 +841,7 @@ it('updates macos workload nodes with darwin arm64 CLI artifacts and portable ch
             [
                 'target' => 'NMBP',
                 'node' => 'NMBP',
-                'role' => 'app-dev',
+                'roles' => ['app-dev'],
                 'status' => 'completed',
                 'doctor_issues' => 0,
             ],
@@ -920,7 +920,7 @@ it('keeps a workload update completed when advisory node doctor fails', function
             [
                 'target' => 'app-dev-1',
                 'node' => 'app-dev-1',
-                'role' => 'app-dev',
+                'roles' => ['app-dev'],
                 'status' => 'completed',
                 'doctor_issues' => null,
             ],
@@ -1037,7 +1037,7 @@ it('continues updating later workload nodes when one remote update fails', funct
             [
                 'target' => 'app-dev-1',
                 'node' => 'app-dev-1',
-                'role' => 'app-dev',
+                'roles' => ['app-dev'],
                 'status' => 'failed',
                 'failed_step' => 'remote_update',
                 'output' => 'download failed',
@@ -1045,7 +1045,7 @@ it('continues updating later workload nodes when one remote update fails', funct
             [
                 'target' => 'app-prod-1',
                 'node' => 'app-prod-1',
-                'role' => 'app-prod',
+                'roles' => ['app-prod'],
                 'status' => 'completed',
                 'doctor_issues' => 0,
             ],
@@ -1093,7 +1093,7 @@ it('fails the runner workload phase with target results when any workload update
                     [
                         'target' => 'app-dev-1',
                         'node' => 'app-dev-1',
-                        'role' => 'app-dev',
+                        'roles' => ['app-dev'],
                         'status' => 'failed',
                         'failed_step' => 'remote_update',
                         'output' => 'download failed',
@@ -1103,7 +1103,7 @@ it('fails the runner workload phase with target results when any workload update
                     [
                         'target' => 'app-dev-1',
                         'node' => 'app-dev-1',
-                        'role' => 'app-dev',
+                        'roles' => ['app-dev'],
                         'status' => 'failed',
                         'failed_step' => 'remote_update',
                         'output' => 'download failed',
@@ -1111,7 +1111,7 @@ it('fails the runner workload phase with target results when any workload update
                     [
                         'target' => 'app-prod-1',
                         'node' => 'app-prod-1',
-                        'role' => 'app-prod',
+                        'roles' => ['app-prod'],
                         'status' => 'completed',
                         'doctor_issues' => 0,
                     ],
@@ -1127,7 +1127,7 @@ it('fails the runner workload phase with target results when any workload update
                     [
                         'target' => 'app-dev-1',
                         'node' => 'app-dev-1',
-                        'role' => 'app-dev',
+                        'roles' => ['app-dev'],
                         'status' => 'failed',
                         'failed_step' => 'remote_update',
                         'output' => 'download failed',
@@ -1137,7 +1137,7 @@ it('fails the runner workload phase with target results when any workload update
                     [
                         'target' => 'app-dev-1',
                         'node' => 'app-dev-1',
-                        'role' => 'app-dev',
+                        'roles' => ['app-dev'],
                         'status' => 'failed',
                         'failed_step' => 'remote_update',
                         'output' => 'download failed',
@@ -1145,7 +1145,7 @@ it('fails the runner workload phase with target results when any workload update
                     [
                         'target' => 'app-prod-1',
                         'node' => 'app-prod-1',
-                        'role' => 'app-prod',
+                        'roles' => ['app-prod'],
                         'status' => 'completed',
                         'doctor_issues' => 0,
                     ],

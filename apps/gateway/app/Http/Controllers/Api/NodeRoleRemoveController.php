@@ -45,15 +45,6 @@ final class NodeRoleRemoveController implements Loggable
 
         $this->activitySubject = $node;
 
-        if ($request->purgeData() && ! $request->force()) {
-            return $this->error(
-                'validation_failed',
-                'The purge-data option requires --force.',
-                ['field' => 'purge_data'],
-                422,
-            );
-        }
-
         if (in_array($role, ['gateway', 'vpn', 'router'], true)) {
             return $this->error(
                 'validation_failed',
@@ -79,14 +70,20 @@ final class NodeRoleRemoveController implements Loggable
 
         $dependents = $this->dependencyInspector->dependentSummaries($node, $assignment);
 
-        if ($dependents !== [] && ! $request->force()) {
+        if (! $request->force()) {
             $this->activityAction = 'node.role.remove_blocked';
             $this->activityDependents = $dependents;
 
             return $this->error(
-                'node_role.remove_blocked',
-                "Role '{$role}' cannot be removed while dependents exist.",
-                ['role' => $role, 'dependents' => $dependents],
+                'validation_failed',
+                'Use --force to remove this node role.',
+                [
+                    'field' => 'force',
+                    'reason' => 'destructive_consent_required',
+                    'role' => $role,
+                    'dependents' => $dependents,
+                    'purge_data' => $request->purgeData(),
+                ],
                 422,
             );
         }

@@ -16,6 +16,18 @@ use Tests\Fakes\ProvisioningAgentInstallerRemoteExecutor;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    app()->instance(OrbitCaService::class, new ProvisioningAgentInstallerTestCa);
+});
+
+final readonly class ProvisioningAgentInstallerTestCa extends OrbitCaService
+{
+    public function rootCert(): string
+    {
+        return 'fake-root-ca';
+    }
+}
+
 it('installs and starts the initial Agent over provisioning SSH before role convergence', function (): void {
     $gateway = Node::factory()->create([
         'name' => 'gateway-1',
@@ -28,8 +40,6 @@ it('installs and starts the initial Agent over provisioning SSH before role conv
         'role' => 'gateway',
         'status' => 'active',
     ]);
-    app(OrbitCaService::class)->ensureRootCa();
-
     $node = Node::factory()->create([
         'name' => 'app-dev-1',
         'platform' => 'ubuntu_24-04',

@@ -80,7 +80,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Route not found | The selected domain has no proxy route row. | `error.code=proxy.not_found` |
 | Owned route denied | The selected route is owned by app, app-websocket, workspace, gateway, websocket, S3, or tool. | `error.code=proxy.owned_route_denied` |
-| Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=destructive_consent_required` |
+| Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 | Cleanup failed | Gateway configuration was removed, but backend route or TLS cleanup failed. | `error.code=proxy.cleanup_failed` |
 
 ## Doctor Relationship

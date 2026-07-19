@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\AppSetupStep;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
 
@@ -40,8 +43,18 @@ function createAppSetupStepTarget(): array
         'name' => 'docs',
         'node_id' => $node->id,
     ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
 
-    return [$node, $app];
+    return [$node, $app, $instance];
 }
 
 describe('AppSetupStepController', function (): void {
@@ -70,16 +83,17 @@ describe('AppSetupStepController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'added')
             ->assertJsonPath('success.data.step.app', 'docs')
+            ->assertJsonPath('success.data.step.app_instance', 'development')
             ->assertJsonPath('success.data.step.order', 1)
             ->assertJsonPath('success.data.step.timeout_seconds', 900);
     });
 
     it('lists setup steps with app read permission', function (): void {
-        [$node, $app] = createAppSetupStepTarget();
+        [$node, $app, $instance] = createAppSetupStepTarget();
         $caller = createAppSetupStepCallerNode();
         grantAppSetupStepAccess($caller, $node, ['app:read']);
         AppSetupStep::factory()->create([
-            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
             'command' => 'php artisan migrate',
             'sort_order' => 1,
         ]);
@@ -98,15 +112,16 @@ describe('AppSetupStepController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.steps.0.app', 'docs')
+            ->assertJsonPath('success.data.steps.0.app_instance', 'development')
             ->assertJsonPath('success.data.steps.0.command', 'php artisan migrate');
     });
 
     it('removes setup steps with destructive consent', function (): void {
-        [$node, $app] = createAppSetupStepTarget();
+        [$node, $app, $instance] = createAppSetupStepTarget();
         $caller = createAppSetupStepCallerNode();
         grantAppSetupStepAccess($caller, $node, ['app:write']);
         $step = AppSetupStep::factory()->create([
-            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
             'sort_order' => 1,
         ]);
 
@@ -131,5 +146,142 @@ describe('AppSetupStepController', function (): void {
             ->assertJsonPath('success.meta.remaining_step_count', 0);
 
         expect(AppSetupStep::query()->whereKey($step->id)->exists())->toBeFalse();
+    });
+
+    it('keeps setup steps isolated between app instances', function (): void {
+        [$node, $app, $development] = createAppSetupStepTarget();
+        $production = AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/srv/docs',
+                document_root: 'public',
+                domain: 'docs.example.com',
+            ),
+        ]);
+        AppSetupStep::factory()->create([
+            'app_instance_id' => $development->id,
+            'command' => 'composer install',
+        ]);
+        AppSetupStep::factory()->create([
+            'app_instance_id' => $production->id,
+            'command' => 'php artisan migrate --force',
+        ]);
+        $caller = createAppSetupStepCallerNode();
+        grantAppSetupStepAccess($caller, $node, ['app:read']);
+
+        $response = $this->call(
+            'GET',
+            '/api/apps/docs.production/setup-steps',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_SETUP_STEP_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(1, 'success.data.steps')
+            ->assertJsonPath('success.data.steps.0.app_instance', 'production')
+            ->assertJsonPath('success.data.steps.0.command', 'php artisan migrate --force');
+    });
+
+    it('requires a concrete selector without exposing a hidden sibling', function (): void {
+        [$visibleNode, $app, $development] = createAppSetupStepTarget();
+        $hiddenNode = Node::factory()->appDev()->create(['name' => 'app-hidden']);
+        $production = AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $hiddenNode->id,
+                node: $hiddenNode->name,
+                path: '/srv/docs',
+                document_root: 'public',
+                domain: 'docs.example.com',
+            ),
+        ]);
+        AppSetupStep::factory()->create([
+            'app_instance_id' => $development->id,
+            'command' => 'composer install',
+        ]);
+        AppSetupStep::factory()->create([
+            'app_instance_id' => $production->id,
+            'command' => 'php artisan migrate --force',
+        ]);
+        $caller = createAppSetupStepCallerNode();
+        grantAppSetupStepAccess($caller, $visibleNode, ['app:read']);
+
+        $response = $this->call(
+            'GET',
+            '/api/apps/docs/setup-steps',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_SETUP_STEP_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.reason', 'app_instance_required');
+
+        expect($response->json('error.meta'))
+            ->not->toHaveKey('instances')->and($response->content())
+            ->not->toContain('production');
+    });
+
+    it('does not reveal whether an unauthorized explicit sibling exists', function (): void {
+        [$visibleNode, $app] = createAppSetupStepTarget();
+        $hiddenNode = Node::factory()->appDev()->create(['name' => 'app-hidden']);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $hiddenNode->id,
+                node: $hiddenNode->name,
+                path: '/srv/docs',
+                document_root: 'public',
+                domain: 'docs.example.com',
+            ),
+        ]);
+        $caller = createAppSetupStepCallerNode();
+        grantAppSetupStepAccess($caller, $visibleNode, ['app:read']);
+
+        $hidden = $this->call(
+            'GET',
+            '/api/apps/docs.production/setup-steps',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_SETUP_STEP_CALLER_WG_IP],
+        );
+        $missing = $this->call(
+            'GET',
+            '/api/apps/docs.does-not-exist/setup-steps',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_SETUP_STEP_CALLER_WG_IP],
+        );
+        $normalize = static function (TestResponse $response): array {
+            /** @var array<string, mixed> $error */
+            $error = $response->json('error');
+            unset($error['message']);
+
+            if (is_array($error['meta'] ?? null)) {
+                $error['meta']['instance'] = '<selector>';
+            }
+
+            return $error;
+        };
+
+        $hidden->assertUnprocessable();
+        $missing->assertUnprocessable();
+
+        expect($normalize($hidden))
+            ->toBe($normalize($missing))
+            ->and($hidden->json('error.code'))
+            ->toBe('validation_failed')
+            ->and($hidden->json('error.meta'))
+            ->not->toHaveKeys(['instances', 'missing_permission', 'serving_node']);
     });
 });

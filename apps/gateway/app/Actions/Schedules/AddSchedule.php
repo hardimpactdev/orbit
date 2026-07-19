@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Schedules;
 
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -22,15 +22,17 @@ final readonly class AddSchedule
      * @return array{data: array<string, mixed>}
      */
     public function handle(
-        App|Node $target,
+        AppInstance|Node $target,
         string $name,
         string $interval,
         string $timezone,
         string $executionType,
         string $executionValue,
     ): array {
-        $scope = $target instanceof App ? 'app' : 'node';
-        $targetName = $target->name;
+        $scope = $target instanceof AppInstance ? 'app' : 'node';
+        $targetName = $target instanceof AppInstance
+            ? "{$target->app->name}.{$target->name}"
+            : $target->name;
         $scheduleKey = "{$scope}:{$targetName}:{$name}";
 
         if (Schedule::query()->where('schedule_key', $scheduleKey)->exists()) {
@@ -48,7 +50,8 @@ final readonly class AddSchedule
             'schedule_key' => $scheduleKey,
             'name' => $name,
             'scope' => $scope,
-            'app_id' => $target instanceof App ? $target->id : null,
+            'app_id' => $target instanceof AppInstance ? $target->app_id : null,
+            'app_instance_id' => $target instanceof AppInstance ? $target->id : null,
             'node_id' => $target instanceof Node ? $target->id : null,
             'target_name' => $targetName,
             'interval' => $interval,

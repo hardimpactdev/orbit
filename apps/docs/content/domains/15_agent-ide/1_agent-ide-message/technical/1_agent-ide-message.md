@@ -72,6 +72,11 @@ This command follows the shared
 - When resolving from the current directory, workspace context takes priority
   over parent app context.
 - A workspace target includes its parent app in command results.
+- Workspace and path targets require an active `app-dev` serving node and a
+  caller that is not `app-prod`. The gateway rejects either production side
+  with `workspace.unsupported_for_production` before target lookup, adapter
+  session lookup, or delivery. Messages to the app's main context remain
+  available under their normal authorization contract.
 - If the requested target is hidden from the caller, return
   `authorization_failed` instead of leaking target existence.
 
@@ -126,6 +131,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Target not found | No visible app/workspace matches the resolved target. | Failure before adapter delivery |
+| Production workspace boundary | A workspace/path request has an `app-prod` caller or resolves to an `app-prod` target. | Failure (`error.code=workspace.unsupported_for_production`) before adapter lookup or delivery |
 | No effective adapter | The target resolves to no configured Agent IDE adapter. | Failure before adapter delivery |
 | No active session | The adapter is configured but cannot find an active session for the target. | Failure before delivery |
 | Adapter delivery failed | The adapter failed while accepting the message. | Failure after delivery attempt |

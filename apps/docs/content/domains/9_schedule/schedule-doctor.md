@@ -10,7 +10,9 @@ The schedule family doctor implements the
 
 The schedule family owns these facts:
 
-- gateway-owned schedule rows: scope, target, interval, timezone, execution source, enabled state, and scheduler metadata;
+- gateway-owned schedule rows: scope, concrete app-instance ownership where
+  applicable, target, interval, timezone, execution source, enabled state, and
+  scheduler metadata;
 - the `orbit-scheduler` Swarm service using the Orbit gateway image;
 - Orbit Scheduler liveness, heartbeat freshness, and schedule lock health (all gateway-side);
 - agent-push/local-executor reachability from the gateway to each schedule's target node so dispatches can succeed;
@@ -29,9 +31,10 @@ expecting a scheduler service on that workload node.
 The schedule probe reads gateway schedule configuration and checks these layers:
 
 1. **Registry configuration:** every selected schedule has valid scope, target, interval, timezone, execution source, and enabled state.
-2. **Target eligibility:** the app, node, or Orbit maintenance target resolves
-   to a valid active target. Caller authorization is resolved before the probe
-   and is not schedule drift.
+2. **Target eligibility:** an app schedule resolves through its persisted app
+   instance to that instance's valid active serving node; node and Orbit
+   maintenance targets resolve to their corresponding active target. Caller
+   authorization is resolved before the probe and is not schedule drift.
 
 **Gateway scheduler layers** (verified once per doctor run, not per schedule):
 
@@ -56,7 +59,7 @@ The table below lists every issue code the schedule probe may emit and the condi
 
 | Code | Detected when |
 | --- | --- |
-| `schedule.record_incomplete` | A selected gateway schedule lacks scope, target, interval, timezone, execution source, or enabled state. |
+| `schedule.record_incomplete` | A selected gateway schedule lacks scope, concrete app-instance ownership where required, target, interval, timezone, execution source, or enabled state. |
 | `schedule.target_invalid` | The schedule points at a missing, inactive, unsupported, or role-incompatible target. |
 | `schedule.runtime_backend_unavailable` | The gateway Swarm runtime or gateway image cannot run the scheduler daemon. |
 | `schedule.scheduler_missing` | The `orbit_orbit-scheduler` Swarm service has no desired scheduler replica. |

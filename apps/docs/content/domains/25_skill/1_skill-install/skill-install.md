@@ -14,7 +14,8 @@ orbit skill:install [provider] [path] [--force] [--json]
   treats it as an explicit target path.
 - `[path]`: Optional explicit target path. Use this only when `[provider]` is a
   supported provider slug.
-- `--force`: Overwrite an existing target directory, file, or symlink.
+- `--force`: Replace an existing target directory, file, or symlink without
+  prompting.
 - `--json`: Emit the canonical JSON envelope.
 
 ## Behavior
@@ -37,9 +38,11 @@ location.
 When the first positional value is not one of those slugs, Orbit treats it as
 the target path and copies the raw Orbit skill directory there.
 
-Existing targets are protected by default. If the target already exists, the
-command fails without changing it. Pass `--force` to remove the existing target
-and copy the current Orbit skill in its place.
+Installing into an absent target is a normal write and needs no destructive
+consent. Replacing an existing target is destructive: interactive mode asks for
+confirmation unless `--force` is present, while non-interactive mode requires
+`--force`. The command resolves and validates the source and target before it
+removes the existing target and copies the current Orbit skill in its place.
 
 `skill:install` is local-only. It does not call the gateway, enable extension
 state, mutate fleet state, or download third-party skills.

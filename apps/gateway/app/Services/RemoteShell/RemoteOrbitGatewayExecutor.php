@@ -59,7 +59,7 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
             durationMs: $durationMs,
         );
 
-        $this->auditLogger->log('remote_shell.run', $node, $script, $options, $result);
+        $this->auditLogger->log('gateway_local.run', 'gateway_local', $node, $script, $options, $result);
 
         if (($options['throw'] ?? false) && ! $result->successful()) {
             throw new RemoteShellFailed($node, $runtimeScript, $result);
@@ -87,7 +87,7 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
             $this->command($node, $this->runtimeScript($node, $script, $options)),
         );
 
-        $this->auditLogger->log('remote_shell.start', $node, $script, $options);
+        $this->auditLogger->log('gateway_local.start', 'gateway_local', $node, $script, $options);
 
         return $process;
     }

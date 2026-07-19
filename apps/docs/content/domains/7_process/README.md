@@ -223,6 +223,14 @@ branch on the node-role column locally.
   include process mutation permissions, and app-dev self-grants do not include
   runtime lifecycle permissions such as `process:start`, `process:stop`, or
   `process:restart`.
+- A workspace-qualified process request is available only when the workspace
+  resolves to an active `app-dev` serving node and the caller is not an
+  `app-prod` node. Explicit workspace targets fail with
+  `workspace.unsupported_for_production` before process rows, runtime units,
+  events, or logs are read or changed when either side crosses that boundary.
+  Broad app and node reads on `app-prod` omit workspace-owned process rows and
+  derived workspace runtime units instead of exposing workspace facts through
+  the process family.
 
 Every process command is a request to the gateway typed API. The CLI never
 writes process configuration, reads Docker, systemd, or launchd logs directly, or

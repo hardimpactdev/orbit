@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\AgentIdeMessageAdapter;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -104,10 +105,69 @@ describe('AppPruneController', function (): void {
             ->assertJsonPath('error.meta.missing_permission', 'app:prune')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
     });
+
+    it('rejects app production callers and production targets before workspace discovery', function (): void {
+        $caller = createAppPruneCallerNode();
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $caller->id,
+            'role' => 'app-prod',
+            'status' => 'active',
+        ]);
+        $developmentNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+        grantAppPruneAccess($caller, $developmentNode);
+        App::factory()->for($developmentNode, 'node')->create([
+            'name' => 'docs',
+            'agent_ide_config' => ['adapter' => 'opencode'],
+        ]);
+        $adapter = new AppPruneControllerAdapter;
+        app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+        $this
+            ->call(
+                'POST',
+                '/api/apps/prune',
+                ['app' => 'docs', 'dry_run' => true],
+                [],
+                [],
+                ['REMOTE_ADDR' => APP_PRUNE_CALLER_WG_IP],
+            )
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production');
+
+        expect($adapter->workspaceCalls)->toBe(0);
+
+        $caller->roleAssignments()->delete();
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $caller->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+        $productionNode = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
+        App::factory()->for($productionNode, 'node')->create([
+            'name' => 'shop',
+            'agent_ide_config' => ['adapter' => 'opencode'],
+        ]);
+
+        $this
+            ->call(
+                'POST',
+                '/api/apps/prune',
+                ['app' => 'shop', 'dry_run' => true],
+                [],
+                [],
+                ['REMOTE_ADDR' => APP_PRUNE_CALLER_WG_IP],
+            )
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production');
+
+        expect($adapter->workspaceCalls)->toBe(0);
+    });
 });
 
 final class AppPruneControllerAdapter implements AgentIdeMessageAdapter
 {
+    public int $workspaceCalls = 0;
+
     public function activeSession(array $target, string $adapter): ?array
     {
         return null;
@@ -120,6 +180,8 @@ final class AppPruneControllerAdapter implements AgentIdeMessageAdapter
 
     public function workspaces(array $target, string $adapter): array
     {
+        $this->workspaceCalls++;
+
         return [];
     }
 }

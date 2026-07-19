@@ -32,8 +32,6 @@ final readonly class AppResponsePayload
             'runtime' => $runtime->value,
             'runtime_config' => $runtime === AppRuntimeKind::Php ? $app->runtimeConfig()->toArray() : null,
             'php_version' => $app->php_version,
-            'worker_enabled' => $app->worker_enabled,
-            'worker_config' => is_array($app->worker_config) ? $app->worker_config : null,
             'adopted' => $app->adopted,
             ...$this->dependencyAuditPayload->forApp($app),
         ];

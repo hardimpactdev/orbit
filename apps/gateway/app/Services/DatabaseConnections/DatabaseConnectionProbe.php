@@ -6,6 +6,7 @@ namespace App\Services\DatabaseConnections;
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DoctorTargetScope;
+use App\Enums\Nodes\NodeRoleName;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -182,11 +183,16 @@ final readonly class DatabaseConnectionProbe
     private function targetsForNode(Node $node, DoctorTargetScope $scope): array
     {
         $targets = [];
+        $query = DatabaseConnectionTarget::query();
 
-        foreach (DatabaseConnectionTarget::query()
+        if ($this->productionNodeExcludesWorkspaces($node)) {
+            $query->whereNull('workspace_id');
+        }
+
+        foreach ($query
             ->with(['connection.node', 'appInstance.app', 'workspace.app', 'workspace.appInstance'])
             ->get() as $target) {
-            if (! $target instanceof DatabaseConnectionTarget || ! $this->targetNode($target)->is($node)) {
+            if (! $this->targetNode($target)->is($node)) {
                 continue;
             }
 
@@ -586,6 +592,10 @@ final readonly class DatabaseConnectionProbe
      */
     private function workspacesForNode(Node $node, DoctorTargetScope $scope): array
     {
+        if ($this->productionNodeExcludesWorkspaces($node)) {
+            return [];
+        }
+
         if ($scope->workspace === null && $scope->app !== null) {
             return [];
         }
@@ -611,6 +621,11 @@ final readonly class DatabaseConnectionProbe
             )
             ->values()
             ->all();
+    }
+
+    private function productionNodeExcludesWorkspaces(Node $node): bool
+    {
+        return $node->hasActiveRole(NodeRoleName::AppProduction->value);
     }
 
     private function appInstancePath(AppInstance $instance): ?string

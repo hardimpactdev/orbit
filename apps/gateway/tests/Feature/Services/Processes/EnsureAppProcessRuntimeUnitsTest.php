@@ -13,6 +13,7 @@ use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
+use App\Models\Workspace;
 use App\Services\Processes\SystemdUnitRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -218,6 +219,52 @@ it('does not enact runtime units when an app has no process definitions', functi
     );
 
     expect($warnings)->toBe([])->and($remoteShell->scripts)->toBe([]);
+});
+
+it('does not reenact workspace runtime units for app-prod targets', function (): void {
+    $node = Node::factory()
+        ->appProd()
+        ->create([
+            'name' => 'app-prod-1',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'path' => '/home/orbit/apps/docs',
+        'runtime' => AppRuntimeKind::Static,
+    ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+    ]);
+    Workspace::factory()->for($app)->create([
+        'app_instance_id' => $instance->id,
+        'name' => 'legacy-workspace',
+    ]);
+    OrbitProcess::factory()
+        ->forOwner($app, $node)
+        ->create([
+            'app_instance_id' => $instance->id,
+            'name' => 'vite',
+            'runtime' => ProcessRuntime::Systemd,
+        ]);
+    $remoteShell = new ProcessRuntimeRecordingRemoteShell;
+    $certificates = new ProcessRuntimeRecordingSiteCertificateInstaller;
+
+    $warnings = makeEnsureRuntimeUnitsAction($remoteShell, $certificates)->handle($app, $instance);
+
+    expect($warnings)
+        ->toBe([])
+        ->and($remoteShell->scripts)
+        ->toHaveCount(1)
+        ->and($remoteShell->scripts[0])
+        ->toContain('orbit_docs_production_main_vite.service')
+        ->not
+        ->toContain('legacy-workspace')
+        ->and($certificates->hosts)
+        ->toHaveCount(1);
 });
 
 describe('runtime dispatcher', function (): void {

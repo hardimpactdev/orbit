@@ -666,7 +666,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             'internal:workspace-adapter:lookup' => ['app-dev'],
             'internal:workspace-adapter:update' => ['app-dev'],
             'internal:app-setup-step' => ['app-dev', 'app-prod'],
-            'internal:workspace-setup-step' => ['app-dev', 'app-prod'],
+            'internal:workspace-setup-step' => ['app-dev'],
             'internal:workspace-source:create' => ['app-dev'],
         ]);
     });

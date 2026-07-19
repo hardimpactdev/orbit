@@ -10,6 +10,7 @@
 - The CLI caller can reach the Orbit gateway.
 - The target app name or hostname must resolve to exactly one gateway app record.
 - The caller has `app:prune` on the app's owning node.
+- The caller is not `app-prod`, and the app is served by active `app-dev`.
 - At least one agent IDE adapter is configured for the app (directly, inherited from the node, or as an extension).
 
 ## Signature
@@ -52,6 +53,11 @@ read operation before workspace removal side effects begin. Commands that
 operate on an explicit named target, such as `app:remove` or
 `workspace:remove`, continue to rely on confirmation/`--force` instead of a
 generic dry-run contract.
+
+Both dry-run and destructive pruning are workspace operations. The gateway
+rejects an `app-prod` caller or target with
+`workspace.unsupported_for_production` before adapter discovery, workspace
+registry reads, locking, or cleanup.
 
 ### 1. Source Discovery
 - Resolve the currently effective agent IDE adapters for the app using the
@@ -126,6 +132,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | App not found | `app` does not match any record. | Failure (`error.code=app.not_found`). |
+| Production workspace boundary | The caller has `app-prod`, or the target app is served by `app-prod`. | Failure (`error.code=workspace.unsupported_for_production`) before adapter discovery. |
 | No adapters | No agent IDE adapters configured for the app. | Failure (`error.code=app.no_agent_ide_adapter`). |
 | Adapter query failed | Error communicating with a source-of-truth adapter. | Failure (`error.code=app.agent_ide_query_failed`). |
 | Destructive consent missing | Non-interactive mode, no `--dry-run`, and `--force` is missing. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |

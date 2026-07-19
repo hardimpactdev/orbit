@@ -8,8 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The target app exists in gateway configuration.
-- The authenticated peer has `app:read` on the app's owning node.
+- The target app instance exists in gateway configuration.
+- The authenticated peer has `app:read` on that instance's serving node.
 
 ## Signature
 
@@ -24,7 +24,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record. |
+| `app` | `[app]` | Always. | Never. | None. | Must resolve one concrete app instance; bare shorthand is valid only for a sole instance. |
 | `app_option` | `--app` | Optional. | Never. | None. | Must match `[app]` when both are present. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
@@ -32,8 +32,8 @@ This command follows the shared
 
 ### Setup step list rules
 
-The command returns setup steps for the resolved app ordered by `sort_order`.
-It does not run remote work.
+The command returns setup steps for the resolved app instance ordered by
+`sort_order`. It does not run remote work.
 
 ## Renderer Contracts
 
@@ -45,6 +45,7 @@ It does not run remote work.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | App not found | No app record matches `app`. | `error.code=app.not_found` |
+| App instance required | A bare app selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=app_instance_required`. |
 
 ## Doctor Relationship
 
@@ -58,8 +59,8 @@ setup steps.
 | --- | --- |
 | Type | `api:GET /apps/{app}/setup-steps` |
 | Effect | `read` |
-| Subject | `App` on success; `none` on validation or authorization failure. |
-| Properties | `app` and setup step count. |
+| Subject | `none` (read-only list). |
+| Properties | `app`, `app_instance`, and setup step count. |
 | Description | derived |
 
 ## Test Mapping

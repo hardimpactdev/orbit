@@ -35,6 +35,7 @@ it('updates the local checkout for a gateway caller', function (): void {
         ->call('POST', '/api/update/all', server: ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP])
         ->assertOk()
         ->assertJsonPath('success.data.updates.0.target', 'gateway')
+        ->assertJsonPath('success.data.updates.0.roles', ['gateway'])
         ->assertJsonPath('success.data.updates.0.status', 'completed')
         ->assertJsonPath('success.meta.summary.total', 1);
 
@@ -65,6 +66,7 @@ it('updates workload nodes with three sequential Agent-pushed stages', function 
         ->call('POST', '/api/update/all', server: ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP])
         ->assertOk()
         ->assertJsonPath('success.data.updates.1.target', 'beast')
+        ->assertJsonPath('success.data.updates.1.roles', ['app-dev', 'metrics'])
         ->assertJsonPath('success.data.updates.1.status', 'completed')
         ->assertJsonPath('success.meta.summary.failed', 0);
 
@@ -110,6 +112,11 @@ function update_all_agent_node(): Node
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => 'app-dev',
+        'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'metrics',
         'status' => 'active',
     ]);
 

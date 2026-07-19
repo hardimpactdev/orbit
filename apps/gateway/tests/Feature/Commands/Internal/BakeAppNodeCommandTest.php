@@ -3,14 +3,19 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
+use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Workspace;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
@@ -209,6 +214,81 @@ describe('orbit:internal:bake-app-node', function (): void {
                     ->count(),
             )
             ->toBe(1);
+    });
+
+    it('does not bake app production intent onto a node that owns a workspace', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'app-prod-1',
+            'host' => '10.6.0.5',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/srv/docs',
+            ),
+        ]);
+        Workspace::factory()->for($app)->create([
+            'name' => 'feature-docs',
+            'app_instance_id' => $instance->id,
+        ]);
+
+        expect(
+            fn () => $this->artisan('orbit:internal:bake-app-node', [
+                'name' => 'app-prod-1',
+                '--role' => 'app-prod',
+                '--host' => '10.6.0.5',
+                '--wireguard-address' => '10.6.0.5',
+                '--gateway-endpoint' => '10.6.0.2',
+                '--user' => 'orbit',
+                '--tld' => 'production',
+            ])->run(),
+        )
+            ->toThrow(InvalidArgumentException::class, 'feature-docs');
+
+        expect($node->roleAssignments()->where('role', 'app-prod')->exists())->toBeFalse();
+    });
+
+    it('sanitizes workspace permissions while baking app production intent', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'app-prod-1',
+            'host' => '10.6.0.5',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+        $grant = NodeAccess::query()->create([
+            'consumer_node_id' => $node->id,
+            'serving_node_id' => $node->id,
+            'permissions' => ['*'],
+            'custom_permissions' => ['*'],
+        ]);
+
+        $this->artisan('orbit:internal:bake-app-node', [
+            'name' => 'app-prod-1',
+            '--role' => 'app-prod',
+            '--host' => '10.6.0.5',
+            '--wireguard-address' => '10.6.0.5',
+            '--gateway-endpoint' => '10.6.0.2',
+            '--user' => 'orbit',
+            '--tld' => 'production',
+        ])->assertSuccessful();
+
+        $permissions = $grant->fresh()->permissions;
+        $customPermissions = $grant->fresh()->custom_permissions;
+
+        expect($permissions)
+            ->not->toContain('*')->and($customPermissions)
+            ->not->toContain(
+                '*',
+            )->and(array_values(array_filter($permissions, fn (string $permission): bool => str_starts_with(
+                $permission,
+                'workspace:',
+            ))))->toBe([])->and(array_values(array_filter($customPermissions, fn (string $permission): bool => str_starts_with(
+                $permission,
+                'workspace:',
+            ))))->toBe([]);
     });
 
     it('stores the selected ingress node for production placement', function (): void {

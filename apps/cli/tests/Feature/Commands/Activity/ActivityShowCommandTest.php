@@ -33,6 +33,9 @@ describe('activity:show', function (): void {
                 'type' => 'workspace.created',
                 'effect' => 'write',
                 'command' => 'app:new',
+                'description' => 'Workspace created',
+                'properties' => ['workspace' => 'feature/docs'],
+                'channel' => 'api',
             ],
             'related' => [],
         ]));
@@ -50,7 +53,22 @@ describe('activity:show', function (): void {
             ->and($output)
             ->toContain('Effect')
             ->and($output)
-            ->toContain('write');
+            ->toContain('write')
+            ->and($output)
+            ->toContain('Description')
+            ->and($output)
+            ->toContain('Workspace created')
+            ->and($output)
+            ->toContain('Properties')
+            ->and($output)
+            ->toContain('workspace: feature/docs')
+            ->and($output)
+            ->toContain('Channel')
+            ->and($output)
+            ->toContain('api')
+            ->and($output)
+            ->not->toContain('Summary')->and($output)
+            ->not->toContain('Details');
     });
 
     it('returns validation_failed when id is missing', function (): void {

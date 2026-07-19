@@ -22,7 +22,7 @@ role-derived base set is:
 - client target (no active role): `Node`.
 - `gateway` target: `Node`, `Processes`.
 - `database` target: `Node`, `Tools`, `Processes`.
-- `agent` target: `Node`, `Tools`, `Processes`.
+- `agent` target: `Node`, `Tools`, `Proxy routes`, `Processes`.
 - `router` target: `Node`, `Proxy routes`, `Processes`.
 - `app-dev` target: `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`,
   `Tools`, `Databases`.
@@ -33,6 +33,12 @@ role-derived base set is:
 - `s3` target: `Node`, `Tools`, `Proxy routes`, `Processes`.
 - `metrics` target: `Node`, `Tools`, `Processes`, `Proxy routes`.
 - `vpn` or `analytics` target (no other role-specific category): `Node`, `Processes`.
+
+For an `app-prod` target, `Processes`, `Proxy routes`, and `Databases` diagnose
+only production app and node facts. Workspace rows and workspace-derived facts
+are removed before those probes run. The gateway rejects an explicit workspace
+family or scope before dispatch, and an `app-prod` caller cannot use a mixed or
+workspace-adjacent doctor request to inspect an `app-dev` workspace.
 
 Owned-fact/platform overlays then add:
 

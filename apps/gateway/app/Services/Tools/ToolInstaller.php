@@ -16,7 +16,7 @@ use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\ProcessOwnerContextResolver;
-use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Proxy\AgentToolProxyRouteIntent;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteSecretFile;
 use App\Tools\UserScopedCliTool;
@@ -222,7 +222,7 @@ final readonly class ToolInstaller
         $row->refresh();
 
         if ($this->catalog->category($tool) === 'agent') {
-            $routeResult = $this->createToolProxyRoute($tool, $targetNode, $agentConfig);
+            $routeResult = $this->createToolProxyRoute($tool, $targetNode);
 
             if ($routeResult instanceof ToolRegistryFailure) {
                 return $routeResult;
@@ -343,14 +343,35 @@ final readonly class ToolInstaller
         return null;
     }
 
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private function createToolProxyRoute(string $tool, Node $node, array $config): ?ToolRegistryFailure
+    private function createToolProxyRoute(string $tool, Node $node): ?ToolRegistryFailure
     {
-        $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
-        $domain = $tld !== '' ? "{$tool}.{$tld}" : $tool;
-        $upstream = $config['upstream'] ?? 'http://'.ProxyRouteRenderer::HostLoopbackHostname.':8080';
+        $nodeTool = NodeTool::query()
+            ->with('node')
+            ->where('node_id', $node->id)
+            ->where('name', $tool)
+            ->first();
+
+        if (! $nodeTool instanceof NodeTool) {
+            return ToolRegistryFailure::validation(
+                'tool',
+                $tool,
+                "Tool '{$tool}' has no persisted install intent on node '{$node->name}'.",
+                ['tool' => $tool, 'node' => $node->name],
+            );
+        }
+
+        $expected = app(AgentToolProxyRouteIntent::class)->expectedRoute($nodeTool);
+
+        if (! $expected instanceof ProxyRoute) {
+            return ToolRegistryFailure::validation(
+                'domain',
+                '',
+                "Tool '{$tool}' cannot derive its expected proxy route on node '{$node->name}'.",
+                ['tool' => $tool, 'node' => $node->name],
+            );
+        }
+
+        $domain = $expected->domain;
 
         $existing = ProxyRoute::query()
             ->where('domain', $domain)
@@ -378,32 +399,7 @@ final readonly class ToolInstaller
             }
         }
 
-        $routeConfig = [
-            'target' => ['type' => 'upstream', 'value' => $upstream],
-            'upstream' => $upstream,
-            'owner_name' => $tool,
-        ];
-
-        $sourceHash = app(ProxyRouteRenderer::class)->sourceHash(new ProxyRoute([
-            'node_id' => $node->id,
-            'domain' => $domain,
-            'kind' => 'proxy',
-            'owner_type' => 'tool',
-            'config' => $routeConfig,
-        ]));
-
-        ProxyRoute::query()->updateOrCreate(
-            ['domain' => $domain],
-            [
-                'node_id' => $node->id,
-                'app_id' => null,
-                'workspace_id' => null,
-                'owner_type' => 'tool',
-                'kind' => 'proxy',
-                'config' => $routeConfig,
-                'source_hash' => $sourceHash,
-            ],
-        );
+        app(AgentToolProxyRouteIntent::class)->persist($expected);
 
         return null;
     }

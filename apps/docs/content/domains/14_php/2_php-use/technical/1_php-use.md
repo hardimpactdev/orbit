@@ -73,6 +73,9 @@ that serving node; it must not supply image facts from another node.
 
 ### Workspace Runtime Selection
 
+- Requires the workspace to resolve to an active `app-dev` serving node and
+  rejects `app-prod` callers with `workspace.unsupported_for_production`
+  before inventory, configuration, proxy, or runtime effects.
 - Writes a workspace PHP override when `version` targets a workspace.
 - Clears the workspace PHP override when `--inherit` is supplied.
 - Re-renders and applies workspace runtime container artifacts through Agent

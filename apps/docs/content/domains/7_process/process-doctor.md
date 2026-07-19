@@ -15,7 +15,9 @@ The process family owns these facts:
 - gateway-owned process definitions: node/app-instance/workspace owner, name, command,
   restart policy, crash-notification policy, optional tool dependency, runtime,
   runtime configuration, and service endpoint metadata;
-- derived runtime-unit identity for one concrete app instance and its workspaces: `orbit_<app>_<app-instance>_<workspace|main>_<process>`;
+- derived runtime-unit identity for one concrete app instance and, on
+  `app-dev` only, its workspaces:
+  `orbit_<app>_<app-instance>_<workspace|main>_<process>`;
 - systemd process runtime units rendered from process, app, workspace, and node
   configuration, including command, working directory, restart policy, and
   runtime environment;
@@ -51,6 +53,11 @@ the process family.
 
 The processes probe reads gateway process definitions and checks the layers below in order.
 
+On an `app-prod` target, the probe never loads a workspace-owned process row or
+expands an app process into workspace runtime contexts. Unsupported workspace
+owner types, runtime units, and event identities are excluded before comparison.
+Main app-instance and node-owned process drift remains visible.
+
 ### Registry configuration
 
 Every selected app/workspace process definition has valid logical-app and
@@ -65,10 +72,11 @@ recreate both the derived definition and its container.
 
 ### Owning app instance and workspace expansion
 
-The owner resolves to one active `AppInstance`. Expected runtime contexts are
-that instance's main context plus every active workspace belonging to that same
-instance. All expected units are placed on the instance's serving node; other
-instances of the same logical app are outside this definition's expansion.
+The owner resolves to one active `AppInstance`. On `app-dev`, expected runtime
+contexts are that instance's main context plus every active workspace belonging
+to the same instance. On `app-prod`, only the main context is eligible. All
+expected units are placed on the instance's serving node; other instances of
+the same logical app are outside this definition's expansion.
 
 ### Process manager availability
 

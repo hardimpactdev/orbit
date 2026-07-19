@@ -224,15 +224,16 @@ The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes
 Roles compose only where the role matrix allows it. In v1, `gateway`, `vpn`,
 and `router` are coupled to each other, but the `metrics` role may be added to
 that coupled node because it observes host resources and owns no public edge.
-`app-dev` may combine with `database`, `websocket`, `s3`, and `metrics`.
+`app-dev` may combine with `database`, `websocket`, `s3`, `metrics`, and
+`analytics`.
 `app-prod` may combine with `ingress` and `metrics`, but conflicts with
-`database`, `websocket`, `s3`, and `analytics`. `websocket` and `s3` may
-combine with each other on dev services nodes, and both may combine with
-`metrics` and `analytics`. `analytics` may also combine with `database` and
-`metrics`, but conflicts with gateway-coupled infrastructure, public edge,
-production app, and agent roles. The `agent` role remains exclusive and
-conflicts with both `metrics` and `analytics`. The full compatibility matrix
-lives in [Node Concepts](domains/1_node/node-concepts.md#role-compatibility).
+`database`, `websocket`, `s3`, and `analytics`. `database`, `websocket`, and
+`s3` may combine with `app-dev`, each other, `metrics`, and `analytics`.
+`analytics` may combine with `app-dev`, `database`, `websocket`, `s3`, and
+`metrics`, but conflicts with gateway-coupled infrastructure, `ingress`,
+`app-prod`, and `agent`. `metrics` may combine with every non-agent role. The
+`agent` role remains exclusive. The full compatibility matrix lives in
+[Node Concepts](domains/1_node/node-concepts.md#role-compatibility).
 
 Each role has a **driver** — the code that knows how to install, configure, and verify that role on a node. A role can only be assigned to a node whose host operating system is supported by that role's driver. New OS support for an existing role is a driver change, not an architecture change. Most role drivers support Ubuntu only; `app-dev` and `database` also support macOS on adopted/self-managed workload nodes backed by a reachable Docker-compatible container provider. Current driver OS support is enumerated in [Node Concepts: Role Platform Support](domains/1_node/node-concepts.md#role-platform-support).
 
@@ -473,7 +474,13 @@ This grant model lets you scope access naturally:
 
 - A developer's client might have a `developer` preset to nodes with the `app-dev` role and no grant at all to nodes with the `app-prod` role.
 - A CI runner's client might have an `operator` preset only to the apps it deploys.
-- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own app registry rows through `app:read`. An `app-dev` node can also register apps on itself and manage process definitions for concrete app instances served by itself. `app-prod` self-grants remain read-only plus workspace setup. These self-grants do not grant app writes, credentials, deploy, runtime lifecycle process start/stop/restart, workspace reads, or cross-node app/process visibility.
+- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own app registry rows through `app:read`. An `app-dev` node can also register apps on itself, manage process definitions for concrete app instances served by itself, and operate app-dev workspaces. `app-prod` self-grants remain read-only and never include wildcard or `workspace:*` permissions. These self-grants do not grant app writes, credentials, deploy, runtime lifecycle process start/stop/restart, or cross-node app/process visibility.
+
+Workspace permission policy applies to both endpoints of every grant. A
+permission set containing `*` or `workspace:*` is rejected when its consuming
+node has `app-prod`, or when its serving node has `app-prod`.
+Request authorization repeats the consuming-node check so legacy grant drift
+cannot let a production app service operate another node's workspace.
 
 Authority is revocable through the lever that owns its class: remove a grant or
 permission, remove the gateway role, or disable the peer. `node:grant` creates
@@ -496,9 +503,11 @@ Node-side state is never written by the public local CLI. The gateway is the
 only authority, even when the gateway dispatches token-gated local executor
 work back to the same node.
 
-This is why `workspace:setup` works for workspaces placed on the self-granted
-node, why `app:list` includes logical apps with at least one instance on that
-node, and why `app:show` can inspect apps served there. It is also why
+This is why `workspace:setup` works for app-dev workspaces placed on the
+self-granted app-dev node, why `app:list` includes logical apps with at least
+one instance on that node, and why `app:show` can inspect apps served there.
+Production app nodes never create, own, set up, remove, diagnose, or execute
+workspaces. It is also why
 `app:register`, `process:add`, `process:update`, and `process:remove` work from
 inside an `app-dev` node for instance-owned state on that same node. The node's
 self-grant includes the necessary scoped permissions; this is the self-grant

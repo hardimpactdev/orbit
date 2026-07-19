@@ -15,6 +15,7 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Operations\FleetUpdateTargetSelector;
 use App\Services\OrbitUpdater;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
+use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -27,6 +28,11 @@ final class UpdateAllController implements Loggable
 {
     private ?Node $activitySubject = null;
 
+    #[OpenApiResponse(
+        status: 200,
+        description: 'The fleet update results and summary.',
+        type: 'array{success: array{data: array{updates: list<array{target: string, node: string, roles: list<string>, status: string, output?: string}>}, meta: array{summary: array{total: int, completed: int, failed: int}}}}',
+    )]
     public function __invoke(
         Request $request,
         OrbitUpdater $updater,
@@ -294,7 +300,7 @@ final class UpdateAllController implements Loggable
                 $updates[] = [
                     'target' => $node->name,
                     'node' => $node->name,
-                    'role' => $node->displayRole(),
+                    'roles' => $this->activeRoles($node),
                     'status' => 'failed',
                     'output' => $output,
                 ];
@@ -312,7 +318,7 @@ final class UpdateAllController implements Loggable
         return [
             'target' => $node->name,
             'node' => $node->name,
-            'role' => $node->displayRole(),
+            'roles' => $this->activeRoles($node),
             'status' => $result->successful() ? 'completed' : 'failed',
             ...($result->successful() ? [] : ['output' => trim($result->errorOutput() ?: $result->output())]),
         ];
@@ -330,7 +336,7 @@ final class UpdateAllController implements Loggable
     }
 
     /**
-     * @return array{target: string, node: string, role: string}
+     * @return array{target: string, node: string, roles: list<string>}
      */
     private function localGatewayTarget(): array
     {
@@ -340,15 +346,23 @@ final class UpdateAllController implements Loggable
             return [
                 'target' => $node->name,
                 'node' => $node->name,
-                'role' => $node->displayRole(),
+                'roles' => $this->activeRoles($node),
             ];
         }
 
         return [
             'target' => 'gateway',
             'node' => 'gateway',
-            'role' => 'gateway',
+            'roles' => ['gateway'],
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function activeRoles(Node $node): array
+    {
+        return app(NodeRoleAssignments::class)->activeRoleNames($node);
     }
 
     /**

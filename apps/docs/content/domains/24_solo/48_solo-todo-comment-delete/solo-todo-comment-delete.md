@@ -1,6 +1,7 @@
 # `orbit solo:todo:comment:delete`
 
-Delete a Solo todo comment after explicit force consent.
+Delete a Solo todo comment. Interactive human mode prompts unless `--force` is
+supplied; non-interactive mode requires `--force`.
 
 ## Usage
 
@@ -24,4 +25,5 @@ These errors are stable for automation and human troubleshooting.
 
 - `extension_disabled`: Solo is disabled locally or on the gateway.
 - `authorization_failed`: The caller lacks the required permission on the target node.
+- `validation_failed`: Required destructive consent is missing or was declined (`meta.field=force`, `meta.reason=destructive_consent_required`).
 - `solo_upstream_unavailable`: The configured Solo API on the node cannot be reached.

@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
+use App\Models\Workspace;
 use App\Services\Authorization\ServingNodeResolver;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,11 +21,16 @@ use ReflectionClass;
 use ReflectionMethod;
 use Symfony\Component\HttpFoundation\Response;
 
+/**
+ * @mago-expect lint:kan-defect
+ * @mago-expect lint:too-many-methods
+ */
 final readonly class RequireGrantPermission
 {
     public function __construct(
         private NodeAccessAuthorizer $authorizer,
         private ServingNodeResolver $servingNodeResolver,
+        private WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     /**
@@ -32,16 +40,38 @@ final readonly class RequireGrantPermission
      */
     public function handle(Request $request, Closure $next): Response
     {
+        $consumer = $request->user();
+
+        if ($consumer instanceof Node && $this->targetsWorkspace($request)) {
+            try {
+                $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($consumer);
+
+                $serving = $this->servingNodeResolver->resolve($request, ServingNode::WorkspaceOwning);
+
+                if ($serving instanceof Node) {
+                    $this->workspaceRoleGuard->ensureNodeIsWorkspaceEligible($serving);
+                }
+            } catch (WorkspaceUnsupportedForProduction $exception) {
+                return $this->workspaceUnsupportedForProduction($exception);
+            }
+        }
+
         $attribute = $this->attributeForRequest($request);
 
         if (! $attribute instanceof RequiresPermission) {
             return $next($request);
         }
 
-        $consumer = $request->user();
-
         if (! $consumer instanceof Node) {
             return $this->forbidden('Peer identity unknown.');
+        }
+
+        if (str_starts_with($attribute->permission, 'workspace:')) {
+            try {
+                $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($consumer);
+            } catch (WorkspaceUnsupportedForProduction $exception) {
+                return $this->workspaceUnsupportedForProduction($exception);
+            }
         }
 
         $serving = $this->servingNodeResolver->resolve($request, $attribute->servingNode);
@@ -55,6 +85,14 @@ final readonly class RequireGrantPermission
                 'reason' => 'serving_node_unresolved',
                 'missing_permission' => $attribute->permission,
             ]);
+        }
+
+        if ($attribute->servingNode === ServingNode::WorkspaceOwning) {
+            try {
+                $this->workspaceRoleGuard->ensureNodeIsWorkspaceEligible($serving);
+            } catch (WorkspaceUnsupportedForProduction $exception) {
+                return $this->workspaceUnsupportedForProduction($exception);
+            }
         }
 
         $result = $this->authorizer->authorize($consumer, $serving, $attribute->permission);
@@ -131,6 +169,24 @@ final readonly class RequireGrantPermission
         return $this->firstAttribute(new ReflectionClass($controllerClass));
     }
 
+    private function targetsWorkspace(Request $request): bool
+    {
+        if ($this->isWorkspaceTarget($request->route('workspace'))) {
+            return true;
+        }
+
+        return $this->isWorkspaceTarget($request->input('workspace'));
+    }
+
+    private function isWorkspaceTarget(mixed $workspace): bool
+    {
+        if ($workspace instanceof Workspace) {
+            return true;
+        }
+
+        return is_string($workspace) && trim($workspace) !== '';
+    }
+
     private function firstAttribute(ReflectionClass|ReflectionMethod $reflection): ?RequiresPermission
     {
         $attributes = $reflection->getAttributes(RequiresPermission::class);
@@ -156,6 +212,18 @@ final readonly class RequireGrantPermission
                 'meta' => $meta,
             ],
         ], 403);
+    }
+
+    private function workspaceUnsupportedForProduction(
+        WorkspaceUnsupportedForProduction $exception,
+    ): JsonResponse {
+        return response()->json([
+            'error' => [
+                'code' => $exception->errorCode(),
+                'message' => $exception->getMessage(),
+                'meta' => $exception->meta,
+            ],
+        ], 422);
     }
 
     /**

@@ -333,7 +333,7 @@ final readonly class UpdateRunner
         try {
             $this->activityLogger->log(
                 new FleetUpdateOutcomeActivity($operationRun, $plan, $status, $failedStep),
-                channel: 'fleet_update',
+                channel: 'api',
                 causer: null,
             );
         } catch (Throwable) {

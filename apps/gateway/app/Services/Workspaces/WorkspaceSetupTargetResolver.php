@@ -127,6 +127,8 @@ final readonly class WorkspaceSetupTargetResolver
                 $app,
                 $path,
             ) ?? $this->callerNodeInstanceForPath($app, $callerNode, $path);
+        $instance = $this->concreteInstance($app, $explicitInstance);
+        $this->ensureInstanceSupportsWorkspaces($app, $instance);
 
         if ($name === null) {
             $resolved = $this->probeAdapters($path, [$app]);
@@ -139,7 +141,6 @@ final readonly class WorkspaceSetupTargetResolver
             }
         }
 
-        $instance = $this->concreteInstance($app, $explicitInstance);
         $workspaceName = $name ?? basename($path);
         $existing = $this->firstWorkspaceMatch($app, $workspaceName, $instance);
 
@@ -306,6 +307,8 @@ final readonly class WorkspaceSetupTargetResolver
 
     private function adapterConfirmsRegisteredWorkspace(Workspace $workspace, string $cwd): bool
     {
+        $this->ensureWorkspaceSupportsWorkspaces($workspace);
+
         if ($workspace->agent_ide === null || $workspace->agent_ide === 'none') {
             return true;
         }
@@ -426,6 +429,7 @@ final readonly class WorkspaceSetupTargetResolver
             $app,
             $explicitInstance ?? $this->placement->matchingOrbitInstanceForPath($app, $resolution->path),
         );
+        $this->ensureInstanceSupportsWorkspaces($app, $instance);
         $workspace = Workspace::query()
             ->with(['app.node', 'app.instances', 'appInstance'])
             ->where('app_id', $app->id)
@@ -475,13 +479,29 @@ final readonly class WorkspaceSetupTargetResolver
      */
     private function appsForCaller(?Node $callerNode): array
     {
-        $query = App::query()->with('node');
+        if ($callerNode instanceof Node && ! $this->roleGuard->nodeSupportsWorkspaces($callerNode)) {
+            return [];
+        }
+
+        $query = App::query()->with(['node', 'instances']);
 
         if ($callerNode instanceof Node && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($callerNode)) {
             $query->where('node_id', $callerNode->id);
         }
 
-        return $query->get()->all();
+        $apps = [];
+
+        foreach ($query->get() as $app) {
+            $supportsWorkspaces = $app->instances->contains(fn (AppInstance $instance): bool => $this->roleGuard->nodeSupportsWorkspaces(
+                $this->placement->nodeForInstance($instance),
+            ));
+
+            if ($supportsWorkspaces) {
+                $apps[] = $app;
+            }
+        }
+
+        return $apps;
     }
 
     private function assertExplicitMatches(Workspace $workspace, ?string $appName, ?string $path): void
@@ -635,6 +655,41 @@ final readonly class WorkspaceSetupTargetResolver
         return $resolved;
     }
 
+    private function ensureWorkspaceSupportsWorkspaces(Workspace $workspace): void
+    {
+        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
+        $app = $workspace->app;
+
+        if (! $app instanceof App) {
+            return;
+        }
+
+        $this->ensureInstanceSupportsWorkspaces($app, $workspace->appInstance);
+    }
+
+    private function ensureInstanceSupportsWorkspaces(App $app, AppInstance $instance): void
+    {
+        $node = $this->placement->nodeForInstance($instance);
+
+        if (! $node instanceof Node) {
+            throw new WorkspaceSetupResolutionFailed(
+                'validation_failed',
+                "Node not found for app instance '{$this->selectionLabel($app, $instance)}'.",
+                ['field' => 'app'],
+            );
+        }
+
+        try {
+            $this->roleGuard->ensureNodeSupportsWorkspaces($app, $node);
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            throw new WorkspaceSetupResolutionFailed(
+                $exception->errorCode(),
+                $exception->getMessage(),
+                $exception->meta,
+            );
+        }
+    }
+
     private function pathAllowedForWorkspace(App $app, string $path, AppInstance $instance): bool
     {
         $appPath = $this->instancePath($instance) ?? $app->path;
@@ -700,6 +755,8 @@ final readonly class WorkspaceSetupTargetResolver
             if (! $this->pathMatches($path, $cwd)) {
                 continue;
             }
+
+            $this->ensureInstanceSupportsWorkspaces($candidate['app'], $candidate['instance']);
 
             return [
                 'app' => $candidate['app'],

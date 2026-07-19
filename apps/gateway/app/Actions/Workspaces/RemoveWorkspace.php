@@ -17,6 +17,7 @@ use App\Services\Processes\ProcessRuntimeUnitPayload;
 use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspaceEnvInheritanceGuard;
 use App\Services\Workspaces\WorkspacePlacement;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceStepPolicyService;
@@ -25,12 +26,14 @@ use Throwable;
 
 final readonly class RemoveWorkspace
 {
+    /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private WorkspaceRuntimeContainerManager $workspaceRuntimeContainerManager,
         private ToolScriptDispatcher $scripts,
         private WorkspacePlacement $placement,
         private WorkspaceStepPolicyService $stepPolicy,
+        private WorkspaceRoleGuard $roleGuard,
     ) {}
 
     /**
@@ -50,6 +53,7 @@ final readonly class RemoveWorkspace
     public function handle(Workspace $workspace, bool $keepFiles = false): array
     {
         $workspace->loadMissing(['app.node', 'app.instances', 'appInstance', 'app.processes']);
+        $this->roleGuard->ensureWorkspaceSupported($workspace);
 
         $app = $workspace->app;
         $name = $workspace->name;

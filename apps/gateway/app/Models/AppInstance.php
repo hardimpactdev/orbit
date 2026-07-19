@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Data\Apps\AppInstanceDriverConfigData;
 use App\Data\Apps\AppInstanceRuntimeRequirementsData;
+use App\Data\Apps\PhpWorkerConfig;
 use App\Enums\Apps\AppInstanceDriver;
 use Database\Factories\AppInstanceFactory;
 use Illuminate\Database\Eloquent\Collection;
@@ -23,6 +24,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property AppInstanceDriverConfigData|null $driver_config
  * @property AppInstanceRuntimeRequirementsData|null $runtime_requirements
  * @property list<string>|null $deploy_warmup_paths
+ * @property bool $worker_enabled
+ * @property array<string, mixed>|null $worker_config
  * @property string|null $latest_deployment_status
  * @property int|null $latest_deployment_run_id
  * @property-read App $app
@@ -30,6 +33,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read Collection<int, DatabaseConnection> $databaseConnections
  * @property-read Collection<int, DeployStep> $deploySteps
  * @property-read Collection<int, DeploymentRun> $deploymentRuns
+ * @property-read Collection<int, AppSetupRun> $setupRuns
+ * @property-read Collection<int, AppSetupStep> $setupSteps
+ * @property-read Collection<int, Schedule> $schedules
+ *
+ * @mago-expect lint:too-many-methods
  */
 class AppInstance extends Model
 {
@@ -44,6 +52,8 @@ class AppInstance extends Model
         'driver_config',
         'runtime_requirements',
         'deploy_warmup_paths',
+        'worker_enabled',
+        'worker_config',
         'latest_deployment_status',
         'latest_deployment_run_id',
     ];
@@ -51,6 +61,7 @@ class AppInstance extends Model
     #[\Override]
     protected $attributes = [
         'driver' => 'orbit',
+        'worker_enabled' => false,
     ];
 
     #[\Override]
@@ -61,6 +72,8 @@ class AppInstance extends Model
             'driver_config' => AppInstanceDriverConfigData::class,
             'runtime_requirements' => AppInstanceRuntimeRequirementsData::class,
             'deploy_warmup_paths' => 'array',
+            'worker_enabled' => 'boolean',
+            'worker_config' => 'array',
         ];
     }
 
@@ -137,10 +150,48 @@ class AppInstance extends Model
         return $relation;
     }
 
+    /**
+     * @return HasMany<AppSetupStep, $this>
+     */
+    public function setupSteps(): HasMany
+    {
+        $relation = $this->hasMany(AppSetupStep::class);
+        $relation->getQuery()->orderBy('sort_order');
+
+        return $relation;
+    }
+
+    /**
+     * @return HasMany<AppSetupRun, $this>
+     */
+    public function setupRuns(): HasMany
+    {
+        $relation = $this->hasMany(AppSetupRun::class);
+        $relation->getQuery()->orderByDesc('started_at');
+
+        return $relation;
+    }
+
+    /**
+     * @return HasMany<Schedule, $this>
+     */
+    public function schedules(): HasMany
+    {
+        $relation = $this->hasMany(Schedule::class);
+        $relation->getQuery()->orderBy('name');
+
+        return $relation;
+    }
+
     public function runtimeRequirements(): AppInstanceRuntimeRequirementsData
     {
         return $this->runtime_requirements instanceof AppInstanceRuntimeRequirementsData
             ? $this->runtime_requirements
             : new AppInstanceRuntimeRequirementsData;
+    }
+
+    public function workerConfig(): PhpWorkerConfig
+    {
+        return PhpWorkerConfig::fromArray(is_array($this->worker_config) ? $this->worker_config : []);
     }
 }

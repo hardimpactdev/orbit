@@ -38,6 +38,10 @@ Accepts the message from `[message]` or from standard input when `--stdin` is pr
 
 Resolves the target context from explicit options or the current directory. `--workspace=<workspace>` targets a workspace and `--app=<app>` targets the app's main context. With no explicit target, Orbit resolves the current workspace or app from the current directory when possible.
 
+Workspace and path-derived targets are `app-dev` only. An `app-prod` caller or
+target is rejected before adapter lookup or delivery. Messages to the app's
+main context remain available when normally authorized.
+
 ### Adapter resolution
 
 Resolves the effective Agent IDE adapter from workspace setting when a future workspace override exists, then app override, then owning node default.

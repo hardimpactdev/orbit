@@ -44,6 +44,12 @@ These rules define what PHP runtime commands own and how they operate.
 - App PHP version is gateway-tracked app configuration.
 - Workspace PHP version is gateway-tracked workspace configuration. A workspace
   inherits the parent app PHP version unless it stores an override.
+- Workspace PHP reads and writes are available only when the workspace resolves
+  to an active `app-dev` serving node and the caller is not an `app-prod` node.
+  Explicit workspace targets fail with
+  `workspace.unsupported_for_production` before inventory, configuration, or
+  runtime effects when either side crosses that boundary. App-level PHP reads
+  for production callers and targets omit workspace selection facts.
 - PHP runtime commands must not read `.php-version` files.
 - PHP runtime commands must not mutate `composer.json`, Composer constraints,
   lockfiles, framework config, or project source files.

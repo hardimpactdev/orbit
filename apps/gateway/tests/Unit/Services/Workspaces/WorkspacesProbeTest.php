@@ -43,6 +43,14 @@ describe('interface contract', function (): void {
 
         expect($snapshot->isEmpty())->toBeTrue();
     });
+
+    it('defines only canonical persisted workspace lifecycle statuses', function (): void {
+        expect(array_column(WorkspaceLifecycleStatus::cases(), 'value'))->toBe([
+            'expected',
+            'setup-pending',
+            'active',
+        ]);
+    });
 });
 
 describe('source path reality', function (): void {
@@ -84,6 +92,23 @@ describe('source path reality', function (): void {
             ->and($shell->scripts[0])
             ->toContain("{$app->path}/.worktrees/feature");
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
+    });
+
+    it('does not remotely introspect production workspace registry drift', function (): void {
+        $app = workspaceableApp(['environment' => 'production'], role: 'app-prod');
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+        $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\t1\t1\t1\t0\t0\t0\t\n");
+
+        $snapshot = new WorkspacesProbe(
+            scripts: new ToolScriptDispatcher(new WorkspacesProbeScriptExecutor($shell)),
+        )->introspect($workspace);
+
+        expect($snapshot->isEmpty())
+            ->toBeTrue()
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and($shell->nodes)
+            ->toBe([]);
     });
 
     it('does not contain host-lane php eval probe snippets', function (): void {
@@ -262,7 +287,6 @@ describe('PHP runtime reality', function (): void {
     })->with([
         WorkspaceLifecycleStatus::Expected,
         WorkspaceLifecycleStatus::SetupPending,
-        WorkspaceLifecycleStatus::SettingUp,
     ]);
 
     it('hands missing PHP workspace runtime units to process doctor without duplicate workspace issues', function (): void {
@@ -372,7 +396,6 @@ describe('PHP runtime reality', function (): void {
     })->with([
         WorkspaceLifecycleStatus::Expected,
         WorkspaceLifecycleStatus::SetupPending,
-        WorkspaceLifecycleStatus::SettingUp,
     ]);
 });
 

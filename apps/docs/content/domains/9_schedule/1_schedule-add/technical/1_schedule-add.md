@@ -8,7 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized to manage schedules for the resolved app or node scope.
+- The current node identity is authorized to manage schedules on the resolved
+  app instance's serving node or selected node.
 
 ## Signature
 
@@ -22,8 +23,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Schedule slug unique within the selected scope. |
-| `app` | `--app` | `Required when no node target resolves and no target can be prompted.` | `Forbidden with `node`.` | `None.` | Visible active app that the caller may manage. |
+| `name` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Schedule slug unique within the selected concrete target. |
+| `app` | `--app` | `Required when no node target resolves and no target can be prompted.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare logical app is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Required when no app target resolves and no target can be prompted.` | `Forbidden with `app`.` | `local node:default when configured` | Visible active gateway or node with schedule capability. |
 | `command` | `--command` | `Required when `script` is absent.` | `Forbidden with `script`.` | `None.` | Non-empty command line accepted by the schedule execution policy for the target scope. |
 | `script` | `--script` | `Required when `command` is absent.` | `Forbidden with `command`.` | `None.` | Managed script path readable by the gateway policy and executable by the target node. |
@@ -43,9 +44,15 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 These rules describe how `schedule:add` resolves scope and writes the gateway schedule row.
 
 - Resolves exactly one target scope: app or node.
+- Resolves app scope to exactly one concrete app instance before writing. A
+  dotted selector addresses that instance; a bare app selector succeeds only
+  when exactly one eligible instance is visible for `schedule:add`.
 - Creates one gateway schedule-configuration row in the `schedule` state family.
-- Stores the schedule name, scope, target, interval, timezone, execution source, enabled state, and initial status.
-- Rejects writes that collide with an existing schedule name in the selected scope, before any side effects.
+- Stores the schedule name, scope, concrete `app_instance_id` when applicable,
+  target, interval, timezone, execution source, enabled state, and initial
+  status.
+- Rejects ambiguous app selectors and writes that collide with an existing
+  schedule name in the selected concrete target before any side effects.
 
 ### Execution Source Rules
 
@@ -77,7 +84,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Name collision | A schedule with the same name already exists in the selected scope. | `error.code=schedule.name_collision` |
+| Name collision | A schedule with the same name already exists in the selected concrete target. | `error.code=schedule.name_collision` |
+| App instance required | No eligible instance exists for a bare logical app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
 | Interval invalid | The interval cannot be parsed against the schedule expression contract. | `error.code=schedule.interval_invalid` |
 | Execution source invalid | The selected command or script is rejected by schedule execution policy. | `error.code=schedule.execution_source_invalid` |
 
@@ -103,5 +111,7 @@ schedule creation attempts.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php` | CLI `schedule:add` POST payload, target and execution-source validation, default node when no target is supplied, and gateway error passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php` | Explicit and bare app-instance resolution, per-instance name uniqueness, serving-node payloads, and ambiguity before writes. |
+| `apps/gateway/tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php` | Existing app-schedule ownership backfill and ambiguous migration stop. |
 
-There is no gateway-side coverage for this command contract: no gateway API or SDK contract test is linked for this command yet. The linked CLI test proves the mapped CLI behavior above; API behavior, activity logging, and authorization assertions remain coverage gaps until focused tests land.
+Activity logging assertions remain a coverage gap until focused tests land.

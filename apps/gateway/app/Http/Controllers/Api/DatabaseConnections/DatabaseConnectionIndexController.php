@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\DatabaseConnections;
 
 use App\Enums\ActivityLogType;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\DatabaseConnection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,14 +28,22 @@ final class DatabaseConnectionIndexController extends DatabaseConnectionApiContr
             static fn (mixed $value): bool => $value !== null,
         ));
 
+        $appModel = $app !== null ? $this->resolver->resolveApp($app) : null;
+
+        try {
+            $workspaceModel = $workspace !== null
+                ? $this->resolver->resolveWorkspaceForCaller($workspace, $auth)
+                : null;
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return $this->workspaceUnsupportedForProduction($exception);
+        }
+
         if ($app !== null && $workspace !== null) {
             return $this->validationFailed('scope', 'Invalid scope: --app and --workspace cannot be combined.', [
                 'field' => 'scope',
             ]);
         }
 
-        $appModel = $app !== null ? $this->resolver->resolveApp($app) : null;
-        $workspaceModel = $workspace !== null ? $this->resolver->resolveWorkspace($workspace) : null;
         $nodeModel = $node !== null ? $this->resolver->resolveNode($node) : null;
 
         if ($app !== null && $appModel === null) {
@@ -84,7 +93,7 @@ final class DatabaseConnectionIndexController extends DatabaseConnectionApiContr
         }
 
         $connections = $connections
-            ->map(fn (DatabaseConnection $connection): array => $this->payloads->toArray($connection))
+            ->map(fn (DatabaseConnection $connection): array => $this->payloads->toArray($connection, $auth))
             ->all();
 
         return response()->json([

@@ -3,12 +3,15 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
 
@@ -40,6 +43,24 @@ function grantWorkerAccess(Node $caller, Node $appNode, array $permissions): voi
     ]);
 }
 
+function create_worker_app_instance(
+    App $app,
+    Node $node,
+    string $name = 'development',
+    array $overrides = [],
+): AppInstance {
+    return AppInstance::factory()->for($app)->create(array_merge([
+        'name' => $name,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ], $overrides));
+}
+
 /**
  * @param  list<RemoteShellResult>  $results
  */
@@ -69,12 +90,13 @@ describe('AppWorkerController', function (): void {
         $caller = createWorkerControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['app:read']);
-        App::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
             'runtime' => AppRuntimeKind::Php,
         ]);
+        create_worker_app_instance($app, $node);
         bindWorkerControllerShell();
 
         $response = $this->call('GET', '/api/apps/docs/worker', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
@@ -82,6 +104,7 @@ describe('AppWorkerController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.app', 'docs')
+            ->assertJsonPath('success.data.app_instance', 'development')
             ->assertJsonPath('success.data.worker_enabled', false)
             ->assertJsonPath('success.data.worker_config', null);
     });
@@ -90,11 +113,12 @@ describe('AppWorkerController', function (): void {
         $caller = createWorkerControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['app:worker']);
-        App::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'runtime' => AppRuntimeKind::Php,
         ]);
+        $instance = create_worker_app_instance($app, $node);
         bindWorkerControllerShell();
 
         $response = $this->call(
@@ -113,19 +137,19 @@ describe('AppWorkerController', function (): void {
             ->assertJsonPath('success.data.worker_config.max_requests', 500)
             ->assertJsonMissingPath('success.data.worker_config.max_consecutive_failures');
 
-        $app = App::query()->where('name', 'docs')->first();
-        expect($app->worker_enabled)->toBeTrue();
+        expect($instance->refresh()->worker_enabled)->toBeTrue();
     });
 
     it('refuses to enable worker mode when readiness fails and leaves state unchanged', function (): void {
         $caller = createWorkerControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['app:worker']);
-        App::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'runtime' => AppRuntimeKind::Php,
         ]);
+        $instance = create_worker_app_instance($app, $node);
         bindWorkerControllerShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
@@ -142,18 +166,19 @@ describe('AppWorkerController', function (): void {
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 'app.worker_readiness_failed');
 
-        $app = App::query()->where('name', 'docs')->first();
-        expect($app->worker_enabled)->toBeFalse();
+        expect($instance->refresh()->worker_enabled)->toBeFalse();
     });
 
     it('disables worker mode and keeps the stored worker_config', function (): void {
         $caller = createWorkerControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['app:worker']);
-        App::factory()->for($node, 'node')->create([
+        $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'runtime' => AppRuntimeKind::Php,
+        ]);
+        $instance = create_worker_app_instance($app, $node, overrides: [
             'worker_enabled' => true,
             'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
         ]);
@@ -173,10 +198,10 @@ describe('AppWorkerController', function (): void {
             ->assertJsonPath('success.data.worker_enabled', false)
             ->assertJsonPath('success.data.worker_config.workers', 'auto');
 
-        $app = App::query()->where('name', 'docs')->first();
-        expect($app->worker_enabled)
+        $instance->refresh();
+        expect($instance->worker_enabled)
             ->toBeFalse()
-            ->and($app->worker_config)
+            ->and($instance->worker_config)
             ->toMatchArray(['workers' => 'auto', 'max_requests' => 500]);
     });
 
@@ -184,7 +209,8 @@ describe('AppWorkerController', function (): void {
         $caller = createWorkerControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['app:read']);
-        App::factory()->for($node, 'node')->create(['name' => 'docs', 'runtime' => AppRuntimeKind::Php]);
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs', 'runtime' => AppRuntimeKind::Php]);
+        create_worker_app_instance($app, $node);
         bindWorkerControllerShell();
 
         $response = $this->call(
@@ -227,16 +253,18 @@ describe('AppWorkerController', function (): void {
         // App "alpha" carries the colliding domain. If the controller path
         // short-circuits on a domain match, it would return alpha instead
         // of the docs.example.com-named app.
-        App::factory()->for($node, 'node')->create([
+        $alpha = App::factory()->for($node, 'node')->create([
             'name' => 'alpha',
             'domain' => 'docs.example.com',
             'runtime' => AppRuntimeKind::Php,
         ]);
-        App::factory()->for($node, 'node')->create([
+        create_worker_app_instance($alpha, $node);
+        $named = App::factory()->for($node, 'node')->create([
             'name' => 'docs.example.com',
             'domain' => 'other.example.com',
             'runtime' => AppRuntimeKind::Php,
         ]);
+        create_worker_app_instance($named, $node);
         bindWorkerControllerShell();
 
         $response = $this->call(
@@ -250,5 +278,136 @@ describe('AppWorkerController', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.app', 'docs.example.com');
+    });
+
+    it('requires a concrete instance when a bare app selector is ambiguous', function (): void {
+        $caller = createWorkerControllerCaller();
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
+        grantWorkerAccess($caller, $node, ['app:read']);
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        create_worker_app_instance($app, $node, name: 'development');
+        create_worker_app_instance($app, $node, name: 'production');
+
+        $response = $this->call(
+            'GET',
+            '/api/apps/docs/worker',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'app')
+            ->assertJsonPath('error.meta.reason', 'app_instance_required')
+            ->assertJsonPath('error.meta.instances', ['development', 'production']);
+    });
+
+    it('requires a concrete selector without exposing a hidden sibling', function (): void {
+        $caller = createWorkerControllerCaller();
+        $visibleNode = createTestAppHostNode(['name' => 'app-visible', 'host' => '10.6.0.7']);
+        $hiddenNode = createTestAppHostNode(['name' => 'app-hidden', 'host' => '10.6.0.8']);
+        grantWorkerAccess($caller, $visibleNode, ['app:read']);
+        $app = App::factory()->for($visibleNode, 'node')->create(['name' => 'docs']);
+        create_worker_app_instance($app, $visibleNode, name: 'development');
+        create_worker_app_instance($app, $hiddenNode, name: 'production');
+        bindWorkerControllerShell();
+
+        $response = $this->call(
+            'GET',
+            '/api/apps/docs/worker',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.reason', 'app_instance_required');
+
+        expect($response->json('error.meta'))
+            ->not->toHaveKey('instances')->and($response->content())
+            ->not->toContain('production');
+    });
+
+    it('does not reveal whether an unauthorized explicit sibling exists', function (): void {
+        $caller = createWorkerControllerCaller();
+        $visibleNode = createTestAppHostNode(['name' => 'app-visible', 'host' => '10.6.0.7']);
+        $hiddenNode = createTestAppHostNode(['name' => 'app-hidden', 'host' => '10.6.0.8']);
+        grantWorkerAccess($caller, $visibleNode, ['app:read']);
+        $app = App::factory()->for($visibleNode, 'node')->create(['name' => 'docs']);
+        create_worker_app_instance($app, $visibleNode, name: 'development');
+        create_worker_app_instance($app, $hiddenNode, name: 'production');
+        bindWorkerControllerShell();
+
+        $hidden = $this->call(
+            'GET',
+            '/api/apps/docs.production/worker',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP],
+        );
+        $missing = $this->call(
+            'GET',
+            '/api/apps/docs.does-not-exist/worker',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP],
+        );
+        $normalize = static function (TestResponse $response): array {
+            /** @var array<string, mixed> $error */
+            $error = $response->json('error');
+            unset($error['message']);
+
+            if (is_array($error['meta'] ?? null)) {
+                $error['meta']['instance'] = '<selector>';
+            }
+
+            return $error;
+        };
+
+        $hidden->assertUnprocessable();
+        $missing->assertUnprocessable();
+
+        expect($normalize($hidden))
+            ->toBe($normalize($missing))
+            ->and($hidden->json('error.code'))
+            ->toBe('validation_failed')
+            ->and($hidden->json('error.meta'))
+            ->not->toHaveKeys(['instances', 'missing_permission', 'serving_node']);
+    });
+
+    it('reads worker state from the explicitly selected app instance', function (): void {
+        $caller = createWorkerControllerCaller();
+        $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
+        grantWorkerAccess($caller, $node, ['app:read']);
+        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        create_worker_app_instance($app, $node, name: 'development');
+        create_worker_app_instance($app, $node, name: 'production', overrides: [
+            'worker_enabled' => true,
+            'worker_config' => ['workers' => 4, 'max_requests' => 250],
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/apps/docs.production/worker',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.app', 'docs')
+            ->assertJsonPath('success.data.app_instance', 'production')
+            ->assertJsonPath('success.data.worker_enabled', true)
+            ->assertJsonPath('success.data.worker_config.workers', 4);
     });
 });

@@ -222,17 +222,17 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
         if (! $this->option('force')) {
             if (! $this->isInteractiveInput()) {
                 return $this->renderFailure(
-                    'destructive_consent_required',
+                    'validation_failed',
                     'Reset requires --force in non-interactive mode.',
-                    ['field' => 'force', 'reason' => 'missing'],
+                    ['field' => 'force', 'reason' => 'destructive_consent_required'],
                 );
             }
 
             if (! confirm("Remove the local resolver override for .{$tld}?", default: false)) {
                 return $this->renderFailure(
-                    'destructive_consent_required',
+                    'validation_failed',
                     'Reset cancelled. No local resolver changes were made.',
-                    [],
+                    ['field' => 'force', 'reason' => 'destructive_consent_required'],
                 );
             }
         }

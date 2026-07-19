@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 
-final class DatabaseConnectionTargetResolver
+final readonly class DatabaseConnectionTargetResolver
 {
+    public function __construct(
+        private WorkspaceRoleGuard $workspaceRoleGuard,
+    ) {}
+
     public function resolveNode(?string $selector): ?Node
     {
         if ($selector === null || trim($selector) === '') {
@@ -47,6 +53,35 @@ final class DatabaseConnectionTargetResolver
             ->first();
     }
 
+    public function resolveWorkspaceForCaller(?string $selector, Node $caller): ?Workspace
+    {
+        $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($caller);
+        $workspace = $this->resolveWorkspace($selector);
+
+        if ($workspace instanceof Workspace) {
+            $this->workspaceRoleGuard->ensureWorkspaceSupported($workspace);
+        }
+
+        return $workspace;
+    }
+
+    public function ensureWorkspaceSupportedForCaller(Workspace $workspace, Node $caller): void
+    {
+        $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($caller);
+        $this->workspaceRoleGuard->ensureWorkspaceSupported($workspace);
+    }
+
+    public function workspaceIsSupportedForCaller(Workspace $workspace, Node $caller): bool
+    {
+        try {
+            $this->ensureWorkspaceSupportedForCaller($workspace, $caller);
+
+            return true;
+        } catch (WorkspaceUnsupportedForProduction) {
+            return false;
+        }
+    }
+
     public function resolveAppInstance(App $app, ?string $selector): ?AppInstance
     {
         if ($selector === null || trim($selector) === '') {
@@ -65,7 +100,7 @@ final class DatabaseConnectionTargetResolver
             return null;
         }
 
-        [$appName, $instanceName] = explode('.', trim($selector), 2);
+        [$appName, $instanceName] = explode(separator: '.', string: trim($selector), limit: 2);
         $app = App::query()->where('name', $appName)->first();
 
         if (! $app instanceof App) {

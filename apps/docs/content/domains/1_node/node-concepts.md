@@ -106,7 +106,10 @@ Each term below has a precise meaning in the node command family.
   `analytics.orbit`, and receives tracking traffic for each app through public
   ingress-to-router routes. Exactly one assignment may exist fleet-wide. Its
   convergence owns the deployment workflow that creates and enacts the private
-  route, while proxy owns the resulting route, artifact, and TLS state.
+  route, while proxy owns the resulting route, artifact, and TLS state. It may
+  coexist with `app-dev`, `database`, `websocket`, `s3`, and `metrics`, but
+  conflicts with `gateway`, `vpn`, `router`, `ingress`, `app-prod`, and
+  `agent`.
 - **Agent role:** Exclusive workload role for first-party autonomous agent
   workloads. Conflicts with `gateway`, `vpn`, `router`, `app-dev`,
   `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics`, and
@@ -115,8 +118,8 @@ Each term below has a precise meaning in the node command family.
 - **Ingress role:** Workload role that owns public production HTTP
   ingress, public Caddy route artifacts, public TLS, and public edge
   hardening. It forwards public routes to `router` and may coexist with
-  `app-prod`, but conflicts with `gateway`, `vpn`, `router`,
-  `app-dev`, `database`, `agent`, and `s3`.
+  `app-prod` and `metrics`, but conflicts with `gateway`, `vpn`, `router`,
+  `app-dev`, `database`, `agent`, `websocket`, `s3`, and `analytics`.
 - **Role assignability:** Flag on a role that decides whether it may be
   selected by `node:new`, by `node role:add`, or by both. `agent` is
   assignable through `node:new` only; gateway-coupled infrastructure roles

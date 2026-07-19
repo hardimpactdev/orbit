@@ -97,14 +97,14 @@ describe('AppListController', function (): void {
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
         $response->assertOk();
+        $response->assertJsonPath('success.meta', []);
+        expect($response->getContent())->toContain('"meta":[]');
 
         $apps = $response->json('success.data.apps');
-        $inventory = $response->json('success.data.inventory');
-
         expect(array_column($apps, 'name'))
-            ->toBe(['alpha', 'beta', 'zebra'])
-            ->and(array_column($inventory, 'app'))
             ->toBe(['alpha', 'beta', 'zebra']);
+
+        $response->assertJsonMissingPath('success.data.inventory');
     });
 
     it('derives visibility from concrete instances instead of logical app default nodes', function (): void {
@@ -144,12 +144,12 @@ describe('AppListController', function (): void {
             ->assertOk()
             ->assertJsonCount(1, 'success.data.apps')
             ->assertJsonPath('success.data.apps.0.name', 'docs')
-            ->assertJsonPath('success.data.inventory.0.app', 'docs')
-            ->assertJsonPath('success.data.inventory.0.instance_count', 2)
-            ->assertJsonPath('success.data.inventory.0.workspace_count', 0);
+            ->assertJsonPath('success.data.apps.0.instance_count', 2)
+            ->assertJsonPath('success.data.apps.0.workspace_count', 0)
+            ->assertJsonMissingPath('success.data.inventory');
     });
 
-    it('returns only workspaces placed on visible app instances', function (): void {
+    it('counts only workspaces placed on visible app instances without exposing placement rows', function (): void {
         $caller = createAppListCallerNode();
         $visibleNode = createAppListAppNode(['name' => 'visible-node', 'tld' => 'visible']);
         $hiddenNode = createAppListAppNode(['name' => 'hidden-node', 'tld' => 'hidden']);
@@ -174,12 +174,35 @@ describe('AppListController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.inventory.0.instance_count', 1)
-            ->assertJsonPath('success.data.inventory.0.workspace_count', 1)
-            ->assertJsonCount(1, 'success.data.apps.0.workspaces')
-            ->assertJsonPath('success.data.apps.0.workspaces.0.name', 'visible-workspace')
-            ->assertJsonPath('success.data.apps.0.workspaces.0.url', 'https://visible-workspace.docs.visible')
+            ->assertJsonPath('success.data.apps.0.instance_count', 1)
+            ->assertJsonPath('success.data.apps.0.workspace_count', 1)
+            ->assertJsonMissingPath('success.data.apps.0.workspaces')
+            ->assertJsonMissing(['name' => 'visible-workspace'])
             ->assertJsonMissing(['name' => 'hidden-workspace']);
+    });
+
+    it('does not expose workspace counts to app production callers with legacy app read grants', function (): void {
+        $caller = createAppListAppNode([
+            'name' => 'prod-caller',
+            'host' => APP_LIST_CALLER_WG_IP,
+            'wireguard_address' => APP_LIST_CALLER_WG_IP,
+        ], 'app-prod');
+        $developmentNode = createAppListAppNode(['name' => 'app-dev-1']);
+        grantAppListAccess($caller, $developmentNode);
+
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
+        $instance = create_app_list_instance($app, $developmentNode);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+        ]);
+
+        $this
+            ->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP])
+            ->assertOk()
+            ->assertJsonPath('success.data.apps.0.name', 'docs')
+            ->assertJsonPath('success.data.apps.0.workspace_count', 0);
     });
 
     it('lets an app role node list logical apps with an instance on its self-granted node', function (): void {
@@ -275,7 +298,7 @@ describe('AppListController', function (): void {
             ->assertJsonPath('error.meta.allowed', ['development', 'production']);
     });
 
-    it('returns the canonical app entity shape', function (): void {
+    it('returns the compact logical app list shape', function (): void {
         $caller = createAppListCallerNode();
         assignAppListGatewayRole($caller);
         $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
@@ -303,34 +326,15 @@ describe('AppListController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.apps.0', [
                 'name' => 'docs',
-                'node' => 'app-1',
-                'url' => 'https://docs.test',
-                'path' => '/srv/docs',
-                'root' => 'public',
                 'repository' => null,
-                'runtime' => 'php',
-                'runtime_config' => ['proxy_transport' => 'http'],
-                'php_version' => '8.5',
-                'worker_enabled' => false,
-                'worker_config' => null,
-                'adopted' => false,
                 'dependency_audit_status' => 'unknown',
                 'dependency_warning_count' => 0,
                 'dependency_danger_count' => 0,
                 'last_dependency_audit_at' => null,
-                'workspaces' => [
-                    [
-                        'name' => 'feature-docs',
-                        'url' => 'https://feature-docs.docs.test',
-                        'lifecycle_status' => 'expected',
-                    ],
-                ],
-            ])
-            ->assertJsonPath('success.data.inventory.0', [
-                'app' => 'docs',
                 'instance_count' => 1,
                 'workspace_count' => 1,
-            ]);
+            ])
+            ->assertJsonMissingPath('success.data.inventory');
     });
 
     it('includes dependency audit posture aggregates in app list JSON', function (): void {
@@ -359,7 +363,7 @@ describe('AppListController', function (): void {
             ->assertJsonPath('success.data.apps.0.last_dependency_audit_at', '2026-07-02T08:15:00+00:00');
     });
 
-    it('returns runtime=static for static apps', function (): void {
+    it('does not expose runtime placement details for static apps', function (): void {
         $caller = createAppListCallerNode();
         assignAppListGatewayRole($caller);
         $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
@@ -381,8 +385,10 @@ describe('AppListController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.apps.0.name', 'marketing')
-            ->assertJsonPath('success.data.apps.0.runtime', 'static')
-            ->assertJsonPath('success.data.apps.0.runtime_config', null);
+            ->assertJsonMissingPath('success.data.apps.0.runtime')
+            ->assertJsonMissingPath('success.data.apps.0.runtime_config')
+            ->assertJsonMissingPath('success.data.apps.0.node')
+            ->assertJsonMissingPath('success.data.apps.0.path');
     });
 
     it('rejects unauthenticated requests', function (): void {

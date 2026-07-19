@@ -26,7 +26,7 @@ artifact removal.
 
 - `--command=<command>`: The shell command to execute. Required.
 - `--app=<app.instance>`: Concrete dotted app-instance selector, such as
-  `my-app.production`. A caller context may supply the same concrete instance
+  `my-app.development`. A caller context may supply the same concrete instance
   using the same precedence chain as
   [`workspace:new`](../1_workspace-new/workspace-new.md): explicit flag →
   `.orbit/config` marker on the caller filesystem → gateway path-ownership
@@ -108,7 +108,7 @@ teardown pipeline run that begins after the gateway commit.
 Run this to append a step to the end of the teardown list.
 
 ```bash
-orbit workspace-teardown-step:add --command="dropdb docs_feature" --app=docs.production
+orbit workspace-teardown-step:add --command="dropdb docs_feature" --app=docs.development
 ```
 
 ### Insert a step before an existing one
@@ -116,7 +116,7 @@ orbit workspace-teardown-step:add --command="dropdb docs_feature" --app=docs.pro
 Use `--before` to position the step relative to an existing step ID.
 
 ```bash
-orbit workspace-teardown-step:add --command="pkill -f 'my-app-worker'" --app=my-app.production --before=18
+orbit workspace-teardown-step:add --command="pkill -f 'my-app-worker'" --app=my-app.development --before=18
 ```
 
 ## Requirements

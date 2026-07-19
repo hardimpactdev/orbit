@@ -12,10 +12,10 @@ node and records lifecycle events for the transition.
 
 ```bash
 orbit process:restart vite --app=docs.production
-orbit process:restart vite --app=docs.production --workspace=feature-docs
+orbit process:restart vite --app=docs.development --workspace=feature-docs
 orbit process:restart opencode-server --node=app-dev-1
 orbit process:restart vite --app=docs.production --json
-orbit process:restart --app=docs.production --workspace=feature-docs
+orbit process:restart --app=docs.development --workspace=feature-docs
 ```
 
 ## Behavior Summary

@@ -11,6 +11,11 @@ final readonly class CommandCatalogGatewayPermissionIndex
      */
     private const array KNOWN_INDIRECT_PERMISSION_CALLS = [
         [
+            'class' => 'AppListController',
+            'action' => '->visibleAppNodeIds(',
+            'permission' => 'app:read',
+        ],
+        [
             'class' => 'ScheduleLogsPayload',
             'action' => '->forSchedule(',
             'permission' => 'schedule:read',

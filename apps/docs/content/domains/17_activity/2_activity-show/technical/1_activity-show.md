@@ -52,14 +52,16 @@ This command follows the shared
 ### Gateway History Detail Rules
 
 - Read one durable activity record by id from gateway history.
-- Return the selected activity entry with its full recorded details.
+- Return the selected activity entry through the canonical Activity DTO in
+  [`activity-concepts.md`](../../activity-concepts.md).
 - Return other visible activity entries from the same `correlation_id` under a
-  related collection.
+  related collection using that same complete DTO.
 - Order related entries by `occurred_at` ascending so the operator can read the
   correlated operation flow.
 - Exclude the selected activity from the related collection.
-- Treat activity `details` as type-specific diagnostic metadata. Stable fields
-  belong on the activity DTO; type-specific details remain under `details`.
+- Keep `effect`, `command`, and every other canonical field at the DTO top
+  level. Type-specific audit data belongs under `properties`; neither selected
+  nor related entries use alternate `summary`/`details` projections.
 
 ### Authorization Rules
 
@@ -76,7 +78,7 @@ This command follows the shared
 - Replay, revert, repair, adopt, or retry the selected activity.
 - Inspect live node state, app runtimes, process manager programs, process
   logs, Caddy, or filesystem state.
-- Treat activity details as current readiness or drift diagnostics.
+- Treat activity properties as current readiness or drift diagnostics.
 
 ## Renderer Contracts
 

@@ -19,7 +19,7 @@ describe('schedule:logs', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:logs', [
             'name' => 'laravel-scheduler',
-            '--app' => 'docs',
+            '--app' => 'docs.production',
             '--run' => 18,
             '--lines' => 10,
             '--json' => true,
@@ -33,7 +33,7 @@ describe('schedule:logs', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/schedules/laravel-scheduler/logs')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'app=docs.production')
                 && str_contains($url, 'run=18')
                 && str_contains($url, 'lines=10')
             );
@@ -57,7 +57,7 @@ describe('schedule:logs', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:logs', [
             'name' => 'laravel-scheduler',
-            '--app' => 'docs',
+            '--app' => 'docs.production',
         ]);
 
         expect($exitCode)
@@ -88,7 +88,7 @@ describe('schedule:logs', function (): void {
                         [
                             'name' => 'laravel-scheduler',
                             'scope' => 'app',
-                            'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'app-1'],
+                            'target' => ['type' => 'app', 'name' => 'docs.production', 'node' => 'app-1'],
                         ],
                     ],
                 ]));
@@ -97,7 +97,7 @@ describe('schedule:logs', function (): void {
             if (
                 $request->method() === 'GET'
                 && $path === '/api/schedules/laravel-scheduler/logs'
-                && ($parameters['app'] ?? null) === 'docs'
+                && ($parameters['app'] ?? null) === 'docs.production'
                 && ($parameters['lines'] ?? null) === '100'
             ) {
                 return Http::response(fakeSuccessEnvelope([
@@ -143,7 +143,7 @@ describe('schedule:logs', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:logs', [
             'name' => 'laravel-scheduler',
-            '--app' => 'docs',
+            '--app' => 'docs.production',
             '--node' => 'app-1',
             '--json' => true,
         ]);

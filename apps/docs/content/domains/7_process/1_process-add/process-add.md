@@ -14,7 +14,7 @@ long-running app-instance or workspace workers, and development servers.
 ```bash
 orbit process:add vite "npm run dev" --app=docs.production --crash-notification=agent_ide
 orbit process:add queue "php artisan queue:work" --app=docs.production --restart-policy=always
-orbit process:add horizon "php artisan horizon" --app=docs.production --workspace=feature-docs --runtime=systemd
+orbit process:add horizon "php artisan horizon" --app=docs.development --workspace=feature-docs --runtime=systemd
 orbit process:add feedback "php artisan feedback:work" --app=feedback.development --runtime=launchd
 orbit process:add opencode-server "opencode serve -a" --node=app-dev-1 --runtime=systemd --tool=opencode-cli
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3

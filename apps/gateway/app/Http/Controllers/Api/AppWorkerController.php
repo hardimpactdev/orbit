@@ -6,85 +6,135 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
-use App\Http\Authorization\RequiresPermission;
-use App\Http\Authorization\ServingNode;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Models\App;
+use App\Models\AppInstance;
+use App\Models\Node;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Apps\AppWorkerService;
+use App\Services\Nodes\Access\AuthorizationResult;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 final class AppWorkerController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?AppInstance $activitySubject = null;
 
     private string $currentAction = 'show';
 
-    #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
-    public function show(string $app, AppWorkerService $service): JsonResponse
+    public function __construct(
+        private readonly AppSelectorResolver $selectorResolver,
+        private readonly WorkspacePlacement $placement,
+        private readonly NodeAccessAuthorizer $authorizer,
+    ) {}
+
+    public function show(string $app, Request $request, AppWorkerService $service): JsonResponse
     {
-        return $this->dispatch('show', $app, $service);
+        return $this->dispatch('show', 'app:read', $app, $request, $service);
     }
 
-    #[RequiresPermission('app:worker', servingNode: ServingNode::AppOwning)]
-    public function enable(string $app, AppWorkerService $service): JsonResponse
+    public function enable(string $app, Request $request, AppWorkerService $service): JsonResponse
     {
-        return $this->dispatch('enable', $app, $service);
+        return $this->dispatch('enable', 'app:worker', $app, $request, $service);
     }
 
-    #[RequiresPermission('app:worker', servingNode: ServingNode::AppOwning)]
-    public function disable(string $app, AppWorkerService $service): JsonResponse
+    public function disable(string $app, Request $request, AppWorkerService $service): JsonResponse
     {
-        return $this->dispatch('disable', $app, $service);
+        return $this->dispatch('disable', 'app:worker', $app, $request, $service);
     }
 
-    private function dispatch(string $action, string $app, AppWorkerService $service): JsonResponse
-    {
+    private function dispatch(
+        string $action,
+        string $permission,
+        string $selector,
+        Request $request,
+        AppWorkerService $service,
+    ): JsonResponse {
         $this->currentAction = $action;
-        $targetApp = $this->resolveApp($app);
-        $this->activitySubject = $targetApp;
 
-        if (! $targetApp instanceof App) {
-            return response()->json([
-                'error' => [
-                    'code' => 'app.not_found',
-                    'message' => "App '{$app}' not found.",
-                    'meta' => ['app' => $app],
-                ],
-            ], 404);
+        /** @var mixed $caller */
+        $caller = $request->user();
+
+        if (! $caller instanceof Node) {
+            return $this->error('authorization_failed', 'Peer identity unknown.', status: 403);
         }
 
+        $instanceIsVisible = fn (AppInstance $instance): bool => $this->selectorResolver->instanceIsVisibleTo(
+            $caller,
+            $instance,
+            $permission,
+        );
+
+        try {
+            $selection = $this->selectorResolver->resolve($selector, $instanceIsVisible);
+
+            if ($selection === null) {
+                return $this->error('app.not_found', "App '{$selector}' not found.", ['app' => $selector], 404);
+            }
+
+            $selection = $this->selectorResolver->requireInstance(
+                $selection,
+                instanceIsVisible: $instanceIsVisible,
+            );
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->error($exception->errorCode, $exception->getMessage(), $exception->meta);
+        }
+
+        $instance = $selection->instance;
+
+        if (! $instance instanceof AppInstance) {
+            return $this->instanceUnavailable($selection->app, null);
+        }
+
+        $node = $this->placement->nodeForInstance($instance);
+
+        if (! $node instanceof Node) {
+            return $this->instanceUnavailable($selection->app, $instance);
+        }
+
+        $authorization = $this->authorizer->authorize($caller, $node, $permission);
+
+        if (! $authorization->allowed) {
+            return $this->forbidden($node, $authorization, $permission);
+        }
+
+        $this->activitySubject = $instance;
+
         if ($action === 'show') {
-            return $this->success($this->workerPayload($targetApp));
+            return $this->success($this->workerPayload($selection->app, $instance));
         }
 
         if ($action === 'enable') {
-            $result = $service->enable($targetApp);
+            $result = $service->enable($selection->app, $instance);
 
             if (! $result['ready']) {
                 $readiness = $result['readiness'];
 
-                return response()->json([
-                    'error' => [
-                        'code' => $readiness->code ?? 'app.worker_readiness_failed',
-                        'message' => $readiness->message ?? "App '{$targetApp->name}' is not ready for worker mode.",
-                        'meta' => array_merge([
-                            'app' => $targetApp->name,
-                            'missing' => $readiness->missing,
-                        ], $readiness->meta),
-                    ],
-                ], 422);
+                return $this->error(
+                    $readiness->code ?? 'app.worker_readiness_failed',
+                    $readiness->message
+                    ?? "App instance '{$selection->app->name}.{$instance->name}' is not ready for worker mode.",
+                    array_merge([
+                        'app' => $selection->app->name,
+                        'app_instance' => $instance->name,
+                        'missing' => $readiness->missing,
+                    ], $readiness->meta),
+                );
             }
 
             return $this->success(array_merge(
-                $this->workerPayload($result['app']),
+                $this->workerPayload($selection->app, $result['instance']),
                 ['changed' => $result['changed']],
             ));
         }
 
-        $result = $service->disable($targetApp);
+        $result = $service->disable($instance);
 
         return $this->success(array_merge(
-            $this->workerPayload($result['app']),
+            $this->workerPayload($selection->app, $result['instance']),
             ['changed' => $result['changed']],
         ));
     }
@@ -94,40 +144,62 @@ final class AppWorkerController implements Loggable
      */
     private function success(array $data): JsonResponse
     {
-        return response()->json([
-            'success' => [
-                'data' => $data,
-            ],
-        ]);
-    }
-
-    private function resolveApp(string $selector): ?App
-    {
-        $baseQuery = App::query()->with('node');
-
-        $nameMatch = (clone $baseQuery)
-            ->where('name', $selector)
-            ->first();
-
-        if ($nameMatch instanceof App) {
-            return $nameMatch;
-        }
-
-        return $baseQuery
-            ->where('domain', $selector)
-            ->first();
+        return response()->json(['success' => ['data' => $data]]);
     }
 
     /**
-     * @return array{app: string, worker_enabled: bool, worker_config: array<string, mixed>|null}
+     * @return array{app: string, app_instance: string, worker_enabled: bool, worker_config: array<string, mixed>|null}
      */
-    private function workerPayload(App $app): array
+    private function workerPayload(App $app, AppInstance $instance): array
     {
         return [
             'app' => $app->name,
-            'worker_enabled' => $app->worker_enabled,
-            'worker_config' => is_array($app->worker_config) ? $app->worker_config : null,
+            'app_instance' => $instance->name,
+            'worker_enabled' => $instance->worker_enabled,
+            'worker_config' => is_array($instance->worker_config) ? $instance->worker_config : null,
         ];
+    }
+
+    private function instanceUnavailable(App $app, ?AppInstance $instance): JsonResponse
+    {
+        return $this->error(
+            'validation_failed',
+            "App instance '{$app->name}.{$instance?->name}' does not resolve an Orbit serving node.",
+            [
+                'field' => 'app',
+                'reason' => 'app_instance_unavailable',
+                'app' => $app->name,
+                'app_instance' => $instance?->name,
+            ],
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function error(string $code, string $message, array $meta = [], int $status = 422): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => $code,
+                'message' => $message,
+                'meta' => $meta,
+            ],
+        ], $status);
+    }
+
+    private function forbidden(Node $servingNode, AuthorizationResult $result, string $permission): JsonResponse
+    {
+        return $this->error(
+            'authorization_failed',
+            "This node is not authorized for '{$permission}' on '{$servingNode->name}'.",
+            [
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $servingNode->name,
+            ],
+            403,
+        );
     }
 
     public function effect(): ActivityLogType
@@ -169,9 +241,7 @@ final class AppWorkerController implements Loggable
      */
     public function properties(): array
     {
-        return [
-            'action' => $this->currentAction,
-        ];
+        return ['action' => $this->currentAction];
     }
 
     /**

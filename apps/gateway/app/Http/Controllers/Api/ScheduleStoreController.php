@@ -8,11 +8,12 @@ use App\Actions\Schedules\AddSchedule;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\LogsScheduleApiActivity;
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Schedules\ScheduleAppInstanceResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -23,6 +24,7 @@ final readonly class ScheduleStoreController implements Loggable
 
     public function __construct(
         private NodeAccessAuthorizer $authorizer,
+        private ScheduleAppInstanceResolver $appInstances,
     ) {}
 
     public function __invoke(Request $request, AddSchedule $addSchedule): JsonResponse
@@ -40,7 +42,7 @@ final readonly class ScheduleStoreController implements Loggable
             return $input;
         }
 
-        $target = $this->resolveTarget($input['app'], $input['node']);
+        $target = $this->resolveTarget($caller, $input['app'], $input['node']);
 
         if ($target instanceof JsonResponse) {
             return $target;
@@ -61,7 +63,11 @@ final readonly class ScheduleStoreController implements Loggable
                 executionType: $input['execution_type'],
                 executionValue: $input['execution_value'],
             );
-            $schedule = Schedule::query()->where('name', $input['name'])->first();
+            $targetName = data_get(target: $result, key: 'data.schedule.target.name');
+            $schedule = Schedule::query()
+                ->where('name', $input['name'])
+                ->when(is_string($targetName), static fn ($query) => $query->where('target_name', $targetName))
+                ->first();
 
             if ($schedule instanceof Schedule) {
                 $this->setScheduleActivitySubject($request, $schedule);
@@ -152,18 +158,27 @@ final readonly class ScheduleStoreController implements Loggable
         ];
     }
 
-    private function resolveTarget(?string $app, ?string $node): App|Node|JsonResponse
+    private function resolveTarget(Node $caller, ?string $app, ?string $node): AppInstance|Node|JsonResponse
     {
         if ($app !== null) {
-            $target = App::query()->with('node.schedulerState')->where('name', $app)->first();
+            try {
+                $selection = $this->appInstances->resolve($app, $caller, 'schedule:add');
+            } catch (GatewayApiException $exception) {
+                return $this->error(
+                    $exception->errorCode() ?? 'validation_failed',
+                    $exception->getMessage(),
+                    $exception->errorMeta(),
+                    $this->status($exception),
+                );
+            }
 
             return (
-                $target instanceof App
-                    ? $target
+                $selection->instance instanceof AppInstance
+                    ? $selection->instance
                     : $this->error(
                         'validation_failed',
-                        "App '{$app}' not found.",
-                        ['field' => 'app', 'value' => $app],
+                        "App '{$app}' requires a concrete app instance selector.",
+                        ['field' => 'app', 'reason' => 'app_instance_required'],
                         422,
                     )
             );
@@ -187,9 +202,9 @@ final readonly class ScheduleStoreController implements Loggable
         );
     }
 
-    private function authorizeTarget(Node $caller, App|Node $target): ?JsonResponse
+    private function authorizeTarget(Node $caller, AppInstance|Node $target): ?JsonResponse
     {
-        $servingNode = $target instanceof App ? $target->node : $target;
+        $servingNode = $target instanceof AppInstance ? $this->appInstances->targetNode($target) : $target;
 
         if (! $servingNode instanceof Node) {
             return $this->error(
@@ -249,6 +264,10 @@ final readonly class ScheduleStoreController implements Loggable
 
     private function status(GatewayApiException $e): int
     {
+        if ($e->errorCode() === 'authorization_failed') {
+            return 403;
+        }
+
         return $e->errorCode() === 'schedule.name_collision' ? 409 : 422;
     }
 

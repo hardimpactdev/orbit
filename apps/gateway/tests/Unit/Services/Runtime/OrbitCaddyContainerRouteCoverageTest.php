@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\Proxy\AgentToolProxyRouteIntent;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Runtime\OrbitCaddyContainer;
-use App\Services\Tools\ToolInstaller;
-use App\Services\Tools\ToolsFixer;
-use App\Services\Tools\ToolsProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -219,34 +218,27 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
             ->not->toContain('http://docs.test {');
     });
 
-    it('normalizes loopback upstreams written by tool route writers so persisted routes still reach the host', function (): void {
-        $rewriter = function (string $methodName): string {
-            $reflection = new ReflectionClass(ToolsFixer::class);
-            $method = $reflection->getMethod($methodName);
-            $instance = $reflection->newInstanceWithoutConstructor();
-            $method->setAccessible(true);
+    it('derives agent tool routes through proxy-owned intent with a container-reachable upstream', function (): void {
+        $node = Node::factory()->create([
+            'status' => 'active',
+            'tld' => 'agent',
+        ]);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+        ]);
 
-            /** @var array{upstream: string} $config */
-            $config = $method->invoke($instance, 'agent-ide');
+        $route = app(AgentToolProxyRouteIntent::class)->expectedRoute($tool);
 
-            return $config['upstream'];
-        };
-
-        expect($rewriter('agentProxyRouteConfig'))
+        expect($route)
+            ->toBeInstanceOf(ProxyRoute::class)
+            ->and($route->config['upstream'])
             ->toBe('http://host.docker.internal:8080')
-            ->not->toContain('127.0.0.1');
-
-        $probeReflection = new ReflectionClass(ToolsProbe::class);
-        $probeMethod = $probeReflection->getMethod('agentProxyRouteConfig');
-        $probeInstance = $probeReflection->newInstanceWithoutConstructor();
-        $probeMethod->setAccessible(true);
-        $probeConfig = $probeMethod->invoke($probeInstance, 'agent-ide');
-
-        expect($probeConfig['upstream'])->toBe('http://host.docker.internal:8080');
-
-        $installerReflection = new ReflectionClass(ToolInstaller::class);
-        $installerMethod = $installerReflection->getMethod('createToolProxyRoute');
-        expect($installerMethod)->toBeInstanceOf(ReflectionMethod::class);
+            ->not
+            ->toContain('127.0.0.1')
+            ->and(new ProxyRouteRenderer()->render($route))
+            ->toContain('reverse_proxy http://host.docker.internal:8080');
     });
 
     it('rewrites pre-existing loopback custom proxy routes when rendering them through orbit-caddy', function (): void {

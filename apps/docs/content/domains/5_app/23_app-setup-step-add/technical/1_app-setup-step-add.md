@@ -8,8 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The target app exists in gateway configuration.
-- The authenticated peer has `app:write` on the app's owning node.
+- The target app instance exists in gateway configuration.
+- The authenticated peer has `app:write` on that instance's serving node.
 
 ## Signature
 
@@ -24,7 +24,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record. |
+| `app` | `[app]` | Always. | Never. | None. | Must resolve one concrete app instance; bare shorthand is valid only for a sole instance. |
 | `app_option` | `--app` | Optional. | Never. | None. | Must match `[app]` when both are present. |
 | `command` | `--command` | Always in non-interactive mode. | Never. | Prompted interactively. | Non-empty finite shell command. |
 | `before` | `--before` | Optional. | `--after` is present. | None. | Positive integer setup step id. |
@@ -36,7 +36,8 @@ This command follows the shared
 
 ### Setup step creation rules
 
-The command creates one setup-step record. It does not execute the command.
+The command creates one setup-step record owned by the selected app instance.
+It does not execute the command.
 
 ## Renderer Contracts
 
@@ -48,6 +49,7 @@ The command creates one setup-step record. It does not execute the command.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | App not found | No app record matches `app`. | `error.code=app.not_found` |
+| App instance required | A bare app selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=app_instance_required`. |
 | Invalid position | `--before` and `--after` are both supplied. | `error.code=app_setup.invalid_position` |
 
 ## Doctor Relationship
@@ -62,8 +64,8 @@ setup steps.
 | --- | --- |
 | Type | `api:POST /apps/{app}/setup-steps` |
 | Effect | `write` |
-| Subject | `App` on success; `none` on validation or authorization failure. |
-| Properties | `app`, setup step command, order, and timeout. |
+| Subject | `AppSetupStep` on success; `none` on validation or authorization failure. |
+| Properties | `app`, `app_instance`, setup step command, order, and timeout. |
 | Description | derived |
 
 ## Test Mapping

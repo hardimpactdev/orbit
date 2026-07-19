@@ -291,13 +291,15 @@ final readonly class JsonRendererExampleRule implements GroupedRule
         array $schema,
     ): array {
         $findings = [];
-        $required = $schema['required'] ?? [];
-        $optional = $schema['optional'] ?? [];
-        $allowed = array_merge(
-            $required,
-            $optional,
-            $this->commandSpecificEntityFields($this->docs->relativePath($file), $entity, $label),
-        );
+        $effectiveSchema =
+            $this->commandSpecificEntitySchema(
+                $this->docs->relativePath($file),
+                $entity,
+                $label,
+            ) ?? $schema;
+        $required = $effectiveSchema['required'] ?? [];
+        $optional = $effectiveSchema['optional'] ?? [];
+        $allowed = array_merge($required, $optional);
 
         foreach ($required as $field => $type) {
             if (array_key_exists($field, $value)) {
@@ -350,19 +352,30 @@ final readonly class JsonRendererExampleRule implements GroupedRule
     }
 
     /**
-     * @return array<string, string>
+     * @return array{required?: array<string, string>, optional?: array<string, string>}|null
      */
-    private function commandSpecificEntityFields(string $path, string $entity, string $label): array
+    private function commandSpecificEntitySchema(string $path, string $entity, string $label): ?array
     {
         if (
             $path === 'docs/domains/5_app/3_app-list/technical/6.2_app-list_output-render_json.md'
             && $entity === 'app'
             && str_starts_with($label, 'success.data.apps[')
         ) {
-            return ['workspaces' => 'array'];
+            return [
+                'required' => [
+                    'name' => 'string',
+                    'repository' => 'string|null',
+                    'dependency_audit_status' => 'string',
+                    'dependency_warning_count' => 'int',
+                    'dependency_danger_count' => 'int',
+                    'last_dependency_audit_at' => 'string|null',
+                    'instance_count' => 'int',
+                    'workspace_count' => 'int',
+                ],
+            ];
         }
 
-        return [];
+        return null;
     }
 
     private function matchesType(mixed $value, string $type): bool

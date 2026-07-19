@@ -121,9 +121,9 @@ final class DeployStepRemoveCommand extends DeployGatewayCommand
 
         if ($this->wantsJson() || ! $this->input->isInteractive()) {
             return $this->renderFailure(
-                'destructive_consent_required',
+                'validation_failed',
                 'Use --force to remove this deployment step.',
-                ['field' => 'force'],
+                ['field' => 'force', 'reason' => 'destructive_consent_required'],
             );
         }
 
@@ -132,9 +132,9 @@ final class DeployStepRemoveCommand extends DeployGatewayCommand
         }
 
         return $this->renderFailure(
-            'destructive_consent_required',
+            'validation_failed',
             'Use --force to remove this deployment step.',
-            ['field' => 'force'],
+            ['field' => 'force', 'reason' => 'destructive_consent_required'],
         );
     }
 }

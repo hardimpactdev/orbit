@@ -147,7 +147,7 @@ classes](../architecture.md#authorization-classes).
 | `workspace:log` | `workspace:read` | resolved concrete workspace's owning node | None | `authorization_failed` | Standard missing-permission meta plus workspace run and `app_instance` |
 | `workspace:new` | `workspace:new` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
 | `workspace:remove` | `workspace:remove` | workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus workspace |
-| `workspace:setup` | `workspace:setup` | workspace owning node | Self-grant case for app-dev and app-prod nodes | `authorization_failed` | Standard missing-permission meta plus workspace/app |
+| `workspace:setup` | `workspace:setup` | workspace owning app-dev node | Self-grant case for app-dev nodes only; app-prod callers and targets are rejected before effects | `authorization_failed` | Standard missing-permission meta plus workspace/app |
 | `workspace:show` | `workspace:read` | workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus workspace |
 | `workspace-setup-step:add` | `workspace:setup` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
 | `workspace-setup-step:list` | `workspace:read` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |

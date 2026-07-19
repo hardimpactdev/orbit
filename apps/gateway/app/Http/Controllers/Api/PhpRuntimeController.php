@@ -65,6 +65,7 @@ final readonly class PhpRuntimeController implements Loggable
             workspace: $this->nullableString($request->query('workspace')),
             node: $this->nullableString($request->query('node')),
             live: filter_var($request->query('live'), FILTER_VALIDATE_BOOL),
+            caller: $caller,
         );
 
         if ($result->failed()) {
@@ -103,6 +104,12 @@ final readonly class PhpRuntimeController implements Loggable
     {
         $failure ??= new PhpRuntimeFailure('validation_failed', 'Required input is missing or invalid.');
 
+        $status = match ($failure->code) {
+            'authorization_failed' => 403,
+            'workspace.unsupported_for_production' => 422,
+            default => 400,
+        };
+
         return response()->json(
             [
                 'error' => [
@@ -111,7 +118,7 @@ final readonly class PhpRuntimeController implements Loggable
                     'meta' => $failure->meta,
                 ],
             ],
-            $failure->code === 'authorization_failed' ? 403 : 400,
+            $status,
         );
     }
 

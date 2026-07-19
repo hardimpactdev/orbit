@@ -384,7 +384,7 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
         ],
         InternalCommand::WorkspaceAdapterLookup->value => [NodeRoleName::AppDevelopment],
         InternalCommand::WorkspaceAdapterUpdate->value => [NodeRoleName::AppDevelopment],
-        InternalCommand::WorkspaceSetupStep->value => [NodeRoleName::AppDevelopment, NodeRoleName::AppProduction],
+        InternalCommand::WorkspaceSetupStep->value => [NodeRoleName::AppDevelopment],
         InternalCommand::WorkspaceSourceCreate->value => [NodeRoleName::AppDevelopment],
     ];
 

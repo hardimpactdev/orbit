@@ -122,6 +122,51 @@ describe('explicit path adoption', function (): void {
         ))
             ->toThrow(WorkspaceSetupResolutionFailed::class, 'app root');
     });
+
+    it('rejects production placement before adapter lookup or workspace registration', function (): void {
+        $node = createTestAppHostNode(role: 'app-prod');
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'site',
+            'environment' => 'production',
+            'agent_ide_config' => ['adapter' => 'polyscope'],
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                path: $app->path,
+                document_root: $app->document_root,
+                domain: $app->domain,
+            ),
+        ]);
+        app()->instance(
+            AgentIdeWorkspacePathResolver::class,
+            new class implements AgentIdeWorkspacePathResolver {
+                public function resolve(string $adapter, App $app, string $absolutePath): ?WorkspacePathResolution
+                {
+                    throw new \RuntimeException('Production workspace adapter lookup must not run.');
+                }
+            },
+        );
+
+        try {
+            app(WorkspaceSetupTargetResolver::class)->resolve(
+                name: null,
+                appName: 'site.development',
+                path: '/srv/site/.worktrees/feature',
+            );
+
+            $this->fail('Expected production workspace placement to be rejected.');
+        } catch (WorkspaceSetupResolutionFailed $exception) {
+            expect($exception->errorCode)
+                ->toBe('workspace.unsupported_for_production')
+                ->and($exception->meta['node'] ?? null)
+                ->toBe($node->name)
+                ->and($exception->meta['role'] ?? null)
+                ->toBe('app-prod');
+        }
+
+        expect(Workspace::query()->where('app_id', $app->id)->exists())->toBeFalse();
+    });
 });
 
 function workspaceSetupResolverApp(array $overrides = []): App

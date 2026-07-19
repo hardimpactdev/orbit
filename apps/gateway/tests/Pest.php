@@ -581,6 +581,8 @@ function gatewayIdentityEnvelope(array $self = [], array $gateway = []): array
 
 final class PruneAppActionTestAdapter implements AgentIdeMessageAdapter
 {
+    public int $workspaceCalls = 0;
+
     public function activeSession(array $target, string $adapter): ?array
     {
         return null;
@@ -593,6 +595,8 @@ final class PruneAppActionTestAdapter implements AgentIdeMessageAdapter
 
     public function workspaces(array $target, string $adapter): array
     {
+        $this->workspaceCalls++;
+
         return ['active-ws'];
     }
 }

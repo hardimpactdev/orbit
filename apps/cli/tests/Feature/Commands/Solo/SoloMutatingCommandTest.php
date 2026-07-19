@@ -130,8 +130,10 @@ describe('Solo mutating commands', function (): void {
             ->toBe(1)
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('force')
             ->and($decoded['error']['meta']['reason'])
-            ->toBe('force_required');
+            ->toBe('destructive_consent_required');
     });
 
     it('requires force before destructive commands across resource groups', function (
@@ -151,11 +153,96 @@ describe('Solo mutating commands', function (): void {
             ->toBe(1)
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('force')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('destructive_consent_required');
+    })->with([
+        'scratchpad delete' => ['solo:scratchpad:delete', ['scratchpad' => 'plan']],
+        'process close' => ['solo:process:close', ['process' => 'worker']],
+    ]);
+
+    it('preserves the legacy force gate for non-destructive force-required operations', function (
+        string $command,
+        array $params,
+    ): void {
+        enable_solo_mutating_extension();
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, command: $command, params: $params + ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
             ->and($decoded['error']['meta']['reason'])
             ->toBe('force_required');
     })->with([
-        'scratchpad delete' => ['solo:scratchpad:delete', ['scratchpad' => 'plan']],
         'process stop' => ['solo:process:stop', ['process' => 'worker']],
+        'process clear output' => ['solo:process:clear-output', ['process' => 'worker']],
+        'scratchpad archive' => ['solo:scratchpad:archive', ['scratchpad' => 'plan']],
+    ]);
+
+    it('validates destructive command targets before requiring consent', function (): void {
+        enable_solo_mutating_extension();
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, command: 'solo:todo:delete', params: ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('todo');
+    });
+
+    it('prompts for destructive consent after resolving the Solo target', function (): void {
+        enable_solo_mutating_extension();
+        fakeGateway(fakeSuccessEnvelope(['todo' => ['id' => 42, 'deleted' => true]]));
+
+        $this
+            ->artisan('solo:todo:delete', ['todo' => '42'])
+            ->expectsConfirmation("Run destructive Solo command 'solo:todo:delete' for todo '42'?", 'yes')
+            ->assertSuccessful();
+
+        Http::assertSent(fn (Request $request): bool => ($request->data()['todo'] ?? null) === '42');
+    });
+
+    it('returns canonical destructive consent failure when a Solo prompt is declined', function (
+        string $command,
+        array $params,
+        string $prompt,
+    ): void {
+        enable_solo_mutating_extension();
+        Http::fake();
+
+        $this
+            ->artisan($command, $params)
+            ->expectsConfirmation($prompt, 'no')
+            ->expectsOutput('validation_failed: Operation cancelled.')
+            ->assertFailed();
+
+        Http::assertNothingSent();
+    })->with([
+        'todo delete' => [
+            'solo:todo:delete',
+            ['todo' => '42'],
+            "Run destructive Solo command 'solo:todo:delete' for todo '42'?",
+        ],
+        'process close' => [
+            'solo:process:close',
+            ['process' => 'worker'],
+            "Run destructive Solo command 'solo:process:close' for process 'worker'?",
+        ],
     ]);
 
     it('sends forced destructive commands to the gateway', function (): void {

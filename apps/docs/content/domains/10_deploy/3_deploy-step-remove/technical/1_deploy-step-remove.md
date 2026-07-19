@@ -64,7 +64,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
 | App instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
 | Step not found | No step matches the supplied id or title. | `error.code=deploy.step_not_found` |
-| Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=destructive_consent_required` |
+| Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 
 ## Doctor Relationship
 

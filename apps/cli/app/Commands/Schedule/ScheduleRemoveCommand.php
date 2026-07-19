@@ -19,7 +19,7 @@ final class ScheduleRemoveCommand extends ScheduleGatewayCommand
     #[\Override]
     protected $signature = 'schedule:remove
         {name? : Schedule name}
-        {--app= : Filter by app scope}
+        {--app= : Filter by app instance (app.instance; bare app only when unambiguous)}
         {--node= : Filter by node scope}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
@@ -178,8 +178,9 @@ final class ScheduleRemoveCommand extends ScheduleGatewayCommand
         }
 
         if ($this->wantsJson() || ! $this->input->isInteractive()) {
-            return $this->renderFailure('destructive_consent_required', 'Use --force to remove this schedule.', [
+            return $this->renderFailure('validation_failed', 'Use --force to remove this schedule.', [
                 'field' => 'force',
+                'reason' => 'destructive_consent_required',
             ]);
         }
 
@@ -187,8 +188,9 @@ final class ScheduleRemoveCommand extends ScheduleGatewayCommand
             return null;
         }
 
-        return $this->renderFailure('destructive_consent_required', 'No schedule was removed.', [
+        return $this->renderFailure('validation_failed', 'No schedule was removed.', [
             'field' => 'force',
+            'reason' => 'destructive_consent_required',
         ]);
     }
 }

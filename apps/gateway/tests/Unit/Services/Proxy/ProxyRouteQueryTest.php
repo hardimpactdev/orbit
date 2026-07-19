@@ -340,7 +340,7 @@ describe('ProxyRouteQuery', function (): void {
     });
 
     it('applies route filters after visibility is resolved', function (): void {
-        $node = Node::factory()->create(['name' => 'app-1']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature', 'app_id' => $app->id]);
 

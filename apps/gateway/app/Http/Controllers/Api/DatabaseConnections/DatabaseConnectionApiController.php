@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\DatabaseConnections;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
@@ -157,7 +158,7 @@ abstract class DatabaseConnectionApiController implements Loggable
             return null;
         }
 
-        $nodes = $this->connectionServingNodes($connection);
+        $nodes = $this->connectionServingNodes($connection, $caller);
 
         if ($nodes === []) {
             return $this->authorizeNodePermission($caller, $this->gatewayNode(), $permission);
@@ -193,7 +194,7 @@ abstract class DatabaseConnectionApiController implements Loggable
             return true;
         }
 
-        $nodes = $this->connectionServingNodes($connection);
+        $nodes = $this->connectionServingNodes($connection, $caller);
 
         if ($nodes === []) {
             $gateway = $this->gatewayNode();
@@ -207,7 +208,7 @@ abstract class DatabaseConnectionApiController implements Loggable
     /**
      * @return list<Node>
      */
-    protected function connectionServingNodes(DatabaseConnection $connection): array
+    protected function connectionServingNodes(DatabaseConnection $connection, ?Node $caller = null): array
     {
         $connection->loadMissing([
             'node',
@@ -230,9 +231,15 @@ abstract class DatabaseConnectionApiController implements Loggable
                 $nodes[$instanceNode->id] = $instanceNode;
             }
 
-            $workspaceNode = $target->workspace instanceof Workspace
-                ? $this->workspacePlacement->nodeForWorkspace($target->workspace)
-                : null;
+            $workspaceNode = null;
+
+            if (
+                $target->workspace instanceof Workspace
+                && (! $caller instanceof Node
+                || $this->resolver->workspaceIsSupportedForCaller($target->workspace, $caller))
+            ) {
+                $workspaceNode = $this->workspacePlacement->nodeForWorkspace($target->workspace);
+            }
 
             if ($workspaceNode instanceof Node) {
                 $nodes[$workspaceNode->id] = $workspaceNode;
@@ -356,11 +363,20 @@ abstract class DatabaseConnectionApiController implements Loggable
     /**
      * @return array{0: 'app_instance', 1: AppInstance}|array{0: 'workspace', 1: Workspace}|JsonResponse
      */
-    protected function resolveTargetScope(Request $request, string $envPrefix): array|JsonResponse
+    protected function resolveTargetScope(Request $request, string $envPrefix, Node $caller): array|JsonResponse
     {
         $app = $this->stringValue($request->input('app'));
         $instance = $this->stringValue($request->input('instance'));
         $workspace = $this->stringValue($request->input('workspace'));
+        $workspaceModel = null;
+
+        if ($workspace !== null) {
+            try {
+                $workspaceModel = $this->resolver->resolveWorkspaceForCaller($workspace, $caller);
+            } catch (WorkspaceUnsupportedForProduction $exception) {
+                return $this->workspaceUnsupportedForProduction($exception);
+            }
+        }
 
         if ($instance !== null && $app === null) {
             return $this->validationFailed(
@@ -431,8 +447,6 @@ abstract class DatabaseConnectionApiController implements Loggable
             return ['app_instance', $instanceModel];
         }
 
-        $workspaceModel = $this->resolver->resolveWorkspace($workspace);
-
         if ($workspaceModel === null) {
             return $this->validationFailed(
                 'workspace',
@@ -455,11 +469,16 @@ abstract class DatabaseConnectionApiController implements Loggable
         }
 
         $this->setActivitySubject($request, $result);
+        /** @var mixed $caller */
+        $caller = $request->user();
 
         return response()->json([
             'success' => [
                 'data' => [
-                    'connection' => $this->payloads->toArray($result),
+                    'connection' => $this->payloads->toArray(
+                        $result,
+                        $caller instanceof Node ? $caller : null,
+                    ),
                 ],
                 'meta' => (object) [],
             ],
@@ -478,6 +497,12 @@ abstract class DatabaseConnectionApiController implements Loggable
 
         if ($target === null) {
             return $this->validationFailed('target', 'Target is required.', ['field' => 'target'], 422);
+        }
+
+        $workspaceBoundary = $this->ensureWorkspaceTargetSupported($target, $auth);
+
+        if ($workspaceBoundary instanceof JsonResponse) {
+            return $workspaceBoundary;
         }
 
         $connection = $this->selector->resolve($target, $this->stringValue($request->query('connection')));
@@ -592,6 +617,39 @@ abstract class DatabaseConnectionApiController implements Loggable
                 'meta' => $failure->meta === [] ? (object) [] : $failure->meta,
             ],
         ], $status);
+    }
+
+    protected function ensureWorkspaceTargetSupported(string $target, Node $caller): ?JsonResponse
+    {
+        if ($this->resolver->resolveAppInstanceSelector($target) instanceof AppInstance) {
+            return null;
+        }
+
+        $workspace = $this->resolver->resolveWorkspace($target);
+
+        if (! $workspace instanceof Workspace) {
+            return null;
+        }
+
+        try {
+            $this->resolver->ensureWorkspaceSupportedForCaller($workspace, $caller);
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return $this->workspaceUnsupportedForProduction($exception);
+        }
+
+        return null;
+    }
+
+    protected function workspaceUnsupportedForProduction(
+        WorkspaceUnsupportedForProduction $exception,
+    ): JsonResponse {
+        return response()->json([
+            'error' => [
+                'code' => $exception->errorCode(),
+                'message' => $exception->getMessage(),
+                'meta' => $exception->meta,
+            ],
+        ], 422);
     }
 
     /**

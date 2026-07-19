@@ -88,8 +88,9 @@ final class ActivityShowCommand extends GatewayCommand
             'Actor' => $this->humanActor($activity['actor'] ?? null),
             'Command' => $activity['command'] ?? null,
             'Correlation' => $activity['correlation_id'] ?? null,
-            'Summary' => $activity['summary'] ?? null,
-            'Details' => $this->detailsLabel($activity['details'] ?? []),
+            'Description' => $activity['description'] ?? null,
+            'Properties' => $this->propertiesLabel($activity['properties'] ?? []),
+            'Channel' => $activity['channel'] ?? null,
             'Related' => $this->relatedLabel($related),
         ]);
     }
@@ -142,15 +143,15 @@ final class ActivityShowCommand extends GatewayCommand
         return json_encode($value, JSON_THROW_ON_ERROR);
     }
 
-    private function detailsLabel(mixed $details): string
+    private function propertiesLabel(mixed $properties): string
     {
-        if (! is_array($details) || $details === []) {
+        if (! is_array($properties) || $properties === []) {
             return '—';
         }
 
         $labels = [];
 
-        foreach ($details as $key => $value) {
+        foreach ($properties as $key => $value) {
             $labels[] = "{$key}: ".$this->stringValue($value);
         }
 

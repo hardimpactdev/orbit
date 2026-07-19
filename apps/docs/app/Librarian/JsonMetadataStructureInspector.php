@@ -11,6 +11,28 @@ final class JsonMetadataStructureInspector
     /**
      * @return list<string>
      */
+    public function missingSuccessMetaPaths(stdClass|array $value): array
+    {
+        if (! $value instanceof stdClass) {
+            return [];
+        }
+
+        $properties = get_object_vars($value);
+
+        if (! isset($properties['success']) || ! $properties['success'] instanceof stdClass) {
+            return [];
+        }
+
+        if (array_key_exists('meta', get_object_vars($properties['success']))) {
+            return [];
+        }
+
+        return ['success.meta'];
+    }
+
+    /**
+     * @return list<string>
+     */
     public function emptyMetaPaths(stdClass|array $value, string $prefix = ''): array
     {
         if ($value instanceof stdClass) {

@@ -26,6 +26,7 @@ final readonly class WorkspaceEnvApplier
         private WorkspaceRuntimeContainerManager $containerManager,
         private RemoteAppCacheClear $cacheClear,
         private AppRuntimeUser $runtimeUser,
+        private WorkspaceRoleGuard $roleGuard,
     ) {}
 
     /**
@@ -33,6 +34,7 @@ final readonly class WorkspaceEnvApplier
      */
     public function apply(Workspace $workspace, array $updates): WorkspaceEnvApplyResult
     {
+        $this->roleGuard->ensureWorkspaceSupported($workspace);
         $workspace->loadMissing('app');
         $app = $workspace->app;
         $node = $this->placement->nodeForWorkspace($workspace);

@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Enums\Nodes\NodeStatus;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Requests\Api\NodePermissionsApiRequest;
 use App\Models\Node;
 use App\Models\NodeAccess;
@@ -14,6 +15,7 @@ use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use InvalidArgumentException;
@@ -23,6 +25,7 @@ final readonly class NodePermissionsController implements Loggable
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
         private NodeAccessAuthorizer $authorizer,
+        private WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     private function requiredPermission(NodePermissionsApiRequest $request): string
@@ -125,6 +128,16 @@ final readonly class NodePermissionsController implements Loggable
             $normalized = app(NodePermissionNormalizer::class)->normalize($newPermissions);
             $newPermissions = $normalized->permissions;
 
+            $workspaceBoundaryFailure = $this->workspaceBoundaryFailure(
+                $consumer,
+                $serving,
+                $newPermissions,
+            );
+
+            if ($workspaceBoundaryFailure instanceof JsonResponse) {
+                return $workspaceBoundaryFailure;
+            }
+
             $grant->update(['permissions' => $newPermissions]);
 
             $data = [
@@ -160,6 +173,16 @@ final readonly class NodePermissionsController implements Loggable
         }
 
         $normalized = app(NodePermissionNormalizer::class)->normalize($permissions);
+
+        $workspaceBoundaryFailure = $this->workspaceBoundaryFailure(
+            $consumer,
+            $serving,
+            $normalized->permissions,
+        );
+
+        if ($workspaceBoundaryFailure instanceof JsonResponse) {
+            return $workspaceBoundaryFailure;
+        }
 
         $mode = $preset !== null ? 'preset' : ($permissionsOpt !== null ? 'permissions' : 'add');
 
@@ -208,6 +231,33 @@ final readonly class NodePermissionsController implements Loggable
         }
 
         return response()->json($payload);
+    }
+
+    /**
+     * @param  list<string>  $permissions
+     */
+    private function workspaceBoundaryFailure(
+        Node $consumer,
+        Node $serving,
+        array $permissions,
+    ): ?JsonResponse {
+        try {
+            $this->workspaceRoleGuard->ensureGrantSupportsWorkspacePermissions(
+                $consumer,
+                $serving,
+                $permissions,
+            );
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return response()->json([
+                'error' => [
+                    'code' => $exception->errorCode(),
+                    'message' => $exception->getMessage(),
+                    'meta' => $exception->meta,
+                ],
+            ], 422);
+        }
+
+        return null;
     }
 
     private function authorizeCaller(Node $caller, string $permission): ?JsonResponse

@@ -2,7 +2,7 @@
 
 [Back to App commands.](../README.md)
 
-List the recorded setup steps for an app.
+List the recorded setup steps for one app instance.
 
 ## Usage
 
@@ -17,8 +17,8 @@ ordered step set.
 
 | Input | Meaning |
 | --- | --- |
-| `app` | Existing app slug or hostname. |
-| `--app` | App selector for scripts where the positional argument is awkward. |
+| `app` | Dotted app-instance selector, or a bare app shorthand when exactly one instance exists. |
+| `--app` | App-instance selector for scripts where the positional argument is awkward. |
 | `--json` | Render JSON. |
 
 ## Behavior Summary
@@ -28,7 +28,7 @@ setup commands.
 
 ## Requirements
 
-The caller needs `app:read` on the app's owning node.
+The caller needs `app:read` on the selected instance's serving node.
 
 ## Output Summary
 
@@ -38,7 +38,7 @@ machine-readable step list.
 ## Examples
 
 ```bash
-orbit app-setup-step:list dlf-leden
+orbit app-setup-step:list dlf-leden.production
 ```
 
 ## Related

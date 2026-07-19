@@ -117,8 +117,11 @@ describe('FirewallRule mutation controllers', function (): void {
             ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP],
         );
 
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'destructive_consent_required');
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'force')
+            ->assertJsonPath('error.meta.reason', 'destructive_consent_required');
 
         expect(FirewallRule::query()->where('name', 'local-vite')->exists())->toBeTrue();
     });

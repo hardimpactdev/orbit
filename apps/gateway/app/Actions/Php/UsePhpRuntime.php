@@ -28,6 +28,7 @@ final readonly class UsePhpRuntime
         ?string $node = null,
         bool $inherit = false,
         bool $cli = false,
+        ?Node $caller = null,
     ): PhpRuntimeOperation {
         $operation = $this->runtime->use(
             version: $version,
@@ -36,6 +37,7 @@ final readonly class UsePhpRuntime
             node: $node,
             inherit: $inherit,
             cli: $cli,
+            caller: $caller,
         );
 
         if ($operation->failed()) {

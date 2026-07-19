@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Data\Apps\AppRuntimeConfig;
-use App\Data\Apps\PhpWorkerConfig;
 use App\Enums\Apps\AppRuntimeKind;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -28,14 +27,10 @@ use Illuminate\Support\Str;
  * @property string $php_version
  * @property AppRuntimeKind $runtime
  * @property array<string, mixed>|null $runtime_config
- * @property bool $worker_enabled
- * @property array<string, mixed>|null $worker_config
  * @property bool $adopted
  * @property array<string, mixed>|null $agent_ide_config
  * @property-read Node|null $node
  * @property-read Collection<int, AppInstance> $instances
- * @property-read Collection<int, AppSetupRun> $setupRuns
- * @property-read Collection<int, AppSetupStep> $setupSteps
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, Schedule> $schedules
  * @property-read AppAnalyticsBinding|null $analyticsBinding
@@ -59,8 +54,6 @@ class App extends Model
         'php_version',
         'runtime',
         'runtime_config',
-        'worker_enabled',
-        'worker_config',
         'adopted',
         'agent_ide_config',
     ];
@@ -68,7 +61,6 @@ class App extends Model
     #[\Override]
     protected $attributes = [
         'runtime' => 'php',
-        'worker_enabled' => false,
     ];
 
     #[\Override]
@@ -79,8 +71,6 @@ class App extends Model
             'agent_ide_config' => 'array',
             'runtime' => AppRuntimeKind::class,
             'runtime_config' => 'array',
-            'worker_enabled' => 'boolean',
-            'worker_config' => 'array',
         ];
     }
 
@@ -102,11 +92,6 @@ class App extends Model
         }
 
         return AppRuntimeKind::Php;
-    }
-
-    public function workerConfig(): PhpWorkerConfig
-    {
-        return PhpWorkerConfig::fromArray(is_array($this->worker_config) ? $this->worker_config : []);
     }
 
     /**
@@ -131,22 +116,6 @@ class App extends Model
     public function processes(): MorphMany
     {
         return $this->morphMany(Process::class, 'owner')->orderBy('sort_order');
-    }
-
-    /**
-     * @return HasMany<AppSetupStep, $this>
-     */
-    public function setupSteps(): HasMany
-    {
-        return $this->hasMany(AppSetupStep::class)->orderBy('sort_order');
-    }
-
-    /**
-     * @return HasMany<AppSetupRun, $this>
-     */
-    public function setupRuns(): HasMany
-    {
-        return $this->hasMany(AppSetupRun::class)->orderByDesc('started_at');
     }
 
     /**

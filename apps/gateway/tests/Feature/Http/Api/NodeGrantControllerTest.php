@@ -636,6 +636,74 @@ describe('NodeGrantController', function (): void {
         ]);
     });
 
+    it('rejects workspace-capable grants for production app serving nodes', function (array $grantInput): void {
+        createGrantCallerNode('gateway');
+        DB::table('nodes')->insert(apiGrantNodeRow([
+            'name' => 'control-1',
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $productionNodeId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'app-prod-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+        assignApiGrantNodeRole($productionNodeId, 'app-prod');
+
+        $response = postNodeGrantJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-prod-1',
+            ...$grantInput,
+        ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
+            ->assertJsonPath('error.meta.node', 'app-prod-1')
+            ->assertJsonPath('error.meta.role', 'app-prod');
+
+        expect(
+            NodeAccess::query()
+                ->where('serving_node_id', $productionNodeId)
+                ->exists(),
+        )->toBeFalse();
+    })->with([
+        'explicit workspace permission' => [['permissions' => 'app:read,workspace:read']],
+        'developer preset' => [['preset' => 'developer']],
+        'wildcard preset' => [['preset' => 'gateway-admin']],
+    ]);
+
+    it('rejects workspace-capable grants for production app consuming nodes', function (): void {
+        createGrantCallerNode('gateway');
+        $productionConsumerId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'app-prod-caller',
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        assignApiGrantNodeRole($productionConsumerId, 'app-prod');
+        $developmentServingId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+        assignApiGrantNodeRole($developmentServingId, 'app-dev');
+
+        $response = postNodeGrantJson([
+            'consuming_node' => 'app-prod-caller',
+            'serving_node' => 'app-dev-1',
+            'permissions' => 'app:read,workspace:read',
+        ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
+            ->assertJsonPath('error.meta.node', 'app-prod-caller')
+            ->assertJsonPath('error.meta.role', 'app-prod');
+
+        expect(
+            NodeAccess::query()
+                ->where('consumer_node_id', $productionConsumerId)
+                ->where('serving_node_id', $developmentServingId)
+                ->exists(),
+        )->toBeFalse();
+    });
+
     it('requires force for gateway-admin grants', function (): void {
         createGrantCallerNode('gateway');
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiGrantNodeRow([

@@ -13,6 +13,7 @@ use App\Models\Workspace;
 use App\Services\Processes\ProcessRuntimeApp;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Workspaces\WorkspacePlacement;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use RuntimeException;
 use Throwable;
 
@@ -22,12 +23,13 @@ final readonly class EnsureAppProcessRuntimeUnits
         private SiteCertificateInstaller $siteCertificateInstaller,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private WorkspacePlacement $placement,
+        private WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     /**
      * @return list<array<string, string>>
      */
-    public function handle(App $app, ?AppInstance $appInstance = null): array
+    public function handle(App $app, ?AppInstance $appInstance = null, ?Node $consumer = null): array
     {
         $app->loadMissing(['node', 'instances']);
         $appInstance ??= $this->soleInstance($app);
@@ -56,7 +58,7 @@ final readonly class EnsureAppProcessRuntimeUnits
 
         $warnings = [];
 
-        foreach ($this->runtimeContexts($app) as $workspace) {
+        foreach ($this->runtimeContexts($app, $consumer) as $workspace) {
             $tlsWarning = $this->ensureSiteCertificate($app, $workspace);
 
             if ($tlsWarning !== null) {
@@ -169,11 +171,16 @@ final readonly class EnsureAppProcessRuntimeUnits
     /**
      * @return list<Workspace|null>
      */
-    private function runtimeContexts(App $app): array
+    private function runtimeContexts(App $app, ?Node $consumer): array
     {
-        return [
-            null,
-            ...$app->workspaces->all(),
-        ];
+        $contexts = [null];
+
+        foreach ($app->workspaces as $workspace) {
+            if ($this->workspaceRoleGuard->allowsWorkspaceTarget($workspace, $consumer)) {
+                $contexts[] = $workspace;
+            }
+        }
+
+        return $contexts;
     }
 }

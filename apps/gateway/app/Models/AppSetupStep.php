@@ -11,13 +11,13 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $app_id
+ * @property int $app_instance_id
  * @property int $sort_order
  * @property string $command
  * @property int $timeout_seconds
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read App|null $app
+ * @property-read AppInstance|null $appInstance
  */
 class AppSetupStep extends Model
 {
@@ -27,7 +27,7 @@ class AppSetupStep extends Model
 
     #[\Override]
     protected $fillable = [
-        'app_id',
+        'app_instance_id',
         'sort_order',
         'command',
         'timeout_seconds',
@@ -42,11 +42,11 @@ class AppSetupStep extends Model
     }
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return BelongsTo<AppInstance, $this>
      */
-    public function app(): BelongsTo
+    public function appInstance(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->belongsTo(AppInstance::class);
     }
 
     public function timeoutSeconds(): int

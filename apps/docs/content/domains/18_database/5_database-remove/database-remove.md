@@ -10,11 +10,12 @@ Use this command when you want to delete stored connection intent and its
 mapping rows.
 
 ```bash
-orbit database:remove {connection} --force [--json]
+orbit database:remove {connection} [--force] [--json]
 ```
 
-`--force` is required because removal is destructive and may orphan target `.env`
-state until doctor restore or manual cleanup.
+Removal is destructive and may orphan target `.env` state until doctor restore
+or manual cleanup. Interactive use prompts for confirmation when `--force` is
+absent; non-interactive use, including `--json`, requires `--force`.
 
 ## Technical Contract
 

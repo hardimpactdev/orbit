@@ -7,11 +7,14 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Apps\PruneAppWorkspaces;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\SetAppAgentIdeApiRequest;
 use App\Models\App;
+use App\Models\Node;
 use App\Services\Apps\AppAgentIdeDefaults;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 
@@ -29,6 +32,7 @@ final class AppAgentIdeController implements Loggable
     public function __construct(
         private readonly AppAgentIdeDefaults $defaults,
         private readonly PruneAppWorkspaces $pruneAppWorkspaces,
+        private readonly WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     public function __invoke(SetAppAgentIdeApiRequest $request, string $app): JsonResponse
@@ -47,6 +51,17 @@ final class AppAgentIdeController implements Loggable
         }
 
         $targetApp->loadMissing('node');
+
+        /** @var mixed $caller */
+        $caller = $request->user();
+
+        if ($caller instanceof Node) {
+            try {
+                $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($caller);
+            } catch (WorkspaceUnsupportedForProduction $exception) {
+                return $this->workspaceUnsupportedForProduction($exception);
+            }
+        }
 
         $agentIde = $request->agentIde();
 
@@ -177,6 +192,17 @@ final class AppAgentIdeController implements Loggable
                 'meta' => $meta,
             ],
         ], $status);
+    }
+
+    private function workspaceUnsupportedForProduction(
+        WorkspaceUnsupportedForProduction $exception,
+    ): JsonResponse {
+        return $this->error(
+            code: $exception->errorCode(),
+            message: $exception->getMessage(),
+            meta: $exception->meta,
+            status: 422,
+        );
     }
 
     public function effect(): ActivityLogType

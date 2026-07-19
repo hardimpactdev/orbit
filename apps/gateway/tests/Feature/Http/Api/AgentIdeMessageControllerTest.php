@@ -296,6 +296,60 @@ it('resolves a workspace-target message from a forwarded path', function (): voi
         ->toBe('feature-docs');
 });
 
+it('rejects app production callers and production workspace targets before agent IDE delivery', function (): void {
+    $caller = createAgentIdeMessageCallerNode(role: 'app-prod');
+    $developmentNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+    grantAgentIdeMessageAccess($caller, $developmentNode);
+    $developmentApp = App::factory()->for($developmentNode, 'node')->create([
+        'name' => 'docs',
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+    Workspace::factory()->for($developmentApp)->create([
+        'name' => 'feature-docs',
+        'path' => '/srv/docs/.worktrees/feature-docs',
+        'agent_ide' => 'polyscope',
+    ]);
+    $adapter = new FakeApiAgentIdeMessageAdapter;
+    app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+    foreach ([
+        ['workspace' => 'feature-docs'],
+        ['path' => '/srv/docs/.worktrees/feature-docs/nested'],
+    ] as $target) {
+        postAgentIdeMessageJson(
+            ['message' => 'Ship the docs', ...$target],
+            ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP],
+        )
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production');
+    }
+
+    $caller->roleAssignments()->delete();
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $caller->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+    $productionNode = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
+    $productionApp = App::factory()->for($productionNode, 'node')->create([
+        'name' => 'shop',
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+    Workspace::factory()->for($productionApp)->create([
+        'name' => 'legacy-workspace',
+        'agent_ide' => 'opencode',
+    ]);
+
+    postAgentIdeMessageJson(
+        ['message' => 'Ship the shop', 'workspace' => 'legacy-workspace'],
+        ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP],
+    )
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'workspace.unsupported_for_production');
+
+    expect($adapter->deliveries)->toBeEmpty();
+});
+
 it('returns adapter delivery diagnostics under error data', function (): void {
     $caller = createAgentIdeMessageCallerNode();
     $appNode = Node::factory()

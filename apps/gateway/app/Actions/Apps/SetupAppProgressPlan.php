@@ -6,6 +6,7 @@ namespace App\Actions\Apps;
 
 use App\Contracts\ProgressReporter;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\AppSetupStep;
 use App\Models\Node;
 use RuntimeException;
@@ -28,6 +29,7 @@ final class SetupAppProgressPlan
     public function __construct(
         private readonly SetupApp $setupApp,
         private readonly App $app,
+        private readonly AppInstance $instance,
         private readonly Node $node,
     ) {}
 
@@ -58,6 +60,7 @@ final class SetupAppProgressPlan
                 'run' => function (): string {
                     $this->setupResult = $this->setupApp->runSetupSteps(
                         $this->app,
+                        $this->instance,
                         $this->node,
                         $this->reportSetupStepProgress(...),
                     );
@@ -167,6 +170,7 @@ final class SetupAppProgressPlan
     /**
      * @return array{
      *     app: string,
+     *     app_instance: string,
      *     node: string,
      *     path: string,
      *     url: string,
@@ -178,6 +182,7 @@ final class SetupAppProgressPlan
     {
         return [
             'app' => $this->app->name,
+            'app_instance' => $this->instance->name,
             'node' => $this->node->name,
             'path' => $this->app->path,
             'url' => $this->app->url(),
@@ -189,7 +194,7 @@ final class SetupAppProgressPlan
     private function hasSetupSteps(): bool
     {
         return AppSetupStep::query()
-            ->where('app_id', $this->app->id)
+            ->where('app_instance_id', $this->instance->id)
             ->exists();
     }
 }

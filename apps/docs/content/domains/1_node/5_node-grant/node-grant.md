@@ -49,6 +49,10 @@ Non-interactive callers must supply exactly one of `--preset` or
 `--permissions`. Interactive callers without a mode flag are prompted for the
 permission set through a multiselect.
 
+A set containing `*` or any `workspace:*` permission is rejected when either
+the consuming or serving node has `app-prod`. Production app services cannot
+receive or exercise workspace authority through a cross-node grant.
+
 ## What Happens
 
 Run `node:grant` to create a new access edge from one node to another with
@@ -66,12 +70,13 @@ The command:
    policy.
 3. Resolves the initial permission set from `--preset` or `--permissions`
    and normalizes it.
-4. Requires explicit consent for elevated grants. `gateway-admin` or any
+4. Enforces the app-dev-only workspace boundary against both grant endpoints.
+5. Requires explicit consent for elevated grants. `gateway-admin` or any
    permission set containing `*` on a grant to the gateway prompts an
    interactive confirmation, or requires `--force` in non-interactive mode.
-5. Writes the grant record with the normalized permission set when the edge
+6. Writes the grant record with the normalized permission set when the edge
    does not already exist.
-6. Reports whether the grant was newly created or already present, and
+7. Reports whether the grant was newly created or already present, and
    surfaces warnings for any redundant permissions that normalization
    removed.
 
@@ -110,6 +115,8 @@ any redundant-permission warnings.
   access policy accepts them.
 - Elevated grants (`gateway-admin` or `*` to the gateway) require
   interactive confirmation or `--force`.
+- Workspace-capable permission sets require that neither grant endpoint has
+  `app-prod`.
 
 ## Related Commands
 

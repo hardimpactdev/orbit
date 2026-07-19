@@ -18,6 +18,14 @@ touch.
 - A database connection target maps one connection record to exactly one app
   instance or one workspace plus the environment-variable prefix used in
   that target's `.env`.
+- Workspace database targets remain subject to the workspace domain's strict
+  `app-dev` boundary. An `app-prod` caller cannot list, inspect, attach,
+  detach, query, describe, or diagnose a workspace target, even when a database
+  grant would otherwise allow it. A workspace mapping served by `app-prod` is equally
+  unsupported. Explicit targets fail with
+  `workspace.unsupported_for_production` before registry, `.env`, probe, or
+  executor effects; broad connection reads omit the forbidden workspace
+  mappings while retaining supported app-instance targets.
 - CLI callers resolve input locally, then the gateway reads or writes durable
   database connection state and performs any target `.env` inspection or update.
 - `doctor --family=database_connection` owns drift between gateway
@@ -102,6 +110,10 @@ and require gateway authority.
 
 Authorization failures use `authorization_failed` with standard
 `missing_permission` metadata.
+
+The production workspace boundary is an eligibility failure, not an ordinary
+missing grant. It returns `workspace.unsupported_for_production` before the
+database command evaluates or enacts workspace state.
 
 ## State Ownership
 

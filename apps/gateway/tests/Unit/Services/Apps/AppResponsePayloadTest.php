@@ -19,8 +19,6 @@ it('defaults missing legacy app runtime attributes to php in response payloads',
         'document_root' => 'public',
         'repository' => null,
         'php_version' => '8.5',
-        'worker_enabled' => false,
-        'worker_config' => null,
         'adopted' => false,
     ], true);
     $app->setRelation('node', new Node([

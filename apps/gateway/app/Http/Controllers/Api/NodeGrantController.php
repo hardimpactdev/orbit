@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Enums\Nodes\NodeStatus;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\GrantNodeApiRequest;
@@ -15,6 +16,7 @@ use App\Models\NodeAccess;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use InvalidArgumentException;
@@ -24,6 +26,7 @@ final readonly class NodeGrantController implements Loggable
 {
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
+        private WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     public function __invoke(GrantNodeApiRequest $request): JsonResponse
@@ -67,6 +70,21 @@ final readonly class NodeGrantController implements Loggable
 
         $normalized = app(NodePermissionNormalizer::class)->normalize($permissions);
         $permissions = $normalized->permissions;
+
+        try {
+            $this->workspaceRoleGuard->ensureGrantSupportsWorkspacePermissions(
+                $consumer,
+                $serving,
+                $permissions,
+            );
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return $this->error(
+                code: $exception->errorCode(),
+                message: $exception->getMessage(),
+                meta: $exception->meta,
+                status: 422,
+            );
+        }
 
         $isGatewayAdmin = in_array('*', $permissions, true) && $this->nodeRoleAssignments->nodeIsGateway($serving);
 

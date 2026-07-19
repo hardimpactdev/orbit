@@ -17,19 +17,13 @@ final readonly class SkillInstallActions
 
     public function install(SkillInstallRequest $request): SkillInstallResult|SkillInstallFailure
     {
-        $resolution = $this->targetResolver->resolve($request->provider, $request->path);
+        $resolution = $this->prepare($request);
 
         if ($resolution instanceof SkillInstallFailure) {
             return $resolution;
         }
 
         $source = $this->sourcePath();
-        $sourceValidation = $this->validateSource($source);
-
-        if ($sourceValidation !== null) {
-            return $sourceValidation;
-        }
-
         $target = $resolution->target;
 
         if ($this->targetExists($target) && ! $request->force) {
@@ -37,8 +31,8 @@ final readonly class SkillInstallActions
                 code: 'validation_failed',
                 message: 'Use --force to overwrite the existing skill target.',
                 meta: [
-                    'field' => 'target',
-                    'reason' => 'target_exists',
+                    'field' => 'force',
+                    'reason' => 'destructive_consent_required',
                     'target' => $target,
                 ],
             );
@@ -62,6 +56,24 @@ final readonly class SkillInstallActions
         }
 
         return new SkillInstallResult(provider: $resolution->provider, target: $target, source: $source);
+    }
+
+    public function prepare(SkillInstallRequest $request): SkillTargetResolution|SkillInstallFailure
+    {
+        $resolution = $this->targetResolver->resolve($request->provider, $request->path);
+
+        if ($resolution instanceof SkillInstallFailure) {
+            return $resolution;
+        }
+
+        $sourceValidation = $this->validateSource($this->sourcePath());
+
+        return $sourceValidation ?? $resolution;
+    }
+
+    public function requiresReplacement(SkillTargetResolution $resolution): bool
+    {
+        return $this->targetExists($resolution->target);
     }
 
     private function validateSource(string $source): ?SkillInstallFailure

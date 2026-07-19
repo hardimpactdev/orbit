@@ -13,10 +13,11 @@ The terms below define the core identity vocabulary for the app family.
   repository. An app may have multiple app instances.
 - **App instance:** Concrete runtime or deployment target for one app. An
   instance belongs to exactly one app, has a name unique within that app, selects
-  one driver, owns driver configuration, and owns app env values. It is the
-  target for database attachments plus deployment policy, runs, logs, and status.
+  one driver, and owns driver configuration, app env values, worker policy,
+  setup-step policy, and setup runs. It is the target for database attachments
+  plus deployment policy, runs, logs, and status.
 - **App instance driver:** Backend that knows how an instance is placed and
-  operated. Current drivers are `orbit` for Orbit-managed app-role nodes and
+  operated. Current drivers are `orbit` for Orbit-managed app-host nodes and
   `laravel-cloud` for Laravel Cloud application/environment targets.
 - **Driver config:** Driver-specific configuration stored as a Spatie Laravel
   Data object under `driver_config`. `orbit` config records node/path/root/domain
@@ -36,8 +37,8 @@ The terms below define the core identity vocabulary for the app family.
   hostname matches.
 - **Default node:** Node slug stored on the logical app and used when creating
   its initial Orbit instance. Placement-specific behavior uses app instances. Orbit
-  instances may only run on nodes with an active `app-dev` or `app-prod` role; a
-  node without an active app role is not a valid Orbit app instance target.
+  instances may only run on nodes with an active `app-dev` or `app-prod` role;
+  a node without either role is not a valid Orbit app instance target.
 
 ## Environment and hosting
 
@@ -86,7 +87,7 @@ app defaults used when creating an instance.
 - **Production app runtime container:** App-prod PHP runtime rendered as a
   per-app Docker container running FrankenPHP on the owning node. It
   listens on internal port `8080`, publishes no public host ports, and is
-  reached only by the app-role-owned private backend `orbit-caddy` route. The
+  reached only by the app-host-owned private backend `orbit-caddy` route. The
   process family owns the concrete long-running lifecycle unit for the container.
 - **Production app runtime user:** Path-derived Linux user and group used for
   one production app's source, releases, and runtime container identity. It must
@@ -109,11 +110,12 @@ app defaults used when creating an instance.
   source path, app-instance deployment policy, and runtime selection; the process family owns
   the concrete long-running lifecycle unit.
 - **Worker mode:** Opt-in FrankenPHP mode that keeps a validated Laravel app in
-  memory. It is disabled by default and can be enabled only after readiness
-  validation succeeds.
+  memory on one concrete app instance. It is disabled by default per instance
+  and can be enabled only after readiness validation succeeds against that
+  instance's serving node and source path.
 - **Worker config:** Gateway-tracked object for worker settings such as worker
-  count, max requests, and failure thresholds. It is stored separately from the
-  on/off decision.
+  count and max requests. It belongs to one app instance and is stored
+  separately from that instance's on/off decision.
 - **Required PHP extensions:** Instance-owned list of PHP extensions required by
   the app on that target. The list is normalized for stable output. Orbit driver
   instances are checked against the running FrankenPHP container by app doctor;
@@ -184,14 +186,15 @@ The terms below describe how an app moves through its active states.
 - **App pruning:** Source-of-truth cleanup performed by `app:prune`. Removes
   stale apps, workspaces, and configured agent IDE associations. It is not
   doctor drift repair.
-- **App setup pipeline:** Ordered app-owned commands recorded with
-  `app-setup-step:*` and run by `app:setup` on the app's owning node. Setup
-  commands are for finite project bootstrap work such as dependency install,
-  application key generation, storage linking, migrations, seeders, and
-  app-owned user creation.
-- **App setup run:** Gateway record of one `app:setup` execution. It stores the
-  step-set hash, per-step status, result code, and captured output so reruns can
-  skip unchanged completed setup steps.
+- **App setup pipeline:** Ordered app-instance-owned commands recorded with
+  `app-setup-step:*` and run by `app:setup` on the selected instance's serving
+  node and source path. Setup commands are for finite project bootstrap work
+  such as dependency install, application key generation, storage linking,
+  migrations, seeders, and app-owned user creation.
+- **App setup run:** Gateway record of one `app:setup` execution owned by one
+  app instance. It stores the step-set hash, per-step status, result code, and
+  captured output so reruns can skip unchanged completed setup steps without
+  affecting another instance of the same logical app.
 
 ## Boundaries
 

@@ -37,10 +37,12 @@ final readonly class WorkspaceRuntimeContainerRenderer
         private RuntimeHostRoutingPolicy $runtimeHostRouting = new RuntimeHostRoutingPolicy,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
         private WorkspacePlacement $placement = new WorkspacePlacement,
+        private ?WorkspaceRoleGuard $roleGuard = null,
     ) {}
 
     public function render(Workspace $workspace, ?string $preloadPath = null): WorkspaceRuntimeContainer
     {
+        $this->roleGuard()->ensureWorkspaceSupported($workspace);
         $workspace->loadMissing('app');
         $app = $workspace->app;
 
@@ -156,6 +158,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
 
     public function runtimeConfigPath(Workspace $workspace): string
     {
+        $this->roleGuard()->ensureWorkspaceSupported($workspace);
         $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
         $app = $workspace->app;
         $node = $this->placement->nodeForWorkspace($workspace);
@@ -171,11 +174,18 @@ final readonly class WorkspaceRuntimeContainerRenderer
 
     public function upstreamUrl(Workspace $workspace): string
     {
+        $this->roleGuard()->ensureWorkspaceSupported($workspace);
+
         if ($this->innerTlsPolicy->appliesToWorkspace($workspace)) {
             return 'https://'.$this->containerName($workspace).':'.AppDevelopmentInnerTlsPolicy::InternalTlsPort;
         }
 
         return 'http://'.$this->containerName($workspace);
+    }
+
+    private function roleGuard(): WorkspaceRoleGuard
+    {
+        return $this->roleGuard ?? app(WorkspaceRoleGuard::class);
     }
 
     /**

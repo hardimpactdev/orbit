@@ -147,6 +147,38 @@ it('allows app-dev role callers when they hold the deployment grant', function (
         ->assertJsonPath('success.meta.action', 'created');
 });
 
+it('returns canonical destructive consent metadata before removing a deployment step', function (): void {
+    ['instance' => $instance] = createDeployApiFixture('control', ['deploy:step']);
+    $step = DeployStep::query()->create([
+        'app_instance_id' => $instance->id,
+        'title' => 'Run migrations',
+        'command' => 'php artisan migrate --force',
+        'sort_order' => 10,
+        'timeout_seconds' => 600,
+    ]);
+
+    $response = $this->call(
+        'DELETE',
+        '/api/deploy/steps/Run%20migrations',
+        [
+            'app' => 'docs',
+        ],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => DEPLOY_API_CALLER_WG_IP,
+        ],
+    );
+
+    $response
+        ->assertBadRequest()
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath('error.meta.field', 'force')
+        ->assertJsonPath('error.meta.reason', 'destructive_consent_required');
+
+    expect($step->fresh())->not->toBeNull();
+});
+
 it('authorizes deployment against the concrete app instance node', function (): void {
     $logicalNode = createTestAppHostNode(['name' => 'logical-app-node'], role: 'app-prod');
     $instanceNode = createTestAppHostNode(['name' => 'production-instance-node'], role: 'app-prod');

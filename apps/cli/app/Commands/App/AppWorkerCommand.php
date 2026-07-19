@@ -56,10 +56,14 @@ final class AppWorkerCommand extends AppGatewayCommand
     {
         $data = $this->successData($response);
         $app = is_string($data['app'] ?? null) && $data['app'] !== '' ? $data['app'] : $selector;
+        $instance = is_string($data['app_instance'] ?? null) && $data['app_instance'] !== ''
+            ? $data['app_instance']
+            : null;
+        $target = $instance !== null ? "{$app}.{$instance}" : $selector;
         $enabled = ($data['worker_enabled'] ?? null) === true;
         $changed = ($data['changed'] ?? null) === true;
 
-        $this->line($this->statusLine($action, $app, $enabled, $changed));
+        $this->line($this->statusLine($action, $target, $enabled, $changed));
 
         foreach ($this->workerConfigPairs($data['worker_config'] ?? null) as $line) {
             $this->line($line);
@@ -73,16 +77,16 @@ final class AppWorkerCommand extends AppGatewayCommand
         if ($action === 'show') {
             $state = $enabled ? 'enabled' : 'disabled';
 
-            return "App '{$app}' worker mode is {$state}.";
+            return "App instance '{$app}' worker mode is {$state}.";
         }
 
         $verb = $action === 'enable' ? 'enabled' : 'disabled';
 
         if ($changed) {
-            return "App '{$app}' worker mode {$verb}.";
+            return "App instance '{$app}' worker mode {$verb}.";
         }
 
-        return "App '{$app}' worker mode already {$verb}.";
+        return "App instance '{$app}' worker mode already {$verb}.";
     }
 
     /**

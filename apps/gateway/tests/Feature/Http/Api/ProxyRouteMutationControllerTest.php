@@ -120,7 +120,10 @@ describe('ProxyRoute mutation API', function (): void {
             '/api/proxy-routes/old.test',
         );
 
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'destructive_consent_required');
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'force')
+            ->assertJsonPath('error.meta.reason', 'destructive_consent_required');
     });
 });

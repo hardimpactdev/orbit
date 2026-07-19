@@ -72,6 +72,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
+| Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 | Baseline conflict | The selected rule is node bootstrap policy, not an Orbit-owned firewall rule. | `error.code=firewall_rule.baseline_conflict` |
 | Cleanup failed | Backend firewall cleanup failed before configuration could be removed safely. | `error.code=firewall_rule.cleanup_failed` |
 

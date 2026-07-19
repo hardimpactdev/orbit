@@ -52,7 +52,7 @@ eligibility. A displayed role label is derived output and grants nothing.
 | client with no active role | `Node` |
 | active `gateway` role | `Node`, `Processes` |
 | active `database` role only | `Node`, `Tools`, `Processes` |
-| active `agent` role | `Node`, `Tools`, `Processes` |
+| active `agent` role | `Node`, `Tools`, `Proxy routes`, `Processes` |
 | active `router` role | `Node`, `Proxy routes`, `Processes` |
 | active `app-dev` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Tools`, `Databases` |
 | active `app-prod` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Tools`, `Databases` |
@@ -61,6 +61,13 @@ eligibility. A displayed role label is derived output and grants nothing.
 | active `s3` role | `Node`, `Tools`, `Proxy routes`, `Processes` |
 | active `metrics` role | `Node`, `Tools`, `Processes`, `Proxy routes` |
 | active `vpn` or `analytics` role without another role-specific category | `Node`, `Processes` |
+
+The `Processes`, `Proxy routes`, and `Databases` categories on an `app-prod`
+target cover only production app and node facts. They never admit workspace
+rows, workspace-derived runtime units, workspace routes, workspace database
+targets, or unsupported owner markers into a probe. An explicit workspace family or
+scope is rejected before dispatch. An `app-prod` caller is also rejected before
+using any workspace-adjacent doctor family against an `app-dev` target.
 
 The gateway then adds these fact-derived overlays:
 

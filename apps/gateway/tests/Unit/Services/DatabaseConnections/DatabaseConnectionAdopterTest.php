@@ -30,6 +30,62 @@ beforeEach(function (): void {
 });
 
 describe('DatabaseConnectionAdopter', function (): void {
+    it('does not adopt workspace database targets on production app nodes', function (): void {
+        $node = Node::factory()
+            ->appProd()
+            ->create([
+                'name' => 'app-prod-1',
+                'status' => 'active',
+                'wireguard_address' => '10.44.0.92',
+            ]);
+        $appPath = '/srv/docs';
+        $workspacePath = '/srv/docs/.worktrees/feature';
+        $app = databaseConnectionAdopterApp([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'environment' => 'production',
+            'path' => $appPath,
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => databaseConnectionAdopterAppInstance($app)->id,
+            'name' => 'feature',
+            'path' => $workspacePath,
+        ]);
+
+        Http::preventStrayRequests();
+        Http::fake(function (\Illuminate\Http\Client\Request $request) use ($appPath, $workspacePath): mixed {
+            $input = json_decode((string) $request['input'], associative: true);
+            $path = is_array($input) ? $input['path'] ?? null : null;
+            $contents = $path === $workspacePath.'/.env'
+                ? "DB_CONNECTION=sqlite\nDB_DATABASE=/srv/docs/.worktrees/feature/database/database.sqlite\n"
+                : "DB_CONNECTION=sqlite\nDB_DATABASE=/srv/docs/database/database.sqlite\n";
+
+            return Http::response(databaseConnectionAdopterEnvReadResponse($contents));
+        });
+
+        $results = app(DatabaseConnectionAdopter::class)->adopt($node);
+
+        expect($results)
+            ->toHaveCount(1)
+            ->and($results[0]->detail)
+            ->toMatchArray([
+                'target_type' => 'app_instance',
+                'app' => 'docs',
+                'app_instance' => 'development',
+            ])
+            ->and(DatabaseConnectionTarget::query()->where('workspace_id', $workspace->id)->exists())
+            ->toBeFalse()
+            ->and(DatabaseConnectionTarget::query()->whereNotNull('app_instance_id')->count())
+            ->toBe(1);
+
+        Http::assertNotSent(function (\Illuminate\Http\Client\Request $request) use ($workspacePath): bool {
+            $input = json_decode((string) $request['input'], associative: true);
+
+            return is_array($input) && ($input['path'] ?? null) === $workspacePath.'/.env';
+        });
+    });
+
     it('materializes a connection and target for an existing app env and encrypts the password', function (): void {
         $node = Node::factory()->gateway()->create(['status' => 'active']);
         $path = storage_path('framework/testing/database-adopter-app');

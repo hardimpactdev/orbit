@@ -14,6 +14,7 @@ use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
@@ -127,6 +128,139 @@ describe('ProxyRouteProbe interface', function (): void {
 });
 
 describe('proxy registry probe foundation', function (): void {
+    it('detects a missing expected agent tool route as proxy-family drift', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'agent-1',
+            'status' => 'active',
+            'tld' => 'agent',
+        ]);
+        assignProxyProbeRole(node: $node, role: 'agent');
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+        ]);
+
+        $drift = new ProxyRouteProbe()->diffAgentToolRouteIntent($node);
+
+        expect(proxyProbeIssue(drift: $drift, key: 'proxy.agent_tool_route_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(proxyProbeIssue(drift: $drift, key: 'proxy.agent_tool_route_missing')?->detail)
+            ->toMatchArray([
+                'tool' => 'openclaw',
+                'domain' => 'openclaw.agent',
+            ]);
+    });
+
+    it('detects a mismatched expected agent tool route as proxy-family drift', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'agent-1',
+            'status' => 'active',
+            'tld' => 'agent',
+        ]);
+        assignProxyProbeRole(node: $node, role: 'agent');
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'openclaw.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat(string: 'a', times: 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:9999'],
+                'upstream' => 'http://127.0.0.1:9999',
+                'owner_name' => 'openclaw',
+            ],
+        ]);
+
+        $drift = new ProxyRouteProbe()->diffAgentToolRouteIntent($node);
+
+        expect(proxyProbeIssue(drift: $drift, key: 'proxy.agent_tool_route_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue(drift: $drift, key: 'proxy.agent_tool_route_mismatch')?->detail)
+            ->toMatchArray([
+                'tool' => 'openclaw',
+                'domain' => 'openclaw.agent',
+                'expected_upstream' => 'http://host.docker.internal:8080',
+                'observed_upstream' => 'http://127.0.0.1:9999',
+            ]);
+    });
+
+    it('reports an occupied agent tool domain as a non-restorable proxy conflict', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'agent-1',
+            'status' => 'active',
+            'tld' => 'agent',
+        ]);
+        assignProxyProbeRole(node: $node, role: 'agent');
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'openclaw.agent',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080'],
+                'upstream' => 'http://127.0.0.1:8080',
+            ],
+        ]);
+
+        $drift = new ProxyRouteProbe()->diffAgentToolRouteIntent($node);
+
+        expect(proxyProbeIssue(drift: $drift, key: 'proxy.agent_tool_route_conflict')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue(drift: $drift, key: 'proxy.agent_tool_route_conflict')?->detail)
+            ->toMatchArray([
+                'tool' => 'openclaw',
+                'domain' => 'openclaw.agent',
+                'observed_owner_type' => 'custom',
+            ]);
+    });
+
+    it('passes a canonical expected agent tool route', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'agent-1',
+            'status' => 'active',
+            'tld' => 'agent',
+        ]);
+        assignProxyProbeRole(node: $node, role: 'agent');
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+        ]);
+        $config = [
+            'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+            'upstream' => 'http://host.docker.internal:8080',
+            'owner_name' => 'openclaw',
+        ];
+        $intent = new ProxyRoute([
+            'node_id' => $node->id,
+            'domain' => 'openclaw.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => $config,
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'openclaw.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'source_hash' => new ProxyRouteRenderer()->sourceHash($intent),
+            'config' => $config,
+        ]);
+
+        expect(new ProxyRouteProbe()->diffAgentToolRouteIntent($node))->toBe([]);
+    });
+
     it('passes complete custom proxy routes on active app nodes', function (): void {
         $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([
@@ -1686,6 +1820,83 @@ describe('proxy node-level diff', function (): void {
             ->toBe(DriftKind::Missing)
             ->and(proxyProbeIssue($drift, 'node-only.test')?->kind)
             ->toBe(DriftKind::Extra);
+    });
+
+    it('keeps production app proxy drift while excluding workspace route inventory', function (): void {
+        $node = createTestAppHostNode([
+            'name' => 'app-prod-1',
+            'tld' => 'prod',
+        ], role: 'app-prod');
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'domain' => 'docs.prod',
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'feature',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.prod',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        $workspaceRoutes = [
+            ['feature.docs.prod', 'workspace', 'workspace', $workspace->id],
+            ['legacy-owner.docs.prod', 'workspace', 'proxy', null],
+            ['legacy-class.docs.prod', Workspace::class, 'proxy', null],
+            ['legacy-kind.docs.prod', 'custom', 'workspace', null],
+        ];
+
+        foreach ($workspaceRoutes as [$domain, $ownerType, $kind, $workspaceId]) {
+            ProxyRoute::factory()->create([
+                'node_id' => $node->id,
+                'app_id' => $app->id,
+                'workspace_id' => $workspaceId,
+                'domain' => $domain,
+                'owner_type' => $ownerType,
+                'kind' => $kind,
+            ]);
+        }
+
+        $probe = new ProxyRouteProbe;
+        $observedDomains = [...array_column($workspaceRoutes, 0), 'unknown.prod'];
+        $routeDrift = $probe->diffNode($node, new ProbeSnapshot(array_fill_keys($observedDomains, [])));
+        $routeKeys = collect($routeDrift)->pluck('key')->all();
+        $routeSummaries = collect($routeDrift)->pluck('summary')->all();
+        $globalContents = collect(['docs.prod', ...$observedDomains])
+            ->map(static fn (string $domain): string => "{$domain} {\n    reverse_proxy http://127.0.0.1:8080\n}")
+            ->implode("\n\n");
+        $globalDrift = $probe->diffGlobalConfig($node, new ProbeSnapshot([
+            'global_caddy_config' => [
+                'exists' => true,
+                'content' => $globalContents,
+                'hash' => hash('sha256', $globalContents),
+            ],
+        ]));
+        $globalKeys = collect($globalDrift)->pluck('key')->all();
+
+        expect($probe->expectedDomainsForNode($node))
+            ->toBe(['docs.prod'])
+            ->and($routeSummaries)
+            ->toContain('Proxy backend route docs.prod is missing on the serving node.')
+            ->not->toContain('Proxy backend route feature.docs.prod is missing on the serving node.')
+            ->not->toContain('Proxy backend route legacy-owner.docs.prod is missing on the serving node.')
+            ->not->toContain('Proxy backend route legacy-class.docs.prod is missing on the serving node.')
+            ->not->toContain('Proxy backend route legacy-kind.docs.prod is missing on the serving node.')->and(
+                $routeKeys,
+            )->toContain('proxy.route_missing')->toContain('unknown.prod')
+            ->not->toContain('feature.docs.prod')
+            ->not->toContain('legacy-owner.docs.prod')
+            ->not->toContain('legacy-class.docs.prod')
+            ->not->toContain('legacy-kind.docs.prod')->and($globalKeys)
+            ->not->toContain('docs.prod')->toContain('unknown.prod')
+            ->not->toContain('feature.docs.prod')
+            ->not->toContain('legacy-owner.docs.prod')
+            ->not->toContain('legacy-class.docs.prod')
+            ->not->toContain('legacy-kind.docs.prod');
     });
 
     it('reports global caddy config drift and stale node-tld domains embedded in the global file', function (): void {

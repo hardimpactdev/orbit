@@ -266,8 +266,8 @@ describe('AppStoreController', function (): void {
             ->assertJsonPath('success.data.app.php_version', '8.4')
             ->assertJsonPath('success.data.app.runtime', 'php')
             ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'http')
-            ->assertJsonPath('success.data.app.worker_enabled', false)
-            ->assertJsonPath('success.data.app.worker_config', null)
+            ->assertJsonMissingPath('success.data.app.worker_enabled')
+            ->assertJsonMissingPath('success.data.app.worker_config')
             ->assertJsonPath('success.meta.warnings', []);
 
         expect(App::query()->where('name', 'docs')->exists())

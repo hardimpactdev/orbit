@@ -34,6 +34,118 @@ describe('ProxyRouteFixer', function (): void {
 
     afterEach(function (): void {});
 
+    it('restores a deleted expected agent tool route row and its Caddy artifact', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'agent-1',
+            'status' => 'active',
+            'tld' => 'agent',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'agent',
+            'status' => 'active',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->restoreAgentToolRoute($node, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.agent_tool_route_missing',
+            kind: DriftKind::Missing,
+            summary: 'missing agent tool route',
+            detail: ['tool' => 'openclaw', 'domain' => 'openclaw.agent'],
+        ));
+        $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->firstOrFail();
+
+        expect($action)
+            ->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'agent-1',
+                'key' => 'proxy.agent_tool_route_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => [
+                    'route' => 'openclaw.agent',
+                    'tool' => 'openclaw',
+                ],
+            ])
+            ->and($route->owner_type)
+            ->toBe('tool')
+            ->and($route->kind)
+            ->toBe('proxy')
+            ->and($route->config)
+            ->toMatchArray([
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+                'upstream' => 'http://host.docker.internal:8080',
+                'owner_name' => 'openclaw',
+            ])
+            ->and($route->source_hash)
+            ->toBe(new ProxyRouteRenderer()->sourceHash($route))
+            ->and(proxy_fixer_scripts_contain(shell: $shell, needle: "internal:caddy-config 'write-site'"))
+            ->toBeTrue()
+            ->and(proxy_fixer_scripts_contain(shell: $shell, needle: "internal:caddy-config 'reload'"))
+            ->toBeTrue();
+    });
+
+    it('restores a mismatched same-owner agent tool route to canonical intent', function (): void {
+        $node = Node::factory()->create([
+            'name' => 'agent-1',
+            'status' => 'active',
+            'tld' => 'agent',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'agent',
+            'status' => 'active',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'openclaw.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat(string: 'a', times: 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:9999'],
+                'upstream' => 'http://127.0.0.1:9999',
+                'owner_name' => 'openclaw',
+            ],
+        ]);
+        new ProxyFixerRecordingRemoteShell;
+
+        $action = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->restoreAgentToolRoute($node, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.agent_tool_route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatched agent tool route',
+            detail: ['tool' => 'openclaw', 'domain' => 'openclaw.agent'],
+        ));
+        $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->firstOrFail();
+
+        expect($action['status'])
+            ->toBe('completed')
+            ->and($route->config['upstream'])
+            ->toBe('http://host.docker.internal:8080')
+            ->and($route->source_hash)
+            ->toBe(new ProxyRouteRenderer()->sourceHash($route));
+    });
+
     it('re-applies missing custom proxy routes from gateway intent', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $route = ProxyRoute::factory()->create([

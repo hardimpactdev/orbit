@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Actions\Apps\SetupApp;
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\AppSetupStep;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -27,7 +29,17 @@ it('passes Laravel Vite URL and dev server certificate environment into app setu
         'php_version' => '8.5',
     ]);
 
-    AppSetupStep::factory()->for($app)->create([
+    $instance = AppInstance::factory()->for($app)->create([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+
+    AppSetupStep::factory()->for($instance, 'appInstance')->create([
         'command' => 'npm install',
         'sort_order' => 1,
     ]);
@@ -51,7 +63,7 @@ it('passes Laravel Vite URL and dev server certificate environment into app setu
     };
     app()->instance(RemoteShell::class, $shell);
 
-    app(SetupApp::class)->handle($app);
+    app(SetupApp::class)->handle($app, $instance, $node);
 
     expect($shell->runs)
         ->toHaveCount(1)

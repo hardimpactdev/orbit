@@ -56,6 +56,154 @@ test('gateway openapi export includes stable contract metadata', function (): vo
 
     Assert::assertSame(['node', 'app', 'workspace'], $processParameterNames);
 
+    /** @var array<string, mixed>|null $appListItem */
+    $appListItem = data_get(
+        target: $schema,
+        key: 'paths./apps.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.apps.items',
+    );
+
+    Assert::assertIsArray($appListItem);
+    Assert::assertSame([
+        'name',
+        'repository',
+        'dependency_audit_status',
+        'dependency_warning_count',
+        'dependency_danger_count',
+        'last_dependency_audit_at',
+        'instance_count',
+        'workspace_count',
+    ], array_keys($appListItem['properties'] ?? []));
+    Assert::assertSame([
+        'name',
+        'repository',
+        'dependency_audit_status',
+        'dependency_warning_count',
+        'dependency_danger_count',
+        'last_dependency_audit_at',
+        'instance_count',
+        'workspace_count',
+    ], $appListItem['required'] ?? null);
+    Assert::assertSame('string', data_get($appListItem, 'properties.name.type'));
+    Assert::assertSame(['string', 'null'], data_get($appListItem, 'properties.repository.type'));
+    Assert::assertSame('string', data_get($appListItem, 'properties.dependency_audit_status.type'));
+    Assert::assertSame('integer', data_get($appListItem, 'properties.dependency_warning_count.type'));
+    Assert::assertSame('integer', data_get($appListItem, 'properties.dependency_danger_count.type'));
+    Assert::assertSame(['string', 'null'], data_get($appListItem, 'properties.last_dependency_audit_at.type'));
+    Assert::assertSame('integer', data_get($appListItem, 'properties.instance_count.type'));
+    Assert::assertSame('integer', data_get($appListItem, 'properties.workspace_count.type'));
+    $appListResponseStatuses = array_map(
+        static fn (int|string $status): string => (string) $status,
+        array_keys(data_get($schema, 'paths./apps.get.responses', [])),
+    );
+    sort($appListResponseStatuses);
+
+    Assert::assertSame(['200', '400', '403'], $appListResponseStatuses);
+    Assert::assertSame('array', data_get(
+        $schema,
+        'paths./apps.get.responses.200.content.application/json.schema.properties.success.properties.meta.type',
+    ));
+
+    /** @var array<string, mixed>|null $appSetupResponses */
+    $appSetupResponses = data_get(target: $schema, key: 'paths./apps/{app}/setup.post.responses');
+
+    Assert::assertIsArray($appSetupResponses);
+    Assert::assertSame(
+        [],
+        array_values(array_diff(
+            ['200', '403', '404', '422'],
+            array_keys($appSetupResponses),
+        )),
+    );
+
+    /** @var array<string, mixed>|null $appSetupData */
+    $appSetupData = data_get(
+        target: $appSetupResponses,
+        key: '200.content.application/json.schema.properties.success.properties.data',
+    );
+
+    Assert::assertIsArray($appSetupData);
+    Assert::assertSame([
+        'app',
+        'app_instance',
+        'node',
+        'path',
+        'url',
+        'action',
+        'setup_steps',
+    ], array_keys($appSetupData['properties'] ?? []));
+    Assert::assertSame('array', data_get(
+        $appSetupResponses,
+        '200.content.application/json.schema.properties.success.properties.meta.type',
+    ));
+
+    foreach (['403', '404', '422'] as $status) {
+        Assert::assertIsArray(data_get(
+            $appSetupResponses,
+            "{$status}.content.application/json.schema.properties.error",
+        ));
+    }
+
+    /** @var array<string, mixed>|null $updateAllItem */
+    $updateAllItem = data_get(
+        target: $schema,
+        key: 'paths./update/all.post.responses.200.content.application/json.schema.properties.success.properties.data.properties.updates.items',
+    );
+
+    Assert::assertIsArray($updateAllItem);
+    Assert::assertSame('array', data_get($updateAllItem, 'properties.roles.type'));
+    Assert::assertSame('string', data_get($updateAllItem, 'properties.roles.items.type'));
+    Assert::assertContains('roles', $updateAllItem['required'] ?? []);
+
+    /** @var array<string, mixed>|null $activityListItem */
+    $activityListItem = data_get(
+        target: $schema,
+        key: 'paths./activity.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.activities.items',
+    );
+    /** @var array<string, mixed>|null $activityShowItem */
+    $activityShowItem = data_get(
+        target: $schema,
+        key: 'paths./activity/{id}.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.activity',
+    );
+    /** @var array<string, mixed>|null $relatedActivityItem */
+    $relatedActivityItem = data_get(
+        target: $schema,
+        key: 'paths./activity/{id}.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.related.items',
+    );
+    $activityFields = [
+        'id',
+        'occurred_at',
+        'correlation_id',
+        'type',
+        'effect',
+        'subject',
+        'actor',
+        'command',
+        'description',
+        'properties',
+        'channel',
+    ];
+
+    foreach ([$activityListItem, $activityShowItem, $relatedActivityItem] as $activityItem) {
+        Assert::assertIsArray($activityItem);
+        Assert::assertSame($activityFields, array_keys($activityItem['properties'] ?? []));
+        Assert::assertSame('string', data_get($activityItem, 'properties.effect.type'));
+        Assert::assertSame('object', data_get($activityItem, 'properties.properties.type'));
+        Assert::assertSame('string', data_get($activityItem, 'properties.subject.properties.name.type'));
+        Assert::assertSame('string', data_get($activityItem, 'properties.actor.properties.node.type'));
+        Assert::assertSame('string', data_get($activityItem, 'properties.channel.type'));
+    }
+
+    /** @var array<string, mixed>|null $scheduleListItem */
+    $scheduleListItem = data_get(
+        target: $schema,
+        key: 'paths./schedules.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.schedules.items',
+    );
+
+    Assert::assertIsArray($scheduleListItem);
+    Assert::assertSame('object', $scheduleListItem['type'] ?? null);
+    Assert::assertSame('string', data_get($scheduleListItem, 'properties.target.properties.name.type'));
+    Assert::assertContains('target', $scheduleListItem['required'] ?? []);
+
     /** @var array<string, array<string, array<string, mixed>>> $paths */
     $paths = $schema['paths'];
 

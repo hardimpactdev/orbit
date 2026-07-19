@@ -1824,6 +1824,7 @@
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/AppWorkerControllerTest.php",
+                "apps/gateway/tests/Feature/Http/Api/WorkspaceProductionBoundaryTest.php",
                 "apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php",
                 "apps/gateway/tests/Unit/Services/Apps/AppWorkerReadinessTest.php",
                 "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerRendererTest.php"
@@ -1842,6 +1843,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/AppWorkerControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppWorkerControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/WorkspaceProductionBoundaryTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/WorkspaceProductionBoundaryTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/WorkspaceProductionBoundaryTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php",
@@ -3862,7 +3870,8 @@
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Deploy/DeployInteractiveInputModeTest.php",
                 "apps/cli/tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php",
-                "apps/gateway/tests/Feature/Actions/Deploy/DeployStepActionsTest.php"
+                "apps/gateway/tests/Feature/Actions/Deploy/DeployStepActionsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php"
             ],
             "verification_hints": [
                 {
@@ -3885,6 +3894,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Actions/Deploy/DeployStepActionsTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Actions/Deploy/DeployStepActionsTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/DeployControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/DeployControllerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -7508,7 +7524,9 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php"
+                "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                "apps/gateway/tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php"
             ],
             "verification_hints": [
                 {
@@ -7517,6 +7535,20 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php"
                 }
             ],
             "p4_mapping": {
@@ -7569,7 +7601,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php"
+                "apps/cli/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
             ],
             "verification_hints": [
                 {
@@ -7578,6 +7611,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Schedule/ScheduleListCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Schedule/ScheduleListCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
                 }
             ],
             "p4_mapping": {
@@ -7634,7 +7674,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php"
+                "apps/cli/tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
             ],
             "verification_hints": [
                 {
@@ -7643,6 +7684,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
                 }
             ],
             "p4_mapping": {
@@ -7701,6 +7749,8 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ScheduleDestroyControllerTest.php",
                 "apps/gateway/tests/Feature/Models/ScheduleTest.php"
             ],
             "verification_hints": [
@@ -7710,6 +7760,20 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleDestroyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ScheduleDestroyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleDestroyControllerTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Models/ScheduleTest.php",
@@ -7760,7 +7824,8 @@
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php",
                 "apps/cli/tests/Feature/InternalScheduleRunCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php"
+                "apps/gateway/tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
             ],
             "verification_hints": [
                 {
@@ -7783,6 +7848,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
                 }
             ],
             "p4_mapping": {
@@ -7824,7 +7896,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php"
+                "apps/cli/tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
             ],
             "verification_hints": [
                 {
@@ -7833,6 +7906,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php"
                 }
             ],
             "p4_mapping": {
@@ -14327,7 +14407,8 @@
                     "exec_docker_unavailable",
                     "exec_node_unreachable",
                     "exec_unsupported_runtime",
-                    "not_found"
+                    "not_found",
+                    "unsupported_for_production"
                 ],
                 "node": [
                     "bootstrap_required",
@@ -14472,8 +14553,6 @@
                     "runtime": "string",
                     "runtime_config": "object|null",
                     "php_version": "string",
-                    "worker_enabled": "bool",
-                    "worker_config": "array|null",
                     "adopted": "bool"
                 },
                 "optional": []

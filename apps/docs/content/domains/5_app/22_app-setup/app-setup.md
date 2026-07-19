@@ -2,30 +2,32 @@
 
 [Back to App commands.](../README.md)
 
-Run the recorded setup pipeline for an app.
+Run the recorded setup pipeline for one concrete app instance.
 
 ## Usage
 
 ```bash
-orbit app:setup {app} [--json|--stream-json]
+orbit app:setup {app.instance} [--json|--stream-json]
 ```
 
-Use this command after registering or updating an app that has setup steps.
-`app:setup` runs ordered setup steps on the app's owning node.
+Use this command after registering or updating an app instance that has setup
+steps. `app:setup` runs ordered setup steps on that instance's serving node and
+source path.
 
 ## Arguments and options
 
 | Input | Meaning |
 | --- | --- |
-| `app` | Existing app slug or hostname. |
+| `app` | Dotted app-instance selector. A bare app slug or hostname is shorthand only when exactly one instance exists. |
 | `--json` | Render one final JSON response. |
 | `--stream-json` | Render progress events as JSON lines. |
 
 ## Behavior Summary
 
-Setup steps run through the selected app user's host tool path from the app
-source path. PHP, Composer, and Artisan commands include the app node host PHP
-toolchain selected by the app's configured PHP version.
+Setup steps run through the selected instance's app user host tool path from
+that instance's source path. PHP, Composer, and Artisan commands include the
+instance serving node's host PHP toolchain selected by the app's configured PHP
+version.
 
 Setup steps receive the app URL and Laravel Vite development-server environment
 fields: `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`,
@@ -35,8 +37,10 @@ Setup skips when the latest completed setup run used the same ordered step set.
 
 ## Requirements
 
-The app must exist and must have an owning node. Running setup requires
-`app:write` on that node.
+The app instance must exist and must resolve an Orbit serving node. Running
+setup requires `app:write` on that node. A bare logical-app selector with zero
+or multiple instances fails before authorization or setup with
+a validation error that requires a concrete app-instance selector.
 
 ## Output Summary
 
@@ -46,7 +50,7 @@ run, per-step status, and captured command output.
 ## Examples
 
 ```bash
-orbit app:setup dlf-leden --stream-json
+orbit app:setup dlf-leden.production --stream-json
 ```
 
 ## Related

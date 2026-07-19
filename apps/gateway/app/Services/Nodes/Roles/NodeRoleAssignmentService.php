@@ -24,6 +24,7 @@ class NodeRoleAssignmentService
         private readonly NodeRoleAssignments $assignments,
         private readonly NodeRoleBaselineConverger $converger,
         private readonly NodeRoleDependencyInspector $dependencyInspector,
+        private readonly NodeRoleActivator $roleActivator,
         private readonly RoleSelfGrantMaterializer $roleSelfGrantMaterializer,
         private readonly WebSocketValkeyResolver $webSocketValkeyResolver,
         private readonly AnalyticsDatabaseResolver $analyticsDatabaseResolver,
@@ -77,6 +78,7 @@ class NodeRoleAssignmentService
         $this->assertFleetRoleAvailable($role, $node);
         $this->guardSupportedPlatform($node, $definition);
         $this->guardAgainstConflicts($node, $definition);
+        $this->roleActivator->ensureCanActivate($node, $role);
 
         $settingsData = $definition->settingsFromArray($settings)->toArray();
         $this->guardWebSocketValkeyNode($role, $settingsData);
@@ -121,6 +123,7 @@ class NodeRoleAssignmentService
 
         $this->guardSupportedPlatform($node, $definition);
         $this->guardAgainstConflicts($node, $definition);
+        $this->roleActivator->ensureCanActivate($node, $role);
 
         $settingsData = $definition->settingsFromArray($settings)->toArray();
         $this->guardWebSocketValkeyNode($role, $settingsData);
@@ -155,6 +158,7 @@ class NodeRoleAssignmentService
         }
 
         $this->guardSupportedPlatform($node, $definition);
+        $this->roleActivator->ensureCanActivate($node, $role);
         $settingsData = $definition->settingsFromArray($settings)->toArray();
 
         $assignment->forceFill([
@@ -316,11 +320,7 @@ class NodeRoleAssignmentService
                 $this->analyticsRouteRegistrar->convergeServiceRoute($node);
             }
 
-            $assignment->forceFill([
-                'status' => NodeRoleStatus::Active->value,
-                'converged_at' => now(),
-                'last_error' => null,
-            ])->save();
+            $assignment = $this->roleActivator->activate($node, $assignment);
 
             if (
                 $assignment->role === NodeRoleName::S3->value
@@ -329,8 +329,6 @@ class NodeRoleAssignmentService
             ) {
                 $this->s3RouteRegistrar->syncServiceRoute();
             }
-
-            $this->roleSelfGrantMaterializer->materializeOnRoleApplied($node, NodeRoleName::from($assignment->role));
         } catch (Throwable $throwable) {
             $assignment->forceFill([
                 'status' => NodeRoleStatus::Error->value,

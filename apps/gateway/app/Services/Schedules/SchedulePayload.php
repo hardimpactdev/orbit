@@ -21,7 +21,16 @@ class SchedulePayload
     {
         $this->ensureExclusiveFilters($app, $node);
 
+        $appInstances = app(ScheduleAppInstanceResolver::class);
         $visibleNodeIds = $this->visibleNodeIds($caller, 'schedule:read');
+        $visibleInstanceIds = $caller instanceof Node
+            ? $appInstances->visibleInstanceIds($caller, 'schedule:read')
+            : null;
+        $appSelection =
+            $app !== null && $caller instanceof Node
+                ? $appInstances->resolve($app, $caller, 'schedule:read')
+                : null;
+        $appInstanceId = $appSelection?->instance?->id;
 
         if (
             $caller instanceof Node
@@ -39,11 +48,10 @@ class SchedulePayload
         }
 
         $query = $this
-            ->visibleSchedules($caller, $visibleNodeIds)
-            ->when($app !== null, fn (Builder $query): Builder => $query->where(
-                'scope',
-                'app',
-            )->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
+            ->visibleSchedules($caller, $visibleNodeIds, $visibleInstanceIds)
+            ->when(is_int($appInstanceId), fn (Builder $query): Builder => $query
+                ->where('scope', 'app')
+                ->where('app_instance_id', $appInstanceId))
             ->when($node !== null, fn (Builder $query): Builder => $query->where(
                 'scope',
                 'node',
@@ -93,7 +101,16 @@ class SchedulePayload
     ): Schedule {
         $this->ensureExclusiveFilters($app, $node);
 
+        $appInstances = app(ScheduleAppInstanceResolver::class);
         $visibleNodeIds = $this->visibleNodeIds($caller, $permission);
+        $visibleInstanceIds = $caller instanceof Node
+            ? $appInstances->visibleInstanceIds($caller, $permission)
+            : null;
+        $appSelection =
+            $app !== null && $caller instanceof Node
+                ? $appInstances->resolve($app, $caller, $permission)
+                : null;
+        $appInstanceId = $appSelection?->instance?->id;
 
         if (
             $caller instanceof Node
@@ -110,20 +127,22 @@ class SchedulePayload
             );
         }
 
-        $schedule = $this
-            ->visibleSchedules($caller, $visibleNodeIds)
+        $schedules = $this
+            ->visibleSchedules($caller, $visibleNodeIds, $visibleInstanceIds)
             ->where('name', $name)
-            ->when($app !== null, fn (Builder $query): Builder => $query->where(
-                'scope',
-                'app',
-            )->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
+            ->when(is_int($appInstanceId), fn (Builder $query): Builder => $query
+                ->where('scope', 'app')
+                ->where('app_instance_id', $appInstanceId))
             ->when($node !== null, fn (Builder $query): Builder => $query->where(
                 'scope',
                 'node',
             )->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
             ->orderBy('scope')
             ->orderBy('target_name')
-            ->first();
+            ->limit(2)
+            ->get();
+
+        $schedule = $schedules->first();
 
         if (! $schedule instanceof Schedule) {
             throw new GatewayApiException("Schedule '{$name}' was not found.", 'schedule.not_found', [
@@ -131,6 +150,19 @@ class SchedulePayload
                 'app' => $app,
                 'node' => $node,
             ]);
+        }
+
+        if ($schedules->count() > 1) {
+            throw new GatewayApiException(
+                "Schedule '{$name}' matches more than one visible target.",
+                'validation_failed',
+                [
+                    'field' => 'name',
+                    'reason' => 'schedule_selector_ambiguous',
+                    'name' => $name,
+                    'targets' => $schedules->pluck('target_name')->values()->all(),
+                ],
+            );
         }
 
         return $schedule;
@@ -149,27 +181,29 @@ class SchedulePayload
 
     /**
      * @param  list<int>|null  $visibleNodeIds
+     * @param  list<int>|null  $visibleInstanceIds
      * @return Builder<Schedule>
      */
-    private function visibleSchedules(?Node $caller, ?array $visibleNodeIds): Builder
-    {
+    private function visibleSchedules(
+        ?Node $caller,
+        ?array $visibleNodeIds,
+        ?array $visibleInstanceIds,
+    ): Builder {
         $canSeeOrbitSchedules =
             $visibleNodeIds !== null && array_intersect($visibleNodeIds, $this->gatewayNodeIds()) !== [];
 
         return Schedule::query()
-            ->with(['app.node', 'node', 'latestRun'])
+            ->with(['app', 'appInstance', 'node', 'latestRun'])
             ->when(
                 $caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller),
                 fn (Builder $query): Builder => $query->where(function (Builder $query) use (
                     $visibleNodeIds,
+                    $visibleInstanceIds,
                     $canSeeOrbitSchedules,
                 ): void {
                     $query
                         ->whereIn('node_id', $visibleNodeIds ?? [])
-                        ->orWhereHas('app', fn (Builder $query): Builder => $query->whereIn(
-                            'node_id',
-                            $visibleNodeIds ?? [],
-                        ));
+                        ->orWhereIn('app_instance_id', $visibleInstanceIds ?? []);
 
                     if ($canSeeOrbitSchedules) {
                         $query->orWhere('scope', 'orbit');
@@ -223,7 +257,7 @@ class SchedulePayload
      */
     public function forSchedule(Schedule $schedule): array
     {
-        $schedule->loadMissing(['app.node', 'node', 'latestRun']);
+        $schedule->loadMissing(['app', 'appInstance', 'node', 'latestRun']);
 
         return $this->serialize($schedule);
     }
@@ -235,7 +269,7 @@ class SchedulePayload
     {
         $gatewayNode = $this->gatewayNode();
         $targetNode = match ($schedule->scope) {
-            'app' => $schedule->app?->node,
+            'app' => app(ScheduleAppInstanceResolver::class)->targetNode($schedule),
             'node' => $schedule->node,
             'orbit' => $gatewayNode,
             default => null,

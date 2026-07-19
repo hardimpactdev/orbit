@@ -16,14 +16,14 @@ describe('schedule:show', function (): void {
             'schedule' => [
                 'name' => 'laravel-scheduler',
                 'scope' => 'app',
-                'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'app-1'],
+                'target' => ['type' => 'app', 'name' => 'docs.production', 'node' => 'app-1'],
                 'timezone' => 'Europe/Amsterdam',
             ],
-        ], ['app' => 'docs', 'node' => null]));
+        ], ['app' => 'docs.production', 'node' => null]));
 
         [$exitCode, $output] = runCommand($this, 'schedule:show', [
             'name' => 'laravel-scheduler',
-            '--app' => 'docs',
+            '--app' => 'docs.production',
             '--json' => true,
         ]);
 
@@ -35,7 +35,7 @@ describe('schedule:show', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/schedules/laravel-scheduler')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'app=docs.production')
             );
         });
 
@@ -44,7 +44,7 @@ describe('schedule:show', function (): void {
             ->and($decoded['success']['data']['schedule']['name'])
             ->toBe('laravel-scheduler')
             ->and($decoded['success']['meta']['app'])
-            ->toBe('docs');
+            ->toBe('docs.production');
     });
 
     it('renders human output containing schedule fields', function (): void {
@@ -52,7 +52,7 @@ describe('schedule:show', function (): void {
             'schedule' => [
                 'name' => 'laravel-scheduler',
                 'scope' => 'app',
-                'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'app-1'],
+                'target' => ['type' => 'app', 'name' => 'docs.production', 'node' => 'app-1'],
                 'interval' => 'daily',
                 'timezone' => 'Europe/Amsterdam',
                 'execution' => ['type' => 'command', 'value' => 'php artisan schedule:run'],
@@ -71,7 +71,7 @@ describe('schedule:show', function (): void {
             ->and($output)
             ->toContain('Target')
             ->and($output)
-            ->toContain('docs')
+            ->toContain('docs.production')
             ->and($output)
             ->toContain('Execution')
             ->and($output)
@@ -96,7 +96,7 @@ describe('schedule:show', function (): void {
                         [
                             'name' => 'laravel-scheduler',
                             'scope' => 'app',
-                            'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'app-1'],
+                            'target' => ['type' => 'app', 'name' => 'docs.production', 'node' => 'app-1'],
                         ],
                     ],
                 ]));
@@ -105,7 +105,7 @@ describe('schedule:show', function (): void {
             if (
                 $request->method() === 'GET'
                 && $path === '/api/schedules/laravel-scheduler'
-                && ($parameters['app'] ?? null) === 'docs'
+                && ($parameters['app'] ?? null) === 'docs.production'
             ) {
                 return Http::response(fakeSuccessEnvelope([
                     'schedule' => [
@@ -152,7 +152,7 @@ describe('schedule:show', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:show', [
             'name' => 'laravel-scheduler',
-            '--app' => 'docs',
+            '--app' => 'docs.production',
             '--node' => 'app-1',
             '--json' => true,
         ]);
@@ -172,13 +172,13 @@ describe('schedule:show', function (): void {
     it('passes through gateway schedule not found errors', function (): void {
         fakeGateway(fakeErrorEnvelope('schedule.not_found', 'Schedule not found.', [
             'name' => 'missing',
-            'app' => 'docs',
+            'app' => 'docs.production',
             'node' => null,
         ]), 404);
 
         [$exitCode, $output] = runCommand($this, 'schedule:show', [
             'name' => 'missing',
-            '--app' => 'docs',
+            '--app' => 'docs.production',
             '--json' => true,
         ]);
 

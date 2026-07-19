@@ -89,7 +89,7 @@ final class ProcessDestroyController implements Loggable
         }
 
         try {
-            $result = $removeProcess->handle($context, $name);
+            $result = $removeProcess->handle($context, $name, $caller);
         } catch (GatewayApiException $e) {
             return $this->error(
                 $e->errorCode() ?? 'validation_failed',

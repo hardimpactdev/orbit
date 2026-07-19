@@ -45,6 +45,19 @@ function createRemoteShellActivityEntry(Node $node, array $propertyOverrides = [
         ->log('remote_shell.run');
 }
 
+function createLegacyLocalExecutorActivityEntry(Node $node): Activity
+{
+    return activity('local_executor')
+        ->performedOn($node)
+        ->event('local_executor.completed')
+        ->withProperties([
+            'type' => 'write',
+            'lane' => 'local-executor',
+            'status' => 'succeeded',
+        ])
+        ->log('Local executor operation succeeded');
+}
+
 function createActivityEntry(
     string $type,
     string $effect,
@@ -146,7 +159,34 @@ describe('ActivityListController', function (): void {
         expect($activities[0]['subject'])->toBe(['type' => 'app', 'name' => 'docs']);
         expect($activities[0]['actor'])->toBe(['node' => 'caller']);
         expect($activities[0]['command'])->toBe('app:removed');
-        expect($activities[0]['summary'])->toBe('Recorded app.removed');
+        expect($activities[0]['description'])->toBe('Recorded app.removed');
+        expect($activities[0]['properties'])->toBe([]);
+        expect($activities[0]['channel'])->toBe('api');
+        expect($response->getContent())->toContain('"properties":{}');
+        expect(array_keys($activities[0]))->toBe([
+            'id',
+            'occurred_at',
+            'correlation_id',
+            'type',
+            'effect',
+            'subject',
+            'actor',
+            'command',
+            'description',
+            'properties',
+            'channel',
+        ]);
+    });
+
+    it('normalizes legacy activity rows without a channel', function (): void {
+        $caller = createActivityListCallerNode();
+        $activity = createActivityEntry('node.listed', 'read', $caller);
+        $activity->forceFill(['log_name' => null])->save();
+
+        $this
+            ->call('GET', '/api/activity', [], [], [], ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP])
+            ->assertOk()
+            ->assertJsonPath('success.data.activities.0.channel', 'default');
     });
 
     it('reports has_more when more visible activity matches the requested limit', function (): void {
@@ -254,6 +294,30 @@ describe('ActivityListController', function (): void {
             ->toBe([$operatorActivity->id]);
     });
 
+    it('hides legacy local executor rows by default', function (): void {
+        $caller = createActivityListCallerNode();
+        $appNode = Node::factory()->create(['name' => 'beast']);
+
+        $operatorActivity = createActivityEntry('node.listed', 'read', $caller);
+        createLegacyLocalExecutorActivityEntry($appNode);
+
+        $response = $this->call(
+            'GET',
+            '/api/activity',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.meta.count', 1);
+
+        expect(array_column($response->json('success.data.activities'), 'id'))
+            ->toBe([$operatorActivity->id]);
+    });
+
     it('includes internal remote shell activity when include_internal is true', function (): void {
         $caller = createActivityListCallerNode();
         $appNode = Node::factory()->create(['name' => 'beast']);
@@ -283,6 +347,7 @@ describe('ActivityListController', function (): void {
         ]);
         expect($activities[0]['type'])->toBe('remote_shell.run');
         expect($activities[0]['effect'])->toBe('write');
+        expect($activities[0]['channel'])->toBe('remote_shell');
     });
 
     it('does not surface internal remote shell rows through effect filters alone', function (): void {

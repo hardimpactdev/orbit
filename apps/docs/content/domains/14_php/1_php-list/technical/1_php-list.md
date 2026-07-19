@@ -42,6 +42,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   inventory source for app or workspace runtime facts.
 - Reads gateway configuration for app PHP version and workspace override or
   inheritance when those scopes are resolved.
+- Rejects an explicit workspace scope before configuration or live inventory
+  reads unless its serving node is active `app-dev` and the caller is not
+  `app-prod`. When the caller or selected app is production, the app view omits
+  workspace inheritance and override facts.
 - Reads the Orbit-supported PHP version set from the PHP runtime catalog.
 - Reads gateway-tracked image facts by default.
 - Performs live image inspection through Agent push only when `--live` is

@@ -45,6 +45,10 @@ Run `app:agent-ide` to set, clear, or disable the agent IDE adapter for an app.
 `app:agent-ide` writes the app-default agent-IDE adapter into gateway app
 configuration.
 
+An `app-prod` caller cannot run this command because adapter switches may plan
+workspace cleanup. A setting stored for an `app-prod` target applies only to
+the app main context; production workspace discovery and cleanup never run.
+
 The command:
 
 1. Validates that the target app exists in gateway configuration.
@@ -98,6 +102,8 @@ payload shape.
 
 - The caller's grant on the app's owning node must include the `app:agent`
   permission. Denials surface as `authorization_failed`.
+- The caller must not have active `app-prod`; existing grants do not bypass
+  the workspace boundary.
 - The adapter must be present in the gateway-owned adapter registry. Adapters
   shipped by installed Orbit extensions become valid only after the extension
   has registered them with the gateway.

@@ -8,6 +8,7 @@ use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
+use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
@@ -25,8 +26,13 @@ final readonly class EditProcess
      * @param  array{name?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}  $changes
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
-    public function handle(ProcessOwnerContext $context, string $name, array $changes, bool $restart): array
-    {
+    public function handle(
+        ProcessOwnerContext $context,
+        string $name,
+        array $changes,
+        bool $restart,
+        ?Node $consumer = null,
+    ): array {
         $app = $context->runtimeApp();
         $app->loadMissing(['node', 'workspaces']);
 
@@ -50,6 +56,7 @@ final readonly class EditProcess
             $app,
             $process,
             $context->runtimeWorkspaceFor($process),
+            $consumer,
         );
 
         if (array_key_exists('name', $changes) && $process->name !== $changes['name']) {
@@ -144,11 +151,16 @@ final readonly class EditProcess
 
         $process->save();
         $app->unsetRelation('processes');
-        $runtimeUnits = $this->runtimeUnitPayload->forProcess($app, $process, $context->runtimeWorkspaceFor($process));
+        $runtimeUnits = $this->runtimeUnitPayload->forProcess(
+            $app,
+            $process,
+            $context->runtimeWorkspaceFor($process),
+            $consumer,
+        );
         $restartableRuntimeUnits = $runtimeUnits;
 
         if ($context->app !== null && $context->workspace === null) {
-            $warnings = $this->ensureRuntimeUnits->handle($app, $context->appInstance);
+            $warnings = $this->ensureRuntimeUnits->handle($app, $context->appInstance, $consumer);
 
             if ($warnings === []) {
                 $warnings = $this->runtimeUnits->cleanupPrevious(

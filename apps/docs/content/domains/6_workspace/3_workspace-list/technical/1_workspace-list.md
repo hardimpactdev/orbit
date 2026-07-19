@@ -103,6 +103,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Invalid filter value | `--app` or `--node` references an unknown selector/slug, or contains comma-separated input. | Failure |
+| Production app unsupported | `--app` selects a concrete instance served by an `app-prod` node. | Failure (`error.code=workspace.unsupported_for_production`). Unfiltered and node-filtered registry reads omit production workspace rows. |
 
 ## Doctor Relationship
 

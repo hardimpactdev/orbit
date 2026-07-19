@@ -8,14 +8,16 @@ use App\Actions\Apps\AddAppSetupStep;
 use App\Actions\Apps\RemoveAppSetupStep;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
-use App\Http\Authorization\RequiresPermission;
-use App\Http\Authorization\ServingNode;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\AppSetupStep;
 use App\Models\Node;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Apps\AppSetupStepListPayload;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,33 +30,33 @@ final class AppSetupStepController implements Loggable
         private readonly NodeAccessAuthorizer $authorizer,
         private readonly AddAppSetupStep $addAppSetupStep,
         private readonly RemoveAppSetupStep $removeAppSetupStep,
+        private readonly AppSelectorResolver $selectorResolver,
+        private readonly WorkspacePlacement $placement,
     ) {}
 
-    #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
     public function index(string $app, Request $request, AppSetupStepListPayload $payload): JsonResponse
     {
-        $resolved = $this->resolveAuthorizedApp($app, $request, 'app:read');
+        $target = $this->resolveAuthorizedTarget($app, $request, 'app:read');
 
-        if ($resolved instanceof JsonResponse) {
-            return $resolved;
+        if ($target instanceof JsonResponse) {
+            return $target;
         }
 
         return response()->json([
             'success' => [
                 'data' => [
-                    'steps' => $payload->forApp($resolved),
+                    'steps' => $payload->forAppInstance($target['instance']),
                 ],
             ],
         ]);
     }
 
-    #[RequiresPermission('app:write', servingNode: ServingNode::AppOwning)]
     public function store(string $app, Request $request, AppSetupStepListPayload $payload): JsonResponse
     {
-        $resolved = $this->resolveAuthorizedApp($app, $request, 'app:write');
+        $target = $this->resolveAuthorizedTarget($app, $request, 'app:write');
 
-        if ($resolved instanceof JsonResponse) {
-            return $resolved;
+        if ($target instanceof JsonResponse) {
+            return $target;
         }
 
         $input = $request->json()->all();
@@ -91,14 +93,15 @@ final class AppSetupStepController implements Loggable
             ]);
         }
 
-        $anchor = $this->anchorStep($resolved, $before ?? $after);
+        $instance = $target['instance'];
+        $anchor = $this->anchorStep($instance, $before ?? $after);
 
         if (($before !== null || $after !== null) && ! $anchor instanceof AppSetupStep) {
-            return $this->stepNotFound((int) ($before ?? $after), $resolved->name);
+            return $this->stepNotFound((int) ($before ?? $after), $target['app'], $instance);
         }
 
         $step = $this->addAppSetupStep->handle(
-            appId: $resolved->id,
+            appInstanceId: $instance->id,
             command: $command,
             timeoutSeconds: $timeout,
             beforeStepId: is_int($before) ? $before : null,
@@ -117,26 +120,26 @@ final class AppSetupStepController implements Loggable
         ]);
     }
 
-    #[RequiresPermission('app:write', servingNode: ServingNode::AppOwning)]
     public function destroy(string $app, int $step, Request $request, AppSetupStepListPayload $payload): JsonResponse
     {
-        $resolved = $this->resolveAuthorizedApp($app, $request, 'app:write');
+        $target = $this->resolveAuthorizedTarget($app, $request, 'app:write');
 
-        if ($resolved instanceof JsonResponse) {
-            return $resolved;
+        if ($target instanceof JsonResponse) {
+            return $target;
         }
 
         if ($request->boolean('destructive_consent') !== true) {
             return $this->validationFailed('force', 'Use --force to remove this app setup step.');
         }
 
+        $instance = $target['instance'];
         $model = AppSetupStep::query()
-            ->where('app_id', $resolved->id)
+            ->where('app_instance_id', $instance->id)
             ->whereKey($step)
             ->first();
 
         if (! $model instanceof AppSetupStep) {
-            return $this->stepNotFound($step, $resolved->name);
+            return $this->stepNotFound($step, $target['app'], $instance);
         }
 
         $removed = $payload->forStep($model);
@@ -145,7 +148,7 @@ final class AppSetupStepController implements Loggable
         $this->removeAppSetupStep->handle($model);
 
         $remaining = AppSetupStep::query()
-            ->where('app_id', $resolved->id)
+            ->where('app_instance_id', $instance->id)
             ->count();
 
         return response()->json([
@@ -162,24 +165,11 @@ final class AppSetupStepController implements Loggable
         ]);
     }
 
-    private function resolveAuthorizedApp(string $selector, Request $request, string $permission): App|JsonResponse
+    /**
+     * @return array{app: App, instance: AppInstance, node: Node}|JsonResponse
+     */
+    private function resolveAuthorizedTarget(string $selector, Request $request, string $permission): array|JsonResponse
     {
-        $app = App::query()
-            ->with('node')
-            ->where('name', $selector)
-            ->orWhere('domain', $selector)
-            ->first();
-
-        if (! $app instanceof App) {
-            return $this->error('app.not_found', "App '{$selector}' was not found.", ['app' => $selector], 404);
-        }
-
-        if (! $app->node instanceof Node) {
-            return $this->authorizationFailed("Could not resolve owning node for app '{$app->name}'.", [
-                'app' => $app->name,
-            ]);
-        }
-
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -187,23 +177,60 @@ final class AppSetupStepController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $authorization = $this->authorizer->authorize($caller, $app->node, $permission);
+        $instanceIsVisible = fn (AppInstance $instance): bool => $this->selectorResolver->instanceIsVisibleTo(
+            $caller,
+            $instance,
+            $permission,
+        );
 
-        if (! $authorization->allowed) {
-            return $this->forbidden($app->node, $authorization, $permission);
+        try {
+            $selection = $this->selectorResolver->resolve($selector, $instanceIsVisible);
+
+            if ($selection === null) {
+                return $this->error('app.not_found', "App '{$selector}' was not found.", ['app' => $selector], 404);
+            }
+
+            $selection = $this->selectorResolver->requireInstance(
+                $selection,
+                instanceIsVisible: $instanceIsVisible,
+            );
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->error($exception->errorCode, $exception->getMessage(), $exception->meta);
         }
 
-        return $app;
+        $instance = $selection->instance;
+
+        if (! $instance instanceof AppInstance) {
+            return $this->instanceUnavailable($selection->app, null);
+        }
+
+        $node = $this->placement->nodeForInstance($instance);
+
+        if (! $node instanceof Node) {
+            return $this->instanceUnavailable($selection->app, $instance);
+        }
+
+        $authorization = $this->authorizer->authorize($caller, $node, $permission);
+
+        if (! $authorization->allowed) {
+            return $this->forbidden($node, $authorization, $permission);
+        }
+
+        return [
+            'app' => $selection->app,
+            'instance' => $instance,
+            'node' => $node,
+        ];
     }
 
-    private function anchorStep(App $app, ?int $stepId): ?AppSetupStep
+    private function anchorStep(AppInstance $instance, ?int $stepId): ?AppSetupStep
     {
         if ($stepId === null) {
             return null;
         }
 
         return AppSetupStep::query()
-            ->where('app_id', $app->id)
+            ->where('app_instance_id', $instance->id)
             ->whereKey($stepId)
             ->first();
     }
@@ -266,16 +293,31 @@ final class AppSetupStepController implements Loggable
         return $this->error('validation_failed', $message, array_merge(['field' => $field], $meta), 400);
     }
 
-    private function stepNotFound(int $id, string $app): JsonResponse
+    private function stepNotFound(int $id, App $app, AppInstance $instance): JsonResponse
     {
         return $this->error(
             'app_setup.step_not_found',
-            "Setup step '{$id}' not found for app '{$app}'.",
+            "Setup step '{$id}' not found for app instance '{$app->name}.{$instance->name}'.",
             [
                 'step_id' => $id,
-                'app' => $app,
+                'app' => $app->name,
+                'app_instance' => $instance->name,
             ],
             404,
+        );
+    }
+
+    private function instanceUnavailable(App $app, ?AppInstance $instance): JsonResponse
+    {
+        return $this->error(
+            'validation_failed',
+            "App instance '{$app->name}.{$instance?->name}' does not resolve an Orbit serving node.",
+            [
+                'field' => 'app',
+                'reason' => 'app_instance_unavailable',
+                'app' => $app->name,
+                'app_instance' => $instance?->name,
+            ],
         );
     }
 

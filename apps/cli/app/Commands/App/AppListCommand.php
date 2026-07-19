@@ -40,7 +40,6 @@ final class AppListCommand extends GatewayCommand
         }
 
         $apps = $this->appsFromGatewayResponse($response);
-        $inventory = $this->inventoryFromGatewayResponse($response);
 
         if ($apps === []) {
             $this->line('No apps found.');
@@ -48,7 +47,7 @@ final class AppListCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $rows = $this->dataTableRows($apps, $inventory);
+        $rows = $this->dataTableRows($apps);
 
         try {
             $selected = datatable(
@@ -85,37 +84,12 @@ final class AppListCommand extends GatewayCommand
     }
 
     /**
-     * @param  array<string, mixed>  $response
-     * @return list<array<array-key, mixed>>
-     */
-    private function inventoryFromGatewayResponse(array $response): array
-    {
-        $inventory = $response['success']['data']['inventory'] ?? null;
-
-        if (! is_array($inventory)) {
-            return [];
-        }
-
-        return array_values(array_filter($inventory, is_array(...)));
-    }
-
-    /**
      * @param  list<array<array-key, mixed>>  $apps
-     * @param  list<array<array-key, mixed>>  $inventory
      * @return array<string, array<int, string>>
      */
-    private function dataTableRows(array $apps, array $inventory): array
+    private function dataTableRows(array $apps): array
     {
         $rows = [];
-        $inventoryByApp = [];
-
-        foreach ($inventory as $entry) {
-            $appName = $this->appString($entry, 'app');
-
-            if ($appName !== '—') {
-                $inventoryByApp[$appName] = $entry;
-            }
-        }
 
         foreach ($apps as $app) {
             $appName = $this->appString($app, 'name');
@@ -124,13 +98,11 @@ final class AppListCommand extends GatewayCommand
                 continue;
             }
 
-            $placement = $inventoryByApp[$appName] ?? [];
-
             $rows[$appName] = [
                 $appName,
                 $this->appString($app, 'repository'),
-                $this->countString($placement, 'instance_count'),
-                $this->countString($placement, 'workspace_count'),
+                $this->countString($app, 'instance_count'),
+                $this->countString($app, 'workspace_count'),
             ];
         }
 

@@ -20,5 +20,6 @@ final readonly class SoloMutatingOperationDefinition
         /** @var array<string, string> */
         public array $payloadOptions = [],
         public bool $forceRequired = false,
+        public bool $destructiveConsent = false,
     ) {}
 }

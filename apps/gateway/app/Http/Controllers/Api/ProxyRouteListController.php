@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\Node;
 use App\Services\Proxy\ProxyRouteQuery;
 use Illuminate\Database\Eloquent\Model;
@@ -33,6 +34,13 @@ final readonly class ProxyRouteListController implements Loggable
                 filter: $this->stringQuery($request, 'filter'),
                 node: $this->stringQuery($request, 'node'),
                 caller: $caller,
+            );
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return $this->fail(
+                code: $exception->errorCode(),
+                message: $exception->getMessage(),
+                meta: $exception->meta,
+                status: 422,
             );
         } catch (GatewayApiException $e) {
             return $this->fail(

@@ -29,7 +29,7 @@ This command follows the shared
 | `node` | `--node` | Optional. | Never. | `null`. | Non-empty node name matched against recorded activity relationships. |
 | `effect` | `--effect` | Optional. | Never. | `null`. | One of `read`, `write`, `destructive`. |
 | `correlation` | `--correlation` | Optional. | Never. | `null`. | UUID string. |
-| `include_internal` | `--include-internal` | Optional. | Never. | `false`. | Boolean. When `false`, internal backend transport activity such as remote shell audit rows is excluded. |
+| `include_internal` | `--include-internal` | Optional. | Never. | `false`. | Boolean. When `false`, current internal transport activity and pre-existing `remote_shell`/`local_executor` rows are excluded. |
 | `limit` | `--limit` | Optional. | Never. | `25`. | Integer from `1` through `200`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -55,15 +55,17 @@ command does not prompt.
 - Return entries newest first.
 - Apply `app`, `node`, `effect`, and `correlation` filters against recorded
   activity relationships, not live node or app probes.
-- Exclude internal backend transport activity by default using internal lane,
-  channel, or event markers such as `properties.lane = internal` and the
-  `remote_shell` activity channel. Effect filters alone must not surface hidden
-  internal rows. Internal rows remain durable and are returned only when
-  `include_internal` is `true`.
-- Remote shell audit rows record `properties.type = write` as a conservative
-  effect, `properties.lane = internal`, and `properties.category =
-  remote_execution`. They must not use `read` or store `remote_execution` in
-  `properties.type`.
+- Exclude internal backend transport activity by default. Current Agent-push
+  rows use channel `api`, types `agent_push.dispatching` and
+  `agent_push.completed`, and `properties.lane = internal` with
+  `properties.transport = agent_push`. Bootstrap/provisioning SSH rows use
+  channel `api`, `ssh_bootstrap.*` types, and `properties.transport =
+  ssh_bootstrap`. Pre-existing `remote_shell` and `local_executor` channels and
+  the retained `local-executor` lane are also internal markers. Effect
+  filters alone must not surface these rows; `include_internal=true` does.
+- Return every entry through the canonical Activity DTO in
+  [`activity-concepts.md`](../../activity-concepts.md). `effect` is a top-level
+  DTO field; `properties` contains only type-specific audit data.
 - Return an empty successful result when no visible activity matches the
   filters.
 - Preserve each entry's `correlation_id` so automation can group related

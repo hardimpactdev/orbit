@@ -11,6 +11,7 @@ use RuntimeException;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputOption;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final class NodeRoleRemoveCommand extends GatewayCommand
 {
     use WithStepTree;
@@ -27,7 +28,12 @@ final class NodeRoleRemoveCommand extends GatewayCommand
 
         $this->addArgument('node', InputArgument::REQUIRED, 'Name of the node');
         $this->addArgument('role', InputArgument::REQUIRED, 'Role to remove');
-        $this->addOption('force', null, InputOption::VALUE_NONE, 'Confirm destructive dependent cleanup');
+        $this->addOption(
+            'force',
+            null,
+            InputOption::VALUE_NONE,
+            'Confirm destructive role removal and dependent cleanup',
+        );
         $this->addOption('purge-data', null, InputOption::VALUE_NONE, 'Purge role-owned data');
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Output JSON');
     }
@@ -47,14 +53,12 @@ final class NodeRoleRemoveCommand extends GatewayCommand
             );
         }
 
-        if ($purgeData && ! $force) {
-            return $this->renderFailure('validation_failed', 'The purge-data option requires --force.', [
-                'field' => 'purge-data',
-            ]);
-        }
-
         if (! $force) {
-            return $this->renderFailure('validation_failed', 'Use --force to remove this role.', ['field' => 'force']);
+            $confirmation = $this->confirmRemoval($node, $role, $purgeData);
+
+            if ($confirmation !== null) {
+                return $confirmation;
+            }
         }
 
         if ($this->wantsJson()) {
@@ -96,6 +100,87 @@ final class NodeRoleRemoveCommand extends GatewayCommand
             'force' => true,
             'purge_data' => $purgeData,
         ]);
+    }
+
+    private function confirmRemoval(string $node, string $role, bool $purgeData): ?int
+    {
+        try {
+            $this->gatewayDelete('/api/nodes/'.rawurlencode($node).'/roles/'.rawurlencode($role), [
+                'force' => false,
+                'purge_data' => $purgeData,
+            ]);
+        } catch (GatewayApiException $exception) {
+            if (! $this->isDestructiveConsentFailure($exception)) {
+                return $this->renderGatewayFailure($exception);
+            }
+
+            $dependents = $this->dependentResources($exception);
+
+            if ($this->wantsJson() || ! $this->input->isInteractive()) {
+                return $this->renderGatewayFailure($exception);
+            }
+
+            $this->renderDependentResources($dependents);
+
+            if ($this->confirm("Remove role '{$role}' from '{$node}'?", default: false)) {
+                return null;
+            }
+
+            return $this->renderFailure('validation_failed', 'Operation cancelled.', [
+                'field' => 'force',
+                'reason' => 'destructive_consent_required',
+                'node' => $node,
+                'role' => $role,
+                'dependents' => $dependents,
+            ]);
+        }
+
+        return $this->renderFailure(
+            'validation_failed',
+            'The gateway did not return a node role removal preview.',
+            ['field' => 'force', 'reason' => 'destructive_consent_required'],
+        );
+    }
+
+    private function isDestructiveConsentFailure(GatewayApiException $exception): bool
+    {
+        $meta = $exception->gatewayErrorMeta();
+
+        return (
+            $exception->gatewayErrorCode() === 'validation_failed'
+            && ($meta['field'] ?? null) === 'force'
+            && ($meta['reason'] ?? null) === 'destructive_consent_required'
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function dependentResources(GatewayApiException $exception): array
+    {
+        $dependents = $exception->gatewayErrorMeta()['dependents'] ?? null;
+
+        if (! is_array($dependents)) {
+            return [];
+        }
+
+        return array_values(array_filter($dependents, is_string(...)));
+    }
+
+    /**
+     * @param  list<string>  $dependents
+     */
+    private function renderDependentResources(array $dependents): void
+    {
+        if ($dependents === []) {
+            return;
+        }
+
+        $this->line('Dependent resources:');
+
+        foreach ($dependents as $dependent) {
+            $this->line("  - {$dependent}");
+        }
     }
 
     /**

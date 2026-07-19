@@ -192,8 +192,41 @@ describe('skill:install', function (): void {
                 ->toBe(1)
                 ->and($decoded['error']['code'])
                 ->toBe('validation_failed')
+                ->and($decoded['error']['meta']['field'])
+                ->toBe('force')
+                ->and($decoded['error']['meta']['reason'])
+                ->toBe('destructive_consent_required')
+                ->and($decoded['error']['meta']['target'])
+                ->toBe($target)
                 ->and(file_get_contents($target.'/SKILL.md'))
                 ->toBe("# stale\n");
+        });
+
+        it('prompts before replacing a resolved existing target', function (): void {
+            $target = skill_install_target(home: $this->tempHome, provider: 'codex');
+            File::ensureDirectoryExists($target);
+            file_put_contents(filename: $target.'/SKILL.md', data: "# stale\n");
+
+            $this
+                ->artisan('skill:install', ['provider' => 'codex'])
+                ->expectsConfirmation("Replace existing Orbit skill target '{$target}'?", 'yes')
+                ->assertSuccessful();
+
+            expect(file_get_contents($target.'/SKILL.md'))->toBe("# Orbit skill\n");
+        });
+
+        it('does not replace a resolved existing target when confirmation is declined', function (): void {
+            $target = skill_install_target(home: $this->tempHome, provider: 'codex');
+            File::ensureDirectoryExists($target);
+            file_put_contents(filename: $target.'/SKILL.md', data: "# stale\n");
+
+            $this
+                ->artisan('skill:install', ['provider' => 'codex'])
+                ->expectsConfirmation("Replace existing Orbit skill target '{$target}'?", 'no')
+                ->expectsOutput('validation_failed: Operation cancelled.')
+                ->assertFailed();
+
+            expect(file_get_contents($target.'/SKILL.md'))->toBe("# stale\n");
         });
 
         it('overwrites an existing target when --force is provided', function (): void {

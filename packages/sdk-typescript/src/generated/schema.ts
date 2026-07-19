@@ -676,6 +676,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/nodes/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["nodeBootstrap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/nodes/bootstrap/{nodeBootstrap}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["nodeBootstrapComplete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/nodes/bootstrap/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["nodeBootstrapResume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/nodes/grant": {
         parameters: {
             query?: never;
@@ -1646,12 +1694,50 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description The canonical activity inventory. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": {
+                        success: {
+                            data: {
+                                activities: {
+                                    id: number;
+                                    occurred_at: string;
+                                    correlation_id: string | null;
+                                    type: string;
+                                    effect: string;
+                                    subject: {
+                                        type: string;
+                                        name: string;
+                                    } | null;
+                                    actor: {
+                                        node: string;
+                                    } | null;
+                                    command: string | null;
+                                    description: string | null;
+                                    properties: {
+                                        [key: string]: unknown;
+                                    };
+                                    channel: string;
+                                }[];
+                            };
+                            meta: {
+                                filters: {
+                                    app: string | null;
+                                    node: string | null;
+                                    effect: string | null;
+                                    correlation: string | null;
+                                    include_internal: boolean;
+                                };
+                                limit: number;
+                                count: number;
+                                has_more: boolean;
+                            };
+                        };
+                    };
                 };
             };
         };
@@ -1667,6 +1753,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description The canonical selected activity and its correlation peers. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1675,10 +1762,50 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                activity: string;
-                                related: string;
+                                activity: {
+                                    id: number;
+                                    occurred_at: string;
+                                    correlation_id: string | null;
+                                    type: string;
+                                    effect: string;
+                                    subject: {
+                                        type: string;
+                                        name: string;
+                                    } | null;
+                                    actor: {
+                                        node: string;
+                                    } | null;
+                                    command: string | null;
+                                    description: string | null;
+                                    properties: {
+                                        [key: string]: unknown;
+                                    };
+                                    channel: string;
+                                };
+                                related: {
+                                    id: number;
+                                    occurred_at: string;
+                                    correlation_id: string | null;
+                                    type: string;
+                                    effect: string;
+                                    subject: {
+                                        type: string;
+                                        name: string;
+                                    } | null;
+                                    actor: {
+                                        node: string;
+                                    } | null;
+                                    command: string | null;
+                                    description: string | null;
+                                    properties: {
+                                        [key: string]: unknown;
+                                    };
+                                    channel: string;
+                                }[];
                             };
-                            meta: string;
+                            meta: {
+                                related_count: number;
+                            };
                         };
                     };
                 };
@@ -1822,120 +1949,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                agent_ide: {
-                                    adapter: string;
-                                    source: string;
-                                    target: {
-                                        app: string;
-                                        workspace: null;
-                                        node: string;
-                                    };
-                                    session: {
-                                        id: string | null;
-                                        status: string;
-                                    } | null;
-                                    delivery: {
-                                        /** @constant */
-                                        status: "sent";
-                                        message_bytes: number;
-                                        /** @constant */
-                                        input: "argument";
-                                    };
-                                };
-                            };
-                        };
-                    } | string | {
-                        success: {
-                            data: {
-                                agent_ide: {
-                                    adapter: string;
-                                    source: string;
-                                    target: {
-                                        app: string;
-                                        workspace: string;
-                                        node: string;
-                                    };
-                                    session: {
-                                        id: string | null;
-                                        status: string;
-                                    } | null;
-                                    delivery: {
-                                        /** @constant */
-                                        status: "sent";
-                                        message_bytes: number;
-                                        /** @constant */
-                                        input: "argument";
-                                    };
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            message: string;
-                            meta: unknown[] | null;
-                            data: string;
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            /** @constant */
-                            message: "Peer identity unknown.";
-                            meta: string[];
-                            data: string;
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "target_not_found";
-                            message: string;
-                            meta: {
-                                app: string;
-                            };
-                            data: string;
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "target_not_found";
-                            message: string;
-                            meta: {
-                                workspace: string;
-                            };
-                            data: string;
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "target_not_found";
-                            message: string;
-                            meta: {
-                                workspace: string | null;
-                            };
-                            data: string;
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
             422: components["responses"]["ValidationException"];
@@ -2118,7 +2132,6 @@ export interface operations {
     appList: {
         parameters: {
             query?: {
-                node?: string;
                 environment?: string;
             };
             header?: never;
@@ -2127,6 +2140,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description The compact logical app inventory. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2136,9 +2150,17 @@ export interface operations {
                         success: {
                             data: {
                                 apps: {
-                                    [key: string]: string;
-                                };
+                                    name: string;
+                                    repository: string | null;
+                                    dependency_audit_status: string;
+                                    dependency_warning_count: number;
+                                    dependency_danger_count: number;
+                                    last_dependency_audit_at: string | null;
+                                    instance_count: number;
+                                    workspace_count: number;
+                                }[];
                             };
+                            meta: unknown[];
                         };
                     };
                 };
@@ -2149,17 +2171,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "validation_failed";
-                            message: string;
-                            meta: {
-                                /** @constant */
-                                field: "node";
-                                value: string | unknown[] | null;
-                            };
-                        };
-                    } | {
                         error: {
                             /** @constant */
                             code: "validation_failed";
@@ -2299,6 +2310,13 @@ export interface operations {
                     } | {
                         error: {
                             /** @constant */
+                            code: "workspace.unsupported_for_production";
+                            message: string;
+                            meta: unknown[];
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
                             code: "validation_failed";
                             message: string;
                             meta: {
@@ -2392,8 +2410,19 @@ export interface operations {
                                         workspace_discovery: "available" | "unsupported" | null;
                                     };
                                     dependency_audits: string;
+                                    instances: {
+                                        name: string;
+                                        driver: string;
+                                        node: string | null;
+                                        url: string | null;
+                                        workspaces: unknown[];
+                                    }[];
                                     workspaces: string[];
-                                    processes: string[];
+                                    processes: {
+                                        name: string;
+                                        app_instance: string | null;
+                                        runtime: string;
+                                    }[];
                                     routes: [
                                         {
                                             host: string | null;
@@ -2405,6 +2434,29 @@ export interface operations {
                                     ];
                                 };
                             };
+                        };
+                    };
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            message: string | "This node is not authorized to read this app.";
+                            meta: unknown[];
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "Peer identity unknown.";
+                            meta: string;
                         };
                     };
                 };
@@ -2459,8 +2511,6 @@ export interface operations {
                                         proxy_transport: string;
                                     };
                                     php_version: string;
-                                    worker_enabled: boolean;
-                                    worker_config: unknown[] | null;
                                     adopted: boolean;
                                 };
                                 result: {
@@ -2472,36 +2522,12 @@ export interface operations {
                                     workspaces_removed: number;
                                     schedules_removed: number;
                                     processes_removed: number;
-                                    runtime_container_removed: boolean;
-                                    runtime_config_removed: boolean;
+                                    runtime_container_removed: string;
+                                    runtime_config_removed: string;
                                 };
                             };
                             meta: {
-                                warnings: ({
-                                    /** @constant */
-                                    code: "app.runtime_container_extra";
-                                    /** @constant */
-                                    family: "app";
-                                    message: string;
-                                    /** @constant */
-                                    next_command: "doctor --family=app --restore";
-                                } | {
-                                    /** @constant */
-                                    code: "app.runtime_config_extra";
-                                    /** @constant */
-                                    family: "app";
-                                    message: string;
-                                    /** @constant */
-                                    next_command: "doctor --family=app --restore";
-                                } | {
-                                    /** @constant */
-                                    code: "app.cleanup_failed";
-                                    /** @constant */
-                                    family: "app";
-                                    message: string;
-                                    /** @constant */
-                                    next_command: "doctor --family=app --restore";
-                                })[];
+                                warnings: string;
                             };
                         };
                     };
@@ -2676,6 +2702,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description The app instance setup result. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2685,40 +2712,24 @@ export interface operations {
                         success: {
                             data: {
                                 app: string;
+                                app_instance: string;
                                 node: string;
                                 path: string;
                                 url: string;
                                 /** @enum {string} */
                                 action: "set_up" | "converged";
                                 setup_steps: {
-                                    /** @constant */
-                                    status: "completed";
-                                    message: string | "1 step";
+                                    status: string;
                                     count: number;
-                                } | {
-                                    /** @constant */
-                                    status: "failed";
                                     message: string;
-                                    count: number;
-                                } | {
-                                    /** @constant */
-                                    status: "skipped";
-                                    /** @constant */
-                                    message: "Already up to date";
-                                    count: number;
-                                } | {
-                                    /** @constant */
-                                    status: "skipped";
-                                    /** @constant */
-                                    message: "No setup steps configured";
-                                    count: number;
                                 };
                             };
-                            meta: string;
+                            meta: unknown[];
                         };
-                    } | Record<string, never>;
+                    };
                 };
             };
+            /** @description The caller is not authorized to set up the app instance. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2726,35 +2737,16 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: {
-                            /** @constant */
-                            code: "authorization_failed";
+                            code: string;
                             message: string;
-                            meta: string[] | {
-                                reason: string | null;
-                                missing_permission: string | null;
-                                serving_node: string;
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            /** @constant */
-                            message: "Peer identity unknown.";
-                            meta: string[] | string;
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            message: string;
-                            meta: string[] | {
-                                app: string;
+                            meta: {
+                                [key: string]: unknown;
                             };
                         };
                     };
                 };
             };
+            /** @description The selected app was not found. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2762,16 +2754,16 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: {
-                            /** @constant */
-                            code: "app.not_found";
+                            code: string;
                             message: string;
                             meta: {
-                                app: string;
+                                [key: string]: unknown;
                             };
                         };
                     };
                 };
             };
+            /** @description The app instance selector or setup operation is invalid. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2779,25 +2771,10 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: {
-                            /** @constant */
-                            code: "app.setup_step_failed";
+                            code: string;
                             message: string;
                             meta: {
-                                /** @constant */
-                                phase: "setup_steps";
-                                node: string;
-                                path: string;
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "app.setup_failed";
-                            message: string;
-                            meta: {
-                                /** @constant */
-                                phase: "setup";
-                                node: string;
+                                [key: string]: unknown;
                             };
                         };
                     };
@@ -3081,6 +3058,7 @@ export interface operations {
                         success: {
                             data: {
                                 app: string;
+                                app_instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                                 changed: boolean;
@@ -3090,6 +3068,7 @@ export interface operations {
                         success: {
                             data: {
                                 app: string;
+                                app_instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                                 changed: string;
@@ -3099,9 +3078,37 @@ export interface operations {
                         success: {
                             data: {
                                 app: string;
+                                app_instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                             };
+                        };
+                    };
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            message: string;
+                            meta: {
+                                reason: string | null;
+                                missing_permission: string | null;
+                                serving_node: string;
+                            };
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "Peer identity unknown.";
+                            meta: string;
                         };
                     };
                 };
@@ -3133,6 +3140,26 @@ export interface operations {
                             code: string | "app.worker_readiness_failed";
                             message: string;
                             meta: unknown[];
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            message: string;
+                            meta: {
+                                /** @constant */
+                                field: "app";
+                                /** @constant */
+                                reason: "app_instance_unavailable";
+                                app: string;
+                                app_instance: string;
+                            };
+                        };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: string;
                         };
                     };
                 };
@@ -3159,6 +3186,7 @@ export interface operations {
                         success: {
                             data: {
                                 app: string;
+                                app_instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                                 changed: boolean;
@@ -3168,6 +3196,7 @@ export interface operations {
                         success: {
                             data: {
                                 app: string;
+                                app_instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                                 changed: string;
@@ -3177,9 +3206,37 @@ export interface operations {
                         success: {
                             data: {
                                 app: string;
+                                app_instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                             };
+                        };
+                    };
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            message: string;
+                            meta: {
+                                reason: string | null;
+                                missing_permission: string | null;
+                                serving_node: string;
+                            };
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "Peer identity unknown.";
+                            meta: string;
                         };
                     };
                 };
@@ -3211,6 +3268,26 @@ export interface operations {
                             code: string | "app.worker_readiness_failed";
                             message: string;
                             meta: unknown[];
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            message: string;
+                            meta: {
+                                /** @constant */
+                                field: "app";
+                                /** @constant */
+                                reason: "app_instance_unavailable";
+                                app: string;
+                                app_instance: string;
+                            };
+                        };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: string;
                         };
                     };
                 };
@@ -3237,6 +3314,7 @@ export interface operations {
                         success: {
                             data: {
                                 app: string;
+                                app_instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                                 changed: boolean;
@@ -3246,6 +3324,7 @@ export interface operations {
                         success: {
                             data: {
                                 app: string;
+                                app_instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                                 changed: string;
@@ -3255,9 +3334,37 @@ export interface operations {
                         success: {
                             data: {
                                 app: string;
+                                app_instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                             };
+                        };
+                    };
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            message: string;
+                            meta: {
+                                reason: string | null;
+                                missing_permission: string | null;
+                                serving_node: string;
+                            };
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "Peer identity unknown.";
+                            meta: string;
                         };
                     };
                 };
@@ -3289,6 +3396,26 @@ export interface operations {
                             code: string | "app.worker_readiness_failed";
                             message: string;
                             meta: unknown[];
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            message: string;
+                            meta: {
+                                /** @constant */
+                                field: "app";
+                                /** @constant */
+                                reason: "app_instance_unavailable";
+                                app: string;
+                                app_instance: string;
+                            };
+                        };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: string;
                         };
                     };
                 };
@@ -4038,12 +4165,14 @@ export interface operations {
                     } | {
                         error: {
                             /** @constant */
-                            code: "destructive_consent_required";
+                            code: "validation_failed";
                             /** @constant */
                             message: "Use --force to remove this deployment step.";
                             meta: string | {
                                 /** @constant */
                                 field: "force";
+                                /** @constant */
+                                reason: "destructive_consent_required";
                             };
                             data: string;
                         };
@@ -4163,12 +4292,14 @@ export interface operations {
                     } | {
                         error: {
                             /** @constant */
-                            code: "destructive_consent_required";
+                            code: "validation_failed";
                             /** @constant */
                             message: "Use --force to remove this firewall rule.";
                             meta: string | {
                                 /** @constant */
                                 field: "force";
+                                /** @constant */
+                                reason: "destructive_consent_required";
                             };
                         };
                     };
@@ -4383,6 +4514,125 @@ export interface operations {
                 };
             };
             422: components["responses"]["ValidationException"];
+        };
+    };
+    nodeBootstrap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "This caller cannot prepare node bootstrap.";
+                            meta: string[];
+                        };
+                    };
+                };
+            };
+        };
+    };
+    nodeBootstrapComplete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The node bootstrap ID */
+                nodeBootstrap: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never> | string;
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "Only the initiating node can complete this bootstrap.";
+                            meta: {
+                                bootstrap_id: string;
+                            };
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "This caller cannot complete node bootstrap.";
+                            meta: string[];
+                        };
+                    };
+                };
+            };
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    nodeBootstrapResume: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "This caller cannot resume node bootstrap.";
+                            meta: string[];
+                        };
+                    };
+                };
+            };
         };
     };
     nodeGrant: {
@@ -5111,6 +5361,7 @@ export interface operations {
                                         "8.3"
                                     ];
                                     available_images: unknown[];
+                                    image_inventory_status: string;
                                     cli: string | null;
                                     app: {
                                         name: string;
@@ -5168,6 +5419,7 @@ export interface operations {
                                         "8.3"
                                     ];
                                     available_images: unknown[];
+                                    image_inventory_status: string;
                                     cli: string | null;
                                     app: {
                                         name: string;
@@ -5199,6 +5451,7 @@ export interface operations {
                                         "8.3"
                                     ];
                                     available_images: unknown[];
+                                    image_inventory_status: string;
                                     cli: string | null;
                                     app: {
                                         name: string;
@@ -5231,6 +5484,7 @@ export interface operations {
                                         "8.3"
                                     ];
                                     available_images: unknown[];
+                                    image_inventory_status: string;
                                     cli: string | null;
                                     app: {
                                         name: string;
@@ -5340,9 +5594,10 @@ export interface operations {
                                 context: {
                                     node: string;
                                     app: string;
+                                    app_instance: string;
                                     workspace: string;
                                 };
-                                processes: string[];
+                                processes: unknown[];
                             };
                             meta: string;
                         };
@@ -5627,12 +5882,14 @@ export interface operations {
                     "application/json": {
                         error: {
                             /** @constant */
-                            code: "destructive_consent_required";
+                            code: "validation_failed";
                             /** @constant */
                             message: "Use --force to remove this proxy route.";
                             meta: string | {
                                 /** @constant */
                                 field: "force";
+                                /** @constant */
+                                reason: "destructive_consent_required";
                             };
                         };
                     };
@@ -5657,7 +5914,7 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                routes: string[];
+                                routes: unknown[];
                             };
                             meta: {
                                 filter: string;
@@ -5680,6 +5937,20 @@ export interface operations {
                             /** @constant */
                             message: "Peer identity unknown.";
                             meta: string | string[];
+                        };
+                    };
+                };
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: string;
                         };
                     };
                 };
@@ -5868,6 +6139,8 @@ export interface operations {
                             meta: string | {
                                 /** @constant */
                                 field: "force";
+                                /** @constant */
+                                reason: "destructive_consent_required";
                             };
                             data: string;
                         };
@@ -5885,6 +6158,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description The visible schedule inventory with concrete instance targets. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5893,7 +6167,35 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                schedules: string[];
+                                schedules: {
+                                    name: string;
+                                    scope: string;
+                                    target: {
+                                        type: string;
+                                        name: string;
+                                        node: string | null;
+                                    };
+                                    interval: string;
+                                    timezone: string;
+                                    execution: {
+                                        type: string;
+                                        value: string;
+                                    };
+                                    enabled: boolean;
+                                    status: string;
+                                    scheduler: {
+                                        node: string | null;
+                                        heartbeat_at: string | null;
+                                        registry_synced_at: string | null;
+                                    };
+                                    last_run: {
+                                        id: number;
+                                        status: string;
+                                        exit_code: number | null;
+                                        started_at: string;
+                                        finished_at: string | null;
+                                    } | null;
+                                }[];
                             };
                             meta: {
                                 app: string | null;
@@ -5901,7 +6203,7 @@ export interface operations {
                                 count: number;
                             };
                         };
-                    } | string;
+                    };
                 };
             };
             403: {
@@ -5967,7 +6269,7 @@ export interface operations {
                                     target: {
                                         type: string;
                                         name: string;
-                                        node: string;
+                                        node: string | null;
                                     };
                                     status: string;
                                     exit_code: number | null;
@@ -6517,6 +6819,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description The fleet update results and summary. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -6525,13 +6828,23 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                updates: string;
+                                updates: {
+                                    target: string;
+                                    node: string;
+                                    roles: string[];
+                                    status: string;
+                                    output?: string;
+                                }[];
                             };
                             meta: {
-                                summary: string;
+                                summary: {
+                                    total: number;
+                                    completed: number;
+                                    failed: number;
+                                };
                             };
                         };
-                    } | Record<string, never>;
+                    };
                 };
             };
             422: {
@@ -7049,6 +7362,21 @@ export interface operations {
                     };
                 };
             };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "workspace.unsupported_for_production";
+                            message: string;
+                            meta: unknown[];
+                        };
+                    };
+                };
+            };
         };
     };
     workspaceStore: {
@@ -7183,6 +7511,21 @@ export interface operations {
                     };
                 };
             };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "workspace.unsupported_for_production";
+                            message: string;
+                            meta: unknown[];
+                        };
+                    };
+                };
+            };
         };
     };
     workspaceShow: {
@@ -7247,6 +7590,12 @@ export interface operations {
                                 name: string;
                                 apps: string[];
                             };
+                        };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: unknown[];
                         };
                     };
                 };
@@ -7350,12 +7699,12 @@ export interface operations {
                                 kept_files: boolean;
                                 warnings: ({
                                     /** @constant */
-                                    code: "workspace.runtime_container_extra";
+                                    code: "process.runtime_unit_extra";
                                     /** @constant */
-                                    family: "workspace";
+                                    family: "process";
                                     message: string;
                                     /** @constant */
-                                    next_command: "doctor --family=workspace --restore";
+                                    next_command: "doctor --family=process --restore";
                                 } | {
                                     /** @constant */
                                     code: "workspace.runtime_config_extra";
@@ -7373,6 +7722,14 @@ export interface operations {
                                     message: "Workspace inherited runtime units could not be removed during cleanup.";
                                     /** @constant */
                                     next_command: "doctor --family=process --restore";
+                                } | {
+                                    /** @constant */
+                                    code: "workspace.teardown_step_unsafe";
+                                    /** @constant */
+                                    family: "workspace";
+                                    message: string;
+                                    next_command: string;
+                                    step_id: string;
                                 } | {
                                     /** @constant */
                                     code: "workspace.teardown_step_failed";
@@ -7680,6 +8037,12 @@ export interface operations {
                                 /** @constant */
                                 field: "path";
                             };
+                        };
+                    } | {
+                        error: {
+                            code: string;
+                            message: string;
+                            meta: unknown[];
                         };
                     };
                 };
@@ -8147,6 +8510,14 @@ export interface operations {
                             code: "validation_failed";
                             /** @constant */
                             message: "Timeout must be a positive integer.";
+                            meta: unknown[];
+                        };
+                    } | {
+                        error: {
+                            /** @constant */
+                            code: "validation_failed";
+                            /** @constant */
+                            message: "Workspace lifecycle steps cannot read or copy the parent app .env file.";
                             meta: unknown[];
                         };
                     } | {

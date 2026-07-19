@@ -8,6 +8,7 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\AdoptResult;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Enums\AdoptAction;
+use App\Enums\Nodes\NodeRoleName;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -460,6 +461,10 @@ final readonly class DatabaseConnectionAdopter
      */
     private function workspacesForNode(Node $node, DoctorTargetScope $scope): array
     {
+        if ($this->productionNodeExcludesWorkspaces($node)) {
+            return [];
+        }
+
         if ($scope->workspace === null && $scope->app !== null) {
             return [];
         }
@@ -485,6 +490,11 @@ final readonly class DatabaseConnectionAdopter
             )
             ->values()
             ->all();
+    }
+
+    private function productionNodeExcludesWorkspaces(Node $node): bool
+    {
+        return $node->hasActiveRole(NodeRoleName::AppProduction->value);
     }
 
     private function appInstancePath(AppInstance $instance): ?string

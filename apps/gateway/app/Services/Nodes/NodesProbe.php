@@ -20,6 +20,7 @@ use App\Models\NodeTool;
 use App\Models\WireGuardPeer;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionRegistry;
+use App\Services\Nodes\Roles\NodeRoleActivator;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\NodeRoleDefinition;
@@ -48,6 +49,7 @@ final readonly class NodesProbe
         private ?NodeSecurityPostureProbe $nodeSecurityPostureProbe = null,
         private ?NodeAgentIdeDefaults $agentIdeDefaults = null,
         private ?NodeRoleRegistry $nodeRoleRegistry = null,
+        private ?NodeRoleActivator $nodeRoleActivator = null,
         private ?NodeRoleBaselineConverger $nodeRoleBaselineConverger = null,
         private ?UpdateDriverRegistry $updateDriverRegistry = null,
         private ?UpdateTargetFactory $updateTargetFactory = null,
@@ -1249,14 +1251,12 @@ final readonly class NodesProbe
             return;
         }
 
+        $roleActivator = $this->nodeRoleActivator();
+        $roleActivator->ensureCanActivate($node, $assignment->role);
+
         try {
             $this->nodeRoleBaselineConverger()->converge($node, $assignment);
-
-            $assignment->forceFill([
-                'status' => NodeRoleStatus::Active->value,
-                'last_error' => null,
-                'converged_at' => now(),
-            ])->save();
+            $roleActivator->activate($node, $assignment);
         } catch (Throwable $throwable) {
             $assignment->forceFill([
                 'status' => NodeRoleStatus::Error->value,
@@ -1282,6 +1282,11 @@ final readonly class NodesProbe
     private function nodeRoleRegistry(): NodeRoleRegistry
     {
         return $this->nodeRoleRegistry ?? app(NodeRoleRegistry::class);
+    }
+
+    private function nodeRoleActivator(): NodeRoleActivator
+    {
+        return $this->nodeRoleActivator ?? app(NodeRoleActivator::class);
     }
 
     private function nodeRoleBaselineConverger(): NodeRoleBaselineConverger

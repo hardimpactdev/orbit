@@ -146,7 +146,7 @@ final readonly class AppRuntimeContainerRenderer
             appSlug: $runtimeSlug,
             runtimeUser: $this->appRuntimeUser->containerUserForApp($app),
             environment: array_merge(
-                $this->environmentFor($app),
+                $this->environmentFor($app, $instance),
                 $this->runtimeClientTrust->environmentForApp($app),
             ),
             mounts: $mounts,
@@ -251,7 +251,7 @@ final readonly class AppRuntimeContainerRenderer
     /**
      * @return array<string, string>
      */
-    private function environmentFor(App $app): array
+    private function environmentFor(App $app, ?AppInstance $instance): array
     {
         $environment = [
             'SERVER_ROOT' => $this->documentRootInContainer($app),
@@ -271,8 +271,8 @@ final readonly class AppRuntimeContainerRenderer
             $environment['SERVER_NAME'] = ':'.self::InternalPort;
         }
 
-        if ($app->worker_enabled) {
-            $environment = array_merge($environment, $this->workerEnvironmentFor($app));
+        if ($instance instanceof AppInstance && $instance->worker_enabled) {
+            $environment = array_merge($environment, $this->workerEnvironmentFor($app, $instance));
 
             return $environment;
         }
@@ -287,8 +287,8 @@ final readonly class AppRuntimeContainerRenderer
     }
 
     /**
-     * Worker-mode env vars are emitted only when worker_enabled is true. The
-     * stored worker_config is the single source of truth; classic mode is
+     * Worker-mode env vars are emitted only when the app instance enables worker mode.
+     * The instance's stored worker_config is the single source of truth; classic mode is
      * the default and emits none of these vars.
      *
      * Active levers:
@@ -302,9 +302,9 @@ final readonly class AppRuntimeContainerRenderer
      *
      * @return array<string, string>
      */
-    private function workerEnvironmentFor(App $app): array
+    private function workerEnvironmentFor(App $app, AppInstance $instance): array
     {
-        $config = $app->workerConfig();
+        $config = $instance->workerConfig();
         $workerFile = $this->frankenPhpWorkerFilePath($app);
 
         return [

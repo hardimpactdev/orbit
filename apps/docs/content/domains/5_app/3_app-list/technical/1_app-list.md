@@ -44,9 +44,10 @@ once.
 - A non-gateway caller receives a logical app when at least one Orbit instance
   resolves to a serving node on which that caller has `app:read`.
 - A logical app with multiple visible instances is still returned once.
-- Workspaces remain placement-scoped. Non-gateway callers receive only
-  workspaces whose concrete app instance resolves to a serving node included in
-  the caller's visible app-node set.
+- Workspace counts remain placement-scoped. For a caller outside the gateway,
+  the count includes only workspaces whose concrete `app-dev` instance resolves
+  to a serving node in the caller's visible app-node set. `app-prod` instances
+  never contribute a workspace count.
 - An authorized caller whose visible set is empty receives an empty list
   (`success.data.apps=[]` in JSON, `No apps found.` in human output) with
   exit zero.
@@ -73,16 +74,13 @@ once.
    sort by the logical app's default node metadata.
 3. **Sort results.** Apps are sorted by app name (ascending,
    case-insensitive). Every output renderer uses this single ordering.
-4. **Count visible placements.** Each app list result has a parallel inventory
-   entry with the number of placement-visible instances and workspaces. Gateway
-   callers count every instance and workspace. For a non-gateway caller, the
-   count includes Orbit instances on authorized serving nodes and workspaces
-   owned by those instances.
-5. **Attach visible workspaces.** Each app list result retains the app's
-   placement-visible workspaces, sorted by workspace name (ascending,
-   case-insensitive), for machine compatibility. Workspaces are registry
-   configuration rows; no live workspace probing is performed.
-6. **Render output.** JSON returns the filtered app inventory. Human interactive
+4. **Build compact summaries.** Put `repository`, aggregate dependency-audit
+   posture, `instance_count`, and `workspace_count` directly on each logical-app
+   row. Gateway callers count every visible instance and every workspace on an
+   `app-dev` instance. For callers outside the gateway, count only placements
+   they are authorized to see. Do not attach instance/workspace rows or logical
+   default-node fields.
+5. **Render output.** JSON returns the compact logical-app summaries. Human interactive
    output renders `Laravel\Prompts\datatable` with `Name`, `Repository`,
    `Instances`, and `Workspaces` columns, then opens the selected app's
    `app:show` placement drill-down. Non-interactive human mode fails before
@@ -139,7 +137,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/App/AppListCommandTest.php` | CLI command contract: global request without node resolution, Laravel Prompts datatable headers and selection, selected-app drill-down, gateway-unavailable failure, and WireGuard-specific failure mapping. |
-| `apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php` | Gateway app list API: instance-derived authorization, logical-app uniqueness, placement-scoped instance/workspace counts, placement-scoped workspace payload, and empty result shape. |
+| `apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php` | Gateway app list API: instance-derived authorization, logical-app uniqueness, compact summary fields, placement-scoped counts, absence of placement rows, and empty result shape. |
 
 Renderer-specific test mapping lives in:
 

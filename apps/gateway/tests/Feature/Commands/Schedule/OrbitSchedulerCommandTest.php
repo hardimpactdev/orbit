@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\DriftKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Schedule;
@@ -70,13 +73,28 @@ it('renders scheduler repair through the gateway Swarm scheduler service instead
 
 it('dispatches due app schedules from the gateway and records run history centrally', function (): void {
     $gateway = createOrbitSchedulerGatewayNode();
-    $appNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'path' => '/srv/docs']);
+    $logicalDefaultNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
+    $instanceNode = createOrbitSchedulerAppHostNode(['name' => 'app-2']);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $logicalDefaultNode->id,
+        'path' => '/srv/docs',
+    ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $instanceNode->id,
+            node: $instanceNode->name,
+            path: '/srv/docs-production',
+            document_root: 'public',
+        ),
+    ]);
     Schedule::factory()
-        ->forApp($app)
+        ->forAppInstance($instance)
         ->create([
             'name' => 'laravel-scheduler',
-            'schedule_key' => 'app:docs:laravel-scheduler',
+            'schedule_key' => 'app:docs.production:laravel-scheduler',
             'execution_value' => 'php artisan schedule:run',
             'interval' => 'every minute',
         ]);
@@ -96,7 +114,7 @@ it('dispatches due app schedules from the gateway and records run history centra
         ->and($result->executedSchedules)
         ->toBe(1)
         ->and($localExecutor->nodes)
-        ->toBe(['app-1'])
+        ->toBe(['app-2'])
         ->and($localExecutor->commands)
         ->toBe([InternalCommand::ScheduleRun->value])
         ->and($localExecutor->transportOptions[0]['timeout'])
@@ -110,13 +128,13 @@ it('dispatches due app schedules from the gateway and records run history centra
         ->and($payload['execution_value'] ?? null)
         ->toBe('php artisan schedule:run')
         ->and($payload['cwd'] ?? null)
-        ->toBe('/srv/docs')
+        ->toBe('/srv/docs-production')
         ->and($payload['timeout'] ?? null)
         ->toBe(900)
         ->and($run->node_id)
-        ->toBe($appNode->id)
+        ->toBe($instanceNode->id)
         ->and($run->schedule_key)
-        ->toBe('app:docs:laravel-scheduler')
+        ->toBe('app:docs.production:laravel-scheduler')
         ->and($run->status)
         ->toBe('completed')
         ->and($run->stdout)
@@ -137,7 +155,7 @@ it('dispatches remote schedules through the internal schedule command without tr
         ->forApp($app)
         ->create([
             'name' => 'laravel-scheduler',
-            'schedule_key' => 'app:docs:laravel-scheduler',
+            'schedule_key' => 'app:docs.development:laravel-scheduler',
             'execution_value' => 'php artisan schedule:run',
             'interval' => 'every minute',
         ]);
@@ -298,7 +316,7 @@ it('records remote dispatch failures as failed gateway history', function (): vo
         ->forApp($app)
         ->create([
             'name' => 'laravel-scheduler',
-            'schedule_key' => 'app:docs:laravel-scheduler',
+            'schedule_key' => 'app:docs.development:laravel-scheduler',
             'interval' => 'every minute',
         ]);
     app()->instance(

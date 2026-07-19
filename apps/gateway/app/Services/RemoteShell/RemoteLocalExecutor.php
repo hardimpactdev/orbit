@@ -614,11 +614,12 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
 
         $this->activityLogger->log(
             new LocalExecutorActivity(
-                event: 'local_executor.dispatching',
+                event: 'agent_push.dispatching',
                 subject: $node,
-                description: 'Local executor operation dispatching',
+                description: 'Agent push operation dispatching',
                 properties: [
-                    'lane' => 'local-executor',
+                    'lane' => 'internal',
+                    'transport' => 'agent_push',
                     'status' => 'dispatching',
                     'operation_id' => $operationId,
                     'target_node_id' => $this->nodeId($node),
@@ -629,7 +630,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                     'command_line' => $this->redactCommandOptionsInLine($auditLine, $redactedCommandOptionNames),
                 ],
             ),
-            channel: 'local_executor',
+            channel: 'api',
             causer: null,
         );
     }
@@ -654,11 +655,12 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
 
         $this->activityLogger->log(
             new LocalExecutorActivity(
-                event: 'local_executor.completed',
+                event: 'agent_push.completed',
                 subject: $node,
-                description: "Local executor operation {$status}",
+                description: "Agent push operation {$status}",
                 properties: [
-                    'lane' => 'local-executor',
+                    'lane' => 'internal',
+                    'transport' => 'agent_push',
                     'status' => $status,
                     'operation_id' => $dispatch['operationId'],
                     'target_node_id' => $this->nodeId($node),
@@ -678,7 +680,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                     'duration_ms' => $result->durationMs,
                 ],
             ),
-            channel: 'local_executor',
+            channel: 'api',
             causer: null,
         );
     }
@@ -692,11 +694,12 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     ): void {
         $this->activityLogger->log(
             new LocalExecutorActivity(
-                event: 'local_executor.completed',
+                event: 'agent_push.completed',
                 subject: $node,
-                description: 'Local executor operation failed',
+                description: 'Agent push operation failed',
                 properties: [
-                    'lane' => 'local-executor',
+                    'lane' => 'internal',
+                    'transport' => 'agent_push',
                     'status' => 'failed',
                     'operation_id' => $operationId,
                     'target_node_id' => $this->nodeId($node),
@@ -709,7 +712,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                     'exception_message' => $exceptionMessage,
                 ],
             ),
-            channel: 'local_executor',
+            channel: 'api',
             causer: null,
         );
     }

@@ -28,6 +28,12 @@ final class DatabaseConnectionQueryController extends DatabaseConnectionApiContr
             return $this->validationFailed('target', 'Target is required.', ['field' => 'target'], 422);
         }
 
+        $workspaceBoundary = $this->ensureWorkspaceTargetSupported($target, $auth);
+
+        if ($workspaceBoundary instanceof JsonResponse) {
+            return $workspaceBoundary;
+        }
+
         if ($sql === null) {
             return $this->validationFailed('sql', 'SQL is required.', ['field' => 'sql'], 422);
         }

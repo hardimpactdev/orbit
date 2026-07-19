@@ -8,6 +8,7 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\Apps\NodeRuntimeContainersProbeStatus;
 use App\Enums\DriftKind;
+use App\Enums\Nodes\NodeRoleName;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
@@ -28,6 +29,8 @@ use Throwable;
 
 final readonly class ProcessesProbe
 {
+    private const array WORKSPACE_OWNER_TYPES = [Workspace::class, 'workspace'];
+
     public function __construct(
         private ?RuntimeBackendProbe $runtimeBackendProbe = null,
         private ?ToolScriptDispatcher $scripts = null,
@@ -984,26 +987,31 @@ final readonly class ProcessesProbe
 
         $runtimeUnits = [];
 
-        Process::query()
+        $query = Process::query()
             ->with('owner')
             ->where('node_id', $node->id)
-            ->where('app_instance_id', $process->app_instance_id)
-            ->each(function (Process $candidate) use ($app, &$runtimeUnits): void {
-                $candidateApp = $candidate->ownerApp();
+            ->where('app_instance_id', $process->app_instance_id);
 
-                if (! $candidateApp instanceof App || ! $candidateApp->is($app)) {
-                    return;
-                }
+        if ($this->productionNodeExcludesWorkspaces($node)) {
+            $query->whereNotIn('owner_type', self::WORKSPACE_OWNER_TYPES);
+        }
 
-                try {
-                    $runtimeUnits = [
-                        ...$runtimeUnits,
-                        ...$this->expectedRuntimeUnits($candidate),
-                    ];
-                } catch (InvalidArgumentException) {
-                    return;
-                }
-            });
+        $query->each(function (Process $candidate) use ($app, &$runtimeUnits): void {
+            $candidateApp = $candidate->ownerApp();
+
+            if (! $candidateApp instanceof App || ! $candidateApp->is($app)) {
+                return;
+            }
+
+            try {
+                $runtimeUnits = [
+                    ...$runtimeUnits,
+                    ...$this->expectedRuntimeUnits($candidate),
+                ];
+            } catch (InvalidArgumentException) {
+                return;
+            }
+        });
 
         return array_values(array_unique($runtimeUnits));
     }
@@ -1765,9 +1773,10 @@ final readonly class ProcessesProbe
     private function runtimeContexts(Process $process): array
     {
         $process->loadMissing('owner');
+        $owner = $process->owner;
 
-        if ($process->owner instanceof Workspace) {
-            return [$process->owner];
+        if ($owner instanceof Workspace) {
+            return $this->processNodeExcludesWorkspaces($process) ? [] : [$owner];
         }
 
         $config = is_array($process->runtime_config) ? $process->runtime_config : [];
@@ -1777,15 +1786,21 @@ final readonly class ProcessesProbe
             return [null];
         }
 
-        if (! $process->app instanceof App) {
+        $app = $process->app;
+
+        if (! $app instanceof App) {
             return [];
         }
 
-        $process->app->loadMissing('workspaces');
+        if ($this->processNodeExcludesWorkspaces($process)) {
+            return [null];
+        }
+
+        $app->loadMissing('workspaces');
 
         $workspaces = $process->app_instance_id === null
-            ? $process->app->workspaces
-            : $process->app->workspaces->where('app_instance_id', $process->app_instance_id);
+            ? $app->workspaces
+            : $app->workspaces->where('app_instance_id', $process->app_instance_id);
 
         /** @var list<Workspace> $workspaceModels */
         $workspaceModels = array_values($workspaces->all());
@@ -1973,7 +1988,9 @@ final readonly class ProcessesProbe
         if ($withWorkspaces) {
             $runtimeApp->setRelation(
                 'workspaces',
-                $logicalApp->workspaces()->where('app_instance_id', $instance->id)->get(),
+                $this->processNodeExcludesWorkspaces($process)
+                    ? $logicalApp->newCollection()
+                    : $logicalApp->workspaces()->where('app_instance_id', $instance->id)->get(),
             );
         }
 
@@ -1986,6 +2003,18 @@ final readonly class ProcessesProbe
         if ($process->owner instanceof Workspace) {
             $process->owner->setRelation('app', $runtimeApp);
         }
+    }
+
+    private function processNodeExcludesWorkspaces(Process $process): bool
+    {
+        $node = $this->processNode($process);
+
+        return $node instanceof Node && $this->productionNodeExcludesWorkspaces($node);
+    }
+
+    private function productionNodeExcludesWorkspaces(Node $node): bool
+    {
+        return app(NodeRoleAssignments::class)->nodeHasActiveRole($node, NodeRoleName::AppProduction->value);
     }
 
     /**

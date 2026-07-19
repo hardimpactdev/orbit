@@ -193,9 +193,9 @@ final class ProxyRemoveCommand extends ProxyGatewayCommand
 
         if ($this->wantsJson() || ! $this->input->isInteractive()) {
             return $this->renderFailure(
-                'destructive_consent_required',
+                'validation_failed',
                 'Use --force to remove this proxy route.',
-                ['field' => 'force'],
+                ['field' => 'force', 'reason' => 'destructive_consent_required'],
             );
         }
 
@@ -204,9 +204,9 @@ final class ProxyRemoveCommand extends ProxyGatewayCommand
         }
 
         return $this->renderFailure(
-            'destructive_consent_required',
+            'validation_failed',
             'Operation cancelled.',
-            ['field' => 'force'],
+            ['field' => 'force', 'reason' => 'destructive_consent_required'],
         );
     }
 }

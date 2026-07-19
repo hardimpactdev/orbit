@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Services\Activity\ActivityHistory;
+use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,6 +34,11 @@ final class ActivityListController implements Loggable
 
     private int $resultCount = 0;
 
+    #[OpenApiResponse(
+        status: 200,
+        description: 'The canonical activity inventory.',
+        type: 'array{success: array{data: array{activities: list<array{id: int, occurred_at: string, correlation_id: string|null, type: string, effect: string, subject: array{type: string, name: string}|null, actor: array{node: string}|null, command: string|null, description: string|null, properties: array<string, mixed>, channel: string}>}, meta: array{filters: array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool}, limit: int, count: int, has_more: bool}}}',
+    )]
     public function __invoke(Request $request, ActivityHistory $history): JsonResponse
     {
         $filters = $this->validatedFilters($request);

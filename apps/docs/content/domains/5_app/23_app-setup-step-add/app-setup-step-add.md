@@ -2,7 +2,7 @@
 
 [Back to App commands.](../README.md)
 
-Add one command to an app setup pipeline.
+Add one command to an app-instance setup pipeline.
 
 ## Usage
 
@@ -10,15 +10,15 @@ Add one command to an app setup pipeline.
 orbit app-setup-step:add [app] --command=<command> [--app=<app>] [--before=<id>|--after=<id>] [--timeout=600] [--json]
 ```
 
-Use this command to record finite bootstrap work for an app.
+Use this command to record finite bootstrap work for one concrete app instance.
 
 ## Arguments and options
 
 | Input | Meaning |
 | --- | --- |
-| `app` | Existing app slug or hostname. |
+| `app` | Dotted app-instance selector, or a bare app shorthand when exactly one instance exists. |
 | `--command` | Shell command to run from the app path during `app:setup`. |
-| `--app` | App selector for scripts where the positional argument is awkward. |
+| `--app` | App-instance selector for scripts where the positional argument is awkward. |
 | `--before` | Insert before this setup step id. |
 | `--after` | Insert after this setup step id. |
 | `--timeout` | Per-step timeout in seconds. |
@@ -31,7 +31,7 @@ pipeline.
 
 ## Requirements
 
-The caller needs `app:write` on the app's owning node.
+The caller needs `app:write` on the selected instance's serving node.
 
 ## Output Summary
 
@@ -40,7 +40,7 @@ Human output names the created step. JSON output returns the setup step entity.
 ## Examples
 
 ```bash
-orbit app-setup-step:add dlf-leden --command="composer install --no-interaction"
+orbit app-setup-step:add dlf-leden.production --command="composer install --no-interaction"
 ```
 
 ## Related

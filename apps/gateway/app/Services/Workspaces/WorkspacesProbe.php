@@ -26,6 +26,7 @@ final readonly class WorkspacesProbe
         private ?PhpRuntimeCatalog $phpRuntimeCatalog = null,
         private ?WorkspaceRuntimeContainerRenderer $workspaceRuntimeContainerRenderer = null,
         private ?WorkspacePlacement $placement = null,
+        private ?WorkspaceRoleGuard $workspaceRoleGuard = null,
     ) {}
 
     public function key(): string
@@ -41,9 +42,14 @@ final readonly class WorkspacesProbe
     public function introspect(Workspace $workspace): ProbeSnapshot
     {
         $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
+        $app = $workspace->app;
         $node = $this->placement()->nodeForWorkspace($workspace);
 
-        if (! $workspace->app instanceof App || ! $node instanceof Node) {
+        if (! $app instanceof App || ! $node instanceof Node) {
+            return new ProbeSnapshot([]);
+        }
+
+        if (! $this->workspaceRoleGuard()->nodeSupportsWorkspaces($node)) {
             return new ProbeSnapshot([]);
         }
 
@@ -51,7 +57,7 @@ final readonly class WorkspacesProbe
 
         if (
             $workspace->lifecycle_status === WorkspaceLifecycleStatus::Active
-            && $workspace->app->runtime === AppRuntimeKind::Php
+            && $app->runtime === AppRuntimeKind::Php
             && $this->phpRuntimeCatalog()->supports((string) $workspace->effectivePhpVersion())
         ) {
             $runtimeContainer = $this->workspaceRuntimeContainerRenderer()->render($workspace);
@@ -200,6 +206,11 @@ final readonly class WorkspacesProbe
     private function scripts(): ToolScriptDispatcher
     {
         return $this->scripts ?? app(ToolScriptDispatcher::class);
+    }
+
+    private function workspaceRoleGuard(): WorkspaceRoleGuard
+    {
+        return $this->workspaceRoleGuard ?? app(WorkspaceRoleGuard::class);
     }
 
     /**

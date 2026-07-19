@@ -22,7 +22,7 @@ final class DatabaseConnectionDetachController extends DatabaseConnectionApiCont
         }
 
         $envPrefix = $this->stringValue($request->input('env_prefix')) ?? 'DB';
-        $scope = $this->resolveTargetScope($request, $envPrefix);
+        $scope = $this->resolveTargetScope($request, $envPrefix, $auth);
 
         if ($scope instanceof JsonResponse) {
             return $scope;

@@ -80,7 +80,7 @@ describe('ActivityShowController', function (): void {
             ->assertJsonPath('error.meta.serving_node', 'gateway-1');
     });
 
-    it('shows one activity with details and related entries ordered oldest first', function (): void {
+    it('shows one canonical activity DTO and related entries ordered oldest first', function (): void {
         $caller = createActivityShowCallerNode();
         $correlation = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
@@ -109,16 +109,36 @@ describe('ActivityShowController', function (): void {
             ->assertJsonPath('success.data.activity.effect', 'write')
             ->assertJsonPath('success.data.activity.actor', ['node' => 'caller'])
             ->assertJsonPath('success.data.activity.command', 'node:created')
-            ->assertJsonPath('success.data.activity.details.node', 'caller')
+            ->assertJsonPath('success.data.activity.description', 'Recorded node.created')
+            ->assertJsonPath('success.data.activity.properties.node', 'caller')
+            ->assertJsonPath('success.data.activity.channel', 'api')
             ->assertJsonPath('success.meta.related_count', 2);
 
+        $activity = $response->json('success.data.activity');
         $related = $response->json('success.data.related');
 
+        expect(array_keys($activity))->toBe([
+            'id',
+            'occurred_at',
+            'correlation_id',
+            'type',
+            'effect',
+            'subject',
+            'actor',
+            'command',
+            'description',
+            'properties',
+            'channel',
+        ]);
         expect(array_column($related, 'id'))->toBe([$firstRelated->id, $secondRelated->id]);
         expect($related[0])->toMatchArray([
             'type' => 'node.create_requested',
             'effect' => 'read',
+            'description' => 'Recorded node.create_requested',
+            'properties' => ['node' => 'caller'],
+            'channel' => 'api',
         ]);
+        expect(array_keys($related[0]))->toBe(array_keys($activity));
     });
 
     it('returns not found and logs the outcome when the activity is missing', function (): void {

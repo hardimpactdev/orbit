@@ -11,7 +11,8 @@ is invoked from a peer the gateway identifies as a gateway node.
   identity. When the peer's gateway-owned node role is `gateway`, gateway
   implicit authority authorizes the request.
 - **Apply:** The gateway writes app configuration to its local SQLite database
-  and applies app-role artifacts through the selected node execution transport.
+  and applies `app-dev` or `app-prod` artifacts through the selected node
+  execution transport.
   The observable result is identical to the operator-caller path.
 - **No CLI shortcut:** The CLI still calls the gateway API. There is no
   client-side bypass that skips the API just because the operator happens to be

@@ -24,6 +24,8 @@
   mode. Combining them, or supplying neither, fails with
   `validation_failed`.
 - The resolved initial permission set normalizes to a non-empty set.
+- A normalized set containing `*` or `workspace:*` has a non-`app-prod`
+  consuming node and a non-`app-prod` serving node.
 - Elevated grants (`gateway-admin` or any custom set containing `*` on a
   grant to the gateway) require interactive confirmation or `--force`.
 
@@ -63,10 +65,13 @@ This command follows the shared
      validate each entry against the registry.
    - Normalize the resolved set. Reject an empty normalized result with
      `validation_failed`.
-6. Apply elevated-grant consent: when the resolved permission set contains
+6. Reject workspace-capable permissions with
+   `workspace.unsupported_for_production` when the consuming node has
+   `app-prod` or the serving node has `app-prod`.
+7. Apply elevated-grant consent: when the resolved permission set contains
    `*` on a grant whose serving node is the gateway, require interactive
    confirmation or `--force`.
-7. Send the typed request to the gateway over HTTPS through WireGuard. The
+8. Send the typed request to the gateway over HTTPS through WireGuard. The
    gateway authenticates the caller's WireGuard identity, then checks for a
    grant to the gateway whose permissions include `node:grant` or `*`
    before any side effects.
@@ -99,6 +104,9 @@ This command follows the shared
 - Reject an empty normalized result with `validation_failed`.
 - Apply elevated-grant consent when the normalized result contains `*` on a
   grant to the gateway.
+- Reject `*` and `workspace:*` when the consuming node has `app-prod` or the
+  serving node has `app-prod`. The stable failure code is
+  `workspace.unsupported_for_production`.
 
 ### Grant Write Rules
 
@@ -139,6 +147,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Unknown permission | Any supplied permission string is not registry-known. | Failure |
 | Unknown preset | The named preset is not registry-known. | Failure |
 | Elevated-grant consent missing | `gateway-admin` or `*` to the gateway was requested without `--force` in non-interactive mode. | Failure |
+| Workspace role boundary | The set contains `*` or `workspace:*` while either grant endpoint has `app-prod`. | Failure (`error.code=workspace.unsupported_for_production`) |
 
 ## Doctor Relationship
 

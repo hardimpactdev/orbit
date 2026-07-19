@@ -34,9 +34,9 @@ orbit activity:list --json
 - `--node`: Limit results to activity associated with the recorded node name.
 - `--effect`: Limit results to one effect: `read`, `write`, or `destructive`.
 - `--correlation`: Limit results to one correlated operation.
-- `--include-internal`: Include internal backend transport activity such as
-  remote shell audit rows. Hidden by default by internal lane/channel markers,
-  not by effect alone.
+- `--include-internal`: Include current Agent-push and bootstrap transport
+  audit rows plus pre-existing `remote_shell`/`local_executor` rows. They are
+  hidden by default by internal lane/channel markers, not by effect alone.
 - `--limit`: Maximum number of entries to return. Defaults to `25`.
 - `--json`: Output JSON.
 
@@ -57,7 +57,8 @@ Use `--json` for machine-readable output. Human output is a compact activity tab
 actor, and command columns.
 
 Use `--json` for machine-readable activity objects, filters, and count
-metadata.
+metadata. Every row uses the canonical Activity DTO defined by
+[`activity-concepts.md`](../activity-concepts.md).
 
 ## Requirements
 

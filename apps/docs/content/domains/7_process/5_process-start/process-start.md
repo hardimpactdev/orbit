@@ -12,10 +12,10 @@ node and records durable `started` events.
 
 ```bash
 orbit process:start vite --app=docs.production
-orbit process:start vite --app=docs.production --workspace=feature-docs
+orbit process:start vite --app=docs.development --workspace=feature-docs
 orbit process:start opencode-server --node=app-dev-1
 orbit process:start vite --app=docs.production --json
-orbit process:start --app=docs.production --workspace=feature-docs
+orbit process:start --app=docs.development --workspace=feature-docs
 ```
 
 ## Behavior Summary

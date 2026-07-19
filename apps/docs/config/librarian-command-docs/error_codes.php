@@ -33,6 +33,7 @@ return [
             'exec_node_unreachable',
             'exec_unsupported_runtime',
             'not_found',
+            'unsupported_for_production',
         ],
         'node' => [
             'bootstrap_required',

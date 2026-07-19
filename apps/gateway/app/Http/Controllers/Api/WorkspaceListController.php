@@ -8,6 +8,7 @@ use App\Contracts\Loggable;
 use App\Data\Apps\AppSelection;
 use App\Enums\ActivityLogType;
 use App\Exceptions\AppSelectionResolutionFailed;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
@@ -15,11 +16,13 @@ use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspacePlacement;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+/** @mago-expect lint:kan-defect */
 final readonly class WorkspaceListController implements Loggable
 {
     public function __construct(
@@ -27,6 +30,7 @@ final readonly class WorkspaceListController implements Loggable
         private NodeAccessAuthorizer $authorizer,
         private AppSelectorResolver $appSelectorResolver,
         private WorkspacePlacement $placement,
+        private WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -36,6 +40,12 @@ final readonly class WorkspaceListController implements Loggable
 
         if (! $caller instanceof Node) {
             return $this->authorizationFailed('Peer identity unknown.');
+        }
+
+        try {
+            $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($caller);
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return $this->workspaceUnsupportedForProduction($exception);
         }
 
         $app = $this->stringQuery($request, 'app');
@@ -65,6 +75,17 @@ final readonly class WorkspaceListController implements Loggable
                 $selection = $this->appSelectorResolver->resolveRequired($app);
             } catch (AppSelectionResolutionFailed) {
                 return $this->validationFailed('app', $app, "Unknown app: '{$app}'.");
+            }
+        }
+
+        if ($selection instanceof AppSelection && $selection->instance instanceof AppInstance) {
+            try {
+                $this->workspaceRoleGuard->ensureNodeSupportsWorkspaces(
+                    $selection->app,
+                    $this->placement->nodeForInstance($selection->instance),
+                );
+            } catch (WorkspaceUnsupportedForProduction $exception) {
+                return $this->workspaceUnsupportedForProduction($exception);
             }
         }
 
@@ -202,6 +223,10 @@ final readonly class WorkspaceListController implements Loggable
                 continue;
             }
 
+            if (! $this->workspaceRoleGuard->nodeSupportsWorkspaces($workspaceNode)) {
+                continue;
+            }
+
             if (! $callerIsGateway && ! in_array($workspaceNode->id, $visibleNodeIds, true)) {
                 continue;
             }
@@ -239,6 +264,18 @@ final readonly class WorkspaceListController implements Loggable
         $workspaces = new Collection($items);
 
         return $workspaces;
+    }
+
+    private function workspaceUnsupportedForProduction(
+        WorkspaceUnsupportedForProduction $exception,
+    ): JsonResponse {
+        return response()->json([
+            'error' => [
+                'code' => $exception->errorCode(),
+                'message' => $exception->getMessage(),
+                'meta' => $exception->meta,
+            ],
+        ], 422);
     }
 
     /**

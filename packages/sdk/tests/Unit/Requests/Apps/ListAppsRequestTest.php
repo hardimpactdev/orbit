@@ -46,7 +46,12 @@ it('returns an AppListResponse DTO with apps', function (): void {
             'success' => [
                 'data' => [
                     'apps' => [
-                        ['name' => 'docs', 'node' => 'app-1'],
+                        [
+                            'name' => 'docs',
+                            'repository' => 'git@example.com:orbit/docs.git',
+                            'instance_count' => 2,
+                            'workspace_count' => 1,
+                        ],
                     ],
                 ],
             ],
@@ -60,6 +65,11 @@ it('returns an AppListResponse DTO with apps', function (): void {
 
     expect($dto)->toBeInstanceOf(AppListResponse::class);
     expect($dto->apps)->toBe([
-        ['name' => 'docs', 'node' => 'app-1'],
+        [
+            'name' => 'docs',
+            'repository' => 'git@example.com:orbit/docs.git',
+            'instance_count' => 2,
+            'workspace_count' => 1,
+        ],
     ]);
 });

@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodeRegistryWriter;
+use App\Services\Nodes\Roles\NodeRoleActivator;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -35,8 +36,11 @@ class BakeAppNodeCommand extends Command
     #[\Override]
     protected $hidden = true;
 
-    public function handle(NodeRegistryWriter $registryWriter, NodeConverger $nodeConverger): int
-    {
+    public function handle(
+        NodeRegistryWriter $registryWriter,
+        NodeConverger $nodeConverger,
+        NodeRoleActivator $roleActivator,
+    ): int {
         $name = $this->stringArgument('name');
         $role = $this->stringOption('role') ?? NodeRoleName::AppDevelopment->value;
         $host = $this->stringOption('host');
@@ -79,10 +83,14 @@ class BakeAppNodeCommand extends Command
             ),
         );
 
+        if (! $node instanceof Node) {
+            throw new RuntimeException('App node registry write did not return a node.');
+        }
+
         $this->measureBakeStep(
             $timingRole,
             'role-assignment',
-            fn () => $this->upsertRoleAssignment($node->id, $role, $ingressNode),
+            fn () => $this->upsertRoleAssignment($roleActivator, $node, $role, $ingressNode),
         );
 
         $this->measureBakeStep(
@@ -145,9 +153,15 @@ class BakeAppNodeCommand extends Command
         }
     }
 
-    private function upsertRoleAssignment(int $nodeId, string $role, ?string $ingressNode): void
-    {
+    private function upsertRoleAssignment(
+        NodeRoleActivator $roleActivator,
+        Node $node,
+        string $role,
+        ?string $ingressNode,
+    ): void {
         $settings = [];
+
+        $roleActivator->ensureCanActivate($node, $role);
 
         if ($ingressNode !== null) {
             if ($role !== NodeRoleName::AppProduction->value) {
@@ -163,26 +177,32 @@ class BakeAppNodeCommand extends Command
 
             $settings['ingress_node_id'] = $ingressNodeId;
 
-            if ($ingressNodeId !== $nodeId) {
+            if ($ingressNodeId !== $node->id) {
                 NodeRoleAssignment::query()
-                    ->where('node_id', $nodeId)
+                    ->where('node_id', $node->id)
                     ->where('role', NodeRoleName::Ingress->value)
                     ->delete();
             }
         }
 
-        NodeRoleAssignment::query()->updateOrCreate(
+        $assignment = NodeRoleAssignment::query()->updateOrCreate(
             [
-                'node_id' => $nodeId,
+                'node_id' => $node->id,
                 'role' => $role,
             ],
             [
-                'status' => NodeRoleStatus::Active->value,
+                'status' => $role === NodeRoleName::AppProduction->value
+                    ? NodeRoleStatus::Pending->value
+                    : NodeRoleStatus::Active->value,
                 'settings' => $settings,
                 'last_error' => null,
                 'converged_at' => now(),
             ],
         );
+
+        if ($role === NodeRoleName::AppProduction->value) {
+            $roleActivator->activate($node, $assignment);
+        }
     }
 
     private function stringArgument(string $name): ?string

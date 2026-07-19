@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\AppSetupRun;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -18,7 +18,7 @@ class AppSetupRunFactory extends Factory
     public function definition(): array
     {
         return [
-            'app_id' => App::factory(),
+            'app_instance_id' => AppInstance::factory(),
             'status' => 'pending',
             'step_set_hash' => null,
             'started_at' => null,

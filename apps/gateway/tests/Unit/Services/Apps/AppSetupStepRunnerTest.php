@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupStep;
 use App\Models\Node;
@@ -99,16 +100,36 @@ function createAppSetupRunnerTestApp(array $overrides = []): App
     ], $overrides));
 }
 
+function appSetupRunnerInstance(App $app): AppInstance
+{
+    $instance = AppInstance::query()->where('app_id', $app->id)->first();
+
+    return $instance instanceof AppInstance
+        ? $instance
+        : AppInstance::factory()->for($app)->create();
+}
+
 it('runs app setup steps sequentially in the app path', function (): void {
     allow_app_setup_remote_shell_fallback();
     $app = createAppSetupRunnerTestApp();
-    $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
+    $run = AppSetupRun::factory()->create([
+        'app_instance_id' => appSetupRunnerInstance($app)->id,
+        'status' => 'pending',
+    ]);
     $shell = new AppSetupStepRunnerTestShell;
     $runner = new AppSetupStepRunner(app(AppCommandRouter::class), $shell);
 
     $steps = [
-        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'npm install', 'sort_order' => 1]),
-        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'npm run build', 'sort_order' => 2]),
+        AppSetupStep::factory()->create([
+            'app_instance_id' => appSetupRunnerInstance($app)->id,
+            'command' => 'npm install',
+            'sort_order' => 1,
+        ]),
+        AppSetupStep::factory()->create([
+            'app_instance_id' => appSetupRunnerInstance($app)->id,
+            'command' => 'npm run build',
+            'sort_order' => 2,
+        ]),
     ];
 
     $result = $runner->run($run, $steps, $app, $app->node, ['ORBIT_APP' => 'docs']);
@@ -139,14 +160,21 @@ it('runs app setup steps sequentially in the app path', function (): void {
 it('routes php and composer setup steps through the app host php toolchain', function (): void {
     allow_app_setup_remote_shell_fallback();
     $app = createAppSetupRunnerTestApp();
-    $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
+    $run = AppSetupRun::factory()->create([
+        'app_instance_id' => appSetupRunnerInstance($app)->id,
+        'status' => 'pending',
+    ]);
     $shell = new AppSetupStepRunnerTestShell;
     $runner = new AppSetupStepRunner(app(AppCommandRouter::class), $shell);
 
     $steps = [
-        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'composer install', 'sort_order' => 1]),
         AppSetupStep::factory()->create([
-            'app_id' => $app->id,
+            'app_instance_id' => appSetupRunnerInstance($app)->id,
+            'command' => 'composer install',
+            'sort_order' => 1,
+        ]),
+        AppSetupStep::factory()->create([
+            'app_instance_id' => appSetupRunnerInstance($app)->id,
             'command' => 'php artisan migrate --force',
             'sort_order' => 2,
         ]),
@@ -167,7 +195,10 @@ it('routes php and composer setup steps through the app host php toolchain', fun
 it('fails fast on the first failed setup step and records output', function (): void {
     allow_app_setup_remote_shell_fallback();
     $app = createAppSetupRunnerTestApp();
-    $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
+    $run = AppSetupRun::factory()->create([
+        'app_instance_id' => appSetupRunnerInstance($app)->id,
+        'status' => 'pending',
+    ]);
     $shell = new AppSetupStepRunnerTestShell;
     $shell->results = [
         new RemoteShellResult(exitCode: 1, stdout: 'failed', stderr: 'boom', durationMs: 25),
@@ -175,8 +206,16 @@ it('fails fast on the first failed setup step and records output', function (): 
     $runner = new AppSetupStepRunner(app(AppCommandRouter::class), $shell);
 
     $steps = [
-        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'exit 1', 'sort_order' => 1]),
-        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'echo skipped', 'sort_order' => 2]),
+        AppSetupStep::factory()->create([
+            'app_instance_id' => appSetupRunnerInstance($app)->id,
+            'command' => 'exit 1',
+            'sort_order' => 1,
+        ]),
+        AppSetupStep::factory()->create([
+            'app_instance_id' => appSetupRunnerInstance($app)->id,
+            'command' => 'echo skipped',
+            'sort_order' => 2,
+        ]),
     ];
 
     $result = $runner->run($run, $steps, $app, $app->node, []);
@@ -217,7 +256,10 @@ it('runs setup steps through the local executor by default for agent capable nod
             'host' => 'agent-node',
         ]);
     $app->setRelation('node', $node);
-    $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
+    $run = AppSetupRun::factory()->create([
+        'app_instance_id' => appSetupRunnerInstance($app)->id,
+        'status' => 'pending',
+    ]);
     $shell = new AppSetupStepRunnerTestShell;
     $transport = new WorkspaceSetupStepRunnerExecutorTransport(new RemoteShellResult(
         exitCode: 0,
@@ -237,7 +279,11 @@ it('runs setup steps through the local executor by default for agent capable nod
     );
 
     $steps = [
-        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'npm install', 'sort_order' => 1]),
+        AppSetupStep::factory()->create([
+            'app_instance_id' => appSetupRunnerInstance($app)->id,
+            'command' => 'npm install',
+            'sort_order' => 1,
+        ]),
     ];
 
     $result = $runner->run($run, $steps, $app, $node, ['ORBIT_APP' => 'docs']);
@@ -269,7 +315,10 @@ it('routes php setup commands before dispatching through the local executor', fu
             'user' => 'orbit',
         ]);
     $app->setRelation('node', $node);
-    $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
+    $run = AppSetupRun::factory()->create([
+        'app_instance_id' => appSetupRunnerInstance($app)->id,
+        'status' => 'pending',
+    ]);
     $shell = new AppSetupStepRunnerTestShell;
     $transport = new WorkspaceSetupStepRunnerExecutorTransport(new RemoteShellResult(
         exitCode: 0,
@@ -289,7 +338,11 @@ it('routes php setup commands before dispatching through the local executor', fu
     );
 
     $steps = [
-        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'composer install', 'sort_order' => 1]),
+        AppSetupStep::factory()->create([
+            'app_instance_id' => appSetupRunnerInstance($app)->id,
+            'command' => 'composer install',
+            'sort_order' => 1,
+        ]),
     ];
 
     $result = $runner->run($run, $steps, $app, $node, ['ORBIT_APP' => 'docs']);
@@ -323,7 +376,10 @@ it('fails fast on a non-zero local executor setup step and records output', func
             'user' => 'orbit',
         ]);
     $app->setRelation('node', $node);
-    $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
+    $run = AppSetupRun::factory()->create([
+        'app_instance_id' => appSetupRunnerInstance($app)->id,
+        'status' => 'pending',
+    ]);
     $shell = new AppSetupStepRunnerTestShell;
     $transport = new WorkspaceSetupStepRunnerExecutorTransport(
         new RemoteShellResult(
@@ -356,8 +412,16 @@ it('fails fast on a non-zero local executor setup step and records output', func
     );
 
     $steps = [
-        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'exit 7', 'sort_order' => 1]),
-        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'echo skipped', 'sort_order' => 2]),
+        AppSetupStep::factory()->create([
+            'app_instance_id' => appSetupRunnerInstance($app)->id,
+            'command' => 'exit 7',
+            'sort_order' => 1,
+        ]),
+        AppSetupStep::factory()->create([
+            'app_instance_id' => appSetupRunnerInstance($app)->id,
+            'command' => 'echo skipped',
+            'sort_order' => 2,
+        ]),
     ];
 
     $result = $runner->run($run, $steps, $app, $node, []);
@@ -391,7 +455,10 @@ it('does not place setup environment values in transport metadata for agent-push
             'host' => 'agent-node',
         ]);
     $app->setRelation('node', $node);
-    $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
+    $run = AppSetupRun::factory()->create([
+        'app_instance_id' => appSetupRunnerInstance($app)->id,
+        'status' => 'pending',
+    ]);
     $shell = new AppSetupStepRunnerTestShell;
     $transport = new WorkspaceSetupStepRunnerExecutorTransport(new RemoteShellResult(
         exitCode: 0,
@@ -411,7 +478,11 @@ it('does not place setup environment values in transport metadata for agent-push
     );
 
     $steps = [
-        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'npm install', 'sort_order' => 1]),
+        AppSetupStep::factory()->create([
+            'app_instance_id' => appSetupRunnerInstance($app)->id,
+            'command' => 'npm install',
+            'sort_order' => 1,
+        ]),
     ];
 
     $environment = [

@@ -12,7 +12,7 @@ describe('schedule:list', function (): void {
                 [
                     'name' => 'laravel-scheduler',
                     'scope' => 'app',
-                    'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'app-1'],
+                    'target' => ['type' => 'app', 'name' => 'docs.production', 'node' => 'app-1'],
                     'interval' => 'every minute',
                     'timezone' => 'UTC',
                     'execution' => ['type' => 'command', 'value' => 'php artisan schedule:run'],
@@ -21,10 +21,10 @@ describe('schedule:list', function (): void {
                     'last_run' => ['status' => 'completed'],
                 ],
             ],
-        ], ['app' => 'docs', 'node' => null, 'count' => 1]));
+        ], ['app' => 'docs.production', 'node' => null, 'count' => 1]));
 
         [$exitCode, $output] = runCommand($this, 'schedule:list', [
-            '--app' => 'docs',
+            '--app' => 'docs.production',
             '--json' => true,
         ]);
 
@@ -36,7 +36,7 @@ describe('schedule:list', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/schedules')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'app=docs.production')
             );
         });
 
@@ -54,7 +54,7 @@ describe('schedule:list', function (): void {
                 [
                     'name' => 'laravel-scheduler',
                     'scope' => 'app',
-                    'target' => ['type' => 'app', 'name' => 'docs', 'node' => 'app-1'],
+                    'target' => ['type' => 'app', 'name' => 'docs.production', 'node' => 'app-1'],
                     'interval' => 'every minute',
                     'execution' => ['type' => 'command', 'value' => 'php artisan schedule:run'],
                     'status' => 'expected',
@@ -72,7 +72,7 @@ describe('schedule:list', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'schedule:list', ['--app' => 'docs']);
+        [$exitCode, $output] = runCommand($this, 'schedule:list', ['--app' => 'docs.production']);
 
         expect($exitCode)
             ->toBe(0)
@@ -112,11 +112,15 @@ describe('schedule:list', function (): void {
     });
 
     it('renders a scope-aware empty state when filtered with no matches', function (): void {
-        fakeGateway(fakeSuccessEnvelope(['schedules' => []], ['app' => 'docs', 'node' => null, 'count' => 0]));
+        fakeGateway(fakeSuccessEnvelope(['schedules' => []], [
+            'app' => 'docs.production',
+            'node' => null,
+            'count' => 0,
+        ]));
 
-        [$exitCode, $output] = runCommand($this, 'schedule:list', ['--app' => 'docs']);
+        [$exitCode, $output] = runCommand($this, 'schedule:list', ['--app' => 'docs.production']);
 
-        expect($exitCode)->toBe(0)->and($output)->toBe('No schedules found for app docs.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No schedules found for app docs.production.');
     });
 
     it('renders a plain empty state when unfiltered with no schedules', function (): void {
@@ -131,7 +135,7 @@ describe('schedule:list', function (): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, 'schedule:list', [
-            '--app' => 'docs',
+            '--app' => 'docs.production',
             '--node' => 'app-1',
             '--json' => true,
         ]);

@@ -14,14 +14,15 @@ These rules govern all app family commands.
   app-instance deployment policy, and app health configuration.
 - App names are identity slugs: lowercase letters, digits, and hyphens only.
   They cannot start or end with a hyphen and are limited to 40 characters.
-- App-role artifacts on non-gateway nodes are applied through Agent push.
+- App-host artifacts on non-gateway nodes are applied through Agent push.
   Gateway-owned work executes locally. Provisioning is the sole permanent
   Orbit SSH lane.
 - Apps may have one or more app instances. Instance names are unique within the
   app.
 - An app instance has exactly one driver. Current drivers are `orbit` and
   `laravel-cloud`.
-- `orbit` instances describe Orbit-managed placements on app-role nodes.
+- `orbit` instances describe Orbit-managed placements on nodes with an active
+  `app-dev` or `app-prod` role.
   `laravel-cloud` instances describe external Laravel Cloud application and
   environment targets; Orbit stores the relationship but does not deploy to
   Laravel Cloud in this slice.
@@ -32,8 +33,10 @@ These rules govern all app family commands.
   remain possible, Orbit fails and returns the candidates instead of creating
   another environment.
 - The app `node`, `path`, `root`, URL, and environment fields define logical
-  defaults used when creating an Orbit instance. Runtime placement always
-  resolves through a concrete app instance, as do resources owned by one.
+  defaults used only when creating an Orbit instance. They are discovery and
+  input conveniences, never live placement. Runtime work always resolves a
+  concrete app instance and uses that instance's serving node, path, root, and
+  domain.
 - App instance env values and database targets belong to the instance, not the
   logical app. Rendering an instance env merges explicit app env values with
   database attachments for that instance.
@@ -66,15 +69,18 @@ These rules govern all app family commands.
   FrankenPHP container serves. Orbit ships no command-`exec` surface; deploy
   steps use the same host toolchain.
 - App setup is lifecycle-specific, not a generic exec surface.
-  `app-setup-step:*` records ordered setup commands for an app, and
-  `app:setup` runs those commands on the owning app node through the same host
-  PHP, Composer, and Artisan routing used by deploy steps.
+  `app-setup-step:*` records ordered setup commands for one app instance, and
+  `app:setup` runs those commands on that instance's serving node and path
+  through the same host PHP, Composer, and Artisan routing used by deploy
+  steps. Dotted selectors address the instance; a bare logical-app selector is
+  shorthand only when exactly one instance exists.
 - `app:setup` is idempotent for an unchanged setup-step set. Re-running setup
   with no step changes returns the latest completed run instead of replaying
   commands.
-- Worker mode is an opt-in app runtime setting. It is disabled by default and
-  `app:worker enable` must validate app readiness before changing gateway
-  configuration.
+- Worker mode is an opt-in app-instance runtime setting. It is disabled by
+  default for every instance, and `app:worker enable` must validate readiness
+  on the selected instance before changing gateway configuration. Different
+  instances of one logical app may carry different worker policy.
 - App runtime mounts are extra bind mounts stored on app instances for PHP
   runtimes on `app-dev` nodes. Workspaces inherit the selected app instance's
   configured mounts; mount intent is exclusively app-instance-owned.
@@ -120,6 +126,13 @@ These rules govern all app family commands.
   coverage, nightly fleet refresh, and full Bun vulnerability normalization are
   follow-up slices.
 
+- App doctor, worker, and setup commands resolve concrete placement exactly as
+  deployment and process commands do. A dotted selector such as
+  `docs.production` is explicit. A selector containing only the logical app
+  name succeeds for an app with exactly one instance; otherwise the command fails with
+  a validation error requiring a concrete app-instance selector before
+  authorization or side effects.
+
 Read commands over app registry state are fast gateway database reads unless
 their command contract explicitly opts into live inspection. App runtime drift
 belongs to [`app-doctor.md`](app-doctor.md). Implementation-shape details for
@@ -131,7 +144,7 @@ Orbit-managed production app routes enter through `ingress`, are forwarded over
 WireGuard to the gateway-coupled `router`, and only then fan out to private
 `app-prod` backend artifacts. App commands choose the ingress placement for
 Orbit-driven production. The router owns private route selection and
-backend-pool targeting. The app-prod backend artifact is app-role-owned and
+backend-pool targeting. The app-prod backend artifact is app-host-owned and
 separate from the API Caddy route that is colocated with the gateway router. It
 terminates at `orbit-caddy` on the app-prod node and then reaches the app's
 FrankenPHP Docker runtime container on internal port `8080` over the node Docker
@@ -160,16 +173,22 @@ App command signatures use two positional names intentionally:
 
 ## App JSON Entity
 
-App-family JSON renderers that return an app entity embed the same canonical
-shape under `success.data.app`, or directly under `success.data.apps[]` for
-list items. Command-specific result state belongs beside the entity, not inside
-it.
+When a JSON renderer in the app family returns one concrete placement, it
+embeds the canonical app entity under `success.data.app`. Command-specific
+result state belongs beside the entity, not inside it.
+
+`app:list` is the intentional exception: `success.data.apps[]` contains compact
+logical-app summaries, not this placement-shaped entity. Each summary carries
+`name`, `repository`, aggregate dependency-audit posture, `instance_count`, and
+`workspace_count`. Concrete node, URL, path, runtime, instance, and workspace
+rows belong to `app:show` and `app:instance`.
 
 `app:show` follows that same rule: `success.data.app` is the canonical app
 entity, while show-only registry expansion such as bound workspaces, process
 definitions, routes, and effective agent IDE details lives under
 `success.data.details`. Do not merge those show-only relationships into the
-canonical app entity.
+canonical app entity. Workspace expansion includes only active `app-dev`
+placements and is omitted entirely for `app-prod` callers.
 
 ```json
 {
@@ -184,8 +203,6 @@ canonical app entity.
     "proxy_transport": "http"
   },
   "php_version": "8.5",
-  "worker_enabled": false,
-  "worker_config": null,
   "adopted": false
 }
 ```
@@ -201,8 +218,6 @@ canonical app entity.
 | `runtime` | string | Runtime for the app. `php` uses a FrankenPHP app runtime container; `static` serves without one. |
 | `runtime_config` | object \| null | Runtime-specific gateway configuration. PHP/FrankenPHP apps expose `proxy_transport`, which is `http` by default and may be `https` for app-dev inner TLS; static apps report `null`. |
 | `php_version` | string | PHP version recorded in gateway app configuration. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
-| `worker_enabled` | boolean | Whether FrankenPHP worker mode is enabled for this app. Defaults to `false`. |
-| `worker_config` | object \| null | Worker settings used only when worker mode is enabled. |
 | `adopted` | boolean | `true` once the app path was adopted through `app:register`; `false` for app records created by `app:new` or first registered without adoption. |
 
 Structural fields are always present. Use `null` only for structural fields
@@ -233,6 +248,8 @@ App-instance renderers return this shape under `success.data.instance`, or under
     "configured_mounts": [],
     "required_php_extensions": ["intl", "redis"]
   },
+  "worker_enabled": false,
+  "worker_config": null,
   "deploy_warmup_paths": [],
   "latest_deployment_status": null,
   "latest_deployment_run_id": null
@@ -252,6 +269,8 @@ App-instance renderers return this shape under `success.data.instance`, or under
 | `runtime.mode` | string | `classic` or `worker` for PHP apps. |
 | `runtime.configured_mounts` | array | Instance-scoped runtime mounts rendered into Orbit PHP runtimes for the selected instance. |
 | `runtime.required_php_extensions` | array | Required PHP extensions tracked for the instance. |
+| `worker_enabled` | boolean | Whether FrankenPHP worker mode is enabled for this instance. Defaults to `false`. |
+| `worker_config` | object \| null | Worker settings owned by this instance and retained across disable/enable cycles. |
 | `deploy_warmup_paths` | array | HTTP paths warmed after this instance deploys successfully. |
 | `latest_deployment_status` | string \| null | Latest deployment status owned by this instance. |
 | `latest_deployment_run_id` | integer \| null | Latest deployment run owned by this instance. |
@@ -270,8 +289,9 @@ self-grant — see [Architecture: Self-grants and
 self-serving](../../architecture.md#self-grants-and-self-serving).
 [`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md) is
 the most visible self-serving command in this family today; it works because
-the `app-dev` and `app-prod` self-grant baselines include the
-workspace permissions it needs.
+the `app-dev` self-grant baseline includes the workspace permissions it needs.
+`app-prod` self-grants are read-only and include no wildcard or workspace
+permission; production app services never operate workspaces.
 
 `app-dev` self-grants also include `app:register` for the node itself, so a
 local CLI on an app-dev node can register or re-apply management for apps hosted

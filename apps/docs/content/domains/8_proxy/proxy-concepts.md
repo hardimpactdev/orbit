@@ -69,7 +69,9 @@ These terms define the types of routes that the proxy family owns and manages.
   reverse proxying to the backend pool.
 - **Private backend artifact:** `orbit-caddy` site rendered on an `app-prod`
   node. It listens on HTTP port `80` bound to the node's WireGuard address and
-  serves the app/workspace ingress contract to a backend FrankenPHP container.
+  serves the app ingress contract to a backend FrankenPHP container. Workspace
+  routes are an `app-dev`-only surface and never receive an `app-prod` backend
+  artifact.
 - **Route enactment state:** Persisted operation evidence attached to route
   intent. `pending` means no operation has completed, `partial` means some
   operations completed before a named failure, `failed` means the first

@@ -136,6 +136,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Workspace not found | No visible workspace matches the resolved criteria. | Failure |
 | Ambiguous workspace | Multiple workspaces match the name and `--app` is missing. | Failure |
+| Production app unsupported | The selected workspace belongs to an `app-prod` instance. | Failure (`error.code=workspace.unsupported_for_production`) before history is returned. |
 
 `workspace:history` exits zero whenever the gateway history read succeeds,
 including when the result set is empty.

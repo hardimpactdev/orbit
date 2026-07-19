@@ -549,6 +549,8 @@ it('scopes command catalog authorization metadata to controller class and action
     ]);
 
     expect($catalog['commands']['update:all']['p4_mapping']['authorization_permission'])->toBe(['*']);
+
+    expect($catalog['commands']['app:list']['p4_mapping']['authorization_permission'])->toBe(['app:read']);
 });
 
 it('keeps linked test file paths on disk under the repository root', function (): void {

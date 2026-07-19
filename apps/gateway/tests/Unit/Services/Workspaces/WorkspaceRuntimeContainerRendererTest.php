@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -79,6 +80,26 @@ function workspaceRendererForTest(): WorkspaceRuntimeContainerRenderer
         new OrbitContainerNames,
     );
 }
+
+it('rejects production workspace runtime rendering', function (): void {
+    $node = createTestAppHostNode(attributes: ['user' => 'orbit'], role: 'app-prod');
+    $app = makeWorkspaceRendererApp($node, [
+        'name' => 'demo-prod',
+        'environment' => 'production',
+        'path' => '/home/demo/app',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $workspace = makeWorkspaceRendererWorkspace($app, [
+        'name' => 'feature-a',
+        'path' => '/home/demo/app/.worktrees/feature-a',
+        'php_version' => null,
+    ]);
+
+    expect(fn () => workspaceRendererForTest()->render($workspace))
+        ->toThrow(WorkspaceUnsupportedForProduction::class);
+});
 
 it(
     'renders a FrankenPHP workspace runtime container for a PHP workspace with deterministic name, image, network, and source mount',
@@ -307,33 +328,6 @@ it('uses configured runtime mounts from the selected app instance', function ():
         ]);
 });
 
-it('does not mount the packages directory for app-prod PHP workspace runtimes', function (): void {
-    $node = createTestAppHostNode(attributes: ['user' => 'orbit'], role: 'app-prod');
-    $app = makeWorkspaceRendererApp($node, [
-        'name' => 'demo-prod',
-        'environment' => 'production',
-        'path' => '/home/demo/app',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ]);
-    $workspace = makeWorkspaceRendererWorkspace($app, [
-        'name' => 'feature-a',
-        'path' => '/home/demo/app/.worktrees/feature-a',
-        'php_version' => null,
-    ]);
-
-    $container = workspaceRendererForTest()->render($workspace);
-
-    expect($container->mounts())
-        ->not
-        ->toContain([
-            'source' => '/home/orbit/packages',
-            'target' => '/packages',
-            'read_only' => false,
-        ]);
-});
-
 it('uses the workspace php_version override when set', function (): void {
     $workspace = makePhpWorkspace(workspaceOverrides: ['php_version' => '8.4']);
 
@@ -400,8 +394,7 @@ it('changes the spec hash when the app-dev packages mount policy changes', funct
         description: 'App must retain its node relation before packages mount hash coverage.',
     );
 
-    $node->roleAssignments()->update(['status' => 'pending']);
-    $node->unsetRelation('roleAssignments');
+    $node->forceFill(['user' => ' '])->save();
     $app->unsetRelation('node');
     $workspace->unsetRelation('app');
 
@@ -514,27 +507,6 @@ it('renders app-dev FrankenPHP thread pool settings for classic workspace runtim
     ]);
 });
 
-it('does not render app-dev FrankenPHP thread pool settings for app-prod workspace runtimes', function (): void {
-    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
-    $app = makeWorkspaceRendererApp($node, [
-        'name' => 'demo-prod',
-        'environment' => 'production',
-        'path' => '/home/demo/app',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ]);
-    $workspace = makeWorkspaceRendererWorkspace($app, [
-        'name' => 'feature-a',
-        'path' => '/home/demo/app/.worktrees/feature-a',
-        'php_version' => null,
-    ]);
-
-    $container = workspaceRendererForTest()->render($workspace);
-
-    expect(array_key_exists('FRANKENPHP_CONFIG', $container->environment()))->toBeFalse();
-});
-
 it('omits opcache.preload from rendered php ini when the workspace has no preload script', function (): void {
     $workspace = makePhpWorkspace();
 
@@ -637,41 +609,6 @@ it('renders app-dev workspace runtimes with Orbit CA trust pool mount and PHP cl
         ->toBe([
             'feature-a.demo.test' => 'host-gateway',
         ]);
-});
-
-it('does not render runtime client trust for app-prod workspace runtimes', function (): void {
-    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
-    $app = makeWorkspaceRendererApp($node, [
-        'name' => 'demo-prod',
-        'environment' => 'production',
-        'path' => '/home/demo/app',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ]);
-    $workspace = makeWorkspaceRendererWorkspace($app, [
-        'name' => 'feature-a',
-        'path' => '/home/demo/app/.worktrees/feature-a',
-        'php_version' => null,
-    ]);
-
-    $container = workspaceRendererForTest()->render($workspace);
-
-    expect(collect($container->mounts())->pluck('target'))
-        ->not
-        ->toContain(AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath)
-        ->and(array_key_exists('SSL_CERT_FILE', $container->environment()))
-        ->toBeFalse()
-        ->and(array_key_exists('CURL_CA_BUNDLE', $container->environment()))
-        ->toBeFalse()
-        ->and(array_key_exists('openssl.cafile', $container->phpIni()))
-        ->toBeFalse()
-        ->and(array_key_exists('curl.cainfo', $container->phpIni()))
-        ->toBeFalse()
-        ->and($container->extraHosts())
-        ->toBeEmpty()
-        ->and(array_key_exists('extra_hosts', $container->spec()))
-        ->toBeFalse();
 });
 
 it('renders app-dev workspace runtimes with inner HTTPS on 8443, site cert mounts, and FrankenPHP TLS directives', function (): void {

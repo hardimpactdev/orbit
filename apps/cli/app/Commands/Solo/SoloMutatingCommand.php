@@ -41,7 +41,11 @@ final class SoloMutatingCommand extends GatewayCommand
             return $failure;
         }
 
-        if ($this->operation->forceRequired && $this->option('force') !== true) {
+        if (
+            $this->operation->forceRequired
+            && ! $this->operation->destructiveConsent
+            && $this->option('force') !== true
+        ) {
             return $this->renderFailure('validation_failed', 'This Solo command requires --force.', [
                 'reason' => 'force_required',
             ]);
@@ -72,6 +76,12 @@ final class SoloMutatingCommand extends GatewayCommand
             if (is_scalar($value) && (string) $value !== '') {
                 $payload[$payloadKey] = (string) $value;
             }
+        }
+
+        $confirmation = $this->confirmDestructiveMutation($payload);
+
+        if ($confirmation !== null) {
+            return $confirmation;
         }
 
         try {
@@ -125,5 +135,54 @@ final class SoloMutatingCommand extends GatewayCommand
     private function payloadKeyForArgument(string $argument): string
     {
         return self::ARGUMENT_PAYLOAD_KEYS[$argument] ?? $argument;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function confirmDestructiveMutation(array $payload): ?int
+    {
+        if (! $this->operation->destructiveConsent || $this->option('force') === true) {
+            return null;
+        }
+
+        $meta = [
+            'field' => 'force',
+            'reason' => 'destructive_consent_required',
+        ];
+
+        if (! $this->allowsInteractiveInput()) {
+            return $this->renderFailure(
+                'validation_failed',
+                'Use --force to run this destructive Solo command.',
+                $meta,
+            );
+        }
+
+        if ($this->confirm($this->destructiveConfirmationLabel($payload), default: false)) {
+            return null;
+        }
+
+        return $this->renderFailure('validation_failed', 'Operation cancelled.', $meta);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function destructiveConfirmationLabel(array $payload): string
+    {
+        $argument = $this->operation->requiredArguments[0] ?? null;
+
+        if ($argument === null) {
+            return "Run destructive Solo command '{$this->operation->command}'?";
+        }
+
+        $value = $payload[$this->payloadKeyForArgument($argument)] ?? null;
+
+        if (! is_scalar($value) || (string) $value === '') {
+            return "Run destructive Solo command '{$this->operation->command}'?";
+        }
+
+        return "Run destructive Solo command '{$this->operation->command}' for {$argument} '{$value}'?";
     }
 }

@@ -15,7 +15,7 @@ orbit schedule:show [name] [--app=<app>] [--node=<node>] [--json]
 ## Examples
 
 ```bash
-orbit schedule:show laravel-scheduler --app=docs
+orbit schedule:show laravel-scheduler --app=docs.production
 orbit schedule:show backups --node=app-1
 ```
 
@@ -23,7 +23,8 @@ orbit schedule:show backups --node=app-1
 
 - `name`: schedule slug. When omitted in interactive mode, Orbit shows a
   schedule data table.
-- `--app`: disambiguate an app-scoped schedule.
+- `--app`: select the owning `app.instance`. A bare app name is shorthand only
+  when exactly one eligible instance is visible.
 - `--node`: disambiguate a node-scoped schedule.
 - `--json`: Output JSON.
 

@@ -103,20 +103,12 @@ describe('app:list', function (): void {
                         [
                             'name' => 'docs',
                             'repository' => 'git@github.com:orbit/docs.git',
+                            'instance_count' => 17,
+                            'workspace_count' => 23,
                         ],
                         [
                             'name' => 'blog',
                             'repository' => null,
-                        ],
-                    ],
-                    'inventory' => [
-                        [
-                            'app' => 'docs',
-                            'instance_count' => 2,
-                            'workspace_count' => 2,
-                        ],
-                        [
-                            'app' => 'blog',
                             'instance_count' => 1,
                             'workspace_count' => 0,
                         ],
@@ -170,6 +162,10 @@ describe('app:list', function (): void {
             ->toContain('Workspaces')
             ->and($plain)
             ->toContain('git@github.com:orbit/docs.git')
+            ->and($plain)
+            ->toContain('17')
+            ->and($plain)
+            ->toContain('23')
             ->and($plain)
             ->toContain('App: docs')
             ->and($plain)

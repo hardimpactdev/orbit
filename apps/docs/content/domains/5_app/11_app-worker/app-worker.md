@@ -2,7 +2,7 @@
 
 [Back to App commands.](../README.md)
 
-Inspect or change FrankenPHP worker mode for an app.
+Inspect or change FrankenPHP worker mode for one concrete app instance.
 
 Worker mode is an opt-in app runtime setting. It is disabled by default and
 classic FrankenPHP request handling is the steady-state runtime path. Worker
@@ -10,48 +10,50 @@ mode keeps the Laravel application in memory between requests through Laravel
 Octane's FrankenPHP integration, and `app:worker` is the only command that
 owns that state transition.
 
-Worker mode lives on the app entity. There is no workspace worker mode in the
-current command surface; workspaces always use the classic runtime regardless
-of the owning app's worker setting.
+Worker mode lives on the app-instance entity. Different instances of one
+logical app may use different worker settings. There is no workspace worker
+mode in the current command surface; supported `app-dev` workspaces always use
+the classic runtime, and production workspaces are rejected.
 
 ## Usage
 
 ```bash
-orbit app:worker show <app> [--json]
-orbit app:worker enable <app> [--json]
-orbit app:worker disable <app> [--json]
+orbit app:worker show <app.instance> [--json]
+orbit app:worker enable <app.instance> [--json]
+orbit app:worker disable <app.instance> [--json]
 ```
 
 ## Examples
 
 ```bash
-orbit app:worker show docs
-orbit app:worker show docs --json
-orbit app:worker enable docs
-orbit app:worker disable docs --json
+orbit app:worker show docs.development
+orbit app:worker show docs.development --json
+orbit app:worker enable docs.development
+orbit app:worker disable docs.development --json
 ```
 
 ## Arguments and options
 
 - `action`: one of `show`, `enable`, `disable`. Required.
-- `app`: app name or app hostname. Required. Name match wins; the hostname
-  match is consulted only when no name match exists.
+- `app`: dotted app-instance selector such as `docs.development`. A bare app
+  name or hostname is shorthand only when that app has exactly one instance.
 - `--json`: Output JSON.
 
 ## What Happens
 
-Run `app:worker` to inspect or change worker mode for an app and to update
-the worker configuration stored on that app.
+Run `app:worker` to inspect or change worker mode for one app instance and to
+update the worker configuration stored on that instance.
 
-`app:worker show` reads the current state without touching gateway
+`app:worker show` reads the selected instance state without touching gateway
 configuration. You see the same `worker_enabled` and `worker_config` values
-that `app:show` reports.
+that `app:instance show` reports.
 
-`app:worker enable` first runs the readiness validator on the owning node.
+`app:worker enable` first runs the readiness validator on the selected
+instance's serving node and source path.
 When readiness fails, the command exits with an error and leaves both
 `worker_enabled` and `worker_config` unchanged. When readiness passes, the
 command writes `worker_enabled=true` and the active worker configuration into
-gateway-owned app configuration.
+gateway-owned app-instance configuration.
 
 `app:worker disable` clears `worker_enabled` to `false` and preserves the
 stored `worker_config` so re-enabling later restores your prior configuration.
@@ -63,13 +65,14 @@ stored `worker_config` so re-enabling later restores your prior configuration.
 - Restart the FrankenPHP runtime container directly. The runtime renderer
   picks up the new worker mode setting the next time the app runtime is
   enacted.
-- Change workspace runtime behavior. Workspaces remain in classic mode
-  regardless of the app's worker setting.
+- Change workspace runtime behavior. Supported `app-dev` workspaces remain in
+  classic mode regardless of the selected instance's worker setting;
+  `app-prod` workspace operations are rejected before runtime rendering.
 
 ## Readiness
 
-Use `enable` only when the app source on the owning node carries every piece
-of evidence below:
+Use `enable` only when the selected instance source on its serving node carries
+every piece of evidence below:
 
 - `vendor/laravel/octane/` exists. Declaring `laravel/octane` in
   `composer.json` or `composer.lock` is not enough; the vendor directory
@@ -101,8 +104,10 @@ the exact payload shape, success and error codes, and field meanings.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The owning node is reachable for the readiness probe when calling `enable`.
-- The current node identity is authorized to manage the app. Use `app:read`
+- The selected instance's serving node is reachable for the readiness probe
+  when calling `enable`.
+- The current node identity is authorized to manage that instance on its
+  serving node. Use `app:read`
   for `show` and `app:worker` for `enable` and `disable`.
 
 ## Related Commands
@@ -110,8 +115,8 @@ the exact payload shape, success and error codes, and field meanings.
 Use these commands alongside `app:worker` to inspect the canonical app entity
 or repair runtime drift.
 
-- [`app:show`](../4_app-show/app-show.md) — show the canonical app entity
-  including `worker_enabled` and `worker_config`.
+- [`app:instance`](../19_app-instance/app-instance.md) — show the concrete app
+  instance including `worker_enabled` and `worker_config`.
 - [`doctor --family=app`](../app-doctor.md) — verify and repair app runtime
   drift, including worker-mode container state.
 

@@ -5,15 +5,20 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Data\Doctor\DoctorAppInstanceTarget;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Enums\ActivityLogType;
+use App\Exceptions\AppSelectionResolutionFailed;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\Node;
+use App\Services\Doctor\DoctorAppInstanceTargetResolver;
 use App\Services\Doctor\DoctorProgressReportFactory;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Doctor\DoctorValidationFailure;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use App\Support\Streaming\ProgressEventStreamEmitter;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -21,10 +26,13 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
+/** @mago-expect lint:kan-defect */
 final readonly class DoctorRunController implements Loggable
 {
     public function __construct(
         private NodeAccessAuthorizer $authorizer,
+        private DoctorAppInstanceTargetResolver $appTargets,
+        private WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     public function __invoke(
@@ -57,8 +65,8 @@ final readonly class DoctorRunController implements Loggable
         }
 
         if ($this->usesFleetScope($request)) {
-            $unauthorizedTarget = $runner
-                ->fleetTargetsForFamilies($families)
+            $fleetTargets = $runner->fleetTargetsForFamilies($families);
+            $unauthorizedTarget = $fleetTargets
                 ->first(
                     fn (Node $target): bool => ! $this->authorizer->allows($caller, $target, 'doctor:verify'),
                 );
@@ -83,6 +91,19 @@ final readonly class DoctorRunController implements Loggable
                 ], 422);
             }
 
+            try {
+                foreach ($fleetTargets as $target) {
+                    $this->workspaceRoleGuard->ensureDoctorRequestDoesNotCrossProductionBoundary(
+                        caller: $caller,
+                        target: $target,
+                        families: $families === [] ? $runner->categoriesForNode($target) : $families,
+                        hasWorkspaceScope: false,
+                    );
+                }
+            } catch (WorkspaceUnsupportedForProduction $exception) {
+                return $this->workspaceUnsupportedForProduction($exception);
+            }
+
             if ($this->wantsEventStream($request)) {
                 return $this->streamFleet($streams, $runner, $families, $key);
             }
@@ -98,7 +119,17 @@ final readonly class DoctorRunController implements Loggable
             ]);
         }
 
-        $target = $this->resolveTarget($request, $caller);
+        try {
+            $appTarget = $this->appTargets->resolve(
+                $this->scopeValue($request, 'app'),
+                $caller,
+                'doctor:verify',
+            );
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->appTargetFailure($exception);
+        }
+
+        $target = $this->resolveTarget($request, $caller, $appTarget);
 
         if ($target === null) {
             return response()->json([
@@ -110,13 +141,32 @@ final readonly class DoctorRunController implements Loggable
             ], 422);
         }
 
+        if ($appTarget instanceof DoctorAppInstanceTarget && $target->id !== $appTarget->node->id) {
+            return response()->json([
+                'error' => [
+                    'code' => 'validation_failed',
+                    'message' => "App instance '{$appTarget->app->name}.{$appTarget->instance->name}' is not placed on node '{$target->name}'.",
+                    'meta' => [
+                        'field' => 'node',
+                        'reason' => 'app_instance_node_mismatch',
+                        'node' => $target->name,
+                        'serving_node' => $appTarget->node->name,
+                    ],
+                ],
+            ], 422);
+        }
+
+        $scope = $appTarget instanceof DoctorAppInstanceTarget
+            ? $appTarget->scope($this->scopeValue($request, 'workspace'))
+            : $this->doctorTargetScope($request);
+
         $authorization = $this->authorizer->authorize($caller, $target, 'doctor:verify');
 
         if (! $authorization->allowed) {
             return $this->authorizationFailed($target, 'doctor:verify', $authorization);
         }
 
-        $failure = $validator->validate($families, $runner, $target);
+        $failure = $validator->validate($families, $runner, $target, $scope);
 
         if ($failure instanceof DoctorValidationFailure) {
             return response()->json([
@@ -128,6 +178,17 @@ final readonly class DoctorRunController implements Loggable
             ], 422);
         }
 
+        try {
+            $this->workspaceRoleGuard->ensureDoctorRequestDoesNotCrossProductionBoundary(
+                caller: $caller,
+                target: $target,
+                families: $families === [] ? $runner->categoriesForNode($target) : $families,
+                hasWorkspaceScope: $scope->workspace !== null,
+            );
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return $this->workspaceUnsupportedForProduction($exception);
+        }
+
         if ($this->wantsEventStream($request)) {
             return $this->stream(
                 $streams,
@@ -136,8 +197,7 @@ final readonly class DoctorRunController implements Loggable
                 $target,
                 $families,
                 $key,
-                $this->scopeValue($request, 'app'),
-                $this->scopeValue($request, 'workspace'),
+                $scope,
             );
         }
 
@@ -145,7 +205,7 @@ final readonly class DoctorRunController implements Loggable
             $target,
             families: $families,
             key: $key,
-            scope: $this->doctorTargetScope($request),
+            scope: $scope,
         );
 
         return response()->json([
@@ -167,8 +227,7 @@ final readonly class DoctorRunController implements Loggable
         Node $target,
         array $families,
         ?string $key,
-        ?string $app,
-        ?string $workspace,
+        DoctorTargetScope $scope,
     ): StreamedResponse {
         return $streams->make(function (ProgressEventStreamEmitter $events) use (
             $runner,
@@ -176,8 +235,7 @@ final readonly class DoctorRunController implements Loggable
             $target,
             $families,
             $key,
-            $app,
-            $workspace,
+            $scope,
         ): void {
             $renderedFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
             $familyStatuses = $progressReports->familyStatuses($renderedFamilies);
@@ -196,8 +254,9 @@ final readonly class DoctorRunController implements Loggable
                     actions: [],
                     familyStatuses: $familyStatuses,
                     familyCheckCounts: $familyCheckCounts,
-                    app: $app,
-                    workspace: $workspace,
+                    app: $scope->app,
+                    workspace: $scope->workspace,
+                    appInstance: $scope->appInstance,
                 ),
             ]);
             $events->tree('Running Doctor', array_map(
@@ -221,8 +280,7 @@ final readonly class DoctorRunController implements Loggable
                 $target,
                 $key,
                 $renderedFamilies,
-                $app,
-                $workspace,
+                $scope,
                 &$familyStatuses,
                 &$familyCheckCounts,
                 &$issues,
@@ -261,8 +319,9 @@ final readonly class DoctorRunController implements Loggable
                             actions: [],
                             familyStatuses: $familyStatuses,
                             familyCheckCounts: $familyCheckCounts,
-                            app: $app,
-                            workspace: $workspace,
+                            app: $scope->app,
+                            workspace: $scope->workspace,
+                            appInstance: $scope->appInstance,
                         ),
                     ],
                 );
@@ -273,7 +332,7 @@ final readonly class DoctorRunController implements Loggable
                 families: $families,
                 key: $key,
                 onFamilyProgress: $onFamilyProgress,
-                scope: DoctorTargetScope::from($app, $workspace),
+                scope: $scope,
             );
 
             if (($doctor['healthy'] ?? false) === true) {
@@ -395,8 +454,11 @@ final readonly class DoctorRunController implements Loggable
         ));
     }
 
-    private function resolveTarget(Request $request, Node $caller): ?Node
-    {
+    private function resolveTarget(
+        Request $request,
+        Node $caller,
+        ?DoctorAppInstanceTarget $appTarget = null,
+    ): ?Node {
         $name = $request->input('node');
 
         if (is_string($name) && $name !== '') {
@@ -405,7 +467,21 @@ final readonly class DoctorRunController implements Loggable
             return $target instanceof Node ? $target : null;
         }
 
-        return $caller;
+        return $appTarget?->node ?? $caller;
+    }
+
+    private function appTargetFailure(AppSelectionResolutionFailed $exception): JsonResponse
+    {
+        return response()->json(
+            [
+                'error' => [
+                    'code' => $exception->errorCode,
+                    'message' => $exception->getMessage(),
+                    'meta' => $exception->meta,
+                ],
+            ],
+            $exception->errorCode === 'app.not_found' ? 404 : 422,
+        );
     }
 
     private function authorizationFailed(
@@ -425,6 +501,18 @@ final readonly class DoctorRunController implements Loggable
                 ],
             ],
         ], 403);
+    }
+
+    private function workspaceUnsupportedForProduction(
+        WorkspaceUnsupportedForProduction $exception,
+    ): JsonResponse {
+        return response()->json([
+            'error' => [
+                'code' => $exception->errorCode(),
+                'message' => $exception->getMessage(),
+                'meta' => $exception->meta,
+            ],
+        ], 422);
     }
 
     private function validateScope(Request $request): ?JsonResponse

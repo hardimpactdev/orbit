@@ -237,7 +237,8 @@ function polyscopeWorkspaceDriverExceptionBlob(WorkspaceCreateFailed $exception)
 function polyscopeWorkspaceDriverLocalExecutorActivityRows(): array
 {
     return DB::table('activity_log')
-        ->where('log_name', 'local_executor')
+        ->where('log_name', 'api')
+        ->whereIn('event', ['agent_push.dispatching', 'agent_push.completed'])
         ->orderBy('id')
         ->get()
         ->all();

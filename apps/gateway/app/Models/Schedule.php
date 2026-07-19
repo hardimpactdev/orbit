@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string $scope
  * @property int|null $app_id
+ * @property int|null $app_instance_id
  * @property int|null $node_id
  * @property string $target_name
  * @property string $interval
@@ -29,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read App|null $app
+ * @property-read AppInstance|null $appInstance
  * @property-read Node|null $node
  * @property-read ScheduleRun|null $latestRun
  * @property-read Collection<int, ScheduleRun> $runs
@@ -43,6 +45,7 @@ class Schedule extends Model
         'name',
         'scope',
         'app_id',
+        'app_instance_id',
         'node_id',
         'target_name',
         'interval',
@@ -67,6 +70,14 @@ class Schedule extends Model
     public function app(): BelongsTo
     {
         return $this->belongsTo(App::class);
+    }
+
+    /**
+     * @return BelongsTo<AppInstance, $this>
+     */
+    public function appInstance(): BelongsTo
+    {
+        return $this->belongsTo(AppInstance::class);
     }
 
     /**

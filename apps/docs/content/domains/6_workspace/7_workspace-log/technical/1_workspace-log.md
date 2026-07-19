@@ -142,6 +142,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Run not found | The provided run ID does not exist or is not visible to the caller. | Failure |
 | Log not found | The run record exists but its captured output has been pruned. | Failure |
+| Production app unsupported | The run belongs to a workspace on an `app-prod` instance. | Failure (`error.code=workspace.unsupported_for_production`) before captured output is returned. |
 
 `workspace:log` exits zero whenever the gateway read succeeds, including
 when a run completed without producing any captured output (empty steps array

@@ -6,12 +6,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Requests\Api\SendAgentIdeMessageApiRequest;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\AgentIde\AgentIdeMessageDelivery;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -28,6 +30,7 @@ final class AgentIdeMessageController implements Loggable
     public function __construct(
         private readonly AgentIdeMessageDelivery $delivery,
         private readonly NodeAccessAuthorizer $authorizer,
+        private readonly WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     public function __invoke(SendAgentIdeMessageApiRequest $request): JsonResponse
@@ -48,12 +51,20 @@ final class AgentIdeMessageController implements Loggable
         $workspaceSelector = $request->workspaceSelector();
 
         if ($workspaceSelector !== null) {
+            if ($boundary = $this->workspaceBoundaryForCaller($caller)) {
+                return $boundary;
+            }
+
             return $this->sendWorkspaceMessage($request, $caller, $workspaceSelector);
         }
 
         $pathSelector = $request->pathSelector();
 
         if ($pathSelector !== null) {
+            if ($boundary = $this->workspaceBoundaryForCaller($caller)) {
+                return $boundary;
+            }
+
             return $this->sendPathMessage($request, $caller, $pathSelector);
         }
 
@@ -137,7 +148,7 @@ final class AgentIdeMessageController implements Loggable
     ): JsonResponse {
         $workspace = $this->resolveWorkspace($workspaceSelector);
 
-        if (! $workspace instanceof Workspace || ! $workspace->app instanceof App) {
+        if (! $workspace instanceof Workspace) {
             return $this->error(
                 code: 'target_not_found',
                 message: "Workspace '{$workspaceSelector}' not found or not visible.",
@@ -146,9 +157,26 @@ final class AgentIdeMessageController implements Loggable
             );
         }
 
-        $workspace->app->loadMissing('node');
+        $app = $workspace->app;
 
-        $authorizationMeta = $this->messageAuthorizationMeta($caller, $workspace->app, $workspace);
+        if (! $app instanceof App) {
+            return $this->error(
+                code: 'target_not_found',
+                message: "Workspace '{$workspaceSelector}' not found or not visible.",
+                meta: ['workspace' => $workspaceSelector],
+                status: 404,
+            );
+        }
+
+        try {
+            $this->workspaceRoleGuard->ensureWorkspaceSupported($workspace);
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return $this->workspaceUnsupportedForProduction($exception);
+        }
+
+        $app->loadMissing('node');
+
+        $authorizationMeta = $this->messageAuthorizationMeta($caller, $app, $workspace);
 
         if ($authorizationMeta !== null) {
             return $this->error(
@@ -193,6 +221,28 @@ final class AgentIdeMessageController implements Loggable
                     || $app->url() === "https://{$selector}"
                 ),
             );
+    }
+
+    private function workspaceBoundaryForCaller(Node $caller): ?JsonResponse
+    {
+        try {
+            $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($caller);
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return $this->workspaceUnsupportedForProduction($exception);
+        }
+
+        return null;
+    }
+
+    private function workspaceUnsupportedForProduction(
+        WorkspaceUnsupportedForProduction $exception,
+    ): JsonResponse {
+        return $this->error(
+            code: $exception->errorCode(),
+            message: $exception->getMessage(),
+            meta: $exception->meta,
+            status: 422,
+        );
     }
 
     private function resolveWorkspace(string $selector): ?Workspace

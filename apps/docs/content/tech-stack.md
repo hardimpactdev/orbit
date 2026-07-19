@@ -476,8 +476,8 @@ client-trust configuration is rendered for `app-prod` runtimes.
 `app-dev` PHP app and workspace containers render a small native
 `FRANKENPHP_CONFIG` snippet in classic mode: `max_threads auto` and
 `max_idle_time 1h`. These are FrankenPHP thread-pool settings, not Laravel
-Octane worker mode; worker mode stays opt-in through `app:worker` after
-readiness validation.
+Octane worker mode; worker mode stays opt-in per concrete app instance through
+`app:worker` after readiness validation on that instance.
 
 PHP apps on `app-dev` nodes may also store instance-scoped additional runtime
 mount intent through `app:mount` with dotted selectors such as `hauser.nmbp`.
@@ -706,7 +706,12 @@ Each tick:
 
 1. Queries the gateway database for every enabled schedule and selects the ones that are due in the current minute.
 2. Claims a per-schedule lock in the gateway database (`schedule_locks`). Locks are gateway-owned; there is no node-local lock state.
-3. Dispatches the due schedules. Schedules whose target resolves to the gateway run locally; schedules targeting any other node run on that node through `internal:schedule:run` over agent-push. The scheduled command physically executes on the target, but the gateway is orchestrating it.
+3. Dispatches the due schedules. App schedules resolve their persisted concrete
+   app instance and execute on that instance's serving node with its path as the
+   working directory. Schedules whose target resolves to the gateway run
+   locally; schedules targeting any other node run on that node through
+   `internal:schedule:run` over agent-push. The scheduled command physically
+   executes on the target, but the gateway is orchestrating it.
 4. Records the run result — success, failure, exit code, captured output, dispatch failure — in `schedule_runs` immediately as durable gateway history.
 5. Releases the lock.
 

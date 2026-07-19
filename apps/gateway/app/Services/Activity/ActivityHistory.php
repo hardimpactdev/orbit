@@ -18,7 +18,16 @@ final class ActivityHistory
      * @var list<string>
      */
     private const array INTERNAL_LOG_NAMES = [
+        'local_executor',
         'remote_shell',
+    ];
+
+    /**
+     * @var list<string>
+     */
+    private const array INTERNAL_LANES = [
+        'internal',
+        'local-executor',
     ];
 
     /**
@@ -43,7 +52,19 @@ final class ActivityHistory
         }
 
         if ($filters['effect'] !== null) {
-            $query->where('properties->type', $filters['effect']);
+            if ($filters['effect'] === 'write') {
+                $query->where(function (Builder $query): void {
+                    $query
+                        ->where('properties->type', 'write')
+                        ->orWhere(function (Builder $query): void {
+                            $query
+                                ->where('log_name', 'security')
+                                ->where('event', 'like', 'node.host_key.%');
+                        });
+                });
+            } else {
+                $query->where('properties->type', $filters['effect']);
+            }
         }
 
         if ($filters['correlation'] !== null) {
@@ -106,7 +127,7 @@ final class ActivityHistory
         $related = $this->relatedActivities($activity);
 
         return [
-            'activity' => $this->activityPayload($activity, includeDetails: true),
+            'activity' => $this->activityPayload($activity),
             'related' => $related,
             'meta' => [
                 'related_count' => count($related),
@@ -123,20 +144,20 @@ final class ActivityHistory
             return [];
         }
 
-        return Activity::query()
-            ->with(['causer', 'subject'])
+        /** @var Builder<Activity> $query */
+        $query = Activity::query()->with(['causer', 'subject']);
+        $query
             ->where('batch_uuid', $activity->batch_uuid)
             ->whereKeyNot($activity->id)
             ->orderBy('created_at')
-            ->orderBy('id')
-            ->get()
-            ->map(fn (Activity $related): array => [
-                'id' => $related->id,
-                'occurred_at' => $related->created_at?->toIso8601String(),
-                'type' => $related->event,
-                'effect' => $related->properties->get('type'),
-            ])
-            ->all();
+            ->orderBy('id');
+
+        return array_values(
+            $query
+                ->get()
+                ->map(fn (Activity $related): array => $this->activityPayload($related))
+                ->all(),
+        );
     }
 
     /**
@@ -155,7 +176,7 @@ final class ActivityHistory
                 ->where(function (Builder $query): void {
                     $query
                         ->whereNull('properties->lane')
-                        ->orWhere('properties->lane', '<>', 'internal');
+                        ->orWhereNotIn('properties->lane', self::INTERNAL_LANES);
                 });
         });
     }
@@ -205,32 +226,32 @@ final class ActivityHistory
     /**
      * @return array<string, mixed>
      */
-    private function activityPayload(Activity $activity, bool $includeDetails = false): array
+    private function activityPayload(Activity $activity): array
     {
-        $payload = [
+        /** @var array<string, mixed> $properties */
+        $properties = $activity
+            ->properties
+            ->except(['type', 'command'])
+            ->toArray();
+        $canonical = ActivityPayloadCompatibility::normalize($activity, $properties);
+
+        return [
             'id' => $activity->id,
             'occurred_at' => $activity->created_at?->toIso8601String(),
             'correlation_id' => $activity->batch_uuid,
             'type' => $activity->event,
-            'effect' => $activity->properties->get('type'),
+            'effect' => $canonical['effect'],
             'subject' => $this->subjectPayload($activity->subject),
             'actor' => $this->actorPayload($activity->causer),
             'command' => $activity->properties->get('command'),
-            'summary' => $activity->description,
+            'description' => $activity->description,
+            'properties' => $canonical['properties'] === [] ? (object) [] : $canonical['properties'],
+            'channel' => $canonical['channel'],
         ];
-
-        if ($includeDetails) {
-            $payload['details'] = $activity
-                ->properties
-                ->except(['type', 'command'])
-                ->toArray();
-        }
-
-        return $payload;
     }
 
     /**
-     * @return array{type: string, name: string|null}|null
+     * @return array{type: string, name: string}|null
      */
     private function subjectPayload(?Model $subject): ?array
     {
@@ -259,7 +280,7 @@ final class ActivityHistory
     }
 
     /**
-     * @return array{node: string|null}|null
+     * @return array{node: string}|null
      */
     private function actorPayload(?Model $causer): ?array
     {

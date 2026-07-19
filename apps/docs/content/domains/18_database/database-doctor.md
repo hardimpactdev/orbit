@@ -10,6 +10,11 @@ The database family doctor implements the
 connection state still matches the supported env configuration for databases
 that is present in app-instance and workspace `.env` files.
 
+An `app-prod` target never admits a workspace mapping, workspace `.env`, or
+unsupported marker for a workspace target into the probe. Mappings to supported
+production app instances remain visible. Explicit workspace scope is rejected
+before database inspection, restore, or adoption begins.
+
 The database family owns these facts:
 
 - database connection records owned by the gateway: slug, driver, host, port,

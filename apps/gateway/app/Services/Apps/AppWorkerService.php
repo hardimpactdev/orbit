@@ -7,6 +7,7 @@ namespace App\Services\Apps;
 use App\Data\Apps\AppWorkerReadinessResult;
 use App\Data\Apps\PhpWorkerConfig;
 use App\Models\App;
+use App\Models\AppInstance;
 
 final readonly class AppWorkerService
 {
@@ -17,53 +18,53 @@ final readonly class AppWorkerService
     /**
      * @return array{
      *     ready: bool,
-     *     app: App,
+     *     instance: AppInstance,
      *     readiness: AppWorkerReadinessResult,
      *     changed: bool,
      * }
      */
-    public function enable(App $app): array
+    public function enable(App $app, AppInstance $instance): array
     {
-        $readiness = $this->readiness->assess($app);
+        $readiness = $this->readiness->assess($app, $instance);
 
         if (! $readiness->ready) {
             return [
                 'ready' => false,
-                'app' => $app,
+                'instance' => $instance,
                 'readiness' => $readiness,
                 'changed' => false,
             ];
         }
 
-        $changed = ! $app->worker_enabled || ! is_array($app->worker_config);
-        $existing = is_array($app->worker_config) ? $app->worker_config : [];
+        $changed = ! $instance->worker_enabled || ! is_array($instance->worker_config);
+        $existing = is_array($instance->worker_config) ? $instance->worker_config : [];
         $config = PhpWorkerConfig::fromArray($existing)->toArray();
 
-        $app->worker_enabled = true;
-        $app->worker_config = $config;
-        $app->save();
+        $instance->worker_enabled = true;
+        $instance->worker_config = $config;
+        $instance->save();
 
         return [
             'ready' => true,
-            'app' => $app,
+            'instance' => $instance,
             'readiness' => $readiness,
             'changed' => $changed || $existing !== $config,
         ];
     }
 
     /**
-     * @return array{app: App, changed: bool}
+     * @return array{instance: AppInstance, changed: bool}
      */
-    public function disable(App $app): array
+    public function disable(AppInstance $instance): array
     {
-        $changed = $app->worker_enabled === true;
+        $changed = $instance->worker_enabled === true;
 
-        $app->worker_enabled = false;
+        $instance->worker_enabled = false;
         // Keep worker_config so subsequent enables remember the prior config.
-        $app->save();
+        $instance->save();
 
         return [
-            'app' => $app,
+            'instance' => $instance,
             'changed' => $changed,
         ];
     }

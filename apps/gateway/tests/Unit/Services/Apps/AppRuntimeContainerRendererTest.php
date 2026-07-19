@@ -52,6 +52,26 @@ function rendererForTest(): AppRuntimeContainerRenderer
     );
 }
 
+/**
+ * @param  array<string, mixed>  $overrides
+ */
+function workerRuntimeInstance(App $app, array $overrides = []): AppInstance
+{
+    $app->loadMissing('node');
+
+    return AppInstance::factory()->for($app)->create(array_merge([
+        'name' => 'development',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $app->node_id,
+            node: $app->node?->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ], $overrides));
+}
+
 it('renders a FrankenPHP app runtime container for a PHP app with deterministic name, image, network, and source mount', function (): void {
     $app = makePhpApp();
 
@@ -777,8 +797,9 @@ it('exposes labels with the spec hash so the manager can detect drift', function
 
 it('does not render any worker-mode runtime config when worker_enabled is false', function (): void {
     $app = makePhpApp();
+    $instance = workerRuntimeInstance($app);
 
-    $container = rendererForTest()->render($app);
+    $container = rendererForTest()->renderForInstance($app, $instance);
 
     expect($container->environment()['FRANKENPHP_CONFIG'] ?? null)
         ->toBe("max_threads auto\nmax_idle_time 1h")
@@ -788,7 +809,8 @@ it('does not render any worker-mode runtime config when worker_enabled is false'
 
 it('does not include any FRANKENPHP_CONFIG worker directive in the docker run command when worker mode is off', function (): void {
     $app = makePhpApp();
-    $container = rendererForTest()->render($app);
+    $instance = workerRuntimeInstance($app);
+    $container = rendererForTest()->renderForInstance($app, $instance);
 
     $command = new DockerCommandBuilder()->runDetached($container);
 
@@ -816,7 +838,8 @@ it('does not render app-dev FrankenPHP thread pool settings for app-prod classic
 });
 
 it('renders the FrankenPHP worker block against public/frankenphp-worker.php with workers=auto', function (): void {
-    $app = makePhpApp([
+    $app = makePhpApp();
+    $instance = workerRuntimeInstance($app, [
         'worker_enabled' => true,
         'worker_config' => [
             'workers' => 'auto',
@@ -824,7 +847,7 @@ it('renders the FrankenPHP worker block against public/frankenphp-worker.php wit
         ],
     ]);
 
-    $container = rendererForTest()->render($app);
+    $container = rendererForTest()->renderForInstance($app, $instance);
 
     expect($container->environment())->toMatchArray([
         'FRANKENPHP_CONFIG' => "max_threads auto\nmax_idle_time 1h\nworker {\n\tfile /app/public/frankenphp-worker.php\n}",
@@ -833,7 +856,8 @@ it('renders the FrankenPHP worker block against public/frankenphp-worker.php wit
 });
 
 it('renders the block-form `worker` directive with num when worker_config.workers is an integer', function (): void {
-    $app = makePhpApp([
+    $app = makePhpApp();
+    $instance = workerRuntimeInstance($app, [
         'worker_enabled' => true,
         'worker_config' => [
             'workers' => 4,
@@ -841,7 +865,7 @@ it('renders the block-form `worker` directive with num when worker_config.worker
         ],
     ]);
 
-    $container = rendererForTest()->render($app);
+    $container = rendererForTest()->renderForInstance($app, $instance);
 
     expect($container->environment())->toMatchArray([
         'FRANKENPHP_CONFIG' => "max_threads auto\nmax_idle_time 1h\nworker {\n\tfile /app/public/frankenphp-worker.php\n\tnum 4\n}",
@@ -852,12 +876,13 @@ it('renders the block-form `worker` directive with num when worker_config.worker
 it(
     'does not emit any OCTANE_* or MAX_CONSECUTIVE_FAILURES env vars; FrankenPHP and Laravel only read FRANKENPHP_CONFIG and MAX_REQUESTS',
     function (): void {
-        $app = makePhpApp([
+        $app = makePhpApp();
+        $instance = workerRuntimeInstance($app, [
             'worker_enabled' => true,
             'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
         ]);
 
-        $container = rendererForTest()->render($app);
+        $container = rendererForTest()->renderForInstance($app, $instance);
 
         expect(array_key_exists('OCTANE_SERVER', $container->environment()))
             ->toBeFalse()
@@ -875,11 +900,13 @@ it(
 it('points the worker directive at the configured document root, not always /app/public', function (): void {
     $app = makePhpApp([
         'document_root' => 'web',
+    ]);
+    $instance = workerRuntimeInstance($app, [
         'worker_enabled' => true,
         'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
     ]);
 
-    $container = rendererForTest()->render($app);
+    $container = rendererForTest()->renderForInstance($app, $instance);
 
     expect($container->environment()['FRANKENPHP_CONFIG'])
         ->toBe("max_threads auto\nmax_idle_time 1h\nworker {\n\tfile /app/web/frankenphp-worker.php\n}");
@@ -888,11 +915,12 @@ it('points the worker directive at the configured document root, not always /app
 it(
     'exposes the worker directive and MAX_REQUESTS env on the rendered docker run command so FrankenPHP and the Laravel worker actually consume them',
     function (): void {
-        $app = makePhpApp([
+        $app = makePhpApp();
+        $instance = workerRuntimeInstance($app, [
             'worker_enabled' => true,
             'worker_config' => ['workers' => 4, 'max_requests' => 500],
         ]);
-        $container = rendererForTest()->render($app);
+        $container = rendererForTest()->renderForInstance($app, $instance);
 
         $command = new DockerCommandBuilder()->runDetached($container);
 
@@ -908,20 +936,21 @@ it(
 it('changes the spec hash when worker mode toggles on the same app so the manager recreates the container', function (): void {
     $renderer = rendererForTest();
     $app = makePhpApp(['name' => 'toggle-app']);
+    $instance = workerRuntimeInstance($app);
 
     // Classic mode (worker disabled is the factory default).
-    $classic = $renderer->render($app);
+    $classic = $renderer->renderForInstance($app, $instance);
 
     // Flip only the worker toggle on the same app identity — name, node,
     // path, php_version, document_root all stay identical so the spec hash
     // differs strictly because of the worker fields.
-    $app->worker_enabled = true;
-    $app->worker_config = [
+    $instance->worker_enabled = true;
+    $instance->worker_config = [
         'workers' => 'auto',
         'max_requests' => 500,
     ];
 
-    $worker = $renderer->render($app);
+    $worker = $renderer->renderForInstance($app, $instance);
 
     expect($classic->name())
         ->toBe($worker->name())
@@ -934,12 +963,13 @@ it('changes the spec hash when worker mode toggles on the same app so the manage
 });
 
 it('uses worker config defaults when worker_enabled is true and worker_config is empty', function (): void {
-    $app = makePhpApp([
+    $app = makePhpApp();
+    $instance = workerRuntimeInstance($app, [
         'worker_enabled' => true,
         'worker_config' => null,
     ]);
 
-    $container = rendererForTest()->render($app);
+    $container = rendererForTest()->renderForInstance($app, $instance);
 
     expect($container->environment())->toMatchArray([
         'FRANKENPHP_CONFIG' => "max_threads auto\nmax_idle_time 1h\nworker {\n\tfile /app/public/frankenphp-worker.php\n}",

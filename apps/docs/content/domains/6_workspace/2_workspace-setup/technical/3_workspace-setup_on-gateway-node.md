@@ -15,8 +15,8 @@ This contract defines behavior when `workspace:setup` is invoked from a
   node through Agent push, not on the gateway filesystem.
 - **Remote apply**: Applies runtime artifacts and setup steps through Agent
   push to the app instance's owning node.
-- **Target eligibility**: The owning node must be an active node;
-  the gateway is never a valid app target.
+- **Target eligibility**: The owning node must be active and carry `app-dev`;
+  the gateway and `app-prod` nodes are never valid workspace targets.
 
 ## Authorization
 

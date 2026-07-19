@@ -111,6 +111,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Workspace not found | No visible workspace matches the resolved criteria. | Failure |
 | Ambiguous workspace | Multiple workspaces match the name and `--app` is missing. | Failure |
+| Production app unsupported | The selected workspace belongs to an `app-prod` instance. | Failure (`error.code=workspace.unsupported_for_production`) before returning registry data. |
 | Not authorized | The caller is not allowed to inspect the target workspace. | Failure |
 
 `workspace:show` exits zero whenever the registry read succeeds. Runtime drift

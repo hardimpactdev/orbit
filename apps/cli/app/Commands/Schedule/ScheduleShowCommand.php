@@ -21,7 +21,7 @@ final class ScheduleShowCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'schedule:show
         {name? : Schedule name}
-        {--app= : Filter by app scope}
+        {--app= : Filter by app instance (app.instance; bare app only when unambiguous)}
         {--node= : Filter by node scope}
         {--json}';
 

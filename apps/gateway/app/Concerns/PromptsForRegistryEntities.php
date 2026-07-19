@@ -13,6 +13,7 @@ use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Schedules\ScheduleAppInstanceResolver;
 use Illuminate\Database\Eloquent\Builder;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
@@ -248,7 +249,7 @@ trait PromptsForRegistryEntities
         ?string $node = null,
     ): array|GatewayApiException {
         return Schedule::query()
-            ->with(['app.node', 'node'])
+            ->with(['app', 'appInstance', 'node'])
             ->when($app !== null, fn (Builder $query): Builder => $query->where(
                 'scope',
                 'app',
@@ -560,7 +561,7 @@ trait PromptsForRegistryEntities
     private function schedulePromptPayload(Schedule $schedule): array
     {
         $targetNode = $schedule->scope === 'app'
-            ? $schedule->app?->node
+            ? app(ScheduleAppInstanceResolver::class)->targetNode($schedule)
             : $schedule->node;
 
         return [

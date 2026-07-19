@@ -997,6 +997,143 @@ it('requires a non-null app instance on canonical workspace json entities', func
         );
 });
 
+it('accepts the compact logical app list summary instead of the placement entity', function (): void {
+    config()->set('librarian.rules', [JsonRendererExampleRule::class]);
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/5_app/3_app-list/technical/6.2_app-list_output-render_json.md',
+        contents: <<<'MARKDOWN'
+            # JSON Renderer
+
+            ```json
+            {
+              "success": {
+                "data": {
+                  "apps": [{
+                    "name": "docs",
+                    "repository": null,
+                    "dependency_audit_status": "unknown",
+                    "dependency_warning_count": 0,
+                    "dependency_danger_count": 0,
+                    "last_dependency_audit_at": null,
+                    "instance_count": 1,
+                    "workspace_count": 0
+                  }]
+                },
+                "meta": []
+              }
+            }
+            ```
+            MARKDOWN,
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(findingsForRule($payload, 'command_docs.json_renderer_examples'))
+        ->toBeEmpty();
+});
+
+it('requires every compact logical app list summary field', function (): void {
+    config()->set('librarian.rules', [JsonRendererExampleRule::class]);
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/5_app/3_app-list/technical/6.2_app-list_output-render_json.md',
+        contents: <<<'MARKDOWN'
+            # JSON Renderer
+
+            ```json
+            {
+              "success": {
+                "data": {
+                  "apps": [{
+                    "name": "docs",
+                    "repository": null,
+                    "dependency_audit_status": "unknown",
+                    "dependency_warning_count": 0,
+                    "dependency_danger_count": 0,
+                    "last_dependency_audit_at": null,
+                    "instance_count": 1
+                  }]
+                },
+                "meta": []
+              }
+            }
+            ```
+            MARKDOWN,
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and(array_column(findingsForRule($payload, 'command_docs.json_renderer_examples'), 'message'))
+        ->toContain(
+            'JSON example 1 success.data.apps[0] is missing required canonical app field `workspace_count`.',
+        );
+});
+
+it('reports instance-owned worker fields on canonical logical app entities', function (): void {
+    config()->set('librarian.rules', [JsonRendererExampleRule::class]);
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/5_app/4_app-show/technical/6.2_app-show_output-render_json.md',
+        contents: <<<'MARKDOWN'
+            # JSON Renderer
+
+            ```json
+            {
+              "success": {
+                "data": {
+                  "app": {
+                    "name": "docs",
+                    "node": "beast",
+                    "url": "https://docs.beast.test",
+                    "path": "/srv/orbit/apps/docs",
+                    "root": "public",
+                    "repository": null,
+                    "runtime": "frankenphp",
+                    "runtime_config": null,
+                    "php_version": "8.5",
+                    "adopted": false,
+                    "worker_enabled": true,
+                    "worker_config": {"workers": "auto", "max_requests": 500}
+                  }
+                },
+                "meta": []
+              }
+            }
+            ```
+            MARKDOWN,
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(array_column(findingsForRule($payload, 'command_docs.json_renderer_examples'), 'message'))
+        ->toContain(
+            'JSON example 1 success.data.app contains non-canonical app field `worker_enabled`.',
+            'JSON example 1 success.data.app contains non-canonical app field `worker_config`.',
+        );
+});
+
 it('reports json warning entries that omit required warning fields', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
@@ -2437,6 +2574,60 @@ function use_json_metadata_shape_rule_only(): void
         \App\Librarian\Rules\JsonMetadataShapeRule::class,
     ]);
 }
+
+it('reports success envelopes without mandatory metadata', function (): void {
+    use_json_metadata_shape_rule_only();
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        jsonRendererContract: "# JSON Renderer\n\n## Primitive\n\nNone. JSON renderer.\n\n## Envelope\n\nUses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.\n\n```json\n{\"success\": {\"data\": {\"node\": \"gateway\"}}}\n```\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
+            'path' => 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md',
+            'line' => 11,
+            'severity' => 'error',
+            'rule' => 'command_docs.json_metadata_shape',
+            'message' => 'JSON example 1 success envelope is missing mandatory metadata at success.meta.',
+        ]);
+});
+
+it('scans general product docs for success envelopes without mandatory metadata', function (): void {
+    use_json_metadata_shape_rule_only();
+    writeOrbitCommandDocsFamily($this->docsRoot);
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/3_tool/catalog/mailpit.md',
+        contents: "# Mailpit\n\n```json\n{\"success\": {\"data\": {\"tool\": \"mailpit\"}}}\n```\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains/3_tool/catalog/mailpit.md',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
+            'path' => 'docs/domains/3_tool/catalog/mailpit.md',
+            'line' => 3,
+            'severity' => 'error',
+            'rule' => 'command_docs.json_metadata_shape',
+            'message' => 'JSON example 1 success envelope is missing mandatory metadata at success.meta.',
+        ]);
+});
 
 it('reports json examples with empty object metadata', function (): void {
     use_json_metadata_shape_rule_only();

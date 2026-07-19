@@ -71,6 +71,96 @@ function create_process_store_app_instance(App $app, Node $node, string $name = 
 }
 
 describe('ProcessStoreController', function (): void {
+    it('rejects app-prod callers mutating workspace processes despite a legacy add grant', function (): void {
+        $caller = Node::factory()
+            ->appProd()
+            ->create([
+                'name' => 'app-prod-caller',
+                'host' => PROCESS_STORE_CALLER_WG_IP,
+                'wireguard_address' => PROCESS_STORE_CALLER_WG_IP,
+            ]);
+        $appNode = createTestAppHostNode(['name' => 'app-dev-1']);
+        grantProcessStoreAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $instance = create_process_store_app_instance($app, $appNode);
+        Workspace::factory()->for($app)->create([
+            'app_instance_id' => $instance->id,
+            'name' => 'feature-docs',
+        ]);
+        $remoteShell = new ProcessStoreRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs.development',
+                'workspace' => 'feature-docs',
+                'name' => 'horizon',
+                'command' => 'php artisan horizon',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
+            ->assertJsonPath('error.meta.node', 'app-prod-caller')
+            ->assertJsonPath('error.meta.role', 'app-prod');
+
+        expect(Process::query()->where('name', 'horizon')->exists())
+            ->toBeFalse()
+            ->and($remoteShell->scripts)
+            ->toBe([]);
+    });
+
+    it('does not derive or enact workspace units during app-context writes from app-prod callers', function (): void {
+        $caller = Node::factory()
+            ->appProd()
+            ->create([
+                'name' => 'app-prod-caller',
+                'host' => PROCESS_STORE_CALLER_WG_IP,
+                'wireguard_address' => PROCESS_STORE_CALLER_WG_IP,
+            ]);
+        $appNode = createTestAppHostNode(['name' => 'app-dev-1']);
+        grantProcessStoreAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $instance = create_process_store_app_instance($app, $appNode);
+        Workspace::factory()->for($app)->create([
+            'app_instance_id' => $instance->id,
+            'name' => 'feature-docs',
+        ]);
+        $remoteShell = new ProcessStoreRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs.development',
+                'name' => 'vite',
+                'command' => 'npm run dev',
+                'no_start' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(1, 'success.data.runtime_units')
+            ->assertJsonPath('success.data.runtime_units.0.context', 'main')
+            ->assertJsonMissing(['context' => 'feature-docs']);
+
+        expect($remoteShell->scripts)
+            ->toHaveCount(1)
+            ->and($remoteShell->scripts[0])
+            ->not->toContain('feature-docs');
+    });
+
     it('requires an app instance when a bare app selector is ambiguous', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         $developmentNode = createTestAppHostNode(['name' => 'app-development']);

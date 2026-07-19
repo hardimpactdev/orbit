@@ -301,7 +301,7 @@ describe('dns:resolve-tld', function (): void {
                 ->toBe('missing');
         });
 
-        it('returns destructive_consent_required for --reset without --force non-interactively', function (): void {
+        it('returns canonical destructive consent metadata for --reset without --force non-interactively', function (): void {
             [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', [
                 'tld' => 'test',
                 '--reset' => true,
@@ -310,7 +310,14 @@ describe('dns:resolve-tld', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('destructive_consent_required');
+            expect($exitCode)
+                ->toBe(1)
+                ->and($decoded['error']['code'])
+                ->toBe('validation_failed')
+                ->and($decoded['error']['meta']['field'])
+                ->toBe('force')
+                ->and($decoded['error']['meta']['reason'])
+                ->toBe('destructive_consent_required');
         });
 
         it('returns node.unsupported_platform when resolver does not support mutation', function (): void {

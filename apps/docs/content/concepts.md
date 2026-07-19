@@ -360,6 +360,7 @@ Source: [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 - **Schedule**
 - **Schedule scope**
 - **App-scoped schedule**
+- **Schedule app selector**
 - **Node-scoped schedule**
 - **Orbit-scoped schedule**
 - **Laravel scheduler**

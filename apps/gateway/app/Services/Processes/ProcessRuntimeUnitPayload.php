@@ -8,22 +8,28 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 
 class ProcessRuntimeUnitPayload
 {
     public function __construct(
         private readonly ProcessRuntimeDriverRegistry $runtimeDrivers,
+        private readonly WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     /**
      * @return list<array{name: string, context: string}>
      */
-    public function forProcess(App $app, Process $process, ?Workspace $workspaceContext = null): array
-    {
+    public function forProcess(
+        App $app,
+        Process $process,
+        ?Workspace $workspaceContext = null,
+        ?Node $consumer = null,
+    ): array {
         $app->loadMissing('workspaces');
         $process->loadMissing('owner');
 
-        return collect($this->contexts($app, $process, $workspaceContext))
+        return collect($this->contexts($app, $process, $workspaceContext, $consumer))
             ->map(fn (?Workspace $workspace): array => [
                 'name' => $this->runtimeDrivers->forProcess($process)->runtimeUnitName($app, $process, $workspace),
                 'context' => $this->contextName($process, $workspace),
@@ -35,18 +41,32 @@ class ProcessRuntimeUnitPayload
     /**
      * @return list<Workspace|null>
      */
-    private function contexts(App $app, Process $process, ?Workspace $workspaceContext): array
-    {
+    private function contexts(
+        App $app,
+        Process $process,
+        ?Workspace $workspaceContext,
+        ?Node $consumer,
+    ): array {
         if ($process->owner instanceof Node) {
             return [null];
         }
 
         if ($workspaceContext instanceof Workspace) {
-            return [$workspaceContext];
+            return (
+                $this->workspaceRoleGuard->allowsWorkspaceTarget($workspaceContext, $consumer)
+                    ? [$workspaceContext]
+                    : []
+            );
         }
 
-        if ($process->owner instanceof Workspace) {
-            return [$process->owner];
+        $workspaceOwner = $process->owner;
+
+        if ($workspaceOwner instanceof Workspace) {
+            return (
+                $this->workspaceRoleGuard->allowsWorkspaceTarget($workspaceOwner, $consumer)
+                    ? [$workspaceOwner]
+                    : []
+            );
         }
 
         $config = is_array($process->runtime_config) ? $process->runtime_config : [];
@@ -60,8 +80,16 @@ class ProcessRuntimeUnitPayload
             ? $app->workspaces
             : $app->workspaces->where('app_instance_id', $process->app_instance_id);
 
-        /** @var list<Workspace> $workspaceModels */
-        $workspaceModels = array_values($workspaces->all());
+        $workspaceModels = [];
+
+        foreach ($workspaces as $workspace) {
+            if (
+                $workspace instanceof Workspace
+                && $this->workspaceRoleGuard->allowsWorkspaceTarget($workspace, $consumer)
+            ) {
+                $workspaceModels[] = $workspace;
+            }
+        }
 
         return [null, ...$workspaceModels];
     }

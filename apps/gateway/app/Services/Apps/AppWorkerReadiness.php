@@ -7,6 +7,7 @@ namespace App\Services\Apps;
 use App\Data\Apps\AppWorkerReadinessResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 
 final readonly class AppWorkerReadiness
 {
@@ -23,16 +24,19 @@ final readonly class AppWorkerReadiness
 
     public function __construct(
         private RemoteAppWorkerReadinessProbe $probe,
+        private AppRuntimeContainerRenderer $runtimeRenderer,
     ) {}
 
-    public function assess(App $app): AppWorkerReadinessResult
+    public function assess(App $app, AppInstance $instance): AppWorkerReadinessResult
     {
+        $app = $this->runtimeRenderer->runtimeAppForInstance($app, $instance);
+        $target = "{$app->name}.{$instance->name}";
         $runtime = $app->runtimeKind();
 
         if ($runtime !== AppRuntimeKind::Php) {
             return AppWorkerReadinessResult::notReady(
                 code: 'app.worker_unsupported_runtime',
-                message: "Worker mode requires runtime=php; app '{$app->name}' uses '{$runtime->value}'.",
+                message: "Worker mode requires runtime=php; app instance '{$target}' uses '{$runtime->value}'.",
                 missing: ['runtime=php'],
                 meta: ['runtime' => $runtime->value],
             );
@@ -43,7 +47,7 @@ final readonly class AppWorkerReadiness
         if ($node === null) {
             return AppWorkerReadinessResult::notReady(
                 code: 'app.worker_unknown_node',
-                message: "App '{$app->name}' has no owning node; cannot validate worker readiness.",
+                message: "App instance '{$target}' has no owning node; cannot validate worker readiness.",
                 missing: ['owning_node'],
             );
         }
@@ -53,7 +57,7 @@ final readonly class AppWorkerReadiness
         if ($appPath === '') {
             return AppWorkerReadinessResult::notReady(
                 code: 'app.worker_missing_path',
-                message: "App '{$app->name}' has no source path; cannot validate worker readiness.",
+                message: "App instance '{$target}' has no source path; cannot validate worker readiness.",
                 missing: ['app_path'],
             );
         }
@@ -79,7 +83,7 @@ final readonly class AppWorkerReadiness
         if ($missing !== []) {
             return AppWorkerReadinessResult::notReady(
                 code: 'app.worker_readiness_failed',
-                message: "App '{$app->name}' is not ready for worker mode.",
+                message: "App instance '{$target}' is not ready for worker mode.",
                 missing: $missing,
                 meta: [
                     'probe_output' => $stdout,

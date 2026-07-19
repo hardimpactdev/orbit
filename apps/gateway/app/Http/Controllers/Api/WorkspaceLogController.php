@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
@@ -15,6 +16,7 @@ use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Workspaces\WorkspaceLogPayload;
 use App\Services\Workspaces\WorkspacePlacement;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -25,6 +27,7 @@ final readonly class WorkspaceLogController implements Loggable
     public function __construct(
         private NodeAccessAuthorizer $authorizer,
         private WorkspacePlacement $placement,
+        private WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     public function __invoke(string $run, Request $request, WorkspaceLogPayload $payload): JsonResponse
@@ -50,14 +53,25 @@ final readonly class WorkspaceLogController implements Loggable
         }
 
         $workspace = $workspaceRun->workspace;
-        $node = $workspace instanceof Workspace
-            ? $this->placement->nodeForWorkspace($workspace)
-            : null;
+
+        if (! $workspace instanceof Workspace) {
+            return $this->authorizationFailed('Workspace run owning node could not be resolved.', [
+                'run' => $workspaceRun->id,
+            ]);
+        }
+
+        $node = $this->placement->nodeForWorkspace($workspace);
 
         if (! $node instanceof Node) {
             return $this->authorizationFailed('Workspace run owning node could not be resolved.', [
                 'run' => $workspaceRun->id,
             ]);
+        }
+
+        try {
+            $this->workspaceRoleGuard->ensureWorkspaceSupported($workspace);
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return $this->workspaceUnsupportedForProduction($exception);
         }
 
         $authorization = $this->authorizer->authorize($caller, $node, 'workspace:log');
@@ -103,6 +117,18 @@ final readonly class WorkspaceLogController implements Loggable
                 ],
             ],
         ], 404);
+    }
+
+    private function workspaceUnsupportedForProduction(
+        WorkspaceUnsupportedForProduction $exception,
+    ): JsonResponse {
+        return response()->json([
+            'error' => [
+                'code' => $exception->errorCode(),
+                'message' => $exception->getMessage(),
+                'meta' => $exception->meta,
+            ],
+        ], 422);
     }
 
     /**

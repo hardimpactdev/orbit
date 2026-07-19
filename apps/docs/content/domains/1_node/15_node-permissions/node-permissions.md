@@ -71,6 +71,10 @@ the normalized result equals the existing set, the command reports
 `--add`, or `--preset` are normalized away; the command surfaces a warning
 that lists the removed permissions so you can adjust your automation.
 
+Mutations reject a result containing `*` or any `workspace:*` permission when
+either the consuming or serving node has `app-prod`. Production app services
+cannot operate workspaces through a grant to another node.
+
 ## Interactive mode
 
 Run without `--preset`, `--permissions`, `--add`, or `--remove` in an
@@ -99,7 +103,8 @@ access grant.
    include `node:read` or `*`; write modes require `node:permissions` or `*`.
    Callers without the required permission receive `authorization_failed`.
 3. Compute the normalized target permission set from the requested mode.
-4. Apply the change to the grant. Reads return the current permissions
+4. Enforce the app-dev-only workspace boundary against both grant endpoints.
+5. Apply the change to the grant. Reads return the current permissions
    without mutation. Mutations write the normalized set and report whether
    the grant was created or updated.
 
@@ -132,6 +137,8 @@ for the exact payload shape.
   `--remove` cannot be combined.
 - Read mode and `--remove` require an existing grant edge; the gateway fails
   with `node.grant_not_found` when the edge is absent.
+- A mutation that grants workspace authority requires that neither endpoint
+  has `app-prod`.
 
 ## Related Commands
 

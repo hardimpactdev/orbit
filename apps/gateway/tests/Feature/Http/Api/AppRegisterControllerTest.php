@@ -130,8 +130,8 @@ describe('AppRegisterController', function (): void {
             ->assertJsonPath('success.data.app.node', 'app-1')
             ->assertJsonPath('success.data.app.runtime', 'php')
             ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'http')
-            ->assertJsonPath('success.data.app.worker_enabled', false)
-            ->assertJsonPath('success.data.app.worker_config', null)
+            ->assertJsonMissingPath('success.data.app.worker_enabled')
+            ->assertJsonMissingPath('success.data.app.worker_config')
             ->assertJsonPath('success.meta.node', 'app-1')
             ->assertJsonPath('success.meta.warnings', []);
 

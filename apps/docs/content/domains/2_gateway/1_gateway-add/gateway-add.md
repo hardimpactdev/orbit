@@ -81,9 +81,11 @@ missing or stale, use [`gateway:trust`](../2_gateway-trust/gateway-trust.md).
 provision hosts, does not mint access grants, and does not repair unrelated node
 drift.
 
-First-gateway bootstrap via `node:new --template=gateway --host=<host>
---operator-name=<operator-name>` already completes the onboarding for the initiating client;
-that initiating client must not run `gateway:add` afterward.
+First-gateway bootstrap via
+`node:new <gateway-name> --template=gateway --host=<host> --tld=<gateway-tld> --operator-name=<operator-name> --operator-tld=<operator-tld>`
+already completes onboarding for the initiating client. The gateway uses
+`<gateway-tld>` while the initiating operator uses the separate
+`<operator-tld>` identity; that client must not run `gateway:add` afterward.
 
 ## Output
 

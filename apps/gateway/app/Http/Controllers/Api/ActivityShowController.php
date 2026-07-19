@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Services\Activity\ActivityHistory;
+use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Spatie\Activitylog\Models\Activity;
@@ -24,6 +25,11 @@ final class ActivityShowController implements Loggable
 
     private string $outcome = 'not_found';
 
+    #[OpenApiResponse(
+        status: 200,
+        description: 'The canonical selected activity and its correlation peers.',
+        type: 'array{success: array{data: array{activity: array{id: int, occurred_at: string, correlation_id: string|null, type: string, effect: string, subject: array{type: string, name: string}|null, actor: array{node: string}|null, command: string|null, description: string|null, properties: array<string, mixed>, channel: string}, related: list<array{id: int, occurred_at: string, correlation_id: string|null, type: string, effect: string, subject: array{type: string, name: string}|null, actor: array{node: string}|null, command: string|null, description: string|null, properties: array<string, mixed>, channel: string}>}, meta: array{related_count: int}}}',
+    )]
     public function __invoke(string $id, ActivityHistory $history): JsonResponse
     {
         if (filter_var($id, FILTER_VALIDATE_INT) === false || (int) $id < 1) {

@@ -578,9 +578,9 @@ describe(RemoteLocalExecutor::class, function (): void {
         expect($activities)
             ->toHaveCount(2)
             ->and($started->event)
-            ->toBe('local_executor.dispatching')
+            ->toBe('agent_push.dispatching')
             ->and($started->description)
-            ->toBe('Local executor operation dispatching')
+            ->toBe('Agent push operation dispatching')
             ->and($started->subject_type)
             ->toBe($node->getMorphClass())
             ->and((int) $started->subject_id)
@@ -588,7 +588,8 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->and($startedProperties)
             ->toMatchArray([
                 'type' => 'write',
-                'lane' => 'local-executor',
+                'lane' => 'internal',
+                'transport' => 'agent_push',
                 'status' => 'dispatching',
                 'operation_id' => $operationId,
                 'target_node_id' => $node->getKey(),
@@ -603,13 +604,14 @@ describe(RemoteLocalExecutor::class, function (): void {
                 'command_line' => $auditLine,
             ])
             ->and($completed->event)
-            ->toBe('local_executor.completed')
+            ->toBe('agent_push.completed')
             ->and($completed->description)
-            ->toBe('Local executor operation succeeded')
+            ->toBe('Agent push operation succeeded')
             ->and($completedProperties)
             ->toMatchArray([
                 'type' => 'write',
-                'lane' => 'local-executor',
+                'lane' => 'internal',
+                'transport' => 'agent_push',
                 'status' => 'succeeded',
                 'operation_id' => $operationId,
                 'target_node_id' => $node->getKey(),
@@ -773,7 +775,8 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->toBe(13)
             ->and($completedProperties)
             ->toMatchArray([
-                'lane' => 'local-executor',
+                'lane' => 'internal',
+                'transport' => 'agent_push',
                 'status' => 'failed',
                 'command' => 'internal:executor:verify',
                 'exit_code' => 13,
@@ -823,7 +826,8 @@ describe(RemoteLocalExecutor::class, function (): void {
                 ->not->toContain($token)->and($exception->result->stderr)
                 ->not->toContain($token)->and($exception->getTraceAsString())
                 ->not->toContain($token)->and($completedProperties)->toMatchArray([
-                    'lane' => 'local-executor',
+                    'lane' => 'internal',
+                    'transport' => 'agent_push',
                     'status' => 'failed',
                     'command' => 'internal:executor:verify',
                     'exit_code' => 19,
@@ -865,7 +869,8 @@ describe(RemoteLocalExecutor::class, function (): void {
                 )
                 ->not->toContain($token)->and($exception->getTraceAsString())
                 ->not->toContain($token)->and($completedProperties)->toMatchArray([
-                    'lane' => 'local-executor',
+                    'lane' => 'internal',
+                    'transport' => 'agent_push',
                     'status' => 'failed',
                     'command' => 'internal:executor:verify',
                     'exit_code' => null,
@@ -903,7 +908,8 @@ describe(RemoteLocalExecutor::class, function (): void {
                 )->toBe('Remote local executor transport failed: transport disconnected')->and($exception->getMessage())
                 ->not->toContain($token)->and($exception->getTraceAsString())
                 ->not->toContain($token)->and($completedProperties)->toMatchArray([
-                    'lane' => 'local-executor',
+                    'lane' => 'internal',
+                    'transport' => 'agent_push',
                     'status' => 'failed',
                     'command' => 'internal:executor:verify',
                     'exit_code' => null,
@@ -1585,7 +1591,8 @@ function remoteLocalExecutorTokenFromScript(string $script): string
 function remoteLocalExecutorActivityRows(): array
 {
     $rows = DB::table('activity_log')
-        ->where('log_name', 'local_executor')
+        ->where('log_name', 'api')
+        ->whereIn('event', ['agent_push.dispatching', 'agent_push.completed'])
         ->orderBy('id')
         ->get()
         ->all();

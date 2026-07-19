@@ -116,6 +116,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | App not found | The resolved app slug does not exist in gateway configuration (`error.code=workspace.app_not_found`, `error.meta.app`). | Failure |
 | App instance required | The selector does not resolve a concrete app instance. | Failure (`error.code=validation_failed`, `error.meta.reason=app_instance_required`) |
+| Production app unsupported | The selected instance is served by an `app-prod` node. | Failure (`error.code=workspace.unsupported_for_production`) |
 | Unauthorized app | The caller is not authorized to read the resolved app's teardown-step policy (`error.code=authorization_failed`). | Failure |
 
 ### Exit Status

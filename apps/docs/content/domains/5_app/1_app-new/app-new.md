@@ -2,7 +2,8 @@
 
 [Back to App commands.](../README.md)
 
-Create a new Orbit-managed app on a node with an app role.
+Create a new Orbit-managed app on a node with an active `app-dev` or `app-prod`
+role. Orbit has no generic `app` node role.
 
 ## Usage
 
@@ -75,7 +76,7 @@ The steps below describe what the command does during a successful run.
 - The CLI caller must be able to reach the Orbit gateway.
 - The gateway must be able to reach the target node through its selected node
   execution transport.
-- The target node must be active with the applicable app role: `app-dev`
+- The target node must be active with the applicable role: `app-dev`
   without `--domain`, or `app-prod` when `--domain` is supplied.
 - Creating from a template requires authenticated GitHub CLI access on the
   target node for `github.com` and a repository that GitHub exposes as a

@@ -39,6 +39,18 @@ final readonly class JsonMetadataShapeRule implements GroupedRule
 
             foreach ($this->parser->parse($file, $contents) as $example) {
                 foreach ($this->decoder->decodeExamples($example->raw) as $decoded) {
+                    foreach ($this->inspector->missingSuccessMetaPaths($decoded) as $path) {
+                        $findings[] = $this->finding(
+                            $file,
+                            sprintf(
+                                'JSON example %d success envelope is missing mandatory metadata at %s.',
+                                $example->blockIndex + 1,
+                                $path,
+                            ),
+                            $example->line,
+                        );
+                    }
+
                     foreach ($this->inspector->emptyMetaPaths($decoded) as $path) {
                         $findings[] = $this->finding(
                             $file,

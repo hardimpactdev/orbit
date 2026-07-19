@@ -267,6 +267,44 @@ describe('AppShowController', function (): void {
             ->assertJsonMissing(['name' => 'hidden-workspace']);
     });
 
+    it('omits workspace details for app production callers and production placements', function (): void {
+        $caller = createAppShowCallerNode(role: 'app-prod');
+        $developmentNode = createTestAppHostNode(['name' => 'app-dev-1']);
+        grantAppShowAccess($caller, $developmentNode);
+        $developmentApp = App::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
+        $developmentInstance = create_app_show_instance($developmentApp, $developmentNode);
+        Workspace::factory()->for($developmentApp)->create([
+            'name' => 'feature-docs',
+            'app_instance_id' => $developmentInstance->id,
+        ]);
+
+        $this
+            ->call('GET', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP])
+            ->assertOk()
+            ->assertJsonPath('success.data.details.instances.0.workspaces', [])
+            ->assertJsonPath('success.data.details.workspaces', []);
+
+        $caller->roleAssignments()->delete();
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $caller->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+        $productionNode = createTestAppHostNode(['name' => 'app-prod-1'], 'app-prod');
+        $productionApp = App::factory()->for($productionNode, 'node')->create(['name' => 'shop']);
+        $productionInstance = create_app_show_instance($productionApp, $productionNode, 'production');
+        Workspace::factory()->for($productionApp)->create([
+            'name' => 'legacy-workspace',
+            'app_instance_id' => $productionInstance->id,
+        ]);
+
+        $this
+            ->call('GET', '/api/apps/shop', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP])
+            ->assertOk()
+            ->assertJsonPath('success.data.details.instances.0.workspaces', [])
+            ->assertJsonPath('success.data.details.workspaces', []);
+    });
+
     it('lets gateway callers inspect external instances with configured URLs', function (): void {
         createAppShowCallerNode(role: 'gateway');
         $node = createTestAppHostNode(['name' => 'app-1']);

@@ -8,6 +8,7 @@ use App\Actions\Apps\EnsureAppProxyRoute;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
@@ -31,6 +32,59 @@ final readonly class ProxyRouteFixer
         private ?RemoteCaddyConfig $caddyConfig = null,
         private ?Closure $appRouteEnactor = null,
     ) {}
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function restoreAgentToolRoute(Node $node, DriftEntry $entry): ?array
+    {
+        if (! in_array($entry->key, ['proxy.agent_tool_route_missing', 'proxy.agent_tool_route_mismatch'], true)) {
+            return null;
+        }
+
+        $tool = is_string($entry->detail['tool'] ?? null) ? $entry->detail['tool'] : null;
+
+        if ($tool === null) {
+            return null;
+        }
+
+        $expected = app(AgentToolProxyRouteIntent::class)->expectedRouteFor($node, $tool);
+
+        if (! $expected instanceof ProxyRoute) {
+            return null;
+        }
+
+        $route = app(AgentToolProxyRouteIntent::class)->persist($expected);
+
+        if (! $route instanceof ProxyRoute) {
+            return null;
+        }
+
+        $fixed = $this->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: "Agent tool proxy route {$route->domain} requires canonical re-application.",
+        ));
+
+        if ($fixed === null) {
+            return null;
+        }
+
+        return [
+            'family' => 'proxy',
+            'node' => $node->name,
+            'code' => $entry->key,
+            'key' => $entry->key,
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => "Restored expected agent tool proxy route {$route->domain} from gateway intent.",
+            'details' => [
+                'route' => $route->domain,
+                'tool' => $tool,
+            ],
+        ];
+    }
 
     /**
      * @return array<string, mixed>|null

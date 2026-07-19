@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Apps\AppWorkerReadiness;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -21,7 +22,10 @@ beforeEach(function (): void {
     );
 });
 
-function makeReadinessApp(array $overrides = []): App
+/**
+ * @return array{app: App, instance: AppInstance}
+ */
+function makeReadinessTarget(array $overrides = []): array
 {
     $node = Node::factory()
         ->appDev()
@@ -31,13 +35,18 @@ function makeReadinessApp(array $overrides = []): App
             'wireguard_address' => '10.6.0.61',
         ]);
 
-    return App::factory()->for($node, 'node')->create(array_merge([
+    $app = App::factory()->for($node, 'node')->create(array_merge([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ], $overrides));
+
+    return [
+        'app' => $app,
+        'instance' => AppInstance::factory()->for($app, 'app')->create(),
+    ];
 }
 
 function readinessProbe(string $stdout): AppWorkerReadiness
@@ -94,9 +103,11 @@ afterEach(function (): void {
 
 describe('AppWorkerReadiness service', function (): void {
     it('refuses worker mode for static apps', function (): void {
-        $app = makeReadinessApp(['runtime' => AppRuntimeKind::Static]);
+        ['app' => $app, 'instance' => $instance] = makeReadinessTarget([
+            'runtime' => AppRuntimeKind::Static,
+        ]);
 
-        $result = readinessProbe('')->assess($app);
+        $result = readinessProbe('')->assess($app, $instance);
 
         expect($result->ready)
             ->toBeFalse()
@@ -114,8 +125,9 @@ describe('AppWorkerReadiness service', function (): void {
         $app->document_root = 'public';
         $app->php_version = '8.5';
         $app->runtime = AppRuntimeKind::Php;
+        $instance = AppInstance::factory()->for($app, 'app')->make();
 
-        $result = readinessProbe('')->assess($app);
+        $result = readinessProbe('')->assess($app, $instance);
 
         expect($result->ready)
             ->toBeFalse()
@@ -124,13 +136,13 @@ describe('AppWorkerReadiness service', function (): void {
             ->and($result->missing)
             ->toBe(['owning_node'])
             ->and($result->message)
-            ->toContain("App 'docs' has no owning node");
+            ->toContain("App instance 'docs.development' has no owning node");
     });
 
     it('returns app.worker_missing_path when the app has an empty source path', function (): void {
-        $app = makeReadinessApp(['path' => '']);
+        ['app' => $app, 'instance' => $instance] = makeReadinessTarget(['path' => '']);
 
-        $result = readinessProbe('')->assess($app);
+        $result = readinessProbe('')->assess($app, $instance);
 
         expect($result->ready)
             ->toBeFalse()
@@ -141,28 +153,28 @@ describe('AppWorkerReadiness service', function (): void {
     });
 
     it('reports missing vendor/laravel/octane when the probe omits the installed token', function (): void {
-        $app = makeReadinessApp();
+        ['app' => $app, 'instance' => $instance] = makeReadinessTarget();
         $stdout = "frankenphp-worker-file:present\nfrankenphp:configured\n";
 
-        $result = readinessProbe($stdout)->assess($app);
+        $result = readinessProbe($stdout)->assess($app, $instance);
 
         expect($result->ready)->toBeFalse()->and($result->missing)->toContain('vendor/laravel/octane');
     });
 
     it('reports the document-root-relative worker file path when the probe omits the worker-file token', function (): void {
-        $app = makeReadinessApp();
+        ['app' => $app, 'instance' => $instance] = makeReadinessTarget();
         $stdout = "octane:installed\nfrankenphp:configured\n";
 
-        $result = readinessProbe($stdout)->assess($app);
+        $result = readinessProbe($stdout)->assess($app, $instance);
 
         expect($result->ready)->toBeFalse()->and($result->missing)->toContain('public/frankenphp-worker.php');
     });
 
     it('reports the configured document_root in the missing worker file path, not always public/', function (): void {
-        $app = makeReadinessApp(['document_root' => 'web']);
+        ['app' => $app, 'instance' => $instance] = makeReadinessTarget(['document_root' => 'web']);
         $stdout = "octane:installed\nfrankenphp:configured\n";
 
-        $result = readinessProbe($stdout)->assess($app);
+        $result = readinessProbe($stdout)->assess($app, $instance);
 
         expect($result->ready)
             ->toBeFalse()
@@ -176,28 +188,28 @@ describe('AppWorkerReadiness service', function (): void {
     });
 
     it('reports the app-root-relative worker file when document_root is empty or "."', function (): void {
-        $app = makeReadinessApp(['document_root' => '.']);
+        ['app' => $app, 'instance' => $instance] = makeReadinessTarget(['document_root' => '.']);
         $stdout = "octane:installed\nfrankenphp:configured\n";
 
-        $result = readinessProbe($stdout)->assess($app);
+        $result = readinessProbe($stdout)->assess($app, $instance);
 
         expect($result->ready)->toBeFalse()->and($result->missing)->toContain('frankenphp-worker.php');
     });
 
     it('reports missing octane.server=frankenphp when the probe omits the configured token', function (): void {
-        $app = makeReadinessApp();
+        ['app' => $app, 'instance' => $instance] = makeReadinessTarget();
         $stdout = "octane:installed\nfrankenphp-worker-file:present\n";
 
-        $result = readinessProbe($stdout)->assess($app);
+        $result = readinessProbe($stdout)->assess($app, $instance);
 
         expect($result->ready)->toBeFalse()->and($result->missing)->toContain('octane.server=frankenphp');
     });
 
     it('passes only when every required token is present', function (): void {
-        $app = makeReadinessApp();
+        ['app' => $app, 'instance' => $instance] = makeReadinessTarget();
         $stdout = "octane:installed\nfrankenphp-worker-file:present\nfrankenphp:configured\n";
 
-        $result = readinessProbe($stdout)->assess($app);
+        $result = readinessProbe($stdout)->assess($app, $instance);
 
         expect($result->ready)->toBeTrue();
 

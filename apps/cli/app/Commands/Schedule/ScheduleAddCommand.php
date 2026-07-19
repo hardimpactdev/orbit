@@ -23,7 +23,7 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
         {--command= : Command to execute}
         {--script= : Managed script path to execute}
         {--interval= : Portable interval expression}
-        {--app= : Target app scope}
+        {--app= : Target app instance (app.instance; bare app only when unambiguous)}
         {--node= : Target node scope}
         {--timezone=UTC : IANA timezone}
         {--json : Output JSON}';

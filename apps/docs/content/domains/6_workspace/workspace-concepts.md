@@ -9,9 +9,10 @@ the workspace command contracts and the
 
 The terms below define the core identity vocabulary for the workspace family.
 
-- **Workspace:** Gateway-owned working copy of an app, bound to exactly one app
-  instance on that instance's node, with a canonical workspace name, workspace
-  path, and one workspace route lifecycle.
+- **Workspace:** A development working copy of an app whose durable record
+  belongs to the gateway. It is bound to exactly one app instance on an active
+  `app-dev` node, with a canonical workspace name, workspace path, and one
+  workspace route lifecycle.
 - **Concrete app-instance ownership:** Every workspace row stores a non-null
   `app_instance_id`. A bare parent-app selector or parent-app path is only a
   shorthand resolver: it succeeds when exactly one registered app instance
@@ -43,6 +44,9 @@ The terms below define the core identity vocabulary for the workspace family.
   `/home/<node-user>/packages` on the owning node appears at `/packages` in the
   container.
 
+  Production app instances do not have workspace runtime containers; selecting
+  one fails with `workspace.unsupported_for_production` before runtime work.
+
   The workspace source is mounted both at `/app` and at its original absolute
   path on the owning node. That keeps source-local absolute paths, such as
   SQLite database files, available inside the runtime container.
@@ -54,9 +58,8 @@ The terms below define the core identity vocabulary for the workspace family.
   `/tmp/orbit-frankenphp`, matching app runtimes, and is not stored in the
   workspace checkout, `~/.config/orbit`, or `/var/lib/orbit`.
 
-  Workspaces for `app-prod` apps do not receive this mount. The concrete
-  workspace web runtime, managed through the process lifecycle, is represented
-  as a process with Docker runtime.
+  The concrete workspace web runtime, managed through the process lifecycle,
+  is represented as a process with Docker runtime.
 - **Host cwd context:** Caller-side working-directory hint used only to resolve
   defaults such as app and workspace identity. It is not an authorization
   source and does not make the CLI operate on local artifacts directly.

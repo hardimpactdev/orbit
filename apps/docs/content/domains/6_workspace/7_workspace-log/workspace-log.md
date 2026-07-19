@@ -75,7 +75,8 @@ detail, including per-step timing and truncation flags.
           }
         ]
       }
-    }
+    },
+    "meta": []
   }
 }
 ```

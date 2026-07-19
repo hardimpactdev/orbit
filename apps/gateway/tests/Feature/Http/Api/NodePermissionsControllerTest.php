@@ -200,6 +200,83 @@ describe('NodePermissionsController', function (): void {
         expect($grant)->not->toBeNull();
     });
 
+    it('rejects workspace permissions for production app serving nodes', function (): void {
+        createPermsCallerNode('gateway');
+        DB::table('nodes')->insert(apiPermsNodeRow([
+            'name' => 'control-1',
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $productionNodeId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'app-prod-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $productionNodeId,
+            'role' => 'app-prod',
+            'status' => 'active',
+        ]);
+
+        $response = postNodePermissionsJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-prod-1',
+            'permissions' => 'app:read,workspace:read',
+        ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
+            ->assertJsonPath('error.meta.node', 'app-prod-1')
+            ->assertJsonPath('error.meta.role', 'app-prod');
+
+        expect(
+            NodeAccess::query()
+                ->where('serving_node_id', $productionNodeId)
+                ->exists(),
+        )
+            ->toBeFalse();
+    });
+
+    it('rejects workspace permissions for production app consuming nodes', function (): void {
+        createPermsCallerNode('gateway');
+        $productionConsumerId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'app-prod-caller',
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $productionConsumerId,
+            'role' => 'app-prod',
+            'status' => 'active',
+        ]);
+        $developmentServingId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $developmentServingId,
+            'role' => 'app-dev',
+            'status' => 'active',
+        ]);
+
+        $response = postNodePermissionsJson([
+            'consuming_node' => 'app-prod-caller',
+            'serving_node' => 'app-dev-1',
+            'permissions' => 'app:read,workspace:read',
+        ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
+            ->assertJsonPath('error.meta.node', 'app-prod-caller')
+            ->assertJsonPath('error.meta.role', 'app-prod');
+
+        expect(
+            NodeAccess::query()
+                ->where('consumer_node_id', $productionConsumerId)
+                ->where('serving_node_id', $developmentServingId)
+                ->exists(),
+        )->toBeFalse();
+    });
+
     it('removes permissions and preserves grant edge', function (): void {
         createPermsCallerNode('gateway');
         $controlId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
@@ -231,6 +308,43 @@ describe('NodePermissionsController', function (): void {
             ->assertJsonPath('success.data.permissions', ['node:read']);
 
         expect(DB::table('node_access')->count())->toBe(1);
+    });
+
+    it('does not preserve a stale production workspace grant through remove mode', function (): void {
+        createPermsCallerNode('gateway');
+        $productionConsumerId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'app-prod-caller',
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $productionConsumerId,
+            'role' => 'app-prod',
+            'status' => 'active',
+        ]);
+        $developmentServingId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $developmentServingId,
+            'role' => 'app-dev',
+            'status' => 'active',
+        ]);
+        $grant = NodeAccess::query()->create([
+            'consumer_node_id' => $productionConsumerId,
+            'serving_node_id' => $developmentServingId,
+            'permissions' => ['app:read', 'workspace:read'],
+        ]);
+
+        postNodePermissionsJson([
+            'consuming_node' => 'app-prod-caller',
+            'serving_node' => 'app-dev-1',
+            'remove' => 'app:read',
+        ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production');
+
+        expect($grant->fresh()?->permissions)->toBe(['app:read', 'workspace:read']);
     });
 
     it('fails with node.grant_not_found when removing from missing grant', function (): void {

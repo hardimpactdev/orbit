@@ -15,8 +15,6 @@ use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
 use App\Services\Proxy\AppProxyRouteCaddyInstaller;
 use App\Services\Proxy\CaddyContainerHostPathResolver;
-use App\Services\Proxy\IngressResolver;
-use App\Services\Proxy\ProxyRouteRenderer;
 use RuntimeException;
 use Throwable;
 
@@ -26,9 +24,8 @@ final readonly class EnsureWorkspaceProxyRoute
         private WorkspaceRuntimeContainerRenderer $runtimeContainerRenderer,
         private SiteCertificateInstaller $siteCertificateInstaller,
         private AppProxyRouteCaddyInstaller $caddyInstaller,
-        private IngressResolver $ingressResolver,
-        private ProxyRouteRenderer $proxyRouteRenderer,
         private OrbitCaService $ca,
+        private WorkspaceRoleGuard $roleGuard,
         private WorkspacePlacement $placement = new WorkspacePlacement,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private ?CaddyContainerHostPathResolver $caddyHostPathResolver = null,
@@ -52,6 +49,8 @@ final readonly class EnsureWorkspaceProxyRoute
         if (! $node instanceof Node) {
             throw new RuntimeException("App '{$app->name}' has no owning node.");
         }
+
+        $this->roleGuard->ensureNodeSupportsWorkspaces($app, $node);
 
         $domain = $this->domain($workspace);
         [$servingNode, $config, $content] = $this->routeArtifact($workspace, $app, $node, $domain);
@@ -91,79 +90,6 @@ final readonly class EnsureWorkspaceProxyRoute
                 'message' => "Proxy route '{$domain}' was recorded, but backend enactment failed. Run doctor to converge proxy artifacts.",
                 'next_command' => 'doctor --family=proxy --restore',
             ]];
-        }
-
-        if (($config['placement'] ?? null) === 'ingress') {
-            $routerArtifact = $config['router_artifact'] ?? null;
-
-            if (! is_array($routerArtifact)) {
-                throw new RuntimeException("Proxy route '{$domain}' is missing a router artifact.");
-            }
-
-            $routerNodeId = $routerArtifact['node_id'] ?? null;
-            $routerNode = is_int($routerNodeId) ? Node::query()->find($routerNodeId) : null;
-
-            if (! $routerNode instanceof Node) {
-                throw new RuntimeException("Proxy route '{$domain}' points at an unavailable router node.");
-            }
-
-            $routerContent = $this->proxyRouteRenderer->renderRouterRoute(new ProxyRoute([
-                'node_id' => $routerNode->id,
-                'domain' => $domain,
-                'kind' => 'workspace',
-                'owner_type' => 'workspace',
-                'app_id' => $app->id,
-                'workspace_id' => $workspace->id,
-                'config' => $config,
-            ]));
-
-            $this->caddyInstaller->ensureGlobalCaddyfile($routerNode);
-            $routerResult = $this->caddyInstaller->installRouteConfig($routerNode, $domain, $routerContent);
-
-            if (! $routerResult->successful()) {
-                return [[
-                    'code' => 'proxy.enactment_failed',
-                    'family' => 'proxy',
-                    'message' => "Proxy route '{$domain}' was recorded, but router enactment failed. Run doctor to converge proxy artifacts.",
-                    'next_command' => 'doctor --family=proxy --restore',
-                ]];
-            }
-
-            $backendArtifact = $config['backend_artifacts'][0] ?? null;
-
-            if (! is_array($backendArtifact)) {
-                throw new RuntimeException("Proxy route '{$domain}' is missing a backend artifact.");
-            }
-
-            $backendContent = $this->proxyRouteRenderer->renderPrivateBackend(
-                new ProxyRoute([
-                    'domain' => $domain,
-                    'kind' => 'workspace',
-                    'owner_type' => 'workspace',
-                    'app_id' => $app->id,
-                    'workspace_id' => $workspace->id,
-                    'config' => $config,
-                ]),
-                $backendArtifact,
-            );
-
-            $this->caddyInstaller->ensureGlobalCaddyfile($node);
-            $this->ensureRuntimeTrustPool($node, $config);
-            $backendResult = $this->caddyInstaller->installRouteConfig(
-                $node,
-                $domain,
-                $backendContent,
-                backend: true,
-            );
-
-            if (! $backendResult->successful()) {
-                return [[
-                    'code' => 'proxy.enactment_failed',
-                    'family' => 'proxy',
-                    'message' => "Proxy route '{$domain}' was recorded, but backend enactment failed. Run doctor to converge proxy artifacts.",
-                    'next_command' => 'doctor --family=proxy --restore',
-                ]];
-            }
         }
 
         return [];
@@ -289,98 +215,22 @@ final readonly class EnsureWorkspaceProxyRoute
     {
         $isPhp = $app->runtimeKind() === AppRuntimeKind::Php;
         $runtimeUpstream = $isPhp ? $this->runtimeContainerRenderer->upstreamUrl($workspace) : null;
-
-        if ($app->environment !== 'production') {
-            $certificatePaths = $this->siteCertificatePaths($node, $domain);
-            $config = [
-                'document_root' => $this->documentRoot($workspace, $app),
-                'runtime_upstream' => $runtimeUpstream,
-                'php_socket' => null,
-                'tls' => [
-                    'cert_path' => $certificatePaths['cert'],
-                    'key_path' => $certificatePaths['key'],
-                ],
-            ];
-
-            if ($this->innerTlsPolicy->appliesToWorkspace($workspace)) {
-                $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig($node, $domain);
-            }
-
-            return [$node, $config, $this->renderCaddySite($workspace, $app, $domain, $config)];
-        }
-
-        $ingressNode = $this->ingressResolver->forAppNode($node);
-        $routerNode = $this->ingressResolver->router();
-        $certificatePaths = $this->siteCertificatePaths($ingressNode, $domain);
-        $backendArtifact = [
-            'node_id' => $node->id,
-            'domain' => $domain,
-            'bind' => $node->wireguard_address,
+        $certificatePaths = $this->siteCertificatePaths($node, $domain);
+        $config = [
             'document_root' => $this->documentRoot($workspace, $app),
             'runtime_upstream' => $runtimeUpstream,
             'php_socket' => null,
-        ];
-        $config = [
-            'placement' => 'ingress',
-            'ingress_node_id' => $ingressNode->id,
-            'router_upstream' => [
-                'node_id' => $routerNode->id,
-                'node' => $routerNode->name,
-                'url' => $this->ingressResolver->routerUrl($routerNode),
-            ],
-            'router_backend_pool' => [
-                [
-                    'node_id' => $node->id,
-                    'node' => $node->name,
-                    'url' => $this->ingressResolver->backendUrl($node),
-                ],
-            ],
-            'backend_artifacts' => [$backendArtifact],
             'tls' => [
                 'cert_path' => $certificatePaths['cert'],
                 'key_path' => $certificatePaths['key'],
             ],
         ];
 
-        $routerContent = $this->proxyRouteRenderer->renderRouterRoute(new ProxyRoute([
-            'node_id' => $routerNode->id,
-            'domain' => $domain,
-            'app_id' => $app->id,
-            'workspace_id' => $workspace->id,
-            'owner_type' => 'workspace',
-            'kind' => 'workspace',
-            'config' => $config,
-        ]));
-        $config['router_artifact'] = [
-            'node_id' => $routerNode->id,
-            'node' => $routerNode->name,
-            'source_hash' => hash('sha256', $routerContent),
-        ];
+        if ($this->innerTlsPolicy->appliesToWorkspace($workspace)) {
+            $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig($node, $domain);
+        }
 
-        $content = $this->proxyRouteRenderer->renderIngress(new ProxyRoute([
-            'node_id' => $ingressNode->id,
-            'domain' => $domain,
-            'app_id' => $app->id,
-            'workspace_id' => $workspace->id,
-            'owner_type' => 'workspace',
-            'kind' => 'workspace',
-            'config' => $config,
-        ]));
-
-        $backendArtifact['source_hash'] = hash('sha256', $this->proxyRouteRenderer->renderPrivateBackend(
-            new ProxyRoute([
-                'domain' => $domain,
-                'app_id' => $app->id,
-                'workspace_id' => $workspace->id,
-                'owner_type' => 'workspace',
-                'kind' => 'workspace',
-                'config' => ['placement' => 'ingress'],
-            ]),
-            $backendArtifact,
-        ));
-        $config['backend_artifacts'] = [$backendArtifact];
-
-        return [$ingressNode, $config, $content];
+        return [$node, $config, $this->renderCaddySite($workspace, $app, $domain, $config)];
     }
 
     /**

@@ -8,11 +8,11 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The authenticated peer has `app:read` on the app's owning node for `show`,
-  and `app:worker` on the app's owning node for `enable` and `disable`.
-- The target app exists in gateway configuration.
-- For `enable`, the owning node is reachable so the readiness probe can run
-  against the installed app source.
+- The authenticated peer has `app:read` on the selected instance's serving
+  node for `show`, and `app:worker` on that node for `enable` and `disable`.
+- The target app instance exists in gateway configuration.
+- For `enable`, the serving node is reachable so the readiness probe can run
+  against the selected instance's installed app source.
 
 ## Signature
 
@@ -28,7 +28,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `action` | `{action}` | Always. | Never. | None. | Must be one of `show`, `enable`, `disable`. |
-| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record by name or hostname. Name match wins; the hostname match is consulted only when no name match exists. |
+| `app` | `[app]` | Always. | Never. | None. | Dotted app-instance selector. A bare app name or hostname is shorthand only when exactly one instance exists; otherwise fail with `validation_failed` and `meta.reason=app_instance_required`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
@@ -36,15 +36,23 @@ This command follows the shared
 1. Resolve `action`. Reject any value other than `show`, `enable`, or
    `disable` with `validation_failed`.
 2. Resolve `app` from `[app]`. When omitted, an interactive prompt selects an
-   app the caller can see; non-interactive callers without an `[app]`
+   app instance the caller can see; non-interactive callers without an `[app]`
    argument fail with `validation_failed`.
-3. Validate the target app exists in gateway configuration.
+3. Require one concrete app instance. A dotted selector is explicit. A bare
+   app selector auto-resolves only a sole instance; zero or multiple instances
+   fail before authorization or side effects with `validation_failed`,
+   `error.meta.field=app`, and
+   `error.meta.reason=app_instance_required`.
+4. Resolve authorization, readiness, and runtime placement from that instance's
+   serving node and driver configuration. Logical app defaults never replace
+   the selected placement.
 
 ## State Model
 
-Gateway-owned app configuration stores two structural fields for worker mode:
+Gateway-owned app-instance configuration stores two structural fields for
+worker mode:
 
-- `worker_enabled` (boolean): defaults to `false` for every app and is the
+- `worker_enabled` (boolean): defaults to `false` for every instance and is the
   on/off switch.
 - `worker_config` (object | `null`): defaults to `null`. Populated on first
   successful `enable` with the worker policy and retained across `disable`
@@ -74,7 +82,8 @@ renderer expose it deliberately.
 
 ## Readiness
 
-`enable` runs a readiness probe on the owning node before any state mutation.
+`enable` runs a readiness probe on the selected instance's serving node and
+source path before any state mutation.
 Every required token must be present in the probe output:
 
 | Token | Meaning |
@@ -113,9 +122,9 @@ The gateway HTTP API mirrors the command:
 
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
-| `GET` | `/api/apps/{app}/worker` | `app:read` | Maps to `show`. |
-| `POST` | `/api/apps/{app}/worker/enable` | `app:worker` | Maps to `enable`. |
-| `POST` | `/api/apps/{app}/worker/disable` | `app:worker` | Maps to `disable`. |
+| `GET` | `/api/apps/{app}/worker` | `app:read` | Maps to `show`; `{app}` is the dotted selector or unambiguous bare shorthand. |
+| `POST` | `/api/apps/{app}/worker/enable` | `app:worker` | Maps to `enable` for the selected instance. |
+| `POST` | `/api/apps/{app}/worker/disable` | `app:worker` | Maps to `disable` for the selected instance. |
 
 API responses share the JSON envelope and error codes documented in the
 [JSON renderer contract](6.2_app-worker_output-render_json.md).
@@ -126,12 +135,13 @@ all other documented `error.code` values, `403` for permission denials.
 
 ### Worker Mode Rules
 
-1. **Off by default.** Every app starts with `worker_enabled=false` and
+1. **Off by default.** Every app instance starts with `worker_enabled=false` and
    `worker_config=null`. Classic FrankenPHP is the steady-state runtime.
 2. **State transitions only through `app:worker`.** No other command writes
    `worker_enabled` or `worker_config`. Migrations and factories use the
    same defaults.
-3. **Enable proves readiness first.** Run the readiness probe on the owning
+3. **Enable proves readiness first.** Run the readiness probe on the selected
+   instance's serving
    node and require every token in the table above. Any missing token
    leaves both `worker_enabled` and `worker_config` unchanged.
 4. **Disable preserves configuration.** Set `worker_enabled=false` but keep
@@ -142,10 +152,11 @@ all other documented `error.code` values, `403` for permission denials.
 6. **No source mutation.** `enable` never runs `composer require`, publishes
    Octane config, edits bootstrap files, or otherwise changes the app
    source to make readiness pass.
-7. **No workspace worker mode.** Worker mode is an app-level setting only.
-   Workspaces always run in classic mode regardless of the owning app's
-   worker setting. On `app-dev` nodes, workspaces may still receive the
-   classic FrankenPHP thread-pool settings documented below.
+7. **No workspace worker mode.** Worker mode is app-instance state but is not
+   inherited by workspaces. Supported `app-dev` workspaces run in classic mode
+   and may receive the classic FrankenPHP thread-pool settings documented
+   below. `app-prod` workspace operations are rejected before runtime
+   rendering.
 
 ## Failure Semantics
 
@@ -158,6 +169,7 @@ failures below.
 | Validation failed (action) | `action` is missing or not one of `show`, `enable`, `disable`. | Failure |
 | Validation failed (app) | `app` is missing in non-interactive mode. | Failure |
 | App not found | No app record matches `app`. | Failure |
+| App instance required | A bare app selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=app_instance_required`. |
 | Unsupported runtime | `enable` was called for an app with `runtime != php`. State unchanged. | Failure |
 | Owning node missing | `enable` was called for an app whose `node` relation is `null`. State unchanged. | Failure |
 | App path missing | `enable` was called for an app with an empty `path`. State unchanged. | Failure |
@@ -165,8 +177,8 @@ failures below.
 
 ## Doctor Relationship
 
-- `doctor --family=app --app=<app>` verifies the FrankenPHP app runtime
-  container matches the app's worker mode configuration. See
+- `doctor --family=app --app=<app.instance>` verifies the selected instance's
+  runtime configuration against its worker policy. See
   [`app-doctor.md`](../../app-doctor.md).
 - Worker mode changes do not implicitly trigger a doctor run. The runtime
   renderer picks up the new setting the next time the app runtime is
@@ -175,7 +187,8 @@ failures below.
 
 ## Side Effects
 
-`enable` and `disable` are writes against gateway-owned app configuration.
+`enable` and `disable` are writes against gateway-owned app-instance
+configuration.
 Neither command:
 
 - Runs `composer require`, publishes Octane config, edits bootstrap files,
@@ -183,11 +196,11 @@ Neither command:
 - Restarts or recreates the FrankenPHP runtime container directly. The
   app runtime renderer picks up the new worker setting the next time the
   runtime is enacted (for example through `app:root` or doctor adopt).
-- Enables worker mode for workspaces.
+- Enables worker mode for workspaces or creates production workspaces.
 
 ## Runtime Renderer Integration
 
-On nodes with `app-dev`, classic PHP app and workspace containers render
+On nodes with `app-dev`, classic PHP app and supported workspace containers render
 `FRANKENPHP_CONFIG` with native FrankenPHP thread-pool settings even when
 worker mode is disabled:
 
@@ -245,4 +258,5 @@ contract does not include it and no env consumer reads
 | `apps/gateway/tests/Feature/Http/Api/AppWorkerControllerTest.php` | API surface for `show`, `enable`, `disable`; HTTP status mapping; `app:worker` vs `app:read` permission split; `app.not_found` 404; readiness failure 422. |
 | `apps/gateway/tests/Unit/Services/Apps/AppWorkerReadinessTest.php` | Probe token vocabulary and false-positive guards: bare composer.json, missing vendor, comment-only configuration (line and block), and the trailing-comment positive case. |
 | `apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php` | App-dev thread-pool config, worker env vars, worker block shapes, document-root paths, and spec-hash changes. |
-| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerRendererTest.php` | App-dev workspace classic FrankenPHP thread-pool config and the absence of that config for app-prod workspace runtimes. |
+| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerRendererTest.php` | App-dev workspace classic FrankenPHP thread-pool config without inheriting app-instance worker mode. |
+| `apps/gateway/tests/Feature/Http/Api/WorkspaceProductionBoundaryTest.php` | `app-prod` workspace operations are rejected before any workspace runtime can be rendered. |

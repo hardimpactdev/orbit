@@ -117,7 +117,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Not supported on gateway | The command is run on a gateway node. | Failure before prompts or side effects |
-| Destructive consent missing | `--reset` is selected in non-interactive mode without `--force`, or the interactive confirmation is rejected. | Failure before side effects |
+| Destructive consent missing | `--reset` is selected in non-interactive mode without `--force`, or the interactive confirmation is rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 | Unsupported platform | The caller platform has no supported local resolver backend. | Failure before resolver writes |
 | Resolver write failed | Orbit-managed resolver configuration cannot be written or removed. | Failure |
 | Resolver refresh failed | Configuration was written but the resolver backend could not be refreshed. | Failure with local file side effect already applied |

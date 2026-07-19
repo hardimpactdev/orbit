@@ -10,12 +10,14 @@ use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspacePlacement;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 
 /** @mago-expect lint:cyclomatic-complexity */
 final readonly class AppShowPlacementPayload
 {
     public function __construct(
         private WorkspacePlacement $workspacePlacement,
+        private WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     /**
@@ -25,10 +27,12 @@ final readonly class AppShowPlacementPayload
      *     workspaces: list<array<string, mixed>>,
      * }
      */
-    public function forApp(App $app, array $instances): array
+    public function forApp(App $app, array $instances, bool $includeWorkspaces = true): array
     {
         $visibleInstanceIds = array_map(static fn (AppInstance $instance): int => $instance->id, $instances);
-        $workspacePayloads = $this->workspacePayloadsByInstance($app, $visibleInstanceIds);
+        $workspacePayloads = $includeWorkspaces
+            ? $this->workspacePayloadsByInstance($app, $visibleInstanceIds)
+            : [];
         $instancePayloads = [];
 
         foreach ($instances as $instance) {
@@ -77,6 +81,9 @@ final readonly class AppShowPlacementPayload
             if (
                 ! $workspace instanceof Workspace
                 || ! in_array($workspace->app_instance_id, $visibleInstanceIds, strict: true)
+                || ! $this->workspaceRoleGuard->nodeSupportsWorkspaces(
+                    $this->workspacePlacement->nodeForWorkspace($workspace),
+                )
             ) {
                 continue;
             }

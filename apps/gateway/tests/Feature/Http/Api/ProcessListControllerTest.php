@@ -48,6 +48,50 @@ function grantProcessListAccess(Node $caller, Node $appNode): void
 }
 
 describe('ProcessListController', function (): void {
+    it('rejects app-prod callers targeting workspace processes despite a legacy read grant', function (): void {
+        $caller = Node::factory()
+            ->appProd()
+            ->create([
+                'name' => 'app-prod-caller',
+                'host' => PROCESS_LIST_CALLER_WG_IP,
+                'wireguard_address' => PROCESS_LIST_CALLER_WG_IP,
+            ]);
+        $appNode = createTestAppHostNode(['name' => 'app-dev-1']);
+        grantProcessListAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $instance = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+        ]);
+        Process::factory()
+            ->forOwner($app, $appNode)
+            ->create([
+                'app_instance_id' => $instance->id,
+                'name' => 'vite',
+            ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/processes?app=docs.development&workspace=feature-docs',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
+            ->assertJsonPath('error.meta.node', 'app-prod-caller')
+            ->assertJsonPath('error.meta.role', 'app-prod');
+    });
+
     it('filters process events by the selected app instance', function (): void {
         createProcessListCallerNode(role: 'gateway');
         $developmentNode = createTestAppHostNode(['name' => 'app-development']);

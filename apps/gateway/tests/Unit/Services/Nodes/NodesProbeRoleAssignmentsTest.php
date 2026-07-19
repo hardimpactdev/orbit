@@ -5,19 +5,25 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Nodes;
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
+use App\Models\Workspace;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
+use InvalidArgumentException;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -382,6 +388,115 @@ it('retries baseline convergence for error assignments during reconcile', functi
         ->status->toBe(NodeRoleStatus::Active)
         ->last_error->toBeNull()
         ->converged_at->not->toBeNull();
+});
+
+it('does not reactivate an app production role while the node owns a workspace', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'future-app-prod',
+        'tld' => 'prod',
+        'status' => 'active',
+        'platform' => 'ubuntu_24-04',
+        'host' => '10.0.0.9',
+        'wireguard_address' => '10.6.0.9',
+    ]);
+    $assignment = NodeRoleAssignment::factory()->for($node)->create([
+        'role' => 'app-prod',
+        'status' => NodeRoleStatus::Error->value,
+        'settings' => [],
+        'last_error' => 'baseline failed',
+        'converged_at' => null,
+    ]);
+    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/srv/docs',
+        ),
+    ]);
+    Workspace::factory()->for($app)->create([
+        'name' => 'feature-docs',
+        'app_instance_id' => $instance->id,
+    ]);
+
+    $this->app->bind(NodeRoleBaselineConverger::class, fn (): NodeRoleBaselineConverger => new class extends
+        NodeRoleBaselineConverger {
+        public function __construct() {}
+
+        public function converge(Node $node, NodeRoleAssignment $assignment): void {}
+    });
+
+    expect(fn () => $this->probe->reconcile($node, new DriftEntry(
+        family: 'nodes',
+        key: 'node.role_convergence_failed',
+        kind: DriftKind::Divergent,
+        summary: 'retry production role convergence',
+        detail: ['role' => 'app-prod'],
+    )))
+        ->toThrow(InvalidArgumentException::class, 'feature-docs');
+
+    expect($assignment->fresh())
+        ->status->toBe(NodeRoleStatus::Error)
+        ->last_error->toBe('baseline failed')
+        ->converged_at->toBeNull();
+});
+
+it('sanitizes workspace permissions when doctor reactivates an app production role', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'recovered-app-prod',
+        'tld' => 'prod',
+        'status' => 'active',
+        'platform' => 'ubuntu_24-04',
+        'host' => '10.0.0.10',
+        'wireguard_address' => '10.6.0.10',
+    ]);
+    $assignment = NodeRoleAssignment::factory()->for($node)->create([
+        'role' => 'app-prod',
+        'status' => NodeRoleStatus::Error->value,
+        'settings' => [],
+        'last_error' => 'baseline failed',
+        'converged_at' => null,
+    ]);
+    $grant = NodeAccess::query()->create([
+        'consumer_node_id' => $node->id,
+        'serving_node_id' => $node->id,
+        'permissions' => ['*'],
+        'custom_permissions' => ['*'],
+    ]);
+
+    $this->app->bind(NodeRoleBaselineConverger::class, fn (): NodeRoleBaselineConverger => new class extends
+        NodeRoleBaselineConverger {
+        public function __construct() {}
+
+        public function converge(Node $node, NodeRoleAssignment $assignment): void {}
+    });
+
+    $this->probe->reconcile($node, new DriftEntry(
+        family: 'nodes',
+        key: 'node.role_convergence_failed',
+        kind: DriftKind::Divergent,
+        summary: 'retry production role convergence',
+        detail: ['role' => 'app-prod'],
+    ));
+
+    $permissions = $grant->fresh()->permissions;
+    $customPermissions = $grant->fresh()->custom_permissions;
+
+    expect($assignment->fresh())
+        ->status->toBe(NodeRoleStatus::Active)
+        ->last_error->toBeNull()
+        ->converged_at->not->toBeNull()->and($permissions)
+        ->not->toContain('*')->and($customPermissions)
+        ->not->toContain(
+            '*',
+        )->and(array_values(array_filter($permissions, fn (string $permission): bool => str_starts_with(
+            $permission,
+            'workspace:',
+        ))))->toBe([])->and(array_values(array_filter($customPermissions, fn (string $permission): bool => str_starts_with(
+            $permission,
+            'workspace:',
+        ))))->toBe([]);
 });
 
 it('keeps role assignments errored when convergence retry fails during reconcile', function (): void {

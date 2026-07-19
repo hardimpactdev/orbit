@@ -25,6 +25,19 @@ class AppInstanceFactory extends Factory
             'driver_config' => new OrbitAppInstanceDriverConfigData,
             'runtime_requirements' => new AppInstanceRuntimeRequirementsData,
             'deploy_warmup_paths' => null,
+            'worker_enabled' => false,
+            'worker_config' => null,
         ];
+    }
+
+    public function workerEnabled(?array $config = null): static
+    {
+        return $this->state(fn (): array => [
+            'worker_enabled' => true,
+            'worker_config' => $config ?? [
+                'workers' => 'auto',
+                'max_requests' => 500,
+            ],
+        ]);
     }
 }

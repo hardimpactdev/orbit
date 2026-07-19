@@ -222,6 +222,33 @@ describe('AppAgentIdeController', function (): void {
         expect(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBeNull();
     });
 
+    it('rejects app production callers before agent IDE workspace cleanup can run', function (): void {
+        $caller = createAppAgentIdeCallerNode(role: 'app-prod');
+        $developmentNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+        grantAppAgentIdeAccess($caller, $developmentNode);
+        App::factory()->for($developmentNode, 'node')->create([
+            'name' => 'docs',
+            'agent_ide_config' => ['adapter' => 'opencode'],
+        ]);
+        $adapter = new PruneAppActionTestAdapter;
+        app()->instance(AgentIdeMessageAdapter::class, $adapter);
+
+        $response = postAppAgentIdeJson(
+            '/api/apps/docs/agent-ide',
+            ['agent_ide' => 'polyscope', 'force' => true],
+            ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production');
+
+        expect(App::query()->where('name', 'docs')->value('agent_ide_config'))
+            ->toBe(['adapter' => 'opencode'])
+            ->and($adapter->workspaceCalls)
+            ->toBe(0);
+    });
+
     it('returns validation errors for missing and unsupported adapters', function (
         array $data,
         string $code,
@@ -247,7 +274,8 @@ describe('AppAgentIdeController', function (): void {
 
     it('requires consent for destructive workspace cleanup without force', function (): void {
         createAppAgentIdeCallerNode(role: 'gateway');
-        $app = App::factory()->create([
+        $appNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+        $app = App::factory()->for($appNode, 'node')->create([
             'name' => 'docs',
             'agent_ide_config' => ['adapter' => 'opencode'],
         ]);
@@ -279,7 +307,8 @@ describe('AppAgentIdeController', function (): void {
 
     it('prunes stale workspaces when force is true', function (): void {
         createAppAgentIdeCallerNode(role: 'gateway');
-        $app = App::factory()->create([
+        $appNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+        $app = App::factory()->for($appNode, 'node')->create([
             'name' => 'docs',
             'agent_ide_config' => ['adapter' => 'opencode'],
         ]);

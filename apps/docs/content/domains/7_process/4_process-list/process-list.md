@@ -12,7 +12,7 @@ from the gateway without performing live node inspection.
 
 ```bash
 orbit process:list --app=docs.production
-orbit process:list --app=docs.production --workspace=feature-docs
+orbit process:list --app=docs.development --workspace=feature-docs
 orbit process:list --node=app-dev-1
 orbit process:list --app=docs.production --json
 ```

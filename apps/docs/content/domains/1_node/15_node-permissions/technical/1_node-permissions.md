@@ -105,6 +105,14 @@ This command follows the shared
   are normalized away and reported under
   [JSON envelope](6.2_node-permissions_output-render_json.md) warnings.
 
+### Workspace Boundary Rules
+
+- After normalization, reject `*` or any `workspace:*` permission when the
+  consuming node has `app-prod`, or when the serving node has `app-prod`.
+- Fail before creating or updating the grant with
+  `error.code=workspace.unsupported_for_production`. Subtractive removal
+  remains available so administrators can clear persisted drift.
+
 ## Renderer Contracts
 
 - [Interactive input](5.1_node-permissions_input-mode_interactive.md)
@@ -125,6 +133,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Grant not found | Read mode or `--remove` against a missing grant edge. | Failure |
 | Unknown permission | Any supplied permission string is not registry-known. | Failure |
 | Unknown preset | The named preset is not registry-known. | Failure |
+| Workspace role boundary | A replacement or additive result contains `*` or `workspace:*` while either grant endpoint has `app-prod`. | Failure (`error.code=workspace.unsupported_for_production`) |
 
 ## Doctor Relationship
 

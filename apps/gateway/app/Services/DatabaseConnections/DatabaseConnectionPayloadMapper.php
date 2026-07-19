@@ -7,15 +7,20 @@ namespace App\Services\DatabaseConnections;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Node;
 use App\Models\Workspace;
 use LogicException;
 
-final class DatabaseConnectionPayloadMapper
+final readonly class DatabaseConnectionPayloadMapper
 {
+    public function __construct(
+        private DatabaseConnectionTargetResolver $targets,
+    ) {}
+
     /**
      * @return array<string, mixed>
      */
-    public function toArray(DatabaseConnection $connection): array
+    public function toArray(DatabaseConnection $connection, ?Node $caller = null): array
     {
         $connection->loadMissing(['node', 'targets.appInstance.app', 'targets.workspace.app']);
 
@@ -23,6 +28,14 @@ final class DatabaseConnectionPayloadMapper
         $targets = [];
 
         foreach ($connection->targets as $target) {
+            if (
+                $caller instanceof Node
+                && $target->workspace instanceof Workspace
+                && ! $this->targets->workspaceIsSupportedForCaller($target->workspace, $caller)
+            ) {
+                continue;
+            }
+
             $targets[] = $this->targetPayload($target);
         }
 

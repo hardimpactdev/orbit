@@ -13,12 +13,12 @@ final readonly class RemoveAppSetupStep
     {
         DB::transaction(function () use ($step): void {
             $sortOrder = $step->sort_order;
-            $appId = $step->app_id;
+            $appInstanceId = $step->app_instance_id;
 
             $step->delete();
 
             AppSetupStep::query()
-                ->where('app_id', $appId)
+                ->where('app_instance_id', $appInstanceId)
                 ->where('sort_order', '>', $sortOrder)
                 ->decrement('sort_order');
         });

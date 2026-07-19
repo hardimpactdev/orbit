@@ -8,9 +8,21 @@ app, has a canonical name, and owns one workspace route lifecycle.
 
 These rules govern all workspace family commands.
 
+- Workspaces are an `app-dev`-only development surface. A workspace may belong
+  only to a concrete instance served by an active `app-dev` node. `app-prod`
+  nodes never create, register, own, set up, remove, diagnose, execute, or
+  receive permissions for workspaces or workspace lifecycle policy. This
+  boundary applies to both sides of a grant: an `app-prod` consuming node may
+  not operate a workspace on an `app-dev` serving node either.
+- Selecting an `app-prod` instance for any workspace operation fails before
+  side effects with `error.code=workspace.unsupported_for_production` and
+  metadata naming the app, node, and `app-prod` role. Registry-wide list reads
+  omit unsupported production rows. The workspace doctor family and every
+  explicit workspace doctor scope are unavailable on `app-prod`; the request
+  fails before any probe, Agent dispatch, or repair planning.
 - The gateway owns workspace configuration.
-- Workspace artifacts are applied through Agent push on the selected app
-  instance node. Every workspace belongs to exactly one app instance.
+- Workspace artifacts are applied through Agent push on the selected app-dev
+  instance node. Every workspace belongs to exactly one app-dev instance.
 - Every workspace write resolves one concrete app instance before side effects.
   A bare parent-app selector, parent app path, or parent-app marker is shorthand
   only when the gateway can resolve it to exactly one registered app instance.

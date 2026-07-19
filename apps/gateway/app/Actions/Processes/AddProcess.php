@@ -45,6 +45,7 @@ final readonly class AddProcess
         ?string $version = null,
         ?string $image = null,
         array $replaceContainers = [],
+        ?Node $consumer = null,
     ): array {
         $app = $context->runtimeApp();
         $app->loadMissing(['node', 'workspaces']);
@@ -186,11 +187,16 @@ final readonly class AddProcess
         });
 
         $app->unsetRelation('processes');
-        $runtimeUnits = $this->runtimeUnitPayload->forProcess($app, $process, $context->runtimeWorkspaceFor($process));
+        $runtimeUnits = $this->runtimeUnitPayload->forProcess(
+            $app,
+            $process,
+            $context->runtimeWorkspaceFor($process),
+            $consumer,
+        );
         $startableRuntimeUnits = $runtimeUnits;
 
         if ($context->app instanceof App && $context->workspace === null) {
-            $warnings = $this->ensureRuntimeUnits->handle($app, $context->appInstance);
+            $warnings = $this->ensureRuntimeUnits->handle($app, $context->appInstance, $consumer);
         } else {
             $applyResult = $this->applyRuntimeUnits($context, $app, $process, $runtimeUnits);
             $warnings = $applyResult['warnings'];

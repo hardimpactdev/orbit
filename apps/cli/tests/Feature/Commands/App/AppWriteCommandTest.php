@@ -543,6 +543,7 @@ describe('app write commands', function (): void {
     it('forwards app:worker actions to their gateway endpoints', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'app' => 'docs',
+            'app_instance' => 'development',
             'worker_enabled' => true,
             'worker_config' => null,
             'changed' => true,
@@ -550,7 +551,7 @@ describe('app write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'app:worker', [
             'action' => 'enable',
-            'app' => 'docs',
+            'app' => 'docs.development',
             '--json' => true,
         ]);
 
@@ -559,7 +560,7 @@ describe('app write commands', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/apps/docs/worker/enable'
+                && $request->url() === 'https://gateway.test/api/apps/docs.development/worker/enable'
             ),
         );
 
@@ -569,6 +570,7 @@ describe('app write commands', function (): void {
     it('renders human app:worker show output for an enabled app', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'app' => 'docs',
+            'app_instance' => 'development',
             'worker_enabled' => true,
             'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
         ]));
@@ -581,7 +583,7 @@ describe('app write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("App 'docs' worker mode is enabled.")
+            ->toContain("App instance 'docs.development' worker mode is enabled.")
             ->and($output)
             ->toContain('  workers: auto')
             ->and($output)
@@ -595,6 +597,7 @@ describe('app write commands', function (): void {
     it('renders human app:worker show output for a disabled app without config detail', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'app' => 'docs',
+            'app_instance' => 'development',
             'worker_enabled' => false,
             'worker_config' => null,
         ]));
@@ -607,7 +610,7 @@ describe('app write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toBe("App 'docs' worker mode is disabled.")
+            ->toBe("App instance 'docs.development' worker mode is disabled.")
             ->and($output)
             ->not->toContain('workers:')->and($output)
             ->not->toContain('max_requests:');
@@ -616,6 +619,7 @@ describe('app write commands', function (): void {
     it('renders human app:worker enable output when state changed', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'app' => 'docs',
+            'app_instance' => 'development',
             'worker_enabled' => true,
             'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
             'changed' => true,
@@ -629,7 +633,7 @@ describe('app write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("App 'docs' worker mode enabled.")
+            ->toContain("App instance 'docs.development' worker mode enabled.")
             ->and($output)
             ->toContain('  workers: auto')
             ->and($output)
@@ -642,6 +646,7 @@ describe('app write commands', function (): void {
     it('renders human app:worker enable output when already enabled', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'app' => 'docs',
+            'app_instance' => 'development',
             'worker_enabled' => true,
             'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
             'changed' => false,
@@ -655,7 +660,7 @@ describe('app write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("App 'docs' worker mode already enabled.")
+            ->toContain("App instance 'docs.development' worker mode already enabled.")
             ->and($output)
             ->toContain('  workers: auto')
             ->and($output)
@@ -667,6 +672,7 @@ describe('app write commands', function (): void {
     it('renders human app:worker disable output retaining config detail', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'app' => 'docs',
+            'app_instance' => 'development',
             'worker_enabled' => false,
             'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
             'changed' => true,
@@ -680,7 +686,7 @@ describe('app write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("App 'docs' worker mode disabled.")
+            ->toContain("App instance 'docs.development' worker mode disabled.")
             ->and($output)
             ->toContain('  workers: auto')
             ->and($output)
@@ -693,6 +699,7 @@ describe('app write commands', function (): void {
     it('renders human app:worker disable output when already disabled', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'app' => 'docs',
+            'app_instance' => 'development',
             'worker_enabled' => false,
             'worker_config' => null,
             'changed' => false,
@@ -706,7 +713,7 @@ describe('app write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toBe("App 'docs' worker mode already disabled.")
+            ->toBe("App instance 'docs.development' worker mode already disabled.")
             ->and($output)
             ->not->toContain('workers:')->and($output)
             ->not->toContain('max_requests:');

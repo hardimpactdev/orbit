@@ -89,6 +89,40 @@ function databaseApiInstanceForApp(App $app): AppInstance
     ]);
 }
 
+function database_api_workspace_on_node(Node $node, string $appName, string $workspaceName): Workspace
+{
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => $appName,
+        'domain' => "{$appName}.test",
+    ]);
+    $instance = databaseApiInstanceForApp($app);
+
+    return Workspace::factory()
+        ->for($app)
+        ->for($instance, 'appInstance')
+        ->create([
+            'name' => $workspaceName,
+            'path' => "/srv/apps/{$appName}/workspaces/{$workspaceName}",
+        ]);
+}
+
+function database_api_workspace_boundary(string $boundary): Node
+{
+    $caller = createDatabaseApiCallerNode();
+
+    if ($boundary === 'consumer') {
+        assignDatabaseApiRole($caller, role: 'app-prod');
+        $workspaceNode = Node::factory()->appDev()->create(['name' => 'workspace-dev']);
+        grantDatabaseApiAccess($caller, $workspaceNode, ['database:*']);
+
+        return $workspaceNode;
+    }
+
+    assignDatabaseApiGatewayRole($caller);
+
+    return Node::factory()->appProd()->create(['name' => 'workspace-prod']);
+}
+
 /**
  * @return array<string, string>
  */
@@ -161,6 +195,187 @@ describe('database connection api', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.connections.0.slug', 'primary-db');
     });
+
+    it('redacts forbidden workspace mappings from broad database lists while retaining app-instance mappings', function (
+        string $boundary,
+    ): void {
+        $workspaceNode = database_api_workspace_boundary($boundary);
+        $workspace = database_api_workspace_on_node(
+            $workspaceNode,
+            appName: 'docs',
+            workspaceName: 'feature-docs',
+        );
+        $connection = DatabaseConnection::factory()->create([
+            'slug' => 'primary-db',
+            'node_id' => $workspaceNode->id,
+        ]);
+        DatabaseConnectionTarget::factory()
+            ->for($connection, 'connection')
+            ->forAppInstance($workspace->appInstance)
+            ->create(['env_prefix' => 'DB']);
+        DatabaseConnectionTarget::factory()
+            ->for($connection, 'connection')
+            ->forWorkspace($workspace)
+            ->create(['env_prefix' => 'WORKSPACE_DB']);
+
+        $response = $this->call(
+            'GET',
+            '/api/database-connections',
+            [],
+            [],
+            [],
+            database_api_fallback_server(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.connections.0.slug', 'primary-db')
+            ->assertJsonPath('success.data.connections.0.targets', [[
+                'type' => 'app_instance',
+                'app' => 'docs',
+                'instance' => 'development',
+                'env_prefix' => 'DB',
+            ]]);
+    })->with([
+        'app-prod consumer with a legacy database wildcard grant' => ['consumer'],
+        'legacy workspace mapping placed on app-prod' => ['target'],
+    ]);
+
+    it('rejects explicit forbidden workspace database operations before registry or executor effects', function (
+        string $boundary,
+    ): void {
+        $workspaceNode = database_api_workspace_boundary($boundary);
+        $workspace = database_api_workspace_on_node(
+            $workspaceNode,
+            appName: 'docs',
+            workspaceName: 'feature-docs',
+        );
+        $attachedConnection = DatabaseConnection::factory()->create([
+            'slug' => 'attached-db',
+            'node_id' => $workspaceNode->id,
+            'driver' => 'sqlite',
+            'host' => null,
+            'port' => null,
+            'database' => null,
+            'path' => '/srv/databases/attached.sqlite',
+            'username' => null,
+        ]);
+        $unattachedConnection = DatabaseConnection::factory()->create([
+            'slug' => 'unattached-db',
+            'node_id' => $workspaceNode->id,
+        ]);
+        $mapping = DatabaseConnectionTarget::factory()
+            ->for($attachedConnection, 'connection')
+            ->forWorkspace($workspace)
+            ->create(['env_prefix' => 'DB']);
+        $shell = new DatabaseApiQueryRemoteShell(new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => [
+                    'data' => ['columns' => ['id'], 'rows' => [['id' => 1]]],
+                    'meta' => ['mode' => 'read', 'returned_rows' => 1],
+                ],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 5,
+        ));
+        bindDatabaseApiLocalExecutor($shell);
+
+        $listResponse = $this->call(
+            'GET',
+            '/api/database-connections',
+            ['workspace' => $workspace->name],
+            [],
+            [],
+            database_api_fallback_server(),
+        );
+        $queryResponse = $this->call(
+            'POST',
+            '/api/database-connections/query',
+            [
+                'target' => $workspace->name,
+                'sql' => 'select id from users',
+            ],
+            [],
+            [],
+            database_api_fallback_server(),
+        );
+        $tablesResponse = $this->call(
+            'GET',
+            '/api/database-connections/tables',
+            ['target' => $workspace->name],
+            [],
+            [],
+            database_api_fallback_server(),
+        );
+        $schemaResponse = $this->call(
+            'GET',
+            '/api/database-connections/schema',
+            ['target' => $workspace->name],
+            [],
+            [],
+            database_api_fallback_server(),
+        );
+        $describeResponse = $this->call(
+            'GET',
+            '/api/database-connections/describe',
+            [
+                'target' => $workspace->name,
+                'table' => 'users',
+            ],
+            [],
+            [],
+            database_api_fallback_server(),
+        );
+        $attachResponse = $this->call(
+            'POST',
+            "/api/database-connections/{$unattachedConnection->slug}/targets",
+            [
+                'workspace' => $workspace->name,
+                'env_prefix' => 'ANALYTICS_DB',
+            ],
+            [],
+            [],
+            database_api_fallback_server(),
+        );
+        $detachResponse = $this->call(
+            'DELETE',
+            "/api/database-connections/{$attachedConnection->slug}/targets",
+            [
+                'workspace' => $workspace->name,
+                'env_prefix' => 'DB',
+            ],
+            [],
+            [],
+            database_api_fallback_server(),
+        );
+
+        foreach ([
+            $listResponse,
+            $queryResponse,
+            $tablesResponse,
+            $schemaResponse,
+            $describeResponse,
+            $attachResponse,
+            $detachResponse,
+        ] as $response) {
+            $response
+                ->assertUnprocessable()
+                ->assertJsonPath('error.code', 'workspace.unsupported_for_production');
+        }
+
+        expect($shell->runCount)
+            ->toBe(0)
+            ->and(DatabaseConnectionTarget::query()->whereKey($mapping->id)->exists())
+            ->toBeTrue()
+            ->and($unattachedConnection->targets()->exists())
+            ->toBeFalse()
+            ->and(file_exists("{$workspace->path}/.env"))
+            ->toBeFalse();
+    })->with([
+        'app-prod consumer with a legacy database wildcard grant' => ['consumer'],
+        'legacy workspace mapping placed on app-prod' => ['target'],
+    ]);
 
     it('executes database queries through the typed api without leaking sqlite credentials', function (): void {
         $caller = createDatabaseApiCallerNode();
@@ -853,6 +1068,8 @@ final class DatabaseApiQueryRemoteShell implements RemoteExecutor
 {
     public string $script = '';
 
+    public int $runCount = 0;
+
     /** @var array<string, mixed> */
     public array $options = [];
 
@@ -862,6 +1079,7 @@ final class DatabaseApiQueryRemoteShell implements RemoteExecutor
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->runCount++;
         $this->script = $script;
         $this->options = $options;
 

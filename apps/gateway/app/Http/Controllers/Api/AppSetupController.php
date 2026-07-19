@@ -9,89 +9,109 @@ use App\Actions\Apps\SetupAppProgress;
 use App\Contracts\Loggable;
 use App\Contracts\ProgressReporter;
 use App\Enums\ActivityLogType;
-use App\Http\Authorization\RequiresPermission;
-use App\Http\Authorization\ServingNode;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
+use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
-#[RequiresPermission('app:write', servingNode: ServingNode::AppOwning)]
 final class AppSetupController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?AppInstance $activitySubject = null;
+
+    /** @var array<string, string> */
+    private array $activityProperties = [];
 
     public function __construct(
         private readonly SetupApp $setupApp,
         private readonly NodeAccessAuthorizer $authorizer,
+        private readonly AppSelectorResolver $selectorResolver,
+        private readonly WorkspacePlacement $placement,
     ) {}
 
+    #[OpenApiResponse(
+        status: 200,
+        description: 'The app instance setup result.',
+        type: "array{success: array{data: array{app: string, app_instance: string, node: string, path: string, url: string, action: 'set_up'|'converged', setup_steps: array{status: string, count: int, message: string}}, meta: list<mixed>}}",
+    )]
+    #[OpenApiResponse(
+        status: 403,
+        description: 'The caller is not authorized to set up the app instance.',
+        type: 'array{error: array{code: string, message: string, meta: array<string, mixed>}}',
+    )]
+    #[OpenApiResponse(
+        status: 404,
+        description: 'The selected app was not found.',
+        type: 'array{error: array{code: string, message: string, meta: array<string, mixed>}}',
+    )]
+    #[OpenApiResponse(
+        status: 422,
+        description: 'The app instance selector or setup operation is invalid.',
+        type: 'array{error: array{code: string, message: string, meta: array<string, mixed>}}',
+    )]
     public function __invoke(
         string $app,
         Request $request,
         SetupAppProgress $setupProgress,
         ProgressEventStreamResponseFactory $streams,
     ): JsonResponse|StreamedResponse {
-        $targetApp = $this->resolveApp($app);
+        $target = $this->resolveAuthorizedTarget($app, $request);
 
-        if (! $targetApp instanceof App) {
-            return $this->appNotFound($app);
+        if ($target instanceof JsonResponse) {
+            return $target;
         }
 
-        $targetApp->loadMissing('node');
-
-        if (! $targetApp->node instanceof Node) {
-            return $this->authorizationFailed("Could not resolve owning node for app '{$targetApp->name}'.", [
-                'app' => $targetApp->name,
-            ]);
-        }
-
-        /** @var mixed $caller */
-        $caller = $request->user();
-
-        if (! $caller instanceof Node) {
-            return $this->authorizationFailed('Peer identity unknown.');
-        }
-
-        $authorization = $this->authorizer->authorize($caller, $targetApp->node, 'app:write');
-
-        if (! $authorization->allowed) {
-            return $this->forbidden($targetApp->node, $authorization, 'app:write');
-        }
-
-        $this->activitySubject = $targetApp;
+        $targetApp = $target['app'];
+        $instance = $target['instance'];
+        $node = $target['node'];
+        $this->activitySubject = $instance;
+        $this->activityProperties = [
+            'app' => $targetApp->name,
+            'app_instance' => $instance->name,
+            'status' => 'pending',
+        ];
 
         if ($this->wantsEventStream($request)) {
-            return $this->stream($setupProgress, $streams, $targetApp, $targetApp->node);
+            return $this->stream($setupProgress, $streams, $targetApp, $instance, $node);
         }
 
         try {
-            $result = $this->setupApp->handle($targetApp);
+            $result = $this->setupApp->handle($targetApp, $instance, $node);
         } catch (RuntimeException $exception) {
+            $this->activityProperties['status'] = 'failed';
+
             return $this->error('app.setup_failed', $exception->getMessage(), [
                 'phase' => 'setup',
-                'node' => $targetApp->node?->name,
+                'node' => $node->name,
+                'app_instance' => $instance->name,
             ]);
         }
+
+        $this->activityProperties['status'] = $result['setup_steps']['status'];
 
         if ($result['setup_steps']['status'] === 'failed') {
             return $this->error('app.setup_step_failed', $result['setup_steps']['message'], [
                 'phase' => 'setup_steps',
-                'node' => $targetApp->node?->name,
-                'path' => $targetApp->path,
+                'node' => $node->name,
+                'path' => $result['path'],
+                'app_instance' => $instance->name,
             ]);
         }
 
         return response()->json([
             'success' => [
                 'data' => $result,
-                'meta' => (object) [],
+                'meta' => [],
             ],
         ]);
     }
@@ -100,10 +120,11 @@ final class AppSetupController implements Loggable
         SetupAppProgress $setupProgress,
         ProgressEventStreamResponseFactory $streams,
         App $app,
+        AppInstance $instance,
         Node $node,
     ): StreamedResponse {
-        return $streams->make(function ($emitter) use ($setupProgress, $app, $node): void {
-            $plan = $setupProgress->for($app, $node);
+        return $streams->make(function ($emitter) use ($setupProgress, $app, $instance, $node): void {
+            $plan = $setupProgress->for($app, $instance, $node);
             $exitCode = $plan->runForReporter(app(ProgressReporter::class));
 
             if ($exitCode !== 0) {
@@ -113,6 +134,7 @@ final class AppSetupController implements Loggable
                     'meta' => [
                         'phase' => 'setup',
                         'node' => $node->name,
+                        'app_instance' => $instance->name,
                     ],
                 ];
 
@@ -133,13 +155,62 @@ final class AppSetupController implements Loggable
         });
     }
 
-    private function resolveApp(string $selector): ?App
+    /**
+     * @return array{app: App, instance: AppInstance, node: Node}|JsonResponse
+     */
+    private function resolveAuthorizedTarget(string $selector, Request $request): array|JsonResponse
     {
-        return App::query()
-            ->with('node')
-            ->where('name', $selector)
-            ->orWhere('domain', $selector)
-            ->first();
+        /** @var mixed $caller */
+        $caller = $request->user();
+
+        if (! $caller instanceof Node) {
+            return $this->authorizationFailed('Peer identity unknown.');
+        }
+
+        $instanceIsVisible = fn (AppInstance $instance): bool => $this->selectorResolver->instanceIsVisibleTo(
+            $caller,
+            $instance,
+            'app:write',
+        );
+
+        try {
+            $selection = $this->selectorResolver->resolve($selector, $instanceIsVisible);
+
+            if ($selection === null) {
+                return $this->appNotFound($selector);
+            }
+
+            $selection = $this->selectorResolver->requireInstance(
+                $selection,
+                instanceIsVisible: $instanceIsVisible,
+            );
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->error($exception->errorCode, $exception->getMessage(), $exception->meta);
+        }
+
+        $instance = $selection->instance;
+
+        if (! $instance instanceof AppInstance) {
+            return $this->instanceUnavailable($selection->app, null);
+        }
+
+        $node = $this->placement->nodeForInstance($instance);
+
+        if (! $node instanceof Node) {
+            return $this->instanceUnavailable($selection->app, $instance);
+        }
+
+        $authorization = $this->authorizer->authorize($caller, $node, 'app:write');
+
+        if (! $authorization->allowed) {
+            return $this->forbidden($node, $authorization, 'app:write');
+        }
+
+        return [
+            'app' => $selection->app,
+            'instance' => $instance,
+            'node' => $node,
+        ];
     }
 
     private function wantsEventStream(Request $request): bool
@@ -164,6 +235,20 @@ final class AppSetupController implements Loggable
     private function appNotFound(string $app): JsonResponse
     {
         return $this->error('app.not_found', "App '{$app}' was not found.", ['app' => $app], 404);
+    }
+
+    private function instanceUnavailable(App $app, ?AppInstance $instance): JsonResponse
+    {
+        return $this->error(
+            'validation_failed',
+            "App instance '{$app->name}.{$instance?->name}' does not resolve an Orbit serving node.",
+            [
+                'field' => 'app',
+                'reason' => 'app_instance_unavailable',
+                'app' => $app->name,
+                'app_instance' => $instance?->name,
+            ],
+        );
     }
 
     /**
@@ -206,7 +291,7 @@ final class AppSetupController implements Loggable
      */
     public function properties(): array
     {
-        return [];
+        return $this->activityProperties;
     }
 
     public function description(): ?string

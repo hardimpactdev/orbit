@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Doctor;
 
+use App\Data\Doctor\DoctorTargetScope;
 use App\Models\Node;
 
 final readonly class DoctorScopeValidator
@@ -15,8 +16,15 @@ final readonly class DoctorScopeValidator
         array $families,
         DoctorReportRunner $runner,
         ?Node $target = null,
+        ?DoctorTargetScope $scope = null,
     ): ?DoctorValidationFailure {
-        foreach ($families as $family) {
+        $validatedFamilies = $families;
+
+        if ($scope?->workspace !== null && ! in_array('workspace', $validatedFamilies, true)) {
+            $validatedFamilies[] = 'workspace';
+        }
+
+        foreach ($validatedFamilies as $family) {
             if (! in_array($family, $runner->supportedFamilies(), true)) {
                 return new DoctorValidationFailure(
                     code: 'scope_not_found',
@@ -29,7 +37,7 @@ final readonly class DoctorScopeValidator
         if ($target instanceof Node) {
             $allowed = $runner->categoriesForNode($target);
 
-            foreach ($families as $family) {
+            foreach ($validatedFamilies as $family) {
                 if (! in_array($family, $allowed, true)) {
                     return new DoctorValidationFailure(
                         code: 'family_not_in_node_scope',

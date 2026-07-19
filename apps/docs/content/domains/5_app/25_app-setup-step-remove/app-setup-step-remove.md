@@ -2,7 +2,7 @@
 
 [Back to App commands.](../README.md)
 
-Remove one setup step from an app setup pipeline.
+Remove one setup step from an app-instance setup pipeline.
 
 ## Usage
 
@@ -16,9 +16,9 @@ Use this command to delete a bootstrap command from the app setup pipeline.
 
 | Input | Meaning |
 | --- | --- |
-| `app` | Existing app slug or hostname. |
+| `app` | Dotted app-instance selector, or a bare app shorthand when exactly one instance exists. |
 | `--step` | Setup step id. |
-| `--app` | App selector for scripts where the positional argument is awkward. |
+| `--app` | App-instance selector for scripts where the positional argument is awkward. |
 | `--force` | Skip destructive confirmation. |
 | `--json` | Render JSON. |
 
@@ -29,7 +29,7 @@ history remain available.
 
 ## Requirements
 
-The caller needs `app:write` on the app's owning node.
+The caller needs `app:write` on the selected instance's serving node.
 
 ## Output Summary
 
@@ -39,7 +39,7 @@ metadata.
 ## Examples
 
 ```bash
-orbit app-setup-step:remove dlf-leden --step=12 --force
+orbit app-setup-step:remove dlf-leden.production --step=12 --force
 ```
 
 ## Related

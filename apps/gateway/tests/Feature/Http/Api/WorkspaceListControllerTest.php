@@ -200,6 +200,55 @@ describe('WorkspaceListController', function (): void {
             ->assertJsonCount(2, 'success.data.workspaces');
     });
 
+    it('never exposes production workspace registry drift in the global list', function (): void {
+        $caller = createWorkspaceListCallerNode();
+        assignWorkspaceListGatewayRole($caller);
+        $developmentNode = createWorkspaceListAppNode(['name' => 'app-dev-1']);
+        $productionNode = createWorkspaceListAppNode(['name' => 'app-prod-1'], 'app-prod');
+        $developmentApp = App::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
+        $productionApp = App::factory()->create(['name' => 'site', 'node_id' => $productionNode->id]);
+
+        Workspace::factory()->create(['name' => 'docs-feature', 'app_id' => $developmentApp->id]);
+        Workspace::factory()->create(['name' => 'site-feature', 'app_id' => $productionApp->id]);
+
+        $response = $this->call(
+            'GET',
+            '/api/workspaces',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(1, 'success.data.workspaces')
+            ->assertJsonPath('success.data.workspaces.0.name', 'docs-feature');
+    });
+
+    it('rejects an explicitly selected production app instance', function (): void {
+        $caller = createWorkspaceListCallerNode();
+        assignWorkspaceListGatewayRole($caller);
+        $productionNode = createWorkspaceListAppNode(['name' => 'app-prod-1'], 'app-prod');
+        $productionApp = App::factory()->create(['name' => 'site', 'node_id' => $productionNode->id]);
+        Workspace::factory()->create(['name' => 'site-feature', 'app_id' => $productionApp->id]);
+
+        $response = $this->call(
+            'GET',
+            '/api/workspaces?app=site.development',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
+            ->assertJsonPath('error.meta.node', 'app-prod-1')
+            ->assertJsonPath('error.meta.role', 'app-prod');
+    });
+
     it('does not treat an unassigned caller as gateway visibility', function (): void {
         createWorkspaceListCallerNode();
         $node = createWorkspaceListAppNode(['name' => 'app-1']);

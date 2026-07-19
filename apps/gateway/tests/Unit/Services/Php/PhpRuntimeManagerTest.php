@@ -15,6 +15,7 @@ use App\Services\Php\PhpRuntimeManager;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Tools\ToolsProbe;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -96,6 +97,97 @@ it('maps PHP runtime view with inherited workspace version', function (): void {
             'php_version' => '8.5',
             'inherits' => true,
         ]);
+});
+
+it('rejects workspace runtime reads from app-prod callers at the manager boundary', function (): void {
+    $caller = Node::factory()->appProd()->create(['name' => 'app-prod-caller']);
+    $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
+    $instance = place_php_runtime_manager_app($app, $node);
+    Workspace::factory()->create([
+        'name' => 'feature-docs',
+        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
+    ]);
+
+    $result = app(PhpRuntimeManager::class)->view(
+        app: 'docs.development',
+        workspace: 'feature-docs',
+        caller: $caller,
+    );
+
+    expect($result->failed())
+        ->toBeTrue()
+        ->and($result->failure?->code)
+        ->toBe('workspace.unsupported_for_production')
+        ->and($result->failure?->meta)
+        ->toMatchArray([
+            'node' => 'app-prod-caller',
+            'role' => 'app-prod',
+        ]);
+});
+
+it('rejects workspace runtime reads when the workspace owner is app-prod', function (): void {
+    $node = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
+    $instance = place_php_runtime_manager_app($app, $node);
+    Workspace::factory()->create([
+        'name' => 'legacy-workspace',
+        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
+    ]);
+
+    $result = app(PhpRuntimeManager::class)->view(
+        app: 'docs.development',
+        workspace: 'legacy-workspace',
+    );
+
+    expect($result->failed())
+        ->toBeTrue()
+        ->and($result->failure?->code)
+        ->toBe('workspace.unsupported_for_production')
+        ->and($result->failure?->meta)
+        ->toMatchArray([
+            'node' => 'app-prod-1',
+            'role' => 'app-prod',
+        ]);
+});
+
+it('rejects app runtime writes before fanout when a workspace placement is unresolved', function (): void {
+    $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $node->id,
+        'php_version' => '8.4',
+    ]);
+    place_php_runtime_manager_app($app, $node);
+    $unresolvedInstance = AppInstance::factory()->for($app)->create([
+        'name' => 'legacy',
+        'driver_config' => new OrbitAppInstanceDriverConfigData,
+    ]);
+    $workspace = Workspace::factory()->create([
+        'name' => 'legacy-workspace',
+        'app_id' => $app->id,
+        'app_instance_id' => $unresolvedInstance->id,
+    ]);
+
+    expect(app(WorkspaceRoleGuard::class)->allowsWorkspaceTarget($workspace))->toBeFalse();
+
+    $result = app(PhpRuntimeManager::class)->use(version: '8.5', app: 'docs.development');
+
+    expect($result->failed())
+        ->toBeTrue()
+        ->and($result->failure?->code)
+        ->toBe('workspace.unsupported_for_production')
+        ->and($result->failure?->meta)
+        ->toMatchArray([
+            'app' => 'docs',
+            'workspace' => 'legacy-workspace',
+            'role' => 'app-dev-required',
+            'reason' => 'serving_node_unresolved',
+        ])
+        ->and($app->refresh()->php_version)
+        ->toBe('8.4');
 });
 
 it('frankenphp selects app runtime from approved image facts', function (): void {

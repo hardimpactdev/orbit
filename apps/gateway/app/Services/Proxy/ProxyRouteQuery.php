@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Services\Proxy;
 
 use App\Enums\Nodes\NodeStatus;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -33,7 +36,8 @@ class ProxyRouteQuery
     ];
 
     public function __construct(
-        private readonly AppProxyRouteTargetResolver $appRouteTargets = new AppProxyRouteTargetResolver,
+        private readonly AppProxyRouteTargetResolver $appRouteTargets,
+        private readonly WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     /**
@@ -48,6 +52,10 @@ class ProxyRouteQuery
         $node = $node !== null && trim($node) !== '' ? trim($node) : null;
 
         $this->validateFilter($filter);
+
+        if ($filter === 'workspace' && $caller instanceof Node) {
+            $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($caller);
+        }
 
         $visibleNodeIds = $this->visibleNodeIds($caller);
         $callerIsGateway = $caller instanceof Node && $this->nodeRoleAssignments()->nodeIsGateway($caller);
@@ -83,21 +91,36 @@ class ProxyRouteQuery
         /** @var \Illuminate\Database\Eloquent\Collection<int, ProxyRoute> $proxyRoutes */
         $proxyRoutes = $query->get();
 
-        $routes = $proxyRoutes
-            ->sort(
-                fn (ProxyRoute $first, ProxyRoute $second): int => (
-                    [
-                        mb_strtolower($first->node->name),
-                        mb_strtolower($first->domain),
-                    ] <=> [
-                        mb_strtolower($second->node->name),
-                        mb_strtolower($second->domain),
-                    ]
-                ),
-            )
-            ->values()
-            ->map(fn (ProxyRoute $route): array => $this->toRouteEntity($route))
-            ->all();
+        if ($filter === 'workspace') {
+            foreach ($proxyRoutes as $route) {
+                $this->ensureWorkspaceRouteSupported($route, $caller);
+            }
+        }
+
+        if ($filter !== 'workspace') {
+            $proxyRoutes = $proxyRoutes
+                ->reject(fn (ProxyRoute $route): bool => ! $this->workspaceRouteIsSupported($route, $caller))
+                ->values();
+        }
+
+        /** @var list<ProxyRoute> $visibleRoutes */
+        $visibleRoutes = $proxyRoutes->values()->all();
+        usort(
+            $visibleRoutes,
+            fn (ProxyRoute $first, ProxyRoute $second): int => (
+                [
+                    mb_strtolower($first->node->name),
+                    mb_strtolower($first->domain),
+                ] <=> [
+                    mb_strtolower($second->node->name),
+                    mb_strtolower($second->domain),
+                ]
+            ),
+        );
+        $routes = array_map(
+            fn (ProxyRoute $route): array => $this->toRouteEntity($route),
+            $visibleRoutes,
+        );
 
         return [
             'routes' => $routes,
@@ -123,6 +146,34 @@ class ProxyRouteQuery
                 'allowed' => self::AllowedFilters,
             ],
         );
+    }
+
+    private function ensureWorkspaceRouteSupported(ProxyRoute $route, ?Node $caller): void
+    {
+        if ($route->owner_type !== 'workspace') {
+            return;
+        }
+
+        $this->workspaceRoleGuard->ensureNodeIsWorkspaceEligible($route->node);
+
+        if ($caller instanceof Node) {
+            $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($caller);
+        }
+
+        if ($route->workspace instanceof Workspace) {
+            $this->workspaceRoleGuard->ensureWorkspaceSupported($route->workspace);
+        }
+    }
+
+    private function workspaceRouteIsSupported(ProxyRoute $route, ?Node $caller): bool
+    {
+        try {
+            $this->ensureWorkspaceRouteSupported($route, $caller);
+
+            return true;
+        } catch (WorkspaceUnsupportedForProduction) {
+            return false;
+        }
     }
 
     /**

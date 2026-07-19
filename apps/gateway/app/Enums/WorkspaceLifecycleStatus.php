@@ -8,6 +8,5 @@ enum WorkspaceLifecycleStatus: string
 {
     case Expected = 'expected';
     case SetupPending = 'setup-pending';
-    case SettingUp = 'setting_up';
     case Active = 'active';
 }

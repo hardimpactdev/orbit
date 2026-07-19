@@ -227,6 +227,41 @@ class NodeRoleAssignments
         return 'operator';
     }
 
+    /**
+     * @return list<string>
+     */
+    public function activeRoleNames(Node $node): array
+    {
+        if ($node->relationLoaded('roleAssignments')) {
+            $roles = [];
+
+            foreach ($node->roleAssignments as $assignment) {
+                if ($assignment->status === NodeRoleStatus::Active) {
+                    $roles[] = $assignment->role;
+                }
+            }
+
+            sort($roles, SORT_STRING);
+
+            return $roles;
+        }
+
+        $roles = $node
+            ->roleAssignments()
+            ->where('status', NodeRoleStatus::Active->value)
+            ->orderBy('role')
+            ->pluck('role');
+        $roleNames = [];
+
+        foreach ($roles as $role) {
+            if (is_string($role)) {
+                $roleNames[] = $role;
+            }
+        }
+
+        return $roleNames;
+    }
+
     public function nodeCanServeGatewayOrAppHostWorkloads(Node $node): bool
     {
         return $this->nodeIsGateway($node) || $this->nodeHasActiveAppHostRole($node);

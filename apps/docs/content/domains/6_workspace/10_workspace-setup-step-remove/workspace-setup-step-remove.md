@@ -22,7 +22,7 @@ used for future executions.
 
 - `--step=<id>`: The ID of the setup step to remove. Required.
 - `--app=<app.instance>`: Concrete dotted app-instance selector, such as
-  `my-app.production`. A caller context may supply the same concrete instance,
+  `my-app.development`. A caller context may supply the same concrete instance,
   but a bare logical-app slug is rejected with an app-instance-required
   validation error before side effects. The exact error shape is defined by the
   [JSON renderer contract](technical/6.2_workspace-setup-step-remove_output-render_json.md).
@@ -52,7 +52,7 @@ The following rules govern how the step is removed.
 This prompts before removing the step.
 
 ```bash
-orbit workspace-setup-step:remove --step=12 --app=my-app.production
+orbit workspace-setup-step:remove --step=12 --app=my-app.development
 ```
 
 ### Force remove a step without prompting
@@ -60,7 +60,7 @@ orbit workspace-setup-step:remove --step=12 --app=my-app.production
 Use `--force` to skip the confirmation prompt.
 
 ```bash
-orbit workspace-setup-step:remove --step=12 --app=my-app.production --force
+orbit workspace-setup-step:remove --step=12 --app=my-app.development --force
 ```
 
 ## Requirements

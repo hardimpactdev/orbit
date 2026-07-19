@@ -149,6 +149,60 @@ describe('ProcessEventIngestController', function (): void {
         ]);
     });
 
+    it('does not resolve workspace runtime units reported by app-prod nodes', function (): void {
+        $node = Node::factory()
+            ->appProd()
+            ->create([
+                'name' => 'app-prod-1',
+                'status' => 'active',
+                'host' => PROCESS_EVENT_INGEST_APP_WG_IP,
+                'wireguard_address' => PROCESS_EVENT_INGEST_APP_WG_IP,
+            ]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+        ]);
+        Workspace::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'name' => 'legacy-workspace',
+        ]);
+        Process::factory()
+            ->forOwner($app, $node)
+            ->create([
+                'app_instance_id' => $instance->id,
+                'name' => 'vite',
+            ]);
+
+        $response = $this->call(
+            'POST',
+            '/api/events/process',
+            [
+                'event_id' => 'evt-app-prod-workspace',
+                'event' => 'crashed',
+                'unit' => 'orbit_docs_production_legacy-workspace_vite',
+                'exit_code' => 1,
+                'exit_status' => 'exited',
+                'at' => '2026-07-19T12:00:00+00:00',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP],
+        );
+
+        $response
+            ->assertCreated()
+            ->assertJsonPath('success.meta.matched', false);
+
+        $this->assertDatabaseHas('process_events', [
+            'event_id' => 'evt-app-prod-workspace',
+            'app_id' => null,
+            'workspace_id' => null,
+            'process_id' => null,
+        ]);
+    });
+
     it('resolves co-located app instances through instance-qualified runtime identities', function (): void {
         $node = createProcessEventIngestNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);

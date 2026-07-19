@@ -5,16 +5,21 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Data\Doctor\DoctorAppInstanceTarget;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Enums\ActivityLogType;
+use App\Exceptions\AppSelectionResolutionFailed;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\Node;
+use App\Services\Doctor\DoctorAppInstanceTargetResolver;
 use App\Services\Doctor\DoctorProgressReportFactory;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Doctor\DoctorValidationFailure;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 use App\Support\Streaming\ProgressEventStreamEmitter;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -37,6 +42,8 @@ final class DoctorFixController implements Loggable
         DoctorProgressReportFactory $progressReports,
         NodeAccessAuthorizer $authorizer,
         ProgressEventStreamResponseFactory $streams,
+        DoctorAppInstanceTargetResolver $appTargets,
+        WorkspaceRoleGuard $workspaceRoleGuard,
     ): JsonResponse|StreamedResponse {
         /** @var mixed $caller */
         $caller = $request->user();
@@ -76,7 +83,17 @@ final class DoctorFixController implements Loggable
             return $scopeFailure;
         }
 
-        $target = $this->resolveTarget($request, $caller);
+        try {
+            $appTarget = $appTargets->resolve(
+                $this->scopeValue($request, 'app'),
+                $caller,
+                $mode === 'adopt' ? 'doctor:adopt' : 'doctor:restore',
+            );
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->appTargetFailure($exception);
+        }
+
+        $target = $this->resolveTarget($request, $caller, $appTarget);
 
         if ($target === null) {
             return response()->json([
@@ -88,13 +105,35 @@ final class DoctorFixController implements Loggable
             ], 422);
         }
 
+        if ($appTarget instanceof DoctorAppInstanceTarget && $target->id !== $appTarget->node->id) {
+            return response()->json([
+                'error' => [
+                    'code' => 'validation_failed',
+                    'message' => "App instance '{$appTarget->app->name}.{$appTarget->instance->name}' is not placed on node '{$target->name}'.",
+                    'meta' => [
+                        'field' => 'node',
+                        'reason' => 'app_instance_node_mismatch',
+                        'node' => $target->name,
+                        'serving_node' => $appTarget->node->name,
+                    ],
+                ],
+            ], 422);
+        }
+
         $authorization = $this->authorizeDoctorFix($authorizer, $caller, $target, $mode);
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
         }
 
-        $failure = $validator->validate($families, $runner, $target);
+        $scope = $appTarget instanceof DoctorAppInstanceTarget
+            ? $appTarget->scope($this->scopeValue($request, 'workspace'))
+            : DoctorTargetScope::from(
+                $this->scopeValue($request, 'app'),
+                $this->scopeValue($request, 'workspace'),
+            );
+
+        $failure = $validator->validate($families, $runner, $target, $scope);
 
         if ($failure instanceof DoctorValidationFailure) {
             return response()->json([
@@ -106,14 +145,18 @@ final class DoctorFixController implements Loggable
             ], 422);
         }
 
-        $issues = $this->issues($request);
+        try {
+            $workspaceRoleGuard->ensureDoctorRequestDoesNotCrossProductionBoundary(
+                caller: $caller,
+                target: $target,
+                families: $families === [] ? $runner->categoriesForNode($target) : $families,
+                hasWorkspaceScope: $scope->workspace !== null,
+            );
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return $this->workspaceUnsupportedForProduction($exception);
+        }
 
-        $scope = DoctorTargetScope::from(
-            $this->scopeValue($request, 'app'),
-            $this->scopeValue($request, 'workspace'),
-        );
-        $app = $scope->app;
-        $workspace = $scope->workspace;
+        $issues = $this->issues($request);
 
         if ($this->wantsEventStream($request)) {
             return $this->stream(
@@ -126,8 +169,7 @@ final class DoctorFixController implements Loggable
                 $issues,
                 $key,
                 $dryRun,
-                $app,
-                $workspace,
+                $scope,
             );
         }
 
@@ -163,8 +205,7 @@ final class DoctorFixController implements Loggable
         ?array $issues,
         ?string $key,
         bool $dryRun,
-        ?string $app,
-        ?string $workspace,
+        DoctorTargetScope $scope,
     ): StreamedResponse {
         return $streams->make(function (ProgressEventStreamEmitter $events) use (
             $runner,
@@ -175,8 +216,7 @@ final class DoctorFixController implements Loggable
             $issues,
             $key,
             $dryRun,
-            $app,
-            $workspace,
+            $scope,
         ): void {
             $renderedFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
             $familyStatuses = $progressReports->familyStatuses($renderedFamilies);
@@ -190,8 +230,9 @@ final class DoctorFixController implements Loggable
                     issues: [],
                     actions: [],
                     familyStatuses: $familyStatuses,
-                    app: $app,
-                    workspace: $workspace,
+                    app: $scope->app,
+                    workspace: $scope->workspace,
+                    appInstance: $scope->appInstance,
                 ),
             ]);
             $events->tree('Running Doctor', array_map(
@@ -213,8 +254,9 @@ final class DoctorFixController implements Loggable
                         issues: [],
                         actions: [],
                         familyStatuses: $familyStatuses,
-                        app: $app,
-                        workspace: $workspace,
+                        app: $scope->app,
+                        workspace: $scope->workspace,
+                        appInstance: $scope->appInstance,
                     ),
                 ]);
             }
@@ -227,7 +269,7 @@ final class DoctorFixController implements Loggable
                     request: new DoctorRunRequest(
                         $key,
                         $dryRun,
-                        DoctorTargetScope::from($app, $workspace),
+                        $scope,
                     ),
                 )
                 : $this->applySelectedIssues(
@@ -237,7 +279,7 @@ final class DoctorFixController implements Loggable
                     $families,
                     $issues,
                     $key,
-                    DoctorTargetScope::from($app, $workspace),
+                    $scope,
                 );
 
             foreach ($renderedFamilies as $family) {
@@ -251,8 +293,9 @@ final class DoctorFixController implements Loggable
                         issues: $this->doctorEntries($doctor, 'issues'),
                         actions: $this->doctorEntries($doctor, 'actions'),
                         familyStatuses: $familyStatuses,
-                        app: $app,
-                        workspace: $workspace,
+                        app: $scope->app,
+                        workspace: $scope->workspace,
+                        appInstance: $scope->appInstance,
                     ),
                 ]);
             }
@@ -315,8 +358,11 @@ final class DoctorFixController implements Loggable
         return $runner->finalize($probe, $mode, $actions);
     }
 
-    private function resolveTarget(Request $request, Node $caller): ?Node
-    {
+    private function resolveTarget(
+        Request $request,
+        Node $caller,
+        ?DoctorAppInstanceTarget $appTarget = null,
+    ): ?Node {
         $name = $request->input('node');
 
         if (is_string($name) && $name !== '') {
@@ -325,7 +371,21 @@ final class DoctorFixController implements Loggable
             return $target instanceof Node ? $target : null;
         }
 
-        return $caller;
+        return $appTarget?->node ?? $caller;
+    }
+
+    private function appTargetFailure(AppSelectionResolutionFailed $exception): JsonResponse
+    {
+        return response()->json(
+            [
+                'error' => [
+                    'code' => $exception->errorCode,
+                    'message' => $exception->getMessage(),
+                    'meta' => $exception->meta,
+                ],
+            ],
+            $exception->errorCode === 'app.not_found' ? 404 : 422,
+        );
     }
 
     private function validateScope(Request $request): ?JsonResponse
@@ -413,6 +473,18 @@ final class DoctorFixController implements Loggable
             $families,
             static fn (mixed $family): bool => is_string($family) && $family !== '',
         ));
+    }
+
+    private function workspaceUnsupportedForProduction(
+        WorkspaceUnsupportedForProduction $exception,
+    ): JsonResponse {
+        return response()->json([
+            'error' => [
+                'code' => $exception->errorCode(),
+                'message' => $exception->getMessage(),
+                'meta' => $exception->meta,
+            ],
+        ], 422);
     }
 
     private function mode(Request $request): ?string

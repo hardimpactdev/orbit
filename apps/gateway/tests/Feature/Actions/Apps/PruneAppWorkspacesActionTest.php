@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Apps\PruneAppWorkspaces;
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
@@ -31,8 +32,9 @@ beforeEach(function (): void {
 
     NodeRoleAssignment::factory()->create([
         'node_id' => 1,
-        'role' => 'gateway',
+        'role' => 'app-dev',
         'status' => 'active',
+        'settings' => ['tld' => 'test'],
     ]);
 
     DB::table('apps')->insert([
@@ -48,7 +50,17 @@ beforeEach(function (): void {
             'updated_at' => now(),
         ],
     ]);
-    AppInstance::factory()->create(['app_id' => 1]);
+    AppInstance::factory()->create([
+        'app_id' => 1,
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: 1,
+            node: 'gateway',
+            path: '/home/nckrtl/apps/demo',
+            document_root: 'public',
+            domain: 'demo.beast',
+        ),
+    ]);
 
     app()->instance(AgentIdeMessageAdapter::class, new PruneAppActionTestAdapter);
     app()->instance(RemoteShell::class, new PruneAppWorkspacesActionRemoteShell);

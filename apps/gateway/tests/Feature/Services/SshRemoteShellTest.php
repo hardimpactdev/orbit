@@ -325,7 +325,7 @@ it('audits remote shell executions without raw scripts or output', function (): 
     ]);
 
     $activity = DB::table('activity_log')
-        ->where('event', 'remote_shell.run')
+        ->where('event', 'ssh_bootstrap.run')
         ->latest('id')
         ->first();
 
@@ -334,12 +334,13 @@ it('audits remote shell executions without raw scripts or output', function (): 
     $properties = json_decode((string) $activity->properties, true, flags: JSON_THROW_ON_ERROR);
 
     expect($activity->log_name)
-        ->toBe('remote_shell')
+        ->toBe('api')
         ->and($properties)
         ->toMatchArray([
             'type' => 'write',
             'lane' => 'internal',
             'category' => 'remote_execution',
+            'transport' => 'ssh_bootstrap',
             'node' => 'app-audit',
             'metadata_keys' => ['ORBIT_REQUEST_ID'],
             'timeout' => 33,

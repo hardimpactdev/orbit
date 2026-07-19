@@ -9,6 +9,8 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The authenticated peer has `app:agent` on the app's owning node.
+- The authenticated peer is not an `app-prod` node. This command can plan
+  workspace cleanup and is therefore unavailable to production app services.
 - The target app exists in gateway configuration.
 - The adapter appears in the gateway-owned adapter registry. Core adapter names
   are `opencode` and `polyscope`; additional adapters are registered by
@@ -66,6 +68,12 @@ This command follows the shared
 ## Behavior Contract
 
 ### App Agent IDE Default Rules
+
+An `app-prod` caller is rejected with
+`workspace.unsupported_for_production` before adapter validation,
+configuration writes, or workspace cleanup planning. On an `app-prod` target,
+the adapter setting applies only to the app main context; workspace discovery
+and cleanup are disabled.
 
 1. **Lookup.** Find the app record by name or hostname. The lookup checks app
    name first; the hostname match is consulted only when no name match
@@ -149,6 +157,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | App not found | No app record matches `app`. | Failure |
+| Production caller unsupported | The authenticated caller has active `app-prod`. | Failure (`error.code=workspace.unsupported_for_production`) before configuration or cleanup. |
 | Unsupported adapter | The requested adapter is not present in the gateway-owned adapter registry. | Failure |
 | Missing destructive consent | Workspaces would be removed but `--force` is missing in non-interactive mode or confirmation is denied in interactive mode. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 | Cleanup failed after configuration write | App configuration was updated but workspace removal could not finish. | Success with structured `success.meta.warnings[]`. |

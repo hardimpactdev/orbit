@@ -141,6 +141,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Step not found | No setup-step record matches `(step_id, app_instance, phase=setup)`. Already-absent removal is not idempotent. | Failure (`error.code=workspace.step_not_found`, `error.meta.{step_id, app}`). |
 | App not found | Resolved app slug does not exist in gateway configuration. | Failure (`error.code=workspace.app_not_found`, `error.meta.app`). |
 | App instance unresolved | A concrete app instance cannot be resolved from `--app`, `.orbit/config`, or gateway path-ownership lookup, and prompting is disabled. | Failure (`error.code=validation_failed`, `error.meta.field=app`). |
+| Production app unsupported | The selected instance is served by an `app-prod` node. | Failure (`error.code=workspace.unsupported_for_production`) before policy deletion. |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 | Cancelled confirmation | Interactive mode where the operator declines the prompt. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
 

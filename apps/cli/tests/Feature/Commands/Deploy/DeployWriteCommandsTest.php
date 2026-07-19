@@ -113,9 +113,11 @@ describe('deploy write commands', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and($decoded['error']['code'])
-            ->toBe('destructive_consent_required')
+            ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('force');
+            ->toBe('force')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('destructive_consent_required');
     });
 
     it('deletes deployment steps when force is supplied', function (): void {

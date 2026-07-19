@@ -38,7 +38,11 @@ final readonly class ScheduleShowController implements Loggable
                 node: $this->stringQuery($request, 'node'),
                 caller: $caller,
             );
-            $schedule = Schedule::query()->where('name', $name)->first();
+            $targetName = data_get($data, 'schedule.target.name');
+            $schedule = Schedule::query()
+                ->where('name', $name)
+                ->when(is_string($targetName), fn ($query) => $query->where('target_name', $targetName))
+                ->first();
 
             if ($schedule instanceof Schedule) {
                 $this->setScheduleActivitySubject($request, $schedule);
@@ -91,7 +95,7 @@ final readonly class ScheduleShowController implements Loggable
             return 404;
         }
 
-        return 400;
+        return 422;
     }
 
     public function effect(): ActivityLogType

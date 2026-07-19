@@ -85,6 +85,7 @@ function createDoctorRunCallerNode(array $overrides = [], string $role = 'gatewa
 
     return match ($role) {
         'app-dev' => createTestAppHostNode($attributes),
+        'app-prod' => createTestAppHostNode($attributes, 'app-prod'),
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),
     };
@@ -100,6 +101,10 @@ function doctor_run_explicit_fallback_server(): array
     ];
 }
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
+ */
 describe('DoctorRunController', function (): void {
     it('runs verify mode and returns a doctor report', function (): void {
         createDoctorRunCallerNode(['platform' => 'linux']);
@@ -598,13 +603,25 @@ describe('DoctorRunController', function (): void {
     it('accepts the app family scope and returns app drift', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-        App::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',
             'document_root' => 'public',
         ]);
-        app()->instance(RemoteShell::class, new DoctorRunRemoteShell("docs\t0\t0\t1\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\n"));
+        AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: $appNode->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
+        ]);
+        app()->instance(
+            RemoteShell::class,
+            new DoctorRunRemoteShell("docs.development\t0\t0\t1\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\n"),
+        );
 
         $response = $this->call(
             'POST',
@@ -624,6 +641,281 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.healthy', false)
             ->assertJsonPath('success.data.doctor.scope.families', ['app'])
             ->assertJsonPath('success.data.doctor.issues.0.key', 'app.path_missing');
+    });
+
+    it('requires a concrete app instance for an ambiguous app doctor selector', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+        $app = App::factory()->for($appNode, 'node')->create(['name' => 'docs']);
+
+        foreach (['development', 'production'] as $instanceName) {
+            AppInstance::factory()->for($app)->create([
+                'name' => $instanceName,
+                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                    node_id: $appNode->id,
+                    node: $appNode->name,
+                    path: "/home/orbit/apps/docs-{$instanceName}",
+                    document_root: 'public',
+                ),
+            ]);
+        }
+
+        $this
+            ->call(
+                'POST',
+                '/api/doctor/run',
+                [
+                    'mode' => 'verify',
+                    'families' => ['app'],
+                    'app' => 'docs',
+                ],
+                [],
+                [],
+                ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+            )
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.reason', 'app_instance_required');
+    });
+
+    it('does not reveal unauthorized app instance selectors through doctor run or fix', function (): void {
+        $caller = createDoctorRunCallerNode(role: 'operator');
+        $visibleNode = createTestAppHostNode(['name' => 'app-visible', 'status' => 'active']);
+        $hiddenNode = createTestAppHostNode(['name' => 'app-hidden', 'status' => 'active']);
+        $app = App::factory()->for($visibleNode, 'node')->create(['name' => 'docs']);
+
+        foreach ([
+            'visible' => $visibleNode,
+            'hidden' => $hiddenNode,
+        ] as $instanceName => $node) {
+            AppInstance::factory()->for($app)->create([
+                'name' => $instanceName,
+                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                    node_id: $node->id,
+                    node: $node->name,
+                    path: "/home/orbit/apps/docs-{$instanceName}",
+                    document_root: 'public',
+                ),
+            ]);
+        }
+
+        NodeAccess::query()->create([
+            'consumer_node_id' => $caller->id,
+            'serving_node_id' => $visibleNode->id,
+            'permissions' => ['doctor:verify', 'doctor:restore'],
+            'custom_permissions' => ['doctor:verify', 'doctor:restore'],
+        ]);
+
+        $requests = [
+            ['/api/doctor/run', ['mode' => 'verify', 'families' => ['app']]],
+            ['/api/doctor/fix', ['mode' => 'restore', 'families' => ['app']]],
+        ];
+
+        foreach ($requests as [$endpoint, $payload]) {
+            foreach (['hidden', 'missing'] as $instanceName) {
+                $this
+                    ->call(
+                        'POST',
+                        $endpoint,
+                        [...$payload, 'app' => "docs.{$instanceName}"],
+                        [],
+                        [],
+                        ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+                    )
+                    ->assertUnprocessable()
+                    ->assertJsonPath('error.code', 'validation_failed')
+                    ->assertJsonPath('error.meta.field', 'app')
+                    ->assertJsonPath('error.meta.app', 'docs')
+                    ->assertJsonPath('error.meta.instance', $instanceName)
+                    ->assertJsonMissingPath('error.meta.reason')
+                    ->assertJsonMissingPath('error.meta.missing_permission')
+                    ->assertJsonMissingPath('error.meta.serving_node');
+            }
+
+            $this
+                ->call(
+                    'POST',
+                    $endpoint,
+                    [...$payload, 'app' => 'docs'],
+                    [],
+                    [],
+                    ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+                )
+                ->assertUnprocessable()
+                ->assertJsonPath('error.code', 'validation_failed')
+                ->assertJsonPath('error.meta.reason', 'app_instance_required')
+                ->assertJsonMissingPath('error.meta.instances');
+        }
+    });
+
+    it('retains unavailable app instance diagnostics for gateway-admin doctor callers', function (): void {
+        $caller = createDoctorRunCallerNode(role: 'operator');
+        $gateway = createTestGatewayNode(['name' => 'gateway']);
+        $app = App::factory()->for($gateway, 'node')->create(['name' => 'docs']);
+
+        AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: 999_999,
+                node: 'missing-app-node',
+                path: '/home/orbit/apps/docs-development',
+                document_root: 'public',
+            ),
+        ]);
+        NodeAccess::query()->create([
+            'consumer_node_id' => $caller->id,
+            'serving_node_id' => $gateway->id,
+            'permissions' => ['*'],
+            'custom_permissions' => ['*'],
+        ]);
+
+        $this
+            ->call(
+                'POST',
+                '/api/doctor/run',
+                [
+                    'mode' => 'verify',
+                    'families' => ['app'],
+                    'app' => 'docs.development',
+                ],
+                [],
+                [],
+                ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+            )
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.reason', 'app_instance_unavailable')
+            ->assertJsonPath('error.meta.app', 'docs')
+            ->assertJsonPath('error.meta.app_instance', 'development');
+    });
+
+    it('derives the app doctor node and scope from an explicit app instance', function (): void {
+        createDoctorRunCallerNode();
+        $developmentNode = createTestAppHostNode(['name' => 'app-dev-1', 'status' => 'active']);
+        $productionNode = createTestAppHostNode(['name' => 'app-prod-1', 'status' => 'active'], 'app-prod');
+        $app = App::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
+
+        AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $developmentNode->id,
+                node: $developmentNode->name,
+                path: '/home/orbit/apps/docs-development',
+                document_root: 'public',
+            ),
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $productionNode->id,
+                node: $productionNode->name,
+                path: '/home/orbit/apps/docs-production',
+                document_root: 'public',
+            ),
+        ]);
+        app()->instance(
+            RemoteShell::class,
+            new DoctorRunRemoteShell("docs.production\t0\t0\t1\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\n"),
+        );
+
+        $this
+            ->call(
+                'POST',
+                '/api/doctor/run',
+                [
+                    'mode' => 'verify',
+                    'families' => ['app'],
+                    'app' => 'docs.production',
+                ],
+                [],
+                [],
+                ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+            )
+            ->assertOk()
+            ->assertJsonPath('success.data.doctor.scope.node', 'app-prod-1')
+            ->assertJsonPath('success.data.doctor.scope.app', 'docs')
+            ->assertJsonPath('success.data.doctor.scope.app_instance', 'production')
+            ->assertJsonPath('success.data.doctor.issues.0.detail.app_instance', 'production');
+    });
+
+    it('rejects workspace doctor family and scope for app production instances', function (): void {
+        createDoctorRunCallerNode();
+        $productionNode = createTestAppHostNode(['name' => 'app-prod-1', 'status' => 'active'], 'app-prod');
+        $app = App::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
+
+        AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $productionNode->id,
+                node: $productionNode->name,
+                path: '/home/orbit/apps/docs-production',
+                document_root: 'public',
+            ),
+        ]);
+
+        $requests = [
+            ['/api/doctor/run', ['mode' => 'verify', 'families' => ['workspace']]],
+            ['/api/doctor/run', ['mode' => 'verify', 'families' => ['app'], 'workspace' => 'feature']],
+            ['/api/doctor/fix', ['mode' => 'restore', 'families' => ['workspace']]],
+            ['/api/doctor/fix', ['mode' => 'restore', 'families' => ['app'], 'workspace' => 'feature']],
+        ];
+
+        foreach ($requests as [$endpoint, $payload]) {
+            $this
+                ->call(
+                    'POST',
+                    $endpoint,
+                    [...$payload, 'app' => 'docs.production'],
+                    [],
+                    [],
+                    ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+                )
+                ->assertUnprocessable()
+                ->assertJsonPath('error.code', 'family_not_in_node_scope')
+                ->assertJsonPath('error.meta.family', 'workspace')
+                ->assertJsonPath('error.meta.target_node', 'app-prod-1');
+        }
+    });
+
+    it('rejects app production callers from workspace-adjacent doctor work on development nodes', function (): void {
+        $caller = createDoctorRunCallerNode(role: 'app-prod');
+        $developmentNode = createTestAppHostNode(['name' => 'app-dev-1', 'status' => 'active']);
+
+        NodeAccess::query()->updateOrCreate(
+            [
+                'consumer_node_id' => $caller->id,
+                'serving_node_id' => $developmentNode->id,
+            ],
+            [
+                'permissions' => ['doctor:verify', 'doctor:restore'],
+                'custom_permissions' => ['doctor:verify', 'doctor:restore'],
+            ],
+        );
+
+        $requests = [
+            ['/api/doctor/run', ['mode' => 'verify', 'families' => ['workspace']]],
+            ['/api/doctor/run', ['mode' => 'verify', 'families' => ['process']]],
+            ['/api/doctor/run', ['mode' => 'verify', 'families' => ['proxy']]],
+            ['/api/doctor/run', ['mode' => 'verify', 'families' => ['database_connection']]],
+            ['/api/doctor/run', ['mode' => 'verify', 'families' => ['app'], 'workspace' => 'feature']],
+            ['/api/doctor/fix', ['mode' => 'restore', 'families' => ['process']]],
+        ];
+
+        foreach ($requests as [$endpoint, $payload]) {
+            $this
+                ->call(
+                    'POST',
+                    $endpoint,
+                    [...$payload, 'node' => $developmentNode->name],
+                    [],
+                    [],
+                    ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+                )
+                ->assertUnprocessable()
+                ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
+                ->assertJsonPath('error.meta.node', 'caller')
+                ->assertJsonPath('error.meta.role', 'app-prod');
+        }
     });
 
     it('accepts the workspace family scope and returns workspace drift', function (): void {

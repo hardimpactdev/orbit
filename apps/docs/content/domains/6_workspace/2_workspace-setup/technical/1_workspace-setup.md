@@ -131,7 +131,9 @@ the parent app path, including external agent worktree directories.
    - Caller's current directory, resolved to an absolute path on the owning
      node, when adopting an unregistered path.
 3. **Validate Eligibility**:
-   - Target node must be reachable.
+   - Target node must be reachable and carry an active `app-dev` role. An
+     `app-prod` target fails before side effects with
+     `workspace.unsupported_for_production`.
    - Path must be a workspace source path, not the parent app root. Explicit
      `--path` adoption may register paths outside the parent app path,
      including external agent worktree directories.
@@ -238,6 +240,10 @@ letting `result.action` describe what this run did, mirroring the
 
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
+
+`workspace:setup` rejects an instance served by `app-prod` before adapter,
+registry, Agent-push, or runtime effects. This failure uses
+`error.code=workspace.unsupported_for_production`.
 
 - **Path Is App Root**: The resolved CWD is a registered app's own path, not
   a workspace path under it. Fails before side effects with

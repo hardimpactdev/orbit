@@ -88,7 +88,7 @@ final readonly class OrbitScheduler
     private function dueSchedules(CarbonImmutable $now): array
     {
         return Schedule::query()
-            ->with(['app.node', 'node'])
+            ->with(['app', 'appInstance', 'node'])
             ->where('enabled', true)
             ->where('status', 'expected')
             ->get()

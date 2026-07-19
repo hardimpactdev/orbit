@@ -79,7 +79,11 @@ final class AppShowController implements Loggable
             'success' => [
                 'data' => [
                     'app' => $this->appPayload($model),
-                    'details' => $this->detailsPayload($model, $instances),
+                    'details' => $this->detailsPayload(
+                        $model,
+                        $instances,
+                        includeWorkspaces: ! $caller->hasActiveRole('app-prod'),
+                    ),
                 ],
             ],
         ]);
@@ -110,7 +114,7 @@ final class AppShowController implements Loggable
      * @param  list<AppInstance>  $instances
      * @return array<string, mixed>
      */
-    private function detailsPayload(App $app, array $instances): array
+    private function detailsPayload(App $app, array $instances, bool $includeWorkspaces): array
     {
         $app->loadMissing([
             'dependencyAuditSummaries',
@@ -120,7 +124,7 @@ final class AppShowController implements Loggable
         ]);
 
         $visibleInstanceIds = array_map(static fn (AppInstance $instance): int => $instance->id, $instances);
-        $placements = $this->placementPayload->forApp($app, $instances);
+        $placements = $this->placementPayload->forApp($app, $instances, $includeWorkspaces);
         $processModels = [];
 
         foreach ($app->processes as $process) {

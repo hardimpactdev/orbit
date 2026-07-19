@@ -9,6 +9,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Sdk\Laravel\Testing\GatewayMockClient;
 
 function fakeNodeBootstrapPrepare(string $host, string $id = 'bootstrap-123'): void
 {
@@ -1250,8 +1251,24 @@ describe('node write commands', function (): void {
             ->toBe('gateway');
     });
 
-    it('requires --force before node role:remove sends destructive gateway requests', function (): void {
-        Http::fake();
+    it('describes force as consent for every destructive role removal', function (): void {
+        $command = $this->app->make(\App\Commands\Node\NodeRoleRemoveCommand::class);
+
+        expect($command->getDefinition()->getOption('force')->getDescription())
+            ->toBe('Confirm destructive role removal and dependent cleanup');
+    });
+
+    it('preflights node role:remove and returns canonical consent metadata without --force', function (): void {
+        fakeGateway(body: fakeErrorEnvelope(
+            code: 'validation_failed',
+            message: 'Use --force to remove this node role.',
+            meta: [
+                'field' => 'force',
+                'reason' => 'destructive_consent_required',
+                'role' => 'database',
+                'dependents' => [],
+            ],
+        ), status: 422);
 
         [$exitCode, $output] = runCommand($this, 'node role:remove', [
             'node' => 'app-1',
@@ -1261,14 +1278,88 @@ describe('node write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertNothingSent();
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && str_contains($request->url(), '/api/nodes/app-1/roles/database')
+                && $request['force'] === false
+                && $request['purge_data'] === false
+            ),
+        );
 
         expect($exitCode)
             ->toBe(1)
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('force');
+            ->toBe('force')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('destructive_consent_required');
+    });
+
+    it('surfaces role dependents before prompting and retries removal with force', function (): void {
+        config()->set('orbit.gateway.url', 'https://gateway.test');
+        config()->set('orbit.gateway.timeout', 30);
+        app()->forgetInstance(GatewayApiClient::class);
+        GatewayMockClient::destroyGlobal();
+
+        Http::fake([
+            'https://gateway.test/*' => Http::sequence()
+                ->push(fakeErrorEnvelope(
+                    code: 'validation_failed',
+                    message: 'Use --force to remove this node role.',
+                    meta: [
+                        'field' => 'force',
+                        'reason' => 'destructive_consent_required',
+                        'role' => 'app-dev',
+                        'dependents' => ['1 development app record'],
+                    ],
+                ), 422)
+                ->push(fakeSuccessEnvelope([
+                    'node' => 'app-1',
+                    'role' => 'app-dev',
+                    'purged_data' => false,
+                ])),
+        ]);
+
+        $this
+            ->artisan('node role:remove', [
+                'node' => 'app-1',
+                'role' => 'app-dev',
+            ])
+            ->expectsOutput('Dependent resources:')
+            ->expectsOutput('  - 1 development app record')
+            ->expectsConfirmation("Remove role 'app-dev' from 'app-1'?", 'yes')
+            ->assertSuccessful();
+
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $request): bool => $request['force'] === true);
+    });
+
+    it('does not retry node role removal when destructive confirmation is declined', function (): void {
+        fakeGateway(body: fakeErrorEnvelope(
+            code: 'validation_failed',
+            message: 'Use --force to remove this node role.',
+            meta: [
+                'field' => 'force',
+                'reason' => 'destructive_consent_required',
+                'role' => 'database',
+                'dependents' => ['1 database process'],
+            ],
+        ), status: 422);
+
+        $this
+            ->artisan('node role:remove', [
+                'node' => 'app-1',
+                'role' => 'database',
+            ])
+            ->expectsOutput('Dependent resources:')
+            ->expectsOutput('  - 1 database process')
+            ->expectsConfirmation("Remove role 'database' from 'app-1'?", 'no')
+            ->expectsOutput('validation_failed: Operation cancelled.')
+            ->assertFailed();
+
+        Http::assertSentCount(1);
     });
 
     it('deletes node roles through the typed gateway API when force is supplied', function (): void {

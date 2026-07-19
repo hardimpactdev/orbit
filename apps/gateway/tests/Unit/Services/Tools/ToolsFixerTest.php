@@ -598,7 +598,7 @@ describe('ToolsFixer', function (): void {
 });
 
 describe('agent tool fixes', function (): void {
-    it('returns completed when canonical proxy route already exists', function (): void {
+    it('leaves canonical agent proxy route reconciliation to the proxy fixer', function (): void {
         [$node, $tool] = createAgentToolForFixer();
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -611,16 +611,11 @@ describe('agent tool fixes', function (): void {
 
         $fixer = new ToolsFixer(
             catalog: makeToolsFixerAgentToolCatalog(),
-            proxyRouteRenderer: new ProxyRouteRenderer,
         );
 
         $result = $fixer->fix($tool, agentToolDriftEntry('tool.agent_route_missing'));
 
-        expect($result)
-            ->not
-            ->toBeNull()
-            ->and($result['status'])
-            ->toBe('completed');
+        expect($result)->toBeNull();
     });
 
     it('returns null when proxy route is owned by a different tool', function (): void {
@@ -661,39 +656,32 @@ describe('agent tool fixes', function (): void {
         expect($result)->toBeNull();
     });
 
-    it('creates canonical proxy route when missing', function (): void {
-        [$node, $tool] = createAgentToolForFixer();
+    it('does not create a missing agent proxy route', function (): void {
+        [, $tool] = createAgentToolForFixer();
         $fixer = new ToolsFixer(
             catalog: makeToolsFixerAgentToolCatalog(),
-            proxyRouteRenderer: new ProxyRouteRenderer,
         );
 
         $result = $fixer->fix($tool, agentToolDriftEntry('tool.agent_route_missing'));
 
-        $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->first();
-
         expect($result)
-            ->not->toBeNull()->and($result['status'])->toBe('completed')->and($route)
-            ->not->toBeNull()->and($route->kind)->toBe('proxy')->and($route->owner_type)->toBe(
-                'tool',
-            )->and($route->config)->toBe(toolsFixerAgentRouteConfig(
-                'openclaw',
-            ))->and($route->source_hash)->toBe(toolsFixerAgentRouteSourceHash($node, 'openclaw'));
+            ->toBeNull()
+            ->and(ProxyRoute::query()->where('domain', 'openclaw.agent')->exists())
+            ->toBeFalse();
     });
 
-    it('rewrites malformed same-owner proxy routes to the canonical route shape', function (): void {
+    it('does not rewrite malformed same-owner proxy routes', function (): void {
         [$node, $tool] = createAgentToolForFixer();
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'openclaw.agent',
             'owner_type' => 'tool',
             'kind' => 'upstream',
-            'source_hash' => str_repeat('a', 64),
+            'source_hash' => str_repeat(string: 'a', times: 64),
             'config' => ['owner_name' => 'openclaw'],
         ]);
         $fixer = new ToolsFixer(
             catalog: makeToolsFixerAgentToolCatalog(),
-            proxyRouteRenderer: new ProxyRouteRenderer,
         );
 
         $result = $fixer->fix($tool, agentToolDriftEntry('tool.agent_route_missing'));
@@ -701,16 +689,13 @@ describe('agent tool fixes', function (): void {
         $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->first();
 
         expect($result)
-            ->not
             ->toBeNull()
-            ->and($result['status'])
-            ->toBe('completed')
             ->and($route->kind)
-            ->toBe('proxy')
+            ->toBe('upstream')
             ->and($route->config)
-            ->toBe(toolsFixerAgentRouteConfig('openclaw'))
+            ->toBe(['owner_name' => 'openclaw'])
             ->and($route->source_hash)
-            ->toBe(toolsFixerAgentRouteSourceHash($node, 'openclaw'));
+            ->toBe(str_repeat(string: 'a', times: 64));
     });
 
     it('updates credentials when shell returns valid JSON array', function (): void {

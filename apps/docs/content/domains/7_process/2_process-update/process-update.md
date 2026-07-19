@@ -14,7 +14,7 @@ derived unit names so they match the current identity slug.
 ```bash
 orbit process:update vite --app=docs.production --command="npm run dev"
 orbit process:update queue --app=docs.production --restart-policy=on_failure --restart
-orbit process:update horizon --app=docs.production --workspace=feature-docs --command="php artisan horizon"
+orbit process:update horizon --app=docs.development --workspace=feature-docs --command="php artisan horizon"
 orbit process:update opencode-server --node=app-dev-1 --command="opencode serve -a" --runtime=systemd
 orbit process:update watcher --app=docs.production --runtime=systemd
 orbit process:update worker --app=feedback.development --runtime=launchd --restart

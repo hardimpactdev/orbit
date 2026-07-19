@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Operations\OperationUpdatePlanSnapshot;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Services\Activity\ActivityHistory;
 use App\Services\Operations\FleetUpdateVerificationFailed;
 use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\OperationRunRecorder;
@@ -69,6 +70,17 @@ it('records a completed activity entry when the fleet update succeeds', function
 
     app(UpdateRunner::class)->run($run->id);
 
+    $history = app(ActivityHistory::class)->list([
+        'app' => null,
+        'node' => null,
+        'effect' => null,
+        'correlation' => null,
+        'include_internal' => true,
+        'limit' => 10,
+    ]);
+
+    expect($history['activities'][0]['channel'])->toBe('api');
+
     $entry = Activity::query()->where('event', 'update:all')->first();
 
     expect($entry)->not->toBeNull();
@@ -118,6 +130,17 @@ it('records a failed activity entry with failed_step when the fleet update fails
 
     expect(fn () => app(UpdateRunner::class)->run($run->id))
         ->toThrow(FleetUpdateVerificationFailed::class);
+
+    $history = app(ActivityHistory::class)->list([
+        'app' => null,
+        'node' => null,
+        'effect' => null,
+        'correlation' => null,
+        'include_internal' => true,
+        'limit' => 10,
+    ]);
+
+    expect($history['activities'][0]['channel'])->toBe('api');
 
     $entry = Activity::query()->where('event', 'update:all')->first();
 

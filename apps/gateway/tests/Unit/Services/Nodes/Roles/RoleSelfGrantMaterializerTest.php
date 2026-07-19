@@ -102,12 +102,67 @@ describe('RoleSelfGrantMaterializer', function (): void {
         $development->delete();
         app(RoleSelfGrantMaterializer::class)->reconcileOnRoleRemoved($node, NodeRoleName::AppDevelopment);
 
-        expect(roleSelfGrant($node)?->permissions)->toBe(['app:read', 'workspace:setup']);
+        expect(roleSelfGrant($node)?->permissions)->toBe(['app:read']);
 
         $production->delete();
         app(RoleSelfGrantMaterializer::class)->reconcileOnRoleRemoved($node, NodeRoleName::AppProduction);
 
         expect(roleSelfGrant($node))->toBeNull();
+    });
+
+    it('does not materialize workspace permissions while app production is active', function (): void {
+        $node = roleSelfGrantNode();
+        roleSelfGrantAssign($node, NodeRoleName::AppDevelopment);
+        roleSelfGrantAssign($node, NodeRoleName::AppProduction);
+
+        app(RoleSelfGrantMaterializer::class)->materializeOnRoleApplied($node, NodeRoleName::AppProduction);
+
+        expect(roleSelfGrant($node)?->permissions)
+            ->toBe([
+                'app:read',
+                'app:register',
+                'process:add',
+                'process:read',
+                'process:remove',
+                'process:update',
+            ]);
+    });
+
+    it('sanitizes every grant edge when app production becomes active', function (): void {
+        $productionNode = roleSelfGrantNode();
+        $consumer = Node::factory()->create();
+        $serving = Node::factory()->create();
+        roleSelfGrantAssign($productionNode, NodeRoleName::AppProduction);
+        $incoming = NodeAccess::query()->create([
+            'consumer_node_id' => $consumer->id,
+            'serving_node_id' => $productionNode->id,
+            'permissions' => ['app:read', 'workspace:read'],
+            'custom_permissions' => ['workspace:read'],
+        ]);
+        $outgoing = NodeAccess::query()->create([
+            'consumer_node_id' => $productionNode->id,
+            'serving_node_id' => $serving->id,
+            'permissions' => ['*'],
+            'custom_permissions' => ['*'],
+        ]);
+
+        app(RoleSelfGrantMaterializer::class)->materializeOnRoleApplied(
+            $productionNode,
+            NodeRoleName::AppProduction,
+        );
+
+        expect($incoming->fresh()?->permissions)
+            ->toBe(['app:read'])
+            ->and($incoming->fresh()?->custom_permissions)
+            ->toBe([])
+            ->and($outgoing->fresh()?->permissions)
+            ->not->toContain(
+                '*',
+                'workspace:*',
+                'workspace:read',
+                'workspace:setup',
+            )->and($outgoing->fresh()?->custom_permissions)
+            ->not->toContain('*', 'workspace:*', 'workspace:read', 'workspace:setup');
     });
 
     it('preserves custom additions while dropping permissions exclusive to a removed role', function (): void {

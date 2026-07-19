@@ -5,10 +5,23 @@ declare(strict_types=1);
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\NodeBootstrapBundleBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(OrbitCaService::class, new NodeBootstrapBundleBuilderTestCa);
+});
+
+final readonly class NodeBootstrapBundleBuilderTestCa extends OrbitCaService
+{
+    public function rootCert(): string
+    {
+        return 'fake-root-ca';
+    }
+}
 
 it('renders an idempotent minimal WireGuard CLI and Agent bootstrap bundle', function (): void {
     config()->set('orbit.updates.manifest_snapshot', nodeBootstrapReleaseManifest());

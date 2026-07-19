@@ -73,6 +73,220 @@ describe('PHP runtime API controllers', function (): void {
         app()->instance(PhpRuntimeArtifactConverger::class, new PhpApiNoopRuntimeArtifactConverger);
     });
 
+    it('rejects app-prod callers inspecting workspace PHP despite a legacy read grant', function (): void {
+        $caller = Node::factory()
+            ->appProd()
+            ->create([
+                'name' => 'app-prod-caller',
+                'host' => PHP_API_CALLER_WG_IP,
+                'wireguard_address' => PHP_API_CALLER_WG_IP,
+            ]);
+        $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+        grantPhpApiAccess($caller, $node, ['php:read']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $instance = place_php_api_app($app, $node);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/php/runtime?app=docs.development&workspace=feature-docs&live=1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PHP_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
+            ->assertJsonPath('error.meta.node', 'app-prod-caller')
+            ->assertJsonPath('error.meta.role', 'app-prod');
+    });
+
+    it('rejects app-prod callers mutating workspace PHP despite a legacy write grant', function (): void {
+        $caller = Node::factory()
+            ->appProd()
+            ->create([
+                'name' => 'app-prod-caller',
+                'host' => PHP_API_CALLER_WG_IP,
+                'wireguard_address' => PHP_API_CALLER_WG_IP,
+            ]);
+        $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+        grantPhpApiAccess($caller, $node, ['php:write']);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+            'php_version' => '8.4',
+        ]);
+        $instance = place_php_api_app($app, $node);
+        $workspace = Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'php_version' => '8.4',
+        ]);
+
+        $response = $this->call(
+            'POST',
+            '/api/php/use',
+            [
+                'version' => '8.5',
+                'app' => 'docs.development',
+                'workspace' => 'feature-docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PHP_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
+            ->assertJsonPath('error.meta.node', 'app-prod-caller')
+            ->assertJsonPath('error.meta.role', 'app-prod');
+
+        expect($workspace->refresh()->php_version)->toBe('8.4');
+    });
+
+    it('rejects app-target PHP writes from app-prod callers before inherited workspace fanout', function (): void {
+        $caller = Node::factory()
+            ->appProd()
+            ->create([
+                'name' => 'app-prod-caller',
+                'host' => PHP_API_CALLER_WG_IP,
+                'wireguard_address' => PHP_API_CALLER_WG_IP,
+            ]);
+        $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+        grantPhpApiAccess($caller, $node, ['php:write']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'php',
+            'config' => [
+                'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+                'versions' => ['8.5'],
+                'cli_version' => '8.5',
+            ],
+        ]);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+            'php_version' => '8.4',
+        ]);
+        $instance = place_php_api_app($app, $node);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'php_version' => null,
+        ]);
+
+        $response = $this->call(
+            'POST',
+            '/api/php/use',
+            [
+                'version' => '8.5',
+                'app' => 'docs.development',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PHP_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
+            ->assertJsonPath('error.meta.node', 'app-prod-caller')
+            ->assertJsonPath('error.meta.role', 'app-prod');
+
+        expect($app->refresh()->php_version)->toBe('8.4');
+    });
+
+    it('rejects app-target PHP writes for app-prod targets before cross-instance workspace fanout', function (): void {
+        $caller = createPhpApiCaller();
+        $productionNode = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
+        $developmentNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+        grantPhpApiAccess($caller, $productionNode, ['php:write']);
+        NodeTool::factory()->create([
+            'node_id' => $productionNode->id,
+            'name' => 'php',
+            'config' => [
+                'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
+                'versions' => ['8.5'],
+                'cli_version' => '8.5',
+            ],
+        ]);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $productionNode->id,
+            'php_version' => '8.4',
+        ]);
+        place_php_api_app($app, $productionNode, 'production');
+        $development = place_php_api_app($app, $developmentNode);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'app_instance_id' => $development->id,
+            'php_version' => null,
+        ]);
+
+        $response = $this->call(
+            'POST',
+            '/api/php/use',
+            [
+                'version' => '8.5',
+                'app' => 'docs.production',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PHP_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
+            ->assertJsonPath('error.meta.node', 'app-prod-1')
+            ->assertJsonPath('error.meta.role', 'app-prod');
+
+        expect($app->refresh()->php_version)->toBe('8.4');
+    });
+
+    it('rejects PHP reads for workspaces owned by app-prod targets', function (): void {
+        $caller = createPhpApiCaller();
+        $node = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
+        grantPhpApiAccess($caller, $node, ['php:read']);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'php',
+            'config' => ['versions' => ['8.5'], 'cli_version' => '8.5'],
+        ]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $instance = place_php_api_app($app, $node);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/php/runtime?app=docs.development&workspace=feature-docs',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PHP_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production')
+            ->assertJsonPath('error.meta.node', 'app-prod-1')
+            ->assertJsonPath('error.meta.role', 'app-prod');
+    });
+
     it('returns a PHP runtime view for an authorized caller', function (): void {
         $caller = createPhpApiCaller();
         $node = Node::factory()->appDev()->create(['name' => 'app-1']);

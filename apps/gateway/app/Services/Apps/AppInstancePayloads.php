@@ -30,6 +30,8 @@ final readonly class AppInstancePayloads
             'driver' => $instance->driver->value,
             'driver_config' => $instance->driver_config?->toArray() ?? [],
             'runtime' => $this->runtime($instance),
+            'worker_enabled' => $instance->worker_enabled,
+            'worker_config' => is_array($instance->worker_config) ? $instance->worker_config : null,
             'deploy_warmup_paths' => $instance->deploy_warmup_paths ?? [],
             'latest_deployment_status' => $instance->latest_deployment_status,
             'latest_deployment_run_id' => $instance->latest_deployment_run_id,
@@ -69,7 +71,7 @@ final readonly class AppInstancePayloads
             'runtime_config' => $app->runtimeConfig()->toArray(),
             'php_version' => $app->php_version,
             'frankenphp_image' => $image,
-            'mode' => $app->worker_enabled ? 'worker' : 'classic',
+            'mode' => $instance->worker_enabled ? 'worker' : 'classic',
             'configured_mounts' => $instance
                 ->runtimeMounts
                 ->map(fn (AppInstanceRuntimeMount $mount): array => [

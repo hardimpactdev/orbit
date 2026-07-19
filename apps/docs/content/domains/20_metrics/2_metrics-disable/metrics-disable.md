@@ -1,4 +1,4 @@
-# `orbit metrics:disable --node=<node> --force`
+# `orbit metrics:disable --node=<node> [--force]`
 
 [Back to Metrics commands.](../README.md)
 
@@ -7,23 +7,23 @@ Disable the metrics role on a node.
 ## Usage
 
 ```bash
-orbit metrics:disable --node=<node> --force [--purge-data] [--json]
+orbit metrics:disable --node=<node> [--force] [--purge-data] [--json]
 ```
 
 ## Examples
 
 ```bash
-orbit metrics:disable --node=app-1 --force
+orbit metrics:disable --node=app-1
 orbit metrics:disable --node=metrics-1 --force --purge-data --json
 ```
 
 ## Arguments and options
 
 - `--node`: node whose `metrics` role should be removed.
-- `--force`: required explicit consent to remove the metrics role and
-  Orbit-owned metrics intent.
+- `--force`: explicit consent that skips the interactive confirmation prompt;
+  required in non-interactive mode.
 - `--purge-data`: request deletion of metrics-owned data where the role cleanup
-  supports it. Requires `--force`.
+  supports it. This remains behind the same destructive-consent gate.
 - `--json`: output JSON.
 
 ## What Happens
@@ -45,7 +45,8 @@ Pass `--json` to receive the gateway role-removal payload.
 - The caller can reach the Orbit gateway.
 - The caller is authorized for `role:remove` on the target node.
 - The target node has a metrics role assignment.
-- `--force` is present.
+- Destructive consent is supplied through the interactive prompt or `--force`;
+  non-interactive use, including `--json`, requires `--force`.
 
 ## Related Commands
 

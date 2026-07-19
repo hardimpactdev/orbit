@@ -106,10 +106,7 @@ final class NodePermissionPresets
      */
     private function appProductionSelf(): array
     {
-        return [
-            'app:read',
-            'workspace:setup',
-        ];
+        return ['app:read'];
     }
 
     /**

@@ -10,6 +10,7 @@ use App\Data\Php\PhpRuntimeImageInventory;
 use App\Data\Php\PhpRuntimeOperation;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\AppSelectionResolutionFailed;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -18,6 +19,7 @@ use App\Models\Workspace;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspacePlacement;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 
 final readonly class PhpRuntimeManager
 {
@@ -28,6 +30,7 @@ final readonly class PhpRuntimeManager
         private NodeRoleAssignments $nodeRoleAssignments,
         private AppSelectorResolver $appSelectorResolver,
         private WorkspacePlacement $workspacePlacement,
+        private WorkspaceRoleGuard $workspaceRoleGuard,
         private PhpRuntimeImageInventoryStore $imageInventory,
     ) {}
 
@@ -36,11 +39,18 @@ final readonly class PhpRuntimeManager
         ?string $workspace = null,
         ?string $node = null,
         bool $live = false,
+        ?Node $caller = null,
     ): PhpRuntimeOperation {
         $target = $this->resolveTarget(app: $app, workspace: $workspace, node: $node);
 
         if ($target instanceof PhpRuntimeFailure) {
             return new PhpRuntimeOperation(failure: $target);
+        }
+
+        $workspaceBoundaryFailure = $this->workspaceBoundaryFailure($caller, $target['workspace']);
+
+        if ($workspaceBoundaryFailure instanceof PhpRuntimeFailure) {
+            return new PhpRuntimeOperation(failure: $workspaceBoundaryFailure);
         }
 
         $inventory = $live
@@ -64,6 +74,7 @@ final readonly class PhpRuntimeManager
         );
     }
 
+    /** @mago-expect lint:excessive-parameter-list */
     public function use(
         ?string $version,
         ?string $app = null,
@@ -71,6 +82,7 @@ final readonly class PhpRuntimeManager
         ?string $node = null,
         bool $inherit = false,
         bool $cli = false,
+        ?Node $caller = null,
     ): PhpRuntimeOperation {
         $validation = $this->validateUseInputs($version, $app, $workspace, $inherit, $cli);
 
@@ -82,6 +94,14 @@ final readonly class PhpRuntimeManager
 
         if ($target instanceof PhpRuntimeFailure) {
             return new PhpRuntimeOperation(failure: $target);
+        }
+
+        $workspaceBoundaryFailure = $target['scope'] === 'app'
+            ? $this->appWorkspaceFanoutBoundaryFailure($caller, $target['node'], $target['app'])
+            : $this->workspaceBoundaryFailure($caller, $target['workspace']);
+
+        if ($workspaceBoundaryFailure instanceof PhpRuntimeFailure) {
+            return new PhpRuntimeOperation(failure: $workspaceBoundaryFailure);
         }
 
         $requestedVersion = is_string($version) ? trim($version) : null;
@@ -116,6 +136,85 @@ final readonly class PhpRuntimeManager
             ),
             default => $this->useApp($target['app'], $target['node'], (string) $requestedVersion),
         };
+    }
+
+    private function workspaceBoundaryFailure(?Node $caller, ?Workspace $workspace): ?PhpRuntimeFailure
+    {
+        if (! $workspace instanceof Workspace) {
+            return null;
+        }
+
+        try {
+            if ($caller instanceof Node) {
+                $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($caller);
+            }
+
+            $this->workspaceRoleGuard->ensureWorkspaceSupported($workspace);
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return new PhpRuntimeFailure(
+                $exception->errorCode(),
+                $exception->getMessage(),
+                $exception->meta,
+            );
+        }
+
+        return null;
+    }
+
+    private function appWorkspaceFanoutBoundaryFailure(
+        ?Node $caller,
+        Node $targetNode,
+        ?App $app,
+    ): ?PhpRuntimeFailure {
+        if (! $app instanceof App) {
+            return null;
+        }
+
+        $workspaces = $app
+            ->workspaces()
+            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->get();
+
+        if ($workspaces->isEmpty()) {
+            return null;
+        }
+
+        try {
+            if ($caller instanceof Node) {
+                $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($caller);
+            }
+
+            $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($targetNode);
+
+            foreach ($workspaces as $workspace) {
+                if ($workspace instanceof Workspace) {
+                    $this->workspaceRoleGuard->ensureWorkspaceSupported($workspace);
+
+                    if (! $this->workspaceRoleGuard->allowsWorkspaceTarget($workspace)) {
+                        $exception = new WorkspaceUnsupportedForProduction([
+                            'app' => $app->name,
+                            'workspace' => $workspace->name,
+                            'role' => 'app-dev-required',
+                            'reason' => 'serving_node_unresolved',
+                        ]);
+
+                        return new PhpRuntimeFailure(
+                            code: $exception->errorCode(),
+                            message: $exception->getMessage(),
+                            meta: $exception->meta,
+                        );
+                    }
+                }
+            }
+        } catch (WorkspaceUnsupportedForProduction $exception) {
+            return new PhpRuntimeFailure(
+                $exception->errorCode(),
+                $exception->getMessage(),
+                $exception->meta,
+            );
+        }
+
+        return null;
     }
 
     /**

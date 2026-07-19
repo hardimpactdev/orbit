@@ -5,23 +5,26 @@ declare(strict_types=1);
 namespace App\Actions\Apps;
 
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupStep;
 use App\Models\Node;
+use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppSetupStepRunner;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
-use RuntimeException;
 
 final readonly class SetupApp
 {
     public function __construct(
         private AppSetupStepRunner $stepRunner,
         private LaravelViteDevServerEnvironment $vite,
+        private AppRuntimeContainerRenderer $runtimeRenderer,
     ) {}
 
     /**
      * @return array{
      *     app: string,
+     *     app_instance: string,
      *     node: string,
      *     path: string,
      *     url: string,
@@ -29,23 +32,18 @@ final readonly class SetupApp
      *     setup_steps: array{status: string, count: int, message: string},
      * }
      */
-    public function handle(App $app): array
+    public function handle(App $app, AppInstance $instance, Node $node): array
     {
-        $app->loadMissing('node');
+        $runtimeApp = $this->runtimeRenderer->runtimeAppForInstance($app, $instance);
 
-        $node = $app->node;
-
-        if (! $node instanceof Node) {
-            throw new RuntimeException("App '{$app->name}' has no owning node.");
-        }
-
-        $setupResult = $this->runSetupSteps($app, $node);
+        $setupResult = $this->runSetupSteps($runtimeApp, $instance, $node);
 
         return [
             'app' => $app->name,
+            'app_instance' => $instance->name,
             'node' => $node->name,
-            'path' => $app->path,
-            'url' => $app->url(),
+            'path' => $runtimeApp->path,
+            'url' => $runtimeApp->url(),
             'action' => $setupResult['status'] === 'completed' ? 'set_up' : 'converged',
             'setup_steps' => $setupResult,
         ];
@@ -55,10 +53,14 @@ final readonly class SetupApp
      * @param  (callable(string, AppSetupStep, int, int): void)|null  $onStepProgress
      * @return array{status: string, message: string, count: int}
      */
-    public function runSetupSteps(App $app, Node $node, ?callable $onStepProgress = null): array
-    {
+    public function runSetupSteps(
+        App $app,
+        AppInstance $instance,
+        Node $node,
+        ?callable $onStepProgress = null,
+    ): array {
         $steps = AppSetupStep::query()
-            ->where('app_id', $app->id)
+            ->where('app_instance_id', $instance->id)
             ->orderBy('sort_order')
             ->get();
 
@@ -73,7 +75,7 @@ final readonly class SetupApp
         $stepSetHash = $this->computeStepSetHash($steps->all());
 
         $latestSuccessfulRun = AppSetupRun::query()
-            ->where('app_id', $app->id)
+            ->where('app_instance_id', $instance->id)
             ->where('status', 'completed')
             ->latest('id')
             ->first();
@@ -87,7 +89,7 @@ final readonly class SetupApp
         }
 
         $run = AppSetupRun::query()->create([
-            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
             'status' => 'pending',
             'step_set_hash' => $stepSetHash,
             'started_at' => now(),
@@ -98,7 +100,7 @@ final readonly class SetupApp
             $steps->all(),
             $app,
             $node,
-            $this->appEnv($app, $node),
+            $this->appEnv($app, $instance, $node),
             $onStepProgress,
         );
 
@@ -148,11 +150,12 @@ final readonly class SetupApp
     /**
      * @return array<string, string>
      */
-    private function appEnv(App $app, Node $node): array
+    private function appEnv(App $app, AppInstance $instance, Node $node): array
     {
         return (
             [
                 'ORBIT_APP' => $app->name,
+                'ORBIT_APP_INSTANCE' => $instance->name,
                 'ORBIT_APP_PATH' => $app->path,
                 'ORBIT_URL' => $app->url(),
                 'ORBIT_PHP_VERSION' => $app->php_version,

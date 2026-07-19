@@ -52,7 +52,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
             durationMs: $durationMs,
         );
 
-        $this->auditLogger->log('remote_shell.run', $node, $script, $options, $result);
+        $this->auditLogger->log('ssh_bootstrap.run', 'ssh_bootstrap', $node, $script, $options, $result);
 
         if (($options['throw'] ?? false) && ! $result->successful()) {
             throw new RemoteShellFailed($node, $composedScript, $result);
@@ -80,7 +80,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
             $this->command($node, $this->scripts->compose($script, $options), $options),
         );
 
-        $this->auditLogger->log('remote_shell.start', $node, $script, $options);
+        $this->auditLogger->log('ssh_bootstrap.start', 'ssh_bootstrap', $node, $script, $options);
 
         return $process;
     }

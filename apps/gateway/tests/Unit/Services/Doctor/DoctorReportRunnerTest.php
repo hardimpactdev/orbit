@@ -49,6 +49,7 @@ use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
@@ -527,7 +528,7 @@ describe('DoctorReportRunner', function (): void {
             ->toBe('target-app');
     });
 
-    it('restores agent tool proxy routes through restore mode family dispatch', function (): void {
+    it('restores a deleted agent tool proxy route through proxy-family dispatch', function (): void {
         $node = Node::factory()->create([
             'name' => 'agent-1',
             'status' => 'active',
@@ -548,29 +549,11 @@ describe('DoctorReportRunner', function (): void {
             'expected_state' => 'installed',
             'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
         ]);
-        ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'domain' => 'openclaw.agent',
-            'owner_type' => 'tool',
-            'kind' => 'proxy',
-            'source_hash' => str_repeat('b', 64),
-            'config' => [
-                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:9999'],
-                'upstream' => 'http://127.0.0.1:9999',
-                'owner_name' => 'openclaw',
-            ],
-        ]);
-        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
-            new RemoteShellResult(
-                exitCode: 0,
-                stdout: "/usr/local/bin/openclaw\tOpenClaw 1.0\trunning\t\t\t\t\t\t\t\n",
-                stderr: '',
-                durationMs: 1,
-            ),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ]));
+        app()->instance(RemoteShell::class, new DoctorReportRunnerAgentToolProxyRemoteShell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+        app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_agent_tool_proxy_fake_ca());
 
-        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['tool']);
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['proxy']);
         $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->firstOrFail();
 
         expect($report['healthy'])
@@ -585,9 +568,9 @@ describe('DoctorReportRunner', function (): void {
             ->toBe([])
             ->and($report['actions'][0])
             ->toMatchArray([
-                'family' => 'tool',
+                'family' => 'proxy',
                 'node' => 'agent-1',
-                'key' => 'tool.agent_route_missing',
+                'key' => 'proxy.agent_tool_route_missing',
                 'mode' => 'restore',
                 'status' => 'completed',
             ])
@@ -3062,7 +3045,7 @@ describe('DoctorReportRunner firewall categories', function (): void {
             )->and($failure?->meta)->toBe([
                 'family' => 'firewall_rule',
                 'target_node' => 'agent-macos-firewall-cat',
-                'allowed_families' => ['node', 'tool', 'process'],
+                'allowed_families' => ['node', 'tool', 'proxy', 'process'],
             ]);
     });
 });
@@ -3070,6 +3053,47 @@ describe('DoctorReportRunner firewall categories', function (): void {
 // ---------------------------------------------------------------------------
 // S3 role: category mapping + s3 probe dispatch
 // ---------------------------------------------------------------------------
+
+it('includes proxy family ownership in the agent role doctor categories', function (): void {
+    expect(app(DoctorReportRunner::class)->categoriesForRole('agent'))
+        ->toBe(['node', 'tool', 'proxy']);
+});
+
+it('rejects workspace doctor family and scope on app production nodes', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'app-prod-workspace-doctor',
+        'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-prod',
+        'status' => 'active',
+    ]);
+    $runner = app(DoctorReportRunner::class);
+    $validator = app(DoctorScopeValidator::class);
+
+    $familyFailure = $validator->validate(
+        families: ['workspace'],
+        runner: $runner,
+        target: $node,
+    );
+    $scopeFailure = $validator->validate(
+        families: ['app'],
+        runner: $runner,
+        target: $node,
+        scope: DoctorTargetScope::from('docs', 'feature', appInstance: 'production'),
+    );
+
+    expect($runner->categoriesForRole('app-prod'))
+        ->not
+        ->toContain('workspace')
+        ->and($familyFailure?->code)
+        ->toBe('family_not_in_node_scope')
+        ->and($scopeFailure?->code)
+        ->toBe('family_not_in_node_scope')
+        ->and($scopeFailure?->meta['family'] ?? null)
+        ->toBe('workspace');
+});
 
 describe('DoctorReportRunner s3 role categories', function (): void {
     it('resolves s3 role to node, tool, and proxy categories', function (): void {
@@ -3389,6 +3413,304 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             ->toBeFalse();
     });
 
+    it('excludes persisted workspace process and proxy inventory from production app nodes', function (): void {
+        $node = Node::factory()
+            ->appProd()
+            ->create([
+                'name' => 'app-prod-inventory',
+                'status' => 'active',
+                'managed' => true,
+                'tld' => 'test',
+            ]);
+        $app = App::factory()
+            ->static()
+            ->for($node, 'node')
+            ->create([
+                'name' => 'docs',
+                'environment' => 'production',
+                'path' => '/srv/docs',
+            ]);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: $app->path,
+            ),
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'name' => 'feature',
+            'path' => '/srv/docs/.worktrees/feature',
+        ]);
+        OrbitProcess::factory()
+            ->forOwner($app, $node)
+            ->create([
+                'name' => 'app-queue',
+                'runtime' => ProcessRuntime::Systemd,
+            ]);
+        OrbitProcess::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'node-agent',
+                'runtime' => ProcessRuntime::Systemd,
+            ]);
+        OrbitProcess::factory()
+            ->forOwner($workspace, $node)
+            ->create([
+                'name' => 'workspace-queue',
+                'runtime' => ProcessRuntime::Systemd,
+            ]);
+        DB::table('processes')->insert([
+            'node_id' => $node->id,
+            'owner_type' => 'workspace',
+            'owner_id' => $workspace->id,
+            'app_instance_id' => $instance->id,
+            'name' => 'legacy-workspace-queue',
+            'command' => 'php artisan queue:work',
+            'restart_policy' => 'never',
+            'crash_notification' => 'none',
+            'runtime' => 'systemd',
+            'tool' => null,
+            'runtime_config' => '[]',
+            'credentials' => null,
+            'sort_order' => 100,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'docs.example.test',
+            'app_id' => $app->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'node.example.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'feature.docs.example.test',
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'legacy-owner.docs.example.test',
+            'owner_type' => 'workspace',
+            'kind' => 'proxy',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'legacy-kind.docs.example.test',
+            'owner_type' => 'custom',
+            'kind' => 'workspace',
+        ]);
+        $observedProxyDomains = [
+            'docs.example.test',
+            'node.example.test',
+            'feature.docs.example.test',
+            'legacy-owner.docs.example.test',
+            'legacy-kind.docs.example.test',
+            'unknown.example.test',
+        ];
+        $shell = new DoctorProductionProxyObservedRemoteShell($observedProxyDomains);
+        app()->instance(RemoteShell::class, $shell);
+
+        $runner = app(DoctorReportRunner::class);
+        $processReport = $runner->probe($node, ['process']);
+        $proxyReport = $runner->probe($node, ['proxy']);
+        $scripts = implode("\n", $shell->scripts);
+        $processNames = collect($processReport['issues'])
+            ->where('family', 'process')
+            ->pluck('detail.process')
+            ->filter()
+            ->values()
+            ->all();
+        $proxyDomains = collect($proxyReport['issues'])
+            ->where('family', 'proxy')
+            ->pluck('detail.domain')
+            ->filter()
+            ->values()
+            ->all();
+
+        expect($scripts)
+            ->toContain('app-queue')
+            ->toContain('node-agent')
+            ->not->toContain('workspace-queue')
+            ->not->toContain('legacy-workspace-queue')
+            ->not->toContain('/srv/docs/.worktrees/feature')->toContain('docs.example.test')->toContain(
+                'node.example.test',
+            )
+            ->not->toContain('feature.docs.example.test')
+            ->not->toContain('legacy-owner.docs.example.test')
+            ->not->toContain('legacy-kind.docs.example.test')->and($processNames)
+            ->not->toContain('workspace-queue')
+            ->not->toContain('legacy-workspace-queue')->and($proxyDomains)
+            ->not->toContain('feature.docs.example.test')
+            ->not->toContain('legacy-owner.docs.example.test')
+            ->not->toContain('legacy-kind.docs.example.test')->toContain('unknown.example.test');
+    });
+
+    it('ignores forged selected workspace issues on production app nodes without side effects', function (): void {
+        $node = Node::factory()
+            ->appProd()
+            ->create([
+                'name' => 'app-prod-forged-issues',
+                'status' => 'active',
+                'managed' => true,
+            ]);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'environment' => 'production',
+            'path' => '/srv/docs',
+        ]);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: $app->path,
+            ),
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'name' => 'feature',
+            'path' => '/srv/docs/.worktrees/feature',
+        ]);
+        OrbitProcess::factory()
+            ->forOwner($workspace, $node)
+            ->create([
+                'name' => 'workspace-runtime',
+                'runtime_config' => [
+                    'container_spec_hash_label' => WorkspaceRuntimeContainer::SpecHashLabel,
+                ],
+            ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'feature.docs.example.test',
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $node->id,
+            'slug' => 'feature-docs',
+            'driver' => 'sqlite',
+            'path' => '/srv/docs/.worktrees/feature/database/database.sqlite',
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $actions = app(DoctorReportRunner::class)->apply($node, 'restore', [
+            [
+                'family' => 'process',
+                'key' => 'process.runtime_unit_missing',
+                'restorable' => true,
+                'detail' => [
+                    'process' => 'workspace-runtime',
+                    'app' => $app->name,
+                    'app_instance' => $instance->name,
+                ],
+            ],
+            [
+                'family' => 'proxy',
+                'key' => 'proxy.route_missing',
+                'restorable' => true,
+                'detail' => ['domain' => 'feature.docs.example.test'],
+            ],
+            [
+                'family' => 'database_connection',
+                'key' => 'database_connection.target_missing',
+                'restorable' => true,
+                'detail' => [
+                    'target_type' => 'workspace',
+                    'target_id' => $workspace->id,
+                    'env_prefix' => 'DB',
+                    'database_connection_id' => $connection->id,
+                ],
+            ],
+        ]);
+
+        expect($actions)
+            ->toBe([])
+            ->and(DatabaseConnectionTarget::query()->where('workspace_id', $workspace->id)->exists())
+            ->toBeFalse()
+            ->and($shell->scripts)
+            ->toBe([]);
+        Http::assertNothingSent();
+    });
+
+    it('does not pass production workspace proxy routes to adoption', function (): void {
+        $node = Node::factory()
+            ->appProd()
+            ->create([
+                'name' => 'app-prod-proxy-adopt',
+                'status' => 'active',
+                'managed' => true,
+            ]);
+        $app = App::factory()
+            ->static()
+            ->for($node, 'node')
+            ->create([
+                'name' => 'docs',
+                'environment' => 'production',
+            ]);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/srv/docs',
+            ),
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'name' => 'feature',
+        ]);
+        $routes = [
+            ['docs.example.test', 'app', 'app', $app->id, null],
+            ['node.example.test', 'custom', 'proxy', null, null],
+            ['feature.docs.example.test', 'workspace', 'workspace', $app->id, $workspace->id],
+            ['legacy-owner.docs.example.test', 'workspace', 'proxy', null, null],
+            ['legacy-kind.docs.example.test', 'custom', 'workspace', null, null],
+        ];
+
+        foreach ($routes as [$domain, $ownerType, $kind, $appId, $workspaceId]) {
+            ProxyRoute::factory()->create([
+                'node_id' => $node->id,
+                'domain' => $domain,
+                'app_id' => $appId,
+                'workspace_id' => $workspaceId,
+                'owner_type' => $ownerType,
+                'kind' => $kind,
+            ]);
+        }
+
+        $shell = new DoctorProductionProxyAdoptRemoteShell(array_column($routes, 0));
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'adopt', families: ['proxy']);
+        $actionKeys = collect($report['actions'])->pluck('key')->all();
+
+        expect($actionKeys)
+            ->toContain('docs.example.test')
+            ->toContain('node.example.test')
+            ->not->toContain('feature.docs.example.test')
+            ->not->toContain('legacy-owner.docs.example.test')
+            ->not->toContain('legacy-kind.docs.example.test');
+    });
+
     it('marks node.local_executor_probe_failed as diagnostic-only in fleet probe fallback', function (): void {
         $node = createDoctorRunnerAppHostNode([
             'name' => 'app-prod-1',
@@ -3571,6 +3893,169 @@ final class DoctorReportRunnerRemoteShell implements RemoteShell
         }
 
         return $result ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
+
+/** @mago-expect lint:single-class-per-file */
+final class DoctorProductionProxyObservedRemoteShell implements RemoteShell
+{
+    /** @var list<string> */
+    public array $scripts = [];
+
+    /**
+     * @param  list<string>  $domains
+     */
+    public function __construct(
+        private readonly array $domains,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+
+        if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
+            return new RemoteShellResult(0, "available\ttrue\ttrue\n", '', 1);
+        }
+
+        if (str_contains($script, 'for f in /etc/caddy/sites/*.caddy')) {
+            $rows = array_map(
+                static fn (string $domain): string => implode("\t", [
+                    $domain,
+                    hash('sha256', $domain),
+                    '',
+                    '',
+                    '0',
+                    '0',
+                ]),
+                $this->domains,
+            );
+
+            return new RemoteShellResult(0, implode("\n", $rows)."\n", '', 1);
+        }
+
+        if (str_contains($script, 'path="/etc/caddy/Caddyfile"')) {
+            $content = collect($this->domains)
+                ->map(static fn (string $domain): string => "{$domain} {\n    reverse_proxy http://127.0.0.1:8080\n}")
+                ->implode("\n\n");
+
+            return new RemoteShellResult(0, '1'."\t".base64_encode($content)."\n", '', 1);
+        }
+
+        return new RemoteShellResult(0, '', '', 1);
+    }
+}
+
+/** @mago-expect lint:single-class-per-file */
+final class DoctorProductionProxyAdoptRemoteShell implements RemoteShell
+{
+    /**
+     * @param  list<string>  $domains
+     */
+    public function __construct(
+        private readonly array $domains,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        if (str_contains($script, 'body_b64')) {
+            $rows = array_map(
+                static fn (string $domain): string => implode("\t", [
+                    $domain,
+                    hash('sha256', $domain),
+                    base64_encode("reverse_proxy 127.0.0.1:8080\n"),
+                ]),
+                $this->domains,
+            );
+
+            return new RemoteShellResult(0, implode("\n", $rows)."\n", '', 1);
+        }
+
+        if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
+            return new RemoteShellResult(0, "available\ttrue\ttrue\n", '', 1);
+        }
+
+        if (str_contains($script, 'path="/etc/caddy/Caddyfile"')) {
+            return new RemoteShellResult(0, "0\t\n", '', 1);
+        }
+
+        return new RemoteShellResult(0, '', '', 1);
+    }
+}
+
+/** @mago-expect lint:single-class-per-file */
+final class DoctorReportRunnerAgentToolProxyRemoteShell implements RemoteShell
+{
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
+            return $this->success("available\ttrue\ttrue\n");
+        }
+
+        if (str_contains($script, 'export ORBIT_PROXY_DOMAIN=')) {
+            $route = ProxyRoute::query()->where('node_id', $node->id)->first();
+
+            if (! $route instanceof ProxyRoute) {
+                return $this->success();
+            }
+
+            return $this->success(implode("\t", [
+                '1',
+                $route->source_hash,
+                "/etc/orbit/certs/{$route->domain}.crt",
+                "/etc/orbit/certs/{$route->domain}.key",
+                '1',
+                '1',
+                '',
+                '',
+                '0',
+                '',
+            ])
+                ."\n");
+        }
+
+        if (str_contains($script, 'for f in /etc/caddy/sites/*.caddy')) {
+            $rows = ProxyRoute::query()
+                ->where('node_id', $node->id)
+                ->get()
+                ->map(static fn (ProxyRoute $route): string => implode("\t", [
+                    $route->domain,
+                    $route->source_hash,
+                    "/etc/orbit/certs/{$route->domain}.crt",
+                    "/etc/orbit/certs/{$route->domain}.key",
+                    '1',
+                    '1',
+                ]))
+                ->implode("\n");
+
+            return $this->success($rows === '' ? '' : "{$rows}\n");
+        }
+
+        if (str_contains($script, 'path="/etc/caddy/Caddyfile"')) {
+            $content = new \App\Services\Gateway\CaddyGlobalConfig()->fresh();
+
+            return $this->success('1'."\t".base64_encode($content)."\n");
+        }
+
+        return $this->success();
+    }
+
+    private function success(string $stdout = ''): RemoteShellResult
+    {
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: $stdout,
+            stderr: '',
+            durationMs: 1,
+        );
     }
 }
 
@@ -4020,6 +4505,29 @@ function doctor_runner_fake_ca(): \App\Services\Ca\OrbitCaService
         public function rootCert(): string
         {
             return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
+        }
+    };
+}
+
+function doctor_runner_agent_tool_proxy_fake_ca(): \App\Services\Ca\OrbitCaService
+{
+    return new readonly class extends \App\Services\Ca\OrbitCaService {
+        public function rootCert(): string
+        {
+            return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
+        }
+
+        /** @return array{cert: string, key: string} */
+        public function issueLeaf(string $host, array $additionalSans = []): array
+        {
+            $directory = sys_get_temp_dir().'/orbit-doctor-agent-tool-proxy';
+            File::ensureDirectoryExists($directory);
+            $certificate = "{$directory}/{$host}.crt";
+            $key = "{$directory}/{$host}.key";
+            file_put_contents($certificate, "fake-cert-for-{$host}");
+            file_put_contents($key, "fake-key-for-{$host}");
+
+            return ['cert' => $certificate, 'key' => $key];
         }
     };
 }

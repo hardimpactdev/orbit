@@ -13,6 +13,7 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
+use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -55,6 +56,17 @@ beforeEach(function (): void {
     DB::table('node_role')->insert([
         'node_id' => 1,
         'role' => 'gateway',
+        'status' => 'active',
+        'settings' => json_encode([], JSON_THROW_ON_ERROR),
+        'last_error' => null,
+        'converged_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    DB::table('node_role')->insert([
+        'node_id' => 1,
+        'role' => 'app-dev',
         'status' => 'active',
         'settings' => json_encode([], JSON_THROW_ON_ERROR),
         'last_error' => null,
@@ -243,7 +255,7 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
     NodeRoleAssignment::query()
         ->where('node_id', 1)
         ->where('role', 'gateway')
-        ->update(['role' => 'app-dev']);
+        ->delete();
     Node::query()
         ->whereKey(1)
         ->update([
@@ -478,7 +490,7 @@ it('installs workspace app-dev runtime trust pool through the managed file agent
     NodeRoleAssignment::query()
         ->where('node_id', 1)
         ->where('role', 'gateway')
-        ->update(['role' => 'app-dev']);
+        ->delete();
     Node::query()
         ->whereKey(1)
         ->update([
@@ -554,47 +566,12 @@ it('installs workspace app-dev runtime trust pool through the managed file agent
         ->toContain('tls_server_name feature-a.demo.beast');
 });
 
-it('registers production workspace routes on ingress with a private backend site', function (): void {
-    setup_workspace_use_agent_push();
-
+it('rejects production workspace routes before recording or enacting artifacts', function (): void {
     $appHost = Node::query()->whereKey(1)->firstOrFail();
     NodeRoleAssignment::query()
         ->where('node_id', $appHost->id)
-        ->where('role', 'gateway')
-        ->delete();
-
-    $edge = Node::factory()->create([
-        'name' => 'edge-1',
-        'status' => 'active',
-        'user' => 'orbit',
-    ]);
-
-    $router = Node::factory()
-        ->gateway()
-        ->create([
-            'name' => 'gateway-1',
-            'status' => 'active',
-            'wireguard_address' => '10.6.0.2',
-        ]);
-
-    NodeRoleAssignment::factory()->create([
-        'node_id' => $edge->id,
-        'role' => 'ingress',
-        'status' => 'active',
-    ]);
-
-    NodeRoleAssignment::factory()->create([
-        'node_id' => $router->id,
-        'role' => 'router',
-        'status' => 'active',
-    ]);
-
-    NodeRoleAssignment::factory()->create([
-        'node_id' => $appHost->id,
-        'role' => 'app-prod',
-        'status' => 'active',
-        'settings' => ['ingress_node_id' => $edge->id],
-    ]);
+        ->where('role', 'app-dev')
+        ->update(['role' => 'app-prod']);
 
     App::query()
         ->whereKey(1)
@@ -613,18 +590,6 @@ it('registers production workspace routes on ingress with a private backend site
             ),
         ]);
 
-    Node::query()
-        ->whereKey($appHost->id)
-        ->update([
-            'wireguard_address' => '10.6.0.21',
-            'user' => 'orbit',
-        ]);
-    Node::query()
-        ->whereKey($edge->id)
-        ->update([
-            'wireguard_address' => '10.6.0.31',
-        ]);
-
     $workspace = Workspace::create([
         'app_id' => 1,
         'app_instance_id' => 1,
@@ -633,77 +598,13 @@ it('registers production workspace routes on ingress with a private backend site
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->firstOrFail();
-    $node = $app->node;
-    $shell = new SetupWorkspaceActionTestShell;
-    $certificates = new SetupWorkspaceActionTestCertificateInstaller;
-    app()->instance(RemoteShell::class, $shell);
-    app()->instance(SiteCertificateInstaller::class, $certificates);
-    ProcessFacade::preventStrayProcesses();
-    ProcessFacade::fake([
-        '*' => ProcessFacade::result(output: json_encode([
-            'success' => [
-                'data' => [
-                    'content' => new CaddyGlobalConfig()->fresh(),
-                ],
-                'meta' => [],
-            ],
-        ], JSON_THROW_ON_ERROR)),
-    ]);
     Http::preventStrayRequests();
-    Http::fake([
-        'http://10.6.0.31:9477/v1/commands' => setup_workspace_caddy_sequence(
-            '/etc/caddy/sites/feature-a.demo.example.com.caddy',
-        ),
-        'http://10.6.0.21:9477/v1/commands' => setup_workspace_caddy_sequence(
-            '/etc/caddy/sites/feature-a.demo.example.com.backend.caddy',
-        ),
-    ]);
 
-    app(EnsureWorkspaceProxyRoute::class)->handle($workspace);
+    expect(fn (): array => app(EnsureWorkspaceProxyRoute::class)->handle($workspace))
+        ->toThrow(WorkspaceUnsupportedForProduction::class);
 
-    $route = ProxyRoute::query()->where('workspace_id', $workspace->id)->firstOrFail();
-
-    expect($route->node_id)
-        ->toBe($edge->id)
-        ->and($route->config['placement'])
-        ->toBe('ingress')
-        ->and($route->config['router_upstream'])
-        ->toBe([
-            'node_id' => $router->id,
-            'node' => 'gateway-1',
-            'url' => 'http://10.6.0.2:80',
-        ])
-        ->and($route->config['router_artifact']['node_id'])
-        ->toBe($router->id)
-        ->and($route->config['router_artifact']['source_hash'])
-        ->toHaveLength(64)
-        ->and($route->config['router_backend_pool'])
-        ->toBe([
-            [
-                'node_id' => $appHost->id,
-                'node' => 'gateway',
-                'url' => 'http://10.6.0.21:8081',
-            ],
-        ])
-        ->and($route->config['backend_artifacts'][0]['bind'])
-        ->toBe('10.6.0.21')
-        ->and($route->config['backend_artifacts'][0]['source_hash'])
-        ->toHaveLength(64)
-        ->and(setup_workspace_agent_requests('10.6.0.31'))
-        ->toHaveCount(3)
-        ->and(setup_workspace_agent_requests('10.6.0.2'))
-        ->toHaveCount(0)
-        ->and(setup_workspace_agent_requests('10.6.0.21'))
-        ->toHaveCount(3)
-        ->and(setup_workspace_agent_site_payload('10.6.0.31')['domain'] ?? null)
-        ->toBe('feature-a.demo.example.com')
-        ->and(setup_workspace_agent_site_payload('10.6.0.21')['backend'] ?? null)
-        ->toBeTrue()
-        ->and((string) (setup_workspace_agent_site_payload('10.6.0.21')['content'] ?? ''))
-        ->toContain('reverse_proxy http://orbit-ws-demo-feature-a')
-        ->and($certificates->hosts)
-        ->toBe(['feature-a.demo.example.com']);
+    expect(ProxyRoute::query()->where('workspace_id', $workspace->id)->exists())->toBeFalse();
+    Http::assertNothingSent();
 });
 
 it('starts configured app processes for the workspace after rendering runtime units', function (): void {
@@ -712,7 +613,7 @@ it('starts configured app processes for the workspace after rendering runtime un
     NodeRoleAssignment::query()
         ->where('node_id', 1)
         ->where('role', 'gateway')
-        ->update(['role' => 'app-dev']);
+        ->delete();
     Node::query()
         ->whereKey(1)
         ->update([
@@ -1240,7 +1141,7 @@ it('throws when setup step fails', function (): void {
         ->toThrow(RuntimeException::class, 'Setup step failed: exit 1');
 
     $workspace->refresh();
-    expect($workspace->lifecycle_status)->toBe(WorkspaceLifecycleStatus::SettingUp);
+    expect($workspace->lifecycle_status)->toBe(WorkspaceLifecycleStatus::SetupPending);
 });
 
 final class SetupWorkspaceActionTestShell implements RemoteShell

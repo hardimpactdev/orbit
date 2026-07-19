@@ -32,7 +32,80 @@ beforeEach(function (): void {
     app()->instance(RemoteEnvFile::class, new RemoteEnvFile(app(RemoteLocalExecutor::class)));
 });
 
+/** @mago-expect lint:cyclomatic-complexity */
 describe('DatabaseConnectionProbe', function (): void {
+    it('does not inspect workspace database targets on production app nodes', function (): void {
+        $node = Node::factory()
+            ->appProd()
+            ->create([
+                'name' => 'app-prod-1',
+                'status' => 'active',
+                'wireguard_address' => '10.44.0.91',
+            ]);
+        $appPath = '/srv/docs';
+        $workspacePath = '/srv/docs/.worktrees/feature';
+        $app = databaseConnectionProbeApp([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'environment' => 'production',
+            'path' => $appPath,
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => databaseConnectionProbeAppInstance($app)->id,
+            'name' => 'feature',
+            'path' => $workspacePath,
+        ]);
+        $appConnection = DatabaseConnection::factory()->create([
+            'node_id' => $node->id,
+            'slug' => 'docs',
+            'driver' => 'sqlite',
+            'path' => '/srv/docs/database/database.sqlite',
+        ]);
+        $workspaceConnection = DatabaseConnection::factory()->create([
+            'node_id' => $node->id,
+            'slug' => 'feature-docs',
+            'driver' => 'sqlite',
+            'path' => '/srv/docs/.worktrees/feature/database/database.sqlite',
+        ]);
+        DatabaseConnectionTarget::factory()
+            ->forAppInstance(databaseConnectionProbeAppInstance($app))
+            ->create([
+                'database_connection_id' => $appConnection->id,
+                'env_prefix' => 'DB',
+            ]);
+        DatabaseConnectionTarget::factory()
+            ->forWorkspace($workspace)
+            ->create([
+                'database_connection_id' => $workspaceConnection->id,
+                'env_prefix' => 'DB',
+            ]);
+
+        Http::preventStrayRequests();
+        Http::fake(function (Request $request) use ($appPath, $workspacePath): mixed {
+            $input = json_decode((string) $request['input'], associative: true);
+            $path = is_array($input) ? $input['path'] ?? null : null;
+            $contents = $path === $workspacePath.'/.env'
+                ? "DB_CONNECTION=sqlite\nDB_DATABASE=/srv/docs/.worktrees/feature/database/database.sqlite\n"
+                : "DB_CONNECTION=sqlite\nDB_DATABASE=/srv/docs/database/database.sqlite\n";
+
+            return Http::response(databaseConnectionProbeEnvReadResponse($contents));
+        });
+
+        expect(app(DatabaseConnectionProbe::class)->probe($node))->toBe([]);
+
+        Http::assertSent(function (Request $request) use ($appPath): bool {
+            $input = json_decode((string) $request['input'], associative: true);
+
+            return is_array($input) && ($input['path'] ?? null) === $appPath.'/.env';
+        });
+        Http::assertNotSent(function (Request $request) use ($workspacePath): bool {
+            $input = json_decode((string) $request['input'], associative: true);
+
+            return is_array($input) && ($input['path'] ?? null) === $workspacePath.'/.env';
+        });
+    });
+
     it('reports env missing and mismatch for an app target on a local path', function (): void {
         $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-app');

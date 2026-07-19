@@ -15,7 +15,7 @@ orbit schedule:logs [name] [--app=<app>] [--node=<node>] [--run=<id>] [--lines=<
 ## Examples
 
 ```bash
-orbit schedule:logs laravel-scheduler --app=docs
+orbit schedule:logs laravel-scheduler --app=docs.production
 orbit schedule:logs backups --node=app-1 --run=19
 orbit schedule:logs backups --node=app-1 --lines=200
 ```
@@ -24,7 +24,8 @@ orbit schedule:logs backups --node=app-1 --lines=200
 
 - `name`: schedule slug. When omitted in interactive mode, Orbit shows a
   schedule data table.
-- `--app`: disambiguate an app-scoped schedule.
+- `--app`: select the owning `app.instance`. A bare app name is shorthand only
+  when exactly one eligible instance is visible.
 - `--node`: disambiguate a node-scoped schedule.
 - `--run`: specific run id. Defaults to the latest run.
 - `--lines`: maximum captured output lines to render. Defaults to the command renderer limit.

@@ -10,11 +10,13 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspacePlacement;
+use App\Services\Workspaces\WorkspaceRoleGuard;
 
 final readonly class ProcessRuntimeUnitResolver
 {
     public function __construct(
         private WorkspacePlacement $placement,
+        private WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
     /**
@@ -64,6 +66,10 @@ final readonly class ProcessRuntimeUnitResolver
                 ->first();
 
             if (! $workspace instanceof Workspace) {
+                return null;
+            }
+
+            if (! $this->workspaceRoleGuard->allowsWorkspaceTarget($workspace, $node)) {
                 return null;
             }
         }

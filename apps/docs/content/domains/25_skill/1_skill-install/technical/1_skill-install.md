@@ -4,7 +4,8 @@
 
 **Owner:** `skill`.
 
-**Effects:** `local-only`, `write`, `destructive`.
+**Effects:** `local-only`, `write`; conditionally `destructive` only when an
+existing target is replaced.
 
 **Prerequisites:**
 
@@ -29,10 +30,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `force` | `--force` | Optional. | Never. | `false` | Destructive consent for removing an existing target before copying. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 
-`--force` is the destructive consent model for target replacement. Without
-`--force`, an existing target fails before mutation in both interactive and
-non-interactive modes. `--json` selects a renderer and input mode only; it is
-not destructive consent.
+Installing into an absent target is not destructive. When the resolved target
+already exists, interactive mode asks for confirmation unless `--force` is
+present; non-interactive mode requires `--force`. `--json` selects a renderer
+and non-interactive input mode only; it is not destructive consent.
 
 ## Behavior Contract
 
@@ -57,11 +58,14 @@ not destructive consent.
 ### Copy and overwrite rules
 
 - Validate that the source skill directory exists before mutating the target.
-- If the target exists and `--force` is absent, fail with `validation_failed`,
-  `meta.field=target`, and `meta.reason=target_exists`.
-- If the target exists and `--force` is present, remove the existing target
-  before copying. Existing directories, files, and symlinks are target
-  collisions.
+- If the target exists and `--force` is absent, interactive mode asks for
+  confirmation after target/source validation and before deletion.
+- If the target exists in non-interactive mode and `--force` is absent, fail
+  with `validation_failed`, `meta.field=force`, and
+  `meta.reason=destructive_consent_required`.
+- After interactive confirmation or `--force`, remove the existing target
+  before copying. Existing directories, files, and symlinks are replacement
+  targets.
 - Copy the source directory recursively into the resolved target.
 - If copying fails after source and target validation, return
   `skill.install_failed` with `meta.source` and `meta.target`.
@@ -90,7 +94,7 @@ It is a caller-machine filesystem command.
 | Unknown first positional plus second positional | `error.code=validation_failed`; `error.meta.reason=unexpected_path` |
 | Missing `HOME` for provider default | `error.code=validation_failed`; `error.meta.reason=missing_home` |
 | Missing or invalid source skill | `error.code=validation_failed`; `error.meta.reason=missing_source` |
-| Existing target without `--force` | `error.code=validation_failed`; `error.meta.reason=target_exists` |
+| Existing target without destructive consent | `error.code=validation_failed`; `error.meta.field=force`; `error.meta.reason=destructive_consent_required` |
 | Copy failure after validation | `error.code=skill.install_failed`; `error.meta.source` and `error.meta.target` |
 
 The shared exit status policy applies: `0` for success, `1` for Orbit-handled
@@ -108,7 +112,7 @@ contract.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Skill/SkillInstallCommandTest.php` | Command signature, provider default resolution, explicit path resolution, provider-plus-path installs, overwrite protection, `--force`, JSON envelope success/failure, and local-only no-gateway behavior. |
+| `apps/cli/tests/Feature/Commands/Skill/SkillInstallCommandTest.php` | Command signature, provider/default and explicit-path resolution, absent-target install, interactive replacement confirmation/decline, `--force`, JSON consent envelope, and local-only no-gateway behavior. |
 
 There is no gateway-side coverage for this command contract: `skill:install`
 is local-only and has no gateway API surface.

@@ -44,9 +44,10 @@ the standard envelope.
 
 - `success.data` contains the command-specific payload. Use an empty object only
   when a successful JSON response intentionally has no structured result.
-- `success.meta` is optional machine-readable execution context that is not the
-  payload, such as selected scope, pagination, warnings, or resolved entity
-  references.
+- `success.meta` is required on every success and contains machine-readable
+  execution context that is not the payload, such as selected scope,
+  pagination, warnings, or resolved entity references. Use an empty array `[]`
+  when no metadata exists.
 - `error.code` is required on every failure and must be stable enough for tests,
   scripts, agents, and future API adapters.
 - `error.message` is required on every failure and contains human-readable

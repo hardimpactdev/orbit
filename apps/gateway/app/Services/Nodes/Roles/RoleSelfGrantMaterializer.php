@@ -10,17 +10,24 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
+use App\Services\Nodes\Access\NodePermissionRegistry;
 use Illuminate\Database\Eloquent\Builder;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class RoleSelfGrantMaterializer
 {
     public function __construct(
         private NodePermissionPresets $presets,
         private NodePermissionNormalizer $normalizer,
+        private NodePermissionRegistry $registry,
     ) {}
 
     public function materializeOnRoleApplied(Node $node, NodeRoleName $role): void
     {
+        if ($role === NodeRoleName::AppProduction) {
+            $this->sanitizeWorkspacePermissionsForNode($node);
+        }
+
         $this->persistEffectiveSelfGrant($node);
     }
 
@@ -34,10 +41,19 @@ final readonly class RoleSelfGrantMaterializer
      */
     public function effectiveSelfPermissions(Node $node): array
     {
-        return $this->normalize([
+        $permissions = $this->normalize([
             ...$this->roleDerivedSelfPermissions($node),
             ...$this->customSelfPermissions($node),
         ]);
+
+        if (! in_array(NodeRoleName::AppProduction->value, $this->activeRoleNames($node), true)) {
+            return $permissions;
+        }
+
+        return array_values(array_filter(
+            $permissions,
+            static fn (string $permission): bool => $permission !== '*' && ! str_starts_with($permission, 'workspace:'),
+        ));
     }
 
     /**
@@ -103,6 +119,50 @@ final readonly class RoleSelfGrantMaterializer
             'permissions' => $effectivePermissions,
             'custom_permissions' => $customPermissions,
         ]);
+    }
+
+    private function sanitizeWorkspacePermissionsForNode(Node $node): void
+    {
+        $grants = NodeAccess::query()
+            ->where(function (Builder $query) use ($node): void {
+                $query
+                    ->where('consumer_node_id', $node->id)
+                    ->orWhere('serving_node_id', $node->id);
+            })
+            ->get();
+
+        foreach ($grants as $grant) {
+            $grant->forceFill([
+                'permissions' => $this->withoutWorkspacePermissions($grant->permissions ?? ['*']),
+                'custom_permissions' => $this->withoutWorkspacePermissions($grant->custom_permissions ?? []),
+            ])->save();
+        }
+    }
+
+    /**
+     * @param  list<string>  $permissions
+     * @return list<string>
+     */
+    private function withoutWorkspacePermissions(array $permissions): array
+    {
+        $expanded = [];
+
+        foreach ($permissions as $permission) {
+            if ($permission === '*') {
+                array_push($expanded, ...$this->registry->all());
+
+                continue;
+            }
+
+            $expanded[] = $permission;
+        }
+
+        $filtered = array_values(array_filter(
+            $expanded,
+            static fn (string $permission): bool => $permission !== '*' && ! str_starts_with($permission, 'workspace:'),
+        ));
+
+        return $this->normalize($filtered);
     }
 
     /**

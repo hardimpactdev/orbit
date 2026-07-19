@@ -11,17 +11,23 @@ These terms define the core entities in the schedule domain.
   durable run history.
 - **Schedule scope:** Ownership scope of the schedule. One of `app`, `node`, or
   `orbit`.
-- **App-scoped schedule:** Schedule whose scope is `app`. Executes in the app
-  context on the app's owning node; the gateway dispatches through the signed
+- **App-scoped schedule:** Schedule whose scope is `app` and whose durable
+  owner is exactly one concrete app instance. Executes on that instance's
+  serving node and path; the gateway dispatches through the signed
   `internal:schedule:run` local-executor command over agent-push when the target
   is not the gateway itself.
+- **Schedule app selector:** Concrete `app.instance` identity such as
+  `docs.production`. A bare logical app is shorthand only when exactly one
+  eligible instance is visible for the requested permission; otherwise
+  resolution fails without side effects.
 - **Node-scoped schedule:** Schedule whose scope is `node`. Executes on the
   selected node, dispatched by the gateway scheduler.
 - **Orbit-scoped schedule:** Schedule whose scope is `orbit`. Used for
   Orbit-owned maintenance work; runs on the gateway unless a command
   documents another serving node.
 - **Laravel scheduler:** Conventional app-scoped schedule that runs
-  `php artisan schedule:run` every minute on the app's owning node.
+  `php artisan schedule:run` every minute on one concrete app instance's
+  serving node.
 
 ## Execution
 

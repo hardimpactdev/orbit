@@ -13,7 +13,7 @@ removes the derived runtime units for the resolved owner scope.
 ```bash
 orbit process:remove vite --app=docs.production
 orbit process:remove queue --app=docs.production --force
-orbit process:remove horizon --app=docs.production --workspace=feature-docs --force
+orbit process:remove horizon --app=docs.development --workspace=feature-docs --force
 orbit process:remove opencode-server --node=app-dev-1 --force
 orbit process:remove vite --app=docs.production --force --json
 ```

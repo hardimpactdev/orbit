@@ -6,17 +6,34 @@ The app family doctor implements the
 [Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
 `key()` returns `app`.
 
-`doctor --family=app` verifies whether gateway app records still match the
-app facts that make those records runnable on their owning nodes. It also
-detects stale managed app configuration whose identity is absent from active
-gateway app configuration. Concrete runtime units and containers are owned by
-the process family.
+`doctor --family=app` verifies whether gateway records for app instances match
+the facts that make those concrete placements runnable on their serving nodes.
+Logical app placement defaults are never probed as live state. The
+family also detects stale managed app configuration whose identity is absent
+from active gateway app-instance configuration. Concrete runtime units and
+containers are owned by the process family.
+
+## Selection and scope
+
+Selection resolves app doctor to concrete placements before any probe begins.
+
+- `--app=<app.instance>` selects one concrete app instance.
+- A bare app name or hostname is shorthand only when the logical app has
+  exactly one instance. With zero or multiple instances, doctor fails before
+  probing with `error.code=validation_failed`, `error.meta.field=app`, and
+  `error.meta.reason=app_instance_required`.
+- The selected instance determines the serving node, source path, document
+  root, domain, and runtime policy. Logical app defaults never override that
+  placement. An explicit `--node` must name the same serving node.
+- Without `--app`, a node-scoped app-family run enumerates the concrete Orbit
+  app instances served by that node and checks each independently. It does not
+  synthesize a runtime target from a logical app's default fields.
 
 The app family owns these facts:
 
-- gateway-owned app records: name, default owning node, app path, document root,
-  PHP version, production policy, deployment pipeline configuration, and the
-  agent IDE default set at the app level;
+- logical app identity and runtime defaults stored by the gateway only as
+  inputs to the selected instance; default node/path/root/domain values are
+  not observed placement;
 - app instance records owned by the gateway: instance name, driver, driver
   configuration, required PHP extensions, instance env values, and related
   instance database targets;
@@ -50,14 +67,13 @@ and firewall policy belong to `tool` and `firewall_rule`.
 
 The apps probe reads gateway app records and checks these layers:
 
-1. **Registry configuration:** every selected app record has a valid name,
-   owning node reference, app path, document root, PHP version, and lifecycle
-   fields required by the app model.
-2. **Owning node eligibility:** the owning node reference resolves to an active
-   node in gateway node configuration. Node runtime reachability is not diagnosed
-   here; unreachable nodes are reported by the node family.
-3. **Source path:** the app path exists on the owning node and is usable as
-   the app source directory.
+1. **Registry configuration:** every selected instance belongs to a valid
+   logical app, has one supported driver, and has complete driver placement.
+2. **Serving node eligibility:** an Orbit instance's configured node resolves
+   to an active app-host node. Node runtime reachability is not diagnosed here;
+   unreachable nodes are reported by the node family.
+3. **Source path:** the selected instance path exists on its serving node and
+   is usable as the app source directory.
 4. **Document root:** the configured document root exists inside the app path
    and is not outside the app path.
 5. **PHP runtime:** the configured PHP image can serve the app runtime on the
@@ -92,8 +108,8 @@ Each code below corresponds to a specific layer in the apps probe.
 
 | Code | Detected when |
 | --- | --- |
-| `app.record_incomplete` | A selected app record lacks name, owning node reference, app path, document root, PHP version, or required lifecycle fields. |
-| `app.owner_node_invalid` | The app record points at a missing node or a node that is not active. |
+| `app.record_incomplete` | A selected app instance lacks required identity, driver, or placement fields. |
+| `app.owner_node_invalid` | The selected Orbit app instance points at a missing node or a node that is not active. |
 | `app.path_missing` | The configured app path does not exist on the owning node. |
 | `app.path_unusable` | The configured app path exists but cannot be read, entered, or managed by Orbit. |
 | `app.root_missing` | The configured document root does not exist inside the app path. |

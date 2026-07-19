@@ -128,6 +128,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   `error.meta.field=app`, `error.meta.reason=app_instance_required`).
 - **App Not Found**: Resolved app slug does not exist in gateway configuration
   (`error.code=workspace.app_not_found`, `error.meta.app`).
+- **Production app unsupported**: The selected instance is served by an
+  `app-prod` node (`error.code=workspace.unsupported_for_production`). No
+  workspace lifecycle policy is stored.
 - **Invalid Position**: Both `--before` and `--after` supplied
   (`error.code=workspace.invalid_position`,
   `error.meta.{before, after}`).

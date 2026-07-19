@@ -47,6 +47,7 @@ final class SoloMutatingOperationCatalog
                 'project',
                 ['project'],
                 forceRequired: true,
+                destructiveConsent: true,
             ),
             self::op(
                 'solo:process:input',
@@ -79,7 +80,12 @@ final class SoloMutatingOperationCatalog
                 ['process'],
                 ['name' => 'name'],
             ),
-            self::processLifecycle('solo:process:close', 'close', forceRequired: true),
+            self::processLifecycle(
+                'solo:process:close',
+                'close',
+                forceRequired: true,
+                destructiveConsent: true,
+            ),
             self::op(
                 'solo:scratchpad:create',
                 'solo:scratchpad:create {name? : Scratchpad name} {--content= : Initial content} {--json : Output JSON}',
@@ -112,8 +118,22 @@ final class SoloMutatingOperationCatalog
                 'expected-revision' => 'expected_revision',
             ]),
             self::scratchpadWrite('solo:scratchpad:archive', 'archive', 'POST', [], forceRequired: true),
-            self::scratchpadWrite('solo:scratchpad:clear', 'clear', 'DELETE', [], forceRequired: true),
-            self::scratchpadWrite('solo:scratchpad:delete', 'delete', 'DELETE', [], forceRequired: true),
+            self::scratchpadWrite(
+                'solo:scratchpad:clear',
+                'clear',
+                'DELETE',
+                [],
+                forceRequired: true,
+                destructiveConsent: true,
+            ),
+            self::scratchpadWrite(
+                'solo:scratchpad:delete',
+                'delete',
+                'DELETE',
+                [],
+                forceRequired: true,
+                destructiveConsent: true,
+            ),
             self::op(
                 'solo:todo:create',
                 'solo:todo:create {title? : Todo title} {--project= : Project id or name} {--body= : Todo body} {--json : Output JSON}',
@@ -126,7 +146,13 @@ final class SoloMutatingOperationCatalog
             self::todo('solo:todo:update', 'update', 'PATCH', ['title' => 'title', 'body' => 'body']),
             self::todo('solo:todo:complete', 'complete', 'POST'),
             self::todo('solo:todo:reopen', 'reopen', 'POST'),
-            self::todo('solo:todo:delete', 'delete', 'DELETE', forceRequired: true),
+            self::todo(
+                'solo:todo:delete',
+                'delete',
+                'DELETE',
+                forceRequired: true,
+                destructiveConsent: true,
+            ),
             self::todo('solo:todo:lock', 'lock', 'POST'),
             self::todo('solo:todo:unlock', 'unlock', 'POST'),
             self::op(
@@ -155,6 +181,7 @@ final class SoloMutatingOperationCatalog
                 'comment',
                 ['comment'],
                 forceRequired: true,
+                destructiveConsent: true,
             ),
             self::op(
                 'solo:lock:acquire',
@@ -201,10 +228,6 @@ final class SoloMutatingOperationCatalog
     /**
      * @param  list<string>  $requiredArguments
      * @param  array<string, string>  $payloadOptions
-     */
-    /**
-     * @param  list<string>  $requiredArguments
-     * @param  array<string, string>  $payloadOptions
      *
      * @mago-expect lint:excessive-parameter-list
      */
@@ -217,6 +240,7 @@ final class SoloMutatingOperationCatalog
         array $requiredArguments = [],
         array $payloadOptions = [],
         bool $forceRequired = false,
+        bool $destructiveConsent = false,
     ): SoloMutatingOperationDefinition {
         return new SoloMutatingOperationDefinition(
             command: $command,
@@ -227,6 +251,7 @@ final class SoloMutatingOperationCatalog
             requiredArguments: $requiredArguments,
             payloadOptions: $payloadOptions,
             forceRequired: $forceRequired,
+            destructiveConsent: $destructiveConsent,
         );
     }
 
@@ -234,6 +259,7 @@ final class SoloMutatingOperationCatalog
         string $command,
         string $action,
         bool $forceRequired = false,
+        bool $destructiveConsent = false,
     ): SoloMutatingOperationDefinition {
         return self::op(
             $command,
@@ -243,11 +269,14 @@ final class SoloMutatingOperationCatalog
             'process',
             ['process'],
             forceRequired: $forceRequired,
+            destructiveConsent: $destructiveConsent,
         );
     }
 
     /**
      * @param  array<string, string>  $payloadOptions
+     *
+     * @mago-expect lint:excessive-parameter-list
      */
     private static function scratchpadWrite(
         string $command,
@@ -255,6 +284,7 @@ final class SoloMutatingOperationCatalog
         string $method,
         array $payloadOptions,
         bool $forceRequired = false,
+        bool $destructiveConsent = false,
     ): SoloMutatingOperationDefinition {
         $options = '{--content= : Content} {--heading= : Section heading} {--search= : Search text} {--replace= : Replacement text} {--name= : New name} {--expected-revision= : Expected scratchpad revision} {--force : Confirm destructive action} {--json : Output JSON}';
 
@@ -267,11 +297,14 @@ final class SoloMutatingOperationCatalog
             ['scratchpad'],
             $payloadOptions,
             $forceRequired,
+            $destructiveConsent,
         );
     }
 
     /**
      * @param  array<string, string>  $payloadOptions
+     *
+     * @mago-expect lint:excessive-parameter-list
      */
     private static function todo(
         string $command,
@@ -279,6 +312,7 @@ final class SoloMutatingOperationCatalog
         string $method,
         array $payloadOptions = [],
         bool $forceRequired = false,
+        bool $destructiveConsent = false,
     ): SoloMutatingOperationDefinition {
         return self::op(
             $command,
@@ -289,6 +323,7 @@ final class SoloMutatingOperationCatalog
             ['todo'],
             ['project' => 'project'] + $payloadOptions,
             $forceRequired,
+            $destructiveConsent,
         );
     }
 

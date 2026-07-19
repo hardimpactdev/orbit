@@ -26,6 +26,15 @@ use Orbit\Core\Http\JsonEnvelope;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    $this->nodeBootstrapConfigRoot = sys_get_temp_dir().'/orbit-node-bootstrap-controller-'.bin2hex(random_bytes(6));
+    File::ensureDirectoryExists($this->nodeBootstrapConfigRoot.'/ca');
+    File::put($this->nodeBootstrapConfigRoot.'/ca/root.key', 'fake-root-key');
+    File::put(
+        $this->nodeBootstrapConfigRoot.'/ca/root.crt',
+        "-----BEGIN CERTIFICATE-----\nfake-root-cert\n-----END CERTIFICATE-----\n",
+    );
+
+    config()->set('orbit.paths.config_root', $this->nodeBootstrapConfigRoot);
     config()->set('orbit.updates.manifest_snapshot', nodeBootstrapControllerReleaseManifest());
     config()->set('orbit.node_bootstrap.readiness_attempts', 1);
     config()->set('orbit.node_bootstrap.readiness_delay_milliseconds', 0);
@@ -69,6 +78,12 @@ beforeEach(function (): void {
         return Process::result();
     });
     Process::preventStrayProcesses();
+});
+
+afterEach(function (): void {
+    if (isset($this->nodeBootstrapConfigRoot)) {
+        File::deleteDirectory($this->nodeBootstrapConfigRoot);
+    }
 });
 
 it('rejects a second analytics bootstrap before reserving the target node', function (): void {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
+use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
@@ -20,7 +21,7 @@ final readonly class RemoveProcess
     /**
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
-    public function handle(ProcessOwnerContext $context, string $name): array
+    public function handle(ProcessOwnerContext $context, string $name, ?Node $consumer = null): array
     {
         $app = $context->runtimeApp();
         $app->loadMissing(['node', 'workspaces']);
@@ -38,7 +39,12 @@ final readonly class RemoveProcess
             );
         }
 
-        $runtimeUnits = $this->runtimeUnitPayload->forProcess($app, $process, $context->runtimeWorkspaceFor($process));
+        $runtimeUnits = $this->runtimeUnitPayload->forProcess(
+            $app,
+            $process,
+            $context->runtimeWorkspaceFor($process),
+            $consumer,
+        );
         $warnings = $this->removeRuntimeUnits($context, $process, $runtimeUnits);
         $process->delete();
 

@@ -75,6 +75,7 @@ final class ProcessUpdateController implements Loggable
                 name: $name,
                 changes: $input['changes'],
                 restart: $input['restart'],
+                consumer: $caller,
             );
         } catch (GatewayApiException $e) {
             return $this->error(

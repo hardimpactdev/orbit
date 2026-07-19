@@ -8,6 +8,9 @@ Remove stale workspaces for an app.
 reported by its configured agent IDE adapters and removes any workspace that no
 longer exists in any of those source-of-truth adapters.
 
+This is an `app-dev`-only workspace operation. `app-prod` callers and target
+apps are rejected before adapter discovery, including in dry-run mode.
+
 ## Usage
 
 ```bash
@@ -60,6 +63,8 @@ Database cleanup requires Orbit to explicitly track a database as workspace-owne
 
 - The caller must have `app:prune` on the app's owning node. A gateway-role
   caller has the architecture's documented implicit authority.
+- The caller must not be `app-prod`, and the target app must be served by an
+  active `app-dev` node.
 - The target app must be resolved and authorized.
 - The app must have at least one agent IDE adapter configured (directly or inherited).
 - The gateway must be able to query the effective agent IDE adapter(s).

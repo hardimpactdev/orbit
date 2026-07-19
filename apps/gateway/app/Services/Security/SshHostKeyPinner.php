@@ -76,7 +76,7 @@ final readonly class SshHostKeyPinner
 
             $this->logPinEvent('node.host_key.pinned_verified', $host, [
                 'fingerprint' => $key->fingerprint,
-                'type' => $key->type,
+                'host_key_type' => $key->type,
             ]);
 
             return new PinnedHostKey($key->host, $key->type, $key->publicKey, $key->fingerprint, 'verified');
@@ -84,7 +84,7 @@ final readonly class SshHostKeyPinner
 
         $this->logPinEvent('node.host_key.pinned_tofu', $host, [
             'fingerprint' => $key->fingerprint,
-            'type' => $key->type,
+            'host_key_type' => $key->type,
         ]);
 
         return $key;
@@ -171,7 +171,7 @@ final readonly class SshHostKeyPinner
             return;
         }
 
-        activity('security')
+        activity('api')
             ->event($event)
             ->withProperties([
                 'type' => 'write',

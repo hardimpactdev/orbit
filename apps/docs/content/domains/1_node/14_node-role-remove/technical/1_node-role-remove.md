@@ -26,8 +26,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `node` | `[node]` | Always. | Never. | None. | Must match an active node record. |
 | `role` | `[role]` | Always. | Never. | None. | `gateway`, `vpn`, and `router` are rejected. |
-| `force` | `--force` | Required for destructive consent in non-interactive destructive cleanup paths. | Never. | `false`. | Enables dependent cleanup. |
-| `purge-data` | `--purge-data` | Optional. | Never. | `false`. | Requires `--force`. |
+| `force` | `--force` | Required for destructive consent in non-interactive mode. | Never. | `false`. | Explicit destructive consent; skips preview confirmation. |
+| `purge-data` | `--purge-data` | Optional. | Never. | `false`. | Requests purge cleanup after destructive consent. Non-interactive use therefore also requires `--force`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and forces non-interactive input mode. |
 
 ## Behavior Contract
@@ -39,13 +39,21 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   `validation_failed`. The failure message explains that they are
   gateway-coupled infrastructure roles in v1 and cannot be removed
   independently through `node role:remove`.
-- `--purge-data` without `--force` fails with `validation_failed`.
+- Every supported role removal requires destructive consent, including a role
+  with no dependent resources.
+- Interactive mode previews dependents and asks for confirmation unless
+  `--force` is supplied.
+- Non-interactive mode without `--force` fails with
+  `error.code=validation_failed`, `error.meta.field=force`, and
+  `error.meta.reason=destructive_consent_required`.
 
 ### Dependency Rules
 
-- Removal without `--force` blocks when dependents exist and returns `node_role.remove_blocked`.
-- `--force` removes Orbit-owned dependents while preserving user data.
-- `--force --purge-data` requests purge cleanup.
+- The gateway computes the Orbit-owned dependent-resource list before
+  mutation. Interactive mode renders that list when non-empty before asking
+  for consent.
+- Confirmed removal cleans up Orbit-owned dependents while preserving user
+  data. `--purge-data` additionally requests purge cleanup.
 - Removal first commits the assignment's `removing` state, then performs role
   baseline and remote runtime cleanup without holding a gateway database
   transaction open. Orbit-owned dependents and the role assignment are deleted
@@ -73,8 +81,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI role:remove force and purge rendering plus validation before gateway contact. |
-| `apps/gateway/tests/Feature/Http/Api/NodeRoleRemoveControllerTest.php` | Gateway blocked removal, force removal, and purge cleanup behavior. |
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI role-removal preview, dependent rendering, interactive confirmation, non-interactive force validation, and purge forwarding. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRoleRemoveControllerTest.php` | Gateway destructive-consent preview metadata, forced removal, and purge cleanup behavior. |
 
 Input-mode-specific test mapping lives in:
 
@@ -92,7 +100,7 @@ Destructive consent coverage note: routine tests cover only the mapped `--force`
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Remove blocked | Dependents exist and `--force` is absent. | Failure |
+| Destructive consent missing | Non-interactive input omitted `--force`, or interactive confirmation was rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required`; dependent summaries remain in metadata when available. |
 | Remove failed | Cleanup fails after removal starts. | Failure; assignment remains errored for doctor repair. |
 | Node not found | No active node matches `node`. | Failure |
 

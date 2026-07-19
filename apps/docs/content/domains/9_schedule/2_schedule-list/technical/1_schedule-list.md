@@ -8,7 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized to inspect schedules for the selected scope.
+- The current node identity is authorized to inspect schedules for the selected
+  concrete app instance or node scope.
 
 ## Signature
 
@@ -22,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `--app` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible active app the caller may inspect. |
+| `app` | `--app` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare logical app is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or node the caller may inspect. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -31,7 +32,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Schedule Configuration Visibility Rules
 
 - Reads gateway schedule configuration visible to the caller.
-- Applies the optional app or node filter at the gateway.
+- Resolves an optional app filter to one concrete app instance before querying;
+  it never aggregates multiple instances for a bare app selector.
+- Applies the concrete app-instance or node filter at the gateway.
 - Returns app-scoped, node-scoped, and Orbit-scoped schedules when no filter is supplied.
 - Limits the result to schedules the caller is authorized to see.
 - Includes latest durable run-history summary when available.
@@ -48,6 +51,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
+
+| Failure | Condition | Outcome |
+| --- | --- | --- |
+| App instance required | No eligible instance exists for a bare logical app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
 
 ## Doctor Relationship
 
@@ -71,5 +78,6 @@ schedule registry reads.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php` | CLI filter forwarding, JSON envelope shape, human table with last-run summary, empty states, and gateway/WireGuard failure passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php` | Explicit app-instance list filtering and ambiguous bare-selector rejection. |
 
-There is no gateway-side coverage for this command contract: no gateway API or SDK contract test is linked for this command yet. The linked CLI test proves the mapped CLI behavior above; API behavior, activity logging, and authorization assertions remain coverage gaps until focused tests land.
+Activity logging assertions remain a coverage gap until focused tests land.

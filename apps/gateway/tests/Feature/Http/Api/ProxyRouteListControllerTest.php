@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -40,6 +42,40 @@ function assignProxyRouteListRole(Node $node, string $role = 'gateway'): void
         'status' => 'active',
         'settings' => $role === 'app-dev' ? ['tld' => 'test'] : [],
     ]);
+}
+
+function proxy_route_list_workspace_on_node(Node $node): Workspace
+{
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'domain' => 'docs.test',
+    ]);
+
+    return Workspace::factory()->for($app)->create([
+        'name' => 'feature-docs',
+        'path' => '/srv/apps/docs/workspaces/feature-docs',
+    ]);
+}
+
+function proxy_route_list_workspace_boundary(string $boundary): Node
+{
+    $caller = createProxyRouteListCallerNode();
+
+    if ($boundary === 'consumer') {
+        assignProxyRouteListRole($caller, role: 'app-prod');
+        $workspaceNode = Node::factory()->appDev()->create(['name' => 'workspace-dev']);
+        NodeAccess::query()->create([
+            'consumer_node_id' => $caller->id,
+            'serving_node_id' => $workspaceNode->id,
+            'permissions' => ['proxy:*'],
+        ]);
+
+        return $workspaceNode;
+    }
+
+    assignProxyRouteListRole($caller);
+
+    return Node::factory()->appProd()->create(['name' => 'workspace-prod']);
 }
 
 describe('ProxyRouteListController', function (): void {
@@ -97,6 +133,114 @@ describe('ProxyRouteListController', function (): void {
 
         $response->assertOk()
             ->assertJsonCount(2, 'success.data.routes');
+    });
+
+    it('redacts forbidden workspace routes from broad reads and rejects explicit workspace filters without effects', function (
+        string $boundary,
+    ): void {
+        $workspaceNode = proxy_route_list_workspace_boundary($boundary);
+        $workspace = proxy_route_list_workspace_on_node($workspaceNode);
+        ProxyRoute::factory()->create([
+            'node_id' => $workspaceNode->id,
+            'app_id' => $workspace->app_id,
+            'workspace_id' => $workspace->id,
+            'domain' => 'feature-docs.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $workspaceNode->id,
+            'domain' => 'custom.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+        ]);
+        $routeIntentBefore = ProxyRoute::query()
+            ->orderBy('id')
+            ->pluck('source_hash', 'id')
+            ->all();
+
+        $broadResponse = $this->call(
+            'GET',
+            '/api/proxy-routes',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP],
+        );
+        $explicitResponse = $this->call(
+            'GET',
+            '/api/proxy-routes?filter=workspace',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP],
+        );
+
+        $broadResponse
+            ->assertOk()
+            ->assertJsonPath('success.meta.count', 1)
+            ->assertJsonPath('success.data.routes.0.domain', 'custom.test');
+        $explicitResponse
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production');
+
+        expect(ProxyRoute::query()->orderBy('id')->pluck('source_hash', 'id')->all())
+            ->toBe($routeIntentBefore);
+    })->with([
+        'app-prod consumer with a legacy proxy wildcard grant' => ['consumer'],
+        'legacy workspace route placed on app-prod' => ['target'],
+    ]);
+
+    it('rejects a legacy workspace-owned route served by app-prod when its workspace relation is missing', function (): void {
+        $caller = createProxyRouteListCallerNode();
+        assignProxyRouteListRole($caller);
+        $workspaceNode = Node::factory()->appProd()->create(['name' => 'workspace-prod']);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $workspaceNode->id,
+            'workspace_id' => null,
+            'domain' => 'orphaned-workspace.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $workspaceNode->id,
+            'domain' => 'custom.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+        ]);
+        $routeIntentBefore = ProxyRoute::query()
+            ->orderBy('id')
+            ->pluck('source_hash', 'id')
+            ->all();
+
+        $broadResponse = $this->call(
+            'GET',
+            '/api/proxy-routes',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP],
+        );
+        $explicitResponse = $this->call(
+            'GET',
+            '/api/proxy-routes?filter=workspace',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP],
+        );
+
+        $broadResponse
+            ->assertOk()
+            ->assertJsonPath('success.meta.count', 1)
+            ->assertJsonPath('success.data.routes.0.domain', 'custom.test');
+        $explicitResponse
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'workspace.unsupported_for_production');
+
+        expect(ProxyRoute::query()->orderBy('id')->pluck('source_hash', 'id')->all())
+            ->toBe($routeIntentBefore);
     });
 
     it('returns validation failures for invalid filters and node scopes', function (

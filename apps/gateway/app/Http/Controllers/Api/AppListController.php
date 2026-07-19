@@ -12,9 +12,10 @@ use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
-use App\Services\Apps\AppResponsePayload;
+use App\Services\Apps\DependencyAudit\AppDependencyAuditAggregatePayload;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -28,8 +29,14 @@ final readonly class AppListController implements Loggable
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
         private NodeAccessAuthorizer $authorizer,
+        private AppDependencyAuditAggregatePayload $dependencyAuditPayload,
     ) {}
 
+    #[OpenApiResponse(
+        status: 200,
+        description: 'The compact logical app inventory.',
+        type: 'array{success: array{data: array{apps: list<array{name: string, repository: string|null, dependency_audit_status: string, dependency_warning_count: int, dependency_danger_count: int, last_dependency_audit_at: string|null, instance_count: int, workspace_count: int}>}, meta: list<mixed>}}',
+    )]
     public function __invoke(Request $request): JsonResponse
     {
         /** @var mixed $caller */
@@ -77,14 +84,20 @@ final readonly class AppListController implements Loggable
             visibleNodeIds: $visibleNodeIds,
             environment: is_string($environment) && $environment !== '' ? $environment : null,
         );
-        $payloads = $this->listPayloads($apps, $callerIsGateway, $visibleNodeIds);
+        $payloads = $this->listPayloads(
+            apps: $apps,
+            callerIsGateway: $callerIsGateway,
+            callerMayInspectWorkspaces: ! $this->nodeRoleAssignments->nodeHasActiveRole($caller, 'app-prod'),
+            visibleNodeIds: $visibleNodeIds,
+            workspaceNodeIds: $this->nodeRoleAssignments->activeNodeIdsForRole('app-dev'),
+        );
 
         return response()->json([
             'success' => [
                 'data' => [
-                    'apps' => $payloads['apps'],
-                    'inventory' => $payloads['inventory'],
+                    'apps' => $payloads,
                 ],
+                'meta' => [],
             ],
         ]);
     }
@@ -136,7 +149,7 @@ final readonly class AppListController implements Loggable
     {
         /** @var Builder<App> $query */
         $query = App::query();
-        $query->with(['node', 'instances', 'workspaces.appInstance', 'dependencyAuditSummaries']);
+        $query->with(['instances', 'workspaces.appInstance', 'dependencyAuditSummaries']);
 
         if (! $callerIsGateway) {
             $query->whereHas('instances', static function (Builder $query) use ($visibleNodeIds): void {
@@ -159,39 +172,49 @@ final readonly class AppListController implements Loggable
     /**
      * @param  Collection<int, App>  $apps
      * @param  list<int>  $visibleNodeIds
-     * @return array{
-     *     apps: list<array<string, mixed>>,
-     *     inventory: list<array{
-     *         app: string,
-     *         instance_count: int,
-     *         workspace_count: int,
-     *     }>,
-     * }
+     * @param  list<int>  $workspaceNodeIds
+     * @return list<array{
+     *     name: string,
+     *     repository: string|null,
+     *     dependency_audit_status: string,
+     *     dependency_warning_count: int,
+     *     dependency_danger_count: int,
+     *     last_dependency_audit_at: string|null,
+     *     instance_count: int,
+     *     workspace_count: int,
+     * }>
      */
-    private function listPayloads(Collection $apps, bool $callerIsGateway, array $visibleNodeIds): array
-    {
-        $appPayload = app(AppResponsePayload::class);
-        $appPayloads = [];
-        $inventoryPayloads = [];
+    private function listPayloads(
+        Collection $apps,
+        bool $callerIsGateway,
+        bool $callerMayInspectWorkspaces,
+        array $visibleNodeIds,
+        array $workspaceNodeIds,
+    ): array {
+        $payloads = [];
 
         foreach ($apps as $app) {
-            $workspaces = $this->workspacePayloads($app, $callerIsGateway, $visibleNodeIds);
+            $dependencyAudit = $this->dependencyAuditPayload->forApp($app);
 
-            $appPayloads[] = [
-                ...$appPayload->forApp($app),
-                'workspaces' => $workspaces,
-            ];
-            $inventoryPayloads[] = [
-                'app' => $app->name,
+            $payloads[] = [
+                'name' => $app->name,
+                'repository' => $app->repository,
+                'dependency_audit_status' => $dependencyAudit['dependency_audit_status'],
+                'dependency_warning_count' => $dependencyAudit['dependency_warning_count'],
+                'dependency_danger_count' => $dependencyAudit['dependency_danger_count'],
+                'last_dependency_audit_at' => $dependencyAudit['last_dependency_audit_at'],
                 'instance_count' => $this->visibleInstanceCount($app, $callerIsGateway, $visibleNodeIds),
-                'workspace_count' => count($workspaces),
+                'workspace_count' => $this->visibleWorkspaceCount(
+                    app: $app,
+                    callerIsGateway: $callerIsGateway,
+                    callerMayInspectWorkspaces: $callerMayInspectWorkspaces,
+                    visibleNodeIds: $visibleNodeIds,
+                    workspaceNodeIds: $workspaceNodeIds,
+                ),
             ];
         }
 
-        return [
-            'apps' => $appPayloads,
-            'inventory' => $inventoryPayloads,
-        ];
+        return $payloads;
     }
 
     /**
@@ -215,29 +238,32 @@ final readonly class AppListController implements Loggable
 
     /**
      * @param  list<int>  $visibleNodeIds
-     * @return list<array<string, mixed>>
+     * @param  list<int>  $workspaceNodeIds
      */
-    private function workspacePayloads(App $app, bool $callerIsGateway, array $visibleNodeIds): array
-    {
-        $payloads = [];
-
-        foreach ($app->workspaces->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE) as $workspace) {
-            if (
-                ! $workspace instanceof Workspace
-                || ! $callerIsGateway
-                && ! in_array($this->instanceNodeId($workspace->appInstance), $visibleNodeIds, strict: true)
-            ) {
-                continue;
-            }
-
-            $payloads[] = [
-                'name' => $workspace->name,
-                'url' => $workspace->url(),
-                'lifecycle_status' => $workspace->lifecycle_status->value,
-            ];
+    private function visibleWorkspaceCount(
+        App $app,
+        bool $callerIsGateway,
+        bool $callerMayInspectWorkspaces,
+        array $visibleNodeIds,
+        array $workspaceNodeIds,
+    ): int {
+        if (! $callerMayInspectWorkspaces) {
+            return 0;
         }
 
-        return $payloads;
+        return $app->workspaces->filter(function (Workspace $workspace) use (
+            $callerIsGateway,
+            $visibleNodeIds,
+            $workspaceNodeIds,
+        ): bool {
+            $nodeId = $this->instanceNodeId($workspace->appInstance);
+
+            if (! in_array($nodeId, $workspaceNodeIds, strict: true)) {
+                return false;
+            }
+
+            return $callerIsGateway || in_array($nodeId, $visibleNodeIds, strict: true);
+        })->count();
     }
 
     private function instanceNodeId(?AppInstance $instance): ?int

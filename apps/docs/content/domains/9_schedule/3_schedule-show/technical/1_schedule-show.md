@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` or interactive schedule data table | `Required in non-interactive mode.` | `Never.` | `None.` | Schedule slug visible to the caller. |
-| `app` | `--app` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible active app the caller may inspect. |
+| `app` | `--app` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare logical app is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or node the caller may inspect. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -32,7 +32,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Schedule Detail Rules
 
 - Reads one gateway schedule-configuration row visible to the caller.
-- Applies optional app or node disambiguation at the gateway.
+- Resolves optional app disambiguation to one concrete app instance at the
+  gateway. Ambiguous bare app selectors fail instead of choosing one row.
 - Includes latest durable run-history summary when available.
 - Distinguishes gateway-configuration status from live scheduler verification.
 - Does not inspect live Orbit Scheduler state.
@@ -52,6 +53,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
+| App instance required | No eligible instance exists for a bare logical app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
+| Schedule selector ambiguous | The name without a target filter matches more than one visible concrete target. | `error.code=validation_failed`, `error.meta.reason=schedule_selector_ambiguous` |
 
 ## Doctor Relationship
 
@@ -75,5 +78,6 @@ schedule detail reads.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php` | CLI schedule lookup and filter forwarding, validation before gateway contact, interactive name selection, `schedule.not_found` passthrough, and WireGuard failure surfacing. |
+| `apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php` | Explicit instance lookup and ambiguous bare app-selector rejection. |
 
-There is no gateway-side coverage for this command contract: no gateway API or SDK contract test is linked for this command yet. The linked CLI test proves the mapped CLI behavior above; API behavior, activity logging, and authorization assertions remain coverage gaps until focused tests land.
+Activity logging assertions remain a coverage gap until focused tests land.

@@ -47,9 +47,9 @@ final readonly class CommandCatalogPhpMethodSourceExtractor
         }
 
         $start = (int) $startValue;
-        $openBrace = strpos(haystack: $source, needle: '{', offset: $start);
+        $openBrace = $start + strlen($match[0][0]) - 1;
 
-        if ($openBrace === false) {
+        if (($source[$openBrace] ?? null) !== '{') {
             return null;
         }
 

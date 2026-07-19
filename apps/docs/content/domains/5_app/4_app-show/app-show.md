@@ -58,6 +58,10 @@ Run `app:show` to inspect a single app's gateway configuration without triggerin
    visible instance, processes, and app-owned proxy routes.
 5. Returns the app detail view backed by the registry.
 
+Workspace rows are expanded only for `app-dev`. Production placements never
+contribute workspaces, and an `app-prod` caller receives app and instance
+details without nested or flat workspace facts.
+
 `app:show` does not:
 
 - Mutate gateway configuration or node state.

@@ -82,6 +82,12 @@ Supplying an unknown option fails with `error.code=validation_failed`.
    `app:read` and workspaces owned by those instances. External driver-backed
    instances have no Orbit serving node and are visible only to gateway callers.
 
+   Workspace expansion is available only for active `app-dev` placements. A
+   workspace row attached to `app-prod` is omitted as invalid configuration.
+   An `app-prod` caller receives no nested or flat workspace facts, even when a
+   grant that violates current workspace policy makes an `app-dev` instance
+   visible; app and instance details remain readable.
+
    Default `app:show` is a registry read, not a live readiness command.
 
 ### Scope Boundaries

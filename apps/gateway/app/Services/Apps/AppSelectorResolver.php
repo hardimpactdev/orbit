@@ -9,7 +9,9 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Exceptions\AppSelectionResolutionFailed;
 use App\Models\App;
 use App\Models\AppInstance;
+use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -17,13 +19,17 @@ final readonly class AppSelectorResolver
 {
     public function __construct(
         private WorkspacePlacement $placement,
+        private NodeAccessAuthorizer $authorizer,
     ) {}
 
-    public function resolve(?string $selector): ?AppSelection
+    /**
+     * @param  (callable(AppInstance): bool)|null  $instanceIsVisible
+     */
+    public function resolve(?string $selector, ?callable $instanceIsVisible = null): ?AppSelection
     {
-        $value = $this->normalizeSelector($selector);
+        $value = is_string($selector) ? trim($selector) : '';
 
-        if ($value === null) {
+        if ($value === '') {
             return null;
         }
 
@@ -55,7 +61,12 @@ final readonly class AppSelectorResolver
             if ($app instanceof App) {
                 return new AppSelection(
                     app: $app,
-                    instance: $this->resolveInstance($app, $instanceSelector, $value),
+                    instance: $this->resolveInstance(
+                        $app,
+                        $instanceSelector,
+                        $value,
+                        $instanceIsVisible,
+                    ),
                     selector: $value,
                     instanceSelector: $instanceSelector,
                 );
@@ -91,8 +102,14 @@ final readonly class AppSelectorResolver
         );
     }
 
-    public function requireInstance(AppSelection $selection, string $field = 'app'): AppSelection
-    {
+    /**
+     * @param  (callable(AppInstance): bool)|null  $instanceIsVisible
+     */
+    public function requireInstance(
+        AppSelection $selection,
+        string $field = 'app',
+        ?callable $instanceIsVisible = null,
+    ): AppSelection {
         if ($selection->instance instanceof AppInstance) {
             return $selection;
         }
@@ -110,23 +127,31 @@ final readonly class AppSelectorResolver
             );
         }
 
+        $meta = [
+            'field' => $field,
+            'reason' => 'app_instance_required',
+            'app' => $selection->app->name,
+        ];
+        $visibleInstances = $instanceIsVisible === null
+            ? $instances
+            : $instances->filter($instanceIsVisible)->values();
+
+        if ($visibleInstances->count() === $instances->count()) {
+            $meta['instances'] = $instances->pluck('name')->values()->all();
+        }
+
         throw new AppSelectionResolutionFailed(
             'validation_failed',
             "App '{$selection->app->name}' requires a concrete app instance selector.",
-            [
-                'field' => $field,
-                'reason' => 'app_instance_required',
-                'app' => $selection->app->name,
-                'instances' => $instances->pluck('name')->values()->all(),
-            ],
+            $meta,
         );
     }
 
     public function resolveByPath(?string $path): ?AppSelection
     {
-        $normalizedPath = $this->normalizeSelector($path);
+        $normalizedPath = is_string($path) ? trim($path) : '';
 
-        if ($normalizedPath === null) {
+        if ($normalizedPath === '') {
             return null;
         }
 
@@ -197,15 +222,19 @@ final readonly class AppSelectorResolver
         return $query->where('app_id', $selection->app->id);
     }
 
-    private function normalizeSelector(?string $selector): ?string
+    public function instanceIsVisibleTo(Node $caller, AppInstance $instance, string $permission): bool
     {
-        if (! is_string($selector)) {
-            return null;
+        $node = $this->placement->nodeForInstance($instance);
+
+        if (! $node instanceof Node) {
+            return false;
         }
 
-        $value = trim($selector);
+        if ($this->authorizer->allows($caller, $node, $permission)) {
+            return true;
+        }
 
-        return $value !== '' ? $value : null;
+        return $permission !== 'app:read' && $this->authorizer->allows($caller, $node, 'app:read');
     }
 
     private function resolveInstanceByPath(string $path): ?AppSelection
@@ -246,16 +275,28 @@ final readonly class AppSelectorResolver
         return $bestSelection;
     }
 
-    private function resolveInstance(App $app, string $instanceSelector, string $fullSelector): AppInstance
-    {
+    /**
+     * @param  (callable(AppInstance): bool)|null  $instanceIsVisible
+     */
+    private function resolveInstance(
+        App $app,
+        string $instanceSelector,
+        string $fullSelector,
+        ?callable $instanceIsVisible,
+    ): AppInstance {
         $matches = $app
             ->instances
-            ->filter(fn (AppInstance $instance): bool => $this->placement->instanceMatchesSelector(
-                instance: $instance,
-                selector: $instanceSelector,
-                fullSelector: $fullSelector,
-                app: $app,
-            ))
+            ->filter(
+                fn (AppInstance $instance): bool => (
+                    ($instanceIsVisible === null || $instanceIsVisible($instance))
+                    && $this->placement->instanceMatchesSelector(
+                        instance: $instance,
+                        selector: $instanceSelector,
+                        fullSelector: $fullSelector,
+                        app: $app,
+                    )
+                ),
+            )
             ->values();
 
         $match = $matches->first();

@@ -156,7 +156,7 @@ final readonly class SetupWorkspace
     public function prepareWorkspaceState(Workspace $workspace): void
     {
         $workspace->update([
-            'lifecycle_status' => WorkspaceLifecycleStatus::SettingUp,
+            'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
     }
 

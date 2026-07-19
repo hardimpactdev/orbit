@@ -8,8 +8,8 @@ The workspace family doctor implements the
 
 `doctor --family=workspace` verifies whether gateway workspace records still
 match the workspace facts that make those records usable development contexts
-on their effective workspace node. Every workspace belongs to an app instance,
-which selects its effective node. It also detects stale workspace artifacts owned by Orbit with identities
+on their effective app-dev node. Every supported workspace belongs to an
+app-dev instance, which selects its effective node. It also detects stale workspace artifacts owned by Orbit with identities
 absent from active gateway workspace configuration, so
 post-removal cleanup can be repaired without recreating deleted workspace
 records.
@@ -35,8 +35,10 @@ The workspace family owns these facts:
 
 A workspace record that points at a missing parent app is a parent-app issue.
 A missing or mismatched selected app instance, or an instance that does not
-resolve to an active app-capable node, is an app-instance issue because the
-workspace has no valid apply target.
+resolve to an active `app-dev` node, is an app-instance issue because the
+workspace has no valid apply target. A persisted row owned by an `app-prod`
+instance is invalid gateway configuration, but an `app-prod` node or instance
+cannot be selected as a workspace-doctor target to inspect or report it.
 
 Parent app runtime health belongs to the app family. Node reachability belongs
 to the node family. Workspace-owned proxy routes belong to `proxy`.
@@ -57,7 +59,10 @@ The workspaces probe reads gateway workspace records and checks these layers:
    record that can own workspaces. App runtime health is not diagnosed here;
    app drift is reported by the app family.
 3. **App instance eligibility:** the selected instance belongs to the parent
-   app and resolves to an active node with an app-host role.
+   app and resolves to an active node with the `app-dev` role. The probe retains
+   `workspace.unsupported_for_production` as a defensive invariant when invalid
+   gateway configuration enters an otherwise supported development scope; it
+   never uses that issue as permission to target an `app-prod` node.
 4. **Source path:** the workspace path exists on the effective workspace node, is
    usable as the workspace source directory, and is distinct from the parent
    app root. Generic and adapter-owned workspace sources may live outside the
@@ -65,13 +70,13 @@ The workspaces probe reads gateway workspace records and checks these layers:
 5. **PHP runtime:** active workspaces have an effective PHP image that can serve
    the workspace runtime on the owning node. Concrete FrankenPHP unit presence
    and shape are process-family checks. Workspaces still
-   in `expected`, `setup-pending`, or `setting_up` lifecycle states do not
+   in `expected` or `setup-pending` lifecycle states do not
    require image availability yet.
 6. **Runtime artifacts:** workspace runtime configuration and managed
    filesystem ownership match gateway workspace configuration.
 7. **Development workspace security:** workspace runtime isolation is checked
-   only for workspaces on `app-dev` nodes. Production app-role targets
-   do not select the workspace family.
+   only for workspaces on `app-dev` nodes. Persisted production rows are not a
+   supported production doctor scope and never trigger production inspection.
 8. **Adoption hints:** during `doctor --adopt`, an explicitly selected existing
    workspace path may be inspected for compatible workspace facts. `composer.json`
    is the only project file that may provide a PHP version hint, and only for a
@@ -92,7 +97,8 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | --- | --- |
 | `workspace.record_incomplete` | A selected workspace record lacks name, parent app identity, selected app-instance identity, workspace path, derived hostname, effective PHP version, or required lifecycle fields. |
 | `workspace.parent_app_invalid` | The workspace record points at a missing parent app. |
-| `workspace.app_instance_invalid` | The selected app instance is missing, belongs to another app, or does not resolve to an active app-capable node. |
+| `workspace.app_instance_invalid` | The selected app instance is missing, belongs to another app, or does not resolve to an active `app-dev` node for a reason other than production placement. |
+| `workspace.unsupported_for_production` | Defensive gateway validation encounters a persisted workspace row belonging to an `app-prod` instance while evaluating a supported development scope. The production node is never probed. |
 | `workspace.path_missing` | The configured workspace path does not exist on the effective workspace node. |
 | `workspace.path_unusable` | The configured workspace path exists but cannot be read, entered, or managed by Orbit. |
 | `workspace.path_outside_policy` | A generic workspace path equals the parent app root instead of a distinct workspace path. Adapter-owned paths are checked against their adapter metadata instead of this generic policy. |
@@ -121,7 +127,8 @@ The table below shows what `doctor --restore` does for each fixable code.
 `doctor --restore` does not handle `workspace.record_incomplete`,
 `workspace.parent_app_invalid`, `workspace.app_instance_invalid`, `workspace.path_unusable`,
 `workspace.path_outside_policy`, `workspace.php_version_unavailable`,
-`workspace.unregistered_path`, or `workspace.php_hint_unsupported`.
+`workspace.unsupported_for_production`, `workspace.unregistered_path`, or
+`workspace.php_hint_unsupported`.
 
 Unsupported PHP versions require explicit command or operator work. References
 to a missing parent app or invalid app instance also require
@@ -132,9 +139,12 @@ parent apps, changes workspace names, moves a workspace to another app, edits
 setup or teardown step definitions, edits workspace-owned proxy routes,
 edits inherited runtime units, or changes node reachability.
 
-Workspace doctor is a development app-role surface. `app-prod` targets
-reject `doctor --family=workspace` before probes with
-`family_not_in_node_scope` and the resolved `target_node`.
+Workspace doctor is a development surface. An explicit `app-prod` node may
+not select the workspace family or an explicit workspace scope. The gateway
+rejects either request with `family_not_in_node_scope` before probing,
+dispatching Agent work, planning a restore, or adopting state. Normal workspace
+commands reject production targets with `workspace.unsupported_for_production`
+before side effects.
 
 ## Workspace Adopt Map
 

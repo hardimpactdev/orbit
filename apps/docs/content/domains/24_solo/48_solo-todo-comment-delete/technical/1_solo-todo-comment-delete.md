@@ -4,7 +4,7 @@
 
 **Owner:** `solo`.
 
-**Effects:** `write`.
+**Effects:** `destructive`.
 
 **Prerequisites:**
 - The local Solo extension is enabled on the CLI node.
@@ -21,6 +21,16 @@ orbit solo:todo:comment:delete <comment> [--node=<node>] [--force] [--json]
 
 This command follows the shared [Invocation Model](../../../README.md#invocation-model). Arguments and options are validated before the gateway request is sent.
 
+| Field | Source | Required when | Forbidden when | Default | Validation |
+| --- | --- | --- | --- | --- | --- |
+| `force` | `--force` | Non-interactive mode. | Never. | `false` | Explicit destructive consent; skips interactive confirmation. |
+| `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and forces non-interactive mode; it is not destructive consent. |
+
+## Input Mode Contracts
+
+- [Interactive input mode](5.1_solo-todo-comment-delete_input-mode_interactive.md)
+- [Non-interactive input mode](5.2_solo-todo-comment-delete_input-mode_non-interactive.md)
+
 ## Behavior Contract
 
 ### Local Gate
@@ -30,6 +40,10 @@ The command checks local Solo extension state before making a gateway request. D
 ### Gateway Proxy
 
 The command calls `DELETE /api/solo/todo/comment/delete` through the configured gateway client. The CLI resolves an omitted target from local `node:default`, then falls back to the authenticated caller node. Gateway execution requires gateway Solo extension state and the caller permission listed above on the target node.
+
+### Destructive Consent
+
+After resolving the node and comment, apply the shared [Solo destructive-consent contract](../../README.md#destructive-consent). No gateway request is sent before consent succeeds.
 
 ### Upstream Boundary
 
@@ -41,7 +55,7 @@ The gateway records Orbit activity for each Solo operation with the resolved Sol
 
 ## Failure Semantics
 
-Standard failures defined in [Common Failures](../../../README.md#common-failures) apply. Solo-specific failures include `extension_disabled`, `authorization_failed`, `validation_failed`, and `solo_upstream_unavailable`.
+Standard failures defined in [Common Failures](../../../README.md#common-failures) apply. Missing or declined consent returns `validation_failed` with `meta.field=force` and `meta.reason=destructive_consent_required`. Additional Solo failures include `extension_disabled`, `authorization_failed`, and `solo_upstream_unavailable`.
 
 ## Doctor Relationship
 
@@ -52,5 +66,5 @@ The Solo domain does not own a doctor state family. Related drift belongs to nod
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php` | Read-only Solo CLI gateway request shaping, renderer envelope behavior, and gateway error mapping. |
-| `apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php` | Mutating Solo CLI gateway request shaping, consent, validation, and gateway error mapping. |
+| `apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php` | Mutating Solo CLI gateway request shaping, destructive consent, validation, and gateway error mapping. |
 | `apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php` | Gateway extension gate, authorization, activity logging, upstream proxying, and Solo upstream validation. |

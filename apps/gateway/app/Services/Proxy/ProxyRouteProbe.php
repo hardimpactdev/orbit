@@ -7,6 +7,7 @@ namespace App\Services\Proxy;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
+use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
@@ -18,6 +19,7 @@ use App\Services\Nodes\NodeContainerScope;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Tools\ToolScriptDispatcher;
+use Illuminate\Database\Eloquent\Builder;
 use Throwable;
 
 final readonly class ProxyRouteProbe
@@ -36,9 +38,12 @@ final readonly class ProxyRouteProbe
 
     private const array Kinds = ['app', 'workspace', 'internal', 'proxy', 'redirect'];
 
+    private const array WORKSPACE_OWNER_TYPES = ['workspace', Workspace::class];
+
     public function __construct(
         private ?ToolScriptDispatcher $scripts = null,
         private ?ProxyRouteRenderer $renderer = null,
+        private ?AgentToolProxyRouteIntent $agentToolRoutes = null,
     ) {}
 
     public function key(): string
@@ -551,13 +556,14 @@ final readonly class ProxyRouteProbe
      */
     public function diffNode(Node $node, ProbeSnapshot $snapshot): array
     {
-        $drift = [];
-        $allRoutes = ProxyRoute::query()->get();
-        $dbRoutes = $allRoutes
-            ->filter(fn (ProxyRoute $route): bool => $route->node_id === $node->id)
-            ->values();
-        $observedDomains = $snapshot->keys();
-        $expectedDomains = $this->expectedRouteDomainsForNode($allRoutes->all(), $node);
+        $drift = $this->diffAgentToolRouteIntent($node);
+        $allRoutes = $this->persistedRoutesForNodeEvaluation($node);
+        $dbRoutes = array_values(array_filter(
+            $allRoutes,
+            fn (ProxyRoute $route): bool => $route->node_id === $node->id,
+        ));
+        $observedDomains = $this->observedRouteDomainsForNode($node, $snapshot);
+        $expectedDomains = $this->expectedDomainsForNode($node);
 
         foreach ($dbRoutes as $route) {
             $routeDrift = $this->diff($route, $snapshot);
@@ -589,7 +595,7 @@ final readonly class ProxyRouteProbe
             $drift = array_merge($drift, $routeDrift);
         }
 
-        foreach ($snapshot->keys() as $domain) {
+        foreach ($observedDomains as $domain) {
             $domain = $domain;
 
             if (in_array($domain, $expectedDomains, true)) {
@@ -601,6 +607,76 @@ final readonly class ProxyRouteProbe
                 key: $domain,
                 kind: DriftKind::Extra,
                 summary: "Proxy route '{$domain}' exists on node but not in gateway registry.",
+            );
+        }
+
+        return $drift;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    public function diffAgentToolRouteIntent(Node $node): array
+    {
+        $drift = [];
+
+        foreach ($this->agentToolRouteIntent()->expectedRoutesForNode($node) as $expected) {
+            $actual = $this->agentToolRouteIntent()->persistedRoute($expected);
+            $expectedConfig = is_array($expected->config) ? $expected->config : [];
+
+            if (! $actual instanceof ProxyRoute) {
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.agent_tool_route_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Agent tool {$expectedConfig['owner_name']} is missing its expected proxy route {$expected->domain}.",
+                    detail: [
+                        'tool' => $expectedConfig['owner_name'] ?? null,
+                        'domain' => $expected->domain,
+                    ],
+                );
+
+                continue;
+            }
+
+            if ($this->agentToolRouteIntent()->hasOwnershipConflict($actual, $expected)) {
+                $actualConfig = is_array($actual->config) ? $actual->config : [];
+                $drift[] = new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.agent_tool_route_conflict',
+                    kind: DriftKind::Divergent,
+                    summary: "Agent tool proxy route {$expected->domain} is occupied by different proxy intent.",
+                    detail: [
+                        'tool' => $expectedConfig['owner_name'] ?? null,
+                        'domain' => $expected->domain,
+                        'observed_owner_type' => $actual->owner_type,
+                        'observed_owner_name' => $actualConfig['owner_name'] ?? null,
+                    ],
+                );
+
+                continue;
+            }
+
+            if ($this->agentToolRouteIntent()->matches($actual, $expected)) {
+                continue;
+            }
+
+            $actualConfig = is_array($actual->config) ? $actual->config : [];
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'proxy.agent_tool_route_mismatch',
+                kind: DriftKind::Divergent,
+                summary: "Agent tool proxy route {$expected->domain} differs from gateway proxy intent.",
+                detail: [
+                    'tool' => $expectedConfig['owner_name'] ?? null,
+                    'domain' => $expected->domain,
+                    'expected_kind' => $expected->kind,
+                    'observed_kind' => $actual->kind,
+                    'expected_upstream' => $expectedConfig['upstream'] ?? null,
+                    'observed_upstream' => $actualConfig['target']['value'] ?? $actualConfig['upstream'] ?? null,
+                    'expected_hash' => $expected->source_hash,
+                    'observed_hash' => $actual->source_hash,
+                ],
             );
         }
 
@@ -659,9 +735,14 @@ final readonly class ProxyRouteProbe
         }
 
         $expectedDomains = $this->expectedDomainsForNode($node);
+        $excludedDomains = $this->workspaceRouteDomainsExcludedForNode($node);
 
         foreach (new CaddyGlobalSiteBlocks()->domains($content) as $domain) {
-            if (! str_ends_with($domain, ".{$tld}") || in_array($domain, $expectedDomains, true)) {
+            if (
+                ! str_ends_with($domain, ".{$tld}")
+                || in_array($domain, $expectedDomains, true)
+                || in_array($domain, $excludedDomains, true)
+            ) {
                 continue;
             }
 
@@ -685,7 +766,26 @@ final readonly class ProxyRouteProbe
      */
     public function expectedDomainsForNode(Node $node): array
     {
-        return $this->expectedRouteDomainsForNode(ProxyRoute::query()->get()->all(), $node);
+        return array_values(array_unique([
+            ...$this->expectedRouteDomainsForNode($this->persistedRoutesForNodeEvaluation($node), $node),
+            ...array_map(
+                static fn (ProxyRoute $route): string => $route->domain,
+                $this->agentToolRouteIntent()->expectedRoutesForNode($node),
+            ),
+        ]));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function observedRouteDomainsForNode(Node $node, ProbeSnapshot $snapshot): array
+    {
+        $excludedDomains = $this->workspaceRouteDomainsExcludedForNode($node);
+
+        return array_values(array_filter(
+            $snapshot->keys(),
+            static fn (string $domain): bool => ! in_array($domain, $excludedDomains, true),
+        ));
     }
 
     /**
@@ -715,6 +815,54 @@ final readonly class ProxyRouteProbe
         }
 
         return array_values(array_unique(array_filter($domains, is_string(...))));
+    }
+
+    /**
+     * @return list<ProxyRoute>
+     */
+    private function persistedRoutesForNodeEvaluation(Node $node): array
+    {
+        $query = ProxyRoute::query();
+
+        if ($this->productionNodeExcludesWorkspaceRoutes($node)) {
+            $query
+                ->whereNull('workspace_id')
+                ->whereNotIn('owner_type', self::WORKSPACE_OWNER_TYPES)
+                ->where('kind', '!=', 'workspace');
+        }
+
+        return array_values($query->get()->all());
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function workspaceRouteDomainsExcludedForNode(Node $node): array
+    {
+        if (! $this->productionNodeExcludesWorkspaceRoutes($node)) {
+            return [];
+        }
+
+        /** @var Builder<ProxyRoute> $query */
+        $query = ProxyRoute::query();
+        $query->where(function (Builder $workspaceQuery): void {
+            $workspaceQuery
+                ->whereNotNull('workspace_id')
+                ->orWhereIn('owner_type', self::WORKSPACE_OWNER_TYPES)
+                ->orWhere('kind', 'workspace');
+        });
+
+        $routes = array_values($query->get()->all());
+
+        return array_values(array_unique([
+            ...array_map(static fn (ProxyRoute $route): string => $route->domain, $routes),
+            ...$this->expectedRouteDomainsForNode($routes, $node),
+        ]));
+    }
+
+    private function productionNodeExcludesWorkspaceRoutes(Node $node): bool
+    {
+        return app(NodeRoleAssignments::class)->nodeHasActiveRole($node, NodeRoleName::AppProduction->value);
     }
 
     /**
@@ -887,7 +1035,16 @@ final readonly class ProxyRouteProbe
             );
         }
 
+        if ($route->owner_type === 'tool') {
+            return $assignments->nodeHostsOrbitCaddy($node);
+        }
+
         return $assignments->nodeCanServeGatewayOrAppHostWorkloads($node);
+    }
+
+    private function agentToolRouteIntent(): AgentToolProxyRouteIntent
+    {
+        return $this->agentToolRoutes ?? app(AgentToolProxyRouteIntent::class);
     }
 
     /**

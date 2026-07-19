@@ -94,7 +94,6 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.dns_config_drift` | The on-disk `dnsmasq.conf` differs from what the gateway would emit from the current `node.tld` and `node.wireguard_address` of active nodes, including node-host records and role-consumed wildcard mappings. |
 | `tool.dns_client_dns_drift` | The persisted wg-easy default DNS or enabled client DNS is not pinned to the active VPN DNS endpoint. |
 | `tool.dns_forwarding_missing` | The Swarm VPN task is missing the UDP/TCP 53 DNAT and MASQUERADE rules that forward WireGuard peer DNS traffic to `orbit-dns`. |
-| `tool.agent_route_missing` | An installed agent tool with a declared internal proxy route has no tool-owned route under the target node's configured TLD. |
 | `tool.agent_user_missing` | An agent tool is installed on a node whose `agent` user is absent or not configured as the tool's runtime user. |
 | `tool.agent_orbit_cli_inaccessible` | An agent tool is installed on a node whose `agent` runtime user cannot execute `/home/agent/.local/bin/orbit --version --local` through the owner-user shim. |
 | `tool.agent_credentials_missing` | An agent tool declares credentials but no managed credential material is present on the node tool row. |
@@ -139,7 +138,6 @@ credential repair logic.
 | `tool.dns_config_drift` | Rewrite `dnsmasq.conf` from gateway intent and force the Swarm DNS service update or restart the standalone `orbit-dns` container; Swarm restore also reconverges VPN DNS forwarding. |
 | `tool.dns_client_dns_drift` | Rewrite wg-easy default/client DNS to the active VPN DNS endpoint. |
 | `tool.dns_forwarding_missing` | Reapply the VPN task namespace forwarding rules that DNAT WireGuard peer DNS traffic to `orbit-dns` and preserve return traffic. |
-| `tool.agent_route_missing` | Recreate the tool-owned internal proxy route for the agent tool under the target node's configured TLD. |
 | `tool.agent_user_missing` | Re-apply the `agent` role baseline to recreate the `agent` user. |
 | `tool.agent_credentials_missing` | Regenerate managed credential material when the tool definition declares credential generation safe. |
 | `tool.seaweedfs.credentials_missing` | Regenerate managed SeaweedFS credentials via the `seaweedfs` tool definition credential generation path. |
@@ -157,6 +155,11 @@ routes, non-tool firewall rules, node identities, or node grants. It may repair
 endpoint configuration owned by the tool only when the selected tool definition declares that
 ownership; live proxy and firewall artifact drift remains in the `proxy` and
 `firewall_rule` families.
+
+An installed agent tool row declares that an internal endpoint is expected,
+but the `proxy` family owns the derived route row, its canonical shape, the
+rendered Caddy artifact, and TLS material. A deleted or mismatched agent-tool
+route therefore never appears as `tool.*` drift.
 
 Tool fixes apply existing gateway configuration to node reality. They do not change
 `expected_version`, expected capability state, generated config, or credential

@@ -18,7 +18,9 @@ These terms define the scope of the activity command domain.
   substitute for doctor probes.
 - **Activity entry:** One gateway history record with stable fields:
   occurrence time, type, effect, subject, causer (actor), command,
-  correlation id, description, and structured properties.
+  correlation id, description, structured properties, and channel. The same
+  Activity DTO is used by `activity:list`, the selected `activity:show` entry,
+  and every correlated entry returned by `activity:show`.
 
 ## Activity Model
 
@@ -64,7 +66,31 @@ Each activity entry carries the following fields.
   Renderers may fall back to type plus subject when description is absent.
 - **Channel:** Origin of the entry. Currently `cli` (command-side emission)
   and `api` (gateway controller emission). Channel does not change which
-  fields are required.
+  fields are required. The retained `remote_shell` and `local_executor`
+  channel values can appear only on pre-existing rows requested through
+  `--include-internal`. Rows with a missing or empty channel are normalized to
+  `default` on read. Current code does not emit `remote_shell`,
+  `local_executor`, or `default`. Pre-existing `security` host-key rows are
+  normalized on read to channel `api` and effect `write`. Their stored key type
+  moves to `properties.host_key_type`.
+
+### Canonical Activity DTO
+
+Every activity read surface returns these exact fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | integer | Stable gateway activity id. |
+| `occurred_at` | string | ISO-8601 occurrence time. |
+| `correlation_id` | string \| null | UUID shared by one correlated operation. |
+| `type` | string | Stable action identifier. |
+| `effect` | string | Top-level `read`, `write`, or `destructive` classifier. It is not nested under `properties`. |
+| `subject` | object \| null | `{type, name}` subject reference when the activity has one. |
+| `actor` | object \| null | Exactly `{node: <slug>}` when the gateway knows the initiating node. |
+| `command` | string \| null | Orbit command name when one applies. |
+| `description` | string \| null | Optional human-readable description. Automation must not parse it. |
+| `properties` | object | Type-specific structured audit data after canonical top-level fields are removed. |
+| `channel` | string | Current origin channel, `cli` or `api`; pre-existing internal rows can retain their stored channel, known host-key security rows normalize to `api`, and a missing channel reads as `default`. |
 
 ## Correlation
 
@@ -165,17 +191,25 @@ These rules govern which activity rows a caller may read.
 - **Activity visibility:** Gateway-owned authorization filter that controls
   which activity rows and correlated entries a caller may read. Visibility
   is computed against the caller's WireGuard-resolved node identity.
-- **Internal activity visibility:** Backend transport audit rows such as remote
-  shell execution history are durable but hidden from default `activity:list`
-  output. Default filtering uses internal lane, channel, or event markers such
-  as `properties.lane = internal` and the `remote_shell` activity channel, not
-  effect alone. Operators inspect internal rows with
+- **Internal activity visibility:** Backend transport audit rows are durable
+  but hidden from default `activity:list` output. Current Agent-push dispatch,
+  success, and failure rows use channel `api`, types `agent_push.dispatching`
+  and `agent_push.completed`, and properties `lane = internal` plus `transport
+  = agent_push`. Bootstrap/provisioning SSH rows use channel `api`, types
+  `ssh_bootstrap.run` or `ssh_bootstrap.start`, and `transport =
+  ssh_bootstrap`.
+
+  Default filtering uses the internal lane. It also recognizes pre-existing
+  rows with `remote_shell` or `local_executor` channels and the
+  `local-executor` lane, so those rows remain hidden. Operators inspect
+  internal rows with
   `activity:list --include-internal` or the gateway `include_internal=true`
   query parameter. Internal rows still use the public effect vocabulary
-  (`read`, `write`, `destructive`). Remote shell audit records a conservative
-  `write` effect because execution may mutate node state, and carries separate
-  backend classification fields such as `lane = internal` and
-  `category = remote_execution` without exposing raw scripts, stdin, or stdout.
+  (`read`, `write`, `destructive`). Backend execution records a conservative
+  top-level `write` effect because execution may mutate node state, without
+  exposing raw scripts, stdin, or stdout. `remote_shell` is retained for read
+  compatibility only; normal current node execution is Agent push, while SSH
+  is restricted to the bootstrap/provisioning seam.
 - **Filter denial versus empty:** When a caller filters by an entity it
   cannot see, the gateway returns an authorization failure rather than an
   empty result. This prevents leaking the existence of hidden activity

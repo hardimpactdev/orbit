@@ -14,7 +14,7 @@ durable operations WebSocket plane. There is no Orbit-managed SSH path.
 
 ```bash
 orbit process:logs vite --app=docs.production
-orbit process:logs vite --app=docs.production --workspace=feature-docs --follow
+orbit process:logs vite --app=docs.development --workspace=feature-docs --follow
 orbit process:logs opencode-server --node=app-dev-1 --lines=200
 orbit process:logs queue --app=docs.production --lines=200 --json
 ```

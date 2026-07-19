@@ -7,6 +7,7 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceEnvApplier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -18,6 +19,11 @@ uses(RefreshDatabase::class);
 
 it('applies values only to the selected workspace path', function (): void {
     $node = Node::factory()->gateway()->create(['status' => 'active']);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-dev',
+        'status' => 'active',
+    ]);
     $app = App::factory()->for($node, 'node')->create([
         'runtime' => AppRuntimeKind::Static,
     ]);

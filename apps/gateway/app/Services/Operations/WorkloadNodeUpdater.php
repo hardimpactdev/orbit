@@ -428,20 +428,15 @@ final readonly class WorkloadNodeUpdater
     }
 
     /**
-     * @return array{target: string, node: string, role: string}
+     * @return array{target: string, node: string, roles: list<string>}
      */
     private function targetPayload(Node $node): array
     {
         return [
             'target' => $node->name,
             'node' => $node->name,
-            'role' => $this->roleLabel($node),
+            'roles' => $this->roles->activeRoleNames($node),
         ];
-    }
-
-    private function roleLabel(Node $node): string
-    {
-        return $this->roles->assignmentRoleLabel($node);
     }
 
     private function output(RemoteShellResult $result): string

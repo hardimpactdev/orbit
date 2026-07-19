@@ -56,7 +56,11 @@ final readonly class ScheduleLogsController implements Loggable
                 lines: $lines,
                 caller: $caller,
             );
-            $schedule = Schedule::query()->where('name', $name)->first();
+            $targetName = data_get($result, 'data.run.target.name');
+            $schedule = Schedule::query()
+                ->where('name', $name)
+                ->when(is_string($targetName), fn ($query) => $query->where('target_name', $targetName))
+                ->first();
 
             if ($schedule instanceof Schedule) {
                 $this->setScheduleActivitySubject($request, $schedule);

@@ -91,9 +91,9 @@ final readonly class DeployController
     {
         if ($request->boolean('destructive_consent') !== true) {
             return $this->error(
-                'destructive_consent_required',
+                'validation_failed',
                 'Use --force to remove this deployment step.',
-                ['field' => 'force'],
+                ['field' => 'force', 'reason' => 'destructive_consent_required'],
                 400,
             );
         }

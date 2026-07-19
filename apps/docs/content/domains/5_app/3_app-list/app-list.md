@@ -38,8 +38,8 @@ Run `app:list` to read visible logical apps from the gateway:
    Gateway callers can inspect every logical app.
 3. Counts only concrete app instances and workspaces whose placement is visible
    to the caller.
-4. Returns each logical app with its repository plus a parallel inventory entry
-   containing its visible instance and workspace counts.
+4. Returns each logical app as one compact row with its repository, aggregate
+   dependency posture, and visible instance/workspace counts.
 5. In interactive human mode, presents those rows in the Laravel Prompts data
    list and opens the selected app's `app:show` drill-down.
 
@@ -60,10 +60,9 @@ and workspace placement detail as `app:show <app>`.
 Human output requires an interactive terminal. Scripts and other
 non-interactive callers use `orbit app:list --json`.
 
-JSON output returns a flat list of apps in the same order under the standard
-machine-readable result. Each app retains its placement-visible registered
-workspaces as a nested `workspaces` array. A parallel `inventory` array contains
-the `instance_count` and `workspace_count` values keyed by app name. See the
+JSON output returns a flat list of compact logical-app summaries. Counts live
+on the matching app row; there is no parallel inventory and no node, URL, path,
+runtime, instance, or nested workspace placement. See the
 [JSON renderer contract](technical/6.2_app-list_output-render_json.md) for the
 exact payload shape.
 
@@ -73,8 +72,9 @@ exact payload shape.
 - The caller identity can read at least one concrete Orbit app instance.
 - An `app-dev` or `app-prod` self grant exposes logical apps with an instance
   on that node.
-- Additional grants can expose more logical apps and their placement-scoped
-  workspaces.
+- Additional grants can expose more logical apps and increase the placement
+  counts visible to the caller. Workspaces can contribute only through
+  `app-dev` instances because production instances do not own workspaces.
 
 ## Related Commands
 

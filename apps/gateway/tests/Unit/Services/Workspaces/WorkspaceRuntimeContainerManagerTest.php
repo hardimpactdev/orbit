@@ -45,7 +45,7 @@ afterEach(function (): void {});
 
 function workspaceAndNodeForManagerTest(): array
 {
-    $node = Node::factory()->create(['user' => 'orbit']);
+    $node = createTestAppHostNode(['user' => 'orbit'], 'app-dev');
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'demo',
         'path' => '/home/orbit/apps/demo',

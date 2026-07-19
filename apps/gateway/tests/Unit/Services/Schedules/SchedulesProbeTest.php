@@ -302,7 +302,7 @@ describe('SchedulesProbe', function (): void {
         ]);
         ScheduleLock::factory()->create([
             'node_id' => $gateway->id,
-            'schedule_key' => 'app:docs:laravel-scheduler',
+            'schedule_key' => 'app:docs.production:laravel-scheduler',
             'locked_at' => now()->subMinutes(30),
             'expires_at' => now()->subMinutes(20),
         ]);

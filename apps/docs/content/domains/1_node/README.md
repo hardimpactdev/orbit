@@ -91,9 +91,10 @@ to a non-gateway node. The node's self-grant must include the permissions for
 that write. See
 [architecture.md#self-grants-and-self-serving](../../architecture.md#self-grants-and-self-serving).
 [`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md) is
-the most visible example today — it works because the `app-dev` and
-`app-prod` self-grant baselines include the workspace permissions it
-needs.
+the most visible example today — it works because the `app-dev` self-grant
+baseline includes the workspace permissions it needs. `app-prod` self-grants
+include no wildcard or workspace permission; production app services never
+operate workspaces.
 
 ### Compatibility matrix
 
@@ -479,6 +480,12 @@ to the registry in the future. `gateway-admin` is the explicit preset that
 expands to `*` on a grant to the gateway. `node:*` follows the same rule
 inside the `node:` namespace.
 
+The workspace boundary narrows that general vocabulary: a normalized set
+containing `*` or any `workspace:*` permission is invalid when the consuming
+node has `app-prod`, or when the serving node has `app-prod`.
+This keeps production app services out of workspace operation even across
+cross-node grants.
+
 ## Node Identity Issuance
 
 Every CLI caller must present a gateway-known WireGuard identity before it can
@@ -504,8 +511,10 @@ installation steps.
 
 First-gateway bootstrap is a complete onboarding flow for the initiating
 client. When a client with no configured gateway runs
-`orbit node:new <gateway-name> --template=gateway --host=<host> --operator-name=<operator-name>`,
-Orbit provisions the gateway and creates the initiating client identity named by `<operator-name>`.
+`orbit node:new <gateway-name> --template=gateway --host=<host> --tld=<gateway-tld> --operator-name=<operator-name> --operator-tld=<operator-tld>`,
+Orbit provisions the gateway with `<gateway-tld>` as its node identity and
+creates the initiating client identity named by `<operator-name>` with the
+separate `<operator-tld>` identity.
 It then installs that local WireGuard identity, trusts the gateway CA, and stores local
 gateway configuration using `<host>` as the initial gateway endpoint for WireGuard peer configs.
 Finally it verifies gateway API access.

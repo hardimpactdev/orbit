@@ -13,8 +13,6 @@ return [
         'runtime' => 'string',
         'runtime_config' => 'object|null',
         'php_version' => 'string',
-        'worker_enabled' => 'bool',
-        'worker_config' => 'array|null',
         'adopted' => 'bool',
     ],
     'optional' => [],

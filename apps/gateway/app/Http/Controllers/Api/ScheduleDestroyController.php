@@ -32,7 +32,12 @@ final readonly class ScheduleDestroyController implements Loggable
         }
 
         if ($request->boolean('destructive_consent') !== true) {
-            return $this->error('validation_failed', 'Use --force to remove this schedule.', ['field' => 'force'], 422);
+            return $this->error(
+                'validation_failed',
+                'Use --force to remove this schedule.',
+                ['field' => 'force', 'reason' => 'destructive_consent_required'],
+                422,
+            );
         }
 
         try {
@@ -87,6 +92,10 @@ final readonly class ScheduleDestroyController implements Loggable
 
     private function status(GatewayApiException $e): int
     {
+        if ($e->errorCode() === 'authorization_failed') {
+            return 403;
+        }
+
         return $e->errorCode() === 'schedule.not_found' ? 404 : 422;
     }
 

@@ -33,6 +33,7 @@ final readonly class SchedulesProbe
         private ?RunsInternalCommands $localExecutor = null,
         private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
         private GatewaySwarmManager $swarm = new GatewaySwarmManager,
+        private ?ScheduleAppInstanceResolver $appInstances = null,
     ) {}
 
     public function key(): string
@@ -150,11 +151,17 @@ final readonly class SchedulesProbe
     {
         $validScope = in_array($schedule->scope, ['app', 'node', 'orbit'], true);
         $validExecution = in_array($schedule->execution_type, ['command', 'script'], true);
+        $validAppOwnership =
+            $schedule->scope !== 'app'
+            || $schedule->app_id !== null
+            && $schedule->app_instance_id !== null
+            && $schedule->appInstance?->app_id === $schedule->app_id;
 
         if (
             $schedule->schedule_key === ''
             || $schedule->name === ''
             || ! $validScope
+            || ! $validAppOwnership
             || $schedule->target_name === ''
             || $schedule->interval === ''
             || $schedule->timezone === ''
@@ -482,10 +489,14 @@ final readonly class SchedulesProbe
 
     private function targetNode(Schedule $schedule): ?Node
     {
-        $schedule->loadMissing(['app.node', 'node']);
+        $schedule->loadMissing(['app', 'appInstance', 'node']);
 
         if ($schedule->scope === 'app') {
-            return $schedule->app?->node;
+            if ($schedule->appInstance?->app_id !== $schedule->app_id) {
+                return null;
+            }
+
+            return $this->appInstanceResolver()->targetNode($schedule);
         }
 
         if ($schedule->scope === 'node') {
@@ -504,6 +515,11 @@ final readonly class SchedulesProbe
         return $this->nodeRoleAssignments
             ->activeGatewayNodeQuery()
             ->first();
+    }
+
+    private function appInstanceResolver(): ScheduleAppInstanceResolver
+    {
+        return $this->appInstances ?? app(ScheduleAppInstanceResolver::class);
     }
 
     private function canRunSchedules(Node $node): bool

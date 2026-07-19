@@ -91,6 +91,10 @@ final readonly class DoctorReportRunner
 
     private const int FLEET_PROBE_POLL_INTERVAL_MICROSECONDS = 50_000;
 
+    private const array WORKSPACE_PROCESS_OWNER_TYPES = [Workspace::class, 'workspace'];
+
+    private const array WORKSPACE_PROXY_OWNER_TYPES = ['workspace', Workspace::class];
+
     private const array SUPPORTED_FAMILIES = [
         'node',
         'app',
@@ -128,7 +132,7 @@ final readonly class DoctorReportRunner
 
     private const array DATABASE_CATEGORIES = ['node', 'tool', 'process'];
 
-    private const array AGENT_CATEGORIES = ['node', 'tool'];
+    private const array AGENT_CATEGORIES = ['node', 'tool', 'proxy'];
 
     private const array INGRESS_CATEGORIES = ['node', 'proxy', 'tool'];
 
@@ -217,6 +221,35 @@ final readonly class DoctorReportRunner
 
         /** @var Collection<int, Workspace> $workspaces */
         return $workspaces;
+    }
+
+    /**
+     * @return Collection<int, Process>
+     */
+    private function processesForNode(Node $node): Collection
+    {
+        /** @var Collection<int, Process> $processes */
+        $processes = $this
+            ->processQueryForNode($node)
+            ->with(['owner', 'appInstance'])
+            ->get();
+
+        return $processes;
+    }
+
+    /**
+     * @return Builder<Process>
+     */
+    private function processQueryForNode(Node $node): Builder
+    {
+        /** @var Builder<Process> $query */
+        $query = Process::query()->where('node_id', $node->id);
+
+        if ($this->productionNodeExcludesWorkspaces($node)) {
+            $query->whereNotIn('owner_type', self::WORKSPACE_PROCESS_OWNER_TYPES);
+        }
+
+        return $query;
     }
 
     /**
@@ -1245,17 +1278,23 @@ final readonly class DoctorReportRunner
 
         if (in_array('app', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
-            $apps = App::query()->with(['node', 'instances'])->where('node_id', $node->id)->get();
-            $appInstances = $this->appInstancesForNode($node);
-            $appCheckTotal = $apps->count() + $appInstances->count() + 1;
+            $appInstances = $this->scopedAppInstances($this->appInstancesForNode($node), $scope);
+            $includeNodeConfigInventory = $scope->app === null && $scope->appInstanceId === null;
+            $appCheckTotal = $appInstances->count() + ($includeNodeConfigInventory ? 1 : 0);
 
             $this->runFamilyCheckPlan($onFamilyProgress, 'app', $appCheckTotal, function (callable $advance) use (
-                $apps,
                 $appInstances,
+                $includeNodeConfigInventory,
                 $node,
                 &$issues,
             ): void {
-                $this->probeAppFamily($node, $apps, $appInstances, $issues, $advance);
+                $this->probeAppFamily(
+                    $node,
+                    $appInstances,
+                    $includeNodeConfigInventory,
+                    $issues,
+                    $advance,
+                );
             });
 
             $this->reportFamilyProgress(
@@ -1298,14 +1337,13 @@ final readonly class DoctorReportRunner
         if (in_array('process', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
             $missingRuntimeProcessIssues = $this->missingFrankenPhpRuntimeProcessIssues($node);
+            $processes = $this->processesForNode($node);
             $this->runFamilyCheckPlan(
                 $onFamilyProgress,
                 'process',
-                count($missingRuntimeProcessIssues)
-                + Process::query()->with('owner')->where('node_id', $node->id)->count()
-                + 1,
-                function (callable $advance) use ($missingRuntimeProcessIssues, $node, &$issues): void {
-                    foreach (Process::query()->with('owner')->where('node_id', $node->id)->get() as $process) {
+                count($missingRuntimeProcessIssues) + $processes->count() + 1,
+                function (callable $advance) use ($missingRuntimeProcessIssues, $node, $processes, &$issues): void {
+                    foreach ($processes as $process) {
                         $snapshot = $this->processesProbe->introspect($process);
 
                         foreach ($this->processesProbe->diff($process, $snapshot) as $entry) {
@@ -1348,8 +1386,9 @@ final readonly class DoctorReportRunner
             $proxyCheckTotal =
                 $proxyRoutes->count()
                 + 2
+                + ($scope->app === null && $scope->workspace === null ? 1 : 0)
                 + ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node) ? 1 : 0)
-                + ($node->isActive() && $this->canServeGatewayOrAppHost($node) ? 1 : 0);
+                + ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node) ? 1 : 0);
 
             $this->runFamilyCheckPlan($onFamilyProgress, 'proxy', $proxyCheckTotal, function (callable $advance) use (
                 $node,
@@ -1615,7 +1654,7 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  list<string>  $families
-     * @return array{families: list<string>, node: string, role: string, self: false, app: string|null, workspace: string|null, key: string|null}
+     * @return array{families: list<string>, node: string, role: string, self: false, app: string|null, app_instance: string|null, workspace: string|null, key: string|null}
      */
     private function reportScope(
         array $families,
@@ -1629,6 +1668,7 @@ final readonly class DoctorReportRunner
             'role' => $node->displayRole(),
             'self' => false,
             'app' => $scope->app,
+            'app_instance' => $scope->appInstance,
             'workspace' => $scope->workspace,
             'key' => $key,
         ];
@@ -1658,35 +1698,16 @@ final readonly class DoctorReportRunner
     }
 
     /**
-     * @param  Collection<int, App>  $apps
      * @param  Collection<int, AppInstance>  $appInstances
      * @param  list<array<string, mixed>>  $issues
      */
     private function probeAppFamily(
         Node $node,
-        Collection $apps,
         Collection $appInstances,
+        bool $includeNodeConfigInventory,
         array &$issues,
         callable $advance,
     ): void {
-        foreach ($apps as $app) {
-            $snapshot = $this->appsProbe->introspect($app);
-
-            foreach ($this->appsProbe->diff($app, $snapshot) as $entry) {
-                $issues[] = $this->appIssuePayload($entry, $app);
-            }
-
-            $app->loadMissing('instances');
-
-            foreach ($app->instances as $instance) {
-                foreach ($this->appRuntimeRequirementProbe->drift($instance) as $entry) {
-                    $issues[] = $this->appIssuePayload($entry, $app);
-                }
-            }
-
-            $advance();
-        }
-
         foreach ($appInstances as $instance) {
             $app = $instance->app;
 
@@ -1703,20 +1724,18 @@ final readonly class DoctorReportRunner
             $advance();
         }
 
-        $activePhpAppSlugs = App::query()
-            ->where('node_id', $node->id)
-            ->where('runtime', AppRuntimeKind::Php->value)
-            ->pluck('name')
+        if (! $includeNodeConfigInventory) {
+            return;
+        }
+
+        $activePhpAppSlugs = $this
+            ->appInstancesForNode($node)
+            ->filter(fn (AppInstance $instance): bool => $instance->app->runtimeKind() === AppRuntimeKind::Php)
+            ->map(fn (AppInstance $instance): string => app(AppRuntimeContainerRenderer::class)->instanceSlug(
+                $instance->app,
+                $instance,
+            ))
             ->all();
-        $activePhpAppSlugs = [
-            ...$activePhpAppSlugs,
-            ...$appInstances
-                ->map(fn (AppInstance $instance): string => app(AppRuntimeContainerRenderer::class)->instanceSlug(
-                    $instance->app,
-                    $instance,
-                ))
-                ->all(),
-        ];
 
         $configProbe = $this->appsProbe->introspectNodeRuntimeConfigs($node);
         $configSnapshot = $configProbe->configs;
@@ -1772,8 +1791,7 @@ final readonly class DoctorReportRunner
             ->get()
             ->filter(
                 fn (AppInstance $instance): bool => (
-                    $instance->app->runtimeKind() === AppRuntimeKind::Php
-                    && $this->workspacePlacement->nodeForInstance($instance)?->id === $node->id
+                    $this->workspacePlacement->nodeForInstance($instance)?->id === $node->id
                 ),
             )
             ->values();
@@ -1782,18 +1800,41 @@ final readonly class DoctorReportRunner
     }
 
     /**
+     * @param  Collection<int, AppInstance>  $instances
+     * @return Collection<int, AppInstance>
+     */
+    private function scopedAppInstances(Collection $instances, DoctorTargetScope $scope): Collection
+    {
+        /** @var list<AppInstance> $scoped */
+        $scoped = [];
+
+        foreach ($instances as $instance) {
+            if ($scope->appInstanceId !== null && $instance->id !== $scope->appInstanceId) {
+                continue;
+            }
+
+            if ($scope->appInstanceId === null && $scope->app !== null && $instance->app->name !== $scope->app) {
+                continue;
+            }
+
+            $scoped[] = $instance;
+        }
+
+        return new Collection($scoped);
+    }
+
+    /**
      * @return list<string>
      */
     private function activePhpRuntimeSlugsForNode(Node $node): array
     {
-        $slugs = App::query()
-            ->where('node_id', $node->id)
-            ->where('runtime', AppRuntimeKind::Php->value)
-            ->get(['name'])
-            ->map(static fn (App $app): string => $app->name)
-            ->all();
+        $slugs = [];
 
         foreach ($this->appInstancesForNode($node) as $instance) {
+            if ($instance->app->runtimeKind() !== AppRuntimeKind::Php) {
+                continue;
+            }
+
             $slugs[] = app(AppRuntimeContainerRenderer::class)->instanceSlug($instance->app, $instance);
         }
 
@@ -1869,6 +1910,13 @@ final readonly class DoctorReportRunner
             ->with(['node', 'app', 'workspace'])
             ->where('node_id', $node->id);
 
+        if ($this->productionNodeExcludesWorkspaces($node)) {
+            $query
+                ->whereNull('workspace_id')
+                ->whereNotIn('owner_type', self::WORKSPACE_PROXY_OWNER_TYPES)
+                ->where('kind', '!=', 'workspace');
+        }
+
         if ($scope->app !== null) {
             $query->whereHas('app', static fn (Builder $appQuery): Builder => $appQuery->where('name', $scope->app));
         }
@@ -1899,6 +1947,14 @@ final readonly class DoctorReportRunner
 
             foreach ($this->proxyRouteProbe->diff($route, $snapshot) as $entry) {
                 $issues[] = $this->proxyIssuePayload($entry, $route);
+            }
+
+            $advance();
+        }
+
+        if ($scope->app === null && $scope->workspace === null) {
+            foreach ($this->proxyRouteProbe->diffAgentToolRouteIntent($node) as $entry) {
+                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
             }
 
             $advance();
@@ -1947,7 +2003,7 @@ final readonly class DoctorReportRunner
             $advance();
         }
 
-        if (! $node->isActive() || ! $this->canServeGatewayOrAppHost($node)) {
+        if (! $node->isActive() || ! $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node)) {
             return;
         }
 
@@ -1955,7 +2011,7 @@ final readonly class DoctorReportRunner
             $snapshot = $this->proxyRouteProbe->introspectNode($node);
             $expectedDomains = $this->proxyRouteProbe->expectedDomainsForNode($node);
 
-            foreach ($snapshot->keys() as $domain) {
+            foreach ($this->proxyRouteProbe->observedRouteDomainsForNode($node, $snapshot) as $domain) {
                 if (in_array($domain, $expectedDomains, true)) {
                     continue;
                 }
@@ -2083,6 +2139,10 @@ final readonly class DoctorReportRunner
 
         foreach ($issues as $issue) {
             if (! $this->issueSupportsMode($issue, $mode)) {
+                continue;
+            }
+
+            if ($this->productionNodeWorkspaceIssue($node, $issue)) {
                 continue;
             }
 
@@ -2376,6 +2436,21 @@ final readonly class DoctorReportRunner
     {
         $snapshot = $this->proxyRouteProbe->snapshotForAdopt($node);
 
+        if ($this->productionNodeExcludesWorkspaces($node)) {
+            /** @var list<string> $excludedDomains */
+            $excludedDomains = ProxyRoute::query()
+                ->where('node_id', $node->id)
+                ->where(function (Builder $query): void {
+                    $query
+                        ->whereNotNull('workspace_id')
+                        ->orWhereIn('owner_type', self::WORKSPACE_PROXY_OWNER_TYPES)
+                        ->orWhere('kind', 'workspace');
+                })
+                ->pluck('domain')
+                ->all();
+            $snapshot = new ProbeSnapshot(array_diff_key($snapshot->items, array_fill_keys($excludedDomains, true)));
+        }
+
         if ($scope->app === null && $scope->workspace === null) {
             return $snapshot;
         }
@@ -2391,6 +2466,11 @@ final readonly class DoctorReportRunner
     private function canServeGatewayOrAppHost(Node $node): bool
     {
         return $this->nodeRoleAssignments->nodeCanServeGatewayOrAppHostWorkloads($node);
+    }
+
+    private function productionNodeExcludesWorkspaces(Node $node): bool
+    {
+        return $this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::AppProduction->value);
     }
 
     private function isUbuntuPlatform(Node $node): bool
@@ -2464,6 +2544,119 @@ final readonly class DoctorReportRunner
         }
 
         return $resolved;
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function productionNodeWorkspaceIssue(Node $node, array $issue): bool
+    {
+        if (! $this->productionNodeExcludesWorkspaces($node)) {
+            return false;
+        }
+
+        $family = is_string($issue['family'] ?? null) ? $issue['family'] : null;
+        /** @var array<string, mixed> $detail */
+        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+
+        return match ($family) {
+            'process' => $this->processIssueTargetsWorkspace($node, $detail),
+            'proxy' => $this->proxyIssueTargetsWorkspace($detail),
+            'database_connection' => $this->databaseConnectionIssueTargetsWorkspace($detail),
+            default => false,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     */
+    private function processIssueTargetsWorkspace(Node $node, array $detail): bool
+    {
+        if (is_string($detail['workspace'] ?? null)) {
+            return true;
+        }
+
+        $processName = is_string($detail['process'] ?? null) ? $detail['process'] : null;
+
+        if ($processName === null) {
+            return false;
+        }
+
+        /** @var Builder<Process> $query */
+        $query = Process::query();
+        $query
+            ->where('node_id', $node->id)
+            ->where('name', $processName)
+            ->whereIn('owner_type', self::WORKSPACE_PROCESS_OWNER_TYPES);
+        $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
+        $appInstanceName = is_string($detail['app_instance'] ?? null) ? $detail['app_instance'] : null;
+
+        if ($appName !== null && $appInstanceName !== null) {
+            $query->whereHas(
+                'appInstance',
+                fn (Builder $instanceQuery): Builder => $instanceQuery
+                    ->where('name', $appInstanceName)
+                    ->whereHas(
+                        'app',
+                        fn (Builder $appQuery): Builder => $appQuery->where('name', $appName),
+                    ),
+            );
+        }
+
+        /** @var Collection<int, Process> $processes */
+        $processes = $query->with('appInstance.app')->get();
+        $runtimeUnit = is_string($detail['runtime_unit'] ?? null) ? $detail['runtime_unit'] : null;
+
+        if ($runtimeUnit === null) {
+            return $processes->isNotEmpty();
+        }
+
+        foreach ($processes as $process) {
+            if ($process->owner_type !== Workspace::class) {
+                return true;
+            }
+
+            $process->loadMissing('owner');
+
+            if ($this->runtimeUnitNameForProcess($node, $process) === $runtimeUnit) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     */
+    private function proxyIssueTargetsWorkspace(array $detail): bool
+    {
+        $domain = is_string($detail['domain'] ?? null) ? $detail['domain'] : null;
+
+        if ($domain === null) {
+            return false;
+        }
+
+        $route = ProxyRoute::query()->where('domain', $domain)->first();
+
+        return $route instanceof ProxyRoute && $this->proxyRouteIsWorkspaceOwned($route);
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     */
+    private function databaseConnectionIssueTargetsWorkspace(array $detail): bool
+    {
+        return ($detail['target_type'] ?? null) === 'workspace' || is_string($detail['workspace'] ?? null);
+    }
+
+    private function proxyRouteIsWorkspaceOwned(ProxyRoute $route): bool
+    {
+        return (
+            $route->workspace_id !== null
+            || in_array($route->owner_type, self::WORKSPACE_PROXY_OWNER_TYPES, true)
+            || $route->kind === 'workspace'
+        );
     }
 
     /**
@@ -3416,9 +3609,9 @@ final readonly class DoctorReportRunner
         }
 
         /** @var Collection<int, Process> $processes */
-        $processes = Process::query()
+        $processes = $this
+            ->processQueryForNode($node)
             ->with(['owner', 'appInstance.app'])
-            ->where('node_id', $node->id)
             ->where('name', $processName)
             ->when(
                 $appName !== null && $appInstanceName !== null,
@@ -3702,6 +3895,14 @@ final readonly class DoctorReportRunner
     {
         $node = $this->nodeFromIssue($issue) ?? $fallbackNode;
 
+        if (in_array($key, ['proxy.agent_tool_route_missing', 'proxy.agent_tool_route_mismatch'], true)) {
+            return $this->handleAgentToolProxyAction(
+                $mode,
+                $node,
+                $this->driftEntryFromIssue($issue),
+            );
+        }
+
         if (in_array(
             $key,
             [
@@ -3805,6 +4006,33 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->proxyRouteFixer->fixCaddyContainer($node, $entry);
+        } catch (\Throwable $e) {
+            return [
+                'family' => $entry->family,
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => $mode,
+                'status' => 'failed',
+                'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleAgentToolProxyAction(string $mode, Node $node, DriftEntry $entry): ?array
+    {
+        if ($mode === 'verify') {
+            return null;
+        }
+
+        try {
+            return $this->proxyRouteFixer->restoreAgentToolRoute($node, $entry);
         } catch (\Throwable $e) {
             return [
                 'family' => $entry->family,
@@ -4191,6 +4419,8 @@ final readonly class DoctorReportRunner
             'proxy.caddy_container_down',
             'proxy.global_config_missing',
             'proxy.global_config_mismatch',
+            'proxy.agent_tool_route_missing',
+            'proxy.agent_tool_route_mismatch',
             WebSocketProxyDoctorProbe::RouterRouteKey,
             WebSocketProxyDoctorProbe::PublicRouteKey,
             S3ProxyDoctorProbe::RouterRouteKey,
@@ -4216,7 +4446,6 @@ final readonly class DoctorReportRunner
             'process.event_notifier_missing',
             'process.event_notifier_mismatch',
             'tool.capability_missing',
-            'tool.agent_route_missing',
             'tool.container_missing',
             'tool.container_not_running',
             'tool.container_spec_mismatch',
@@ -4859,10 +5088,12 @@ final readonly class DoctorReportRunner
 
     private function scheduleNodeName(Schedule $schedule): ?string
     {
-        $schedule->loadMissing(['app.node', 'node']);
+        $schedule->loadMissing(['app', 'appInstance', 'node']);
 
         if ($schedule->scope === 'app') {
-            return $schedule->app?->node?->name;
+            return $schedule->appInstance instanceof AppInstance
+                ? $this->workspacePlacement->nodeForInstance($schedule->appInstance)?->name
+                : null;
         }
 
         if ($schedule->scope === 'node') {
@@ -4885,7 +5116,7 @@ final readonly class DoctorReportRunner
     {
         if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
             return Schedule::query()
-                ->with(['app.node', 'node'])
+                ->with(['app', 'appInstance', 'node'])
                 ->where('enabled', true)
                 ->where('status', 'expected')
                 ->get();
@@ -4893,7 +5124,7 @@ final readonly class DoctorReportRunner
 
         return $this
             ->expectedSchedulesTargetingNode($node)
-            ->with(['app.node', 'node'])
+            ->with(['app', 'appInstance', 'node'])
             ->get();
     }
 
@@ -4904,14 +5135,15 @@ final readonly class DoctorReportRunner
     {
         /** @var Builder<Schedule> $query */
         $query = Schedule::query();
+        $appInstanceIds = $this->appInstancesForNode($node)->pluck('id')->all();
 
         return $query
             ->where('enabled', true)
             ->where('status', 'expected')
-            ->where(function (Builder $query) use ($node): void {
+            ->where(function (Builder $query) use ($node, $appInstanceIds): void {
                 $query
                     ->where('node_id', $node->id)
-                    ->orWhereHas('app', fn (Builder $appQuery): Builder => $appQuery->where('node_id', $node->id));
+                    ->orWhereIn('app_instance_id', $appInstanceIds);
             });
     }
 

@@ -75,6 +75,7 @@ final class ProcessStoreController implements Loggable
                 version: $input['version'],
                 image: $input['image'],
                 replaceContainers: $input['replace_containers'],
+                consumer: $caller,
             );
         } catch (GatewayApiException $e) {
             return $this->error(

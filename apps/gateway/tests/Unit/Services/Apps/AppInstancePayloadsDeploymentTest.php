@@ -19,14 +19,22 @@ it('publishes deployment state from the concrete app instance', function (): voi
         'deploy_warmup_paths' => ['/health'],
         'latest_deployment_status' => 'completed',
         'latest_deployment_run_id' => 42,
+        'worker_enabled' => true,
+        'worker_config' => ['workers' => 4, 'max_requests' => 500],
     ]);
 
-    expect(app(AppInstancePayloads::class)->instance($instance))
+    $payload = app(AppInstancePayloads::class)->instance($instance);
+
+    expect($payload)
         ->toMatchArray([
             'app' => 'docs',
             'name' => 'production',
             'deploy_warmup_paths' => ['/health'],
             'latest_deployment_status' => 'completed',
             'latest_deployment_run_id' => 42,
-        ]);
+            'worker_enabled' => true,
+            'worker_config' => ['workers' => 4, 'max_requests' => 500],
+        ])
+        ->and($payload['runtime']['mode'])
+        ->toBe('worker');
 });

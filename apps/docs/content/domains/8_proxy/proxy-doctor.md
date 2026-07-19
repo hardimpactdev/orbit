@@ -6,7 +6,12 @@ The proxy family doctor implements the
 [Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
 `key()` returns `proxy`.
 
-`doctor --family=proxy` verifies whether gateway proxy route configuration still matches node proxy and TLS reality. It covers all Orbit-owned routes — app, workspace, gateway API, websocket, S3, analytics, tool-owned, and custom proxy routes — and their TLS material.
+`doctor --family=proxy` verifies whether gateway proxy route configuration still matches node proxy and TLS reality. It covers all supported Orbit-owned routes — app, workspace, gateway API, websocket, S3, analytics, tool-owned, and custom proxy routes — and their TLS material. For installed agent tools, the proxy family derives the expected internal route from the tool row and node TLD, so it can detect a route row that was deleted rather than inspecting only rows that still exist.
+
+An `app-prod` target never admits workspace route rows, unsupported workspace
+owner markers, workspace domains, or workspace TLS expectations into route or shared
+global-config comparison. Supported app and node proxy drift remains visible.
+Explicit workspace scope is rejected before this probe runs.
 
 When Doctor is scoped with `--app` or `--workspace`, route-specific probing,
 planning, and restore/adopt actions are limited to that owner. Shared
@@ -19,6 +24,8 @@ The proxy family owns these facts:
 - gateway-owned proxy route rows: domain, kind, owner, serving node, target,
   redirect code, TLS policy, and backend metadata needed to identify the applied
   route;
+- expected agent-tool internal route intent derived from installed agent tool
+  rows and each tool node's configured TLD;
 - managed proxy backend artifacts rendered from those rows;
 - managed TLS material needed by those routes;
 - hostname compatibility material derived from Orbit-managed TLS that app-role
@@ -38,7 +45,8 @@ Proxy doctor never probes a host `caddy.service`. Host Caddy is not part of the 
 The proxy probe reads gateway proxy route configuration and checks these layers:
 
 1. **Registry configuration:** every selected route has a valid domain, kind, owner,
-   serving node, target, and TLS policy.
+   serving node, target, and TLS policy. Installed agent tools contribute an
+   expected route even when no proxy route row remains.
 2. **Owner eligibility:** the owner reference still resolves when the route is
    owned by an app, app WebSocket binding, workspace, gateway route, router
    service, S3 publication, or tool.
@@ -87,9 +95,12 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.owner_invalid` | An app, app-websocket binding, workspace, gateway, router service, S3 publication, or tool owner reference does not resolve to a valid gateway-owned record. |
 | `proxy.node_invalid` | The route points at a missing, inactive, unsupported, or role-incompatible serving node. |
 | `proxy.domain_conflict` | A custom route claims a domain owned by an app, app WebSocket binding, workspace, gateway, router service, S3 publication, or tool route. |
-| `proxy.docker_runtime_unavailable` | The serving node's Docker CLI is missing or the Docker daemon is unreachable, so `orbit-caddy` container readiness cannot be probed. Repair the node runtime through `doctor --family=node --restore` first. |
+| `proxy.docker_runtime_unavailable` | The serving node's Docker CLI is missing or the Docker daemon is unreachable, so `orbit-caddy` container readiness cannot be probed. Repair the Docker tool baseline through `doctor --family=tool --restore` first. |
 | `proxy.caddy_container_missing` | The `orbit-caddy` container is absent on a serving node that still owns proxy routes. |
 | `proxy.caddy_container_down` | The `orbit-caddy` container exists on the serving node but is not running. Mounted route artifacts are not served. |
+| `proxy.agent_tool_route_missing` | An installed agent tool expects an internal route under its node TLD, but the gateway proxy route row is absent. |
+| `proxy.agent_tool_route_mismatch` | The expected agent-tool route row exists for the same tool but its serving node, kind, upstream, owner shape, or source hash differs from canonical proxy intent. |
+| `proxy.agent_tool_route_conflict` | The expected agent-tool domain is occupied by a custom route or a different tool. Proxy doctor reports the conflict but does not overwrite the other owner. |
 | `proxy.route_missing` | Gateway configuration expects a managed backend route, but the route is absent from node reality. |
 | `proxy.route_mismatch` | A managed backend route exists but differs from gateway configuration. |
 | `proxy.enactment_incomplete` | Persisted enactment is failed, partial, or pending. Restore reports it with artifact drift and retries backend → router → ingress. |
@@ -120,6 +131,8 @@ only when that readback is clean.
 | --- | --- |
 | `proxy.caddy_container_missing` | Reconcile the `orbit-caddy` container on the serving node from its managed spec, then re-render the mounted Caddy config. |
 | `proxy.caddy_container_down` | Start the existing `orbit-caddy` container so mounted route artifacts are served again. |
+| `proxy.agent_tool_route_missing` | Recreate the expected tool-owned route row from the installed agent tool and node TLD, then render its Caddy artifact and TLS material. |
+| `proxy.agent_tool_route_mismatch` | Rewrite a same-tool route row to canonical proxy intent, then re-render its Caddy artifact and TLS material. |
 | `proxy.route_missing` | Recreate the backend route from gateway configuration when the node is reachable and eligible. |
 | `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when the route can be identified safely. For app primary routes that resolve to an app instance, restore also persists the concrete app-instance target, runtime upstream, and inner-TLS server name before writing the backend route. |
 | `proxy.enactment_incomplete` | Retry the app route's complete backend → router → ingress enactment. The persisted state becomes converged only after every operation succeeds; a retry failure retains partial state and reports the exact node and operation. |
@@ -137,7 +150,7 @@ only when that readback is clean.
 | `proxy.tls_mismatch` | Reissue or relink the TLS material so its path and 397-day validity match Orbit policy, then force-reload Caddy so an unchanged route configuration reprovisions the active certificate from disk. |
 | `proxy.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |
 
-`doctor --restore` does not handle `proxy.record_incomplete`, `proxy.owner_invalid`, `proxy.node_invalid`, `proxy.domain_conflict`, or `proxy.docker_runtime_unavailable`. The Docker runtime gap is a node-runtime concern; resolve it through `doctor --family=node --restore` before re-running proxy doctor.
+`doctor --restore` does not handle `proxy.record_incomplete`, `proxy.owner_invalid`, `proxy.node_invalid`, `proxy.domain_conflict`, `proxy.agent_tool_route_conflict`, or `proxy.docker_runtime_unavailable`. The Docker runtime gap is tool-family capability drift; resolve it through `doctor --family=tool --restore` before re-running proxy doctor.
 
 ## Proxy Adopt Map
 
@@ -157,8 +170,8 @@ Required test files:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for proxy family scope, proxy drift reporting, and restore behavior. |
-| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | In-memory proxy probe diff behavior for registry configuration, owner eligibility, node eligibility, conflict boundaries, missing routes, mismatched routes, incomplete enactment, TLS drift, and selected extra routes in adoption scope. |
-| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` | Restore behavior for complete app-route re-enactment and layer-specific artifact repairs. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | Probe drift for registry, derived agent-tool route intent, ownership, node eligibility, artifacts, TLS, and safe adoption. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` | Restore behavior for deleted and mismatched agent-tool routes, complete app-route re-enactment, and layer-specific artifact repairs. |
 | `apps/gateway/tests/Unit/Services/Analytics/AnalyticsProxyDoctorProbeTest.php` | Analytics service-route registry drift, orphan detection, and restore behavior. |
 
 No current E2E test is mapped for proxy-family doctor coverage.

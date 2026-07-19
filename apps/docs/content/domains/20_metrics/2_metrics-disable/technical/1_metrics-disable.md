@@ -1,11 +1,11 @@
-# Technical Contract: `orbit metrics:disable --node=<node> --force [--purge-data] [--json]`
+# Technical Contract: `orbit metrics:disable --node=<node> [--force] [--purge-data] [--json]`
 
 [Back to public `metrics:disable` documentation.](../metrics-disable.md)
 
 **Owner:** `metrics`.
 
-**Effects:** `write`. With `--purge-data`, effects include destructive cleanup
-where the role cleanup contract supports deleting metrics-owned data.
+**Effects:** `write`, `destructive`. With `--purge-data`, cleanup also deletes
+metrics-owned data where the role cleanup contract supports it.
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
@@ -15,7 +15,7 @@ where the role cleanup contract supports deleting metrics-owned data.
 ## Signature
 
 ```bash
-orbit metrics:disable --node=<node> --force [--purge-data] [--json]
+orbit metrics:disable --node=<node> [--force] [--purge-data] [--json]
 ```
 
 ## Input Contract
@@ -25,8 +25,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | Always. | Never. | None. | Active node with a `metrics` role assignment. |
-| `force` | `--force` | Always. | Never. | `false` | Explicit removal consent. |
-| `purge_data` | `--purge-data` | Optional. | Never. | `false` | Requires `--force`. |
+| `force` | `--force` | Non-interactive input mode. | Never. | `false` | Explicit removal consent that skips the interactive prompt. |
+| `purge_data` | `--purge-data` | Optional. | Never. | `false` | Remains subject to the command's destructive-consent gate. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract
@@ -72,7 +72,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Node required | `--node` is absent. | `error.code=validation_failed`, `error.meta.field=node` |
-| Force required | `--force` is absent. | `error.code=validation_failed`, `error.meta.field=force` |
+| Force required | `--force` is absent in non-interactive mode. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 | Role absent | The target node has no `metrics` role assignment. | `error.code=validation_failed` from the gateway role-removal contract |
 
 ## Doctor Relationship
@@ -88,5 +88,5 @@ drift.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Metrics/MetricsCommandsTest.php` | Required `--node`, required `--force`, purge flag forwarding, and gateway path. |
+| `apps/cli/tests/Feature/Commands/Metrics/MetricsCommandsTest.php` | Required `--node`, non-interactive `--force` validation, purge flag forwarding, and gateway path. Interactive confirmation remains a focused coverage gap. |
 | `apps/gateway/tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php` | Metrics role cleanup of process, workload exporter, node-exporter firewall, and route intent. |

@@ -121,7 +121,7 @@ describe('node permission presets', function (): void {
                     'workspace:setup',
                 ])
                 ->and($presets->permissions('app-prod-self'))
-                ->toBe(['app:read', 'workspace:setup']);
+                ->toBe(['app:read']);
         });
     });
 

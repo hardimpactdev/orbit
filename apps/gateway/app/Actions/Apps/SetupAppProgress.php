@@ -5,19 +5,23 @@ declare(strict_types=1);
 namespace App\Actions\Apps;
 
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
+use App\Services\Apps\AppRuntimeContainerRenderer;
 
 final readonly class SetupAppProgress
 {
     public function __construct(
         private SetupApp $setupApp,
+        private AppRuntimeContainerRenderer $runtimeRenderer,
     ) {}
 
-    public function for(App $app, Node $node): SetupAppProgressPlan
+    public function for(App $app, AppInstance $instance, Node $node): SetupAppProgressPlan
     {
         return new SetupAppProgressPlan(
             setupApp: $this->setupApp,
-            app: $app,
+            app: $this->runtimeRenderer->runtimeAppForInstance($app, $instance),
+            instance: $instance,
             node: $node,
         );
     }
