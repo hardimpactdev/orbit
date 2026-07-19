@@ -125,5 +125,12 @@ other family artifacts remain owned by their respective family doctors.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | Slug-only selection, all-instance confirmation, forced/non-interactive consent, progress, and JSON output. |
-| `apps/gateway/tests/Feature/Http/Api/AppRemoveControllerTest.php` | Complete inventory, multi-node authorization, cascade removal, per-instance cleanup, and warning payload shape. |
+| `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | Missing `--force`, forced JSON removal, the current generic interactive confirmation, human progress, drift warnings, and gateway error prose. |
+| `apps/gateway/tests/Feature/Http/Api/AppRemoveControllerTest.php` | Cascade deletion, concrete-instance cleanup, the `success.meta.warnings[]` payload for unresolved placement, destructive-consent validation, and denial on one selected app node. |
+
+Coverage gaps remain for the approved contract. No mapped CLI test asserts that
+the confirmation names every affected instance. No mapped gateway test proves
+that removal stops when the caller lacks access to a second serving node. The
+current gateway fixture has multiple instances and succeeds after granting
+access to only one of its two serving nodes. Authorization on every affected
+node is therefore still a runtime and test gap.
