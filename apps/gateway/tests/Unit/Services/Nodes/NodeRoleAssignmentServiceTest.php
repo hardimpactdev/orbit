@@ -15,7 +15,6 @@ use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\NodeRoleDependencyInspector;
@@ -34,20 +33,13 @@ use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function (): void {
-    $developmentDnsConfigDir = storage_path('framework/testing/node-role-assignment-dns/'.bin2hex(random_bytes(6)));
-
-    app()->instance(DevelopmentDnsMappingEnactor::class, new DevelopmentDnsMappingEnactor($developmentDnsConfigDir));
-});
-
-afterEach(function (): void {
-    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
+    bind_dnsmasq_reconciler_test_double();
 });
 
 describe('node role assignment service', function (): void {
@@ -835,7 +827,7 @@ describe('node role assignment service', function (): void {
             ->toBeNull();
     });
 
-    it('marks app-dev as error when the development dns mapping cannot be materialized', function (): void {
+    it('marks app-dev as error without a WireGuard address', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
 
@@ -847,7 +839,7 @@ describe('node role assignment service', function (): void {
         expect($assignment->status)
             ->toBe(NodeRoleStatus::Error)
             ->and($assignment->last_error)
-            ->toBe('The app-dev role requires a WireGuard address so the development DNS mapping can be materialized.')
+            ->toBe('The app-dev role requires a WireGuard address.')
             ->and($assignment->converged_at)
             ->toBeNull();
     });
@@ -908,41 +900,6 @@ describe('node role assignment service', function (): void {
             ->toBeNull()
             ->and($assignment->converged_at)
             ->not->toBeNull();
-    });
-
-    it('reconverges the development DNS mapping from the node-owned TLD', function (): void {
-        $configDir = app(DevelopmentDnsMappingEnactor::class)->configDir();
-
-        File::deleteDirectory($configDir);
-        File::ensureDirectoryExists($configDir);
-        File::put("{$configDir}/old.conf", 'stale mapping');
-
-        $node = Node::factory()->create([
-            'platform' => 'ubuntu_24-04',
-
-            'tld' => 'old',
-            'wireguard_address' => '10.0.0.10',
-        ]);
-
-        NodeRoleAssignment::factory()->create([
-            'node_id' => $node->id,
-            'role' => 'app-dev',
-            'status' => NodeRoleStatus::Active->value,
-            'settings' => [],
-        ]);
-
-        $assignment = app(NodeRoleAssignmentService::class)->update($node, 'app-dev', []);
-
-        expect($assignment->status)
-            ->toBe(NodeRoleStatus::Active)
-            ->and($assignment->settings)
-            ->toBe([])
-            ->and("{$configDir}/old.conf")
-            ->toBeFile()
-            ->and(File::get("{$configDir}/old.conf"))
-            ->toContain('address=/old/10.0.0.10')
-            ->and("{$configDir}/new.conf")
-            ->not->toBeFile();
     });
 
     it('rejects updates when a conflicting role is active', function (): void {
@@ -1079,7 +1036,6 @@ describe('node role assignment service', function (): void {
         app()->instance(RemoteShell::class, $remoteShell);
         app()->instance(RemoteLocalExecutor::class, nodeRoleAssignmentLocalExecutor($remoteShell));
         app()->instance(AgentRoleBaseline::class, new AgentRoleBaseline(
-            developmentDnsMappingEnactor: app(DevelopmentDnsMappingEnactor::class),
             localExecutor: app(RunsInternalCommands::class),
         ));
 

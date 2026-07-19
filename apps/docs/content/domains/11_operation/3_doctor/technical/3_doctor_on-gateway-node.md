@@ -41,15 +41,13 @@ Gateway implicit authority changes authorization only; it does not change
 family eligibility. After selecting the target, the gateway resolves the
 role-derived base categories and owned-fact/platform overlays defined by the
 [canonical category model](1_doctor.md#target-eligibility-and-category-set).
-That model includes VPN DNS under `Tools`, Orbit-protected rules on eligible
+That model includes DNS base/runtime capability under `Tools`, Orbit-protected rules on eligible
 Ubuntu nodes under `Firewall`, and `Scheduling` for the gateway plus every node
 targeted by a schedule. A narrow `--family` filter intersects with the resolved
 eligibility set; ineligible families are rejected before probes.
 
-DNS/TLD facts currently live inside the `Node` row. A separate `DNS/TLD`
-slice for operator/app targets and a `DNS` slice for gateway targets is
-planned but not yet emitted; the row will be added when a DNS diagnostic
-source lands.
+DNS projection and runtime findings remain in their owning `Node`, `Proxy
+routes`, and `Tools` rows. No separate DNS row is emitted.
 
 ## Probe Orchestration
 
@@ -61,17 +59,18 @@ reality checks scoped to its current target:
 
 | Family | Gateway-owned probing behavior |
 | --- | --- |
-| `node` | Check the target node's gateway record, identity, WireGuard peer configuration, reachability, bootstrap reality, and current DNS/TLD facts. |
+| `node` | Check the target node's gateway record, identity, WireGuard peer configuration, reachability, bootstrap reality, and node-owned `10-node-records.conf` projection. |
 | `app` | Check app configuration and app-role runtime facts on the target node, including paths, document roots, runtime configuration, and app health probes declared by the app family. |
 | `workspace` | Check workspace configuration and the target node's workspace reality, using app-suffixed workspace identifiers in human output. |
 | `database_connection` | Check gateway connection records and target mappings, then inspect selected app-instance and workspace environment facts through the database family's documented gateway-local or Agent-push path. |
 | `process` | Check process configuration and process runtime reality on the target node. |
-| `proxy` | Check proxy route configuration and `orbit-caddy` backend reality on the target node. |
+| `proxy` | Check proxy route configuration, `orbit-caddy` backend reality, and the proxy-owned `20-proxy-records.conf` projection on the active router. |
 | `firewall_rule` | Check firewall rule configuration and backend firewall reality on the target node. |
-| `tool` | Check tool configuration, installed versions, configuration, and lifecycle state on the target node. |
+| `tool` | Check tool configuration, installed versions, lifecycle state, and DNS base/runtime capability on the gateway target. |
 | `schedule` | Check schedule configuration, scheduler liveness, and recent schedule reality for the target node and its apps. |
 
-All node-family facts render under the `Node` row today; a planned `DNS`/`DNS/TLD` slice will separate resolver-specific findings when available.
+DNS findings render in their owning family rows and do not create a separate
+DNS row.
 
 Family contracts remain authoritative for exact probe facts, issue codes, restore maps, and adopt maps. The gateway peer contract owns only where probing is orchestrated and which peer role is allowed to perform it.
 

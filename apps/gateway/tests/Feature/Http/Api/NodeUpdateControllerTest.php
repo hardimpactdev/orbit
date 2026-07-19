@@ -6,12 +6,17 @@ use App\Actions\Nodes\ReenactNodeArtifacts;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Services\Dns\DnsmasqReconciler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    bind_dnsmasq_reconciler_test_double();
+});
 
 const UPDATE_CALLER_WG_IP = '10.6.0.99';
 
@@ -513,6 +518,36 @@ describe('NodeUpdateController', function (): void {
         expect(DB::table('nodes')->where('name', 'app-1')->value('host'))->toBe('10.6.0.8');
     });
 
+    it('returns a success warning when dns reconciliation fails after the tld write', function (): void {
+        app()->instance(DnsmasqReconciler::class, new class extends DnsmasqReconciler {
+            public function __construct() {}
+
+            public function reconcileRecords(): bool
+            {
+                throw new RuntimeException('dns activation failed');
+            }
+        });
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        createApiUpdateNode(['tld' => 'old-tld']);
+
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['tld' => 'new-tld'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.changed', ['tld'])
+            ->assertJsonPath('success.meta.warnings.0.code', 'node.artifact_enactment_failed')
+            ->assertJsonPath('success.meta.warnings.0.family', 'node')
+            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=node --restore');
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('tld'))->toBe('new-tld');
+    });
+
     it('rejects unauthenticated requests', function (): void {
         createApiUpdateNode();
 
@@ -812,6 +847,27 @@ describe('NodeUpdateController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'tld')
             ->assertJsonPath('error.meta.value', 'Invalid_TLD!');
+    });
+
+    it('rejects the private service namespace as a node tld', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        createApiUpdateNode();
+
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['tld' => 'orbit'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'tld')
+            ->assertJsonPath('error.meta.value', 'orbit');
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('tld'))->not->toBe('orbit');
     });
 
     it('updates the tld for a role-less operator node', function (): void {

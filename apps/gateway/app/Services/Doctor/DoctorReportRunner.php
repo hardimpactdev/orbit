@@ -44,6 +44,7 @@ use App\Services\Ca\OrbitCaService;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodeConverger;
@@ -145,6 +146,14 @@ final readonly class DoctorReportRunner
         'node.websocket.bind_public_interface',
     ];
 
+    private const array VERIFIED_DNS_TOOL_RESTORE_KEYS = [
+        'tool.dns_container_missing',
+        'tool.dns_port_not_listening',
+        'tool.dns_base_config_mismatch',
+        'tool.dns_client_dns_drift',
+        'tool.dns_forwarding_missing',
+    ];
+
     private const array S3_CATEGORIES = ['node', 'tool', 'proxy'];
 
     private const array METRICS_CATEGORIES = ['node', 'tool', 'process', 'proxy'];
@@ -192,6 +201,9 @@ final readonly class DoctorReportRunner
         private AnalyticsPublicProxyDoctorProbe $analyticsPublicProxyDoctorProbe,
         private AppRuntimeRequirementProbe $appRuntimeRequirementProbe,
         private DnsRuntimeProbe $dnsRuntimeProbe,
+        private NodeDnsProjectionProbe $nodeDnsProjectionProbe,
+        private ProxyDnsProjectionProbe $proxyDnsProjectionProbe,
+        private DnsmasqReconciler $dnsmasqReconciler,
         private WorkspacePlacement $workspacePlacement = new WorkspacePlacement,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
     ) {}
@@ -1196,12 +1208,24 @@ final readonly class DoctorReportRunner
             return true;
         }
 
+        if ($key === 'node.dns_mapping_mismatch') {
+            return true;
+        }
+
+        if (is_string($key) && in_array($key, self::VERIFIED_DNS_TOOL_RESTORE_KEYS, true)) {
+            return true;
+        }
+
         return array_any(
             $this->issuesFromProbe($probe),
-            fn (array $issue): bool => in_array(
-                $issue['key'] ?? null,
-                self::VERIFIED_WEBSOCKET_RESTORE_KEYS,
-                true,
+            fn (array $issue): bool => (
+                ($issue['key'] ?? null) === 'node.dns_mapping_mismatch'
+                || in_array($issue['key'] ?? null, self::VERIFIED_DNS_TOOL_RESTORE_KEYS, true)
+                || in_array(
+                    $issue['key'] ?? null,
+                    self::VERIFIED_WEBSOCKET_RESTORE_KEYS,
+                    true,
+                )
             ),
         );
     }
@@ -1228,7 +1252,7 @@ final readonly class DoctorReportRunner
         if (in_array('node', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
             $nodeCheckTotal =
-                1
+                2
                 + ($this->activeWebSocketAssignment($node) instanceof NodeRoleAssignment ? 1 : 0)
                 + ($this->activeS3Assignment($node) instanceof NodeRoleAssignment ? 1 : 0);
 
@@ -1245,6 +1269,12 @@ final readonly class DoctorReportRunner
                         $this->nodesProbe->diff($node, $snapshot, $key),
                     ),
                 ];
+                $advance();
+
+                foreach ($this->nodeDnsProjectionProbe->drift($node) as $entry) {
+                    $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                }
+
                 $advance();
 
                 $webSocketAssignment = $this->activeWebSocketAssignment($node);
@@ -1387,6 +1417,7 @@ final readonly class DoctorReportRunner
                 $proxyRoutes->count()
                 + 2
                 + ($scope->app === null && $scope->workspace === null ? 1 : 0)
+                + ($this->shouldProbeProxyDnsProjection($node, $scope) ? 1 : 0)
                 + ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node) ? 1 : 0)
                 + ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node) ? 1 : 0);
 
@@ -1960,6 +1991,14 @@ final readonly class DoctorReportRunner
             $advance();
         }
 
+        if ($this->shouldProbeProxyDnsProjection($node, $scope)) {
+            foreach ($this->proxyDnsProjectionProbe->drift($node) as $entry) {
+                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+            }
+
+            $advance();
+        }
+
         if ($scope->workspace === null) {
             foreach ($this->webSocketProxyDoctorProbe->drift($node, $scope->app) as $entry) {
                 $issues[] = $this->nodeScopedIssuePayload($entry, $node);
@@ -2162,6 +2201,19 @@ final readonly class DoctorReportRunner
                 if ($action !== null) {
                     $actions[] = $action;
                 }
+
+                continue;
+            }
+
+            if (
+                $mode === 'restore'
+                && in_array(
+                    $issue['key'] ?? null,
+                    ['node.dns_mapping_mismatch', 'proxy.dns_mapping_mismatch'],
+                    true,
+                )
+            ) {
+                $actions[] = $this->applyDnsProjectionIssue($node, $issue);
 
                 continue;
             }
@@ -2492,6 +2544,15 @@ final readonly class DoctorReportRunner
     {
         return (
             $this->nodeRoleAssignments->nodeIsGateway($node) && $this->nodeRoleAssignments->nodeHasActiveVpnRole($node)
+        );
+    }
+
+    private function shouldProbeProxyDnsProjection(Node $node, DoctorTargetScope $scope): bool
+    {
+        return (
+            $scope->app === null
+            && $scope->workspace === null
+            && $this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::Router->value)
         );
     }
 
@@ -4233,6 +4294,67 @@ final readonly class DoctorReportRunner
     }
 
     /**
+     * @param  array<string, mixed>  $issue
+     * @return array<string, mixed>
+     */
+    private function applyDnsProjectionIssue(Node $node, array $issue): array
+    {
+        $key = (string) $issue['key'];
+        $family = $key === 'node.dns_mapping_mismatch' ? 'node' : 'proxy';
+        $targetNode = $this->nodeFromIssue($issue) ?? $node;
+        $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+
+        if (! $this->dnsmasqReconciler->projectionDirectoryIsMounted()) {
+            return [
+                'family' => $family,
+                'node' => $targetNode->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to fix {$key}.",
+                'details' => [
+                    ...$detail,
+                    'error' => 'The live orbit-dns runtime does not consume the managed projection directory.',
+                ],
+            ];
+        }
+
+        try {
+            match ($key) {
+                'node.dns_mapping_mismatch' => $this->dnsmasqReconciler->reconcileNodeRecords(),
+                'proxy.dns_mapping_mismatch' => $this->dnsmasqReconciler->reconcileProxyRecords(),
+                default => throw new \LogicException("Unsupported DNS projection issue [{$key}]."),
+            };
+        } catch (\Throwable $throwable) {
+            return [
+                'family' => $family,
+                'node' => $targetNode->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to fix {$key}.",
+                'details' => [
+                    ...$detail,
+                    'error' => $throwable->getMessage(),
+                ],
+            ];
+        }
+
+        return [
+            'family' => $family,
+            'node' => $targetNode->name,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => is_string($issue['summary'] ?? null) ? $issue['summary'] : "Fixed {$key}.",
+            'details' => $detail,
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $detail
      * @param  array<string, mixed>  $issue
      * @return array<string, mixed>|null
@@ -4419,6 +4541,7 @@ final readonly class DoctorReportRunner
             'proxy.caddy_container_down',
             'proxy.global_config_missing',
             'proxy.global_config_mismatch',
+            'proxy.dns_mapping_mismatch',
             'proxy.agent_tool_route_missing',
             'proxy.agent_tool_route_mismatch',
             WebSocketProxyDoctorProbe::RouterRouteKey,
@@ -4456,7 +4579,7 @@ final readonly class DoctorReportRunner
             'tool.credentials_mismatch',
             'tool.dns_container_missing',
             'tool.dns_port_not_listening',
-            'tool.dns_config_drift',
+            'tool.dns_base_config_mismatch',
             'tool.dns_client_dns_drift',
             'tool.dns_forwarding_missing',
             'schedule.scheduler_missing',
@@ -4466,6 +4589,7 @@ final readonly class DoctorReportRunner
             'schedule.lock_stuck',
             'node.role_convergence_failed',
             'node.role_baseline_mismatch',
+            'node.dns_mapping_mismatch',
             'node.websocket.backend_cert_missing',
             'node.websocket.bind_public_interface',
             'node.security.sshd_config',
@@ -4574,13 +4698,113 @@ final readonly class DoctorReportRunner
         $verifiedActions = [];
 
         foreach ($actions as $action) {
-            $verifiedActions[] = $this->verifyCompletedWebSocketAction(
-                $this->verifyCompletedProxyAction($action, $remainingIssues),
+            $verifiedActions[] = $this->verifyCompletedDnsToolAction(
+                $this->verifyCompletedWebSocketAction(
+                    $this->verifyCompletedNodeDnsAction(
+                        $this->verifyCompletedProxyAction($action, $remainingIssues),
+                        $remainingIssues,
+                    ),
+                    $remainingIssues,
+                ),
                 $remainingIssues,
             );
         }
 
         return $verifiedActions;
+    }
+
+    /**
+     * @param  array<string, mixed>  $action
+     * @param  list<array<string, mixed>>  $remainingIssues
+     * @return array<string, mixed>
+     */
+    private function verifyCompletedDnsToolAction(array $action, array $remainingIssues): array
+    {
+        if (
+            ($action['status'] ?? null) !== 'completed'
+            || ($action['family'] ?? null) !== 'tool'
+            || ! in_array($action['key'] ?? null, self::VERIFIED_DNS_TOOL_RESTORE_KEYS, true)
+        ) {
+            return $action;
+        }
+
+        $remainingIssue = collect($remainingIssues)->first(
+            fn (array $issue): bool => ($issue['family'] ?? null) === 'tool'
+            && in_array($issue['key'] ?? null, self::VERIFIED_DNS_TOOL_RESTORE_KEYS, true),
+        );
+
+        if (! is_array($remainingIssue)) {
+            return $action;
+        }
+
+        $key = $this->stringValue($remainingIssue, 'key');
+
+        if ($key === null) {
+            return $action;
+        }
+
+        $issueDetail = is_array($remainingIssue['detail'] ?? null) ? $remainingIssue['detail'] : [];
+        $details = is_array($action['details'] ?? null) ? $action['details'] : [];
+
+        return [
+            ...$action,
+            'status' => 'failed',
+            'summary' => 'DNS runtime restore verification failed.',
+            'details' => [
+                ...$details,
+                ...$issueDetail,
+                'operation' => "verify {$key}",
+                'error' => "DNS runtime drift [{$key}] remained after restore.",
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $action
+     * @param  list<array<string, mixed>>  $remainingIssues
+     * @return array<string, mixed>
+     */
+    private function verifyCompletedNodeDnsAction(array $action, array $remainingIssues): array
+    {
+        if (
+            ($action['status'] ?? null) !== 'completed'
+            || ($action['family'] ?? null) !== 'node'
+            || ($action['key'] ?? null) !== 'node.dns_mapping_mismatch'
+        ) {
+            return $action;
+        }
+
+        $remainingIssue = collect($remainingIssues)->first(
+            fn (array $issue): bool => (
+                ($issue['family'] ?? null) === 'node'
+                && ($issue['key'] ?? null) === 'node.dns_mapping_mismatch'
+                && (
+                    $this->stringValue($action, 'node') === null
+                    || $this->stringValue($action, 'node') === $this->stringValue($issue, 'node')
+                )
+            ),
+        );
+
+        if (! is_array($remainingIssue)) {
+            return $action;
+        }
+
+        $node = $this->stringValue($remainingIssue, 'node') ?? $this->stringValue($action, 'node') ?? 'unknown';
+        $issueDetail = is_array($remainingIssue['detail'] ?? null) ? $remainingIssue['detail'] : [];
+        $details = is_array($action['details'] ?? null) ? $action['details'] : [];
+
+        return [
+            ...$action,
+            'status' => 'failed',
+            'summary' => "Node DNS restore verification failed on node '{$node}'.",
+            'details' => [
+                ...$details,
+                ...$issueDetail,
+                'node' => $node,
+                'operation' => 'verify node.dns_mapping_mismatch',
+                'error' => "Node DNS drift remained after restore on node '{$node}'.",
+            ],
+        ];
     }
 
     /**

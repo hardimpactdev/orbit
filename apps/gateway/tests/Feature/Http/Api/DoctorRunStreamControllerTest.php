@@ -392,7 +392,7 @@ it('streams node family completed and total for opaque composite checks', functi
         'family' => 'node',
         'status' => 'checking',
         'completed' => 0,
-        'total' => 1,
+        'total' => 2,
     ])->and(collect($nodeProgress)->contains(
         static fn (array $snapshot): bool => (
             ($snapshot['status'] ?? null) === 'checking'

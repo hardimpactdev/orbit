@@ -36,8 +36,8 @@ This command follows the shared
 | `roles` | `--roles` | Never required. | When `--template` or `--operator` is present. | `[]`. | Comma-separated canonical role values (see role values below). |
 | `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `database`, `ingress`, `agent`, `websocket`, `s3`, `metrics`, `analytics`, and every template that provisions a host. | Client identity with no roles or `--operator`. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
 | `operator_name` | `--operator-name` | First-gateway bootstrap. | Outside first-gateway bootstrap. | None. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
-| `operator_tld` | `--operator-tld` | First-gateway bootstrap. | Outside first-gateway bootstrap. | None. | Single lowercase DNS label; unique among active node TLDs and different from the gateway TLD. |
-| `tld` | `--tld` | Always. | Never. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. |
+| `operator_tld` | `--operator-tld` | First-gateway bootstrap. | Outside first-gateway bootstrap. | None. | Single lowercase DNS label other than reserved `orbit`; unique among active node TLDs and different from the gateway TLD. |
+| `tld` | `--tld` | Always. | Never. | None. | Single lowercase DNS label without a leading dot and other than reserved `orbit`. Unique among active node TLDs. |
 | `user` | `--user` | Never required from the operator; resolved when SSH bootstrap is used. | Client identity with no host provisioning. | `root`. | Bootstrap SSH user used by the initiating CLI. The gateway never receives or uses that user's private key and stores the steady-state runtime user after provisioning. |
 | `gateway_endpoint` | `--gateway-endpoint` | Never required. | Client identity with no roles or `--operator`. | Gateway VPN public endpoint. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `ingress_node` | `--ingress` | Private `app-prod` placement. | Every path other than private `app-prod` placement. | None. | Must match an active node with the `ingress` role. |
@@ -94,7 +94,8 @@ implementation lands.
 2. Resolve `node_new.template` from `--template` when present.
 3. Resolve `node_new.operator` from `--operator` when present.
 4. Resolve all `node_new.roles` from comma-separated `--roles` when present.
-5. Resolve and validate the mandatory explicit `node_new.tld` for every path.
+5. Resolve and validate the mandatory explicit `node_new.tld` for every path;
+   reject reserved `orbit` before side effects.
 6. Expand templates to role sets before normalization side effects.
 7. Normalize the requested role set before side effects.
    - `--operator` or `--template=operator` means a client identity with the

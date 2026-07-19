@@ -17,6 +17,10 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
+beforeEach(function (): void {
+    bind_dnsmasq_reconciler_test_double();
+});
+
 it('reports a missing private analytics route for the router', function (): void {
     $router = analyticsProxyRouter();
     analyticsProxyBackend();

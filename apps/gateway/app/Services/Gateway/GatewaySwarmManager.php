@@ -73,9 +73,9 @@ final readonly class GatewaySwarmManager
         );
     }
 
-    public function ensureGatewayEdgeNodeLabels(): void
+    public function ensureGatewayVpnNodeLabels(): void
     {
-        $this->ensureNodeRoleLabels(['gateway', 'vpn', 'dns']);
+        $this->ensureNodeRoleLabels(['gateway', 'vpn']);
     }
 
     public function ensureAttachableOverlayNetwork(string $network = GatewaySwarmStackRenderer::Network): void

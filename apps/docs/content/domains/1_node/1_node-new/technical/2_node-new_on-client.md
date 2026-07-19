@@ -38,25 +38,29 @@ same blocker. All path eligibility must complete before side effects begin.
 
 ## Allowed Paths
 
+Every allowed path forwards the mandatory `node_new.tld` as node identity.
+First-gateway bootstrap also requires and forwards the distinct mandatory
+`node_new.operator_tld` for the initiating operator identity.
+
 | Requested path | Behavior |
 | --- | --- |
-| `--template=gateway` | Bootstrap the first gateway and complete local operator onboarding when no gateway is configured yet. When a gateway is configured, forward to the gateway for convergence or adoption. |
-| omitted `--template`, `--operator`, and `--roles` | Forward a client identity request with no roles to the configured gateway over HTTPS. |
-| `--operator` or `--template=operator` | Forward a client identity request with the operator permission preset and no workload roles. |
+| `--template=gateway` | Bootstrap the first gateway and complete local operator onboarding when no gateway is configured yet. When a gateway is configured, forward the node identity to the gateway for convergence or adoption. |
+| omitted `--template`, `--operator`, and `--roles` | Forward a client identity request, including its node TLD, with no roles to the configured gateway over HTTPS. |
+| `--operator` or `--template=operator` | Forward a client identity request, including its node TLD, with the operator permission preset and no workload roles. |
 | `--template=app-development` or `--roles=app-dev` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['app-dev', 'database']` for the template or `roles: ['app-dev']` for the explicit `--roles` path. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
 | `--template=app-production` or `--roles=app-prod[...]` | Resolve canonical role inputs and production placement, then forward to the gateway over HTTPS as either colocated `roles: ['app-prod', 'ingress']` or private `roles: ['app-prod']` plus `ingress_node=<node>`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`; private placement also requires selecting an active `ingress` node. |
 | `--template=database` or `--roles=database` | Resolve canonical workload-node inputs, then forward to the gateway over HTTPS as `roles: ['database']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`; forwards `node_new.gateway_endpoint` when supplied. |
 | `--template=agent` or `--roles=agent` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['agent']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`; forwards any selected agent tools. |
 | `--template=websocket` or `--roles=websocket` | Reserved stable input surface. Current behavior fails before forwarding with `validation_failed` and `error.meta.reason=not_implemented`. The template path uses `error.meta.field=template`; explicit `--roles` uses `error.meta.field=roles`. |
 | `--template=s3` or `--roles=s3` | Resolve canonical workload-node inputs, then forward to the gateway over HTTPS as `roles: ['s3']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`; forwards `node_new.s3_data_path` when supplied. |
-| `--template=metrics` or `--roles=metrics` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['metrics']`. Requires `node_new.host` and `node_new.user`. |
+| `--template=metrics` or `--roles=metrics` | Resolve canonical role inputs, then forward to the gateway over HTTPS as `roles: ['metrics']`. Requires `node_new.host`, `node_new.user`, and `node_new.tld`. |
 | `--roles=<csv>` | Forward compatible canonical role arrays with shared host/user fields and any role-specific fields already resolved. |
 
 Explicit live-role examples include `roles: ['app-prod', 'ingress']` and
-`roles: ['app-dev', 'database']`. Development app roles also forward
-the mandatory `node_new.tld`. Metrics and S3 forward host/user inputs like
-other live workload-role paths. WebSocket role input remains reserved and
-fails before forwarding until its implementation lands.
+`roles: ['app-dev', 'database']`. Every path forwards the mandatory
+`node_new.tld`; metrics and S3 additionally forward host/user inputs like other
+live workload-role paths. WebSocket role input remains reserved and fails
+before forwarding until its implementation lands.
 
 ## First-Gateway Bootstrap
 
@@ -97,7 +101,7 @@ When a gateway is configured:
   including:
   - `node_new.host` and `node_new.user` for gateway convergence or adoption;
   - canonical `roles[]` arrays for role requests;
-  - `node_new.tld` for development app-role and agent provisioning;
+  - the mandatory `node_new.tld` for every node identity;
   - `node_new.valkey_node` for future websocket role provisioning;
   - `node_new.s3_data_path` for S3 role provisioning;
   - host and user fields for metrics role provisioning.

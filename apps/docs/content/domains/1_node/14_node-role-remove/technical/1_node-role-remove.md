@@ -67,6 +67,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Every public CLI caller forwards through typed gateway HTTPS, including a CLI
   running on the gateway host.
 - The gateway authorizes the request with `role:remove` on the target node.
+- Removing `app-dev` or `agent` calls `reconcileNodeRecords()` to remove stale
+  wildcard/local-zone directives while retaining the concrete node record. It
+  does not reconcile proxy records or base configuration.
 
 ## Renderer Contracts
 

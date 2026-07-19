@@ -11,6 +11,7 @@ use App\Models\App;
 use App\Models\AppAnalyticsBinding;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\ProxyRouteFixer;
@@ -34,6 +35,7 @@ class AnalyticsRouteRegistrar
         private readonly IngressResolver $ingressResolver,
         private readonly ProxyRouteRenderer $proxyRouteRenderer,
         private readonly ProxyRouteFixer $proxyRouteFixer,
+        private readonly DnsmasqReconciler $dnsmasqReconciler,
     ) {}
 
     public function syncServiceRoute(?Node $backend = null): ProxyRoute
@@ -52,6 +54,8 @@ class AnalyticsRouteRegistrar
                 'source_hash' => $intent->source_hash,
             ],
         );
+
+        $this->dnsmasqReconciler->reconcileProxyRecords();
 
         return $route->refresh();
     }
@@ -105,6 +109,7 @@ class AnalyticsRouteRegistrar
 
         $this->proxyRouteFixer->removeExtra($route->node, self::ServiceDomain);
         $route->delete();
+        $this->dnsmasqReconciler->reconcileProxyRecords();
     }
 
     public function serviceRouteIntent(?Node $backend = null): ProxyRoute

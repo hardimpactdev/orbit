@@ -9,8 +9,9 @@ use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
-use App\Services\Nodes\DevelopmentDnsMappingProbe;
+use App\Services\Dns\DnsmasqReconciler;
+use App\Services\Dns\NodeDnsmasqRecordsBuilder;
+use App\Services\Dns\ProxyDnsmasqRecordsBuilder;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -90,6 +91,8 @@ ParallelRunner::resolveApplicationUsing(function (): Application {
 pest()
     ->extend(TestCase::class)
     ->beforeEach(function (): void {
+        bind_dnsmasq_reconciler_test_double();
+
         if (orbitIsDnsCommandTest($this)) {
             $storagePath = orbitDnsTestStoragePath();
 
@@ -111,6 +114,12 @@ pest()
         }
     })
     ->in('Feature');
+
+pest()
+    ->beforeEach(function (): void {
+        bind_dnsmasq_reconciler_test_double();
+    })
+    ->in('Unit');
 
 pest()->extend(TestCase::class, RefreshDatabase::class)
     ->in('Unit/Services/WireGuard');
@@ -464,16 +473,89 @@ function bindVpnBackend(ArrayVpnBackend $backend): void
     app()->instance(VpnBackend::class, $backend);
 }
 
-function bindDevelopmentDnsMappingTestDoubles(string $scope): DevelopmentDnsMappingEnactor
+function write_current_node_dns_projection(): string
 {
-    $safeScope = preg_replace('/[^a-z0-9-]+/i', '-', $scope) ?: 'development-dns';
-    $configDir = storage_path("framework/testing/{$safeScope}/".bin2hex(random_bytes(6)));
-    $enactor = new DevelopmentDnsMappingEnactor($configDir);
+    $path =
+        rtrim(
+            string: (string) config('orbit.paths.config_root'),
+            characters: '/',
+        )
+        .'/'
+        .DnsmasqReconciler::NodeRecords;
 
-    app()->instance(DevelopmentDnsMappingEnactor::class, $enactor);
-    app()->instance(DevelopmentDnsMappingProbe::class, new DevelopmentDnsMappingProbe($enactor));
+    File::ensureDirectoryExists(dirname($path));
+    File::put($path, app(NodeDnsmasqRecordsBuilder::class)->buildGatewayState());
 
-    return $enactor;
+    return $path;
+}
+
+function write_current_proxy_dns_projection(): string
+{
+    $path =
+        rtrim(
+            string: (string) config('orbit.paths.config_root'),
+            characters: '/',
+        )
+        .'/'
+        .DnsmasqReconciler::ProxyRecords;
+
+    File::ensureDirectoryExists(dirname($path));
+    File::put($path, app(ProxyDnsmasqRecordsBuilder::class)->buildGatewayState());
+
+    return $path;
+}
+
+function bind_dnsmasq_reconciler_test_double(): DnsmasqReconciler
+{
+    $reconciler = new class extends DnsmasqReconciler {
+        public function __construct() {}
+
+        public function reconcileBase(): bool
+        {
+            return false;
+        }
+
+        public function reconcileNodeRecords(): bool
+        {
+            return false;
+        }
+
+        public function reconcileProxyRecords(): bool
+        {
+            return false;
+        }
+
+        public function reconcileRecords(): bool
+        {
+            return false;
+        }
+
+        public function stageAllForInstall(): bool
+        {
+            return false;
+        }
+
+        public function stageLegacyMigrationLayout(): bool
+        {
+            return false;
+        }
+
+        public function migrateLegacyLayout(): bool
+        {
+            return false;
+        }
+
+        public function projectionDirectoryIsMounted(): bool
+        {
+            return true;
+        }
+
+        public function activateStagedConfiguration(): void {}
+    };
+
+    app()->instance(DnsmasqReconciler::class, $reconciler);
+
+    return $reconciler;
 }
 
 function orbitDnsTestStoragePath(): string

@@ -34,7 +34,7 @@ Run `dns:list` to see which development TLDs have local resolver entries on your
    available.
 
 The command is read-only. It does not create, update, or remove local resolver
-configuration and does not inspect the development DNS mappings that the gateway owns.
+configuration and does not inspect private gateway DNS projections.
 
 ## Output
 

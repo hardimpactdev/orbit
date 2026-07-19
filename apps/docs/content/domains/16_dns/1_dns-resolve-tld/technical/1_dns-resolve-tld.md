@@ -82,8 +82,8 @@ This command follows the shared
 ### Development DNS Boundary Rules
 
 - `dns:resolve-tld` is not the source of truth for app-role development TLDs.
-- Development DNS mappings owned by the gateway for `*.nodes.tld` are created by
-  `node:new --template=app-development` and repaired by
+- Node-family wildcard DNS directives for eligible TLDs are created by node
+  lifecycle convergence and repaired by
   `doctor --family=node --restore`.
 - This command must not write gateway configuration, node records, app routes, proxy
   routes, Cloudflare records, or public DNS.
@@ -101,7 +101,7 @@ This command follows the shared
 
 `dns:resolve-tld` must not:
 - Mutate gateway configuration or node reality.
-- Inspect or repair the development DNS mappings that the gateway owns.
+- Inspect or repair node/proxy DNS projections or tool-owned DNS state.
 - Create arbitrary per-host DNS mappings.
 - Query or mutate Cloudflare or public DNS.
 - Bypass platform-specific privilege checks.

@@ -8,22 +8,11 @@ use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
 use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\File;
 
 uses(RefreshDatabase::class);
-
-beforeEach(function (): void {
-    $this->configDir = storage_path('framework/testing/app-dev-baseline-dns');
-    File::deleteDirectory($this->configDir);
-});
-
-afterEach(function (): void {
-    File::deleteDirectory($this->configDir);
-});
 
 /**
  * @param  array<string, mixed>  $attributes
@@ -51,13 +40,20 @@ function appDevBaselineAssignment(Node $node): NodeRoleAssignment
 }
 
 describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
+    it('rejects the reserved private service namespace', function (): void {
+        $node = appDevBaselineNode();
+        $node->tld = 'orbit';
+        $assignment = appDevBaselineAssignment($node);
+
+        expect(fn () => new AppDevelopmentRoleBaseline()->converge($node, $assignment))
+            ->toThrow(RuntimeException::class, 'The app-dev role requires a valid node TLD.');
+    });
+
     it('converges php-cli with expected_state installed', function (): void {
         $node = appDevBaselineNode();
         $assignment = appDevBaselineAssignment($node);
 
-        $baseline = new AppDevelopmentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AppDevelopmentRoleBaseline;
 
         $baseline->converge($node, $assignment);
 
@@ -77,9 +73,7 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
         $node = appDevBaselineNode();
         $assignment = appDevBaselineAssignment($node);
 
-        $baseline = new AppDevelopmentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AppDevelopmentRoleBaseline;
 
         $baseline->converge($node, $assignment);
 
@@ -99,9 +93,7 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
         $node = appDevBaselineNode();
         $assignment = appDevBaselineAssignment($node);
 
-        $baseline = new AppDevelopmentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AppDevelopmentRoleBaseline;
 
         $baseline->converge($node, $assignment);
 
@@ -121,9 +113,7 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
         $node = appDevBaselineNode();
         $assignment = appDevBaselineAssignment($node);
 
-        $baseline = new AppDevelopmentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AppDevelopmentRoleBaseline;
 
         $baseline->converge($node, $assignment);
 
@@ -143,9 +133,7 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
         $node = appDevBaselineNode();
         $assignment = appDevBaselineAssignment($node);
 
-        $baseline = new AppDevelopmentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AppDevelopmentRoleBaseline;
 
         $baseline->converge($node, $assignment);
 
@@ -165,9 +153,7 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
         $node = appDevBaselineNode();
         $assignment = appDevBaselineAssignment($node);
 
-        $baseline = new AppDevelopmentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AppDevelopmentRoleBaseline;
 
         $baseline->converge($node, $assignment);
 
@@ -183,9 +169,7 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
         $node = appDevBaselineNode();
         $assignment = appDevBaselineAssignment($node);
 
-        $baseline = new AppDevelopmentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AppDevelopmentRoleBaseline;
 
         $baseline->converge($node, $assignment);
 
@@ -203,9 +187,7 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
         ]);
         $assignment = appDevBaselineAssignment($node);
 
-        $baseline = new AppDevelopmentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AppDevelopmentRoleBaseline;
 
         $baseline->converge($node, $assignment);
 
@@ -235,9 +217,7 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
         ]);
         $assignment = appDevBaselineAssignment($node);
 
-        $baseline = new AppDevelopmentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AppDevelopmentRoleBaseline;
 
         $baseline->converge($node, $assignment);
 
@@ -297,9 +277,7 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
         $node = appDevBaselineNode();
         $assignment = appDevBaselineAssignment($node);
 
-        $baseline = new AppDevelopmentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AppDevelopmentRoleBaseline;
 
         $baseline->converge($node, $assignment);
 

@@ -71,8 +71,8 @@ using any workspace-adjacent doctor family against an `app-dev` target.
 
 The gateway then adds these fact-derived overlays:
 
-- `Tools` for owned tool rows or baseline tool capabilities, including VPN DNS
-  on an active gateway+VPN node;
+- `Tools` for owned tool rows or baseline tool capabilities, including DNS base
+  configuration and runtime capability on an active gateway+VPN node;
 - `Firewall` for any active Ubuntu target eligible to own Orbit-protected
   rules, including exporter rules; macOS is excluded;
 - `Scheduling` for the gateway and every node targeted by at least one schedule
@@ -86,7 +86,9 @@ A narrow `--family` filter intersects with this resolved eligibility set.
 Families outside it are rejected before probes; the renderer shows no
 placeholder rows for ineligible families.
 
-A future `DNS/TLD` row is reserved for operator/app targets and a `DNS` row for gateway targets. They will render as a slice of the `node` family once a DNS diagnostic source exists. Until then the renderer keeps DNS/TLD facts inside the `Node` row and produces no separate row.
+DNS findings render in their owning family rows: node projection findings in
+`Node`, proxy projection findings in `Proxy routes`, and DNS base/runtime
+findings in `Tools`. There is no separate DNS row or DNS state family.
 
 ## Input Resolution
 

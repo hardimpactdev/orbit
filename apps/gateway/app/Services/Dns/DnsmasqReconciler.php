@@ -5,40 +5,56 @@ declare(strict_types=1);
 namespace App\Services\Dns;
 
 use App\Services\Vpn\VpnDnsSwarmManager;
-use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Process;
 
-class DnsmasqReconciler
+class DnsmasqReconciler extends DnsmasqLayoutReconciler
 {
     public function __construct(
-        private readonly DnsmasqConfigBuilder $configBuilder,
-        private readonly string $rootPath,
-        private readonly ?VpnDnsSwarmManager $swarmManager = null,
-    ) {}
+        DnsmasqBaseConfigBuilder $baseConfigBuilder = new DnsmasqBaseConfigBuilder,
+        NodeDnsmasqRecordsBuilder $nodeRecordsBuilder = new NodeDnsmasqRecordsBuilder,
+        ProxyDnsmasqRecordsBuilder $proxyRecordsBuilder = new ProxyDnsmasqRecordsBuilder,
+        string $rootPath = '',
+        ?VpnDnsSwarmManager $swarmManager = null,
+    ) {
+        $projectionSetBuilder = new DnsmasqProjectionSetBuilder(
+            baseConfigBuilder: $baseConfigBuilder,
+            nodeRecordsBuilder: $nodeRecordsBuilder,
+            proxyRecordsBuilder: $proxyRecordsBuilder,
+            rootPath: $rootPath,
+        );
+        $runtimeManager = new DnsmasqRuntimeManager(rootPath: $rootPath, swarmManager: $swarmManager);
 
-    public function reconcile(): void
-    {
-        File::ensureDirectoryExists($this->rootPath);
-
-        $confPath = $this->rootPath.'/dnsmasq.conf';
-        $expected = $this->configBuilder->buildGatewayState();
-        $current = File::exists($confPath) ? File::get($confPath) : null;
-
-        if ($current === $expected) {
-            return;
-        }
-
-        File::put($confPath, $expected);
-
-        if ($this->swarmManager()->restartDnsServiceIfPresent() === true) {
-            return;
-        }
-
-        Process::timeout(30)->run('docker restart orbit-dns');
+        parent::__construct(
+            projectionSetBuilder: $projectionSetBuilder,
+            projectionWriter: new DnsmasqProjectionWriter(rootPath: $rootPath, runtimeManager: $runtimeManager),
+            runtimeManager: $runtimeManager,
+        );
     }
 
-    private function swarmManager(): VpnDnsSwarmManager
+    public function reconcileBase(): bool
     {
-        return $this->swarmManager ?? app(VpnDnsSwarmManager::class);
+        $this->runtimeManager->guardOwnerReconciliation();
+
+        return $this->projectionWriter->publishAndActivate(fn (): array => $this->projectionSetBuilder->base());
+    }
+
+    public function reconcileNodeRecords(): bool
+    {
+        $this->runtimeManager->guardOwnerReconciliation();
+
+        return $this->projectionWriter->publishAndActivate(fn (): array => $this->projectionSetBuilder->nodeRecords());
+    }
+
+    public function reconcileProxyRecords(): bool
+    {
+        $this->runtimeManager->guardOwnerReconciliation();
+
+        return $this->projectionWriter->publishAndActivate(fn (): array => $this->projectionSetBuilder->proxyRecords());
+    }
+
+    public function reconcileRecords(): bool
+    {
+        $this->runtimeManager->guardOwnerReconciliation();
+
+        return $this->projectionWriter->publishAndActivate($this->gatewayRecordProjections(...));
     }
 }

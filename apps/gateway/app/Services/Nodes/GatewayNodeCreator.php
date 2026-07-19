@@ -16,6 +16,7 @@ use App\Models\NodeAccess;
 use App\Models\NodeBootstrap;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -40,9 +41,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use InvalidArgumentException;
 use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Core\Nodes\NodeTld;
 use RuntimeException;
 use Throwable;
 
@@ -54,6 +55,7 @@ final class GatewayNodeCreator
 {
     public function __construct(
         private readonly S3RouteRegistrar $s3RouteRegistrar,
+        private readonly DnsmasqReconciler $dnsmasqReconciler,
     ) {}
 
     private const string BOOTSTRAP_PHASE_NONE = 'none';
@@ -227,6 +229,7 @@ final class GatewayNodeCreator
 
         if ($bootstrap->status === 'completed' && $node instanceof Node && $node->isActive()) {
             $this->syncActiveS3ServiceRoute($node);
+            $this->dnsmasqReconciler->reconcileRecords();
 
             return new NodeBootstrapCompletionResult(
                 result: $this->completedBootstrapResult($bootstrap, $node),
@@ -355,6 +358,7 @@ final class GatewayNodeCreator
             }
 
             $this->syncActiveS3ServiceRoute($node);
+            $this->dnsmasqReconciler->reconcileRecords();
 
             return new NodeBootstrapCompletionResult(
                 result: $result,
@@ -864,8 +868,8 @@ final class GatewayNodeCreator
     {
         $tld = $this->stringOption('tld');
 
-        if ($tld === null || ! $this->isValidTld($tld)) {
-            return $this->validationFailed('tld', 'Every node requires an explicit valid TLD.');
+        if ($tld === null || ! NodeTld::isValid($tld)) {
+            return $this->validationFailed('tld', 'Every node requires an explicit valid non-reserved TLD.');
         }
 
         $host = $this->resolveHost('gateway');
@@ -1002,10 +1006,10 @@ final class GatewayNodeCreator
 
         $tld = $this->stringOption('tld');
 
-        if ($tld === null || ! $this->isValidTld($tld)) {
+        if ($tld === null || ! NodeTld::isValid($tld)) {
             return $this->failCommand(
                 code: 'validation_failed',
-                message: 'Every node identity requires an explicit valid TLD.',
+                message: 'Every node identity requires an explicit valid non-reserved TLD.',
                 meta: [
                     'field' => 'tld',
                     'name' => $name,
@@ -1067,6 +1071,8 @@ final class GatewayNodeCreator
             gatewayWireguardAddress: (string) $gateway->wireguard_address,
             gatewayEndpoint: $gateway->gateway_endpoint ?? $gateway->host,
         );
+
+        $this->dnsmasqReconciler->reconcileRecords();
 
         $clientLabel = $operator ? 'operator node' : 'client';
 
@@ -1266,14 +1272,6 @@ final class GatewayNodeCreator
 
         if (is_int($wireguardAddress)) {
             return $wireguardAddress;
-        }
-
-        if ($this->containsDevelopmentAppRole($roles)) {
-            $developmentDnsMappingFailure = $this->guardDevelopmentDnsMappingAvailable($tld, $wireguardAddress);
-
-            if (is_int($developmentDnsMappingFailure)) {
-                return $developmentDnsMappingFailure;
-            }
         }
 
         $gateway = $this->gatewayQuery()->first();
@@ -1503,15 +1501,10 @@ final class GatewayNodeCreator
             return $securityBaseline;
         }
 
-        $developmentDns = $this->containsAppWorkloadRole($roles)
-            ? app(DevelopmentDnsMappingEnactor::class)->converge($node)
-            : null;
-
         $payload = $this->completedNodePayload(
             node: $node,
             host: $inputs['host'],
             roles: $roles,
-            developmentDns: $developmentDns,
         );
 
         return $this->jsonSuccess(
@@ -1522,14 +1515,12 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array<string, mixed>|null  $developmentDns
      * @return array<string, mixed>
      */
     private function completedNodePayload(
         Node $node,
         string $host,
         array $roles,
-        ?array $developmentDns = null,
     ): array {
         $payload = [
             'result' => [
@@ -1569,9 +1560,7 @@ final class GatewayNodeCreator
                 'gateway_dns' => [
                     'domain' => "*.{$node->tld}",
                     'target' => $node->wireguard_address,
-                    'status' => is_string($developmentDns['status'] ?? null)
-                        ? $developmentDns['status']
-                        : 'configured',
+                    'status' => 'configured',
                 ],
             ];
         }
@@ -2037,8 +2026,11 @@ final class GatewayNodeCreator
             return $this->validationFailed('tld', 'Every node requires a unique TLD.');
         }
 
-        if (! $this->isValidTld($tld)) {
-            return $this->validationFailed('tld', 'TLD must be a lowercase DNS label without a leading dot.');
+        if (! NodeTld::isValid($tld)) {
+            return $this->validationFailed(
+                'tld',
+                'TLD must be a non-reserved lowercase DNS label without a leading dot.',
+            );
         }
 
         $s3DataPath = $this->resolveS3DataPath($roles);
@@ -2832,11 +2824,6 @@ final class GatewayNodeCreator
         return (bool) preg_match('/^[a-z](?:[a-z0-9-]*[a-z0-9])?$/', $name);
     }
 
-    private function isValidTld(string $tld): bool
-    {
-        return strlen($tld) <= 63 && preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld) === 1;
-    }
-
     private function isValidHost(string $host): bool
     {
         if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
@@ -3005,46 +2992,6 @@ final class GatewayNodeCreator
             message: $message,
             meta: ['field' => $field],
         );
-    }
-
-    private function guardDevelopmentDnsMappingAvailable(?string $tld, string $target): ?int
-    {
-        if ($tld === null) {
-            return null;
-        }
-
-        $path = app(DevelopmentDnsMappingEnactor::class)->configDir()."/{$tld}.conf";
-
-        if (! File::exists($path)) {
-            return null;
-        }
-
-        $actualTarget = $this->developmentDnsTargetFrom(File::get($path), $tld);
-
-        if ($actualTarget === $target) {
-            return null;
-        }
-
-        return $this->failCommand(
-            code: 'node.incompatible',
-            message: "Development TLD '{$tld}' is already mapped to another gateway development DNS target.",
-            meta: [
-                'field' => 'tld',
-                'value' => $tld,
-                'target' => $target,
-                'actual_target' => $actualTarget,
-                'path' => $path,
-            ],
-        );
-    }
-
-    private function developmentDnsTargetFrom(string $content, string $tld): ?string
-    {
-        if (preg_match('/^address=\/(?:\\.)?'.preg_quote($tld, '/').'\/(.+)$/m', $content, $matches) !== 1) {
-            return null;
-        }
-
-        return trim($matches[1]);
     }
 
     /**

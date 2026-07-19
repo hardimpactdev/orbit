@@ -47,6 +47,8 @@ use Illuminate\Support\Carbon;
  * @property NodeStatus $status
  * @property-read Collection<int, NodeTool> $nodeTools
  * @property-read Collection<int, NodeRoleAssignment> $roleAssignments
+ * @property-read Collection<int, Node> $consumingNodes
+ * @property-read Collection<int, Node> $servingNodes
  * @property-read Collection<int, FirewallRule> $firewallRules
  * @property-read Collection<int, Process> $processes
  * @property-read SchedulerState|null $schedulerState

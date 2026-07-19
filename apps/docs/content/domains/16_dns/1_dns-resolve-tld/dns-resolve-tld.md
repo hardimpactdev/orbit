@@ -6,8 +6,8 @@ Configure or remove a local resolver override for a development TLD on the calle
 
 `dns:resolve-tld` is a local client helper for machines that need browser
 or CLI access to development hostnames through a local resolver override. It
-writes only caller-machine resolver configuration. It does not create gateway
-development DNS mappings, app routes, proxy routes, Cloudflare records, or
+writes only caller-machine resolver configuration. It does not create private
+node/proxy DNS projections, tool-owned DNS state, app routes, proxy routes, Cloudflare records, or
 public DNS.
 
 ## Usage
@@ -47,8 +47,8 @@ Run `dns:resolve-tld` to write or remove a local resolver entry for a developmen
 For the reset path, it removes only the local resolver override that Orbit manages
 for the selected TLD.
 
-Development DNS mappings owned by the gateway are created by node provisioning and
-repaired by node doctor. This command is only for caller-local resolver state.
+Private DNS projections are derived from node and proxy intent and repaired by
+their owning doctor families. This command is only for caller-local resolver state.
 
 ## Output
 

@@ -418,7 +418,9 @@ it('reconciles the s3 route and dns after the provisioned node becomes active', 
 
     expect(Node::query()->where('name', 'services1')->firstOrFail()->isActive())
         ->toBeTrue()
-        ->and(File::get($configRoot.'/dnsmasq.conf'))
+        ->and(File::get($configRoot.'/dnsmasq.d/10-node-records.conf'))
+        ->toContain('address=/orbit.services1/10.6.0.3')
+        ->and(File::get($configRoot.'/dnsmasq.d/20-proxy-records.conf'))
         ->toContain('address=/services1.s3.orbit/10.6.0.3')
         ->toContain('address=/orbit/10.6.0.2');
 

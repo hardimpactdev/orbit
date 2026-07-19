@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Node;
 
 use App\Exceptions\NodeWriteInputException;
+use Orbit\Core\Nodes\NodeTld;
 
 class NodeNewPayloadBuilder
 {
@@ -103,10 +104,10 @@ class NodeNewPayloadBuilder
             throw new NodeWriteInputException('validation_failed', 'Node TLD is required.', ['field' => 'tld']);
         }
 
-        if (! $this->isValidTld($tld)) {
+        if (! NodeTld::isValid($tld)) {
             throw new NodeWriteInputException(
                 'validation_failed',
-                'Node TLD must be a lowercase DNS label without a leading dot.',
+                'Node TLD must be a non-reserved lowercase DNS label without a leading dot.',
                 ['field' => 'tld', 'value' => $tld],
             );
         }
@@ -128,10 +129,10 @@ class NodeNewPayloadBuilder
                 );
             }
 
-            if (! $this->isValidTld($operatorTld)) {
+            if (! NodeTld::isValid($operatorTld)) {
                 throw new NodeWriteInputException(
                     'validation_failed',
-                    'Initiating operator node TLD must be a lowercase DNS label without a leading dot.',
+                    'Initiating operator node TLD must be a non-reserved lowercase DNS label without a leading dot.',
                     ['field' => 'operator_tld', 'value' => $operatorTld],
                 );
             }
@@ -379,11 +380,6 @@ class NodeNewPayloadBuilder
         if ($value !== null) {
             $payload[$key] = $value;
         }
-    }
-
-    private function isValidTld(string $tld): bool
-    {
-        return strlen($tld) <= 63 && preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld) === 1;
     }
 
     /**

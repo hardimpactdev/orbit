@@ -24,9 +24,9 @@ owning family concept document.
 - **Permission preset** — code-defined named bundle of node access permissions. The defined presets are `agent-self`, `operator`, `read-only`, `developer`, `admin`, and `gateway-admin`. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Operator** — node identity with the operator permission preset and grants to operate one or more nodes through the gateway. It is not a node role. See [Architecture: Authentication And Authorization](architecture.md#authentication-and-authorization).
 - **Gateway-admin grant** — a consumer-to-gateway grant whose permissions include `*` (the `gateway-admin` preset); confers fleet-wide super-admin authority including authority over future nodes. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Node TLD** — mandatory node-level identity for every active Orbit node. A node holds at most one unique `tld` value at a time; role features such as `app-dev` and `agent` consume it for wildcard development DNS, and gateway VPN DNS publishes `orbit.<node-tld>` to the node's WireGuard address. See [Node Concepts](domains/1_node/node-concepts.md).
+- **Node TLD** — mandatory node-level identity for every active Orbit node. A node holds at most one unique `tld` value at a time; `orbit` is reserved for the proxy-owned `.orbit` namespace. The node DNS projection publishes `orbit.<node-tld>` for every active node and adds wildcard records only for active `app-dev` and `agent` roles. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Agent role** — exclusive workload role for autonomous agent runtimes; selectable only during `node:new` and rejected by `node role:add`. See [Node Concepts](domains/1_node/node-concepts.md).
-- **VPN role** — gateway-coupled infrastructure role that owns the WireGuard server runtime, public endpoint settings, peer defaults, and VPN-facing DNS runtime. See [Node Concepts](domains/1_node/node-concepts.md).
+- **VPN role** — gateway-coupled infrastructure role that owns the WireGuard server runtime, public endpoint settings, and peer defaults, and requires the DNS tool capability. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Router role** — gateway-coupled infrastructure role that owns private `.orbit` DNS/service hostnames, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Ingress role** — workload role that owns public production HTTP ingress, public `orbit-caddy` route artifacts, public TLS, and public edge hardening. It forwards public routes to `router` over WireGuard. See [Node Concepts](domains/1_node/node-concepts.md).
 - **WebSocket role** — private workload role that runs Laravel Reverb in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned private service routes. See [Node Concepts](domains/1_node/node-concepts.md).
@@ -168,12 +168,13 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Directional grant setup**
 - **Agent tool selection**
 - **Multi-agent-tool warning**
-- **Development DNS mapping owned by the gateway**
-- **Agent DNS mapping owned by the gateway**
-- **Development DNS configuration model**
+- **Node DNS projection**
+- **Concrete node DNS record**
+- **Development wildcard DNS mapping**
+- **Agent wildcard DNS mapping**
+- **Node DNS materializer**
+- **Node DNS projection probe**
 - **App-dev HTTP address for callers**
-- **Development DNS applier**
-- **Development DNS probe**
 <!-- /concept-index -->
 
 ## Gateway Concepts
@@ -334,6 +335,8 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Metrics service route**
 - **Public route artifact**
 - **Private router artifact**
+- **Private service DNS projection**
+- **Exact backend DNS record**
 - **Private backend artifact**
 - **Route enactment state**
 - **Production enactment order**
@@ -503,6 +506,7 @@ Source: [Operation Concepts](domains/11_operation/operation-concepts.md).
 - **Doctor interactive mode**
 - **Doctor force modes**
 - **Family doctor contract**
+- **DNS doctor ownership**
 - **Doctor issue kind**
 - **Doctor action**
 - **Doctor verify permission**
@@ -625,6 +629,10 @@ Source: [Tool Concepts](domains/3_tool/tool-concepts.md).
 - **Unmanaged inventory**
 - **Tool-owned service endpoint**
 - **Tool credentials**
+- **DNS tool capability**
+- **DNS base configuration**
+- **DNS record projection boundary**
+- **Shared DNS materializer and reload**
 - **Tool-family boundaries**
 <!-- /concept-index -->
 
@@ -695,9 +703,9 @@ Source: [DNS Concepts](domains/16_dns/dns-concepts.md).
 - **Local DNS entry**
 - **Local resolver source**
 - **Local DNS entry status**
-- **Development DNS mapping owned by the gateway**
+- **Node DNS projection**
 - **Private `.orbit` service name**
-- **App-role resolver drift**
+- **DNS tool runtime boundary**
 - **Public DNS boundary**
 - **DNS-domain boundaries**
 <!-- /concept-index -->

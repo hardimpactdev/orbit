@@ -21,6 +21,10 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
+beforeEach(function (): void {
+    bind_dnsmasq_reconciler_test_double();
+});
+
 describe('AppAnalyticsBindingService', function (): void {
     it('fails before mutation when another analytics binding mutation holds the lease', function (): void {
         createAnalyticsRoutePrerequisites();

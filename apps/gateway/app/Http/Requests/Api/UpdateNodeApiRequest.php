@@ -8,6 +8,7 @@ use Illuminate\Contracts\Validation\Validator as ValidationContract;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Validation\Validator;
+use Orbit\Core\Nodes\NodeTld;
 
 class UpdateNodeApiRequest extends FormRequest
 {
@@ -24,7 +25,7 @@ class UpdateNodeApiRequest extends FormRequest
         return [
             'host' => ['sometimes', 'string', 'filled', 'max:255'],
             'user' => ['sometimes', 'string', 'filled', 'max:255'],
-            'tld' => ['sometimes', 'string', 'filled', 'regex:/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/'],
+            'tld' => ['sometimes', 'string', 'filled', $this->validTld(...)],
             'gateway_endpoint' => ['sometimes', 'string', 'filled', 'max:253', $this->validGatewayEndpoint(...)],
             'public_ipv4' => ['sometimes', 'string', 'filled', 'ipv4'],
             'public_ipv6' => ['sometimes', 'string', 'filled', 'ipv6'],
@@ -90,7 +91,8 @@ class UpdateNodeApiRequest extends FormRequest
         return match ($field) {
             'fields' => 'At least one field must be provided to update a node.',
             'role', 'environment' => "Field '{$field}' is not supported for node:update.",
-            'tld' => "Invalid value for --tld: '{$value}'. TLD must be a lowercase DNS label without a leading dot.",
+            'tld'
+                => "Invalid value for --tld: '{$value}'. TLD must be a non-reserved lowercase DNS label without a leading dot.",
             'gateway_endpoint'
                 => "Invalid value for --gateway-endpoint: '{$value}'. Gateway endpoint must be a valid IP address or dotted DNS name.",
             'public_ipv4' => "Invalid IPv4 address: '{$value}'.",
@@ -122,14 +124,20 @@ class UpdateNodeApiRequest extends FormRequest
         }
     }
 
+    /**
+     * @param  \Closure(string): \Illuminate\Translation\PotentiallyTranslatedString  $fail
+     */
+    private function validTld(string $attribute, mixed $value, \Closure $fail): void
+    {
+        if (! NodeTld::isValid($value)) {
+            $fail('validation.tld')->translate();
+        }
+    }
+
     private function isValidHost(string $host): bool
     {
-        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
-            return true;
-        }
-
         if (! str_contains($host, '.')) {
-            return false;
+            return filter_var($host, FILTER_VALIDATE_IP) !== false;
         }
 
         if (strlen($host) > 253 || str_contains($host, '..')) {

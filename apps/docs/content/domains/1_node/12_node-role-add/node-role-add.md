@@ -26,6 +26,9 @@ This command validates the role assignment, applies role-local options, and repo
   agent` fails with `validation_failed` and the explanation that
   `node:new --template=agent` is the preferred path that may create it.
 - Role assignment never changes or duplicates the node-owned TLD.
+- Adding `app-dev` changes only wildcard eligibility in the node-owned DNS
+  projection. It reconciles `10-node-records.conf` without touching proxy-owned
+  records or tool-owned base configuration.
 - App-development convergence uses direct gateway-pushed command envelopes.
   An active workload role supplies Agent intent; no duplicated capability flag
   is required.

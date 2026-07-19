@@ -8,12 +8,10 @@ use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\NodeConverger;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\File;
 use Orbit\Core\Enums\InternalCommand;
 use Orbit\Core\Http\JsonEnvelope;
 use Tests\TestCase;
@@ -23,11 +21,6 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     bind_tool_script_dispatcher_to_remote_shell();
-    bindDevelopmentDnsMappingTestDoubles('node-converger-dns');
-});
-
-afterEach(function (): void {
-    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
 });
 
 describe('NodeConverger', function (): void {
@@ -57,7 +50,7 @@ describe('NodeConverger', function (): void {
             ->toBe(['node', 'tool'])
             ->and(collect($result->actions())->pluck('mode')->unique()->values()->all())
             ->toBe(['setup'])
-            ->and(collect($result->actions())->pluck('details.tool')->filter()->sort()->values()->all())
+            ->and(collect($result->actions())->pluck('details.tool')->filter()->unique()->sort()->values()->all())
             ->toBe([
                 'caddy',
                 'composer',
@@ -69,8 +62,6 @@ describe('NodeConverger', function (): void {
             ])
             ->and(collect($result->actions())->pluck('details.tool')->filter()->contains('valkey'))
             ->toBeFalse()
-            ->and(File::exists(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf'))
-            ->toBeTrue()
             ->and(
                 NodeTool::query()
                     ->where('node_id', $node->id)

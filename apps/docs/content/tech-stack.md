@@ -744,13 +744,14 @@ baseline converges `orbit-caddy`, the WireGuard/node identity and trust
 material every other Orbit node uses, a single unprivileged shared `agent`
 runtime user, and whatever role-specific runtime containers the agent workloads
 need. Agent tools never run as the privileged `orbit` maintenance user. The
-node identity requires an explicit unique `tld`, as every active node does.
-The `agent` and `app-dev` roles consume that node-owned field for DNS mappings;
+node identity requires an explicit unique `tld`, as every active node does;
+`orbit` is reserved for the proxy-owned `.orbit` namespace.
+The `agent` and `app-dev` roles consume that node-owned field for wildcard DNS mappings;
 neither role owns it or supplies a default.
-The gateway maps `*.{tld}` to the node's WireGuard address through the same
-gateway-owned development DNS mapping pattern that `app-dev` uses. Stable
-private `.orbit` service names are router-owned and distinct from these
-development/agent TLD mappings.
+The node family always maps `orbit.{tld}` to an active node's WireGuard address
+and adds `*.{tld}` plus a local-zone directive only while that node has an
+active `app-dev` or `agent` role. Stable private `.orbit` service names are
+proxy-family state and distinct from these node records.
 
 Each agent tool is an ordinary entry in the `tool` catalog with category `agent`; there is no separate `agent_tool` state family. Tools are installed through `orbit tool:install`, run through the runtime backend declared by the tool definition, and configured through gateway-tracked tool state. Tool web UIs are exposed by default through tool-owned internal HTTPS proxy routes under the agent TLD (for example `https://openclaw.agent` and `https://hermes.agent`). Tool credentials and web UI tokens are returned only by `tool:credentials` and only when the caller has the explicit `tool:credentials` permission; the agent self-grant does not include that permission. Multiple agent tools may be installed and run on the same node, but Orbit warns at install or start time because node-level activity attribution is weaker when more than one is active. See [Architecture: Node roles](architecture.md#node-roles).
 
@@ -764,6 +765,38 @@ gateway. There is no separate auth token; the WireGuard handshake is the
 credential.
 
 The gateway also acts as the Orbit root certificate authority. It issues TLS certificates for the gateway API and for app/workspace proxy routes, so HTTPS works across the fleet without an external CA.
+
+### Private DNS
+
+Orbit serves private fleet DNS through a `dnsmasq` runtime with three explicit,
+non-overlapping configuration artifacts:
+
+- the `dns` tool owns base `dnsmasq.conf`, including upstream resolvers and
+  explicit includes for `/etc/dnsmasq.d/10-node-records.conf` and
+  `/etc/dnsmasq.d/20-proxy-records.conf`;
+- the node family owns `10-node-records.conf`, with a concrete
+  `orbit.{node-tld}` record for every active node and wildcard plus local-zone
+  directives only for active `app-dev` and `agent` nodes; and
+- the proxy family owns `20-proxy-records.conf`, with router/private `.orbit`
+  directives and exact backend records, currently including S3 backends.
+
+The node TLD `orbit` is reserved for the proxy-owned `.orbit` namespace.
+
+The shared reconciler atomically replaces each requested artifact under one
+lock and reloads or restarts the DNS runtime once; it does not provide an
+all-three-file transaction or transfer record ownership between families. The
+DNS tool also owns container/service presence, listener readiness, VPN-side
+forwarding, and client-DNS settings. The active `vpn` role requires this tool
+capability; Orbit has no `dns` role and no DNS state family. Compose places the
+DNS runtime in the WireGuard namespace. Swarm keeps DNS and WireGuard as
+separate services on a private network and converges forwarding from the
+WireGuard namespace to the DNS service.
+
+Node identity create, update, remove, and activation paths use the combined
+node-plus-proxy record reconciler. Role add/remove that changes only wildcard
+eligibility uses the node-only reconciler. Neither path rewrites base
+configuration. Only installation and the monolithic-to-projection layout
+migration materialize all three artifacts together.
 
 ### Public DNS/CDN
 

@@ -18,6 +18,7 @@ use App\Services\WebSockets\WebSocketRoleBaselineTiming;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Orbit\Core\Nodes\NodeTld;
 use RuntimeException;
 
 #[Signature('orbit:internal:bake-websocket-node
@@ -27,6 +28,7 @@ use RuntimeException;
     {--wireguard-address= : Node WireGuard address}
     {--gateway-endpoint= : Gateway endpoint address}
     {--user=orbit : Runtime user}
+    {--tld= : Required only when creating a new WebSocket node}
     {--valkey-node= : Existing database node name for Valkey}
     {--converge-runtime : Converge the WebSocket Reverb runtime baseline after registry bake}')]
 #[Description('Bake websocket role registry state for prepared E2E topology images')]
@@ -46,6 +48,7 @@ class BakeWebSocketNodeCommand extends Command
         $wireguardAddress = $this->stringOption('wireguard-address');
         $gatewayEndpoint = $this->stringOption('gateway-endpoint');
         $user = $this->stringOption('user') ?? 'orbit';
+        $requestedTld = $this->stringOption('tld');
         $valkeyNodeName = $this->stringOption('valkey-node');
 
         if ($name === null || $host === null || $wireguardAddress === null || $valkeyNodeName === null) {
@@ -56,6 +59,7 @@ class BakeWebSocketNodeCommand extends Command
             'valkey-node',
             fn (): Node => $this->activeValkeyNode($valkeyNodeName),
         );
+        $tld = $this->resolveNodeTld($name, $requestedTld);
         $hostKey = $this->measureBakeStep(
             'host-key',
             fn (): PinnedHostKey => app(SshHostKeyPinner::class)->pin($hostKeyHost ?? $host),
@@ -70,6 +74,7 @@ class BakeWebSocketNodeCommand extends Command
                 wireguardAddress: $wireguardAddress,
                 gatewayEndpoint: $gatewayEndpoint,
                 user: $user,
+                tld: $tld,
                 hostKey: $hostKey,
             ),
         );
@@ -139,42 +144,40 @@ class BakeWebSocketNodeCommand extends Command
         string $wireguardAddress,
         ?string $gatewayEndpoint,
         string $user,
+        string $tld,
         PinnedHostKey $hostKey,
     ): Node {
-        $existing = Node::query()
-            ->where('name', $name)
-            ->first();
+        return $registryWriter->writeNodeIdentity(
+            name: $name,
+            tld: $tld,
+            platform: 'ubuntu',
+            host: $host,
+            wireguardAddress: $wireguardAddress,
+            gatewayEndpoint: $gatewayEndpoint,
+            user: $user,
+            orbitPath: "/home/{$user}/orbit",
+            status: NodeStatus::Active,
+            hostKey: $hostKey,
+        );
+    }
 
-        if (! $existing instanceof Node) {
-            return $registryWriter->writeNodeIdentity(
-                name: $name,
-                tld: null,
-                platform: 'ubuntu',
-                host: $host,
-                wireguardAddress: $wireguardAddress,
-                gatewayEndpoint: $gatewayEndpoint,
-                user: $user,
-                orbitPath: "/home/{$user}/orbit",
-                hostKey: $hostKey,
-            );
+    private function resolveNodeTld(string $name, ?string $requestedTld): string
+    {
+        $existing = Node::query()->where('name', $name)->first();
+
+        if ($existing instanceof Node) {
+            if (! NodeTld::isValid($existing->tld)) {
+                throw new RuntimeException("Existing node [{$name}] must have a valid non-reserved TLD.");
+            }
+
+            return $existing->tld;
         }
 
-        $existing->forceFill([
-            'platform' => 'ubuntu',
-            'host' => $host,
-            'wireguard_address' => $wireguardAddress,
-            'gateway_endpoint' => $gatewayEndpoint,
-            'user' => $user,
-            'orbit_path' => "/home/{$user}/orbit",
-            'status' => NodeStatus::Active,
-            'host_key_type' => $hostKey->type,
-            'host_key_fingerprint' => $hostKey->fingerprint,
-            'host_key_public' => $hostKey->publicKey,
-            'host_key_pin_mode' => $hostKey->pinMode,
-            'host_key_pinned_at' => now(),
-        ])->save();
+        if ($requestedTld === null || ! NodeTld::isValid($requestedTld)) {
+            throw new RuntimeException('A valid non-reserved tld is required when creating a WebSocket node.');
+        }
 
-        return $existing->refresh();
+        return $requestedTld;
     }
 
     private function convergeRuntime(
@@ -215,6 +218,12 @@ class BakeWebSocketNodeCommand extends Command
         return is_string($value) && $value !== '' ? $value : null;
     }
 
+    /**
+     * @template T
+     *
+     * @param  callable(): T  $callback
+     * @return T
+     */
     private function measureBakeStep(string $step, callable $callback): mixed
     {
         $startedAt = hrtime(true);

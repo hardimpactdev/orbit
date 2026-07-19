@@ -33,8 +33,10 @@ execution.
 5. Remove the gateway-managed WireGuard peer.
 6. Delete the node's firewall-rule registry rows from gateway state without
    contacting the target or altering its live firewall.
-7. Remove development DNS mappings that the gateway owns for development nodes.
-8. Delete the node record.
+7. Delete the node record.
+8. Reconcile node- and proxy-owned DNS projections through the shared
+   `reconcileRecords()` materializer and restart DNS once when artifacts
+   changed. Do not rewrite tool-owned base configuration.
 9. Return the result.
 
 ## Failure Semantics
@@ -47,16 +49,15 @@ execution.
   non-interactive input mode or when interactive confirmation is declined.
 - Report partial WireGuard detach as a structured warning in the success
   response.
-- Report partial development DNS cleanup as a structured warning in the success
-  response.
+- Fail the removal action when DNS projection reconciliation fails; do not
+  report projection cleanup as successful.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway-local remove authorization, destructive consent, self-removal, gateway-node denial, not-found envelopes, and grant cleanup. |
-| `apps/gateway/tests/Feature/Http/Api/NodeRemoveDevelopmentDnsWarningTest.php` | Gateway API development DNS warning payload and no-warning cleanup success. |
 
 Destructive consent coverage note: gateway API tests cover missing-consent rejection; interactive confirmation remains a CLI prompt coverage gap outside this gateway-caller page.
 
-Warning payload coverage note: development DNS warning payload shape is covered by the linked API test; WireGuard detach warning variants stay coverage gaps until focused tests land.
+WireGuard detach warning variants stay coverage gaps until focused tests land.

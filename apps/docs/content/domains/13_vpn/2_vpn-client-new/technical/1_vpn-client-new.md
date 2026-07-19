@@ -51,10 +51,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - The generated admin-client config must not use the gateway node peer IP, such
   as `10.6.0.2`, as DNS, and must not include public fallback resolvers such as
   `1.1.1.1`.
-- The gateway owns desired development/agent DNS mappings and DNS policy behind
-  that endpoint. In v1 the `vpn` role DNS runtime serves and materializes those
-  mappings. Stable private `.orbit` service names are router-owned service
-  contracts and are not created by `vpn-client:new`.
+- The node and proxy families own the record projections served behind that
+  endpoint. The DNS tool owns base configuration and runtime capability, which
+  the `vpn` role requires. `vpn-client:new` creates none of those artifacts.
 
 ### Node Identity Boundary
 
@@ -66,8 +65,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### DNS and route boundaries
 
-`vpn-client:new` must not create gateway development DNS mappings,
-caller-local DNS overrides, app routes, proxy routes, or Cloudflare records.
+`vpn-client:new` must not create node/proxy DNS projections, tool-owned DNS
+base/runtime state, caller-local DNS overrides, app routes, proxy routes, or Cloudflare records.
 The command only returns a client config that points DNS at the WireGuard
 server DNS endpoint.
 

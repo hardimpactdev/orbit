@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use JsonException;
+use Orbit\Core\Nodes\NodeTld;
 use RuntimeException;
 
 #[Signature(
@@ -63,12 +64,12 @@ class BootstrapGatewayLocalCommand extends Command
             throw new RuntimeException('Name and wireguard-address are required.');
         }
 
-        if ($gatewayTld === null || ! $this->validTld($gatewayTld)) {
-            throw new RuntimeException('Gateway TLD is required and must be a lowercase DNS label.');
+        if ($gatewayTld === null || ! NodeTld::isValid($gatewayTld)) {
+            throw new RuntimeException('Gateway TLD is required and must be a non-reserved lowercase DNS label.');
         }
 
-        if ($identity !== null && ($operatorTld === null || ! $this->validTld($operatorTld))) {
-            throw new RuntimeException('Operator TLD is required and must be a lowercase DNS label.');
+        if ($identity !== null && ($operatorTld === null || ! NodeTld::isValid($operatorTld))) {
+            throw new RuntimeException('Operator TLD is required and must be a non-reserved lowercase DNS label.');
         }
 
         if ($operatorTld !== null && $operatorTld === $gatewayTld) {
@@ -295,11 +296,6 @@ class BootstrapGatewayLocalCommand extends Command
         }
 
         return GatewayImageReference::fromString($image);
-    }
-
-    private function validTld(string $tld): bool
-    {
-        return strlen($tld) <= 63 && preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld) === 1;
     }
 
     private function gatewayImageArchive(): ?string

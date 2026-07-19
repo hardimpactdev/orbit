@@ -14,11 +14,11 @@ VPN-role runtime clients and the backend admin credential.
 
 [`doctor --family=node`](../1_node/node-doctor.md) owns Orbit node WireGuard
 identity, node peers managed by the gateway, WireGuard readiness for the `vpn`
-role, the gateway-owned DNS mappings the `vpn` role serves, and stale node-peer
-drift. [`doctor --family=tool`](../3_tool/tool-doctor.md) owns drift in the
-`dns` tool row that backs the VPN-facing DNS runtime (the orbit-dns/dnsmasq
-substrate); `doctor --family=node --restore` re-applies the active `vpn` role
-baseline wholesale. There is no `doctor --family=vpn` contract.
+role, node-owned record projection, and stale node-peer drift.
+[`doctor --family=proxy`](../8_proxy/proxy-doctor.md) owns private `.orbit` and
+exact-backend record projection. [`doctor --family=tool`](../3_tool/tool-doctor.md)
+owns DNS base configuration and runtime capability. A node-family restore does
+not repair tool-owned DNS drift. There is no `doctor --family=vpn` contract.
 
 ## Domain Rules
 
@@ -51,8 +51,8 @@ Node identity is managed separately.
 - They do this only when the backend for the active `vpn` role requires
   second-factor authentication.
 - VPN commands do not create app routes, proxy routes, Cloudflare records,
-  gateway development DNS mappings, private `.orbit` service names owned by the
-  router, or caller-local resolver overrides.
+  node- or proxy-owned private DNS projections, tool-owned DNS base/runtime
+  state, or caller-local resolver overrides.
 - Backend implementation details, such as wg-easy storage layout or API paths,
   are not the product contract.
 

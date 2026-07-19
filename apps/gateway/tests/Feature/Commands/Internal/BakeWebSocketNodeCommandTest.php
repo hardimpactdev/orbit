@@ -23,6 +23,8 @@ afterEach(function (): void {
 
 describe('orbit:internal:bake-websocket-node', function (): void {
     beforeEach(function (): void {
+        bind_dnsmasq_reconciler_test_double();
+
         $this->hostKeyPinner = new class {
             /** @var list<array{host: string, expected: ?string}> */
             public array $calls = [];
@@ -93,6 +95,59 @@ describe('orbit:internal:bake-websocket-node', function (): void {
             ])->and($assignment?->last_error)->toBeNull()->and($assignment?->converged_at)
             ->not->toBeNull();
     });
+
+    it('requires and persists an explicit tld when creating a dedicated websocket node', function (): void {
+        $valkey = createBakeWebSocketValkeyNode();
+
+        $this
+            ->artisan('orbit:internal:bake-websocket-node', [
+                'name' => 'websocket-1',
+                '--host' => '10.6.0.8',
+                '--wireguard-address' => '10.6.0.8',
+                '--gateway-endpoint' => '10.6.0.2',
+                '--user' => 'orbit',
+                '--tld' => 'realtime',
+                '--valkey-node' => 'app-dev-1',
+            ])
+            ->assertSuccessful();
+
+        $node = Node::query()->where('name', 'websocket-1')->firstOrFail();
+        $assignment = $node->roleAssignments()->where('role', NodeRoleName::WebSocket->value)->firstOrFail();
+
+        expect($node->tld)
+            ->toBe('realtime')
+            ->and($node->status)
+            ->toBe(NodeStatus::Active)
+            ->and($assignment->settings)
+            ->toBe(['valkey_node_id' => $valkey->id]);
+    });
+
+    it('rejects a missing or reserved tld when creating a dedicated websocket node', function (?string $tld): void {
+        createBakeWebSocketValkeyNode();
+        $arguments = [
+            'name' => 'websocket-1',
+            '--host' => '10.6.0.8',
+            '--wireguard-address' => '10.6.0.8',
+            '--gateway-endpoint' => '10.6.0.2',
+            '--user' => 'orbit',
+            '--valkey-node' => 'app-dev-1',
+        ];
+
+        if ($tld !== null) {
+            $arguments['--tld'] = $tld;
+        }
+
+        expect(fn () => $this->artisan('orbit:internal:bake-websocket-node', $arguments)->run())
+            ->toThrow(
+                RuntimeException::class,
+                'A valid non-reserved tld is required when creating a WebSocket node.',
+            );
+
+        expect(Node::query()->where('name', 'websocket-1')->exists())->toBeFalse();
+    })->with([
+        'missing' => null,
+        'reserved' => 'orbit',
+    ]);
 
     it('requires an active database node with a Valkey process', function (): void {
         Node::factory()

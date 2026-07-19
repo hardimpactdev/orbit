@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 use App\Models\Node;
-use App\Services\Dns\DnsmasqConfigBuilder;
+use App\Services\Dns\DnsmasqBaseConfigBuilder;
+use App\Services\Dns\DnsmasqReconciler;
+use App\Services\Dns\NodeDnsmasqRecordsBuilder;
+use App\Services\Dns\ProxyDnsmasqRecordsBuilder;
 use App\Services\Doctor\DnsRuntimeProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -15,9 +18,16 @@ beforeEach(function (): void {
     $this->workdir = sys_get_temp_dir().'/orbit-dns-probe-'.bin2hex(random_bytes(4));
     File::ensureDirectoryExists($this->workdir);
 
-    $this->probe = new DnsRuntimeProbe(
-        configBuilder: new DnsmasqConfigBuilder,
+    $reconciler = new DnsmasqReconciler(
+        baseConfigBuilder: new DnsmasqBaseConfigBuilder,
+        nodeRecordsBuilder: new NodeDnsmasqRecordsBuilder,
+        proxyRecordsBuilder: new ProxyDnsmasqRecordsBuilder,
         rootPath: $this->workdir,
+    );
+    $this->probe = new DnsRuntimeProbe(
+        baseConfigBuilder: new DnsmasqBaseConfigBuilder,
+        rootPath: $this->workdir,
+        dnsmasqReconciler: $reconciler,
     );
 });
 
@@ -41,13 +51,14 @@ it('reports tool.dns_port_not_listening when port 53 is silent', function (): vo
     Process::fake([
         'docker ps*' => Process::result('orbit-dns-id'),
         'docker exec*' => Process::result(''),
+        'docker inspect*' => Process::result(dns_runtime_probe_mounts($this->workdir)),
     ]);
 
     Node::factory()->create([
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
-    $expected = new DnsmasqConfigBuilder()->build(Node::query()->get());
+    $expected = new DnsmasqBaseConfigBuilder()->build();
     File::put($this->workdir.'/dnsmasq.conf', $expected);
 
     $drift = $this->probe->probe();
@@ -55,10 +66,11 @@ it('reports tool.dns_port_not_listening when port 53 is silent', function (): vo
     expect(collect($drift)->pluck('key')->all())->toContain('tool.dns_port_not_listening');
 });
 
-it('reports tool.dns_config_drift when on-disk dnsmasq.conf differs from intent', function (): void {
+it('reports tool.dns_base_config_mismatch when on-disk dnsmasq.conf differs from tool intent', function (): void {
     Process::fake([
         'docker ps*' => Process::result('orbit-dns-id'),
         'docker exec*' => Process::result('udp 0 0 :::53 :::* LISTEN'),
+        'docker inspect*' => Process::result(dns_runtime_probe_mounts($this->workdir)),
     ]);
 
     Node::factory()->create([
@@ -69,25 +81,73 @@ it('reports tool.dns_config_drift when on-disk dnsmasq.conf differs from intent'
 
     $drift = $this->probe->probe();
 
-    expect(collect($drift)->pluck('key')->all())->toContain('tool.dns_config_drift');
+    expect(collect($drift)->pluck('key')->all())->toContain('tool.dns_base_config_mismatch');
+});
+
+it('does not classify node or proxy record fragment differences as tool drift', function (): void {
+    Process::fake([
+        'docker ps*' => Process::result('orbit-dns-id'),
+        'docker exec*' => Process::result('udp 0 0 :::53 :::* LISTEN'),
+        'docker inspect*' => Process::result(dns_runtime_probe_mounts($this->workdir)),
+    ]);
+    File::ensureDirectoryExists($this->workdir.'/dnsmasq.d');
+    File::put($this->workdir.'/dnsmasq.conf', new DnsmasqBaseConfigBuilder()->build());
+    File::put($this->workdir.'/dnsmasq.d/10-node-records.conf', "stale node records\n");
+    File::put($this->workdir.'/dnsmasq.d/20-proxy-records.conf', "stale proxy records\n");
+
+    expect($this->probe->probe())->toBe([]);
 });
 
 it('does not report drift when runtime is healthy and config matches intent', function (): void {
     Process::fake([
         'docker ps*' => Process::result('orbit-dns-id'),
         'docker exec*' => Process::result('udp 0 0 :::53 :::* LISTEN'),
+        'docker inspect*' => Process::result(dns_runtime_probe_mounts($this->workdir)),
     ]);
 
     Node::factory()->create([
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
-    $expected = new DnsmasqConfigBuilder()->build(Node::query()->get());
+    $expected = new DnsmasqBaseConfigBuilder()->build();
     File::put($this->workdir.'/dnsmasq.conf', $expected);
 
     $drift = $this->probe->probe();
 
     expect($drift)->toBe([]);
+});
+
+it('reports base substrate drift when the active projection mount has the wrong source or mode', function (): void {
+    Process::fake([
+        'docker ps*' => Process::result('orbit-dns-id'),
+        'docker exec*' => Process::result('udp 0 0 :::53 :::* LISTEN'),
+        'docker inspect*' => Process::result(json_encode([
+            [
+                'Source' => '/wrong/dnsmasq.d',
+                'Destination' => '/etc/dnsmasq.d',
+                'RW' => false,
+            ],
+            [
+                'Source' => $this->workdir.'/dnsmasq.d',
+                'Destination' => '/etc/dnsmasq.d',
+                'RW' => true,
+            ],
+        ], JSON_THROW_ON_ERROR)),
+    ]);
+    File::put($this->workdir.'/dnsmasq.conf', new DnsmasqBaseConfigBuilder()->build());
+
+    $entry = collect($this->probe->probe())
+        ->first(fn ($entry): bool => $entry->key === 'tool.dns_base_config_mismatch');
+
+    expect($entry)
+        ->not
+        ->toBeNull()
+        ->and($entry->detail['components'])
+        ->toBe(['projection_mount'])
+        ->and($entry->detail['projection_source'])
+        ->toBe($this->workdir.'/dnsmasq.d')
+        ->and($entry->detail['projection_read_only'])
+        ->toBeTrue();
 });
 
 it('recognizes the swarm dns task as the dns runtime container', function (): void {
@@ -97,13 +157,14 @@ it('recognizes the swarm dns task as the dns runtime container', function (): vo
             'swarm-dns-task',
         ),
         'docker exec*' => Process::result('udp 0 0 :::53 :::* LISTEN'),
+        'docker inspect*' => Process::result(dns_runtime_probe_mounts($this->workdir)),
     ]);
 
     Node::factory()->create([
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
-    $expected = new DnsmasqConfigBuilder()->build(Node::query()->get());
+    $expected = new DnsmasqBaseConfigBuilder()->build();
     File::put($this->workdir.'/dnsmasq.conf', $expected);
 
     $drift = $this->probe->probe();
@@ -144,13 +205,14 @@ it('reports tool.dns_client_dns_drift when wg-easy client DNS is not pinned to t
     Process::fake([
         'docker ps*' => Process::result('orbit-dns-id'),
         'docker exec*' => Process::result('udp 0 0 :::53 :::* LISTEN'),
+        'docker inspect*' => Process::result(dns_runtime_probe_mounts($this->workdir)),
     ]);
 
     Node::factory()->create([
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
-    $expected = new DnsmasqConfigBuilder()->build(Node::query()->get());
+    $expected = new DnsmasqBaseConfigBuilder()->build();
     File::put($this->workdir.'/dnsmasq.conf', $expected);
     createDnsRuntimeProbeWgEasyDatabase($this->workdir.'/wg-easy/wg-easy.db', defaultDns: '["10.6.0.1"]', clients: [
         ['name' => 'operator', 'ipv4_address' => '10.6.0.3', 'dns' => '["10.6.0.1","1.1.1.1"]'],
@@ -181,13 +243,14 @@ it('does not report client dns drift when wg-easy default and client DNS match i
     Process::fake([
         'docker ps*' => Process::result('orbit-dns-id'),
         'docker exec*' => Process::result('udp 0 0 :::53 :::* LISTEN'),
+        'docker inspect*' => Process::result(dns_runtime_probe_mounts($this->workdir)),
     ]);
 
     Node::factory()->create([
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
-    $expected = new DnsmasqConfigBuilder()->build(Node::query()->get());
+    $expected = new DnsmasqBaseConfigBuilder()->build();
     File::put($this->workdir.'/dnsmasq.conf', $expected);
     createDnsRuntimeProbeWgEasyDatabase($this->workdir.'/wg-easy/wg-easy.db', defaultDns: '["10.6.0.1"]', clients: [
         ['name' => 'operator', 'ipv4_address' => '10.6.0.3', 'dns' => '["10.6.0.1"]'],
@@ -226,7 +289,7 @@ it('marks the five drift kinds as restorable', function (): void {
         ->toBeTrue()
         ->and($this->probe->isRestorable('tool.dns_port_not_listening'))
         ->toBeTrue()
-        ->and($this->probe->isRestorable('tool.dns_config_drift'))
+        ->and($this->probe->isRestorable('tool.dns_base_config_mismatch'))
         ->toBeTrue()
         ->and($this->probe->isRestorable('tool.dns_client_dns_drift'))
         ->toBeTrue()
@@ -237,7 +300,7 @@ it('marks the five drift kinds as restorable', function (): void {
 });
 
 it('does not mark dns runtime drift as adoptable', function (): void {
-    expect($this->probe->isAdoptable('tool.dns_config_drift'))
+    expect($this->probe->isAdoptable('tool.dns_base_config_mismatch'))
         ->toBeFalse()
         ->and($this->probe->isAdoptable('tool.dns_container_missing'))
         ->toBeFalse()
@@ -251,6 +314,11 @@ it('does not mark dns runtime drift as adoptable', function (): void {
 
 it('restores config drift by rewriting dnsmasq.conf and restarting orbit-dns', function (): void {
     Process::fake([
+        "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-dns'" => Process::result(''),
+        'docker ps -a -q -f name=orbit-dns' => Process::result('orbit-dns-id'),
+        'docker inspect --format*' => Process::result(dns_runtime_probe_mounts($this->workdir)),
+        "docker service inspect 'orbit_orbit-dns'" => Process::result(exitCode: 1),
+        'docker container inspect orbit-dns' => Process::result(output: "{}\n"),
         'docker restart orbit-dns' => Process::result(),
     ]);
 
@@ -260,24 +328,24 @@ it('restores config drift by rewriting dnsmasq.conf and restarting orbit-dns', f
     ]);
     File::put($this->workdir.'/dnsmasq.conf', "stale\n");
 
-    $result = $this->probe->restore('tool.dns_config_drift');
+    $result = $this->probe->restore('tool.dns_base_config_mismatch');
 
     expect($result)
         ->toBeTrue()
         ->and(File::get($this->workdir.'/dnsmasq.conf'))
-        ->toContain('address=/orbit.gateway/10.6.0.2');
+        ->toBe(new DnsmasqBaseConfigBuilder()->build());
 
     Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker restart orbit-dns'));
 });
 
-it('restores config drift in swarm by forcing the orbit dns service update and reconverging forwarding', function (): void {
+it('restores base config drift in swarm by forcing the orbit dns service update', function (): void {
     Process::fake([
+        "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-dns'" => Process::result(
+            'swarm-dns-task',
+        ),
+        'docker inspect --format*' => Process::result(dns_runtime_probe_mounts($this->workdir)),
         "docker service inspect 'orbit_orbit-dns'" => Process::result(),
         "docker service update --force 'orbit_orbit-dns'" => Process::result(),
-        "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn'" => Process::result(
-            "vpn-container-id\n",
-        ),
-        'docker exec*' => Process::result(),
     ]);
 
     File::ensureDirectoryExists($this->workdir.'/swarm');
@@ -288,22 +356,15 @@ it('restores config drift in swarm by forcing the orbit dns service update and r
     ]);
     File::put($this->workdir.'/dnsmasq.conf', "stale\n");
 
-    $result = $this->probe->restore('tool.dns_config_drift');
+    $result = $this->probe->restore('tool.dns_base_config_mismatch');
 
     expect($result)
         ->toBeTrue()
         ->and(File::get($this->workdir.'/dnsmasq.conf'))
-        ->toContain('address=/orbit.gateway/10.6.0.2');
+        ->toBe(new DnsmasqBaseConfigBuilder()->build());
 
     Process::assertRan(
         fn ($process): bool => (string) $process->command === "docker service update --force 'orbit_orbit-dns'",
-    );
-    Process::assertRan(
-        fn ($process): bool => (
-            str_contains((string) $process->command, "docker exec 'vpn-container-id' sh -lc")
-            && str_contains((string) $process->command, 'PREROUTING')
-            && str_contains((string) $process->command, 'MASQUERADE')
-        ),
     );
 });
 
@@ -328,6 +389,57 @@ it('restores missing swarm vpn dns forwarding by converging the vpn task namespa
             && str_contains((string) $process->command, 'MASQUERADE')
         ),
     );
+});
+
+it('stages owner-neutral runtime layout before restoring a missing standalone container', function (): void {
+    File::put($this->workdir.'/docker-compose.yaml', "services:\n  orbit-dns: {}\n");
+    Process::fake(function ($process) {
+        $command = (string) $process->command;
+
+        if (str_contains($command, 'docker compose') && str_contains($command, 'up -d')) {
+            return Process::result();
+        }
+
+        if ($command === "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-dns'") {
+            return Process::result('');
+        }
+
+        if ($command === 'docker ps -a -q -f name=orbit-dns') {
+            return Process::result("orbit-dns-id\n");
+        }
+
+        if (str_starts_with($command, 'docker inspect --format')) {
+            return Process::result(dns_runtime_probe_mounts($this->workdir));
+        }
+
+        return Process::result(exitCode: 1, errorOutput: "Unexpected command: {$command}");
+    });
+    Process::preventStrayProcesses();
+
+    expect($this->probe->restore('tool.dns_container_missing'))
+        ->toBeTrue()
+        ->and(File::get($this->workdir.'/dnsmasq.conf'))
+        ->toBe(new DnsmasqBaseConfigBuilder()->build())
+        ->and(File::get($this->workdir.'/dnsmasq.d/10-node-records.conf'))
+        ->toBe("# orbit-managed=node-dns-records\n")
+        ->and(File::get($this->workdir.'/dnsmasq.d/20-proxy-records.conf'))
+        ->toBe("# orbit-managed=proxy-dns-records\n");
+});
+
+it('leaves legacy semantic fragments untouched for explicit installer migration', function (): void {
+    File::ensureDirectoryExists($this->workdir.'/dnsmasq.d');
+    File::put($this->workdir.'/dnsmasq.conf', "address=/orbit.gateway/10.6.0.2\n");
+    File::put($this->workdir.'/dnsmasq.d/10-node-records.conf', "node owner sentinel\n");
+    File::put($this->workdir.'/dnsmasq.d/20-proxy-records.conf', "proxy owner sentinel\n");
+    Process::fake();
+
+    expect($this->probe->restore('tool.dns_container_missing'))
+        ->toBeFalse()
+        ->and(File::get($this->workdir.'/dnsmasq.d/10-node-records.conf'))
+        ->toBe("node owner sentinel\n")
+        ->and(File::get($this->workdir.'/dnsmasq.d/20-proxy-records.conf'))
+        ->toBe("proxy owner sentinel\n");
+    Process::assertNothingRan();
 });
 
 /**
@@ -385,7 +497,7 @@ function write_dns_runtime_probe_expected_config(string $workdir): void
         'wireguard_address' => '10.6.0.2',
     ]);
 
-    File::put($workdir.'/dnsmasq.conf', new DnsmasqConfigBuilder()->build(Node::query()->get()));
+    File::put($workdir.'/dnsmasq.conf', new DnsmasqBaseConfigBuilder()->build());
 }
 
 function fake_dns_runtime_probe_swarm_runtime_with_forwarding(): void
@@ -411,6 +523,10 @@ function fake_dns_runtime_probe_swarm_runtime(?string $forwardingFailure): void
             return Process::result("swarm-dns-task\n");
         }
 
+        if (str_starts_with($command, 'docker inspect --format')) {
+            return Process::result(dns_runtime_probe_mounts(test()->workdir));
+        }
+
         if (str_contains($command, "docker exec 'swarm-dns-task'")) {
             return Process::result('udp 0 0 :::53 :::* LISTEN');
         }
@@ -427,6 +543,16 @@ function fake_dns_runtime_probe_swarm_runtime(?string $forwardingFailure): void
 
         return Process::result(exitCode: 1, errorOutput: "Unexpected command: {$command}");
     });
+}
+
+function dns_runtime_probe_mounts(string $workdir, bool $readWrite = false): string
+{
+    return json_encode([[
+        'Type' => 'bind',
+        'Source' => $workdir.'/dnsmasq.d',
+        'Destination' => '/etc/dnsmasq.d',
+        'RW' => $readWrite,
+    ]], JSON_THROW_ON_ERROR)."\n";
 }
 
 /**

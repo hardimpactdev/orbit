@@ -57,17 +57,20 @@ These terms describe the entries that DNS commands read and write on the caller 
 
 These terms define what the DNS command domain must not touch.
 
-- **Development DNS mapping owned by the gateway:** Development DNS state for the node family
-  created during app-role provisioning and repaired by
-  `doctor --family=node --restore`. DNS commands must not create, inspect, or
-  repair these mappings.
+- **Node DNS projection:** Node-family state in
+  `dnsmasq.d/10-node-records.conf`: a concrete record for every active node and
+  wildcard/local-zone directives only for active `app-dev` and `agent` nodes.
+  The node TLD `orbit` is reserved for the proxy-owned `.orbit` namespace. DNS
+  commands must not create, inspect, or repair this projection.
 - **Private `.orbit` service name:** Stable service name such as `valkey.orbit`,
   `postgres.orbit`, or `websocket.orbit` that resolves inside the Orbit network.
-  The gateway-coupled `router` role owns this service contract. DNS commands
-  must not create, inspect, or repair these service names.
-- **App-role resolver drift:** Node-family drift where app-role resolver state
-  does not match the readiness expectations that the gateway owns. DNS commands must not
-  create an app-role write exception or repair app-role resolver state.
+  The proxy family projects router/private `.orbit` directives and exact
+  backend records into `dnsmasq.d/20-proxy-records.conf`. DNS commands must not
+  create, inspect, or repair these records.
+- **DNS tool runtime boundary:** The `dns` tool owns base `dnsmasq.conf`, its
+  container/service, listener, VPN forwarding, and client-DNS settings. The
+  `vpn` role requires the capability, but there is no `dns` role or state
+  family.
 - **Public DNS boundary:** Product boundary that keeps `dns:*` commands away
   from public DNS records and provider DNS/CDN state. Cloudflare provider DNS
   belongs to `cf-dns:*`, and Orbit ingress configuration belongs to app and proxy
@@ -80,7 +83,7 @@ These are the hard limits for everything in the `dns:*` command family.
 - **DNS-domain boundaries:** DNS commands own caller-local resolver override
   reads, writes, resets, backend refreshes, and local DNS reporting for `dns:*`.
   They do not own a state family or create `doctor --family=dns`. They do not
-  mutate gateway configuration or node reality. They do not create development
-  DNS mappings owned by the gateway, private `.orbit` service names owned by
-  the router, app domains, proxy routes, public DNS records, or arbitrary
+  mutate gateway configuration or node reality. They do not create node-family
+  DNS records, proxy-family private `.orbit` or exact backend records,
+  tool-owned DNS base/runtime state, app domains, proxy routes, public DNS records, or arbitrary
   per-host DNS mappings.

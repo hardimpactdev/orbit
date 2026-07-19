@@ -50,7 +50,7 @@ final readonly class S3RouteRegistrar
             ],
         );
 
-        $this->dnsmasqReconciler->reconcile();
+        $this->dnsmasqReconciler->reconcileProxyRecords();
 
         return $route->refresh();
     }
@@ -64,7 +64,7 @@ final readonly class S3RouteRegistrar
         }
 
         ProxyRoute::query()->where('domain', self::ServiceDomain)->delete();
-        $this->dnsmasqReconciler->reconcile();
+        $this->dnsmasqReconciler->reconcileProxyRecords();
     }
 
     /**

@@ -10,7 +10,9 @@ use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\NodeRoleAssignment;
-use App\Services\Dns\DnsmasqConfigBuilder;
+use App\Services\Dns\DnsmasqBaseConfigBuilder;
+use App\Services\Dns\DnsmasqReconciler;
+use App\Services\Dns\DnsmasqRuntimeInspector;
 use App\Services\Vpn\VpnDnsSwarmManager;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -20,9 +22,11 @@ use Throwable;
 final readonly class DnsRuntimeProbe
 {
     public function __construct(
-        private DnsmasqConfigBuilder $configBuilder,
+        private DnsmasqBaseConfigBuilder $baseConfigBuilder,
         private string $rootPath,
         private VpnDnsSwarmManager $swarmManager = new VpnDnsSwarmManager,
+        private ?DnsmasqReconciler $dnsmasqReconciler = null,
+        private DnsmasqRuntimeInspector $runtimeInspector = new DnsmasqRuntimeInspector,
     ) {}
 
     public function family(): string
@@ -36,7 +40,7 @@ final readonly class DnsRuntimeProbe
     public function probe(): array
     {
         $drift = [];
-        $containerId = $this->dnsContainerId();
+        $containerId = $this->runtimeInspector->containerId();
 
         if ($containerId === null) {
             $drift[] = new DriftEntry(
@@ -58,13 +62,29 @@ final readonly class DnsRuntimeProbe
             );
         }
 
+        $baseConfigComponents = [];
+
         if ($this->configDrifted()) {
+            $baseConfigComponents[] = 'base_config';
+        }
+
+        if (! $this->projectionDirectoryIsMounted($containerId)) {
+            $baseConfigComponents[] = 'projection_mount';
+        }
+
+        if ($baseConfigComponents !== []) {
             $drift[] = new DriftEntry(
                 family: $this->family(),
-                key: 'tool.dns_config_drift',
+                key: 'tool.dns_base_config_mismatch',
                 kind: DriftKind::Divergent,
-                summary: 'orbit-dns dnsmasq.conf differs from the gateway intent.',
-                detail: ['path' => $this->confPath()],
+                summary: 'orbit-dns base configuration or projection mount differs from tool-owned intent.',
+                detail: [
+                    'path' => $this->confPath(),
+                    'components' => $baseConfigComponents,
+                    'projection_source' => $this->projectionPath(),
+                    'projection_destination' => DnsmasqRuntimeInspector::ProjectionMount,
+                    'projection_read_only' => true,
+                ],
             );
         }
 
@@ -90,7 +110,7 @@ final readonly class DnsRuntimeProbe
             [
                 'tool.dns_container_missing',
                 'tool.dns_port_not_listening',
-                'tool.dns_config_drift',
+                'tool.dns_base_config_mismatch',
                 'tool.dns_client_dns_drift',
                 'tool.dns_forwarding_missing',
             ],
@@ -108,7 +128,7 @@ final readonly class DnsRuntimeProbe
         return match ($driftKey) {
             'tool.dns_container_missing' => $this->restoreContainer(),
             'tool.dns_port_not_listening' => $this->restartContainer(),
-            'tool.dns_config_drift' => $this->restoreConfig(),
+            'tool.dns_base_config_mismatch' => $this->restoreConfig(),
             'tool.dns_client_dns_drift' => $this->restoreClientDns(),
             'tool.dns_forwarding_missing' => $this->restoreDnsForwarding(),
             default => false,
@@ -118,34 +138,6 @@ final readonly class DnsRuntimeProbe
     public function adopt(string $driftKey): bool
     {
         return false;
-    }
-
-    private function dnsContainerId(): ?string
-    {
-        foreach ([
-            'docker ps -a -q -f name=orbit-dns',
-            "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-dns'",
-        ] as $command) {
-            $result = Process::timeout(15)->run($command);
-
-            if (! $result->successful()) {
-                continue;
-            }
-
-            $output = trim($result->output());
-
-            if ($output === '') {
-                continue;
-            }
-
-            $containerId = strtok($output, "\n");
-
-            if (is_string($containerId)) {
-                return $containerId;
-            }
-        }
-
-        return null;
     }
 
     private function portListening(string $containerId): bool
@@ -166,7 +158,7 @@ final readonly class DnsRuntimeProbe
             return true;
         }
 
-        $expected = $this->configBuilder->buildGatewayState();
+        $expected = $this->baseConfigBuilder->build();
 
         return File::get($confPath) !== $expected;
     }
@@ -219,6 +211,12 @@ final readonly class DnsRuntimeProbe
 
     private function restoreContainer(): bool
     {
+        if ($this->legacyMonolithicBaseExists()) {
+            return false;
+        }
+
+        $this->dnsmasqReconciler()->stageRuntimeLayout();
+
         if (File::exists($this->swarmStackPath())) {
             $result = Process::timeout(180)->run(sprintf(
                 'docker stack deploy -c %s %s',
@@ -226,7 +224,11 @@ final readonly class DnsRuntimeProbe
                 escapeshellarg('orbit'),
             ));
 
-            return $result->successful() && $this->restoreDnsForwarding();
+            if (! $result->successful() || ! $this->projectionDirectoryIsMounted()) {
+                return false;
+            }
+
+            return $this->restoreDnsForwarding();
         }
 
         $result = Process::timeout(180)->run(sprintf(
@@ -234,7 +236,7 @@ final readonly class DnsRuntimeProbe
             escapeshellarg($this->composePath()),
         ));
 
-        return $result->successful();
+        return $result->successful() && $this->projectionDirectoryIsMounted();
     }
 
     private function restartContainer(): bool
@@ -252,10 +254,17 @@ final readonly class DnsRuntimeProbe
 
     private function restoreConfig(): bool
     {
-        $expected = $this->configBuilder->buildGatewayState();
-        File::put($this->confPath(), $expected);
+        if ($this->legacyMonolithicBaseExists()) {
+            return false;
+        }
 
-        return $this->restartContainer();
+        if (! $this->projectionDirectoryIsMounted() && ! $this->restoreContainer()) {
+            return false;
+        }
+
+        $this->dnsmasqReconciler()->reconcileBase();
+
+        return ! $this->configDrifted() && $this->projectionDirectoryIsMounted();
     }
 
     private function restoreClientDns(): bool
@@ -332,6 +341,21 @@ final readonly class DnsRuntimeProbe
         return $this->rootPath.'/dnsmasq.conf';
     }
 
+    private function projectionPath(): string
+    {
+        return $this->rootPath.'/dnsmasq.d';
+    }
+
+    private function projectionDirectoryIsMounted(?string $containerId = null): bool
+    {
+        return $this->runtimeInspector->projectionDirectoryIsMounted($this->projectionPath(), $containerId);
+    }
+
+    private function legacyMonolithicBaseExists(): bool
+    {
+        return File::exists($this->confPath()) && str_contains(File::get($this->confPath()), 'address=/');
+    }
+
     private function composePath(): string
     {
         return $this->rootPath.'/docker-compose.yaml';
@@ -347,6 +371,11 @@ final readonly class DnsRuntimeProbe
         $result = Process::timeout(15)->run("docker service inspect 'orbit_orbit-dns'");
 
         return $result->successful();
+    }
+
+    private function dnsmasqReconciler(): DnsmasqReconciler
+    {
+        return $this->dnsmasqReconciler ?? app(DnsmasqReconciler::class);
     }
 
     private function wgEasyDatabasePath(): string

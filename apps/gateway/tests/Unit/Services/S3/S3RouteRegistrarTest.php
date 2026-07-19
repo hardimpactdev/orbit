@@ -17,6 +17,10 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    bind_dnsmasq_reconciler_test_double();
+});
+
 /**
  * @group service
  */
@@ -92,7 +96,7 @@ it('reconciles the persisted dnsmasq config after syncing the s3 service route',
 
     app(S3RouteRegistrar::class)->syncServiceRoute();
 
-    expect(File::get($configRoot.'/dnsmasq.conf'))
+    expect(File::get($configRoot.'/dnsmasq.d/20-proxy-records.conf'))
         ->toContain('address=/storage-1.s3.orbit/10.6.0.44')
         ->toContain('address=/orbit/10.6.0.1');
 

@@ -755,8 +755,10 @@ final class MetricsRoleBaselineRecordingDnsmasqReconciler extends DnsmasqReconci
 
     public function __construct() {}
 
-    public function reconcile(): void
+    public function reconcileProxyRecords(): bool
     {
         $this->reconciles++;
+
+        return true;
     }
 }

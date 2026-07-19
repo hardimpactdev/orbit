@@ -6,18 +6,12 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 uses(RefreshDatabase::class);
-
-afterEach(function (): void {
-    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
-});
 
 const CALLER_WG_IP = '10.6.0.99';
 
@@ -87,6 +81,10 @@ function getApiNodesJson(string $uri, array $server = []): TestResponse
     /** @var TestCase $test */
     $test = test();
 
+    if (str_contains($uri, 'doctor=')) {
+        write_current_node_dns_projection();
+    }
+
     return $test->call(
         'GET',
         $uri,
@@ -102,7 +100,6 @@ function getApiNodesJson(string $uri, array $server = []): TestResponse
 
 describe('NodeListController', function (): void {
     beforeEach(function (): void {
-        bindDevelopmentDnsMappingTestDoubles('node-list-controller-dns');
         app()->instance(RemoteShell::class, new NodeListControllerRemoteShell);
 
         createCallerNode();
@@ -125,6 +122,7 @@ describe('NodeListController', function (): void {
 
         $response->assertOk();
         $nodes = $response->json('success.data.nodes');
+        expect($nodes[0]['tld'])->toBe('alpha-app');
         $names = array_column($nodes, 'name');
         expect($names)->toBe(['alpha-app', 'zebra-app', 'database-1', 'gateway-1', 'caller', 'control-1']);
     });
@@ -313,6 +311,7 @@ describe('NodeListController', function (): void {
 
         expect($appNode)->toBe([
             'name' => 'app-1',
+            'tld' => 'app-1',
             'host' => '10.6.0.7',
             'addresses' => [
                 'wireguard' => '10.6.0.7',
@@ -442,7 +441,7 @@ describe('NodeListController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.meta.doctor.checked', 1)
-            ->assertJsonPath('success.meta.doctor.issues', 3);
+            ->assertJsonPath('success.meta.doctor.issues', 2);
 
         $failure = collect($response->json('success.meta.doctor.failures'))
             ->first(fn (array $failure): bool => $failure['code'] === 'node.record_incomplete');

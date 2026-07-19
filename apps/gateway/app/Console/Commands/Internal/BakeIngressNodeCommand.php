@@ -13,6 +13,7 @@ use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Orbit\Core\Nodes\NodeTld;
 use RuntimeException;
 
 #[Signature('orbit:internal:bake-ingress-node
@@ -42,11 +43,11 @@ class BakeIngressNodeCommand extends Command
         if (
             $name === null
             || $tld === null
-            || ! $this->validTld($tld)
+            || ! NodeTld::isValid($tld)
             || $host === null
             || $wireguardAddress === null
         ) {
-            throw new RuntimeException('Name, valid tld, host, and wireguard-address are required.');
+            throw new RuntimeException('Name, valid non-reserved tld, host, and wireguard-address are required.');
         }
 
         $hostKey = app(SshHostKeyPinner::class)->pin($hostKeyHost ?? $host);
@@ -92,10 +93,5 @@ class BakeIngressNodeCommand extends Command
         $value = $this->option($name);
 
         return is_string($value) && $value !== '' ? $value : null;
-    }
-
-    private function validTld(string $tld): bool
-    {
-        return strlen($tld) <= 63 && preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld) === 1;
     }
 }

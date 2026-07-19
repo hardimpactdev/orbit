@@ -45,15 +45,13 @@ The CLI forwards the request; it never derives Doctor eligibility from the
 calling peer's role. The gateway authorizes the selected target, then resolves
 the role-derived base categories and owned-fact/platform overlays defined by
 the [canonical category model](1_doctor.md#target-eligibility-and-category-set).
-That model includes VPN DNS under `Tools`, Orbit-protected rules on eligible
+That model includes DNS base/runtime capability under `Tools`, Orbit-protected rules on eligible
 Ubuntu nodes under `Firewall`, and `Scheduling` for the gateway plus every node
 targeted by a schedule. A narrow `--family` filter intersects with the resolved
 eligibility set; ineligible families are rejected before probes.
 
-DNS/TLD facts currently live inside the `Node` row. A separate `DNS/TLD`
-slice for operator/app targets and a `DNS` slice for gateway targets is
-planned but not yet emitted; the row will be added when a DNS diagnostic
-source lands.
+DNS projection and runtime findings remain in their owning `Node`, `Proxy
+routes`, and `Tools` rows. No separate DNS row is emitted.
 
 ## Probe Orchestration
 

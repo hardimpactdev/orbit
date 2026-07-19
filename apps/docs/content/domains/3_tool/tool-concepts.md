@@ -80,8 +80,8 @@ These terms describe how Orbit relates to each tool in the catalog.
   selected node's operating system to be supported, runs as the shared
   unprivileged `agent` user when the backend uses an agent runtime, and uses
   the backend declared by its catalog entry.
-- **Agent tool internal route:** Tool-owned proxy route under the agent
-  role TLD, such as `https://openclaw.agent`. Reachable only over the
+- **Agent tool internal route:** Tool-owned proxy route under the agent node's
+  node-owned TLD, such as `https://openclaw.agent`. Reachable only over the
   Orbit/WireGuard network.
 - **Agent tool credentials:** Web UI access metadata returned by
   `tool:credentials` for agent tools. Reading agent tool credentials
@@ -107,6 +107,20 @@ These terms describe the network surfaces a tool may declare.
 - **Tool credentials:** Orbit-owned generated secrets for credential-bearing
   tools. Credentials for runnable service instances belong to the owning
   process definition or process runtime configuration.
+- **DNS tool capability:** The gateway-local `dns` tool that owns the
+  `orbit-dns` runtime, port-53 listener, VPN forwarding, client-DNS settings,
+  and base `dnsmasq.conf`. The `vpn` role requires this capability; it does not
+  create a `dns` role.
+- **DNS base configuration:** Tool-owned `dnsmasq.conf` containing resolver
+  policy and explicit includes for the node-owned
+  `dnsmasq.d/10-node-records.conf` and proxy-owned
+  `dnsmasq.d/20-proxy-records.conf`. It does not contain family-owned records.
+- **DNS record projection boundary:** The DNS tool serves the node and proxy
+  record projections but does not own their content. Node and proxy doctor
+  compare and restore their respective files.
+- **Shared DNS materializer and reload:** Ownership-neutral infrastructure that
+  atomically publishes any family-owned DNS artifact and reloads or restarts
+  the runtime. Calling it does not move artifact ownership to the tool family.
 
 ## Node Execution
 
@@ -139,3 +153,6 @@ These rules define what tool commands may and may not change.
   routes, or non-tool firewall policy. Tool-specific or capability-specific
   command families (such as `php:*`) are admitted only when the workflow is
   clearer as its own product surface.
+- The DNS tool owns only base configuration and runtime capability facts. It
+  does not own node or proxy record projections, and Orbit has no DNS state
+  family.

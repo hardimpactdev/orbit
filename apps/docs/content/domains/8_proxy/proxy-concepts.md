@@ -67,6 +67,14 @@ These terms define the types of routes that the proxy family owns and manages.
   `router` node. It owns private route artifacts, private `.orbit` service
   hostnames, backend pools, and private HTTP/WebSocket/S3 routing before
   reverse proxying to the backend pool.
+- **Private service DNS projection:** Proxy-family artifact at
+  `dnsmasq.d/20-proxy-records.conf`. It contains router/private `.orbit`
+  directives and exact backend records derived from active router-owned service
+  routes. The DNS tool serves this file but does not own its content.
+- **Exact backend DNS record:** A hostname-specific address directive that
+  bypasses the generic `.orbit` router mapping for a backend that must be
+  reached directly. Current records map active S3 backend hostnames such as
+  `storage-1.s3.orbit` to the backend node's WireGuard address.
 - **Private backend artifact:** `orbit-caddy` site rendered on an `app-prod`
   node. It listens on HTTP port `80` bound to the node's WireGuard address and
   serves the app ingress contract to a backend FrankenPHP container. Workspace
@@ -142,7 +150,10 @@ These terms define what the proxy family owns and what remains outside its scope
 
 - **Proxy-family boundaries:** Proxy commands own the unified ingress
   registry, route TLS configuration, ingress contracts, and convergence of derived
-  proxy and TLS artifacts. They do not own app, app WebSocket binding, app
+  proxy and TLS artifacts. The family also owns
+  `dnsmasq.d/20-proxy-records.conf` for router/private `.orbit` and exact
+  backend DNS records. It uses the shared ownership-neutral DNS materializer
+  and restart path when that projection changes. It does not own app, app WebSocket binding, app
   analytics binding, workspace, gateway, websocket service, S3 service,
   analytics service, or tool identity, do not create or remove owner-side
   records, and do not manage TCP tool service endpoints or firewall policy.

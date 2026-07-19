@@ -49,14 +49,14 @@ it('labels the gateway Swarm node', function (): void {
 it('labels the local Swarm node for colocated gateway vpn and dns services', function (): void {
     Process::fake([
         "docker info --format '{{.Swarm.NodeID}}'" => Process::result(output: "node-123\n"),
-        "docker node update --label-add 'orbit.role.gateway=true' --label-add 'orbit.role.vpn=true' --label-add 'orbit.role.dns=true' 'node-123'" =>
+        "docker node update --label-add 'orbit.role.gateway=true' --label-add 'orbit.role.vpn=true' 'node-123'" =>
             Process::result(),
     ]);
 
-    new GatewaySwarmManager()->ensureGatewayEdgeNodeLabels();
+    new GatewaySwarmManager()->ensureGatewayVpnNodeLabels();
 
     Process::assertRan(
-        "docker node update --label-add 'orbit.role.gateway=true' --label-add 'orbit.role.vpn=true' --label-add 'orbit.role.dns=true' 'node-123'",
+        "docker node update --label-add 'orbit.role.gateway=true' --label-add 'orbit.role.vpn=true' 'node-123'",
     );
 });
 

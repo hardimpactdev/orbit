@@ -3,21 +3,21 @@
 [Back to tool catalog.](catalog/README.md)
 [Back to tool family.](README.md)
 
-This contract spells out how Orbit provisions DNS for development names over
-the VPN. The current runtime shape is `wg-easy` + `orbit-dns` +
-`dnsmasq.conf`, kept in sync with fleet state and verified by `doctor`. It is
+This contract spells out how Orbit provisions private fleet DNS over the VPN.
+The current runtime shape is `wg-easy` + `orbit-dns` + a tool-owned base
+configuration and two family-owned record projections. It is
 referenced from
 [`catalog/dns.md`](catalog/dns.md) and from the gateway bootstrap path
 (`orbit:internal:bootstrap-gateway-local`).
 
 DNS *commands* — `dns:resolve-tld`, `dns:list` — stay caller-local and are
-covered by `docs/domains/16_dns/**`. The **node family** owns development and
-agent TLD DNS records (per
-[Architecture: DNS responsibilities](../../architecture.md#dns-responsibilities));
-the **tool family** owns the runtime substrate (the `orbit-dns` container and
-`dnsmasq.conf` artifact rendered from node-family state); **bootstrap** wires
-the two together at gateway install. Stable private `.orbit` service names are
-service contracts owned by the router, not by this `dns` tool contract.
+covered by `docs/domains/16_dns/**`. The **node family** owns
+`dnsmasq.d/10-node-records.conf`; the **proxy family** owns
+`dnsmasq.d/20-proxy-records.conf`; and the **tool family** owns base
+`dnsmasq.conf` plus the DNS runtime, listener, VPN forwarding, and client-DNS
+settings. Bootstrap wires the three artifacts into one gateway-local runtime.
+The shared materializer and reload path is ownership-neutral. The `vpn` role
+requires the DNS tool capability; there is no `dns` role or DNS state family.
 
 ## Ownership
 
@@ -28,10 +28,13 @@ service or command that owns it.
 | ----------------------------------------------- | --------------------------------------------------------------------- |
 | Installing `wg-easy` on the gateway             | `BootstrapGatewayLocalCommand` → `WgEasyServiceInstaller`             |
 | Installing `orbit-dns` on the gateway           | `BootstrapGatewayLocalCommand` → `OrbitDnsServiceInstaller`           |
-| Generating `dnsmasq.conf` from fleet state      | `DnsmasqConfigBuilder` (pure function over `Node` and router-owned `ProxyRoute` rows) |
-| Reconciling `dnsmasq.conf` after fleet changes  | `DnsmasqReconciler` invoked from gateway-side node actions and S3 route/backend transitions |
-| Probing runtime drift                           | Doctor `dns` runtime probe under `doctor --family=tool`               |
-| Restoring `dns` drift                           | The same probe's restore path; DNS runtime drift is never adoptable   |
+| Generating base `dnsmasq.conf`                  | Tool family through `DnsmasqBaseConfigBuilder`                        |
+| Generating `dnsmasq.d/10-node-records.conf`     | Node family through `NodeDnsmasqRecordsBuilder`                       |
+| Generating `dnsmasq.d/20-proxy-records.conf`    | Proxy family through `ProxyDnsmasqRecordsBuilder`                     |
+| Publishing artifacts and restarting DNS        | Ownership-neutral `DnsmasqReconciler` materializer/reload path        |
+| Probing node record drift                       | `NodeDnsProjectionProbe` under `doctor --family=node`                 |
+| Probing proxy record drift                      | `ProxyDnsProjectionProbe` under `doctor --family=proxy`               |
+| Probing base/runtime drift                      | `DnsRuntimeProbe` under `doctor --family=tool`                        |
 
 ## Bootstrap Step Order
 
@@ -44,8 +47,8 @@ The gateway bootstrap runs in this order:
    route HTTPS gateway traffic to `orbit-gateway` over `orbit-network` when
    router and gateway are colocated.
 5. **`wg-easy` container started.**
-6. **`orbit-dns` container started inside wg-easy's network namespace,
-   with the initial `dnsmasq.conf` rendered from current fleet state.**
+6. **`orbit-dns` container started inside wg-easy's network namespace, with
+   all three DNS artifacts materialized before startup.**
 
 `wg-easy` must come up before `orbit-dns`: `orbit-dns` uses
 `network_mode: container:wg-easy`, which pins the netns of the wg-easy
@@ -86,12 +89,13 @@ Service shape:
 - `network_mode: container:wg-easy` — shares wg-easy's netns so dnsmasq
   binds on `10.6.0.1:53` inside the VPN. Avoids the `-p 53:53` open-resolver
   hazard.
-- `volumes: [<dnsmasq.conf path>:/etc/dnsmasq.conf:ro]`
+- read-only mounts for `<config-root>/dnsmasq.conf:/etc/dnsmasq.conf` and
+  `<config-root>/dnsmasq.d:/etc/dnsmasq.d`
 - `cap_add: [NET_ADMIN]`
 - `restart: unless-stopped`
 
-The initial `dnsmasq.conf` is rendered from fleet state before
-`docker compose up -d`, so the container starts with a valid config.
+The base configuration and both record projections are rendered before
+`docker compose up -d`, so the container starts with a complete valid config.
 
 ## Swarm VPN/DNS Target Shape
 
@@ -103,14 +107,15 @@ independently.
 Target service shape:
 
 - `wg-easy` and `orbit-dns` are separate Swarm services with one replica each.
-- Both services are constrained to the same gateway edge node. In v1 that is
-  the node carrying the co-located router, vpn, and dns responsibilities.
+- Both services are constrained to the same gateway edge node. In v1 that node
+  carries the gateway-coupled `vpn` role and required DNS tool capability.
 - Both services attach to the private `orbit-network` Swarm overlay network so
   the VPN service can reach the DNS service by service name.
 - `wg-easy` retains `/dev/net/tun`, `NET_ADMIN`, the required WireGuard state
   mount, and host-mode publication of the public WireGuard UDP endpoint.
-- `orbit-dns` mounts the rendered `dnsmasq.conf`, listens on port 53 inside the
-  private service network, and publishes no public host port.
+- `orbit-dns` mounts base `dnsmasq.conf` and the `dnsmasq.d` projection
+  directory, listens on port 53 inside the private service network, and
+  publishes no public host port.
 - Peer configs continue to advertise the VPN-side DNS address, currently
   `10.6.0.1`.
 - The VPN service owns forwarding from WireGuard peer DNS traffic to the DNS
@@ -121,97 +126,158 @@ Target service shape:
   a gateway reboot or Swarm task replacement without waiting for an operator to
   run `doctor --restore`.
 
-The DNS service may be restarted or updated independently when
-`dnsmasq.conf` changes. DNS reconciliation must not restart WireGuard just
-because DNS mappings for the node family changed.
+The DNS service may be restarted or updated independently when any managed DNS
+configuration artifact changes. DNS reconciliation must not restart WireGuard
+just because DNS mappings for the node family changed.
 
-## `dnsmasq.conf` Shape
+## Configuration Artifact Shapes
 
-Rendered by `DnsmasqConfigBuilder::build(iterable $nodes, iterable $serviceRoutes): string`.
-The output is deterministic and contains:
+### Tool-owned base `dnsmasq.conf`
 
-- One `address=/{tld}/{wireguard_address}` line per active node with both
-  `tld` and `wireguard_address` set. Nodes missing either field are skipped.
-  Wildcard TLD mappings continue to serve `app-dev` and `agent` development
-  hostnames such as `*.test`.
-- One host line for each resolvable node:
-  `address=/orbit.{tld}/{wireguard_address}`. Nodes whose `tld` is `orbit` are
-  excluded because that name would collide with router-owned `.orbit` private
-  service routes such as `websocket.orbit`.
-- Optional `local=/{tld}/` companions per TLD.
-- Router-owned `.orbit` private service routes continue to emit
-  `address=/orbit/{router_wireguard_address}` and `local=/orbit/`.
-- The canonical router-owned `s3.orbit` route emits one exact
-  `address=/{node}.s3.orbit/{node_wireguard_address}` record per matching
-  active S3-role backend. Exact backend records are emitted before the generic
-  `address=/orbit/{router_wireguard_address}` rule so SeaweedFS traffic reaches
-  the workload node instead of looping back through the router.
-- `no-resolv` + upstream resolvers (`server=1.1.1.1`, `server=8.8.8.8`).
-- `conf-dir=/etc/dnsmasq.d/,*.conf` (preserves operator drop-ins, if any).
-- `log-queries` + `log-facility=-`.
+`DnsmasqBaseConfigBuilder::build()` emits deterministic base configuration:
 
-Lines are emitted in stable order (node TLDs, exact S3 backend hostnames, then
-router wildcard rules) so two builder calls on the same inputs produce
-byte-identical output.
+```text
+# orbit-managed=dnsmasq-base
+no-resolv
+server=1.1.1.1
+server=8.8.8.8
+conf-file=/etc/dnsmasq.d/10-node-records.conf
+conf-file=/etc/dnsmasq.d/20-proxy-records.conf
+log-queries
+log-facility=-
+```
+
+The explicit includes admit only Orbit's two record projections; arbitrary
+operator drop-ins are not part of the managed runtime contract.
+
+### Node-owned `10-node-records.conf`
+
+`NodeDnsmasqRecordsBuilder` emits the marker
+`# orbit-managed=node-dns-records` followed by deterministic directives:
+
+- every active node with a valid non-reserved TLD and WireGuard address receives
+  `address=/orbit.{tld}/{wireguard_address}`;
+- only a node with an active `app-dev` or `agent` role also receives
+  `address=/{tld}/{wireguard_address}` and `local=/{tld}/`; and
+- inactive, incomplete, or reserved-TLD node identities are omitted.
+
+Orbit reserves the node TLD `orbit` for the proxy-owned `.orbit` namespace.
+Node create and update reject that value before materialization, preventing a
+concrete `orbit.orbit` directive from competing with the generic proxy suffix.
+
+### Proxy-owned `20-proxy-records.conf`
+
+`ProxyDnsmasqRecordsBuilder` emits the marker
+`# orbit-managed=proxy-dns-records`, followed by exact backend records and then
+router/private `.orbit` directives. Router-owned service routes ending in
+`.orbit` contribute `address=/orbit/{router_wireguard_address}` and
+`local=/orbit/`. The canonical `s3.orbit` route currently contributes one
+exact `address=/{node}.s3.orbit/{node_wireguard_address}` record per matching
+active S3 backend. Exact backend records precede the generic `.orbit` directive
+so backend traffic reaches the workload node rather than looping through the
+router.
 
 ## Reconciliation
 
-`DnsmasqReconciler::reconcile()`:
+`DnsmasqReconciler` exposes ownership-specific entry points:
+`reconcileBase()`, `reconcileNodeRecords()`, and `reconcileProxyRecords()`.
+Node identity create, update, remove, and activation call `reconcileRecords()`
+to request the node and proxy projections together without base configuration.
+Role add/remove that changes only wildcard eligibility calls
+`reconcileNodeRecords()`. `stageAllForInstall()` and
+`migrateLegacyLayout()` are reserved for installation and explicit layout
+migration. The ownership-specific reconciliation entry points and
+`migrateLegacyLayout()`:
 
-1. Reads current `Node`, active role-assignment, and router-owned `ProxyRoute`
-   rows.
-2. Builds a candidate `dnsmasq.conf` via `DnsmasqConfigBuilder`.
-3. If different from the on-disk file, writes the new content.
-4. Restarts dnsmasq by forcing the `orbit_orbit-dns` Swarm service update when
+1. Acquires one shared projection lock before reading canonical gateway intent.
+2. Builds only the requested artifacts while holding that lock, so an older
+   snapshot cannot overwrite a newer projection.
+3. Atomically replaces each changed
+   requested artifact. This is per-file atomic replacement under one lock, not
+   an all-files transactional publish.
+4. Restarts dnsmasq once by forcing the `orbit_orbit-dns` Swarm service update when
    the Swarm stack is present, or by restarting the standalone `orbit-dns`
    container. dnsmasq reloads hosts on `SIGHUP`, but address rules require a
    restart to take effect reliably.
-5. Skips the restart if the file was already up to date.
+5. Rolls the published bytes back if activation fails, so the next convergence
+   attempt cannot mistake unapplied bytes for an activated generation. It skips
+   the restart only when every requested artifact was already up to date.
+
+The two pre-deployment staging entry points use the same lock and atomic
+materializer but deliberately do not restart the old runtime. After deploying
+the new runtime definition, the installer activates changed staged
+configuration. Legacy migration instead lets `migrateLegacyLayout()` publish
+the final three artifacts and perform that activation.
+
+The lock, per-file atomic materializer, and single restart are shared
+infrastructure; they do not own any of the three artifacts.
+
+Existing monolithic-layout deployments migrate in a guarded order. First,
+stage header-only, record-free placeholders in `dnsmasq.d` while leaving the
+monolithic `dnsmasq.conf` active. Deploy the runtime definition with the
+read-only directory mount, then inspect the running container or Swarm task and
+prove that the mount source is the configured `dnsmasq.d` directory, its
+destination is `/etc/dnsmasq.d`, and it is read-only. Only then may
+`migrateLegacyLayout()` publish both semantic record projections followed by
+the base file with explicit includes and perform one restart. Persisted Compose
+or stack YAML is not proof that the active runtime consumes the mount. Scoped
+node, proxy, and tool restores leave legacy-layout drift unresolved; they do
+not perform this cross-artifact migration.
 
 Triggers in the gateway application:
 
-- `node:new` for any node that carries a TLD-supporting role and has `tld` and `wireguard_address` set.
-- `node:update` when `tld` or `wireguard_address` change.
-- `node:remove` for any node.
-- `node role:add` when the added role depends on `tld` (`app-dev` or `agent`).
-- `node role:remove` when removing the last TLD-supporting role from a node.
+- `node:new` for every active node with `tld` and `wireguard_address` set,
+  `node:update` when either field changes, and `node:remove` for any node. These
+  lifecycle paths use `reconcileRecords()` because backend DNS may change with
+  node identity; they never rewrite base `dnsmasq.conf`.
+- `node role:add` and `node role:remove` when `app-dev` or `agent` wildcard
+  eligibility changes. These paths use `reconcileNodeRecords()`, so they do not
+  touch proxy records or base configuration and the concrete node record
+  remains while stale wildcard and local-zone directives are removed.
 - S3 role activation after the SeaweedFS runtime and tool row are ready. This
-  syncs the canonical `s3.orbit` route and reconciles its exact backend DNS
+  syncs the canonical `s3.orbit` route and reconciles its proxy-owned exact backend DNS
   record immediately for an active node. Client-owned `node:new` repeats that
   sync after its Provisioning-to-Active terminal transition.
 - S3 role removal, which updates the remaining backend pool or removes the
   canonical service route when no active S3 backend remains.
 - `S3RouteRegistrar::syncServiceRoute()` during S3 publication or proxy-doctor
   restoration.
+- WebSocket, metrics, and analytics router-route activation or removal, which
+  reconciles the proxy projection only.
 
 The reconciler is idempotent: running it twice in a row is a no-op for the
 second call.
 
 ## Doctor Contract
 
-`doctor --family=tool` runs DNS runtime checks on active gateway nodes that
-also carry the `vpn` role. The issues use family `tool` and canonical
-`tool.dns_*` keys:
+Doctor reports DNS drift in the family that owns the mismatched artifact or
+runtime fact:
 
-| Drift kind                  | Detection                                                          | Restorable | Adoptable |
-| --------------------------- | ------------------------------------------------------------------ | ---------- | --------- |
-| `tool.dns_container_missing`     | Neither the standalone `orbit-dns` container nor the Swarm `orbit_orbit-dns` task is present. | Yes (rerun the persisted stack/compose installer; Swarm restore also reconverges VPN DNS forwarding). | No |
-| `tool.dns_port_not_listening`    | The DNS container exists but no listener is available on `53` inside the container. | Yes (force service update or restart container; Swarm restore also reconverges VPN DNS forwarding). | No |
-| `tool.dns_config_drift`          | `dnsmasq.conf` differs from `DnsmasqConfigBuilder` output for current DB state. | Yes (rewrite + force service update/restart; Swarm restore also reconverges VPN DNS forwarding). | No |
-| `tool.dns_client_dns_drift`      | The persisted wg-easy default DNS or enabled client DNS contains anything other than the active `vpn.dns_ip` value, for example `["10.6.0.1", "1.1.1.1"]`. | Yes (rewrite wg-easy default/client DNS to `[vpn.dns_ip]`). | No |
-| `tool.dns_forwarding_missing`    | The Swarm stack is present, but the `orbit-vpn` task namespace does not contain the UDP/TCP 53 DNAT and MASQUERADE rules that forward peer DNS traffic to `orbit-dns`. | Yes (reapply forwarding inside the running VPN task namespace). | No |
+| Drift kind | Owner and detection | Restore | Adopt |
+| --- | --- | --- | --- |
+| `node.dns_mapping_mismatch` | Node: a source-node concrete/wildcard directive is wrong, or the gateway anchor finds an orphan directive. | Re-render only the node projection and use the shared restart path. | No |
+| `proxy.dns_mapping_mismatch` | Proxy: `20-proxy-records.conf` differs from router/private `.orbit` and exact-backend intent. | Re-render only the proxy projection and use the shared restart path. | No |
+| `tool.dns_base_config_mismatch` | Tool: base `dnsmasq.conf` differs from `DnsmasqBaseConfigBuilder` output, or the active projection-directory bind source, destination, or read-only mode is wrong. | Rewrite only non-legacy base config, redeploy a wrong mount, and restart or update DNS. Legacy conversion remains an explicit installer migration. | No |
+| `tool.dns_container_missing` | Tool: neither the standalone `orbit-dns` container nor Swarm task is present. | Stage base config plus record-free owner placeholders when absent, then rerun the persisted stack/compose installer; Swarm restore also reconverges forwarding. | No |
+| `tool.dns_port_not_listening` | Tool: no port-53 listener is available inside the DNS runtime. | Force service update or restart the container. | No |
+| `tool.dns_client_dns_drift` | Tool: wg-easy default or enabled-client DNS differs from the active `vpn.dns_ip`. | Rewrite client DNS to the active endpoint. | No |
+| `tool.dns_forwarding_missing` | Tool: the Swarm VPN task lacks required UDP/TCP 53 DNAT and MASQUERADE rules. | Reapply forwarding in the VPN task namespace. | No |
 
 `tool.dns_client_dns_drift` is only about WireGuard client DNS configuration stored
 in wg-easy. It does not alter dnsmasq upstream resolvers; `server=1.1.1.1` and
 `server=8.8.8.8` remain valid upstream forwarding entries inside
 `dnsmasq.conf`.
 
-DNS runtime drift is not adoptable. The tool family does not own DNS records;
-the node and proxy families do (see
+DNS drift is not adoptable. The tool family does not own DNS records; the node
+and proxy families do (see
 [Architecture: DNS responsibilities](../../architecture.md#dns-responsibilities)).
-Emergency DNS edits should be translated into node or proxy state explicitly,
-then `doctor --family=tool --restore` should re-render `dnsmasq.conf` from the
-canonical gateway state.
+Emergency DNS edits must be translated into canonical owner intent, then the
+owning family's restore path re-renders only its artifact.
+
+Every completed `tool.dns_*` restore is re-probed before Doctor marks it
+successful. An accepted asynchronous deploy is not completion: any remaining
+container, listener, base/mount, forwarding, or client-DNS issue keeps the
+action failed and the drift visible.
 
 The catalog declares `tool:restart dns` and `tool:logs dns` against the single
 direct gateway-local `orbit-dns` runtime. Public start, stop, and reload remain
@@ -227,8 +293,10 @@ without a doctor signal first. The catalog reflects that constraint; this
 contract is the explicit exception that authorizes bootstrap to call the
 underlying installer.
 
-`tool:update dns` re-runs the installer (which re-emits the compose file +
-rebuilds `dnsmasq.conf` from current state and `docker compose up -d`).
+`tool:update dns` re-runs the installer, re-emits the runtime definition,
+materializes all three canonical artifacts for bootstrap compatibility, runs
+`docker compose up -d`, and restarts the DNS runtime when staged bytes changed
+so the running resolver consumes them.
 
 ## Evidence Pointers
 
@@ -240,8 +308,10 @@ These files implement the bootstrap, builder, reconciler, and probe described ab
 
 - `apps/gateway/app/Console/Commands/Internal/BootstrapGatewayLocalCommand.php` — current bootstrap path.
 - `apps/gateway/app/Services/Vpn/WgEasyServiceInstaller.php` — wg-easy install service.
-- `apps/gateway/app/Services/Dns/DnsmasqConfigBuilder.php` — pure builder.
+- `apps/gateway/app/Services/Dns/DnsmasqBaseConfigBuilder.php` — tool-owned base builder.
+- `apps/gateway/app/Services/Dns/NodeDnsmasqRecordsBuilder.php` — node projection builder.
+- `apps/gateway/app/Services/Dns/ProxyDnsmasqRecordsBuilder.php` — proxy projection builder.
 - `apps/gateway/app/Services/Dns/OrbitDnsServiceInstaller.php` — orbit-dns install service.
 - `apps/gateway/app/Services/Dns/DnsmasqReconciler.php` — reconciler.
-- `apps/gateway/app/Services/Doctor/` — DNS runtime probe (`DnsRuntimeProbe`).
+- `apps/gateway/app/Services/Doctor/` — node, proxy, and tool DNS probes.
 - `apps/gateway/app/Tools/DnsTool.php` — `dns` tool definition.

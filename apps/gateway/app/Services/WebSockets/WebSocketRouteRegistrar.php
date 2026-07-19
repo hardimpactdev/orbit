@@ -10,6 +10,7 @@ use App\Models\App;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\ProxyRouteRenderer;
@@ -29,6 +30,7 @@ class WebSocketRouteRegistrar
         private readonly IngressResolver $ingressResolver,
         private readonly ProxyRouteRenderer $proxyRouteRenderer,
         private readonly WebSocketBackendName $backendName,
+        private readonly DnsmasqReconciler $dnsmasqReconciler,
     ) {}
 
     public function syncServiceRoute(): ProxyRoute
@@ -48,7 +50,15 @@ class WebSocketRouteRegistrar
             ],
         );
 
+        $this->dnsmasqReconciler->reconcileProxyRecords();
+
         return $route->refresh();
+    }
+
+    public function removeServiceRoute(): void
+    {
+        ProxyRoute::query()->where('domain', self::ServiceDomain)->delete();
+        $this->dnsmasqReconciler->reconcileProxyRecords();
     }
 
     public function serviceRouteIntent(): ProxyRoute

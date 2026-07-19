@@ -30,7 +30,7 @@ Orbit distinguishes these concepts:
   but normal role commands cannot add, update, or remove it independently.
 - **VPN role:** the gateway-coupled infrastructure role. It owns the WireGuard
   server runtime, public WireGuard endpoint settings, VPN peer defaults, and
-  the VPN-facing DNS runtime. In v1, first gateway bootstrap assigns `gateway`,
+  the requirement for the DNS tool capability. In v1, first gateway bootstrap assigns `gateway`,
   `vpn`, and `router` together, and normal role commands cannot add, update, or
   remove those roles independently.
 - **Router role:** the gateway-coupled private routing role. It owns private
@@ -127,12 +127,12 @@ Roles materialize baseline tool intent when a role assignment converges.
 | Role | Baseline intent |
 | --- | --- |
 | `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, gateway config root, SQLite database, and Orbit CA/certificate material |
-| `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
-| `router` | Private `orbit-caddy` router for private `.orbit` DNS/service names, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
-| `app-dev` | App runtime baseline, development DNS mapping, `orbit-caddy` app/workspace routes, and process-backed runtime units using the platform-supported backend where configured |
+| `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and required DNS tool capability |
+| `router` | Private `orbit-caddy` router and proxy-family intent for private `.orbit` service names, route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
+| `app-dev` | App runtime baseline, node-owned wildcard DNS projection, `orbit-caddy` app/workspace routes, and process-backed runtime units using the platform-supported backend where configured |
 | `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and process-backed runtime units using the platform-supported backend where configured |
 | `database` | Docker running as the substrate for managed database service processes |
-| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping derived from the node's `tld`, and any role-specific runtime containers the agent workload needs |
+| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the node-owned wildcard DNS projection derived from `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Valkey-backed scaling configuration |
 | `s3` | Docker installation and verification, SeaweedFS Docker runtime apply/start, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
@@ -399,9 +399,10 @@ configuration after bootstrap belongs to the `firewall_rule` family. Orbit does
 not use SSH as command transport after provisioning. Break-glass SSH belongs to
 the operator and remains outside Orbit commands.
 
-Development DNS infrastructure is also node-owned during gateway/node
-bootstrap. Gateway-provisioned development DNS must be reachable through the
-Orbit network and must not expose an open public resolver.
+Development wildcard record intent and its record projection are node-owned
+during gateway and node bootstrap. The tool-owned DNS runtime serves that
+projection. The resolver must be reachable through the Orbit network and must
+not be exposed as an open public resolver.
 
 ## Domain Boundaries
 
@@ -599,7 +600,7 @@ Use these commands to update, remove, or configure node settings after initial p
 Use these commands to inspect and mutate the role assignments on an existing node.
 Role assignment settings are changed through the command that owns the setting.
 The node-level `tld` (mandatory and unique for every active node, at most one
-per node) is changed through
+per node, with `orbit` reserved for the proxy namespace) is changed through
 [`orbit node:update [name] --tld=...`](7_node-update/node-update.md).
 
 12. [`orbit node role:list [node]`](11_node-role-list/node-role-list.md)

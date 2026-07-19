@@ -57,7 +57,8 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
   the operating-system account.
 - `--tld=<tld>`: mandatory node TLD. Valid for every active node, including
   gateway, operator, and role-less targets. Role features such as `app-dev` and
-  `agent` consume the same field for wildcard development DNS mappings.
+  `agent` consume the same field for wildcard development DNS mappings. The
+  value `orbit` is reserved for the proxy-owned `.orbit` namespace.
 - `--gateway-endpoint=<endpoint>`: WireGuard endpoint host this node should use
   to reach the gateway. Valid for `gateway` and workload-role-bearing nodes.
   Forbidden on operator-identity nodes. Use this for private-network endpoints
@@ -111,15 +112,17 @@ that are directly affected by the changed metadata.
   effects. Re-applying unchanged configuration is owned by
   [`doctor --family=node --restore`](../node-doctor.md), not `node:update`.
 - Changes a node's mandatory TLD when `--tld` is supplied. `--tld` is valid for
-  every active node. Gateway VPN DNS reconciles `orbit.<node-tld>` node-host
-  records.
+  every active node but rejects reserved `orbit`. The node family reconciles the concrete
+  `orbit.<node-tld>` record and any role-gated wildcard directives in
+  `dnsmasq.d/10-node-records.conf`.
   Broader drift repair after a TLD change belongs to
   [`doctor --family=node --restore`](../node-doctor.md).
-- Reconciles the active `vpn` role DNS runtime when `tld` or
-  `wireguard_address` actually change for a node. In v1 this materializes the
-  desired DNS mappings and policy owned by the gateway onto the
-  gateway-coupled `vpn` role runtime without restarting the container. The
-  contract for the DNS substrate is
+- Reconciles affected DNS projections when `tld` or `wireguard_address`
+  actually change. The node family owns `10-node-records.conf`; a WireGuard
+  change may also affect proxy-owned exact backend records. The shared
+  `reconcileRecords()` path atomically replaces each changed record artifact
+  under one lock and restarts DNS once. It never touches tool-owned base
+  configuration. The contract for the DNS substrate is
   [`docs/domains/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
   Other field changes do not touch DNS.
 - Changes explicit roleless-operator Agent intent when one of the managed flags

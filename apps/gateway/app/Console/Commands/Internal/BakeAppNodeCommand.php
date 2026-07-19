@@ -11,6 +11,7 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\Nodes\Roles\NodeRoleActivator;
@@ -18,6 +19,7 @@ use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Orbit\Core\Nodes\NodeTld;
 use RuntimeException;
 
 #[Signature('orbit:internal:bake-app-node
@@ -40,6 +42,7 @@ class BakeAppNodeCommand extends Command
         NodeRegistryWriter $registryWriter,
         NodeConverger $nodeConverger,
         NodeRoleActivator $roleActivator,
+        DnsmasqReconciler $dnsmasqReconciler,
     ): int {
         $name = $this->stringArgument('name');
         $role = $this->stringOption('role') ?? NodeRoleName::AppDevelopment->value;
@@ -51,8 +54,14 @@ class BakeAppNodeCommand extends Command
         $tld = $this->stringOption('tld');
         $ingressNode = $this->stringOption('ingress-node');
 
-        if ($name === null || $host === null || $wireguardAddress === null || $tld === null) {
-            throw new RuntimeException('Name, host, wireguard-address, and tld are required.');
+        if (
+            $name === null
+            || $host === null
+            || $wireguardAddress === null
+            || $tld === null
+            || ! NodeTld::isValid($tld)
+        ) {
+            throw new RuntimeException('Name, host, wireguard-address, and a valid non-reserved tld are required.');
         }
 
         if (! in_array($role, [NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value], true)) {
@@ -92,6 +101,10 @@ class BakeAppNodeCommand extends Command
             'role-assignment',
             fn () => $this->upsertRoleAssignment($roleActivator, $node, $role, $ingressNode),
         );
+
+        if ($role === NodeRoleName::AppDevelopment->value) {
+            $dnsmasqReconciler->reconcileNodeRecords();
+        }
 
         $this->measureBakeStep(
             $timingRole,

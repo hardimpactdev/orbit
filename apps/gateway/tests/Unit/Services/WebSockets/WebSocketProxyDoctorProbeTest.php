@@ -17,6 +17,10 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    bind_dnsmasq_reconciler_test_double();
+});
+
 // ---------------------------------------------------------------------------
 // Topology helpers
 // ---------------------------------------------------------------------------

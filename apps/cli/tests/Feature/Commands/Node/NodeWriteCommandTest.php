@@ -164,6 +164,30 @@ describe('node write commands', function (): void {
             ->toBe('tld');
     });
 
+    it('rejects the private service namespace as a node TLD before gateway IO', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, command: 'node:new', params: [
+            'name' => 'metrics-1',
+            '--roles' => 'metrics',
+            '--tld' => 'orbit',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('tld')
+            ->and($decoded['error']['meta']['value'])
+            ->toBe('orbit');
+    });
+
     it('does not expose a role-local TLD option on node role:add', function (): void {
         $command = $this->app->make(\App\Commands\Node\NodeRoleAddCommand::class);
 

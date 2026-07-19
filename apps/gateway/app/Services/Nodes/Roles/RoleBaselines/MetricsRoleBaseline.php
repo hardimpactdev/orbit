@@ -111,7 +111,7 @@ class MetricsRoleBaseline implements RoleBaseline
             ->whereJsonContains('config->owner_name', 'grafana')
             ->delete();
 
-        $this->dnsmasqReconciler()->reconcile();
+        $this->dnsmasqReconciler()->reconcileProxyRecords();
     }
 
     protected function toolCatalog(): ToolCatalog
@@ -1258,7 +1258,7 @@ class MetricsRoleBaseline implements RoleBaseline
             ],
         );
 
-        $this->dnsmasqReconciler()->reconcile();
+        $this->dnsmasqReconciler()->reconcileProxyRecords();
     }
 
     /**

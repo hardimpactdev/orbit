@@ -37,11 +37,12 @@ They are reachable only through the gateway bootstrap path described in
 ## Orbit Notes
 
 The `dns` tool is the runtime capability behind the gateway's VPN-facing DNS
-substrate (dnsmasq inside wg-easy's network namespace). The substrate as a
-whole is part of the `vpn` role baseline. This tool row tracks the substrate's
-container, port, and config so `doctor --family=tool` can verify drift in
-those specifically. DNS mapping records — which TLD points at which WireGuard
-IP — are owned by the node family. The `dns:*` command family owns only
+substrate. The `vpn` role requires it, but Orbit has no `dns` role. This tool
+row owns base `dnsmasq.conf`, the container/service, port-53 listener, VPN
+forwarding, and client-DNS settings. The node family owns
+`dnsmasq.d/10-node-records.conf`; the proxy family owns
+`dnsmasq.d/20-proxy-records.conf`. The shared materializer and reload path is
+ownership-neutral. The `dns:*` command family owns only
 caller-local resolver overrides on operator machines. See
 [Architecture: DNS responsibilities](../../../architecture.md#dns-responsibilities)
 for the full split.
@@ -56,14 +57,11 @@ namespace so dnsmasq binds the wg-easy WG IP — is specified in
 
 ## Doctor Relationship
 
-`doctor --family=tool` verifies the DNS runtime tool's container, port, and
-config-content drift. Drift in *which DNS mappings should exist* — a new
-`app-dev` or `agent` role appeared without a matching mapping line —
-is node-family drift, not tool drift, and is verified by
-`doctor --family=node`. All five DNS runtime codes are restore-only:
+`doctor --family=tool` verifies base configuration, container, listener,
+client-DNS, and forwarding drift. Record-content drift is reported by the
+family that owns the projection. All five DNS tool codes are restore-only:
 `tool.dns_container_missing`, `tool.dns_port_not_listening`,
-`tool.dns_config_drift`, `tool.dns_client_dns_drift`, and
+`tool.dns_base_config_mismatch`, `tool.dns_client_dns_drift`, and
 `tool.dns_forwarding_missing`. Their exact recovery behavior is specified in
 [the DNS bootstrap contract](../dns-bootstrap-contract.md). Emergency edits
-must be translated into node or proxy intent before restore re-renders DNS from
-canonical state.
+must be translated into node or proxy intent before restoring that family.

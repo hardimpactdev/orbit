@@ -15,7 +15,16 @@ it('requires a valid unique TLD for every active node', function (): void {
     expect(fn () => DB::table('nodes')->insert(canonical_node_identity_row('missing', null)))
         ->toThrow(QueryException::class, 'active nodes require a valid TLD');
 
+    expect(fn () => DB::table('nodes')->insert(canonical_node_identity_row('reserved', 'orbit')))
+        ->toThrow(QueryException::class, 'active nodes require a valid TLD');
+
+    expect(fn () => DB::table('nodes')->insert(canonical_node_identity_row('whitespace', ' fleet ')))
+        ->toThrow(QueryException::class, 'active nodes require a valid TLD');
+
     DB::table('nodes')->insert(canonical_node_identity_row('first', 'fleet'));
+
+    expect(fn () => DB::table('nodes')->where('name', 'first')->update(['tld' => 'orbit']))
+        ->toThrow(QueryException::class, 'active nodes require a valid TLD');
 
     expect(fn () => DB::table('nodes')->insert(canonical_node_identity_row('second', 'fleet')))
         ->toThrow(QueryException::class, 'UNIQUE constraint failed: nodes.tld');
@@ -23,6 +32,16 @@ it('requires a valid unique TLD for every active node', function (): void {
     DB::table('nodes')->insert(canonical_node_identity_row('inactive', null, 'inactive'));
 
     expect(DB::table('nodes')->where('name', 'inactive')->value('tld'))->toBeNull();
+});
+
+it('refuses to reserve the private namespace while an active node still owns it', function (): void {
+    canonical_node_identity_drop_guards();
+    DB::table('nodes')->insert(canonical_node_identity_row('legacy-reserved', 'orbit'));
+
+    expect(run_reserve_private_dns_namespace_migration(...))
+        ->toThrow(RuntimeException::class, 'reserved_node_tld_conflict: active node(s) [legacy-reserved]');
+
+    expect(DB::table('nodes')->where('name', 'legacy-reserved')->value('tld'))->toBe('orbit');
 });
 
 it('backfills canonical identity and managed operator intent idempotently', function (): void {
@@ -130,6 +149,21 @@ function run_canonical_node_identity_migration(): void
 
     if (! $migration instanceof Migration || ! method_exists($migration, 'up')) {
         throw new RuntimeException('Canonical node identity migration must expose up().');
+    }
+
+    $migration->up();
+}
+
+function run_reserve_private_dns_namespace_migration(): void
+{
+    /** @var mixed $migration */
+    $migration = require
+        database_path(
+            'migrations/2026_07_19_080101_reserve_private_dns_namespace_for_node_tlds.php',
+        );
+
+    if (! $migration instanceof Migration || ! method_exists($migration, 'up')) {
+        throw new RuntimeException('Reserved private DNS namespace migration must expose up().');
     }
 
     $migration->up();

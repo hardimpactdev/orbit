@@ -6,10 +6,10 @@ namespace App\Services\Nodes\Roles\RoleBaselines;
 
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Tools\ToolCatalog;
+use Orbit\Core\Nodes\NodeTld;
 use RuntimeException;
 
 class AgentRoleBaseline implements RoleBaseline
@@ -17,7 +17,6 @@ class AgentRoleBaseline implements RoleBaseline
     use ManagesNodeToolBaseline;
 
     public function __construct(
-        private readonly DevelopmentDnsMappingEnactor $developmentDnsMappingEnactor = new DevelopmentDnsMappingEnactor,
         private readonly ?ToolCatalog $toolCatalog = null,
         private readonly ?NodeRoleAssignments $nodeRoleAssignments = null,
         private readonly ?RunsInternalCommands $localExecutor = null,
@@ -33,18 +32,12 @@ class AgentRoleBaseline implements RoleBaseline
             throw new RuntimeException('The agent role requires an Ubuntu host.');
         }
 
-        $tld = $node->tld;
-
-        if (! is_string($tld) || ! $this->isValidTld(trim($tld))) {
+        if (! NodeTld::isValid($node->tld)) {
             throw new RuntimeException('The agent role requires a valid node TLD.');
         }
 
-        $result = $this->developmentDnsMappingEnactor->convergeDevelopmentRole($node, $tld);
-
-        if (($result['status'] ?? null) === 'not_applicable') {
-            throw new RuntimeException(
-                'The agent role requires a WireGuard address so the agent DNS mapping can be materialized.',
-            );
+        if (! is_string($node->wireguard_address) || trim($node->wireguard_address) === '') {
+            throw new RuntimeException('The agent role requires a WireGuard address.');
         }
 
         $this->convergeAgentUser($node);
@@ -54,18 +47,6 @@ class AgentRoleBaseline implements RoleBaseline
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
     {
-        $tld = $node->tld;
-
-        if (is_string($tld) && $this->isValidTld(trim($tld))) {
-            $result = $this->developmentDnsMappingEnactor->removeDevelopmentRole($node, $tld);
-
-            if (($result['status'] ?? null) === 'failed') {
-                $reason = $result['reason'] ?? 'Failed to remove agent DNS mapping.';
-
-                throw new RuntimeException(is_string($reason) ? $reason : 'Failed to remove agent DNS mapping.');
-            }
-        }
-
         $this->removeTools($node, ['caddy', 'git']);
     }
 
@@ -107,11 +88,6 @@ class AgentRoleBaseline implements RoleBaseline
     private function localExecutor(): RunsInternalCommands
     {
         return $this->localExecutor ?? app(RunsInternalCommands::class);
-    }
-
-    private function isValidTld(string $tld): bool
-    {
-        return (bool) preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld);
     }
 
     protected function toolCatalog(): ToolCatalog

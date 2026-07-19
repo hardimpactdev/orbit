@@ -382,6 +382,20 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         expect(Node::query()->where('name', 'gateway-1')->value('tld'))->toBe('orbital');
     });
 
+    it('rejects the private service namespace as a gateway tld', function (): void {
+        expect(fn (): int => bootstrap_gateway_local([
+            'name' => 'gateway-1',
+            'wireguard-address' => '10.6.0.2',
+            '--tld' => 'orbit',
+        ]))
+            ->toThrow(
+                RuntimeException::class,
+                'Gateway TLD is required and must be a non-reserved lowercase DNS label.',
+            );
+
+        expect(Node::query()->where('name', 'gateway-1')->exists())->toBeFalse();
+    });
+
     it('is idempotent when the gateway node and CA already exist', function (): void {
         bootstrap_gateway_local([
             'name' => 'gateway-1',

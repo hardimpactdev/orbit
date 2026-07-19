@@ -67,10 +67,10 @@ provider is reachable.
 other scheduled target it surfaces target dispatch reachability and recent-run
 health only; no workload node is expected to run a scheduler singleton.
 
-A separate `DNS/TLD` row (operator/app targets) and `DNS` row (gateway target)
-is planned as a slice of the `node` family. It will render once a DNS
-diagnostic source exists; until then, findings related to DNS stay inside the
-`Node` row.
+DNS findings stay in their owning family rows: `Node` reports the node record
+projection, `Proxy routes` reports the private `.orbit` and exact-backend
+projection, and `Tools` reports DNS base configuration and runtime capability.
+Doctor does not create a separate DNS row or DNS state family.
 
 ## Usage
 

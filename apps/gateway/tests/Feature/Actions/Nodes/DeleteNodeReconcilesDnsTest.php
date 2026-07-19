@@ -15,9 +15,11 @@ beforeEach(function (): void {
 
         public function __construct() {}
 
-        public function reconcile(): void
+        public function reconcileRecords(): bool
         {
             $this->reconciles++;
+
+            return true;
         }
     };
 

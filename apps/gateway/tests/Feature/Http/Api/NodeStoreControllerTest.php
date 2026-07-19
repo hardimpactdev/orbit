@@ -9,21 +9,19 @@ use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Operations\ProvisioningAgentInstaller;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Tests\Fakes\NodeStoreProvisioningAgentInstaller;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    bindDevelopmentDnsMappingTestDoubles('node-store-controller-dns');
+    bind_dnsmasq_reconciler_test_double();
     app()->instance(ProvisioningAgentInstaller::class, new NodeStoreProvisioningAgentInstaller);
 
     app()->instance(SshHostKeyPinner::class, new class {
@@ -38,10 +36,6 @@ beforeEach(function (): void {
             );
         }
     });
-});
-
-afterEach(function (): void {
-    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
 });
 
 /**
@@ -126,6 +120,31 @@ describe('NodeStoreController', function (): void {
         'template websocket' => [['template' => 'websocket'], 'template', 'template', 'websocket'],
         'role websocket' => [['roles' => ['websocket']], 'roles', 'role', 'websocket'],
     ]);
+
+    it('rejects the private service namespace as a node tld', function (): void {
+        $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
+        assignStoreNodeRole($gatewayId, 'gateway');
+
+        Process::fake();
+        Process::preventStrayProcesses();
+
+        $response = $this
+            ->withServerVariables(['REMOTE_ADDR' => '10.6.0.2'])
+            ->postJson('/api/nodes', [
+                'name' => 'metrics-1',
+                'roles' => ['metrics'],
+                'host' => '192.0.2.55',
+                'tld' => 'orbit',
+            ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'tld');
+
+        expect(DB::table('nodes')->where('name', 'metrics-1')->exists())->toBeFalse();
+        Process::assertRanTimes(fn (): bool => true, 0);
+    });
 
     it('directs an s3 workload through client-owned host bootstrap', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());

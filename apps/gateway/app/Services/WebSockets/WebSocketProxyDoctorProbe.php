@@ -67,7 +67,7 @@ final readonly class WebSocketProxyDoctorProbe
         }
 
         if ($entry->key === self::RouterRouteOrphanedKey) {
-            ProxyRoute::query()->where('domain', WebSocketRouteRegistrar::ServiceDomain)->delete();
+            $this->routeRegistrar->removeServiceRoute();
 
             return [
                 'family' => 'proxy',

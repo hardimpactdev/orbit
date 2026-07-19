@@ -11,7 +11,7 @@ use RuntimeException;
 class OrbitDnsServiceInstaller
 {
     public function __construct(
-        private readonly DnsmasqConfigBuilder $configBuilder,
+        private readonly DnsmasqReconciler $reconciler,
         private readonly string $rootPath,
     ) {}
 
@@ -21,16 +21,16 @@ class OrbitDnsServiceInstaller
 
         File::ensureDirectoryExists($this->rootPath);
 
-        $confPath = $this->rootPath.'/dnsmasq.conf';
-        $config = $this->configBuilder->buildGatewayState();
-        $existingConfig = File::exists($confPath) ? File::get($confPath) : null;
+        $confPath = $this->rootPath.'/'.DnsmasqReconciler::BaseConfig;
+        $recordsPath = $this->rootPath.'/dnsmasq.d';
+        $legacyBase = File::exists($confPath) && str_contains(File::get($confPath), 'address=/');
 
-        if ($existingConfig !== $config) {
-            File::put($confPath, $config);
-        }
+        $stagedConfigurationChanged = $legacyBase
+            ? $this->reconciler->stageLegacyMigrationLayout()
+            : $this->reconciler->stageAllForInstall();
 
         $composePath = $this->rootPath.'/docker-compose.yaml';
-        $compose = $this->renderCompose($confPath);
+        $compose = $this->renderCompose($confPath, $recordsPath);
         $existingCompose = File::exists($composePath) ? File::get($composePath) : null;
 
         if ($existingCompose !== $compose) {
@@ -47,6 +47,12 @@ class OrbitDnsServiceInstaller
                 'Failed to start orbit-dns: '.trim($result->errorOutput().' '.$result->output()),
             );
         }
+
+        if ($legacyBase) {
+            $this->reconciler->migrateLegacyLayout();
+        } elseif ($stagedConfigurationChanged) {
+            $this->reconciler->activateStagedConfiguration();
+        }
     }
 
     private function ensureWgEasyRunning(): void
@@ -60,7 +66,7 @@ class OrbitDnsServiceInstaller
         }
     }
 
-    private function renderCompose(string $confPath): string
+    private function renderCompose(string $confPath, string $recordsPath): string
     {
         return <<<YAML
             services:
@@ -73,6 +79,7 @@ class OrbitDnsServiceInstaller
                   - NET_ADMIN
                 volumes:
                   - {$confPath}:/etc/dnsmasq.conf:ro
+                  - {$recordsPath}:/etc/dnsmasq.d:ro
 
             YAML;
     }

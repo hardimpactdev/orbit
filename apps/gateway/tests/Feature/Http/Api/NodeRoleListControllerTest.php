@@ -11,7 +11,7 @@ require_once __DIR__.'/NodeRoleApiTestHelpers.php';
 describe('NodeRoleListController', function (): void {
     it('lists role assignments for an authorized caller', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:read']);
-        createNodeRoleApiContractAssignment($target, 'app-dev', 'error', ['tld' => 'test'], 'DNS failed.');
+        createNodeRoleApiContractAssignment($target, 'app-dev', 'error', [], 'Convergence failed.');
         createNodeRoleApiContractAssignment($target, 'database');
 
         $response = getNodeRoleApiContractJson('/api/nodes/target-1/roles');
@@ -21,8 +21,8 @@ describe('NodeRoleListController', function (): void {
             ->assertJsonPath('success.data.node', 'target-1')
             ->assertJsonPath('success.data.roles.0.role', 'app-dev')
             ->assertJsonPath('success.data.roles.0.status', 'error')
-            ->assertJsonPath('success.data.roles.0.settings.tld', 'test')
-            ->assertJsonPath('success.data.roles.0.last_error', 'DNS failed.')
+            ->assertJsonPath('success.data.roles.0.settings', [])
+            ->assertJsonPath('success.data.roles.0.last_error', 'Convergence failed.')
             ->assertJsonPath('success.data.roles.1.role', 'database')
             ->assertJsonPath('success.data.roles.1.status', 'active')
             ->assertJsonPath('success.data.roles.1.settings', []);

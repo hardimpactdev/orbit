@@ -35,6 +35,9 @@ it('renders vpn and dns as separate co-located Swarm services on a shared networ
         ->toContain('SYS_MODULE')
         ->toContain('/home/orbit/.config/orbit/wg-easy:/etc/wireguard')
         ->toContain('${ORBIT_CONFIG_ROOT:-/home/orbit/.config/orbit}/dnsmasq.conf:/etc/dnsmasq.conf:ro')
+        ->toContain('${ORBIT_CONFIG_ROOT:-/home/orbit/.config/orbit}/dnsmasq.d:/etc/dnsmasq.d:ro')
+        ->not->toContain('10-node-records.conf:/etc/dnsmasq.d/')
+        ->not->toContain('20-proxy-records.conf:/etc/dnsmasq.d/')
         ->not->toContain('devices:');
 
     $vpnBlock = substr(
@@ -58,7 +61,8 @@ it('renders vpn and dns as separate co-located Swarm services on a shared networ
         ->toContain('MASQUERADE')
         ->not->toContain('4km3/dnsmasq')->and($dnsBlock)->toContain(
             'node.labels.orbit.role.gateway == true',
-        )->toContain('node.labels.orbit.role.vpn == true')->toContain('node.labels.orbit.role.dns == true')
+        )->toContain('node.labels.orbit.role.vpn == true')
+        ->not->toContain('node.labels.orbit.role.dns == true')
         ->not->toContain('ports:')
         ->not->toContain('network_mode:')
         ->not->toContain('wg-easy');

@@ -96,18 +96,19 @@ final class NodeUpdateController implements Loggable
             $node->update($changes);
         }
 
-        if ($this->touchesDnsFields(array_keys($changes))) {
-            app(DnsmasqReconciler::class)->reconcile();
-        }
+        $warnings = $this->reconcileDnsRecords(array_keys($changes));
 
         $node = $node->refresh();
         $nodeRoleToolConfigRefresher->refreshForProvidedNodeFields($node, $providedFields);
 
-        $warnings = $this->reenactNodeArtifacts(
-            reenactNodeArtifacts: $reenactNodeArtifacts,
-            node: $node->refresh(),
-            changed: array_keys($changes),
-        );
+        $warnings = [
+            ...$warnings,
+            ...$this->reenactNodeArtifacts(
+                reenactNodeArtifacts: $reenactNodeArtifacts,
+                node: $node->refresh(),
+                changed: array_keys($changes),
+            ),
+        ];
 
         $success = [
             'data' => [
@@ -144,6 +145,30 @@ final class NodeUpdateController implements Loggable
             return [[
                 'code' => 'node.artifact_enactment_failed',
                 'message' => 'Node artifact re-enactment failed after intent update.',
+                'family' => 'node',
+                'next_command' => 'doctor --family=node --restore',
+            ]];
+        }
+    }
+
+    /**
+     * @param  list<string>  $changed
+     * @return list<array<string, string>>
+     */
+    private function reconcileDnsRecords(array $changed): array
+    {
+        if (! $this->touchesDnsFields($changed)) {
+            return [];
+        }
+
+        try {
+            app(DnsmasqReconciler::class)->reconcileRecords();
+
+            return [];
+        } catch (\Throwable) {
+            return [[
+                'code' => 'node.artifact_enactment_failed',
+                'message' => 'Node DNS projection application failed after intent update.',
                 'family' => 'node',
                 'next_command' => 'doctor --family=node --restore',
             ]];

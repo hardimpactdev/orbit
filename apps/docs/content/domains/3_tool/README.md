@@ -118,13 +118,13 @@ eligibility gate.
 Installable tools are provisioned by `tool:install`, removed by `tool:remove`,
 and verified by `doctor --family=tool`.
 
-The `dns` tool is the gateway-local runtime capability behind the VPN-facing
-DNS substrate; its container, port, and config lifecycle are verified by
-`doctor --family=tool` and are restore-only.
-Development/agent DNS mapping records — which TLD points at which WireGuard
-IP — are owned by the node family. Stable private `.orbit` service names and
-private route selection are router-owned service contracts. The `dns:*` command
-family owns only caller-local resolver overrides on operator machines. See
+The `dns` tool is the gateway-local runtime capability required by the `vpn`
+role; it owns base `dnsmasq.conf`, its container/service, listener, VPN
+forwarding, and client-DNS settings. The node family owns
+`dnsmasq.d/10-node-records.conf`; the proxy family owns
+`dnsmasq.d/20-proxy-records.conf`. The shared materializer and reload path is
+ownership-neutral. The `dns:*` command family owns only caller-local resolver
+overrides on operator machines. Orbit has no `dns` role or DNS state family. See
 [Architecture: DNS responsibilities](../../architecture.md#dns-responsibilities)
 for the full split.
 

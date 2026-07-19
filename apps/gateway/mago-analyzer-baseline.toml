@@ -3219,24 +3219,6 @@ count = 1
 [[issues]]
 file = "app/Providers/AppServiceProvider.php"
 code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Services\Dns\DnsmasqReconciler::__construct`: expected `App\Services\Dns\DnsmasqConfigBuilder`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Services\Dns\OrbitDnsServiceInstaller::__construct`: expected `App\Services\Dns\DnsmasqConfigBuilder`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Services\Doctor\DnsRuntimeProbe::__construct`: expected `App\Services\Dns\DnsmasqConfigBuilder`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
 message = 'Invalid argument type for argument #1 of `App\Services\Operations\OperationTokenFactory::__construct`: expected `Orbit\Core\Security\OperationTokenSigner`, but found `mixed`.'
 count = 1
 
@@ -3268,12 +3250,6 @@ count = 1
 file = "app/Providers/AppServiceProvider.php"
 code = "mixed-argument"
 message = 'Invalid argument type for argument #2 of `App\Services\Workspaces\PolyscopeWorkspaceDriver::__construct`: expected `App\Services\RemoteShell\RemoteLocalExecutor`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #3 of `App\Services\Dns\DnsmasqReconciler::__construct`: expected `App\Services\Vpn\VpnDnsSwarmManager|null`, but found `mixed`.'
 count = 1
 
 [[issues]]
@@ -4669,30 +4645,6 @@ message = 'Too many arguments provided for method `Illuminate\Database\Eloquent\
 count = 1
 
 [[issues]]
-file = "app/Services/Dns/DnsmasqConfigBuilder.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
-
-[[issues]]
-file = "app/Services/Dns/DnsmasqConfigBuilder.php"
-code = "mixed-property-access"
-message = "Attempting to access a property on a non-object type (`mixed`)."
-count = 3
-
-[[issues]]
-file = "app/Services/Dns/DnsmasqConfigBuilder.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
-count = 1
-
-[[issues]]
-file = "app/Services/Dns/DnsmasqConfigBuilder.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$route->node_id` is already `int`."
-count = 1
-
-[[issues]]
 file = "app/Services/Dns/LocalResolver.php"
 code = "reference-to-undefined-variable"
 message = "Reference created from a previously undefined variable `$matches`."
@@ -5152,30 +5104,6 @@ count = 1
 file = "app/Services/Nodes/Access/NodePermissionNormalizer.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
-
-[[issues]]
-file = "app/Services/Nodes/DevelopmentDnsMappingEnactor.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/DevelopmentDnsMappingEnactor.php"
-code = "redundant-condition"
-message = "Redundant ternary operator: condition is always truthy."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/DevelopmentDnsMappingEnactor.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$settings` is already `array<string, mixed>`."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/DevelopmentDnsMappingProbe.php"
-code = "reference-to-undefined-variable"
-message = "Reference created from a previously undefined variable `$matches`."
 count = 2
 
 [[issues]]

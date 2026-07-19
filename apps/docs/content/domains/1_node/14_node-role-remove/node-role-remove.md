@@ -26,6 +26,9 @@ exist.
   removal side effect.
 - Confirmed removal cleans up Orbit-owned dependents while preserving user
   data. `--purge-data` also requests purge cleanup.
+- Removing `app-dev` or `agent` changes only wildcard eligibility in the
+  node-owned DNS projection. It reconciles `10-node-records.conf` without
+  touching proxy-owned records or tool-owned base configuration.
 - Configured non-gateway callers forward through the typed gateway API and need
   `role:remove` on the target node.
 

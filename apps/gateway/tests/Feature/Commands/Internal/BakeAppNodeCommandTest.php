@@ -16,11 +16,9 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Workspace;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\File;
 
 uses(RefreshDatabase::class);
 
@@ -47,11 +45,7 @@ describe('orbit:internal:bake-app-node', function (): void {
         app()->instance(SshHostKeyPinner::class, $this->hostKeyPinner);
         app()->instance(RemoteShell::class, new BakeAppNodeRemoteShell);
         bind_tool_script_dispatcher_to_remote_shell();
-        bindDevelopmentDnsMappingTestDoubles('bake-app-node-dns');
-    });
-
-    afterEach(function (): void {
-        File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
+        bind_dnsmasq_reconciler_test_double();
     });
 
     it('writes an app node row with the same shape as node:new produces', function (): void {
@@ -103,9 +97,27 @@ describe('orbit:internal:bake-app-node', function (): void {
                 'git',
                 'laravel-installer',
                 'php-cli',
-            ])->and(File::exists(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf'))->toBeTrue()->and(
+            ])->and(
                 $shell->probeScripts(),
             )->toHaveCount(2)->and($shell->repairScripts())->toHaveCount(7);
+    });
+
+    it('rejects the private service namespace as an app node tld', function (): void {
+        expect(
+            fn () => $this->artisan('orbit:internal:bake-app-node', [
+                'name' => 'app-dev-1',
+                '--role' => 'app-dev',
+                '--host' => '10.6.0.4',
+                '--wireguard-address' => '10.6.0.4',
+                '--tld' => 'orbit',
+            ])->run(),
+        )
+            ->toThrow(
+                RuntimeException::class,
+                'Name, host, wireguard-address, and a valid non-reserved tld are required.',
+            );
+
+        expect(Node::query()->where('name', 'app-dev-1')->exists())->toBeFalse();
     });
 
     it('uses setup convergence when baking app-dev role intent', function (): void {

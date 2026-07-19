@@ -8,6 +8,8 @@ use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Services\Dns\DnsmasqReconciler;
+use Orbit\Core\Nodes\NodeTld;
+use RuntimeException;
 
 final readonly class NodeRegistryWriter
 {
@@ -28,6 +30,10 @@ final readonly class NodeRegistryWriter
         ?PinnedHostKey $hostKey = null,
         ?string $architecture = null,
     ): Node {
+        if ($status === NodeStatus::Active && ! NodeTld::isValid($tld)) {
+            throw new RuntimeException('Active nodes require a valid non-reserved TLD.');
+        }
+
         $attributes = [
             'tld' => $tld,
             'platform' => $platform,
@@ -54,10 +60,16 @@ final readonly class NodeRegistryWriter
             $attributes['architecture'] = $architecture;
         }
 
-        return Node::query()->updateOrCreate(
+        $node = Node::query()->updateOrCreate(
             ['name' => $name],
             $attributes,
         );
+
+        if ($node->isActive()) {
+            $this->dnsmasqReconciler->reconcileRecords();
+        }
+
+        return $node;
     }
 
     public function writeAppNode(
@@ -71,7 +83,7 @@ final readonly class NodeRegistryWriter
         NodeStatus $status = NodeStatus::Provisioning,
         ?PinnedHostKey $hostKey = null,
     ): Node {
-        $node = $this->writeNodeIdentity(
+        return $this->writeNodeIdentity(
             name: $name,
             tld: $tld,
             platform: 'ubuntu',
@@ -83,14 +95,15 @@ final readonly class NodeRegistryWriter
             status: $status,
             hostKey: $hostKey,
         );
-
-        $this->dnsmasqReconciler->reconcile();
-
-        return $node;
     }
 
     public function markActive(Node $node): void
     {
+        if (! NodeTld::isValid($node->tld)) {
+            throw new RuntimeException('Active nodes require a valid non-reserved TLD.');
+        }
+
         $node->forceFill(['status' => NodeStatus::Active])->save();
+        $this->dnsmasqReconciler->reconcileRecords();
     }
 }

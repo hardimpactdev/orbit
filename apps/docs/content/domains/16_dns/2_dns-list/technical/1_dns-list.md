@@ -51,8 +51,8 @@ required arguments.
 - Mutate local resolver configuration.
 - Query or mutate gateway configuration, node records, app routes, proxy routes,
   Cloudflare records, or public DNS.
-- Inspect the development DNS mappings that the gateway owns.
-- Inspect private `.orbit` service names owned by the router.
+- Inspect node- or proxy-owned private DNS projections.
+- Inspect tool-owned DNS base/runtime state.
 - Repair local resolver drift.
 
 ## Renderer Contracts
@@ -74,9 +74,8 @@ No local DNS overrides is success with an empty result.
 ## Doctor Relationship
 
 - `dns:list` reads caller-local resolver overrides.
-- `doctor --family=node --self` verifies development TLD readiness for the node family
-  and the DNS mappings that the gateway owns. It is not a local DNS listing
-  command.
+- Node, proxy, and tool doctor verify their respective private DNS projections
+  and runtime facts. `dns:list` is not a gateway DNS listing command.
 
 ## Activity Logging
 

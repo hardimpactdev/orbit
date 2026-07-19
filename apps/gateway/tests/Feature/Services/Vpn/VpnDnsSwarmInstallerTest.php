@@ -3,6 +3,11 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\ProxyRoute;
+use App\Services\Dns\DnsmasqBaseConfigBuilder;
+use App\Services\Dns\DnsmasqReconciler;
+use App\Services\Dns\NodeDnsmasqRecordsBuilder;
+use App\Services\Dns\ProxyDnsmasqRecordsBuilder;
 use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
 use App\Services\Vpn\VpnDnsSwarmManager;
@@ -29,10 +34,16 @@ afterEach(function (): void {
 it('deploys the colocated vpn and dns Swarm services and converges forwarding', function (): void {
     $commands = [];
 
-    Node::factory()->create([
+    $router = Node::factory()->create([
         'name' => 'gateway',
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
+    ]);
+    ProxyRoute::factory()->create([
+        'node_id' => $router->id,
+        'domain' => 'metrics.orbit',
+        'owner_type' => 'router',
+        'kind' => 'proxy',
     ]);
 
     Process::fake(function ($process) use (&$commands) {
@@ -73,7 +84,18 @@ it('deploys the colocated vpn and dns Swarm services and converges forwarding', 
     expect("{$this->root}/dnsmasq.conf")
         ->toBeFile()
         ->and(File::get("{$this->root}/dnsmasq.conf"))
+        ->toBe(new DnsmasqBaseConfigBuilder()->build())
+        ->and(File::get("{$this->root}/dnsmasq.conf"))
+        ->not
+        ->toContain('address=/')
+        ->and("{$this->root}/dnsmasq.d/10-node-records.conf")
+        ->toBeFile()
+        ->and(File::get("{$this->root}/dnsmasq.d/10-node-records.conf"))
         ->toContain('address=/orbit.gateway/10.6.0.2')
+        ->and("{$this->root}/dnsmasq.d/20-proxy-records.conf")
+        ->toBeFile()
+        ->and(File::get("{$this->root}/dnsmasq.d/20-proxy-records.conf"))
+        ->toContain('address=/orbit/10.6.0.2')
         ->and("{$this->root}/swarm/orbit-vpn-dns-stack.yml")
         ->toBeFile()
         ->and(File::get("{$this->root}/swarm/orbit-vpn-dns-stack.yml"))
@@ -95,10 +117,12 @@ it('deploys the colocated vpn and dns Swarm services and converges forwarding', 
 
     expect($commands)
         ->toContain(
-            "docker node update --label-add 'orbit.role.gateway=true' --label-add 'orbit.role.vpn=true' --label-add 'orbit.role.dns=true' 'node-123'",
+            "docker node update --label-add 'orbit.role.gateway=true' --label-add 'orbit.role.vpn=true' 'node-123'",
         )
         ->and($commands)
         ->toContain("docker stack deploy -c '{$this->root}/swarm/orbit-vpn-dns-stack.yml' 'orbit'")
+        ->and($commands)
+        ->toContain("docker service update --force 'orbit_orbit-dns'")
         ->and($commands)
         ->toContain("set -e\nchmod 0777 '{$this->root}/wg-easy'\nchmod 0666 '{$this->root}/wg-easy/wg-easy.db'")
         ->and($commands)
@@ -137,5 +161,11 @@ function vpnDnsSwarmInstaller(string $root): VpnDnsSwarmInstaller
         swarm: new GatewaySwarmManager(configRoot: $root),
         renderer: $renderer,
         manager: new VpnDnsSwarmManager($renderer),
+        reconciler: new DnsmasqReconciler(
+            baseConfigBuilder: new DnsmasqBaseConfigBuilder,
+            nodeRecordsBuilder: new NodeDnsmasqRecordsBuilder,
+            proxyRecordsBuilder: new ProxyDnsmasqRecordsBuilder,
+            rootPath: $root,
+        ),
     );
 }

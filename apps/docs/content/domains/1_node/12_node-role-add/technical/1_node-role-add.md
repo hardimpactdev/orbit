@@ -90,6 +90,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   still apply, and gateway nodes are never Agent targets.
 - If synchronous convergence leaves the assignment in `error`, return a failure
   envelope and leave the errored assignment for `doctor --family=node --restore`.
+- When `app-dev` becomes active, call `reconcileNodeRecords()` for its wildcard
+  eligibility. Role addition does not reconcile proxy records or base
+  configuration.
 
 ### Caller Path Rules
 

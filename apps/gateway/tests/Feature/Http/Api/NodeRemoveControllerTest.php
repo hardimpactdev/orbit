@@ -11,6 +11,10 @@ use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    bind_dnsmasq_reconciler_test_double();
+});
+
 const REMOVE_CALLER_WG_IP = '10.6.0.99';
 
 /**

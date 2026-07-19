@@ -7,12 +7,10 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\RoleBaselines\AgentRoleBaseline;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
@@ -22,13 +20,6 @@ beforeEach(function (): void {
         \App\Services\RemoteShell\RunsInternalCommands::class,
         app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
     );
-
-    $this->configDir = storage_path('framework/testing/agent-dns');
-    File::deleteDirectory($this->configDir);
-});
-
-afterEach(function (): void {
-    File::deleteDirectory($this->configDir);
 });
 
 /**
@@ -108,9 +99,7 @@ describe('agent role baseline', function (): void {
             'settings' => [],
         ]);
 
-        $baseline = new AgentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AgentRoleBaseline;
 
         $baseline->converge($node, $assignment);
 
@@ -135,34 +124,6 @@ describe('agent role baseline', function (): void {
             ]);
     });
 
-    it('materializes a gateway-owned agent dns mapping for the tld', function (): void {
-        $node = Node::factory()->create([
-            'platform' => 'ubuntu',
-            'tld' => 'agent',
-            'managed' => true,
-            'wireguard_address' => '10.6.0.50',
-        ]);
-        fake_agent_role_agent_convergence('10.6.0.50');
-
-        $assignment = NodeRoleAssignment::factory()->create([
-            'node_id' => $node->id,
-            'role' => NodeRoleName::Agent->value,
-            'status' => NodeRoleStatus::Pending->value,
-            'settings' => [],
-        ]);
-
-        $baseline = new AgentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
-
-        $baseline->converge($node, $assignment);
-
-        expect(File::exists("{$this->configDir}/agent.conf"))->toBeTrue();
-        expect(File::get("{$this->configDir}/agent.conf"))
-            ->toContain('orbit-managed=node-development-dns')
-            ->toContain('address=/agent/10.6.0.50');
-    });
-
     it('converges the shared unprivileged agent user through agent-push local executor', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
@@ -180,9 +141,7 @@ describe('agent role baseline', function (): void {
 
         fake_agent_role_agent_convergence('10.6.0.50');
 
-        $baseline = new AgentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AgentRoleBaseline;
 
         $baseline->converge($node, $assignment);
 
@@ -208,15 +167,31 @@ describe('agent role baseline', function (): void {
             'settings' => [],
         ]);
 
-        $baseline = new AgentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AgentRoleBaseline;
 
         expect(fn () => $baseline->converge($node, $assignment))
             ->toThrow(
                 RuntimeException::class,
-                'The agent role requires a WireGuard address so the agent DNS mapping can be materialized.',
+                'The agent role requires a WireGuard address.',
             );
+    });
+
+    it('rejects agent convergence with the reserved private service namespace', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'tld' => 'agent',
+            'wireguard_address' => '10.6.0.50',
+        ]);
+        $node->tld = 'orbit';
+        $assignment = NodeRoleAssignment::factory()->make([
+            'node_id' => $node->id,
+            'role' => NodeRoleName::Agent->value,
+            'status' => NodeRoleStatus::Pending->value,
+            'settings' => [],
+        ]);
+
+        expect(fn () => new AgentRoleBaseline()->converge($node, $assignment))
+            ->toThrow(RuntimeException::class, 'The agent role requires a valid node TLD.');
     });
 
     it('rejects agent convergence on gateway nodes', function (): void {
@@ -239,9 +214,7 @@ describe('agent role baseline', function (): void {
             'settings' => [],
         ]);
 
-        $baseline = new AgentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AgentRoleBaseline;
 
         expect(fn () => $baseline->converge($node, $assignment))
             ->toThrow(RuntimeException::class, 'The agent role cannot be assigned to a gateway node.');
@@ -261,15 +234,13 @@ describe('agent role baseline', function (): void {
             'settings' => [],
         ]);
 
-        $baseline = new AgentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AgentRoleBaseline;
 
         expect(fn () => $baseline->converge($node, $assignment))
             ->toThrow(RuntimeException::class, 'The agent role requires an Ubuntu host.');
     });
 
-    it('removes agent baseline including dns mapping and tools', function (): void {
+    it('removes agent baseline tools', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
             'tld' => 'agent',
@@ -285,18 +256,14 @@ describe('agent role baseline', function (): void {
             'settings' => [],
         ]);
 
-        $baseline = new AgentRoleBaseline(
-            new DevelopmentDnsMappingEnactor($this->configDir),
-        );
+        $baseline = new AgentRoleBaseline;
 
         $baseline->converge($node, $assignment);
 
-        expect(File::exists("{$this->configDir}/agent.conf"))->toBeTrue();
         expect(NodeTool::query()->where('node_id', $node->id)->exists())->toBeTrue();
 
         $baseline->remove($node, $assignment, purgeData: false);
 
-        expect(File::exists("{$this->configDir}/agent.conf"))->toBeFalse();
         expect(NodeTool::query()->where('node_id', $node->id)->exists())->toBeFalse();
     });
 });

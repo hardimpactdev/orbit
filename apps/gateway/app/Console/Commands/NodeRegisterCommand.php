@@ -6,10 +6,12 @@ namespace App\Console\Commands;
 
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
+use App\Services\Dns\DnsmasqReconciler;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Orbit\Core\Nodes\NodeTld;
 
 #[Signature('orbit:internal:node-register
     {name : Registry name for the node}
@@ -24,7 +26,7 @@ class NodeRegisterCommand extends Command
     #[\Override]
     protected $hidden = true;
 
-    public function handle(): int
+    public function handle(DnsmasqReconciler $dnsmasqReconciler): int
     {
         $status = NodeStatus::tryFrom((string) $this->option('status'));
 
@@ -35,34 +37,38 @@ class NodeRegisterCommand extends Command
         }
 
         $name = (string) $this->argument('name');
-        $tld = trim((string) $this->option('tld'));
+        $tldOption = $this->option('tld');
+        $hostOption = $this->option('host');
+        $userOption = $this->option('user');
+        $orbitPathOption = $this->option('orbit-path');
+        $tld = is_string($tldOption) ? $tldOption : '';
+        $host = is_string($hostOption) && $hostOption !== '' ? $hostOption : $name;
+        $user = is_string($userOption) && $userOption !== '' ? $userOption : get_current_user();
+        $orbitPath = is_string($orbitPathOption) && $orbitPathOption !== '' ? $orbitPathOption : repo_path();
 
-        if ($status === NodeStatus::Active && ! $this->validTld($tld)) {
-            $this->error('Active nodes require a unique lowercase DNS-label TLD.');
+        if ($status === NodeStatus::Active && ! NodeTld::isValid($tld)) {
+            $this->error('Active nodes require a unique non-reserved lowercase DNS-label TLD.');
 
             return self::FAILURE;
         }
 
-        DB::transaction(function () use ($name, $status, $tld): void {
+        DB::transaction(static function () use ($host, $name, $orbitPath, $status, $tld, $user): void {
             Node::query()->updateOrCreate(
                 ['name' => $name],
                 [
                     'tld' => $tld !== '' ? $tld : null,
-                    'host' => (string) ($this->option('host') ?: $name),
-                    'user' => (string) ($this->option('user') ?: get_current_user()),
-                    'orbit_path' => (string) ($this->option('orbit-path') ?: repo_path()),
+                    'host' => $host,
+                    'user' => $user,
+                    'orbit_path' => $orbitPath,
                     'status' => $status,
                 ],
             );
         });
 
+        $dnsmasqReconciler->reconcileRecords();
+
         $this->info("Registered node {$name}.");
 
         return self::SUCCESS;
-    }
-
-    private function validTld(string $tld): bool
-    {
-        return strlen($tld) <= 63 && preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld) === 1;
     }
 }

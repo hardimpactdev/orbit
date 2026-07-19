@@ -35,6 +35,7 @@ use App\Services\Updates\UpdateTargetFactory;
 use App\Services\WireGuard\WireGuardPeerRealityProbe;
 use InvalidArgumentException;
 use JsonException;
+use Orbit\Core\Nodes\NodeTld;
 use RuntimeException;
 use Throwable;
 
@@ -45,7 +46,6 @@ final readonly class NodesProbe
         private ?RuntimeBackendProbe $runtimeBackendProbe = null,
         private ?WireGuardPeerRealityProbe $wireGuardPeerRealityProbe = null,
         private ?NodeIdentityArtifactProbe $nodeIdentityArtifactProbe = null,
-        private ?DevelopmentDnsMappingProbe $developmentDnsMappingProbe = null,
         private ?NodeSecurityPostureProbe $nodeSecurityPostureProbe = null,
         private ?NodeAgentIdeDefaults $agentIdeDefaults = null,
         private ?NodeRoleRegistry $nodeRoleRegistry = null,
@@ -88,7 +88,6 @@ final readonly class NodesProbe
         $drift = array_merge($drift, $this->checkNodeReachability($node));
         $drift = array_merge($drift, $this->checkGatewayRuntime($node));
         $drift = array_merge($drift, $this->checkAppRuntime($node));
-        $drift = array_merge($drift, $this->checkDevelopmentTld($node));
         $drift = array_merge($drift, $this->checkCliPhpDefault($node));
         $drift = array_merge($drift, $this->nodeSecurityPostureProbe()->diff($node));
 
@@ -183,6 +182,7 @@ final readonly class NodesProbe
             || $node->platform === ''
             || ! is_string($node->wireguard_address)
             || $node->wireguard_address === ''
+            || $node->isActive() && ! NodeTld::isValid($node->tld)
             || $this->nodeIsMissingRequiredHost($node)
         );
     }
@@ -387,59 +387,7 @@ final readonly class NodesProbe
      */
     private function baselineDriftForAppDevelopment(Node $node, NodeRoleAssignment $assignment): array
     {
-        $tld = is_string($node->tld) ? trim($node->tld) : null;
-
-        if (! is_string($tld) || trim($tld) === '') {
-            return [];
-        }
-
-        $toolDrift = $this->baselineToolConfigDrift($node, $assignment, 'caddy');
-        $mapping = $this->developmentDnsMappingProbe()->inspect(
-            $this->developmentNodeFromAssignment($node, $tld),
-        );
-
-        if (($mapping['expected_target'] ?? null) === null) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'node.role_baseline_mismatch',
-                    kind: DriftKind::Missing,
-                    summary: "Role baseline for '{$assignment->role}' on node {$node->name} is incomplete.",
-                    detail: [
-                        ...$mapping,
-                        'role' => $assignment->role,
-                        'tld' => $tld,
-                        'component' => 'dns_mapping',
-                    ],
-                ),
-                ...$toolDrift,
-            ];
-        }
-
-        if (
-            ($mapping['exists'] ?? false) !== true
-            || ($mapping['actual_target'] ?? null) !== ($mapping['expected_target'] ?? null)
-            || ($mapping['actual_owner'] ?? null) !== ($mapping['expected_owner'] ?? null)
-            || ($mapping['public_exposure'] ?? false) === true
-        ) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'node.role_baseline_mismatch',
-                    kind: ($mapping['exists'] ?? false) === true ? DriftKind::Divergent : DriftKind::Missing,
-                    summary: "Role baseline for '{$assignment->role}' on node {$node->name} is missing or mismatched.",
-                    detail: [
-                        ...$mapping,
-                        'role' => $assignment->role,
-                        'tld' => $tld,
-                        'component' => 'dns_mapping',
-                    ],
-                ),
-                ...$toolDrift,
-            ];
-        }
-
-        return $toolDrift;
+        return $this->baselineToolConfigDrift($node, $assignment, 'caddy');
     }
 
     /**
@@ -532,36 +480,6 @@ final readonly class NodesProbe
     {
         $drift = [];
 
-        $tld = is_string($node->tld) ? trim($node->tld) : null;
-
-        if (is_string($tld) && trim($tld) !== '') {
-            $mapping = $this->developmentDnsMappingProbe()->inspectForTld(
-                $node,
-                $tld,
-            );
-
-            if (
-                ($mapping['expected_target'] ?? null) === null
-                || ($mapping['exists'] ?? false) !== true
-                || ($mapping['actual_target'] ?? null) !== ($mapping['expected_target'] ?? null)
-                || ($mapping['actual_owner'] ?? null) !== ($mapping['expected_owner'] ?? null)
-                || ($mapping['public_exposure'] ?? false) === true
-            ) {
-                $drift[] = new DriftEntry(
-                    family: $this->key(),
-                    key: 'node.role_baseline_mismatch',
-                    kind: ($mapping['exists'] ?? false) === true ? DriftKind::Divergent : DriftKind::Missing,
-                    summary: "Role baseline for '{$assignment->role}' on node {$node->name} is missing or mismatched.",
-                    detail: [
-                        ...$mapping,
-                        'role' => $assignment->role,
-                        'tld' => $tld,
-                        'component' => 'dns_mapping',
-                    ],
-                );
-            }
-        }
-
         foreach (['caddy'] as $tool) {
             if (NodeTool::query()->where('node_id', $node->id)->where('name', $tool)->exists()) {
                 continue;
@@ -625,15 +543,6 @@ final readonly class NodesProbe
         }
 
         return $drift;
-    }
-
-    private function developmentNodeFromAssignment(Node $node, string $tld): Node
-    {
-        $developmentNode = clone $node;
-        $developmentNode->status = NodeStatus::Active;
-        $developmentNode->tld = $tld;
-
-        return $developmentNode;
     }
 
     /**
@@ -1055,19 +964,6 @@ final readonly class NodesProbe
                     : app(NodeIdentityArtifactProbe::class)
             )
         );
-    }
-
-    /**
-     * @return list<DriftEntry>
-     */
-    private function checkDevelopmentTld(Node $node): array
-    {
-        return [];
-    }
-
-    private function developmentDnsMappingProbe(): DevelopmentDnsMappingProbe
-    {
-        return $this->developmentDnsMappingProbe ?? app(DevelopmentDnsMappingProbe::class);
     }
 
     private function agentIdeDefaults(): NodeAgentIdeDefaults

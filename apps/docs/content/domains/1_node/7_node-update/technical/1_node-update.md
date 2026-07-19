@@ -37,7 +37,7 @@ This command follows the shared
 | `name` | `[name]` | Always. | Never. | None. | Must match an existing active node record. |
 | `host` | `--host` | Optional. | Target is an operator-identity node with no host metadata. | None. | SSH/bootstrap endpoint, never the canonical node address. Updating this does not change the gateway endpoint used in WireGuard peer configs; use `--gateway-endpoint` for that. |
 | `user` | `--user` | Optional. | Target is the gateway node. | None. | Orbit owner/runtime user for node-local Agent work. Orbit stores this value as node metadata; it does not create the OS user. |
-| `tld` | `--tld` | Optional. | Never. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. |
+| `tld` | `--tld` | Optional. | Never. | None. | Single lowercase DNS label without a leading dot and other than reserved `orbit`. Unique among active node TLDs. |
 | `gateway_endpoint` | `--gateway-endpoint` | Optional. | Target is an operator-identity node. | None. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `public_ipv4` | `--public-ipv4` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv4 metadata. |
 | `public_ipv6` | `--public-ipv6` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv6 metadata. |
@@ -170,6 +170,8 @@ Input mode behavior is split out of the canonical command contract:
   `node.field_role_incompatible`.
 - Check TLD uniqueness before side effects. If another active node already owns
   the supplied TLD, fail with `node.tld_in_use`.
+- Reject the reserved node TLD `orbit` before side effects because it belongs
+  to the proxy-owned `.orbit` namespace.
 
 ### Configuration Delta Rules
 
@@ -177,9 +179,11 @@ Input mode behavior is split out of the canonical command contract:
 - Fields that match the current value are no-ops and do not appear in
   `changed`.
 - Update the node record with the new values for changed fields.
-- Changing `tld` updates the development TLD stored at node level, which the
-  gateway owns for the `app-dev` or `agent` node. Any wider convergence or
-  repair after that metadata write belongs to the node-family doctor path.
+- Changing `tld` updates the mandatory node identity for an active node. The
+  node family reconciles its concrete `orbit.<node-tld>` record for every role
+  and reconciles wildcard/local directives only when the node carries
+  `app-dev` or `agent`. Repair after that metadata write belongs to the
+  node-family Doctor path.
 - Changing `gateway_endpoint` updates the endpoint stored at node level. The
   changed field triggers node-owned artifact re-applying for workload-role
   targets.

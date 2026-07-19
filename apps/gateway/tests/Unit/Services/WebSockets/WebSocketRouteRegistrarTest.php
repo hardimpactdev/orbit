@@ -61,6 +61,7 @@ function websocketRouteRegistrarAppWithIngress(): array
 }
 
 beforeEach(function (): void {
+    bind_dnsmasq_reconciler_test_double();
     app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 });
 

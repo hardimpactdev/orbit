@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Analytics\AnalyticsDatabaseResolver;
 use App\Services\Analytics\AnalyticsRouteRegistrar;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\S3\S3RouteRegistrar;
 use App\Services\WebSockets\WebSocketValkeyResolver;
 use Illuminate\Database\QueryException;
@@ -30,6 +31,7 @@ class NodeRoleAssignmentService
         private readonly AnalyticsDatabaseResolver $analyticsDatabaseResolver,
         private readonly AnalyticsRouteRegistrar $analyticsRouteRegistrar,
         private readonly S3RouteRegistrar $s3RouteRegistrar,
+        private readonly DnsmasqReconciler $dnsmasqReconciler,
     ) {}
 
     /**
@@ -212,6 +214,10 @@ class NodeRoleAssignmentService
 
             $this->completeRemoval($node, $assignment, $dependentPolicy, $role);
 
+            if ($this->roleChangesWildcardDns($role)) {
+                $this->dnsmasqReconciler->reconcileNodeRecords();
+            }
+
             if ($role === NodeRoleName::S3->value && $this->hasActiveRouter()) {
                 $this->s3RouteRegistrar->syncServiceRouteAfterBackendChange();
             }
@@ -322,6 +328,10 @@ class NodeRoleAssignmentService
 
             $assignment = $this->roleActivator->activate($node, $assignment);
 
+            if ($this->roleChangesWildcardDns($assignment->role)) {
+                $this->dnsmasqReconciler->reconcileNodeRecords();
+            }
+
             if (
                 $assignment->role === NodeRoleName::S3->value
                 && $node->isActive()
@@ -344,6 +354,11 @@ class NodeRoleAssignmentService
     private function hasActiveRouter(): bool
     {
         return $this->assignments->activeRouterNodeQuery()->exists();
+    }
+
+    private function roleChangesWildcardDns(string $role): bool
+    {
+        return in_array($role, [NodeRoleName::AppDevelopment->value, NodeRoleName::Agent->value], true);
     }
 
     public function assertFleetRoleAvailable(string $role, ?Node $exceptNode = null): void

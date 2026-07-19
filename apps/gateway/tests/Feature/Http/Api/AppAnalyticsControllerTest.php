@@ -14,6 +14,10 @@ use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    bind_dnsmasq_reconciler_test_double();
+});
+
 const APP_ANALYTICS_CALLER_WG_IP = '10.6.0.93';
 
 function createAppAnalyticsCallerNode(array $overrides = [], ?string $role = null): Node

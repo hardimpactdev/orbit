@@ -32,8 +32,9 @@ The node family owns these facts:
   and installed-Agent expectation must not remain after the last workload role
   is removed unless the roleless node is explicitly managed;
 - node identity and related defaults: every active node has a mandatory valid
-  node-owned TLD; development and agent roles consume it for DNS mappings,
-  alongside DNS resolver safety, `vpn` role settings and runtime, local
+  node-owned TLD; the node family projects a concrete DNS record for every
+  active node and wildcard records for active development and agent roles,
+  alongside `vpn` role settings and WireGuard runtime, local
   `node:default` preferences for `--self`, Orbit launcher/runtime readiness,
   and agent IDE defaults at the node level.
 
@@ -106,14 +107,20 @@ The node probe reads gateway node records and checks these layers:
    update driver supports the selected target. Unsupported targets are silent:
    node doctor never creates `node.updates_not_applicable` or
    `node.updates_driver_unsupported` findings.
-13. **Role assignment readiness:** active role assignments have the settings
+13. **Node DNS projection:** concrete and wildcard mismatches attach to their
+    active source node. Orphan directives from deleted or renamed nodes are
+    reported once on the active gateway projection anchor. Every active node
+    with a valid TLD and WireGuard address has a concrete `orbit.{tld}` record;
+    only active `app-dev` and `agent` nodes have wildcard and local-zone
+    directives. Container, listener, forwarding, and client-DNS checks belong
+    to the tool family.
+14. **Role assignment readiness:** active role assignments have the settings
    their role requires, current assignment convergence state, and no baseline
    drift.
 
    For `app-dev`, the node has its mandatory valid node-owned `tld`, and the
-   gateway maps `*.{tld}` to the node's WireGuard address. The development DNS
-   resolver that the gateway maintains must be WireGuard-reachable and must not
-   expose a public open resolver.
+   gateway maps `*.{tld}` to the node's WireGuard address in the node-owned DNS
+   projection.
 
    For `agent`, the role consumes the node's mandatory valid node-owned `tld`.
    The gateway maps `*.{tld}` to the node's WireGuard address through the same
@@ -126,8 +133,8 @@ The node probe reads gateway node records and checks these layers:
 
    For `vpn`, assignments have valid `public_endpoint`, `wireguard_cidr`,
    `wireguard_port`, and `dns_ip` settings. The node baseline includes the
-   WireGuard server runtime and DNS runtime, and the DNS runtime served through
-   the `vpn` role matches desired DNS mappings owned by the gateway.
+   WireGuard server runtime and requires the DNS tool capability; DNS base
+   configuration and runtime diagnostics remain tool-family facts.
 
    For `app-prod`, the assignment has a valid `ingress_node_id`
    setting. The role baseline owns private backend readiness: `orbit-caddy`
@@ -155,7 +162,7 @@ The node probe reads gateway node records and checks these layers:
    family.
 
    `database` and `gateway` assignments have no role settings in v1.
-14. **Node-related defaults:** local `node:default` preferences point at
+15. **Node-related defaults:** local `node:default` preferences point at
    active, authorized `app-dev` nodes when `--self` inspects the CLI's
    local configuration, and agent IDE defaults at the node level point at
    supported adapters.
@@ -209,7 +216,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 
 | Code | Detected when |
 | --- | --- |
-| `node.record_incomplete` | A selected active node record lacks a mandatory valid node-owned TLD, required platform-version identifier, required host/endpoint metadata, or WireGuard address. |
+| `node.record_incomplete` | A selected active node record lacks a mandatory valid node-owned TLD, uses reserved TLD `orbit`, or lacks a required platform-version identifier, host/endpoint metadata, or WireGuard address. |
 | `node.role_assignment_missing` | A selected active node has no compatible active role assignment for the role implied by its registry record. |
 | `node.role_assignment_invalid` | A persisted role assignment names an unknown role or otherwise cannot be validated as a real role row. |
 | `node.role_conflict` | Active, pending, or error role assignments violate the compatibility matrix. Assignments already in `removing` are ignored. |
@@ -233,8 +240,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.transport_unreachable` | Gateway-local execution is unavailable for the gateway target, or the gateway cannot reach an Agent-eligible non-gateway node through Agent push. |
 | `node.gateway_runtime_unready` | The gateway node does not expose the Orbit API or required gateway service. |
 | `node.runtime_missing` | A node lacks the minimum Orbit runtime required for gateway applying. Report-only; recovery returns to the initiating client bootstrap flow. |
-| `node.vpn_runtime_missing` | The active gateway-coupled `vpn` assignment is missing WireGuard server or VPN-facing DNS runtime artifacts. |
-| `node.vpn_dns_mapping_mismatch` | The DNS runtime served through the `vpn` role does not match gateway-owned desired DNS mappings. |
+| `node.dns_mapping_mismatch` | A source node's concrete or role-gated wildcard directives are missing or wrong, or the active gateway projection anchor finds an orphan directive for a deleted or renamed node. |
 | `node.s3_data_path_invalid` | An active `s3` role assignment has a missing, relative, or otherwise invalid `data_path` setting. |
 | `node.s3.wireguard_missing` | An active `s3` role node has a missing or empty WireGuard address. SeaweedFS requires a WireGuard address to bind its API endpoint. |
 | `node.node_identity_artifact_missing` | A node is missing bootstrap identity material required to prove its node record. |
@@ -266,14 +272,13 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.access_grant_invalid` | Remove stale grant rows that reference missing or non-active nodes. |
 | `node.access_permission_invalid` | Re-normalize the stored permission set on the grant when it can be reduced to a valid set without changing intent; otherwise leave the drift visible for explicit operator action through `node:permissions`. |
 | `node.role_convergence_failed` | Retry synchronous convergence for error role assignments on the selected node and leave an assignment in `error` again if the retry fails. |
-| `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments through the shared convergence path, including role-owned derived artifacts such as development DNS mappings. |
+| `node.role_baseline_mismatch` | Re-apply the baseline artifacts for the selected active role assignments through the shared convergence path. |
 | `node.websocket.backend_cert_missing` | Re-apply the active `websocket` role baseline, then re-probe the backend certificate and keep the issue visible if drift remains. |
 | `node.websocket.bind_public_interface` | Re-apply the active `websocket` role baseline, then re-probe Reverb's container bind and WireGuard-only Docker publication and keep the issue visible if drift remains. |
 | `node.managed_agent_intent_invalid` | Clear the invalid `managed` flag; workload role intent remains derived from active roles. |
 | `node.agent_expectation_stale` | Clear stale installed-Agent expectation metadata after Agent intent is absent. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway service artifacts required by Orbit API readiness. |
-| `node.vpn_runtime_missing` | Re-apply the active `vpn` role baseline for WireGuard server and VPN-facing DNS runtime artifacts. |
-| `node.vpn_dns_mapping_mismatch` | Rewrite the DNS runtime served through the active `vpn` role so it matches gateway-owned desired DNS mappings. |
+| `node.dns_mapping_mismatch` | Re-render only `dnsmasq.d/10-node-records.conf` from active node intent, atomically replace that artifact through the ownership-neutral materializer, and reload or restart DNS once. If the projection directory mount is not active, leave drift unresolved rather than reporting success. |
 | `node.node_identity_artifact_missing` | Reinstall node identity material from the active node record. |
 | `node.bootstrap_network_policy_mismatch` | Reapply the node-owned bootstrap network policy for the node's role assignments with rollback and reachability checks, preserving gateway-owned `firewall_rule` extras. |
 | `node.security.public_ssh_deny` | Reapply the node-owned public provisioning-SSH deny policy gateway-locally or through Agent push while preserving user-owned firewall rules. |
@@ -294,11 +299,8 @@ from the initiating client so that client-owned bootstrap can reinstall the
 minimum runtime and establish Agent readiness; then rerun doctor through the
 normal gateway-to-Agent path.
 
-`node.vpn_runtime_missing` reports that the active gateway-coupled `vpn`
-assignment is missing WireGuard server artifacts or DNS runtime artifacts.
-
-`node.vpn_dns_mapping_mismatch` reports that the DNS runtime served through
-the `vpn` role does not match desired DNS mappings owned by the gateway.
+`node.dns_mapping_mismatch` is not adoptable. DNS record projection is derived
+from gateway node intent; observed resolver content cannot become node state.
 
 `node.local_default_invalid` and `node.agent_ide_default_invalid` are
 reported only. `node:default` and `node:agent-ide` are explicit user actions;
@@ -381,7 +383,7 @@ Family-specific notes on the shared method surface:
 | `canReconcile()` | Returns whether `doctor --family=node --restore` is supported. |
 | `reconcile(Node $node, DriftEntry $entry)` | Applies restore behavior for supported keys and throws for unsupported keys. |
 | `canAdopt()` | Returns whether `doctor --family=node --adopt` is supported. |
-| `snapshotForAdopt(Node $node)` | Reads adoption-specific proof such as identity artifacts, WireGuard reality, runtime readiness, VPN DNS/runtime state, and local platform facts. |
+| `snapshotForAdopt(Node $node)` | Reads adoption-specific proof such as identity artifacts, WireGuard reality, runtime readiness, and local platform facts. |
 | `adopt(Node $node, ProbeSnapshot $snapshot)` | Attempts supported adoption paths and returns `AdoptResult` rows with `updated`, `skipped`, or `conflict` actions. |
 
 New probe layers must add the issue code here, add focused Pest coverage in
@@ -396,3 +398,5 @@ Primary test owners:
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Operation/DoctorCommandTest.php` | CLI doctor scope selection and rendered output when node doctor sections are exercised from the CLI. |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway verify scope and authorization when node-family doctor probes run through the API. |
+| `apps/gateway/tests/Feature/Services/Doctor/DoctorDnsProjectionRestoreTest.php` | Family-specific restore routing for node and proxy DNS projections. |
+| `apps/gateway/tests/Unit/Services/Doctor/NodeDnsProjectionProbeTest.php` | Source-node host/wildcard findings, one-time anchor reporting for orphan directives, and family isolation. |

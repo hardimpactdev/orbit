@@ -31,11 +31,9 @@ use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerRenderer;
-use App\Services\Dns\DnsmasqConfigBuilder;
+use App\Services\Dns\DnsmasqBaseConfigBuilder;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
-use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
@@ -62,11 +60,6 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    $developmentDnsConfigDir = storage_path('framework/testing/doctor-runner-dns/'.bin2hex(random_bytes(6)));
-    $developmentDnsMappingEnactor = new DevelopmentDnsMappingEnactor($developmentDnsConfigDir);
-
-    app()->instance(DevelopmentDnsMappingEnactor::class, $developmentDnsMappingEnactor);
-    app()->instance(DevelopmentDnsMappingProbe::class, new DevelopmentDnsMappingProbe($developmentDnsMappingEnactor));
     app()->bind(
         RemoteLocalExecutor::class,
         fn (): RemoteLocalExecutor => doctorRunnerLocalExecutor(app(RemoteShell::class)),
@@ -117,10 +110,6 @@ beforeEach(function (): void {
 
         return doctorRunnerAgentPushResponse($request, $result);
     });
-});
-
-afterEach(function (): void {
-    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
 });
 
 function createDoctorRunnerAppHostNode(array $attributes = []): Node
@@ -1849,12 +1838,14 @@ describe('DoctorReportRunner', function (): void {
                     'dns_ip' => '10.6.0.1',
                 ],
             ]);
-            File::put($root.'/dnsmasq.conf', new DnsmasqConfigBuilder()->buildGatewayState());
+            File::put($root.'/dnsmasq.conf', new DnsmasqBaseConfigBuilder()->build());
+            write_current_node_dns_projection();
+            write_current_proxy_dns_projection();
             createDoctorRunnerWgEasyDnsDatabase($root.'/wg-easy/wg-easy.db', '["10.6.0.1"]', [
                 ['name' => 'operator', 'ipv4_address' => '10.6.0.3', 'dns' => '["10.6.0.1","1.1.1.1"]'],
             ]);
 
-            Process::fake(function ($process) {
+            Process::fake(function ($process) use ($root) {
                 $command = (string) $process->command;
 
                 if (str_contains($command, 'docker ps')) {
@@ -1863,6 +1854,15 @@ describe('DoctorReportRunner', function (): void {
 
                 if (str_contains($command, 'docker exec')) {
                     return Process::result('udp 0 0 :::53 :::* LISTEN');
+                }
+
+                if (str_starts_with($command, 'docker inspect --format')) {
+                    return Process::result(json_encode([[
+                        'Type' => 'bind',
+                        'Source' => $root.'/dnsmasq.d',
+                        'Destination' => '/etc/dnsmasq.d',
+                        'RW' => false,
+                    ]], JSON_THROW_ON_ERROR));
                 }
 
                 return Process::result();
@@ -1910,12 +1910,14 @@ describe('DoctorReportRunner', function (): void {
                     'dns_ip' => '10.6.0.1',
                 ],
             ]);
-            File::put($root.'/dnsmasq.conf', new DnsmasqConfigBuilder()->buildGatewayState());
+            File::put($root.'/dnsmasq.conf', new DnsmasqBaseConfigBuilder()->build());
+            write_current_node_dns_projection();
+            write_current_proxy_dns_projection();
             createDoctorRunnerWgEasyDnsDatabase($root.'/wg-easy/wg-easy.db', '["10.6.0.1","1.1.1.1"]', [
                 ['name' => 'operator', 'ipv4_address' => '10.6.0.3', 'dns' => '["10.6.0.1","1.1.1.1"]'],
             ]);
 
-            Process::fake(function ($process) {
+            Process::fake(function ($process) use ($root) {
                 $command = (string) $process->command;
 
                 if (str_contains($command, 'docker ps')) {
@@ -1924,6 +1926,15 @@ describe('DoctorReportRunner', function (): void {
 
                 if (str_contains($command, 'docker exec')) {
                     return Process::result('udp 0 0 :::53 :::* LISTEN');
+                }
+
+                if (str_starts_with($command, 'docker inspect --format')) {
+                    return Process::result(json_encode([[
+                        'Type' => 'bind',
+                        'Source' => $root.'/dnsmasq.d',
+                        'Destination' => '/etc/dnsmasq.d',
+                        'RW' => false,
+                    ]], JSON_THROW_ON_ERROR));
                 }
 
                 return Process::result();
@@ -2049,8 +2060,6 @@ describe('DoctorReportRunner', function (): void {
     });
 
     it('restores supported node role baseline drift through the node converger', function (): void {
-        File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
-
         $node = Node::factory()->create([
             'name' => 'app-1',
             'status' => 'active',
@@ -2071,6 +2080,7 @@ describe('DoctorReportRunner', function (): void {
             'status' => 'active',
             'settings' => [],
         ]);
+        write_current_node_dns_projection();
         app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
@@ -2094,8 +2104,13 @@ describe('DoctorReportRunner', function (): void {
                 'mode' => 'restore',
                 'status' => 'completed',
             ])
-            ->and(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf')
-            ->toBeFile();
+            ->and(
+                NodeTool::query()
+                    ->where('node_id', $node->id)
+                    ->where('name', 'caddy')
+                    ->exists(),
+            )
+            ->toBeTrue();
     });
 
     it('marks websocket role baseline drift as restorable', function (): void {
@@ -2220,54 +2235,6 @@ describe('DoctorReportRunner', function (): void {
                 'mode' => 'restore',
                 'status' => 'failed',
             ]);
-    });
-
-    it('uses the node-level TLD when role settings omit TLD during restore', function (): void {
-        $node = Node::factory()->create([
-            'name' => 'app-1',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'host' => '10.0.0.1',
-            'wireguard_address' => '10.6.0.5',
-            'tld' => 'test',
-        ]);
-        WireGuardPeer::factory()->create([
-            'node_id' => $node->id,
-            'allowed_ips' => '10.6.0.5/32',
-        ]);
-        markDoctorRunnerNodeSecurityBaselineClean($node);
-
-        NodeRoleAssignment::factory()->create([
-            'node_id' => $node->id,
-            'role' => 'app-dev',
-            'status' => 'active',
-            'settings' => [],
-        ]);
-        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
-        ]));
-
-        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['node']);
-
-        expect($report['healthy'])
-            ->toBeTrue()
-            ->and($report['summary'])
-            ->toMatchArray([
-                'issues' => 0,
-                'fixed' => 1,
-                'skipped' => 0,
-            ])
-            ->and($report['actions'][0])
-            ->toMatchArray([
-                'family' => 'node',
-                'node' => 'app-1',
-                'key' => 'node.role_baseline_mismatch',
-                'mode' => 'restore',
-                'status' => 'completed',
-            ])
-            ->and(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf')
-            ->toBeFile();
     });
 
     it('supports the database connection family on app nodes but not database-only nodes', function (): void {

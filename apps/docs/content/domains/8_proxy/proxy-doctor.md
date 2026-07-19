@@ -18,6 +18,8 @@ planning, and restore/adopt actions are limited to that owner. Shared
 node-level Caddy container and global-config checks still run because those
 artifacts are prerequisites for the selected route, but unrelated app,
 workspace, WebSocket, or S3 routes are not enumerated or changed.
+The fleet-wide private DNS projection is checked only for an unscoped proxy
+run on the active router, not for app- or workspace-scoped runs.
 
 The proxy family owns these facts:
 
@@ -27,6 +29,8 @@ The proxy family owns these facts:
 - expected agent-tool internal route intent derived from installed agent tool
   rows and each tool node's configured TLD;
 - managed proxy backend artifacts rendered from those rows;
+- `dnsmasq.d/20-proxy-records.conf`, containing router/private `.orbit`
+  directives and exact backend records, currently including S3 backends;
 - managed TLS material needed by those routes;
 - hostname compatibility material derived from Orbit-managed TLS that app-role
   tooling can use for Laravel Vite TLS detection;
@@ -80,7 +84,11 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
 10. **Enactment state:** app routes whose persisted enactment state is failed,
     partial, or pending are reported alongside any artifact drift so one
     restore run can repair artifacts and perform the complete ordered retry.
-11. **Adoption scope:** during `doctor --adopt`, explicitly selected observed backend
+11. **Private DNS projection:** for an unscoped active-router run,
+    `dnsmasq.d/20-proxy-records.conf` matches router-owned private `.orbit`
+    routes and exact backend intent. DNS base configuration and runtime facts
+    remain tool-owned.
+12. **Adoption scope:** during `doctor --adopt`, explicitly selected observed backend
     routes may be inspected for compatible custom-route facts.
 
 Observed backend routes without Orbit ownership markers are unmanaged node reality by default. They are reported as drift only when the operator requested an explicit adoption scope.
@@ -104,6 +112,7 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.route_missing` | Gateway configuration expects a managed backend route, but the route is absent from node reality. |
 | `proxy.route_mismatch` | A managed backend route exists but differs from gateway configuration. |
 | `proxy.enactment_incomplete` | Persisted enactment is failed, partial, or pending. Restore reports it with artifact drift and retries backend → router → ingress. |
+| `proxy.dns_mapping_mismatch` | Proxy-owned `dnsmasq.d/20-proxy-records.conf` differs from active router/private `.orbit` and exact-backend intent. |
 | `proxy.websocket.router_route_missing` | Gateway WebSocket route intent expects the private router-owned `websocket.orbit` route row, but it is missing or differs from the canonical WebSocket service route. |
 | `proxy.websocket.public_route_missing` | An enabled app WebSocket binding expects a public ingress route, but the route row is missing or differs from the canonical app-websocket public route. |
 | `proxy.websocket.router_route_orphaned` | The private `websocket.orbit` service route row exists, but no active `websocket` role assignment remains in the topology. Service routes exist only while a matching role is active. |
@@ -136,6 +145,7 @@ only when that readback is clean.
 | `proxy.route_missing` | Recreate the backend route from gateway configuration when the node is reachable and eligible. |
 | `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when the route can be identified safely. For app primary routes that resolve to an app instance, restore also persists the concrete app-instance target, runtime upstream, and inner-TLS server name before writing the backend route. |
 | `proxy.enactment_incomplete` | Retry the app route's complete backend → router → ingress enactment. The persisted state becomes converged only after every operation succeeds; a retry failure retains partial state and reports the exact node and operation. |
+| `proxy.dns_mapping_mismatch` | Re-render only `dnsmasq.d/20-proxy-records.conf`, atomically replace that artifact through the shared ownership-neutral materializer, and reload or restart DNS once. If the projection directory mount is not active, leave drift unresolved rather than reporting success. |
 | `proxy.websocket.router_route_missing` | Re-sync the private `websocket.orbit` service route from gateway WebSocket route intent. |
 | `proxy.websocket.public_route_missing` | Re-sync public app-websocket ingress routes from the owning app WebSocket binding. |
 | `proxy.websocket.router_route_orphaned` | Remove the orphaned `websocket.orbit` service route row and its rendered artifacts. |
@@ -162,6 +172,7 @@ Use `doctor --adopt` to apply the adoption action listed for each code.
 | `proxy.route_mismatch` | Update gateway configuration only when the operator selected a custom route and the observed backend route can be represented without changing app, app-websocket, workspace, gateway, router, S3, or tool ownership. |
 
 `doctor --adopt` does not scan arbitrary hosts, adopt app/app-websocket/workspace/gateway/router/S3/tool routes as custom routes, infer app ownership from upstream paths, or adopt service health into the proxy family.
+`proxy.dns_mapping_mismatch` is derived projection drift and is never adoptable.
 
 ## Test Mapping
 
@@ -170,6 +181,8 @@ Required test files:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for proxy family scope, proxy drift reporting, and restore behavior. |
+| `apps/gateway/tests/Feature/Services/Doctor/DoctorDnsProjectionRestoreTest.php` | Family-specific restore routing for node and proxy DNS projections. |
+| `apps/gateway/tests/Unit/Services/Doctor/ProxyDnsProjectionProbeTest.php` | Router/private `.orbit`, exact backend projection, and `proxy.dns_mapping_mismatch`. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | Probe drift for registry, derived agent-tool route intent, ownership, node eligibility, artifacts, TLS, and safe adoption. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` | Restore behavior for deleted and mismatched agent-tool routes, complete app-route re-enactment, and layer-specific artifact repairs. |
 | `apps/gateway/tests/Unit/Services/Analytics/AnalyticsProxyDoctorProbeTest.php` | Analytics service-route registry drift, orphan detection, and restore behavior. |

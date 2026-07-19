@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Vpn;
 
-use App\Services\Dns\DnsmasqConfigBuilder;
+use App\Services\Dns\DnsmasqBaseConfigBuilder;
+use App\Services\Dns\DnsmasqInstallationStage;
+use App\Services\Dns\DnsmasqReconciler;
+use App\Services\Dns\NodeDnsmasqRecordsBuilder;
+use App\Services\Dns\ProxyDnsmasqRecordsBuilder;
 use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Gateway\GatewaySwarmStackRenderer;
 use App\Services\RemoteShell\RemoteLocalExecutor;
@@ -22,7 +26,7 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
         private readonly GatewaySwarmManager $swarm = new GatewaySwarmManager,
         private readonly VpnDnsSwarmStackRenderer $renderer = new VpnDnsSwarmStackRenderer,
         private readonly VpnDnsSwarmManager $manager = new VpnDnsSwarmManager,
-        private readonly DnsmasqConfigBuilder $configBuilder = new DnsmasqConfigBuilder,
+        private readonly ?DnsmasqReconciler $reconciler = null,
         ?RemoteLocalExecutor $localExecutor = null,
         ?VpnNodeResolver $vpnNodeResolver = null,
     ) {
@@ -57,10 +61,13 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
 
         File::ensureDirectoryExists($this->rootPath, 0700);
         File::ensureDirectoryExists($this->statePath(), 0700);
-        File::put($this->rootPath.'/dnsmasq.conf', $this->configBuilder->buildGatewayState());
+        $dnsmasqInstallation = DnsmasqInstallationStage::prepare(
+            rootPath: $this->rootPath,
+            reconciler: $this->dnsmasqReconciler(),
+        );
 
         $this->swarm->ensureSwarm();
-        $this->swarm->ensureGatewayEdgeNodeLabels();
+        $this->swarm->ensureGatewayVpnNodeLabels();
         $this->swarm->ensureAttachableOverlayNetwork(GatewaySwarmStackRenderer::Network);
 
         $stack = $this->renderer->render(
@@ -82,6 +89,8 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
         $this->ensureWgEasyStateWritable();
         $this->convergeServerAddress($publicHost, $wireguardCidr, $dnsIp);
         $this->manager->convergeDnsForwarding();
+
+        $dnsmasqInstallation->activate();
     }
 
     #[\Override]
@@ -105,6 +114,19 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
         }
 
         return $publicKey;
+    }
+
+    private function dnsmasqReconciler(): DnsmasqReconciler
+    {
+        return (
+            $this->reconciler ?? new DnsmasqReconciler(
+                baseConfigBuilder: new DnsmasqBaseConfigBuilder,
+                nodeRecordsBuilder: new NodeDnsmasqRecordsBuilder,
+                proxyRecordsBuilder: new ProxyDnsmasqRecordsBuilder,
+                rootPath: $this->rootPath,
+                swarmManager: $this->manager,
+            )
+        );
     }
 
     /**
@@ -153,8 +175,13 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
             set -eu
             for i in $(seq 1 60); do
                 container_id="$(docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn' | head -n 1)"
+                dns_container_id="$(docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-dns' | head -n 1)"
 
-                if [ -n "$container_id" ] && docker exec "$container_id" test -f /etc/wireguard/wg-easy.db && docker exec "$container_id" ip link show wg0 >/dev/null 2>&1; then
+                if [ -n "$container_id" ] \
+                    && [ -n "$dns_container_id" ] \
+                    && docker exec "$container_id" test -f /etc/wireguard/wg-easy.db \
+                    && docker exec "$container_id" ip link show wg0 >/dev/null 2>&1 \
+                    && docker inspect --format '{{range .Mounts}}{{println .Destination}}{{end}}' "$dns_container_id" | grep -qx /etc/dnsmasq.d; then
                     exit 0
                 fi
 

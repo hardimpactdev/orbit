@@ -151,7 +151,7 @@ operation-backed command moves to this durable stream.
 
 The `vpn` role is a gateway-coupled infrastructure role in this version. It
 owns the WireGuard server runtime, public WireGuard endpoint settings, VPN
-peer defaults, and the VPN-facing DNS runtime. First gateway bootstrap assigns
+peer defaults, and the requirement for the DNS tool capability. First gateway bootstrap assigns
 `gateway`, `vpn`, and `router` to the same node, and normal role commands
 cannot manage those roles independently.
 
@@ -219,7 +219,7 @@ assignment succeeds. Proxy doctor owns route and certificate drift repair.
 Removing the analytics role removes both the runtime and the private route with
 its rendered artifacts and TLS material.
 
-The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics`, or `analytics`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under the agent role TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
+The `agent` role runs first-party autonomous agent tools — OpenClaw and Hermes — that operate Orbit through the gateway API on the fleet's behalf. The `agent` role is exclusive: it cannot combine with `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `ingress`, `websocket`, `s3`, `metrics`, or `analytics`, and it can only be selected during `node:new`. `node role:add` rejects `agent` because adding it to an existing node bypasses the isolation model the role enforces. A node carrying the `agent` role combines that workload role with explicit scoped grants so the agent can call the gateway like any other caller. Agent tool web UIs are exposed only as internal HTTPS routes under that node's node-owned TLD (for example `https://openclaw.agent` and `https://hermes.agent`); they have no ingress baseline. Activity emitted while autonomous agent tools work is attributed to the node identity — Orbit does not claim per-tool sub-identities.
 
 Roles compose only where the role matrix allows it. In v1, `gateway`, `vpn`,
 and `router` are coupled to each other, but the `metrics` role may be added to
@@ -245,7 +245,7 @@ The VPN is the secure network every Orbit node joins. Steady-state traffic
 flows over it: CLI calls to the gateway, changes the gateway pushes to other
 nodes, and events those nodes send back. The `vpn` role owns the WireGuard
 server runtime, the public endpoint settings peers use to reach it, peer
-defaults, and the VPN-facing DNS runtime. In v1 that role is gateway-coupled,
+defaults, and its dependency on the DNS tool capability. In v1 that role is gateway-coupled,
 so the active `vpn` role runs on the same node as the active `gateway` role.
 Nodes with only `app-dev`, `database`, `websocket`, `s3`, `metrics`, `analytics`, or private
 `app-prod` roles do not need a public face. Only nodes with an active
@@ -260,22 +260,34 @@ overlap.
 
 | Concern | Owner | Verified by |
 |---|---|---|
-| Gateway-owned development/agent DNS mappings (which TLD points at which WireGuard IP) | node family | `doctor --family=node` |
-| Router-owned private `.orbit` service names and private route selection | gateway-coupled `router` role | `doctor --family=proxy` for HTTP routes; router service checks for TCP service contracts are future work |
-| VPN-facing DNS runtime (the dnsmasq + wg-easy substrate that serves those mappings) | `vpn` role baseline | `doctor --family=tool` for the `dns` tool row; `doctor --family=node --restore` re-applies the baseline wholesale |
+| `dnsmasq.d/10-node-records.conf`: one concrete `orbit.{tld}` record for every active node, plus wildcard and local-zone directives only for active `app-dev` and `agent` nodes | node family; node TLD `orbit` is reserved for the proxy namespace | `doctor --family=node` (`node.dns_mapping_mismatch`) |
+| `dnsmasq.d/20-proxy-records.conf`: router/private `.orbit` directives and exact backend records, currently including S3 backends | proxy family | `doctor --family=proxy` (`proxy.dns_mapping_mismatch`) |
+| Base `dnsmasq.conf`, DNS container/service, listener, VPN forwarding, and client-DNS settings | `dns` tool capability | `doctor --family=tool` (`tool.dns_base_config_mismatch` and granular DNS runtime issues) |
 | Caller-local resolver overrides on an operator's own machine | `dns:*` command family | — |
 | Public DNS / CDN for production domains | Cloudflare integration | `cf-*` command family |
 
-The `dns:*` command family does not edit gateway-owned development DNS or
-router-owned private `.orbit` service names; the tool family does not own DNS
-records.
+The shared DNS materializer and reload path atomically replaces each requested
+artifact under one lock and reloads once; it is not an all-three-file
+transaction. It remains ownership-neutral. A family restore rewrites only that
+family's artifact before using the shared reload path. The `dns:*` command
+family does not edit gateway-private records, and the tool family does not own
+the record projections. There is no `dns` role or DNS state family; the active
+`vpn` role requires the `dns` tool capability.
+
+Node identity create, update, remove, and activation paths reconcile the node
+and proxy record projections together because a node or WireGuard-address
+change can affect both. Role add/remove that changes only `app-dev` or `agent`
+wildcard eligibility reconciles the node projection alone. Neither path touches
+tool-owned base configuration. Full three-artifact staging and
+`migrateLegacyLayout()` are reserved for installation and explicit layout
+migration.
 
 `wg-easy` and `orbit-dns` are a coupled VPN substrate. In the current Compose
 runtime, `orbit-dns` runs in the wg-easy network namespace so VPN clients can
 resolve node TLDs and private Orbit names. The Swarm migration keeps them as
 separate Swarm-managed services, not one multi-process container: coupling is a
-placement and networking contract. In v1 the router, vpn, and dns roles remain
-co-located on the gateway edge node. The Swarm target gives `wg-easy` and
+placement and networking contract. In v1 the gateway-coupled `router` and
+`vpn` roles use the DNS tool runtime on the gateway edge node. The Swarm target gives `wg-easy` and
 `orbit-dns` a shared private Swarm network, keeps DNS unpublished publicly, and
 forwards VPN-side DNS traffic from the WireGuard namespace to the DNS service.
 The VPN task self-converges that forwarding rule after task recreation, and

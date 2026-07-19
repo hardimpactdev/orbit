@@ -14,6 +14,8 @@ uses(RefreshDatabase::class);
 
 describe('orbit:internal:bake-agent-node', function (): void {
     beforeEach(function (): void {
+        bind_dnsmasq_reconciler_test_double();
+
         $this->hostKeyPinner = new class {
             /** @var list<array{host: string, expected: ?string}> */
             public array $calls = [];
@@ -68,5 +70,22 @@ describe('orbit:internal:bake-agent-node', function (): void {
                 ['host' => '10.6.0.6', 'expected' => null],
             ])->and($assignment)
             ->not->toBeNull()->and($assignment?->status)->toBe(NodeRoleStatus::Active)->and($assignment?->settings)->toBe([]);
+    });
+
+    it('rejects the private service namespace as an agent node tld', function (): void {
+        expect(
+            fn () => $this->artisan('orbit:internal:bake-agent-node', [
+                'name' => 'agent-1',
+                '--host' => '10.6.0.6',
+                '--wireguard-address' => '10.6.0.6',
+                '--tld' => 'orbit',
+            ])->run(),
+        )
+            ->toThrow(
+                RuntimeException::class,
+                'Name, host, wireguard-address, and a valid non-reserved tld are required.',
+            );
+
+        expect(Node::query()->where('name', 'agent-1')->exists())->toBeFalse();
     });
 });

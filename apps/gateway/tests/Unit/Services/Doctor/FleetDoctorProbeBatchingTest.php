@@ -7,8 +7,6 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Doctor\DoctorReportRunner;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
-use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -17,18 +15,6 @@ use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
 
 uses(TestCase::class);
-
-beforeEach(function (): void {
-    $developmentDnsConfigDir = storage_path('framework/testing/fleet-batch-dns/'.bin2hex(random_bytes(6)));
-    $developmentDnsMappingEnactor = new DevelopmentDnsMappingEnactor($developmentDnsConfigDir);
-
-    app()->instance(DevelopmentDnsMappingEnactor::class, $developmentDnsMappingEnactor);
-    app()->instance(DevelopmentDnsMappingProbe::class, new DevelopmentDnsMappingProbe($developmentDnsMappingEnactor));
-});
-
-afterEach(function (): void {
-    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
-});
 
 it('caps concurrent fleet node probes at five workers using subprocess worker reports', function (): void {
     if (! fleetDoctorProbeProcessWorkersAvailable()) {
@@ -179,6 +165,7 @@ it('returns a valid single-node report from the internal artisan command', funct
 
     fleetDoctorProbeWithFileDatabase(function (): void {
         fleetDoctorProbeBatchNode(['name' => 'fleet-cmd-node']);
+        write_current_node_dns_projection();
 
         app()->instance(RemoteShell::class, new FleetDoctorProbeBatchDelayRemoteShell(delayMicroseconds: 0));
 

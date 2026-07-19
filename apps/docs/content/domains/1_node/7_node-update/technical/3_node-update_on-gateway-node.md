@@ -29,8 +29,8 @@ execution.
 1. Resolve `node_update.name`.
 2. Validate the node exists.
 3. Validate role-conditional field eligibility.
-4. Validate `node_update.tld` when present: no other active node may already own
-   that TLD.
+4. Validate `node_update.tld` when present: it must not be reserved `orbit`,
+   and no other active node may already own it.
 5. Validate `node_update.user` when present: it must not target the gateway
    node.
 6. Validate `node_update.gateway_endpoint` when present: it must be a valid IP

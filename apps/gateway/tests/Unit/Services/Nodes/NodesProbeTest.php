@@ -19,7 +19,6 @@ use App\Models\NodeTool;
 use App\Models\WireGuardPeer;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeToolBaselineConfigRenderer;
 use App\Services\Operations\OperationRunRecorder;
@@ -33,7 +32,6 @@ use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Orbit\Core\Security\OperationTokenSigner;
@@ -45,20 +43,8 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    bindDevelopmentDnsMappingTestDoubles('nodes-probe-dns');
     $this->probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([]));
 });
-
-afterEach(function (): void {
-    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
-});
-
-function nodesProbeDevelopmentDnsPath(?string $file = null): string
-{
-    $configDir = app(DevelopmentDnsMappingEnactor::class)->configDir();
-
-    return $file === null ? $configDir : "{$configDir}/{$file}";
-}
 
 /** @param array<string, mixed> $attributes */
 function nodes_probe_node(array $attributes): Node
@@ -199,6 +185,33 @@ describe('record completeness', function (): void {
 
         expect($recordIncomplete)->toHaveCount(0);
     });
+
+    it('reports active nodes with missing, invalid, or reserved tlds as incomplete', function (string $tld): void {
+        $node = nodes_probe_node([
+            'name' => 'legacy-tld',
+            'tld' => $tld,
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'inactive',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+        $node->forceFill(['status' => NodeStatus::Active]);
+
+        $recordIncomplete = array_values(array_filter(
+            $this->probe->diff($node, new ProbeSnapshot([])),
+            fn (DriftEntry $entry): bool => $entry->key === 'node.record_incomplete',
+        ));
+
+        expect($recordIncomplete)
+            ->toHaveCount(1)
+            ->and($recordIncomplete[0]->kind)
+            ->toBe(DriftKind::Missing);
+    })->with([
+        'missing' => '',
+        'invalid' => 'Invalid_TLD!',
+        'reserved' => 'orbit',
+    ]);
 
     it('does not run dependent app live checks when required transport metadata is missing', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
@@ -935,17 +948,6 @@ describe('external service stubs', function (): void {
             'status' => 'active',
             'settings' => [],
         ]);
-        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(
-            nodesProbeDevelopmentDnsPath('test.conf'),
-            implode("\n", [
-                '# orbit-managed=node-development-dns',
-                '# node=test',
-                '# bind-scope=orbit_network',
-                'address=/test/10.6.0.5',
-                '',
-            ]),
-        );
         nodes_probe_create_caddy_tool($node);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
@@ -960,71 +962,6 @@ describe('external service stubs', function (): void {
             ->toBeFalse()
             ->and($baselineDrift)
             ->toHaveCount(0);
-    });
-
-    it('detects missing gateway development dns mapping for development app nodes', function (): void {
-        $node = nodes_probe_node([
-            'name' => 'test',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'tld' => 'test',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-        ]);
-        $node->roleAssignments()->create([
-            'role' => 'app-dev',
-            'status' => 'active',
-            'settings' => [],
-        ]);
-        nodes_probe_create_caddy_tool($node);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $mapping = array_values(array_filter(
-            $drift,
-            fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch',
-        ));
-
-        expect($mapping)->toHaveCount(1);
-        expect($mapping[0]->kind)->toBe(DriftKind::Missing);
-    });
-
-    it('detects wrong gateway development dns mapping targets', function (): void {
-        $node = nodes_probe_node([
-            'name' => 'test',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'tld' => 'test',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-        ]);
-        $node->roleAssignments()->create([
-            'role' => 'app-dev',
-            'status' => 'active',
-            'settings' => [],
-        ]);
-        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(
-            nodesProbeDevelopmentDnsPath('test.conf'),
-            implode("\n", [
-                '# orbit-managed=node-development-dns',
-                '# node=test',
-                '# bind-scope=orbit_network',
-                'address=/test/10.6.0.99',
-                '',
-            ]),
-        );
-        nodes_probe_create_caddy_tool($node);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $mapping = array_values(array_filter(
-            $drift,
-            fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch',
-        ));
-
-        expect($mapping)->toHaveCount(1);
-        expect($mapping[0]->kind)->toBe(DriftKind::Divergent);
     });
 
     it('detects stale app-dev caddy baseline tool config', function (): void {
@@ -1043,17 +980,6 @@ describe('external service stubs', function (): void {
             'status' => 'active',
             'settings' => [],
         ]);
-        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(
-            nodesProbeDevelopmentDnsPath('nmbp.conf'),
-            implode("\n", [
-                '# orbit-managed=node-development-dns',
-                '# node=nmbp',
-                '# bind-scope=orbit_network',
-                'address=/nmbp/10.6.0.3',
-                '',
-            ]),
-        );
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'caddy',
@@ -1089,60 +1015,6 @@ describe('external service stubs', function (): void {
 
         expect($baseline)->toHaveCount(1);
         expect($baseline[0]->kind)->toBe(DriftKind::Divergent);
-    });
-
-    it('detects public gateway development dns resolver exposure', function (): void {
-        $node = nodes_probe_node([
-            'name' => 'test',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'tld' => 'test',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-        ]);
-        $node->roleAssignments()->create([
-            'role' => 'app-dev',
-            'status' => 'active',
-            'settings' => [],
-        ]);
-        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(
-            nodesProbeDevelopmentDnsPath('test.conf'),
-            implode("\n", [
-                '# orbit-managed=node-development-dns',
-                '# node=test',
-                '# bind-scope=public',
-                'address=/test/10.6.0.5',
-                '',
-            ]),
-        );
-        nodes_probe_create_caddy_tool($node);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $exposure = array_values(array_filter(
-            $drift,
-            fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch',
-        ));
-
-        expect($exposure)->toHaveCount(1);
-        expect($exposure[0]->kind)->toBe(DriftKind::Divergent);
-    });
-
-    it('does not require a development DNS mapping without the app-dev role', function (): void {
-        $node = nodes_probe_node([
-            'name' => 'test',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-        ]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $tld = array_filter($drift, fn (DriftEntry $e): bool => str_starts_with($e->key, 'node.development'));
-
-        expect($tld)->toHaveCount(0);
     });
 
     it('returns empty for CLI PHP default checks', function (): void {
@@ -1271,51 +1143,6 @@ describe('reconciliation', function (): void {
         $this->probe->reconcile($consumer, $entry);
 
         expect(NodeAccess::query()->count())->toBe(0);
-    });
-
-    it('repairs gateway development dns mapping drift on reconcile', function (): void {
-        $node = nodes_probe_node([
-            'name' => 'test',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'tld' => 'test',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-        ]);
-        $node->roleAssignments()->create([
-            'role' => 'app-dev',
-            'status' => 'active',
-            'settings' => [],
-        ]);
-        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(
-            nodesProbeDevelopmentDnsPath('test.conf'),
-            implode("\n", [
-                '# orbit-managed=node-development-dns',
-                '# node=test',
-                '# bind-scope=public',
-                'address=/test/10.6.0.99',
-                '',
-            ]),
-        );
-
-        $entry = new DriftEntry(
-            family: 'nodes',
-            key: 'node.role_baseline_mismatch',
-            kind: DriftKind::Divergent,
-            summary: 'test',
-            detail: [
-                'role' => 'app-dev',
-                'tld' => 'test',
-            ],
-        );
-
-        $this->probe->reconcile($node, $entry);
-
-        expect(File::get(nodesProbeDevelopmentDnsPath('test.conf')))
-            ->toContain('# bind-scope=orbit_network')
-            ->toContain('address=/test/10.6.0.5');
     });
 
     it('repairs stale app-dev caddy baseline tool config on reconcile', function (): void {
@@ -1943,36 +1770,6 @@ describe('public IP metadata exclusion', function (): void {
 });
 
 describe('agent role baseline', function (): void {
-    it('detects missing agent DNS mapping', function (): void {
-        $node = nodes_probe_node([
-            'name' => 'agent-1',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-            'tld' => 'agent',
-        ]);
-        $node->roleAssignments()->create([
-            'role' => 'agent',
-            'status' => 'active',
-            'settings' => [],
-        ]);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $baseline = array_values(array_filter(
-            $drift,
-            fn (DriftEntry $e): bool => (
-                $e->key === 'node.role_baseline_mismatch'
-                && ($e->detail['component'] ?? null) === 'dns_mapping'
-            ),
-        ));
-
-        expect($baseline)->toHaveCount(1);
-        expect($baseline[0]->kind)->toBe(DriftKind::Missing);
-        expect($baseline[0]->detail['component'] ?? null)->toBe('dns_mapping');
-    });
-
     it('detects missing caddy baseline tool for agent nodes', function (): void {
         $node = nodes_probe_node([
             'name' => 'agent-1',
@@ -1988,18 +1785,6 @@ describe('agent role baseline', function (): void {
             'status' => 'active',
             'settings' => [],
         ]);
-        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(
-            nodesProbeDevelopmentDnsPath('agent.conf'),
-            implode("\n", [
-                '# orbit-managed=node-development-dns',
-                '# node=agent-1',
-                '# bind-scope=orbit_network',
-                'address=/agent/10.6.0.5',
-                '',
-            ]),
-        );
-
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
         $baseline = array_values(array_filter(
             $drift,
@@ -2040,17 +1825,6 @@ describe('agent role baseline', function (): void {
             'status' => 'active',
             'settings' => [],
         ]);
-        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(
-            nodesProbeDevelopmentDnsPath('agent.conf'),
-            implode("\n", [
-                '# orbit-managed=node-development-dns',
-                '# node=agent-1',
-                '# bind-scope=orbit_network',
-                'address=/agent/10.6.0.5',
-                '',
-            ]),
-        );
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
@@ -2094,17 +1868,6 @@ describe('agent role baseline', function (): void {
             'status' => 'active',
             'settings' => [],
         ]);
-        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(
-            nodesProbeDevelopmentDnsPath('agent.conf'),
-            implode("\n", [
-                '# orbit-managed=node-development-dns',
-                '# node=agent-1',
-                '# bind-scope=orbit_network',
-                'address=/agent/10.6.0.5',
-                '',
-            ]),
-        );
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
@@ -2119,46 +1882,6 @@ describe('agent role baseline', function (): void {
         expect($baseline)->toHaveCount(1);
         expect($baseline[0]->kind)->toBe(DriftKind::Divergent);
         Http::assertSent(fn (Request $request): bool => nodes_probe_agent_runtime_request_matches($request));
-    });
-
-    it('passes when agent DNS mapping is correct', function (): void {
-        $node = nodes_probe_node([
-            'name' => 'agent-1',
-            'host' => '10.0.0.1',
-            'orbit_path' => '/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
-            'tld' => 'agent',
-        ]);
-        $node->roleAssignments()->create([
-            'role' => 'agent',
-            'status' => 'active',
-            'settings' => [],
-        ]);
-        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(
-            nodesProbeDevelopmentDnsPath('agent.conf'),
-            implode("\n", [
-                '# orbit-managed=node-development-dns',
-                '# node=agent-1',
-                '# bind-scope=orbit_network',
-                'address=/agent/10.6.0.5',
-                '',
-            ]),
-        );
-        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
-
-        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $baseline = array_filter(
-            $drift,
-            fn (DriftEntry $e): bool => (
-                $e->key === 'node.role_baseline_mismatch'
-                && ($e->detail['component'] ?? null) === 'dns_mapping'
-            ),
-        );
-
-        expect($baseline)->toHaveCount(0);
     });
 });
 

@@ -27,11 +27,15 @@ use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Ca\OrbitSiteCertificateInstaller;
-use App\Services\Dns\DnsmasqConfigBuilder;
+use App\Services\Dns\DnsmasqBaseConfigBuilder;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Dns\LocalResolver;
+use App\Services\Dns\NodeDnsmasqRecordsBuilder;
 use App\Services\Dns\OrbitDnsServiceInstaller;
+use App\Services\Dns\ProxyDnsmasqRecordsBuilder;
 use App\Services\Doctor\DnsRuntimeProbe;
+use App\Services\Doctor\NodeDnsProjectionProbe;
+use App\Services\Doctor\ProxyDnsProjectionProbe;
 use App\Services\Gateway\SdkUpdateAllGatewayStream;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
@@ -270,25 +274,39 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(VpnDnsSwarmInstaller::class, fn (Application $app): VpnDnsSwarmInstaller => new VpnDnsSwarmInstaller(
             rootPath: $this->orbitConfigPath(),
             statePath: $this->orbitConfigPath().'/wg-easy',
+            reconciler: $app->make(DnsmasqReconciler::class),
             localExecutor: $this->hasOperationTokenSigningKey() ? $app->make(RemoteLocalExecutor::class) : null,
             vpnNodeResolver: $app->make(VpnNodeResolver::class),
         ));
 
         $this->app->singleton(OrbitDnsServiceInstaller::class, fn (Application $app): OrbitDnsServiceInstaller => new OrbitDnsServiceInstaller(
-            configBuilder: $app->make(DnsmasqConfigBuilder::class),
+            reconciler: $app->make(DnsmasqReconciler::class),
             rootPath: $this->orbitConfigPath(),
         ));
 
         $this->app->singleton(DnsmasqReconciler::class, fn (Application $app): DnsmasqReconciler => new DnsmasqReconciler(
-            configBuilder: $app->make(DnsmasqConfigBuilder::class),
+            baseConfigBuilder: $app->make(DnsmasqBaseConfigBuilder::class),
+            nodeRecordsBuilder: $app->make(NodeDnsmasqRecordsBuilder::class),
+            proxyRecordsBuilder: $app->make(ProxyDnsmasqRecordsBuilder::class),
             rootPath: $this->orbitConfigPath(),
             swarmManager: $app->make(VpnDnsSwarmManager::class),
         ));
 
         $this->app->singleton(DnsRuntimeProbe::class, fn (Application $app): DnsRuntimeProbe => new DnsRuntimeProbe(
-            configBuilder: $app->make(DnsmasqConfigBuilder::class),
+            baseConfigBuilder: $app->make(DnsmasqBaseConfigBuilder::class),
             rootPath: $this->orbitConfigPath(),
             swarmManager: $app->make(VpnDnsSwarmManager::class),
+            dnsmasqReconciler: $app->make(DnsmasqReconciler::class),
+        ));
+
+        $this->app->singleton(NodeDnsProjectionProbe::class, fn (Application $app): NodeDnsProjectionProbe => new NodeDnsProjectionProbe(
+            recordsBuilder: $app->make(NodeDnsmasqRecordsBuilder::class),
+            rootPath: $this->orbitConfigPath(),
+        ));
+
+        $this->app->singleton(ProxyDnsProjectionProbe::class, fn (Application $app): ProxyDnsProjectionProbe => new ProxyDnsProjectionProbe(
+            recordsBuilder: $app->make(ProxyDnsmasqRecordsBuilder::class),
+            rootPath: $this->orbitConfigPath(),
         ));
 
         $this->app->bind(TrustStoreInstaller::class, static function (Application $app): TrustStoreInstaller {

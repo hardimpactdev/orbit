@@ -79,7 +79,7 @@ it('publishes the active s3 backend into gateway dns during role activation', fu
 
     expect($assignment->status)
         ->toBe(NodeRoleStatus::Active)
-        ->and(\Illuminate\Support\Facades\File::get($configRoot.'/dnsmasq.conf'))
+        ->and(\Illuminate\Support\Facades\File::get($configRoot.'/dnsmasq.d/20-proxy-records.conf'))
         ->toContain('address=/services1.s3.orbit/10.6.0.14')
         ->toContain('address=/orbit/10.6.0.1');
 

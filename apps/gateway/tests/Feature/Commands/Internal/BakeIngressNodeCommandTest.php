@@ -15,6 +15,8 @@ uses(RefreshDatabase::class);
 
 describe('orbit:internal:bake-ingress-node', function (): void {
     beforeEach(function (): void {
+        bind_dnsmasq_reconciler_test_double();
+
         $this->hostKeyPinner = new class {
             /** @var list<array{host: string, expected: ?string}> */
             public array $calls = [];
@@ -80,5 +82,22 @@ describe('orbit:internal:bake-ingress-node', function (): void {
                 ['host' => '10.6.0.7', 'expected' => null],
             ])->and($assignment)
             ->not->toBeNull()->and($assignment?->status)->toBe(NodeRoleStatus::Active)->and($assignment?->settings)->toBe([]);
+    });
+
+    it('rejects the private service namespace as an ingress node tld', function (): void {
+        expect(
+            fn () => $this->artisan('orbit:internal:bake-ingress-node', [
+                'name' => 'edge-1',
+                '--tld' => 'orbit',
+                '--host' => '10.6.0.7',
+                '--wireguard-address' => '10.6.0.7',
+            ])->run(),
+        )
+            ->toThrow(
+                RuntimeException::class,
+                'Name, valid non-reserved tld, host, and wireguard-address are required.',
+            );
+
+        expect(Node::query()->where('name', 'edge-1')->exists())->toBeFalse();
     });
 });

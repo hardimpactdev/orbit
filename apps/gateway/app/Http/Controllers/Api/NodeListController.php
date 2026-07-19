@@ -137,19 +137,28 @@ final readonly class NodeListController implements Loggable
      */
     private function nodePayloads(Collection $nodes): array
     {
-        return $nodes->map(fn (Node $node): array => [
-            'name' => $node->name,
-            'host' => $node->host,
-            'addresses' => [
-                'wireguard' => $node->wireguard_address,
-            ],
-            'platform' => $node->platform ?? 'unknown',
-            'status' => $node->status->value,
-            'roles' => $node
-                ->roleAssignments
-                ->map(fn (NodeRoleAssignment $assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))
+        return array_values(
+            $nodes
+                ->map(fn (Node $node): array => [
+                    'name' => $node->name,
+                    'tld' => $node->tld,
+                    'host' => $node->host,
+                    'addresses' => [
+                        'wireguard' => $node->wireguard_address,
+                    ],
+                    'platform' => $node->platform ?? 'unknown',
+                    'status' => $node->status->value,
+                    'roles' => $node
+                        ->roleAssignments
+                        ->map(
+                            fn (NodeRoleAssignment $assignment): array => NodeRoleAssignmentPayload::fromModel(
+                                $assignment,
+                            ),
+                        )
+                        ->all(),
+                ])
                 ->all(),
-        ])->all();
+        );
     }
 
     public function effect(): ActivityLogType

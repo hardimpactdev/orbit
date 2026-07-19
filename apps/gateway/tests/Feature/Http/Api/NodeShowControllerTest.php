@@ -117,6 +117,7 @@ describe('NodeShowController', function (): void {
                     'data' => [
                         'node' => [
                             'name' => 'app-1',
+                            'tld' => 'app-1',
                             'status' => 'active',
                             'platform' => 'ubuntu_24-04',
                             'roles' => [

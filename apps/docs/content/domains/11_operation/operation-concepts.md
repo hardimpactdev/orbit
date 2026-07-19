@@ -96,6 +96,11 @@ These terms describe the four doctor execution modes and how they combine.
 These terms describe family-owned doctor contracts and the actions they produce.
 
 - **Family doctor contract:** Family-owned contract for probe layers, issue codes, diagnostics, restore/adopt action maps, and test mapping.
+- **DNS doctor ownership:** DNS findings use existing family rows. Node owns
+  `node.dns_mapping_mismatch` for `10-node-records.conf`; proxy owns
+  `proxy.dns_mapping_mismatch` for `20-proxy-records.conf`; and tool owns
+  `tool.dns_base_config_mismatch` plus container, listener, client-DNS, and
+  forwarding codes. There is no DNS doctor family or separate DNS row.
 - **Doctor issue kind:** Generic relationship between gateway configuration and observed reality: `missing`, `extra`, `divergent`, or `unverifiable`.
 - **Doctor action:** Recorded restore or adopt attempt owned by a family doctor contract.
 

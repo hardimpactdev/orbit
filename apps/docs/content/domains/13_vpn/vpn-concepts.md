@@ -31,7 +31,8 @@ These terms define the VPN command domain and how commands reach the gateway.
   `public_endpoint` is the host or IP WireGuard peers use to reach the VPN.
   `wireguard_cidr` defaults to `10.6.0.0/24`. `wireguard_port` defaults to
   `51820`. `dns_ip` defaults to `10.6.0.1` and is the DNS endpoint written into
-  peer configs. In v1 the DNS resolver runtime is coupled to the `vpn` role.
+  peer configs. In v1 the active `vpn` role requires the gateway-local DNS tool
+  capability; the setting does not make the DNS runtime role-owned.
 - **Backend TOTP code:** Numeric one-time code passed to the active `vpn` role
   runtime backend when its own second-factor authentication is required. It
   authenticates backend administration; it is not Orbit node identity,
@@ -104,6 +105,6 @@ These boundaries define what the VPN command domain owns and what it must not to
   for operators and the VPN web UI credential. They do not own a
   state family, create `doctor --family=vpn`, manage Orbit node identity or
   node peer drift, or create node access grants. They also do not create app
-  routes, proxy routes, Cloudflare records, gateway development DNS mappings,
-  private `.orbit` service names owned by the router, or caller-local resolver
+  routes, proxy routes, Cloudflare records, node- or proxy-owned DNS record
+  projections, tool-owned DNS base/runtime state, or caller-local resolver
   overrides.

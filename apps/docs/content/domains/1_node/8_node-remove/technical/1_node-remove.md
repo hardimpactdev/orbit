@@ -88,17 +88,12 @@ This command follows the shared
 - Delete all gateway-side `firewall_rules` registry rows for the removed node so
   the node record can be deleted. Do not contact the target or alter live
   firewall state.
-- When the removed node is a development node with a stored TLD, remove the
-  development DNS mapping that the gateway owns for `*.{nodes.tld}` through the
-  internal DNS applier for the node family before deleting the node row.
 - Delete the node record from the gateway registry.
-
-The development DNS cleanup target is derived from the node row being removed:
-domain `*.{nodes.tld}`, target WireGuard address, and owner node name. Removal
-must delete only the runtime artifacts that Orbit manages on the active `vpn`
-role for that derived mapping. In v1 that runtime is gateway-coupled. It must
-not call `dns:*`, remove caller-local resolver overrides, or edit
-public/provider DNS.
+- After deletion, rematerialize the node-owned `10-node-records.conf` and any
+  affected proxy-owned `20-proxy-records.conf` from remaining gateway state.
+  Use `reconcileRecords()`, the shared ownership-neutral materializer, and one
+  DNS restart. This path never rewrites base `dnsmasq.conf`. Do not call
+  `dns:*`, remove caller-local resolver overrides, or edit public/provider DNS.
 
 ### WireGuard Detach Rules
 
@@ -156,12 +151,9 @@ node-family drift. JSON output reports this under `success.meta.warnings` with
 `code=node.wireguard_peer_extra` and
 `next_command=doctor --family=node --restore`.
 
-Partial development DNS cleanup is reported as success with a structured
-warning, not as a command failure. The node record is removed; the stale
-DNS artifact served by the active `vpn` role is node-family drift.
-JSON output reports this under
-`success.meta.warnings` with `code=node.role_baseline_mismatch` and
-`next_command=doctor --family=node --restore`.
+DNS projection reconciliation failure is a command failure. Removal must not
+claim that node- or proxy-owned DNS artifacts are clean before the shared
+materializer and runtime restart succeed.
 
 The absent-target rule is intentionally different from `node:revoke`.
 `node:revoke` validates both endpoint node identities and then makes the
@@ -200,7 +192,6 @@ Primary test owners:
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI delete forwarding, force gating, human and JSON renderer output, and lifecycle validation before gateway contact. |
 | `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway remove authorization, force removal, self-removal denial, and delete envelopes. |
-| `apps/gateway/tests/Feature/Http/Api/NodeRemoveDevelopmentDnsWarningTest.php` | Development DNS warning payload when removing development app-role nodes. |
 
 Input-mode-specific test mapping lives in:
 

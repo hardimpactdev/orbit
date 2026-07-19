@@ -36,6 +36,7 @@ final class NodeShowController implements Loggable
             ], 404);
         }
 
+        /** @var Node $node */
         $this->activitySubject = $node;
 
         return response()->json([
@@ -43,6 +44,7 @@ final class NodeShowController implements Loggable
                 'data' => [
                     'node' => [
                         'name' => $node->name,
+                        'tld' => $node->tld,
                         'status' => $node->status->value,
                         'platform' => $node->platform ?? 'unknown',
                         'roles' => $node

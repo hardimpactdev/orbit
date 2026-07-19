@@ -28,7 +28,7 @@ Each term below has a precise meaning in the node command family.
   role-mutation commands do not add it independently.
 - **VPN role:** Gateway-coupled infrastructure role. The `vpn` role owns the
   WireGuard server runtime, public WireGuard endpoint settings, VPN peer
-  defaults, and the VPN-facing DNS runtime. In v1 it is stored as a separate
+  defaults, and the requirement for the DNS tool capability. In v1 it is stored as a separate
   role assignment, shown separately in role output, assigned together with
   `gateway` during first gateway bootstrap, and not independently mutable
   through normal role commands.
@@ -140,7 +140,8 @@ Each term below has a precise meaning in the node command family.
   the service name.
 - **Node TLD:** Mandatory node-level identity for every active Orbit node.
   A node holds exactly one unique `tld` value at a time; every `node:new` path
-  requires it explicitly. Role assignments never copy or own this value.
+  requires it explicitly. The value `orbit` is reserved for the proxy-owned
+  `.orbit` namespace. Role assignments never copy or own this value.
   Role features such as `app-dev` and `agent` consume the node field for
   wildcard development DNS mappings and
   agent tool internal HTTPS hostnames such as `openclaw.agent` and `hermes.agent`.
@@ -222,8 +223,8 @@ Changing the node-level `tld` is a desired-state change and triggers
 baseline convergence
 for every active role assignment that depends on it.
 
-The `tld` value follows the single-lowercase-DNS-label rule and must be unique
-across the active fleet.
+The `tld` value follows the single-lowercase-DNS-label rule, must not be the
+reserved value `orbit`, and must be unique across the active fleet.
 
 Changing role-assignment settings (the per-role columns above) is also a
 desired-state change and triggers the same baseline convergence path as
@@ -233,7 +234,8 @@ adding the role.
 `wireguard_cidr` defaults to `10.6.0.0/24`.
 `wireguard_port` defaults to `51820`.
 `dns_ip` defaults to `10.6.0.1` and is the DNS endpoint written into peer
-configs. In v1 the DNS resolver runtime is coupled to the `vpn` role.
+configs. In v1 the active `vpn` role requires the gateway-local DNS tool
+capability; the setting does not make the DNS runtime role-owned.
 
 `valkey_node_id` references the active `database` role node whose managed Valkey
 service backs Reverb scaling for the `websocket` role. The websocket role uses
@@ -257,12 +259,12 @@ Role baselines are code-defined desired state, not editable package lists.
 | Role | Baseline intent |
 | --- | --- |
 | `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, gateway config root, SQLite database, and Orbit CA/certificate material |
-| `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and VPN-facing DNS runtime |
-| `router` | Private `orbit-caddy` router for private `.orbit` DNS/service names, private route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
-| `app-dev` | App runtime baseline, development DNS mapping, `orbit-caddy` app/workspace routes, and process-backed runtime units where configured |
+| `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and required DNS tool capability |
+| `router` | Private `orbit-caddy` router and proxy-family intent for private `.orbit` service names, route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
+| `app-dev` | App runtime baseline, node-owned wildcard DNS projection, `orbit-caddy` app/workspace routes, and process-backed runtime units where configured |
 | `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and process-backed runtime units where configured |
 | `database` | Docker running as the substrate for managed database process units and related tool capabilities |
-| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping derived from the node's `tld`, and any role-specific runtime containers the agent workload needs |
+| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the node-owned wildcard DNS projection derived from `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Valkey-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
@@ -589,33 +591,38 @@ These terms describe how grants are created and what shape they take.
   `success.meta.warnings[]` and the command proceeds when input is otherwise
   valid.
 
-## Development DNS Mapping
+## Node DNS Projection
 
-These terms describe how the gateway maintains DNS resolution for nodes with
-the `app-dev` role.
+These terms describe the node family's private DNS projection. The projection
+is served by the DNS tool runtime, but record ownership remains with the node
+family.
 
-The `router` role is gateway-coupled in v1. It owns private `.orbit`
-DNS/service names, private route artifacts, backend pools, and private
-HTTP/WebSocket/S3 routing. The development and agent TLD mappings below remain
-node-family desired state, but they are not the public `dns:*` command surface.
-
-- **Development DNS mapping owned by the gateway:** Node-family gateway configuration
-  and desired DNS mappings and policy owned by the gateway. They map `*.{tld}`
-  for an active `app-dev` role assignment to that node's WireGuard address.
-  Runtime reality for that mapping is served and probed on the active
-  gateway-coupled `vpn` role in v1.
-- **Agent DNS mapping owned by the gateway:** Same node-family gateway
-  configuration and resolver reality as the mapping that `app-dev`
-  uses, but derived from the node-owned `tld` while its `agent` role assignment
-  is active.
-  Routes agent tool internal HTTPS hostnames such as
-  `openclaw.agent` and `hermes.agent` to the node's WireGuard address.
-- **Development DNS configuration model:** Derived from the active
-  `app-dev` role assignment. A mapping exists only when that assignment
-  is active, the node-owned `tld` is a valid single lowercase DNS label, and the
-  node row has a non-empty WireGuard address.
-  The canonical domain is `*.{tld}` and the canonical target is the
-  node's WireGuard address.
+- **Node DNS projection:** The complete node-family artifact at
+  `dnsmasq.d/10-node-records.conf`. It contains one concrete node record for
+  every active node and role-gated wildcard directives. It never contains
+  router/private `.orbit` service records or tool-owned base configuration.
+- **Concrete node DNS record:** An `address=/orbit.{tld}/{wireguard-address}`
+  directive derived from every active node with a valid non-reserved node-owned
+  `tld` and WireGuard address. Concrete records do not depend on an app or agent
+  role.
+- **Development wildcard DNS mapping:** The `address=/{tld}/{wireguard-address}`
+  and `local=/{tld}/` directives present only while the node has an active
+  `app-dev` role. They route hosts below that node TLD to its WireGuard address.
+- **Agent wildcard DNS mapping:** The same wildcard and local-zone directives,
+  present only while the node has an active `agent` role. They route agent-tool
+  hosts such as `openclaw.agent` and `hermes.agent` to that node.
+- **Node DNS materializer:** Internal node-family convergence that renders
+  `10-node-records.conf` from active node rows. It uses the shared atomic DNS
+  materializer and reload path, which is ownership-neutral. Node identity
+  create, update, remove, and activation use combined node-plus-proxy
+  reconciliation. Role add/remove that changes only wildcard eligibility and
+  `doctor --family=node --restore` request only the node projection.
+- **Node DNS projection probe:** Internal node-family doctor probe that compares
+  each active source node's concrete and wildcard directives with that node's
+  intent. It reports orphan directives from deleted or renamed nodes once on
+  the active gateway projection anchor. Both paths use
+  `node.dns_mapping_mismatch`; this is semantic comparison, not a byte-exact
+  whole-file comparison on every node.
 - **App-dev HTTP address for callers:** Optional node `public_ipv4`
   metadata used when an operator wants local resolver overrides to send
   `*.{tld}` traffic to a trusted RFC1918 LAN address instead of the WireGuard
@@ -623,22 +630,11 @@ node-family desired state, but they are not the public `dns:*` command surface.
   managed `orbit-caddy` container publishes HTTP/HTTPS on that IPv4 as well as
   on the WireGuard address; its private backend port stays bound only to the
   WireGuard address.
-- **Development DNS applier:** Internal node-family gateway service that
-  uses desired DNS mappings and policy owned by the gateway to converge or remove
-  resolver artifacts on the active `vpn` role runtime. In v1 that runtime is
-  gateway-coupled. It is used by node provisioning, node adoption and
-  materialization, node removal, and
-  `doctor --family=node --restore`.
-- **Development DNS probe:** Internal node-family gateway service that reads
-  resolver reality from the active `vpn` role runtime for derived development
-  DNS configuration and reports node-family drift when the mapping is absent,
-  points at another target, or is publicly exposed. In v1 that runtime is
-  gateway-coupled.
 
-Development DNS mappings are not a public `dns:*` command surface and do not
-create a `dns` state family. The `dns:*` commands own only the resolver overrides
-local to the caller. The node family owns the gateway mapping lifecycle because it is
-part of `app-dev` role readiness.
+The public `dns:*` commands own only caller-local resolver overrides. Private
+node records create neither a public node DNS command surface nor a DNS state
+family. The `vpn` role requires the DNS tool capability but does not own the
+node record projection, base `dnsmasq.conf`, or DNS runtime diagnostics.
 
 ## Node Family Boundaries
 
@@ -649,9 +645,11 @@ The node family owns:
   and gateway service readiness;
 - the node access grant edge and the scoped permissions stored on each grant,
   plus the permission registry, presets, and normalization;
-- the development and agent DNS mappings the gateway maintains;
+- `dnsmasq.d/10-node-records.conf`, including concrete records for all active
+  nodes and wildcard/local-zone directives for active `app-dev` and `agent`
+  nodes;
 - the `vpn` role's WireGuard server runtime, public endpoint settings, peer
-  defaults, and DNS baseline exposed through the VPN runtime;
+  defaults, and requirement for the DNS tool capability;
 - node lifecycle checks.
 
 The node family does not own app registration, workspace registration, process

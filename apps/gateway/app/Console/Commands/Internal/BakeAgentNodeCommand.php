@@ -7,11 +7,13 @@ namespace App\Console\Commands\Internal;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\NodeRoleAssignment;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\NodeRegistryWriter;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Orbit\Core\Nodes\NodeTld;
 use RuntimeException;
 
 #[Signature('orbit:internal:bake-agent-node
@@ -28,8 +30,10 @@ class BakeAgentNodeCommand extends Command
     #[\Override]
     protected $hidden = true;
 
-    public function handle(NodeRegistryWriter $registryWriter): int
-    {
+    public function handle(
+        NodeRegistryWriter $registryWriter,
+        DnsmasqReconciler $dnsmasqReconciler,
+    ): int {
         $name = $this->stringArgument('name');
         $host = $this->stringOption('host');
         $hostKeyHost = $this->stringOption('host-key-host');
@@ -38,8 +42,14 @@ class BakeAgentNodeCommand extends Command
         $user = $this->stringOption('user') ?? 'orbit';
         $tld = $this->stringOption('tld');
 
-        if ($name === null || $host === null || $wireguardAddress === null || $tld === null) {
-            throw new RuntimeException('Name, host, wireguard-address, and tld are required.');
+        if (
+            $name === null
+            || $host === null
+            || $wireguardAddress === null
+            || $tld === null
+            || ! NodeTld::isValid($tld)
+        ) {
+            throw new RuntimeException('Name, host, wireguard-address, and a valid non-reserved tld are required.');
         }
 
         $hostKey = app(SshHostKeyPinner::class)->pin($hostKeyHost ?? $host);
@@ -68,6 +78,8 @@ class BakeAgentNodeCommand extends Command
                 'converged_at' => now(),
             ],
         );
+
+        $dnsmasqReconciler->reconcileNodeRecords();
 
         return self::SUCCESS;
     }

@@ -28,7 +28,7 @@ and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
 - Reject family selections outside the target node's resolved eligibility set
   before probes. Active roles provide the base set; gateway-owned facts and
   platform support add overlays. `process` is eligible for every role-bearing
-  node, `tool` includes VPN DNS ownership, `firewall_rule` includes eligible
+  node, `tool` includes DNS base/runtime capability, `firewall_rule` includes eligible
   Ubuntu protected-rule targets, and `schedule` includes the gateway plus every
   node targeted by a schedule definition.
 - Reject mode requests unsupported by the selected family before side effects.

@@ -91,7 +91,7 @@ final readonly class S3ProxyDoctorProbe
         }
 
         if ($entry->key === self::RouterRouteOrphanedKey) {
-            ProxyRoute::query()->where('domain', S3RouteRegistrar::ServiceDomain)->delete();
+            $this->routeRegistrar->syncServiceRouteAfterBackendChange();
 
             return [
                 'family' => 'proxy',

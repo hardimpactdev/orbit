@@ -7,7 +7,7 @@ Unregister and detach a node from the Orbit fleet.
 Use `node:remove` when decommissioning servers or moving a host to a different
 Orbit project. The command removes the node from gateway-owned node configuration,
 deletes node access grants, tears down the node's WireGuard peer identity, and
-removes development DNS mappings that the gateway owns for development nodes. It
+rematerializes private DNS projections without the removed node. It
 does not clean up apps, workspaces, processes, schedules, tools, firewall rules,
 proxy routes, or deploy artifacts on the target server.
 
@@ -63,15 +63,17 @@ command.
 5. Deletes the removed node's firewall-rule registry rows. This changes gateway
    configuration only; it does not contact the target or alter its live
    firewall.
-6. Removes development DNS mappings that the gateway owns for development nodes.
-7. Removes the node record from the gateway registry.
-8. Reconciles the active `vpn` role DNS runtime so the removed node's TLD no
-   longer resolves over WG. In v1 this materializes the desired DNS mappings
-   and policy owned by the gateway on the gateway-coupled `vpn` role runtime.
+6. Removes the node record from the gateway registry.
+7. Reconciles the node-owned record projection and any affected proxy-owned
+   exact backend records so DNS contains no records for the removed node. The
+   shared materializer replaces changed artifacts under one lock and restarts
+   DNS once without changing family ownership or touching tool-owned base
+   configuration.
    Contract:
    [`docs/domains/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
-8. Reports partial WireGuard detach or development DNS cleanup failures as
-   structured warnings and remaining node-family drift.
+8. Reports partial WireGuard detach failures as structured warnings and
+   remaining node-family drift. Projection reconciliation failures fail the
+   removal action instead of claiming successful cleanup.
 
 When a configured client removes its own node record, the removal is allowed if
 the caller has a covering `node:remove` or gateway-admin grant. The machine loses
@@ -94,8 +96,9 @@ peer. Local settings and local WireGuard configuration are left untouched.
 
 Downstream family state on a removed node becomes orphaned node reality. Clean
 it up through family-specific commands or `doctor --family=<family> --restore`.
-Stale WireGuard peers and development DNS mappings owned by the gateway after
-configuration removal are reported by `doctor --family=node`.
+Stale WireGuard peers and node-record projection drift after configuration
+removal are reported by `doctor --family=node`; proxy-record projection drift
+is reported by `doctor --family=proxy`.
 
 Already-absent node removal is not idempotent because the node record is the
 primary fleet identity. A missing node name usually means the operator targeted
@@ -108,13 +111,13 @@ must still exist and the grant row is only a relationship edge between them.
 
 You will see a confirmation prompt in interactive mode unless `--force`
 is supplied, then a success message with the removed node name. When WireGuard
-detach or development DNS cleanup partially fails, a warning is shown and the
-stale artifact owned by the gateway remains node-family drift.
+detach partially fails, a warning is shown and the stale peer remains
+node-family drift.
 
 JSON output returns the command result, removed node name, whether the removed
 node was the current caller, grant and peer removal status. If WireGuard detach
-or development DNS cleanup partially fails, JSON output keeps the result
-successful and reports repair guidance in machine-readable metadata.
+partially fails, JSON output keeps the result successful and reports repair
+guidance in machine-readable metadata.
 
 ## Requirements
 

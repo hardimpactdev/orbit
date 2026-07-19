@@ -16,13 +16,11 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Models\Workspace;
-use App\Services\Nodes\DevelopmentDnsMappingEnactor;
-use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\File;
 use InvalidArgumentException;
 use RuntimeException;
 use Tests\TestCase;
@@ -32,21 +30,10 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     $remoteShell = new NodesProbeRoleAssignmentsRemoteShell;
-    $developmentDnsConfigDir = storage_path('framework/testing/nodes-probe-role-dns/'.bin2hex(random_bytes(6)));
-    $developmentDnsMappingEnactor = new DevelopmentDnsMappingEnactor($developmentDnsConfigDir);
 
-    $this->app->instance(DevelopmentDnsMappingEnactor::class, $developmentDnsMappingEnactor);
-    $this->app->instance(
-        DevelopmentDnsMappingProbe::class,
-        new DevelopmentDnsMappingProbe($developmentDnsMappingEnactor),
-    );
     $this->app->instance(RemoteShell::class, $remoteShell);
     $this->app->instance(NodesProbe::class, new NodesProbe);
     $this->probe = app(NodesProbe::class);
-});
-
-afterEach(function (): void {
-    File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
 });
 
 function roleDriftEntries(Node $node): array
@@ -157,17 +144,6 @@ it('reports conflicting unresolved role assignments', function (NodeRoleStatus $
         'status' => $conflictingStatus->value,
     ]);
 
-    $configDir = app(DevelopmentDnsMappingEnactor::class)->configDir();
-
-    File::ensureDirectoryExists($configDir);
-    File::put("{$configDir}/test.conf", implode("\n", [
-        '# orbit-managed=node-development-dns',
-        '# node=test',
-        '# bind-scope=orbit_network',
-        'address=/test/10.6.0.5',
-        '',
-    ]));
-
     $roleDrift = roleDriftEntries($node);
     $conflictDrift = array_values(array_filter(
         $roleDrift,
@@ -253,21 +229,13 @@ it('reports baseline mismatches for active role-owned artifacts', function (): v
     $roleDrift = roleDriftEntries($node);
 
     expect($roleDrift)
-        ->toHaveCount(2)
+        ->toHaveCount(1)
         ->and($roleDrift[0]->key)
         ->toBe('node.role_baseline_mismatch')
         ->and($roleDrift[0]->kind)
         ->toBe(DriftKind::Missing)
         ->and($roleDrift[0]->detail)
         ->toMatchArray([
-            'tld' => 'test',
-            'component' => 'dns_mapping',
-        ]);
-
-    expect($roleDrift[1])
-        ->key->toBe('node.role_baseline_mismatch')
-        ->kind->toBe(DriftKind::Missing)
-        ->detail->toMatchArray([
             'role' => 'app-dev',
             'component' => 'tool_config',
             'tool' => 'caddy',
@@ -290,17 +258,6 @@ it('does not require node environment when active role assignments provide the r
         'status' => NodeRoleStatus::Active->value,
         'settings' => [],
     ]);
-
-    $configDir = app(DevelopmentDnsMappingEnactor::class)->configDir();
-
-    File::ensureDirectoryExists($configDir);
-    File::put("{$configDir}/test.conf", implode("\n", [
-        '# orbit-managed=node-development-dns',
-        '# node=test',
-        '# bind-scope=orbit_network',
-        'address=/test/10.6.0.5',
-        '',
-    ]));
 
     $drift = $this->probe->diff($node->fresh()->load('roleAssignments'), new ProbeSnapshot([]));
     $recordIncomplete = array_values(array_filter(
@@ -551,7 +508,7 @@ it('keeps role assignments errored when convergence retry fails during reconcile
         ->converged_at->toBeNull();
 });
 
-it('restores role-owned settings-derived artifacts during reconcile', function (): void {
+it('restores role-owned baseline artifacts during reconcile', function (): void {
     $node = Node::factory()->create([
         'name' => 'test',
         'tld' => 'test',
@@ -579,8 +536,12 @@ it('restores role-owned settings-derived artifacts during reconcile', function (
         ],
     ));
 
-    expect(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf')
-        ->toBeFile();
+    expect(
+        NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'caddy')
+            ->exists(),
+    )->toBeTrue();
 });
 
 it('only re-converges the role assignment that owns a baseline mismatch', function (): void {

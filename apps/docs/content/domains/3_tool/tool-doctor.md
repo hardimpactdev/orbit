@@ -32,6 +32,11 @@ The tool family owns these facts:
 - adoption facts for explicitly selected observed node capabilities that can be
   tied to a supported Orbit tool definition.
 
+For the `dns` tool specifically, tool facts are base `dnsmasq.conf`, the
+container/service, port-53 listener, VPN forwarding, and client-DNS settings.
+The node and proxy families own the two included record projections. Tool
+doctor neither compares nor restores their content.
+
 Node reachability belongs to `node`. App, workspace, process, schedule, proxy
 route, and firewall drift remain outside the tool family even when those
 families depend on a tool.
@@ -91,7 +96,7 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.unregistered_capability` | During an explicit adoption scope, a selected observed capability has no matching gateway tool row. |
 | `tool.dns_container_missing` | The `orbit-dns` container is not present on a gateway that should be serving DNS over WireGuard. |
 | `tool.dns_port_not_listening` | `orbit-dns` is running but nothing is listening on port 53 inside the wg-easy network namespace. |
-| `tool.dns_config_drift` | The on-disk `dnsmasq.conf` differs from what the gateway would emit from the current `node.tld` and `node.wireguard_address` of active nodes, including node-host records and role-consumed wildcard mappings. |
+| `tool.dns_base_config_mismatch` | Base `dnsmasq.conf` differs from the tool-owned resolver policy/explicit includes, or the running container/task does not mount the configured projection directory at `/etc/dnsmasq.d` read-only. Record-content drift is excluded. |
 | `tool.dns_client_dns_drift` | The persisted wg-easy default DNS or enabled client DNS is not pinned to the active VPN DNS endpoint. |
 | `tool.dns_forwarding_missing` | The Swarm VPN task is missing the UDP/TCP 53 DNAT and MASQUERADE rules that forward WireGuard peer DNS traffic to `orbit-dns`. |
 | `tool.agent_user_missing` | An agent tool is installed on a node whose `agent` user is absent or not configured as the tool's runtime user. |
@@ -100,9 +105,10 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.seaweedfs.row_missing` | No `seaweedfs` tool row exists on an active `s3` role node. Not auto-fixable; requires manual tool adoption or re-provision. |
 | `tool.seaweedfs.credentials_missing` | The `seaweedfs` tool row exists but lacks service-level credentials (`credentials['fields']['access_key_id']` / `secret_access_key`). |
 
-The five `tool.dns_*` codes are owned by the VPN-facing development DNS
-bootstrap contract; see [`dns-bootstrap-contract.md`](dns-bootstrap-contract.md)
-for the runtime layout they probe.
+The five `tool.dns_*` codes are owned by the DNS tool capability; see
+[`dns-bootstrap-contract.md`](dns-bootstrap-contract.md) for the runtime layout
+they probe. The `vpn` role requires this capability but does not own these
+findings.
 
 The two `tool.seaweedfs.*` codes cover only the tool row and service
 credentials. The canonical `seaweedfs` process row owns container presence,
@@ -133,9 +139,9 @@ credential repair logic.
 | `tool.config_mismatch` | Rewrite managed configuration from gateway configuration when the tool definition declares a safe reconfigure path. |
 | `tool.credentials_missing` | Recreate managed credential material when the tool definition owns credential generation and declares the repair safe. |
 | `tool.credentials_mismatch` | Rewrite managed credential metadata or generated material when the tool definition declares the repair safe. |
-| `tool.dns_container_missing` | Re-run the persisted DNS stack/compose installer; Swarm restore also reconverges VPN DNS forwarding. |
+| `tool.dns_container_missing` | Stage tool-owned base config and record-free owner placeholders when those files are absent, then re-run the persisted DNS stack/compose installer; Swarm restore also reconverges VPN DNS forwarding. Empty placeholders are layout substrate and never repair node/proxy record semantics. |
 | `tool.dns_port_not_listening` | Force the Swarm DNS service update or restart the standalone `orbit-dns` container; Swarm restore also reconverges VPN DNS forwarding. |
-| `tool.dns_config_drift` | Rewrite `dnsmasq.conf` from gateway intent and force the Swarm DNS service update or restart the standalone `orbit-dns` container; Swarm restore also reconverges VPN DNS forwarding. |
+| `tool.dns_base_config_mismatch` | Verify the running container/task uses the configured `dnsmasq.d` source at `/etc/dnsmasq.d` read-only, redeploy that mount when required, rewrite only non-legacy base `dnsmasq.conf`, and force the Swarm DNS service update or restart the standalone `orbit-dns` container. Swarm restore also reconverges VPN DNS forwarding. Legacy monolith conversion remains an explicit installer migration; scoped tool restore leaves it unresolved. |
 | `tool.dns_client_dns_drift` | Rewrite wg-easy default/client DNS to the active VPN DNS endpoint. |
 | `tool.dns_forwarding_missing` | Reapply the VPN task namespace forwarding rules that DNAT WireGuard peer DNS traffic to `orbit-dns` and preserve return traffic. |
 | `tool.agent_user_missing` | Re-apply the `agent` role baseline to recreate the `agent` user. |
@@ -176,12 +182,15 @@ This table shows what `doctor --adopt` does for each adoptable issue code.
 | `tool.config_mismatch` | Update expected config when the tool definition can prove the observed config belongs to the selected tool row and every adopted field is supported. |
 | `tool.credentials_mismatch` | Update credential metadata only when the tool definition declares the observed credential material safe to adopt. |
 
-DNS runtime drift is never adoptable. Translate emergency edits into explicit
-node or proxy intent, then run `doctor --family=tool --restore` to re-render the
-tool-owned DNS runtime from canonical state. All five public DNS runtime codes
+DNS runtime drift is never adoptable. Translate emergency record edits into
+node or proxy intent, then restore the owning family projection. All five
+public DNS tool codes
 are restore-only: `tool.dns_container_missing`,
-`tool.dns_port_not_listening`, `tool.dns_config_drift`,
+`tool.dns_port_not_listening`, `tool.dns_base_config_mismatch`,
 `tool.dns_client_dns_drift`, and `tool.dns_forwarding_missing`.
+Doctor re-probes the complete DNS runtime group after any of these restores and
+marks the action failed when container, listener, base/mount, forwarding, or
+client-DNS drift remains.
 
 `tool.unregistered_capability` adoption requires three conditions:
 
@@ -200,6 +209,7 @@ Required test files:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for tool family scope, tool drift reporting, and restore behavior. |
+| `apps/gateway/tests/Feature/Services/Doctor/DnsRuntimeProbeTest.php` | DNS base configuration and granular container, listener, client-DNS, and forwarding issue codes. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolsProbeTest.php` | In-memory tool probe diff behavior (scope below). |
 | `apps/e2e/tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php` | Real `doctor --family=tool --restore` repair of safe managed tool drift. |
 

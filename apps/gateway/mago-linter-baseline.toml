@@ -4843,18 +4843,6 @@ message = "Class has too many methods."
 count = 1
 
 [[issues]]
-file = "app/Services/Dns/DnsmasqConfigBuilder.php"
-code = "prefer-first-class-callable"
-message = "Use first-class callable syntax `...` instead of a arrow function."
-count = 1
-
-[[issues]]
-file = "app/Services/Dns/DnsmasqConfigBuilder.php"
-code = "prefer-static-closure"
-message = "This arrow function does not use `$this` and should be declared static."
-count = 6
-
-[[issues]]
 file = "app/Services/Dns/LocalResolver.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -5602,30 +5590,6 @@ count = 3
 file = "app/Services/Nodes/Access/NodePermissionRegistry.php"
 code = "no-isset"
 message = "Use of the `isset` construct."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/DevelopmentDnsMappingEnactor.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/DevelopmentDnsMappingEnactor.php"
-code = "literal-named-argument"
-message = "Literal argument `'/'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/DevelopmentDnsMappingEnactor.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/DevelopmentDnsMappingProbe.php"
-code = "literal-named-argument"
-message = "Literal argument `'/'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -16819,54 +16783,6 @@ message = "Literal argument `'database'` should be passed as a named argument fo
 count = 1
 
 [[issues]]
-file = "tests/Feature/Http/Api/NodeRemoveDevelopmentDnsWarningTest.php"
-code = "file-name"
-message = "Class `NodeRemoveDnsEnactorFake` should be in a file named `NodeRemoveDnsEnactorFake.php`, found `NodeRemoveDevelopmentDnsWarningTest.php`."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Http/Api/NodeRemoveDevelopmentDnsWarningTest.php"
-code = "function-name"
-message = "Function name `assignNodeRemoveDnsRole` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Http/Api/NodeRemoveDevelopmentDnsWarningTest.php"
-code = "function-name"
-message = "Function name `deleteNodeRemoveDnsJson` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Http/Api/NodeRemoveDevelopmentDnsWarningTest.php"
-code = "function-name"
-message = "Function name `fakeNodeRemoveDnsResult` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Http/Api/NodeRemoveDevelopmentDnsWarningTest.php"
-code = "function-name"
-message = "Function name `nodeRemoveDnsRow` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Http/Api/NodeRemoveDevelopmentDnsWarningTest.php"
-code = "function-name"
-message = "Function name `nodeRemoveDnsWarning` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Http/Api/NodeRemoveDevelopmentDnsWarningTest.php"
-code = "function-name"
-message = "Function name `setupNodeRemoveDnsGatewayApiCaller` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Http/Api/NodeRemoveDevelopmentDnsWarningTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'app-dev'` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
 file = "tests/Feature/Http/Api/NodeRevokeControllerTest.php"
 code = "function-name"
 message = "Function name `apiRevokeNodeRow` should be in snake case."
@@ -20739,12 +20655,6 @@ count = 1
 [[issues]]
 file = "tests/Pest.php"
 code = "function-name"
-message = "Function name `bindDevelopmentDnsMappingTestDoubles` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Pest.php"
-code = "function-name"
 message = "Function name `bindVpnBackend` should be in snake case."
 count = 1
 
@@ -21733,36 +21643,6 @@ message = "Use `toBeEmpty()` instead of comparing with empty values for clarity.
 count = 1
 
 [[issues]]
-file = "tests/Unit/Services/Dns/DnsmasqConfigBuilderTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'address=/alpha/'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Dns/DnsmasqConfigBuilderTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'address=/mu/'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Dns/DnsmasqConfigBuilderTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'address=/orbit/10.6.0.2'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Dns/DnsmasqConfigBuilderTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'address=/zeta/'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Dns/DnsmasqConfigBuilderTest.php"
-code = "use-dedicated-expectation"
-message = "Use `toEndWith()` instead of `str_ends_with()` with `toBeTrue()`."
-count = 1
-
-[[issues]]
 file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
 code = "function-name"
 message = "Function name `createDoctorRunnerAppHostNode` should be in snake case."
@@ -22385,24 +22265,6 @@ file = "tests/Unit/Services/Nodes/Access/NodePermissionRegistryTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 3
-
-[[issues]]
-file = "tests/Unit/Services/Nodes/DevelopmentDnsMappingEnactorTest.php"
-code = "function-name"
-message = "Function name `assignDevelopmentDnsMappingRole` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Nodes/DevelopmentDnsMappingEnactorTest.php"
-code = "function-name"
-message = "Function name `developmentDnsMappingNode` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Nodes/DevelopmentDnsMappingEnactorTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'app-prod'` should be passed as a named argument for clarity."
-count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Nodes/NodeConvergerTest.php"

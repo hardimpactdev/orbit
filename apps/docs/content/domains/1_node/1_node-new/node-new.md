@@ -83,11 +83,11 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=al
   `--template=gateway`). Required and forbidden outside first-gateway bootstrap.
 - `--operator-tld`: explicit TLD for the initiating operator identity during
   first-gateway bootstrap. Required there, forbidden elsewhere, and must differ
-  from the gateway TLD.
+  from the gateway TLD. The reserved value `orbit` is invalid.
 - `--tld`: required unique TLD for every node identity. There is no name-based
   default. Agent and development role features consume this node-owned field
   for their DNS mappings. Must be a single lowercase DNS label without a
-  leading dot.
+  leading dot and must not be the reserved value `orbit`.
 - `--user`: Bootstrap SSH user used by the initiating CLI. Defaults to `root`, but
   users from cloud images, such as `ubuntu`, remain valid. This value is only
   used only for the client-to-target SSH path that creates or verifies Orbit's
@@ -287,11 +287,13 @@ Gateway bootstrap also installs the runtime substrate for the gateway-coupled
 - `wg-easy` owns UDP `51820`. The gateway host's `wg-orbit` interface is
   configured as a peer/client of `wg-easy`, not as a second WireGuard server.
 - `orbit-dns` (a dnsmasq container) is installed under `~/.config/orbit/`,
-  sharing wg-easy's network namespace. DNS for fleet TLDs is served by the
-  gateway-coupled `vpn` role on the wg-easy WG IP. The initial
-  `dnsmasq.conf` reflects the current
-  `node.tld` + `node.wireguard_address` state and is kept in sync by later
-  `node:new`, `node:update`, and `node:remove` calls.
+  sharing wg-easy's network namespace. The gateway-local `dns` tool serves
+  private fleet DNS on the wg-easy WG IP and is required by the
+  gateway-coupled `vpn` role. Bootstrap materializes tool-owned base
+  `dnsmasq.conf`, node-owned `dnsmasq.d/10-node-records.conf`, and proxy-owned
+  `dnsmasq.d/20-proxy-records.conf`. Later `node:new`, `node:update`, and
+  `node:remove` calls reconcile the two record projections together without
+  rewriting the base file.
 
 The full contract for the DNS substrate is
 [`docs/domains/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
@@ -344,7 +346,8 @@ identity, WireGuard peer, and bootstrap record after the initiating client has
 observed a supported target platform and architecture. Completion creates each
 requested initial role assignment, then atomically marks the node active and
 the bootstrap complete. Development app bootstrap includes the node TLD and
-the gateway development DNS mapping for that TLD.
+node-owned wildcard DNS directives for that TLD. Every activated node also
+receives its concrete `orbit.{tld}` record in the node projection.
 
 For provisioned Linux nodes, `node:new` configures node-owned security policy
 by default. That policy belongs to the `node` family and may surface as
@@ -465,7 +468,8 @@ For app-role creation:
 
 - Requires an existing gateway and a resolved SSH/bootstrap endpoint reachable
   from the initiating client.
-- Every node identity requires an explicit unique node TLD.
+- Every node identity requires an explicit unique node TLD; `orbit` is reserved
+  for the proxy-owned `.orbit` namespace.
 - There is no manual no-SSH or public pre-WireGuard enrollment fallback.
 
 For client enrollment:
