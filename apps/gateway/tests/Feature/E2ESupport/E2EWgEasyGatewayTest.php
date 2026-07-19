@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Support\E2EInstance;
 use App\E2E\Support\E2EWgEasyGateway;
+use App\E2E\Support\E2EWgEasySwarmHandoff;
 use App\E2E\Support\E2EWireGuardIdentitySet;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\File;
@@ -72,9 +73,11 @@ it('starts wg-easy as the only WireGuard server on host UDP 51820', function ():
             'ghcr.io/wg-easy/wg-easy:15',
         )->and($commands[0])->toContain('docker exec wg-easy wg show wg0 public-key')->and($commands[0])->toContain(
             'test -n "${wg_easy_public_key:-}"',
-        )->and($commands[0])->toContain('docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0')->and(
+        )->and($commands[0])->toContain('docker exec "$wg_easy_container" ip addr replace 10.6.0.1/24 dev wg0')->and(
             $commands[0],
-        )->toContain('docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0')->and($commands[0])->toContain(
+        )->toContain('docker exec "$wg_easy_container" ip route replace 10.6.0.0/24 dev wg0')->and(
+            $commands[0],
+        )->toContain(
             'sudo -u orbit env',
         )->and($commands[0])->toContain('ORBIT_WG_EASY_ADVERTISED_HOST=')->and($commands[0])->toContain(
             'PDO::SQLITE_OPEN_READWRITE',
@@ -84,7 +87,114 @@ it('starts wg-easy as the only WireGuard server on host UDP 51820', function ():
             'UPDATE general_table SET setup_step = :setup_step',
         )->and($commands[0])->toContain('INIT_HOST=10.231.0.11')->and($commands[0])->toContain(
             'INIT_PASSWORD=orbit-e2e-bootstrap-password',
-        )->and($commands[0])->toContain('INSECURE=true');
+        )->and($commands[0])->toContain('INSECURE=true')->and($commands[0])->toContain(
+            'label=com.docker.swarm.service.name=orbit_orbit-vpn',
+        )->and($commands[0])->toContain('docker exec "$wg_easy_container" ip addr replace');
+});
+
+it('moves the verified quiesced wg-easy state to one canonical Swarm path', function (): void {
+    $commands = [];
+    $instance = m::mock(E2EInstance::class);
+    $instance->shouldReceive('name')->andReturn('gateway');
+    $instance
+        ->shouldReceive('exec')
+        ->once()
+        ->andReturnUsing(function (string $command) use (&$commands): ProcessResult {
+            $commands[] = $command;
+
+            return e2eWgEasyGatewayResult();
+        });
+
+    new E2EWgEasySwarmHandoff()->stage($instance);
+
+    $command = $commands[0];
+    $stop = strpos(haystack: $command, needle: 'docker stop wg-easy');
+
+    expect($stop)
+        ->toBeInt()
+        ->and($command)
+        ->toContain('PRAGMA quick_check')
+        ->toContain('password_verify')
+        ->toContain('ORBIT_WG_EASY_SWARM_HANDOFF_PHP')
+        ->toContain('WG_EASY_PASSWORD=')
+        ->toContain('docker start wg-easy')
+        ->toContain('legacy_link_started')
+        ->toContain('sudo rm /home/orbit/.wg-easy')
+        ->toContain('sudo mv /home/orbit/.config/orbit/wg-easy /home/orbit/.wg-easy')
+        ->toContain('already_handed_off')
+        ->toContain('label=com.docker.swarm.service.name=orbit_orbit-vpn')
+        ->toContain('mv /home/orbit/.wg-easy /home/orbit/.config/orbit/wg-easy')
+        ->toContain('ln -s /home/orbit/.config/orbit/wg-easy /home/orbit/.wg-easy')
+        ->toContain('source_database_checksum')
+        ->toContain('target_database_checksum')
+        ->not->toContain('cp -a')
+        ->not->toContain('docker rm wg-easy');
+});
+
+it('persists the prepared credential only after it matches the migrated database', function (): void {
+    $this->wgEasyGatewayTemp = sys_get_temp_dir().'/orbit-e2e-wg-easy-handoff-'.bin2hex(random_bytes(4));
+    $databasePath = "{$this->wgEasyGatewayTemp}/wg-easy.db";
+    $environmentPath = "{$this->wgEasyGatewayTemp}/.env";
+    createE2EWgEasyGatewayFixtureDatabase($databasePath);
+    File::put($environmentPath, "APP_NAME=Orbit\n");
+
+    $commands = [];
+    $instance = m::mock(E2EInstance::class);
+    $instance->shouldReceive('name')->andReturn('gateway');
+    $instance
+        ->shouldReceive('exec')
+        ->once()
+        ->andReturnUsing(function (string $command) use (&$commands): ProcessResult {
+            $commands[] = $command;
+
+            return e2eWgEasyGatewayResult();
+        });
+
+    new E2EWgEasySwarmHandoff()->stage($instance);
+
+    runE2EWgEasyGatewayPhpBlock(
+        command: $commands[0],
+        marker: 'ORBIT_WG_EASY_SWARM_HANDOFF_PHP',
+        environment: [
+            'ORBIT_WG_EASY_DB_PATH' => $databasePath,
+            'ORBIT_WG_EASY_ENV_PATH' => $environmentPath,
+            'ORBIT_WG_EASY_ADMIN_PASSWORD' => E2EWgEasyGateway::ADMIN_PASSWORD,
+        ],
+    );
+
+    expect(File::get($environmentPath))
+        ->toContain('WG_EASY_PASSWORD='.E2EWgEasyGateway::ADMIN_PASSWORD)
+        ->and(fileperms($environmentPath) & 0o777)
+        ->toBe(0o600);
+});
+
+it('finishes or rolls back the prepared wg-easy handoff explicitly', function (): void {
+    $commands = [];
+    $instance = m::mock(E2EInstance::class);
+    $instance->shouldReceive('name')->andReturn('gateway');
+    $instance
+        ->shouldReceive('exec')
+        ->twice()
+        ->andReturnUsing(function (string $command) use (&$commands): ProcessResult {
+            $commands[] = $command;
+
+            return e2eWgEasyGatewayResult();
+        });
+
+    $handoff = new E2EWgEasySwarmHandoff;
+    $handoff->complete($instance);
+    $handoff->restoreStandalone($instance);
+
+    expect($commands[0])
+        ->toContain('docker inspect wg-easy')
+        ->toContain('docker rm wg-easy')
+        ->not
+        ->toContain('docker rm -f')
+        ->and($commands[1])
+        ->toContain('docker service rm orbit_orbit-vpn orbit_orbit-dns')
+        ->toContain('sudo rm /home/orbit/.wg-easy')
+        ->toContain('sudo mv /home/orbit/.config/orbit/wg-easy /home/orbit/.wg-easy')
+        ->toContain('docker start wg-easy');
 });
 
 it('persists and activates topology peers on wg-easy wg0', function (): void {
@@ -137,7 +247,9 @@ it('persists and activates topology peers on wg-easy wg0', function (): void {
         )->toContain('10.6.0.2/32')->and($commands[0])->toContain('operator-public')->and($commands[0])->toContain(
             '10.6.0.3/32',
         )->and($commands[0])->toContain('dev-public')->and($commands[0])->toContain('10.6.0.4/32')->and($commands[0])
-        ->not->toContain('ListenPort = 51820');
+        ->not->toContain('ListenPort = 51820')->and($commands[0])->toContain(
+            'label=com.docker.swarm.service.name=orbit_orbit-vpn',
+        )->and($commands[0])->toContain('docker exec "$wg_easy_container" sh -lc');
 });
 
 it('updates a fixture wg-easy database through the generated start PDO script', function (): void {
@@ -291,6 +403,7 @@ function createE2EWgEasyGatewayFixtureDatabase(string $path): PDO
         'create table user_configs_table (host text not null, default_dns text not null, default_persistent_keepalive integer not null)',
     );
     $pdo->exec('create table general_table (setup_step integer not null)');
+    $pdo->exec('create table users_table (id integer primary key, password text not null)');
     $pdo->exec(<<<'SQL'
         create table clients_table (
             user_id integer not null,
@@ -310,6 +423,10 @@ function createE2EWgEasyGatewayFixtureDatabase(string $path): PDO
         )
         SQL);
     $pdo->exec("insert into interfaces_table (name, ipv4_cidr) values ('wg0', '10.0.0.0/24')");
+    $insertUser = $pdo->prepare('insert into users_table (id, password) values (1, :password)');
+    $insertUser->execute([
+        'password' => password_hash(E2EWgEasyGateway::ADMIN_PASSWORD, PASSWORD_ARGON2ID),
+    ]);
     $pdo->exec(
         "insert into user_configs_table (host, default_dns, default_persistent_keepalive) values ('old.example.test', '[\"8.8.8.8\"]', 0)",
     );

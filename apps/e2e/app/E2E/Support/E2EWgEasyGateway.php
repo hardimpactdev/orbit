@@ -8,6 +8,9 @@ final readonly class E2EWgEasyGateway
 {
     private const string WG_EASY_DATABASE_PATH = '/home/orbit/.wg-easy/wg-easy.db';
 
+    /** @mago-expect lint:no-literal-password -- Fixed disposable E2E fixture credential. */
+    public const string ADMIN_PASSWORD = 'orbit-e2e-bootstrap-password';
+
     public function __construct(
         private string $databasePath = self::WG_EASY_DATABASE_PATH,
     ) {}
@@ -41,7 +44,7 @@ final readonly class E2EWgEasyGateway
                                 --restart unless-stopped \
                                 -e INIT_ENABLED=true \
                                 -e INIT_USERNAME=orbit \
-                                -e INIT_PASSWORD=orbit-e2e-bootstrap-password \
+                                -e %s \
                                 -e %s \
                                 -e INIT_PORT=51820 \
                                 -e INIT_DNS=10.6.0.1 \
@@ -80,22 +83,37 @@ final readonly class E2EWgEasyGateway
                         test -n "${wg_easy_public_key:-}" || return 1
                     }
 
-                    wg_easy_reusable=0
-                    if docker ps --filter name='^wg-easy$' --format '{{.Names}}' 2>/dev/null | grep -qx wg-easy \
-                        && test -f /home/orbit/.wg-easy/wg-easy.db \
-                        && docker exec wg-easy ip link show wg0 >/dev/null 2>&1; then
-                        wg_easy_reusable=1
+                    wg_easy_container="$(docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn' | head -n 1)"
+
+                    if [ -n "$wg_easy_container" ]; then
+                        test -f /home/orbit/.wg-easy/wg-easy.db
+                        for i in $(seq 1 30); do
+                            docker exec "$wg_easy_container" ip link show wg0 >/dev/null 2>&1 && break
+                            sleep 1
+                        done
+                        docker exec "$wg_easy_container" ip link show wg0 >/dev/null 2>&1
+                    else
+                        wg_easy_reusable=0
+                        if docker ps --filter name='^wg-easy$' --format '{{.Names}}' 2>/dev/null | grep -qx wg-easy \
+                            && test -f /home/orbit/.wg-easy/wg-easy.db \
+                            && docker exec wg-easy ip link show wg0 >/dev/null 2>&1; then
+                            wg_easy_reusable=1
+                        fi
+
+                        if [ "$wg_easy_reusable" -eq 1 ] && ensure_wg_easy 0; then
+                            :
+                        else
+                            ensure_wg_easy 1
+                        fi
+
+                        wg_easy_container=wg-easy
                     fi
 
-                    if [ "$wg_easy_reusable" -eq 1 ] && ensure_wg_easy 0; then
-                        :
-                    else
-                        ensure_wg_easy 1
-                    fi
-                    docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0
-                    docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0
+                    docker exec "$wg_easy_container" ip addr replace 10.6.0.1/24 dev wg0
+                    docker exec "$wg_easy_container" ip route replace 10.6.0.0/24 dev wg0
                     %s
                     SH,
+                escapeshellarg('INIT_PASSWORD='.self::ADMIN_PASSWORD),
                 escapeshellarg("INIT_HOST={$advertisedHost}"),
                 $this->phpCommand(
                     marker: 'ORBIT_WG_EASY_START_PHP',
@@ -121,7 +139,7 @@ final readonly class E2EWgEasyGateway
             $rawPreSharedKey = $peer['pre_shared_key'] ?? $this->preSharedKeyFor($peer['public_key']);
 
             $runtimeCommands[] = sprintf(
-                'docker exec wg-easy sh -lc %s',
+                'docker exec "$wg_easy_container" sh -lc %s',
                 escapeshellarg(sprintf(
                     'tmp="$(mktemp)" && printf %s %s > "$tmp" && wg set wg0 peer %s preshared-key "$tmp" allowed-ips %s; status="$?"; rm -f "$tmp"; exit "$status"',
                     escapeshellarg('%s\n'),
@@ -138,6 +156,13 @@ final readonly class E2EWgEasyGateway
                 <<<'SH'
                     set -euo pipefail
                     sudo chown -R orbit:orbit /home/orbit/.wg-easy
+                    wg_easy_container="$(docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn' | head -n 1)"
+
+                    if [ -z "$wg_easy_container" ]; then
+                        wg_easy_container=wg-easy
+                    fi
+
+                    docker inspect "$wg_easy_container" >/dev/null
                     %s
                     %s
                     SH,

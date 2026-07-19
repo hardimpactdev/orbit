@@ -6,6 +6,7 @@ namespace App\Services\Vpn;
 
 use App\Services\Gateway\GatewaySwarmStackRenderer;
 use InvalidArgumentException;
+use SensitiveParameter;
 
 final readonly class VpnDnsSwarmStackRenderer
 {
@@ -18,6 +19,7 @@ final readonly class VpnDnsSwarmStackRenderer
     public function render(
         string $publicHost,
         string $username,
+        #[SensitiveParameter]
         string $password,
         string $wireguardCidr = '10.6.0.0/24',
         int $wireguardPort = 51820,
@@ -139,6 +141,7 @@ final readonly class VpnDnsSwarmStackRenderer
     private function vpnService(
         string $publicHost,
         string $username,
+        #[SensitiveParameter]
         string $password,
         string $wireguardCidr,
         int $wireguardPort,

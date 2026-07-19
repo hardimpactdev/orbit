@@ -64,16 +64,17 @@ function incusAcquisitionReadinessResult(
 /**
  * @return array{0: IncusHost, 1: Closure(): list<string>}
  */
-function incusAcquisitionReadinessCapturingHost(): array
+function incusAcquisitionReadinessCapturingHost(?string $failureNeedle = null): array
 {
     $commands = [];
-    $host = new class(incusAcquisitionReadinessConfig(), $commands) extends IncusHost {
+    $host = new class(incusAcquisitionReadinessConfig(), $commands, $failureNeedle) extends IncusHost {
         /**
          * @param  array<int, string>  $commands
          */
         public function __construct(
             E2EConfig $config,
             public array &$commands,
+            private readonly ?string $failureNeedle,
         ) {
             parent::__construct($config);
         }
@@ -82,6 +83,13 @@ function incusAcquisitionReadinessCapturingHost(): array
         public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
         {
             $this->commands[] = $command;
+
+            if ($this->failureNeedle !== null && str_contains($command, $this->failureNeedle)) {
+                return incusAcquisitionReadinessResult(
+                    successful: false,
+                    errorOutput: 'injected handoff cleanup failure',
+                );
+            }
 
             if (str_contains($command, 'ip -j -4 address show scope global')) {
                 return incusAcquisitionReadinessResult("10.231.7.84\n");
@@ -387,7 +395,9 @@ it('installs the WireGuard mesh on every role through one parallel host call', f
         ->toContain("'clone-operator'")
         ->toContain("'clone-gateway'")
         ->toContain("'clone-dev'")
-        ->toContain('& PID_TASK_');
+        ->toContain('& PID_TASK_')
+        ->and(implode("\n", $commands()))
+        ->toContain('label=com.docker.swarm.service.name=orbit_orbit-vpn');
 });
 
 it('runs acquisition retarget bakes for downstream roles in one parallel gateway call', function (): void {
@@ -474,6 +484,8 @@ it('starts the gateway api before acquisition retarget bakes downstream roles', 
         haystack: $joined,
         needle: 'orbit:internal:converge-vpn-dns-runtime gateway',
     );
+    $legacyVpnStop = strpos(haystack: $joined, needle: 'docker stop wg-easy');
+    $legacyVpnRemoval = strpos(haystack: $joined, needle: 'docker rm wg-easy');
     $downstreamBake = strpos($joined, 'orbit:internal:bake-app-node app-dev-1');
 
     expect($gatewayApiStart)
@@ -482,16 +494,62 @@ it('starts the gateway api before acquisition retarget bakes downstream roles', 
         ->toBeInt()
         ->and($dnsLayoutConvergence)
         ->toBeInt()
+        ->and($legacyVpnStop)
+        ->toBeInt()
+        ->and($legacyVpnRemoval)
+        ->toBeInt()
         ->and($downstreamBake)
         ->toBeInt()
         ->and($gatewayApiStart)
         ->toBeLessThan($downstreamBake)
         ->and($sourceMountedLauncher)
         ->toBeLessThan($downstreamBake)
+        ->and($legacyVpnStop)
+        ->toBeLessThan($dnsLayoutConvergence)
         ->and($dnsLayoutConvergence)
+        ->toBeLessThan($legacyVpnRemoval)
+        ->and($legacyVpnRemoval)
         ->toBeLessThan($downstreamBake)
         ->and($joined)
         ->toContain('/home/orbit/orbit/bin/orbit');
+});
+
+it('restores standalone wg-easy when post-convergence handoff cleanup fails', function (): void {
+    [$host, $commands] = incusAcquisitionReadinessCapturingHost('docker rm wg-easy');
+    $provider = new IncusTopologyProvider(incusAcquisitionReadinessConfig());
+    $instances = incusAcquisitionReadinessSourceMountedInstances($host);
+
+    try {
+        $method = new ReflectionMethod($provider, 'prepareInstances');
+        $method->setAccessible(true);
+        $method->invoke(
+            $provider,
+            $instances,
+            incusAcquisitionReadinessConfig(),
+            new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+            new E2EPhaseTimer,
+            new E2ETopologyAcquisitionOptions(startGatewayApi: true, sourceMountedCheckout: true),
+            E2ETopologyKind::OperatorGatewayAppdev,
+        );
+
+        test()->fail('Expected handoff cleanup to fail.');
+    } catch (RuntimeException $exception) {
+        expect($exception->getMessage())->toContain('injected handoff cleanup failure');
+    }
+
+    $joined = implode("\n", $commands());
+    $cleanup = strpos(haystack: $joined, needle: 'docker rm wg-easy');
+    $rollback = strpos(haystack: $joined, needle: 'docker service rm orbit_orbit-vpn orbit_orbit-dns');
+
+    expect($cleanup)
+        ->toBeInt()
+        ->and($rollback)
+        ->toBeInt()
+        ->and($cleanup)
+        ->toBeLessThan($rollback)
+        ->and($joined)
+        ->toContain('sudo mv /home/orbit/.config/orbit/wg-easy /home/orbit/.wg-easy')
+        ->not->toContain('orbit:internal:bake-app-node app-dev-1');
 });
 
 it('starts the gateway api before snapshot reset retarget bakes downstream roles', function (): void {

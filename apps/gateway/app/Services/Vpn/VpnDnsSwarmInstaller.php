@@ -15,6 +15,7 @@ use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
+use SensitiveParameter;
 
 class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
 {
@@ -42,6 +43,7 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
     public function install(
         string $publicHost,
         string $username,
+        #[SensitiveParameter]
         string $password,
         string $wireguardCidr = '10.6.0.0/24',
         int $wireguardPort = 51820,
@@ -195,8 +197,15 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
             return;
         }
 
+        $diagnostics = Process::timeout(15)->run(<<<'SH'
+            set +e
+            docker service ps --no-trunc --format '{{.Name}}\t{{.CurrentState}}\t{{.Error}}' orbit_orbit-vpn 2>&1
+            docker service ps --no-trunc --format '{{.Name}}\t{{.CurrentState}}\t{{.Error}}' orbit_orbit-dns 2>&1
+            SH);
+        $diagnosticOutput = trim($diagnostics->output().' '.$diagnostics->errorOutput());
+
         throw new RuntimeException(
-            'wg-easy Swarm service did not become ready: '.trim($result->errorOutput().' '.$result->output()),
+            'wg-easy Swarm service did not become ready: '.$diagnosticOutput,
         );
     }
 

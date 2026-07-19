@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use JsonException;
 use RuntimeException;
+use SensitiveParameter;
 
 class WgEasyServiceInstaller
 {
@@ -59,6 +60,7 @@ class WgEasyServiceInstaller
     public function install(
         string $publicHost,
         string $username,
+        #[SensitiveParameter]
         string $password,
         string $wireguardCidr = '10.6.0.0/24',
         int $wireguardPort = 51820,
@@ -258,6 +260,7 @@ class WgEasyServiceInstaller
     private function renderCompose(
         string $publicHost,
         string $username,
+        #[SensitiveParameter]
         string $password,
         string $wireguardCidr,
         int $wireguardPort,

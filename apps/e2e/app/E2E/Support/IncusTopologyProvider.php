@@ -1151,7 +1151,15 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $agent = isset($instances['agent']) ? E2EWireGuardIdentitySet::forRole('agent') : null;
         $ingress = isset($instances['ingress']) ? E2EWireGuardIdentitySet::forRole('ingress') : null;
         $websocket = isset($instances['websocket']) ? E2EWireGuardIdentitySet::forRole('websocket') : null;
-        $wgEasyPublicKey = trim($instances['gateway']->exec('docker exec wg-easy wg show wg0 public-key')->output());
+        $wgEasyPublicKey = trim($instances['gateway']->exec(<<<'SH'
+            wg_easy_container="$(docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn' | head -n 1)"
+
+            if [ -z "$wg_easy_container" ]; then
+                wg_easy_container=wg-easy
+            fi
+
+            docker exec "$wg_easy_container" wg show wg0 public-key
+            SH)->output());
 
         return E2EWireGuardMesh::standard(
             gatewayProviderIp: $gatewayProviderIp,
@@ -1222,13 +1230,23 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         E2EGatewayApi::seedOperatorIdentity($gateway, self::OperatorWireGuardIp, $config->operatorUser);
 
         if ($sourceMountedCheckout) {
-            $this->runGatewayArtisan(
-                $gateway,
-                $sshKeyPair,
-                'orbit:internal:converge-vpn-dns-runtime gateway',
-                true,
-                timeoutSeconds: 240,
-            );
+            $wgEasyHandoff = new E2EWgEasySwarmHandoff;
+
+            try {
+                $wgEasyHandoff->stage($gateway);
+                $this->runGatewayArtisan(
+                    $gateway,
+                    $sshKeyPair,
+                    'orbit:internal:converge-vpn-dns-runtime gateway',
+                    true,
+                    timeoutSeconds: 240,
+                );
+                $wgEasyHandoff->complete($gateway);
+            } catch (\Throwable $exception) {
+                $wgEasyHandoff->restoreStandalone($gateway);
+
+                throw $exception;
+            }
         }
 
         $this->retargetOperator($operator, $config, $sshKeyPair, $sourceMountedCheckout);

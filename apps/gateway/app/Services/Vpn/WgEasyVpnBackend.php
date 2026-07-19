@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use JsonException;
 use RuntimeException;
+use SensitiveParameter;
 
 final class WgEasyVpnBackend implements VpnBackend
 {
@@ -45,7 +46,9 @@ final class WgEasyVpnBackend implements VpnBackend
 
     public function __construct(
         private readonly string $username = '',
+        #[SensitiveParameter]
         private readonly string $password = '',
+        private readonly ?string $databasePath = null,
         private readonly ?RemoteLocalExecutor $localExecutor = null,
         private readonly ?VpnNodeResolver $vpnNodeResolver = null,
     ) {}
@@ -387,6 +390,9 @@ final class WgEasyVpnBackend implements VpnBackend
             ],
             transportOptions: [
                 'timeout' => 30,
+                'environment' => [
+                    'ORBIT_WG_EASY_DB_PATH' => $this->resolvedDatabasePath(),
+                ],
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => (string) Str::uuid(),
                 ],
@@ -395,6 +401,19 @@ final class WgEasyVpnBackend implements VpnBackend
         );
 
         $this->assertWgEasyStateSucceeded($result, $failureMessage);
+    }
+
+    private function resolvedDatabasePath(): string
+    {
+        if (is_string($this->databasePath) && trim($this->databasePath) !== '') {
+            return trim($this->databasePath);
+        }
+
+        $configRoot = config('orbit.paths.config_root');
+
+        return is_string($configRoot) && trim($configRoot) !== ''
+            ? rtrim(string: $configRoot, characters: '/').'/wg-easy/wg-easy.db'
+            : '/home/orbit/.config/orbit/wg-easy/wg-easy.db';
     }
 
     private function assertWgEasyStateSucceeded(RemoteShellResult $result, string $failureMessage): void

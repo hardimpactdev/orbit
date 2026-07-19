@@ -12,6 +12,7 @@ use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
 use App\Services\Vpn\VpnDnsSwarmManager;
 use App\Services\Vpn\VpnDnsSwarmStackRenderer;
+use App\Services\Vpn\WgEasyServiceInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -149,6 +150,69 @@ it('uses the Swarm wg-easy state path for inherited state commands', function ()
     };
 
     expect($installer->exposedStatePath())->toBe($this->root.'/wg-easy');
+});
+
+it('marks installer and renderer password parameters as sensitive', function (): void {
+    foreach ([
+        [WgEasyServiceInstaller::class,   'install'],
+        [VpnDnsSwarmInstaller::class,     'install'],
+        [VpnDnsSwarmStackRenderer::class, 'render'],
+    ] as [$class, $method]) {
+        $password = new ReflectionMethod($class, $method)->getParameters()[2];
+
+        expect($password->getName())
+            ->toBe('password')
+            ->and($password->getAttributes(SensitiveParameter::class))
+            ->toHaveCount(1);
+    }
+});
+
+it('reports safe Swarm task diagnostics when vpn and dns do not become ready', function (): void {
+    Process::fake(function ($process) {
+        $command = (string) $process->command;
+
+        if ($command === "docker info --format '{{.Swarm.LocalNodeState}}'") {
+            return Process::result(output: "active\n");
+        }
+
+        if ($command === "docker info --format '{{.Swarm.NodeID}}'") {
+            return Process::result(output: "node-123\n");
+        }
+
+        if (str_contains($command, 'docker network inspect')) {
+            return Process::result(output: "overlay swarm true\n");
+        }
+
+        if (str_contains($command, 'for i in $(seq 1 60)')) {
+            return Process::result(exitCode: 1);
+        }
+
+        if (str_contains($command, 'docker service ps --no-trunc --format')) {
+            return Process::result(output: "orbit_orbit-vpn.1\tRejected\tport is already allocated\n");
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    $password = bin2hex(random_bytes(16));
+
+    try {
+        vpnDnsSwarmInstaller($this->root)
+            ->install(
+                publicHost: '203.0.113.10',
+                username: 'orbit',
+                password: $password,
+            );
+
+        test()->fail('Expected the Swarm readiness probe to fail.');
+    } catch (RuntimeException $exception) {
+        expect($exception->getMessage())
+            ->toContain('orbit_orbit-vpn.1')
+            ->toContain('port is already allocated')
+            ->not->toContain($password)->and(json_encode($exception->getTrace(), JSON_THROW_ON_ERROR))
+            ->not->toContain($password);
+    }
 });
 
 function vpnDnsSwarmInstaller(string $root): VpnDnsSwarmInstaller

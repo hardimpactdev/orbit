@@ -260,6 +260,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(WgEasyVpnBackend::class, fn (Application $app): WgEasyVpnBackend => new WgEasyVpnBackend(
             username: (string) config('services.wg_easy.username', config('orbit.wg_easy.username', 'orbit')),
             password: (string) config('services.wg_easy.password', config('orbit.wg_easy.password', '')),
+            databasePath: $this->orbitConfigPath().'/wg-easy/wg-easy.db',
             localExecutor: $this->hasOperationTokenSigningKey() ? $app->make(RemoteLocalExecutor::class) : null,
             vpnNodeResolver: $app->make(VpnNodeResolver::class),
         ));

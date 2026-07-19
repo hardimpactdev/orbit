@@ -154,6 +154,7 @@ it('routes password and session secret updates through wg-easy state actions wit
     $result = new WgEasyVpnBackend(
         username: 'orbit',
         password: 'current-secret-password',
+        databasePath: '/home/orbit/.config/orbit/wg-easy/wg-easy.db',
         localExecutor: wgEasyVpnBackendExecutor($transport),
         vpnNodeResolver: app(VpnNodeResolver::class),
     )
@@ -184,6 +185,17 @@ it('routes password and session secret updates through wg-easy state actions wit
         expect($script)
             ->not->toContain('sqlite3')->and($script)
             ->not->toContain('sudo sqlite3');
+    }
+
+    $commandRequests = Http::recorded(
+        fn (Request $request): bool => $request->url() === 'http://10.6.0.2:9477/v1/commands',
+    );
+
+    expect($commandRequests)->toHaveCount(3);
+
+    foreach ($commandRequests as [$request]) {
+        expect($request['environment']['ORBIT_WG_EASY_DB_PATH'] ?? null)
+            ->toBe('/home/orbit/.config/orbit/wg-easy/wg-easy.db');
     }
 
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'sqlite3'));
