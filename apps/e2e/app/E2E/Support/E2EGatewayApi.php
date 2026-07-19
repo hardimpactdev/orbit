@@ -181,11 +181,12 @@ final readonly class E2EGatewayApi
         E2ECommand::exec(
             $gateway,
             sprintf(
-                'docker exec --workdir %s %s %s list --raw | grep -q %s',
+                'docker exec --workdir %s %s %s internal:wg-easy:state --action=ensure-writable --json 2>&1'
+                .' | tee /dev/stderr | grep -q %s',
                 escapeshellarg(self::GatewayContainerOrbitPath.'/apps/gateway'),
                 escapeshellarg(self::GatewayLocalExecutorContainer),
                 escapeshellarg(self::SourceMountedGatewayContainerOrbitCliPath),
-                escapeshellarg('^internal:wg-easy:state '),
+                escapeshellarg('"code":"missing_token"'),
             ),
             'Source-mounted gateway-local executor command is not available',
             timeoutSeconds: 30,

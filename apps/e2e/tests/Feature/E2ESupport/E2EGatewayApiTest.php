@@ -72,7 +72,7 @@ it('starts and preflights a source-mounted gateway-local executor shim', functio
 
     $joined = implode("\n", $gateway->execCommands);
     $start = strpos(haystack: $joined, needle: 'exec sleep infinity');
-    $preflight = strpos(haystack: $joined, needle: 'internal:wg-easy:state');
+    $preflight = strpos(haystack: $joined, needle: '--action=ensure-writable');
 
     expect($joined)
         ->toContain('--name '.escapeshellarg('orbit-gateway'))
@@ -83,8 +83,11 @@ it('starts and preflights a source-mounted gateway-local executor shim', functio
         ->toContain(
             'docker exec --workdir '.escapeshellarg('/srv/orbit/apps/gateway').' '.escapeshellarg('orbit-gateway'),
         )
-        ->toContain(escapeshellarg('/srv/orbit/apps/cli/orbit').' list --raw')
-        ->toContain("grep -q '^internal:wg-easy:state '")
+        ->toContain(
+            escapeshellarg('/srv/orbit/apps/cli/orbit').' internal:wg-easy:state --action=ensure-writable --json',
+        )
+        ->toContain('tee /dev/stderr')
+        ->toContain('grep -q '.escapeshellarg('"code":"missing_token"'))
         ->and($start)
         ->toBeInt()
         ->and($preflight)
