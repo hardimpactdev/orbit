@@ -173,6 +173,7 @@ final readonly class E2EGatewayApi
                 container: self::GatewayLocalExecutorContainer,
                 script: 'exec sleep infinity',
                 hostOrbitPath: $hostOrbitPath,
+                matchGatewayConfigOwner: true,
             ),
             'Could not start source-mounted gateway-local executor container',
             timeoutSeconds: 120,
@@ -2194,6 +2195,7 @@ final readonly class E2EGatewayApi
         bool $mountSsh = false,
         ?string $hostCliPath = null,
         ?string $hostOrbitPath = null,
+        bool $matchGatewayConfigOwner = false,
     ): string {
         $arguments = [
             'docker run --rm --detach --pull never',
@@ -2214,6 +2216,11 @@ final readonly class E2EGatewayApi
             '--mount '.escapeshellarg('type=bind,source='.self::OrbitConfigRoot.',target='.self::OrbitConfigRoot),
             '--mount '.escapeshellarg('type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock'),
         ];
+
+        if ($matchGatewayConfigOwner) {
+            $arguments[] = '--user "$(stat -c %u:%g '.escapeshellarg(self::OrbitConfigRoot).')"';
+            $arguments[] = '--group-add "$(stat -c %g /var/run/docker.sock)"';
+        }
 
         if ($hostOrbitPath !== null) {
             $arguments[] =

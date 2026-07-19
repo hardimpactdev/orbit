@@ -76,6 +76,8 @@ it('starts and preflights a source-mounted gateway-local executor shim', functio
 
     expect($joined)
         ->toContain('--name '.escapeshellarg('orbit-gateway'))
+        ->toContain('--user "$(stat -c %u:%g '.escapeshellarg('/home/orbit/.config/orbit').')"')
+        ->toContain('--group-add "$(stat -c %g /var/run/docker.sock)"')
         ->toContain('--mount '.escapeshellarg('type=bind,source=/home/orbit/orbit,target=/srv/orbit'))
         ->not
         ->toContain(escapeshellarg('/home/orbit/orbit/apps/cli/orbit:/usr/local/bin/orbit-cli:ro'))
