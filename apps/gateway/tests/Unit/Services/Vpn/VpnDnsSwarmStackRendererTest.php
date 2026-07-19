@@ -57,6 +57,11 @@ it('renders vpn and dns as separate co-located Swarm services on a shared networ
         ->toContain('healthcheck:')
         ->toContain('CMD-SHELL')
         ->toContain('getent hosts')
+        ->toContain('dns_ip="$$(getent hosts')
+        ->toContain('{ print $$1; exit }')
+        ->toContain('if [ -z "$$dns_ip" ]')
+        ->toContain('"$${dns_ip}:53"')
+        ->toContain('-d "$$dns_ip"')
         ->toContain('PREROUTING')
         ->toContain('MASQUERADE')
         ->not->toContain('4km3/dnsmasq')->and($dnsBlock)->toContain(
