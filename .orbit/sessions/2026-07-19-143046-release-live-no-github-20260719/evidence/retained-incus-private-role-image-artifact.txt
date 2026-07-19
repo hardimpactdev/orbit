@@ -1,0 +1,24 @@
+topology=dev-faabdf
+kind=operator_gateway_app-dev
+host=beast
+reviewed_head=589411b172c47dd246957f3152e27a36f001e9ce
+checkout_roles=gateway,dev
+
+local_and_dev_vm_hashes
+ecbb4bd121ffc1f8f9d9b85c7fc3a225a7a4c59a0a1ff1a5e81d9fa2804f6a67  apps/cli/app/Services/Operations/LocalFleetUpdateInstallCliAction.php
+010ebcacc701eab893d9d9580242ef290214f7a3847216b46d09ae0c98e643b8  apps/cli/app/Services/Operations/LocalFleetUpdateInstallCliEnvironment.php
+ff95ae1b018e7900f7b33c05d84770c9edb48e36bac8b325b0bd7a6c50b9f25a  apps/cli/app/Services/Operations/LocalFleetUpdateInstallCliPayload.php
+041afdc882af6e7bd5d559ae4484d8109b8b7ec5ddb45f3e10eeee495a609265  apps/cli/app/Services/Operations/LocalFleetUpdateInstallRoleImageArtifactPayload.php
+e29ec5f1630519039d18d7b22fb4c2cd88d31025752043bc57056b6b65e887b7  apps/cli/tests/Feature/InternalFleetUpdateInstallCliCommandTest.php
+
+local_and_gateway_vm_hashes
+52c4038e7e1fc3c17db0d2cc94b29f72d141c30dd260ee6e81e5a242f775e6ff  apps/gateway/app/Services/Operations/WorkloadNodeUpdater.php
+0441f012689790511ccdd704644935c3ab0c76b9fe74135330997ac15c85cf2e  apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php
+
+dev_vm_docker_server=29.1.3
+dev_vm_command=composer --working-dir=apps/cli test -- --compact --filter="hash-verified role image archive"
+dev_vm_result=1 passed, 5 assertions
+gateway_vm_command=php -d memory_limit=512M vendor/pestphp/pest/bin/pest tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php --compact --filter="updates active non-gateway managed nodes" --cache-directory=/tmp/orbit-pest-cache-role-artifacts --no-coverage
+gateway_vm_result=1 passed, 48 assertions
+
+The first gateway invocation hit only the source-overlay vendor cache ownership boundary. Re-running the same focused test with a disposable /tmp PHPUnit cache passed. Pest's optional mutation-cache warning remained non-fatal and did not affect either assertion result.

@@ -1,0 +1,27 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-19T12:30:46+00:00",
+    "mode": "created",
+    "archive_mode": "full",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-release-live-20260719/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-19-143046-release-live-no-github-20260719",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-19-143046-release-live-no-github-20260719/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "evidence",
+        "loop.md",
+        "quality-gates"
+    ],
+    "entry_digests": {
+        "agent-sessions": "0738513313808d257884ce679e60f6312a524c5ef1ea03514a998844206b002f",
+        "evidence": "daa517dc15c794666912debfb52a8fd4d8a3807d7818ff462999c07098e003a9",
+        "loop.md": "a3657b1a2f5868e00cadf08609ce2d4a3fe6897e627e26c60b49a0935ab44160",
+        "quality-gates": "f96035ec7449486630c44c0245846fb28193e332cdcf9fcb535d435d10d5bc29"
+    },
+    "branch": "codex/release-live-20260719",
+    "candidate_commit": "589411b172c47dd246957f3152e27a36f001e9ce",
+    "accepted_feature_tip": "589411b172c47dd246957f3152e27a36f001e9ce",
+    "accepted_main_tip": "5588ef2ed280e46f660572c2718e5c6e42c88747",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
