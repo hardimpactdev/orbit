@@ -27,10 +27,12 @@ only the resolver configuration on the caller machine.
 
 [`doctor --family=node`](../1_node/node-doctor.md),
 [`doctor --family=proxy`](../8_proxy/proxy-doctor.md), and
-[`doctor --family=tool`](../3_tool/tool-doctor.md) own their respective record
-projections and DNS runtime facts. DNS commands must not create DNS doctor
-issues, gateway DNS configuration, private service names, or proxy route
-configuration.
+[`doctor --family=tool`](../3_tool/tool-doctor.md) keep the same explicit split:
+Node Doctor owns `dnsmasq.d/10-node-records.conf`, Proxy Doctor owns
+`dnsmasq.d/20-proxy-records.conf`, and Tool Doctor owns base `dnsmasq.conf` plus
+runtime, mount, listener, forwarding, and VPN-client DNS facts. DNS commands
+must not create DNS doctor issues, gateway DNS configuration, private service
+names, or proxy route configuration.
 
 ## Domain Rules
 
@@ -43,7 +45,7 @@ These rules govern all DNS commands in this family.
   public DNS records.
 - DNS write commands require the local OS privileges needed to update resolver
   configuration and refresh the resolver backend.
-- Node, proxy, and tool doctor contracts own their respective DNS facts.
+- Node, proxy, and tool Doctor contracts preserve the artifact split above.
 
 ## Commands
 

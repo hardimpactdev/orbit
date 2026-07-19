@@ -74,8 +74,10 @@ No local DNS overrides is success with an empty result.
 ## Doctor Relationship
 
 - `dns:list` reads caller-local resolver overrides.
-- Node, proxy, and tool doctor verify their respective private DNS projections
-  and runtime facts. `dns:list` is not a gateway DNS listing command.
+- Node Doctor verifies `dnsmasq.d/10-node-records.conf`; Proxy Doctor verifies
+  `dnsmasq.d/20-proxy-records.conf`; Tool Doctor verifies base `dnsmasq.conf`
+  plus runtime, mount, listener, forwarding, and VPN-client DNS facts.
+  `dns:list` is not a gateway DNS listing command.
 
 ## Activity Logging
 
