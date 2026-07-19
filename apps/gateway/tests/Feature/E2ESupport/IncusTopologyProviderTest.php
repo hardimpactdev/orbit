@@ -301,6 +301,12 @@ it('retargets artifact-backed Incus gateway nodes through the gateway image inst
 
             return incusTopologyProviderTestProcessResult();
         }
+
+        #[Override]
+        public function runWithInput(string $command, string $input, ?int $timeoutSeconds = null): ProcessResult
+        {
+            return $this->run($command."\n".$input, $timeoutSeconds);
+        }
     };
 
     $provider = new IncusTopologyProvider(incusTopologyProviderTestConfig());
@@ -356,6 +362,12 @@ it('prepares gateway state before source-mounted incus retarget bootstrap', func
             }
 
             return incusTopologyProviderTestProcessResult();
+        }
+
+        #[Override]
+        public function runWithInput(string $command, string $input, ?int $timeoutSeconds = null): ProcessResult
+        {
+            return $this->run($command."\n".$input, $timeoutSeconds);
         }
     };
 
