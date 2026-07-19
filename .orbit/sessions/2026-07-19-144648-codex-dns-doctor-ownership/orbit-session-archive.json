@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-19T12:46:48+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-dns-doctor-ownership/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-19-144648-codex-dns-doctor-ownership",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/dns-doctor-ownership-dev-7df17b.md",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/dns-doctor-ownership-dev-7df17b.md": "3c6aa7b319c09f03f0bd3685f543cb8ea4ea7f1b717271104285be8bba549ddc",
+        "loop.md": "48420088fc8e0b46227e78e65f73b95ae44772b2c99a537ba94d85862d394a22"
+    },
+    "branch": "codex/dns-doctor-ownership",
+    "candidate_commit": "57732ed3aedb73d78b537e2c0ff90eddfa5d7745",
+    "accepted_feature_tip": "57732ed3aedb73d78b537e2c0ff90eddfa5d7745",
+    "accepted_main_tip": "01064868ce7123ecc8befdee8709acd6df22445e",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
