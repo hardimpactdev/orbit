@@ -33,7 +33,9 @@ return new class extends Migration {
 
         DB::transaction(function (): void {
             foreach ($this->affectedApps() as $app) {
-                $instanceId = $this->soleInstanceId($app['id']);
+                $instanceId = $this->provenAppInstanceId($app['id']) ?? throw new RuntimeException(
+                    "Canonical app runtime ownership could not resolve app_id={$app['id']} after validation.",
+                );
 
                 DB::table('app_instances')
                     ->where('id', $instanceId)
@@ -64,7 +66,7 @@ return new class extends Migration {
     {
         $ambiguous = array_values(array_filter(
             $this->affectedApps(),
-            static fn (array $app): bool => $app['instance_count'] !== 1,
+            fn (array $app): bool => $this->provenAppInstanceId($app['id']) === null,
         ));
 
         if ($ambiguous === []) {
@@ -137,7 +139,7 @@ return new class extends Migration {
         return $affected;
     }
 
-    private function soleInstanceId(int $appId): int
+    private function provenAppInstanceId(int $appId): ?int
     {
         $ids = DB::table('app_instances')
             ->where('app_id', $appId)
@@ -147,15 +149,54 @@ return new class extends Migration {
             ->values()
             ->all();
 
-        if (count($ids) !== 1) {
-            throw new RuntimeException(
-                "Canonical app runtime ownership expected exactly one instance for app_id={$appId}; found "
-                .count($ids)
-                .'.',
-            );
+        if (count($ids) === 1) {
+            return $ids[0];
         }
 
-        return $ids[0];
+        $app = DB::table('apps')->where('id', $appId)->first();
+
+        if (! is_object($app)) {
+            return null;
+        }
+
+        $nodeId = $this->rowInteger($app, 'node_id');
+        $path = $this->rowString($app, 'path');
+
+        $matching = DB::table('app_instances')
+            ->where('app_id', $appId)
+            ->where('driver', 'orbit')
+            ->orderBy('id')
+            ->get()
+            ->filter(function (object $instance) use ($nodeId, $path): bool {
+                $config = $this->decodeJson($this->rowValue($instance, 'driver_config'));
+                $data = is_array($config['data'] ?? null) ? $config['data'] : [];
+
+                return (
+                    ($config['type'] ?? null) === 'orbit_app_instance_driver_config'
+                    && (int) ($data['node_id'] ?? 0) === $nodeId
+                    && ($data['path'] ?? null) === $path
+                );
+            })
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->values()
+            ->all();
+
+        return count($matching) === 1 ? $matching[0] : null;
+    }
+
+    /**
+     * @return array<array-key, mixed>
+     */
+    private function decodeJson(mixed $value): array
+    {
+        if (! is_string($value)) {
+            return [];
+        }
+
+        $decoded = json_decode($value, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        return is_array($decoded) ? $decoded : [];
     }
 
     private function replaceSetupStepOwnership(): void
