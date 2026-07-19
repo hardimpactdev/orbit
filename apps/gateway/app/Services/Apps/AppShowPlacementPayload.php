@@ -6,11 +6,9 @@ namespace App\Services\Apps;
 
 use App\Models\App;
 use App\Models\AppInstance;
-use App\Models\Workspace;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 
-/** @mago-expect lint:cyclomatic-complexity */
 final readonly class AppShowPlacementPayload
 {
     public function __construct(
@@ -29,7 +27,7 @@ final readonly class AppShowPlacementPayload
     {
         $visibleInstanceIds = array_map(static fn (AppInstance $instance): int => $instance->id, $instances);
         $workspacePayloads = $includeWorkspaces
-            ? $this->workspacePayloadsByInstance($visibleInstanceIds)
+            ? $this->workspacePayloadsByInstance($app, $visibleInstanceIds)
             : [];
         $instancePayloads = [];
 
@@ -51,18 +49,18 @@ final readonly class AppShowPlacementPayload
 
     /**
      * @param  list<int>  $visibleInstanceIds
-     * @return array<int, list<array<string, mixed>>>
+     * @return array<int, list<array{name: string, url: string, lifecycle_status: string}>>
      */
-    private function workspacePayloadsByInstance(array $visibleInstanceIds): array
+    private function workspacePayloadsByInstance(App $app, array $visibleInstanceIds): array
     {
         $payloads = [];
-        $workspaces = Workspace::query()
-            ->with('appInstance')
-            ->whereIn('app_instance_id', $visibleInstanceIds)
-            ->orderBy('name')
-            ->get();
+        $app->loadMissing('workspaces');
 
-        foreach ($workspaces as $workspace) {
+        foreach ($app->workspaces as $workspace) {
+            if (! in_array($workspace->app_instance_id, $visibleInstanceIds, strict: true)) {
+                continue;
+            }
+
             if (
                 ! $this->workspaceRoleGuard->nodeSupportsWorkspaces(
                     $this->workspacePlacement->nodeForWorkspace($workspace),
@@ -71,7 +69,7 @@ final readonly class AppShowPlacementPayload
                 continue;
             }
 
-            $payloads[$workspace->app_instance_id][] = [
+            $payloads[(int) $workspace->app_instance_id][] = [
                 'name' => $workspace->name,
                 'url' => $workspace->url(),
                 'lifecycle_status' => $workspace->lifecycle_status->value,

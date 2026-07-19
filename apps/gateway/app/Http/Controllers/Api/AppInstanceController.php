@@ -79,7 +79,7 @@ final class AppInstanceController implements Loggable
         return $this->success([
             'app' => $targetApp->name,
             'instances' => array_map(
-                fn (AppInstance $instance): array => $this->payloads->instance($instance),
+                $this->payloads->instance(...),
                 $instances,
             ),
         ], ['count' => count($instances)]);

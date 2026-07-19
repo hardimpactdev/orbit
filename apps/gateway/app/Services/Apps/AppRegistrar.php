@@ -13,6 +13,7 @@ use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\PromptAborted;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -578,7 +579,10 @@ final class AppRegistrar
      */
     private function instancePayload(App $app): array
     {
-        $instance = $app->instances()->where('name', $app->environment)->firstOrFail();
+        $instance = AppInstance::query()
+            ->where('app_id', $app->id)
+            ->where('name', $app->environment)
+            ->firstOrFail();
 
         return app(AppInstancePayloads::class)->placement($instance);
     }
