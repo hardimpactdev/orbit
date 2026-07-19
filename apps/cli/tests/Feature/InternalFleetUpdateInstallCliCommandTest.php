@@ -9,6 +9,7 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
+/** @mago-expect lint:cyclomatic-complexity */
 describe('internal fleet update install cli command', function (): void {
     beforeEach(function (): void {
         app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
@@ -405,6 +406,48 @@ describe('internal fleet update install cli command', function (): void {
             ->toContain('skip_required_image')
             ->and(fleet_update_install_cli_sha256(fleet_update_install_cli_binary_path($workspace, $sha256)))
             ->toBe($sha256);
+    });
+
+    it('loads a hash-verified role image archive before registry fallback', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $sha256 = fleet_update_install_cli_sha256($artifactPath);
+        $roleImageArchive = "{$workspace}/artifact/orbit-reverb.tar";
+        file_put_contents($roleImageArchive, data: 'verified role image archive');
+        $dockerLog = "{$workspace}/docker.log";
+        $dockerPath = make_fleet_update_install_cli_fake_docker_bin($workspace, $dockerLog);
+        $originalPath = $_SERVER['PATH'] ?? getenv('PATH');
+
+        putenv('PATH='.$dockerPath.':'.(is_string($originalPath) ? $originalPath : ''));
+        $_ENV['PATH'] = getenv('PATH');
+        $_SERVER['PATH'] = getenv('PATH');
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'role_images' => ['ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:'.str_repeat('a', times: 64)],
+                'role_image_artifacts' => [[
+                    'image' => 'ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:'.str_repeat('a', times: 64),
+                    'url' => "file://{$roleImageArchive}",
+                    'sha256' => hash_file('sha256', $roleImageArchive),
+                ]],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(0, $output)
+            ->and((string) file_get_contents($dockerLog))
+            ->toContain('load --input')
+            ->toContain('image inspect ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:')
+            ->not->toContain('pull ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:');
     });
 });
 
@@ -1032,6 +1075,23 @@ function make_fleet_update_install_cli_path_without_docker(string $workspace): s
             break;
         }
     }
+
+    return $bin;
+}
+
+function make_fleet_update_install_cli_fake_docker_bin(string $workspace, string $log): string
+{
+    $bin = "{$workspace}/docker-bin";
+    mkdir($bin, recursive: true);
+    file_put_contents("{$bin}/docker", <<<'SH'
+        #!/usr/bin/env sh
+        printf '%s\n' "$*" >> "$ORBIT_TEST_DOCKER_LOG"
+        exit 0
+        SH);
+    chmod("{$bin}/docker", permissions: 0o755);
+    putenv("ORBIT_TEST_DOCKER_LOG={$log}");
+    $_ENV['ORBIT_TEST_DOCKER_LOG'] = $log;
+    $_SERVER['ORBIT_TEST_DOCKER_LOG'] = $log;
 
     return $bin;
 }

@@ -280,6 +280,12 @@ The expected target shape per calling context:
 - Workload fan-out uses the same persisted manifest snapshot as the gateway
   update for CLI artifacts, Orbit Agent artifacts, and required role image
   metadata.
+- When that snapshot provides a hash-addressed archive for a required role
+  image, each selected Linux role host downloads and verifies the archive,
+  loads it into the local Docker image store, and confirms the exact image
+  reference before attempting a registry pull. This lets candidate channels
+  verify private, digest-pinned role images without distributing registry
+  credentials to workload nodes.
 - For each remote update, the gateway authorizes a typed Orbit Agent request
   and pushes it over WireGuard to the selected Agent-eligible node.
   `update:all` never selects SSH, and the gateway does not target operator

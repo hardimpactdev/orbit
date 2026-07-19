@@ -80,7 +80,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
 
     $plan = app(OperationUpdatePlanStore::class)->create(
         $run,
-        workloadUpdaterSnapshot(
+        workload_updater_snapshot_with_role_image_artifact(
             targetVersion: '2.0.0',
             cliArtifacts: [
                 'linux-amd64' => [
@@ -191,6 +191,14 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->toBe([
             'caddy:2.9-alpine',
             'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+        ])
+        ->and(workload_updater_install_payload($shell, node: 'app-prod-1')['role_image_artifacts'])
+        ->toBe([
+            [
+                'image' => 'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                'url' => 'https://artifacts.test/orbit-reverb-linux-amd64.tar',
+                'sha256' => str_repeat('f', times: 64),
+            ],
         ])
         ->and(workload_updater_install_payload($shell, node: 'database-1')['role_images'])
         ->toBe([])
@@ -1382,6 +1390,41 @@ function workloadUpdaterSnapshot(
         cliArtifacts: $cliArtifacts,
         agentArtifacts: $agentArtifacts,
         roleImages: $roleImages,
+    );
+}
+
+/**
+ * @param  array<string, array{url: string, sha256: string}>  $cliArtifacts
+ * @param  array<string, string>  $roleImages
+ */
+function workload_updater_snapshot_with_role_image_artifact(
+    string $targetVersion,
+    array $cliArtifacts,
+    array $roleImages,
+): OperationUpdatePlanSnapshot {
+    $snapshot = workloadUpdaterSnapshot(
+        targetVersion: $targetVersion,
+        cliArtifacts: $cliArtifacts,
+        roleImages: $roleImages,
+    );
+
+    return new OperationUpdatePlanSnapshot(
+        targetVersion: $snapshot->targetVersion,
+        gatewayImage: $snapshot->gatewayImage,
+        manifestSource: $snapshot->manifestSource,
+        manifestVersion: $snapshot->manifestVersion,
+        manifestSnapshot: [
+            ...$snapshot->manifestSnapshot,
+            'role_image_artifacts' => [
+                'orbit-websocket' => [
+                    'url' => 'https://artifacts.test/orbit-reverb-linux-amd64.tar',
+                    'sha256' => str_repeat('f', times: 64),
+                ],
+            ],
+        ],
+        cliArtifacts: $snapshot->cliArtifacts,
+        agentArtifacts: $snapshot->agentArtifacts,
+        roleImages: $snapshot->roleImages,
     );
 }
 

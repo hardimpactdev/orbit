@@ -15,9 +15,9 @@ final readonly class LocalFleetUpdateInstallCliPayloadField
         return self::stringMatching($value, self::URL_PATTERN, $field);
     }
 
-    public static function sha256(mixed $value): string
+    public static function sha256(mixed $value, string $field = 'sha256'): string
     {
-        return self::stringMatching($value, self::SHA_256_PATTERN, 'sha256');
+        return self::stringMatching($value, self::SHA_256_PATTERN, $field);
     }
 
     public static function absolutePath(mixed $value, string $field): string
