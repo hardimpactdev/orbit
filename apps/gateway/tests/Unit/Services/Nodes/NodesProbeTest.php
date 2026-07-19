@@ -19,6 +19,7 @@ use App\Models\NodeTool;
 use App\Models\WireGuardPeer;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeToolBaselineConfigRenderer;
 use App\Services\Operations\OperationRunRecorder;
@@ -34,6 +35,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Mockery;
 use Orbit\Core\Security\OperationTokenSigner;
 use RuntimeException;
 use Tests\Fakes\RemoteShellBackedInternalExecutor;
@@ -85,10 +87,13 @@ function assignNodesProbeAgentRole(Node $node, array $settings = []): void
     ]);
 }
 
-function nodesProbeWithRemoteShell(NodesProbeRecordingRemoteShell $remoteShell): NodesProbe
-{
+function nodesProbeWithRemoteShell(
+    NodesProbeRecordingRemoteShell $remoteShell,
+    ?DnsmasqReconciler $dnsmasqReconciler = null,
+): NodesProbe {
     return new NodesProbe(
         localExecutor: nodesProbeLocalExecutor($remoteShell),
+        dnsmasqReconciler: $dnsmasqReconciler,
     );
 }
 
@@ -1611,6 +1616,12 @@ describe('adoption', function (): void {
     });
 
     it('adopts unambiguous WireGuard address mismatches', function (): void {
+        $dnsmasqReconciler = Mockery::mock(DnsmasqReconciler::class);
+        $dnsmasqReconciler->shouldReceive('reconcileRecords')->once()->andReturnTrue();
+        $probe = nodesProbeWithRemoteShell(
+            new NodesProbeRecordingRemoteShell([]),
+            $dnsmasqReconciler,
+        );
         $node = nodes_probe_node([
             'name' => 'test',
             'host' => '10.0.0.1',
@@ -1625,7 +1636,7 @@ describe('adoption', function (): void {
             'allowed_ips' => '10.6.0.8/32',
         ]);
 
-        $results = $this->probe->adopt($node, $this->probe->snapshotForAdopt($node));
+        $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
         $wireguard = array_values(array_filter(
             $results,
             fn ($result): bool => $result->key === 'node.wireguard_address_mismatch',
@@ -1642,6 +1653,12 @@ describe('adoption', function (): void {
     });
 
     it('adopts compatible live WireGuard peer extras', function (): void {
+        $dnsmasqReconciler = Mockery::mock(DnsmasqReconciler::class);
+        $dnsmasqReconciler->shouldReceive('reconcileRecords')->once()->andReturnTrue();
+        $probe = nodesProbeWithRemoteShell(
+            new NodesProbeRecordingRemoteShell([]),
+            $dnsmasqReconciler,
+        );
         Process::preventStrayProcesses();
         Process::fake([
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "peer-public-key\t10.6.0.8/32\n"),
@@ -1662,7 +1679,7 @@ describe('adoption', function (): void {
             'allowed_ips' => '10.6.0.5/32',
         ]);
 
-        $results = $this->probe->adopt($node, $this->probe->snapshotForAdopt($node));
+        $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
         $wireguard = array_values(array_filter(
             $results,
             fn ($result): bool => $result->key === 'node.wireguard_peer_extra',

@@ -18,6 +18,7 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\WireGuardPeer;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionRegistry;
 use App\Services\Nodes\Roles\NodeRoleActivator;
@@ -54,6 +55,7 @@ final readonly class NodesProbe
         private ?UpdateDriverRegistry $updateDriverRegistry = null,
         private ?UpdateTargetFactory $updateTargetFactory = null,
         private ?RunsInternalCommands $localExecutor = null,
+        private ?DnsmasqReconciler $dnsmasqReconciler = null,
     ) {}
 
     public function key(): string
@@ -1410,6 +1412,7 @@ final readonly class NodesProbe
                     'status' => 'active',
                     'wireguard_address' => $observedAddress,
                 ]);
+                $this->dnsmasqReconciler()->reconcileRecords();
 
                 $results[] = new AdoptResult(
                     family: $this->key(),
@@ -1448,6 +1451,7 @@ final readonly class NodesProbe
 
             if (is_string($observedAddress) && $observedAddress !== '') {
                 $node->update(['wireguard_address' => $observedAddress]);
+                $this->dnsmasqReconciler()->reconcileRecords();
 
                 $results[] = new AdoptResult(
                     family: $this->key(),
@@ -1536,6 +1540,11 @@ final readonly class NodesProbe
     private function localExecutor(): RunsInternalCommands
     {
         return $this->localExecutor ?? app(RunsInternalCommands::class);
+    }
+
+    private function dnsmasqReconciler(): DnsmasqReconciler
+    {
+        return $this->dnsmasqReconciler ?? app(DnsmasqReconciler::class);
     }
 
     /**
