@@ -1,0 +1,29 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-19T02:28:20+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-approved-docs-drift/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-19-042820-fix-approved-docs-drift",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/docs-lint-2026-07-19T021107Z-5d4ddb0f2cb3.json",
+        "quality-gates/quality-check-2026-07-19T021046Z-35452bdedfeb.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "1b9efd4e435c85e443d362f12a2851b0c00e07e3170b52e47c5e26f30aee63c4",
+        "feedback.jsonl": "e7be2c603abaa37e35328cbb7ba37312475e3c3f8c7302283ac83cd5141d700c",
+        "loop.md": "95effadd63fded1d9bd7c0eb8b156fa62475d55bbfb3f4858f91ed610328d5ac",
+        "quality-gates/docs-lint-2026-07-19T021107Z-5d4ddb0f2cb3.json": "f0c12ad0f3295bcd8ca2cb1d9e4afacfe4412c0309f6bd05347e8de4679138a8",
+        "quality-gates/quality-check-2026-07-19T021046Z-35452bdedfeb.json": "09eddef256b7f0e9a2375f0aff5e1f461023ef036df9c4a5bc1c5f27d57def54"
+    },
+    "branch": "codex/fix-approved-docs-drift",
+    "candidate_commit": "5fefd30b7449b2d2c7bc8e451fca3e0df7d2eab5",
+    "accepted_feature_tip": "5fefd30b7449b2d2c7bc8e451fca3e0df7d2eab5",
+    "accepted_main_tip": "4e5aa01f37987b27c7c37495b4f0ee624833ecae",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

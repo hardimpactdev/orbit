@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "producer": "quality-gate-run",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-19T02:10:59Z",
+    "ended_at": "2026-07-19T02:11:07Z",
+    "duration_seconds": 8,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/fix-approved-docs-drift",
+        "commit": "5fefd30b7449b2d2c7bc8e451fca3e0df7d2eab5",
+        "dirty": false
+    },
+    "subgates": []
+}

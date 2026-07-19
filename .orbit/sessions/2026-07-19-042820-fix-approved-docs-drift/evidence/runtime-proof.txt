@@ -1,0 +1,105 @@
+RETAINED INCUS PROOF
+
+Initial candidate: 657340a9d421a1253968413e5d2d8a59a6776352
+Exact accepted candidate: 5fefd30b7449b2d2c7bc8e451fca3e0df7d2eab5
+Topology id: dev-f8b9e7
+Topology kind: operator_gateway_app-dev_app-prod
+Provider/host: incus / beast
+Roles: operator, gateway, dev, prod
+Runtime checkout: /home/orbit/orbit-run on every role
+Solo process: 1089 (docs-drift retained dev-f8b9e7)
+
+Acquisition:
+composer e2e:incus -- --start --topology=operator_gateway_app-dev_app-prod --json
+
+Exact-candidate sync:
+composer e2e:incus -- --sync --id=dev-f8b9e7 --json
+
+Launcher and source identity:
+- operator pwd: /home/orbit/orbit-run
+- prod pwd: /home/orbit/orbit-run
+- /usr/local/bin/orbit -> /home/orbit/orbit-run/apps/cli/orbit
+- ActivityPayloadCompatibility.php sha256:
+  21ff61eb85fb63e0008ef3aa301d591f5f6baea74da53c0b5838399973e9ef48
+- WorkspaceRoleGuard.php sha256:
+  6439ccdb7b95cf4772f43d784beeb347cf3b5257f486192796b1e22c7c32e69e
+- NodeRoleActivator.php sha256 after the exact-candidate refresh:
+  c99face0e0456497902e93b181a2b0fb7806a60a92b967545354efee00dbe463
+- all hashes matched the implementing worktree at the candidate where they
+  were measured.
+
+Runtime note:
+The first proof attempt after source sync returned HTTP 500 because the retained
+PHP development-server workers still held pre-sync code. Only the two retained
+gateway API containers were restarted. The complete retry below then passed.
+
+Exact-candidate refresh:
+
+- `composer e2e:incus -- --sync --id=dev-f8b9e7 --json` refreshed all four
+  runtime checkouts to candidate 5fefd30b7449b2d2c7bc8e451fca3e0df7d2eab5.
+- The two retained gateway API containers were restarted so their PHP workers
+  loaded that source.
+- `GET http://10.6.0.2/api/me` from the retained operator resolved
+  self=operator-1, gateway=gateway, and self_address=10.6.0.3 before mutation.
+- `GET http://10.6.0.2/api/nodes` returned only app-dev-1, app-prod-1,
+  gateway, and operator-1. This proved the named retained seam rather than the
+  operator image's normal gateway profile.
+- Local, retained operator, and retained gateway copies of
+  NodeRoleActivator.php all had sha256
+  c99face0e0456497902e93b181a2b0fb7806a60a92b967545354efee00dbe463.
+- `POST /api/workspaces` with app=drift-proof.production returned HTTP 422,
+  code=workspace.unsupported_for_production, node=app-prod-1, role=app-prod.
+- A disposable legacy workspace row was inserted against the retained
+  drift-proof.production instance. Calling
+  NodeRoleAssignmentService::update(app-prod-1, app-prod, current settings)
+  returned the ownership guard message for workspace activation-guard-proof;
+  the assignment remained active before and after. The disposable row was
+  deleted in a finally block, and no role convergence ran.
+
+Observed commands and results:
+
+1. orbit app:list --json
+   exit=0
+   One compact logical row for drift-proof; repository=null,
+   instance_count=2, workspace_count=0; success.meta=[]. No placement fields.
+
+2. orbit doctor --app=drift-proof --family=app --json
+   exit=1 (expected)
+   validation_failed; meta.field=app; meta.reason=app_instance_required;
+   instances=[development,production].
+
+3. orbit schedule:list --app=drift-proof --json
+   exit=1 (expected)
+   validation_failed; meta.field=app; meta.reason=app_instance_required;
+   instances=[development,production].
+
+4. orbit workspace:new prod-proof --app=drift-proof.production --json
+   exit=1 (expected)
+   workspace.unsupported_for_production; Workspaces are only available for
+   app-dev roles; meta.app=drift-proof; meta.node=app-prod-1;
+   meta.role=app-prod.
+
+5. orbit "node role:remove" app-prod-1 app-prod --json
+   exit=1 (expected)
+   validation_failed; meta.field=force;
+   meta.reason=destructive_consent_required; dependents included the production
+   app record. The role was not removed.
+
+6. orbit activity:show 183 --json
+   exit=0
+   The pre-existing host-key row normalized to top-level effect=write and
+   channel=api, with properties.host_key_type=ssh-ed25519.
+
+7. From the app-prod role: orbit workspace:list --json
+   exit=1 (expected)
+   Gateway HTTP 422 body carried workspace.unsupported_for_production with
+   meta.node=app-prod-1 and meta.role=app-prod.
+
+8. From the app-prod role:
+   orbit doctor --family=workspace --self --json
+   exit=1 (expected)
+   authorization_failed because app-prod-1 has no doctor:verify self grant.
+
+Solo transcript terminator: RETAINED_PROOF_PASS
+
+No composer test:e2e* command was run.
