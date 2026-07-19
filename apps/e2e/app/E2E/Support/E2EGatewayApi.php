@@ -14,7 +14,7 @@ final readonly class E2EGatewayApi
 
     private const string GatewayContainerOrbitCliPath = '/usr/local/bin/orbit-cli';
 
-    private const string SourceMountedGatewayContainerOrbitCliPath = '/opt/orbit/apps/cli/orbit';
+    private const string GatewayLocalExecutorContainer = 'orbit-gateway';
 
     private const string GatewayWireGuardHttpUrl = 'http://10.6.0.2';
 
@@ -155,6 +155,41 @@ final readonly class E2EGatewayApi
             self::sourceMountedGatewayLocalExecutorCommand(),
             'php apps/gateway/artisan migrate --force --no-interaction --ansi',
         ]);
+    }
+
+    public static function startSourceMountedGatewayLocalExecutor(
+        E2EInstance $gateway,
+        string $orbitPath = '/home/orbit/orbit',
+    ): void {
+        $hostOrbitPath = self::gatewaySourceMountedRuntimePath($gateway, $orbitPath) ?? self::gatewayHostOrbitPath(
+            $gateway,
+            $orbitPath,
+        );
+        $hostCliPath = self::gatewayHostOrbitCliPath($hostOrbitPath);
+
+        E2ECommand::exec(
+            $gateway,
+            self::gatewayE2eContainerCommand(
+                container: self::GatewayLocalExecutorContainer,
+                script: 'exec sleep infinity',
+                mountHostCli: true,
+                hostCliPath: $hostCliPath,
+                hostOrbitPath: $hostOrbitPath,
+            ),
+            'Could not start source-mounted gateway-local executor container',
+            timeoutSeconds: 120,
+        );
+
+        E2ECommand::exec(
+            $gateway,
+            sprintf(
+                'docker exec %s test -x %s',
+                escapeshellarg(self::GatewayLocalExecutorContainer),
+                escapeshellarg(self::GatewayContainerOrbitCliPath),
+            ),
+            'Source-mounted gateway-local executor CLI is not executable',
+            timeoutSeconds: 30,
+        );
     }
 
     public static function installRootSshKey(E2EInstance $gateway, SshKeyPair $key): void
@@ -2305,16 +2340,14 @@ final readonly class E2EGatewayApi
     {
         $environmentPath = escapeshellarg(self::gatewayStatePath('.env'));
         $environmentLine = escapeshellarg(
-            'ORBIT_LOCAL_EXECUTOR_BINARY='.self::SourceMountedGatewayContainerOrbitCliPath,
+            'ORBIT_LOCAL_EXECUTOR_BINARY='.self::GatewayContainerOrbitCliPath,
         );
 
         return sprintf(
             "(grep -q '^ORBIT_LOCAL_EXECUTOR_BINARY=' %1\$s && sed -i %2\$s %1\$s || printf '%%s\\n' %3\$s >> %1\$s)",
             $environmentPath,
             escapeshellarg(
-                's|^ORBIT_LOCAL_EXECUTOR_BINARY=.*|ORBIT_LOCAL_EXECUTOR_BINARY='
-                .self::SourceMountedGatewayContainerOrbitCliPath
-                .'|',
+                's|^ORBIT_LOCAL_EXECUTOR_BINARY=.*|ORBIT_LOCAL_EXECUTOR_BINARY='.self::GatewayContainerOrbitCliPath.'|',
             ),
             $environmentLine,
         );

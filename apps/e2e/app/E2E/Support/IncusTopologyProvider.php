@@ -1230,6 +1230,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         E2EGatewayApi::seedOperatorIdentity($gateway, self::OperatorWireGuardIp, $config->operatorUser);
 
         if ($sourceMountedCheckout) {
+            E2EGatewayApi::startSourceMountedGatewayLocalExecutor($gateway);
             $wgEasyHandoff = new E2EWgEasySwarmHandoff;
 
             try {

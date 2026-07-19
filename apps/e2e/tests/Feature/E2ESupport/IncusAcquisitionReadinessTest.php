@@ -495,6 +495,7 @@ it('starts the gateway api before acquisition retarget bakes downstream roles', 
         haystack: $joined,
         needle: 'orbit:internal:converge-vpn-dns-runtime gateway',
     );
+    $gatewayExecutorStart = strpos(haystack: $joined, needle: 'exec sleep infinity');
     $legacyVpnStop = strpos(haystack: $joined, needle: 'docker stop wg-easy');
     $legacyVpnRemoval = strpos(haystack: $joined, needle: 'docker rm wg-easy');
     $downstreamBake = strpos($joined, 'orbit:internal:bake-app-node app-dev-1');
@@ -504,6 +505,8 @@ it('starts the gateway api before acquisition retarget bakes downstream roles', 
         ->and($sourceMountedLauncher)
         ->toBeInt()
         ->and($dnsLayoutConvergence)
+        ->toBeInt()
+        ->and($gatewayExecutorStart)
         ->toBeInt()
         ->and($legacyVpnStop)
         ->toBeInt()
@@ -515,6 +518,8 @@ it('starts the gateway api before acquisition retarget bakes downstream roles', 
         ->toBeLessThan($downstreamBake)
         ->and($sourceMountedLauncher)
         ->toBeLessThan($downstreamBake)
+        ->and($gatewayExecutorStart)
+        ->toBeLessThan($legacyVpnStop)
         ->and($legacyVpnStop)
         ->toBeLessThan($dnsLayoutConvergence)
         ->and($dnsLayoutConvergence)
