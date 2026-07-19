@@ -1,10 +1,10 @@
 {
     "schema_version": 2,
-    "generated_at": "2026-07-19T02:28:20+00:00",
+    "generated_at": "2026-07-19T02:29:22+00:00",
     "mode": "created",
     "archive_mode": "compact",
     "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-approved-docs-drift/.orbit",
-    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-19-042820-fix-approved-docs-drift",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-19-042922-codex-fix-approved-docs-drift",
     "agent_sessions_dir": null,
     "copied_entries": [
         "evidence/runtime-proof.txt",

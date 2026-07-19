@@ -4071,9 +4071,9 @@
             "legacy": null
         },
         {
-            "archive": "2026-07-19-042820-fix-approved-docs-drift",
-            "slug": "fix-approved-docs-drift",
-            "timestamp": "2026-07-19-042820",
+            "archive": "2026-07-19-042922-codex-fix-approved-docs-drift",
+            "slug": "codex-fix-approved-docs-drift",
+            "timestamp": "2026-07-19-042922",
             "schema": "compact-v1",
             "archive_mode": "compact",
             "state": "accepted",
