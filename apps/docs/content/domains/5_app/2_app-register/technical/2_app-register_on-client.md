@@ -9,9 +9,10 @@ an operator identity.
 
 - **Allowed:** The gateway authorizes the request based on the authenticated
   WireGuard peer identity.
-- **Apply:** The gateway runs the full registration and apply pipeline. App
-  configuration is written to the gateway database, and app-role artifacts are
-  applied to the target node through authenticated Agent push over WireGuard.
+- **Apply:** The gateway runs the full registration and apply pipeline. It
+  writes or converges the selected instance (and atomically creates its parent
+  app for first adoption), then applies artifacts to that instance's serving
+  node through authenticated Agent push over WireGuard.
 - **No CLI shortcut:** The CLI forwards the request to the gateway API. There
   is no operator-node branch that performs SSH directly from the invoking host.
 

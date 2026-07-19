@@ -11,7 +11,8 @@
 - The selected target node is active, visible to the caller, not the gateway,
   and its platform resolves to macOS for the `codex-app` tool.
 - `add` and `remove` require the authenticated peer to have `codex:app` on both
-  the app's owning node and the selected Codex App target node.
+  the selected Orbit app instance's serving node and the selected Codex App
+  target node.
 - `list` requires `codex:app` on the selected Codex App target node.
 
 ## Signature
@@ -28,7 +29,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `action` | `{action}` | Always. | Never. | None. | Must be `add`, `remove`, or `list`. |
-| `app` | `[app]` | `add`, `remove`. | `list`. | None. | Existing app selector. |
+| `app` | `[app]` | `add`, `remove`. | `list`. | None. | Existing dotted `<app.instance>` selector whose driver is `orbit`. Bare logical-app selectors and external-driver instances fail before effects. |
 | `node` | `--node` | Always. | Never. | None. | Active visible non-gateway node whose platform resolves to macOS for `codex-app`. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 
@@ -36,8 +37,8 @@ This command follows the shared
 
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
-| `POST` | `/api/codex/apps/{app}` | `codex:app` on app node and target node | Add or update the app project entry. |
-| `DELETE` | `/api/codex/apps/{app}` | `codex:app` on app node and target node | Remove the app project entry. |
+| `POST` | `/api/codex/apps/{app_instance}` | `codex:app` on instance serving node and target node | Add or update the app-instance project entry. |
+| `DELETE` | `/api/codex/apps/{app_instance}` | `codex:app` on instance serving node and target node | Remove the app-instance project entry. |
 | `GET` | `/api/codex/projects` | `codex:app` on target node | List target-node Codex App projects. |
 
 ## Behavior Contract
@@ -45,13 +46,22 @@ This command follows the shared
 ### Target Rules
 
 - Resolve `--node` as an explicit tool target, not as an app owner.
+- Resolve `add` and `remove` source context from the concrete Orbit app
+  instance before authorization or config reads. Its driver config supplies the
+  serving node and source path; logical app records supply neither.
+- Reject a bare logical app with `validation_failed`,
+  `error.meta.field=app`, and `error.meta.reason=app_instance_required`.
+- Reject a selected external-driver instance with `validation_failed`,
+  `error.meta.field=app`, `error.meta.reason=unsupported`, and its existing
+  `driver` value. Do not infer an Orbit node or path for it.
 - Reject gateway nodes for every action.
 - Reject inactive or hidden nodes.
 - Reject nodes whose `nodes.platform` does not resolve to macOS for the
   `codex-app` tool definition.
-- Use the app-owning node name as the first Codex SSH alias. The gateway still
-  reaches the selected Codex App target node over that target node's
-  WireGuard address when reading and writing the config file.
+- Use the selected Orbit instance serving-node name as the Codex SSH alias and
+  that instance's path as `remotePath`. The gateway still reaches the selected
+  Codex App target node over that target node's WireGuard address when reading
+  and writing the config file.
 
 ## Context Contracts
 
@@ -73,11 +83,11 @@ This command follows the shared
   "version": 1,
   "remoteConnections": [
     {
-      "sshAlias": "app-node",
+      "sshAlias": "app-dev-1",
       "projects": [
         {
           "remotePath": "/home/orbit/apps/docs",
-          "label": "docs"
+          "label": "docs.development"
         }
       ]
     }
@@ -116,6 +126,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Unsupported action | `action` is not `add`, `remove`, or `list`. | `error.code=validation_failed`; `error.meta.field=action` |
+| App instance required | `add` or `remove` receives a bare logical app selector. | `error.code=validation_failed`; `error.meta.field=app`; `error.meta.reason=app_instance_required` |
+| External instance unsupported | The selected instance driver is not `orbit` and has no Orbit serving node or source path. | `error.code=validation_failed`; `error.meta.field=app`; `error.meta.reason=unsupported`; `error.meta.driver=<driver>` |
 | Missing node | `--node` is absent. | `error.code=validation_failed`; `error.meta.field=node` |
 | Gateway target | The selected target node is the gateway. | `error.code=validation_failed`; `error.meta.field=node`; `error.meta.reason=gateway_not_tool_eligible` |
 | Unsupported node OS | The selected node platform does not resolve to macOS for `codex-app`. | `error.code=tool.unsupported_on_node` |

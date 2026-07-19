@@ -59,7 +59,7 @@ VPN client browser
   -> router private `metrics.orbit` route
   -> metrics node Grafana Docker Swarm service
   -> Prometheus Docker Swarm service on the metrics node
-  -> node-exporter host binary tool and systemd process on metrics and workload nodes
+  -> node-exporter host binary tool and systemd process on metrics and Ubuntu workload nodes
 
 Private analytics:
 
@@ -190,13 +190,13 @@ stable `s3.orbit` endpoint and never target a concrete S3 node.
 The `metrics` role is a private workload role for host-resource observability.
 A metrics node records and starts Prometheus and Grafana process runtimes on the
 selected metrics host and node-exporter tool/process runtimes on the metrics
-host plus every active workload node. Prometheus and Grafana run as Docker Swarm
+host plus every active Ubuntu workload node. Prometheus and Grafana run as Docker Swarm
 service processes, while node-exporter is a host binary capability with a
 systemd process. The role exposes
 Grafana through the router-owned private route `metrics.orbit`. In v1 the
 metrics slice tracks host resources only and does not scrape app-, container-,
-or database-specific metrics. The role can run on a dedicated node or be
-co-located with any non-agent role, including a Debian gateway/router node.
+or database-specific metrics. On Ubuntu, the role can run on a dedicated node
+or be co-located with any non-agent role, including the gateway/router node.
 
 The `analytics` role is a private workload role for Orbit-managed Plausible CE
 analytics. An analytics node runs Plausible CE as a process-owned Docker
@@ -238,9 +238,13 @@ that coupled node because it observes host resources and owns no public edge.
 `agent` role remains exclusive. The full compatibility matrix lives in
 [Node Concepts](domains/1_node/node-concepts.md#role-compatibility).
 
-Each role has a **driver** — the code that knows how to install, configure, and verify that role on a node. A role can only be assigned to a node whose host operating system is supported by that role's driver. New OS support for an existing role is a driver change, not an architecture change. Most role drivers support Ubuntu only; `app-dev` and `database` also support macOS on adopted/self-managed workload nodes backed by a reachable Docker-compatible container provider. Current driver OS support is enumerated in [Node Concepts: Role Platform Support](domains/1_node/node-concepts.md#role-platform-support).
+Each role has a **driver** — the code that knows how to install, configure, and verify that role on a node. A role can only be assigned to a node whose host operating system is supported by that role's driver. New OS support for an existing role is a driver change, not an architecture change. Ubuntu is Orbit's only supported Linux host platform for roles in v1; `app-dev` and `database` also support macOS on adopted/self-managed workload nodes backed by a reachable Docker-compatible container provider. Current driver OS support is enumerated in [Node Concepts: Role Platform Support](domains/1_node/node-concepts.md#role-platform-support).
 
-Nodes other than the gateway do not own durable Orbit state and do not run a local control plane. The Orbit CLI can run on any node, but only as a client that calls the gateway like any other caller.
+Nodes other than the gateway do not own durable Orbit state and do not run a
+local control plane. The Orbit CLI can run on any node. Every public
+gateway-backed or remote command uses the typed gateway HTTPS API over
+WireGuard. Local-only, pre-grants-bootstrap, and identity-gated self-management
+commands follow their documented lanes.
 
 ### VPN
 
@@ -317,13 +321,14 @@ helpers, and the E2E/provisioning harness — and is not a public Orbit command
 target. When a public command moves to `apps/cli`, its gateway command class is
 removed and no gateway alias remains.
 
-CLI calls reach the gateway over HTTPS via the WireGuard tunnel. Gateway hosts
-calling their own API also use HTTPS over the gateway's own WireGuard address,
-with the gateway's CA PEM trusted from `~/.config/orbit/gateways/<name>/`.
-There is no privileged local loopback bypass.
+Gateway-backed CLI calls reach the gateway over HTTPS via the WireGuard tunnel.
+Gateway hosts calling their own API also use HTTPS over the gateway's own
+WireGuard address, with the gateway's CA PEM trusted from
+`~/.config/orbit/gateways/<name>/`. There is no privileged local loopback
+bypass.
 
-Public commands gather local input, call the gateway typed API, and render
-output. Commands that return structured data expose `--json`.
+Public gateway-backed commands gather local input, call the gateway typed API,
+and render output. Commands that return structured data expose `--json`.
 
 ## Relationships
 
@@ -536,7 +541,10 @@ supported platform; otherwise the gateway has no node-local lane to dispatch.
 
 Orbit commands are the stable contract. Each one has documented inputs, outputs, JSON shape, and failure modes — the same surface humans, AI agents, and CI all depend on.
 
-The CLI is what you call through the host launcher. The typed HTTPS API is the transport from CLI runtime to gateway: the CLI gathers input, calls the gateway, and renders the result. The gateway does the real work directly.
+The CLI is what you call through the host launcher. For gateway-backed and
+remote commands, the CLI gathers input, calls the typed gateway HTTPS API over
+WireGuard, and renders the result. Local-only, pre-grants-bootstrap, and
+identity-gated self-management commands use their documented command lanes.
 
 Command contracts live under [docs/domains/](domains/), one folder per family.
 

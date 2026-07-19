@@ -6,8 +6,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity has `app:new` on the target app node, or is the
-  gateway itself.
+- The current node identity has `app:new` on the target node selected to serve
+  the first instance, or is the gateway itself.
 - The gateway can reach the target node through its selected node execution
   transport.
 - The resolved target node is active with the applicable role: `app-dev`
@@ -37,10 +37,10 @@ This command follows the shared
 | `--repo` | string | One source branch is required. | none | Existing repository as a full HTTPS/SSH Git URL, SCP-style `git@host:path`, or GitHub-only `owner/repo` shorthand; rejects embedded credentials, query strings, fragments, whitespace, and control characters; mutually exclusive with `--template-repo` and `--new-repo`. |
 | `--template-repo` | string | Required with `--new-repo`. | none | GitHub template repository as `owner/repo`. Mutually exclusive with `--repo`. |
 | `--new-repo` | string | Required with `--template-repo`. | none | New GitHub repository as `owner/repo`. Created private from the template using the target node's `gh` authentication. Mutually exclusive with `--repo`. |
-| `--root` | string | No | `public` | App document root relative to app path. |
+| `--root` | string | No | `public` | First-instance document root relative to its path. |
 | `--php-version` | string | No | `8.5` | Must match Orbit's supported PHP version set (gateway-side static check). Node-side availability is verified while applying. |
 | `--runtime-proxy-transport` | string | No | `http` | FrankenPHP app-dev transport between `orbit-caddy` and the runtime container. Accepted values: `http`, `https`. `https` opts the app into inner TLS on app-dev routes. |
-| `--domain` | string | No | null | Valid production domain; implies production activation. |
+| `--domain` | string | No | null | Valid first-instance production domain; selects the `production` instance name and implies production activation. Without it, the instance name is `development`. |
 | `--json` | flag | No | false | Force non-interactive mode and JSON output. |
 | `--stream-json` | flag | No | false | Force non-interactive mode and emit newline-delimited progress JSON. Mutually exclusive with `--json`. |
 
@@ -67,6 +67,8 @@ This command follows the shared
 4. **Collision Check:** Fail if `name` is already taken in the gateway app
    registry. App slugs are globally unique across all nodes; there is no
    per-node uniqueness namespace and no `--node`-disambiguation prompt.
+   Path collisions are evaluated against concrete Orbit instances and identify
+   each conflicting dotted instance selector and serving node.
 5. **PHP Validation (gateway-side, static):** Validate `--php-version` against Orbit's
    supported PHP version set. An unsupported value fails before any side
    effects with `error.code=validation_failed` and `error.meta.field=php_version`.
@@ -96,7 +98,7 @@ Apply the source branch resolved before the gateway request:
 
 - App path is derived from the app name and the target node's app root.
 - Remote source creation is applied through authenticated Agent push from the
-  gateway to the owning node over WireGuard.
+  gateway to the selected first-instance serving node over WireGuard.
 - `--repo` accepts either a full Git URL or a GitHub-only `owner/repo` shorthand.
   GitHub shorthand and GitHub URLs are cloned with `gh repo clone` on the
   target node. Full Git URLs for other hosts are cloned with `git clone` as
@@ -135,10 +137,19 @@ Apply the source branch resolved before the gateway request:
   create app configuration, and the retry path is to fix the node-side source problem
   and rerun `app:new`.
 
-### 2. Registry Write (Local)
-Write authoritative app configuration to the gateway SQLite database:
-- `name`, `environment` (production if `--domain` supplied, else development),
-  `node_id`, `path`, `document_root`, `php_version`.
+### 2. Atomic app and instance write (local)
+
+In one gateway database transaction, write:
+
+- logical app identity and shared runtime policy: `name`, repository,
+  `runtime`, `runtime_config`, and `php_version`; and
+- one `orbit` app instance named `production` when `--domain` is supplied or
+  `development` otherwise. Its driver configuration owns `environment`,
+  `node`, `path`, `root`, derived URL, and optional domain. The instance stores
+  `adopted=false`.
+
+Neither row exists if the transaction fails. The logical app stores no
+placement defaults.
 
 ### 3. Registration Pipeline
 Execute the convergent behavior shared with `app:register`:
@@ -168,9 +179,9 @@ If `--domain` is supplied:
   triggers the request.
 - If DNS or TLS prerequisites are not yet satisfied (propagation pending,
   certificate not yet issued), the command still completes successfully:
-  app configuration and production-domain configuration persist, and the inactive domain is
+  logical app and production-instance configuration persist, and the inactive domain is
   reported as a non-fatal warning. Operators retry with
-  `app:register [name] --domain=<host>`, which is safe to call repeatedly.
+  `app:register <app>.production --domain=<host>`, which is safe to call repeatedly.
   Hard activation failures unrelated to propagation (malformed domain,
   registry conflict, internal proxy route registry write failure) fail
   validation up front before any side effects and use the `error` envelope.
@@ -192,9 +203,12 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   gateway evaluates that request.
 - **Node Ineligible:** Fails if the resolved node is not an `app` node.
 - **Resolution Failure:** Fails if no node can be resolved.
-- **Collision:** Fails if the app name is already registered in the gateway
-  app registry on any node (`error.code=app.collision`,
-  `error.meta.name`, `error.meta.node`).
+- **Logical collision:** Fails if the app name is already registered in the
+  gateway app registry (`error.code=app.collision`, `error.meta.name`).
+- **Placement collision:** Fails before the atomic registry write when the
+  derived path is owned by another instance (`error.code=app.path_collision`,
+  `error.meta.path`, `error.meta.existing_instances[]`). Each conflict names
+  its dotted selector and serving node.
 - **Transport Error:** Fails if the gateway cannot reach the node through its
   selected execution transport.
 - **Source Creation Failure:** Template generation or clone failures occur before
@@ -205,9 +219,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Apply Drift:** If configuration is written but registration (runtime
   container, runtime configuration, or proxy handoff) encounters retryable conditions, the
   command reports success and surfaces the drift in `success.meta.warnings[]`
-  with a `next_command` handoff (e.g. `doctor --family=app --restore` or
-  `app:register [name] --domain=<host>`). Examples include unavailable PHP
-  images on the node (`app.php_version_unavailable`) or domain activation
+  with a `next_command` handoff (e.g. `doctor --family=app
+  --app=<app.instance> --restore` or `app:register <app.instance>
+  --domain=<host>`). Warnings name the selected dotted instance and its serving
+  node. Examples include unavailable PHP images on that node
+  (`app.php_version_unavailable`) or domain activation
   (`proxy.domain_inactive`). Process runtime-unit drift is surfaced
   as process-family warnings such as `process.runtime_backend_unavailable` or
   `process.runtime_unit_missing`.
@@ -215,8 +231,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 ## Doctor Relationship
 
 - **Family:** `app` (see [`app-doctor.md`](../../app-doctor.md)).
-- **Probe:** `doctor --family=app --app=<name>` verifies registry configuration and
-  runtime artifacts.
+- **Probe:** `doctor --family=app --app=<name>.<development|production>` verifies
+  the selected instance's registry configuration and runtime artifacts.
 - **Convergence:** `doctor --family=app --restore` repairs missing or divergent
   runtime container/runtime configuration.
 
@@ -231,9 +247,9 @@ slice.
 | --- | --- |
 | Type | `api:POST /apps` |
 | Effect | `write` |
-| Subject | Created `App` when registry configuration is written; `none` for validation, authorization, source-creation, or transport failures before an app row exists. |
-| Properties | `name` (string or null), `node` (string or null), `environment` (`development`, `production`, or null), `domain` (string or null), `repository` (boolean), `source_created` (boolean). No secrets, raw repository credentials, SSH command text, or node-side command output. |
-| Description | `derived`, for example `"Created app docs on app-1."` |
+| Subject | Created logical `App` plus first `AppInstance` when the atomic registry write completes; `none` for failures before both rows exist. |
+| Properties | `name` (string or null), `app_instance` (string or null), `serving_node` (string or null), `environment` (`development`, `production`, or null), `domain` (string or null), `repository` (boolean), `source_created` (boolean). No secrets, raw repository credentials, SSH command text, or node-side command output. |
+| Description | `derived`, for example `"Created app docs and instance docs.development on app-1."` |
 
 ## Test Mapping
 

@@ -56,12 +56,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   so reconvergence repairs older Grafana volumes that used a generated
   datasource UID.
 - The baseline records node-exporter tool/process intent on the target metrics
-  node and every active workload node, installs the node-exporter host binary
+  node and every active Ubuntu workload node, installs the node-exporter host binary
   when missing, and starts the node-exporter systemd process units.
 - The baseline records protected `orbit-metrics-node-exporter` firewall rules
   for Ubuntu node-exporter hosts, allowing the metrics node private WireGuard
-  access to TCP port 9100. Debian metrics nodes may still run node-exporter, but
-  do not receive firewall rule intent because firewall rules are Ubuntu-owned.
+  access to TCP port 9100.
 - The baseline records the `metrics.orbit` proxy route.
 
 ## Renderer Contracts

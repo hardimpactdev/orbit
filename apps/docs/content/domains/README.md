@@ -72,11 +72,11 @@ These rules govern every command contract in this directory.
   Grafana credentials for the metrics role; Prometheus, Grafana, and
   node-exporter lifecycle remains under `process:*`.
 - Commands must state whether they mutate gateway configuration, apply node artifacts, stream runtime data, or only read state.
-- The CLI is a thin gateway client. Every command call is a request to the
-  gateway over HTTPS, regardless of which machine the operator runs it on. The
-  gateway authenticates the WireGuard peer, applies authorization, and owns all
-  durable Orbit state. The CLI gathers input, calls the gateway, and renders the
-  response.
+- Every public gateway-backed or remote command uses the typed gateway HTTPS
+  API over WireGuard. Commands that run locally, bootstrap before grants exist,
+  or self-manage through node identity follow their documented lanes. For gateway-backed
+  requests, the gateway authenticates the WireGuard peer, applies authorization,
+  and owns all durable Orbit state.
 - Authorization is the gateway's responsibility. The CLI does not gate or scope
   commands by caller role locally. Stored grants are the default gate; the
   architecture's named gateway-implicit-authority, pre-grants-bootstrap,

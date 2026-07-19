@@ -1,33 +1,41 @@
-# `orbit codex:app add|remove|list [app]`
+# `orbit codex:app add|remove|list [app.instance]`
 
-`codex:app` registers Orbit apps in Codex App on an eligible target node. It is
-for Codex App's project list, not for app runtime configuration and not for the
-app's Agent IDE adapter.
+`codex:app` registers one concrete Orbit app instance in Codex App on an
+eligible target node. It is for Codex App's project list, not for app runtime
+configuration and not for the app's Agent IDE adapter.
 
 ## Usage
 
 ```bash
-orbit codex:app add <app> --node=<node> [--json]
-orbit codex:app remove <app> --node=<node> [--json]
+orbit codex:app add <app.instance> --node=<node> [--json]
+orbit codex:app remove <app.instance> --node=<node> [--json]
 orbit codex:app list --node=<node> [--json]
 ```
 
 ## Examples
 
 ```bash
-orbit codex:app add docs --node=mini
-orbit codex:app remove docs --node=mini
+orbit codex:app add docs.development --node=mini
+orbit codex:app remove docs.development --node=mini
 orbit codex:app list --node=mini --json
 ```
 
 ## Options
 
-- `add`: Add or update the app's Codex App project entry on the target node.
-- `remove`: Remove the app's Codex App project entry from the target node.
+- `add`: Add or update the selected app instance's Codex App project entry on
+  the target node.
+- `remove`: Remove the selected app instance's Codex App project entry from the
+  target node.
 - `list`: List Codex App project entries known in the target node config.
 - `--node=<node>`: Target node for Codex App. The node must be active, visible,
   non-gateway, and have a platform that resolves to macOS.
 - `--json`: Emit the canonical JSON envelope and do not prompt.
+
+`add` and `remove` require a dotted app-instance selector. Orbit reads the
+source path and builds the SSH alias from that Orbit instance's serving node;
+it never falls back to placement on the logical app. An external-driver
+instance has no Orbit source-node SSH placement and fails as unsupported before
+the Codex App config is read or written.
 
 ## What It Changes
 

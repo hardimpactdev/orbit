@@ -96,10 +96,10 @@ Each term below has a precise meaning in the node command family.
   receives private and public S3 traffic through router-owned service routes.
 - **Metrics role:** Optional private workload role for host-resource
   observability. A metrics node records and starts Prometheus and Grafana
-  process runtimes, records and starts node-exporter tool/process runtimes for
-  itself and active workload nodes, exposes Grafana through the router-owned
-  private `metrics.orbit` route, and can be dedicated or co-located with any
-  non-agent role.
+  process runtimes. It also records and starts node-exporter tool/process
+  runtimes for itself and active Ubuntu workload nodes. Grafana is exposed
+  through the router-owned private `metrics.orbit` route. The role can be
+  dedicated or co-located with any non-agent role.
 - **Analytics role:** Private workload role for Plausible CE analytics. An
   analytics node runs Plausible CE as a process-owned Docker container,
   publishes only on the node's WireGuard address, receives dashboard traffic through
@@ -264,24 +264,24 @@ Role baselines are code-defined desired state, not editable package lists.
 | `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, gateway config root, SQLite database, and Orbit CA/certificate material |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and required DNS tool capability |
 | `router` | Private `orbit-caddy` router and proxy-family intent for private `.orbit` service names, route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
-| `app-dev` | App runtime baseline, node-owned wildcard DNS projection, `orbit-caddy` app/workspace routes, and process-backed runtime units where configured |
-| `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and process-backed runtime units where configured |
+| `app-dev` | Git, GitHub CLI, app runtime baseline, node-owned wildcard DNS projection, `orbit-caddy` app/workspace routes, and process-backed runtime units where configured |
+| `app-prod` | Git, GitHub CLI, private `orbit-caddy` backend, FrankenPHP app containers, and process-backed runtime units where configured |
 | `database` | Docker running as the substrate for managed database process units and related tool capabilities |
-| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the node-owned wildcard DNS projection derived from `tld`, and any role-specific runtime containers the agent workload needs |
+| `agent` | Git, `orbit-caddy`, the shared unprivileged `agent` runtime user, the node-owned wildcard DNS projection derived from `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Valkey-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
-| `metrics` | Docker substrate, node-exporter binary, Prometheus/Grafana Swarm processes, node-exporter systemd processes on metrics/workload nodes, `metrics.orbit`, and Grafana credentials |
+| `metrics` | Docker substrate, node-exporter binary, Prometheus/Grafana Swarm processes, node-exporter systemd processes on metrics and active Ubuntu workload nodes, `metrics.orbit`, and Grafana credentials |
 | `analytics` | Fleet-singleton Plausible CE in a process-owned WireGuard-bound Docker container, enacted private `analytics.orbit` router route with Orbit-managed TLS, per-app public tracking route support, analytics backend pool registration, and authenticated runtime configuration derived from PostgreSQL and ClickHouse process endpoints |
 
 Baseline convergence first stores the gateway intent for the selected role.
 When `node:new` provisions a real managed workload host, node setup then
 applies the overlapping node and tool intent to the host before activation. The
 initial app-development setup slice applies the role baseline tools
-`caddy`, `php-cli`, `composer`, and `laravel-installer` through the shared
-convergence path. After a node is active, `doctor --restore` uses the same
-internal path for overlapping safe repairs while keeping family-specific issue
-ownership and output.
+`caddy`, `php-cli`, `composer`, `git`, `gh`, and `laravel-installer` through the
+shared convergence path. After a node is active, `doctor --restore` uses the
+same internal path for overlapping safe repairs while keeping family-specific
+issue ownership and output.
 
 VitePlus is optional observational runtime inventory, not an `app-dev` or
 `app-prod` role baseline requirement. An absent VitePlus tool row or `vp`
@@ -311,7 +311,8 @@ Eligibility checks only use `active` assignments. Assignments in `pending`,
 
 ## Role Platform Support
 
-Each role is supported on a specific set of host platforms.
+Ubuntu is Orbit's only supported Linux host platform for roles in v1. The table
+also shows the adopted/self-managed macOS exceptions.
 
 | Role | Supported platforms |
 | --- | --- |
@@ -326,7 +327,7 @@ Each role is supported on a specific set of host platforms.
 | `ingress` | Ubuntu |
 | `websocket` | Ubuntu |
 | `s3` | Ubuntu |
-| `metrics` | Ubuntu, Debian |
+| `metrics` | Ubuntu |
 | `analytics` | Ubuntu |
 
 Commands that provision a host or apply node-side artifacts must verify that the
@@ -414,7 +415,7 @@ These terms describe how nodes join the fleet and prove their identity to the ga
   the target. Once the target starts WireGuard and its WireGuard-bound Agent,
   the gateway finishes provisioning and the full node security baseline
   through Agent push. Reservation and terminal completion are atomic. The gateway never
-  opens target SSH and no public pre-WireGuard enrollment endpoint exists.
+  opens target SSH. There is no public enrollment endpoint before WireGuard is active.
 - **Compatible existing node:** An active node whose role assignments are known
   to the gateway and whose role assignments, identity, host, and
   assignment-local settings match the resolved command input for the requested

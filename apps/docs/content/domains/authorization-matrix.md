@@ -14,26 +14,30 @@ classes](../architecture.md#authorization-classes).
 | --- | --- | --- | --- | --- | --- |
 | `activity:list` | `activity:read` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `activity:show` | `activity:read` | gateway | None | `authorization_failed` | Standard missing-permission meta |
-| `agent-ide:message` | `agent-ide:message` | resolved app or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved app/workspace when available |
-| `app:agent-ide` | `app:agent` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
+| `agent-ide:message` | `agent-ide:message` | selected app instance's serving node, or resolved workspace's app-instance serving node | None | `authorization_failed` | Standard missing-permission meta plus resolved app/workspace and `app_instance` when available |
+| `app:agent-ide` | `app:agent` | selected concrete app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
 | `app:list` | `app:read` | at least one concrete Orbit app instance serving node per returned logical app | Logical-app and workspace placement filtering applies | `authorization_failed` | Standard missing-permission meta when the caller has no visible app-instance serving node |
 | `app:instance list` | `app:read` | each concrete Orbit instance serving node | Row-level filtering applies; external-driver instances are gateway-only | `authorization_failed` | Standard missing-permission meta when no instance is visible |
 | `app:instance show` | `app:read` | selected concrete Orbit instance serving node | External-driver instances are gateway-only | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
 | `app:instance add` | `app:write` | explicitly selected Orbit target node | External-driver creation is gateway-only; no logical-app default node | `authorization_failed` | Standard missing-permission meta plus target node |
 | `app:instance remove` | `app:write` | selected concrete Orbit instance serving node | External-driver instances are gateway-only | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
 | `app:new` | `app:new` | target app node | None | `authorization_failed` | Standard missing-permission meta plus target node |
-| `app:prune` | `app:prune` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
+| `app:prune` | `app:prune` | selected concrete app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
 | `app:register` | `app:register` | target app node | `app-dev` self-grants include same-node registration; `app-prod` self-grants do not | `authorization_failed` | Standard missing-permission meta plus target node |
-| `app:remove` | `app:remove` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
-| `app:root` | `app:root` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
+| `app:remove` | `app:remove` | every affected Orbit app instance's serving node | Logical-wide destructive cascade preauthorizes all affected Orbit instances before effects; external-driver instances remain gateway-owned | `authorization_failed` | Standard missing-permission meta plus `app`, denied `app_instance`, and its serving node |
+| `app:root` | `app:root` | selected concrete app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
 | `app:setup` | `app:write` | selected concrete app instance's serving node | Bare logical shorthand requires exactly one instance; `app:write` and `app:*` imply `app:setup` | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
 | `app-setup-step:add` | `app:write` | selected concrete app instance's serving node | Bare logical shorthand requires exactly one instance; `app:write` and `app:*` imply `app-setup-step:add` | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
 | `app-setup-step:list` | `app:read` | selected concrete app instance's serving node | Bare logical shorthand requires exactly one instance; `app:read` and `app:*` imply `app-setup-step:list` | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
 | `app-setup-step:remove` | `app:write` | selected concrete app instance's serving node | Bare logical shorthand requires exactly one instance; `app:write` and `app:*` imply `app-setup-step:remove` | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
 | `app:show` | `app:read` | at least one caller-visible concrete Orbit app instance serving node | Return only authorized Orbit instances; external-driver instances are gateway-only | `authorization_failed` | Standard missing-permission meta when the caller has no visible app-instance serving node |
-| `app:websocket credentials` | `app:credentials` | app owning node | Explicit credential-read permission; not implied by `app:read` or `app:write` | `authorization_failed` | Standard missing-permission meta plus `app` |
-| `app:websocket disable` | `app:write` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
-| `app:websocket enable` | `app:write` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
+| `app:analytics disable` | `app:write` | selected concrete app instance's serving node | Public tracking-host placement follows the selected instance | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
+| `app:analytics enable` | `app:write` | selected concrete app instance's serving node | Public domain and tracking-host placement follow the selected instance | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
+| `app:analytics show` | `app:read` | selected concrete app instance's serving node | Shared non-placement policy may remain logical-app-owned; placement rows remain instance-filtered | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
+| `app:analytics verify` | `app:read` | selected concrete app instance's serving node | Verification context follows the selected instance's public hosts | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
+| `app:websocket credentials` | `app:credentials` | selected concrete app instance's serving node | Explicit credential-read permission; not implied by `app:read` or `app:write` | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
+| `app:websocket disable` | `app:write` | selected concrete app instance's serving node | WebSocket binding placement follows the selected instance | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
+| `app:websocket enable` | `app:write` | selected concrete app instance's serving node | WebSocket binding placement follows the selected instance | `authorization_failed` | Standard missing-permission meta plus `app` and `app_instance` |
 | `cf-cache:flush` | `cf:cache:flush` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `cf-cache-rule:add` | `cf:cache:rule:add` | gateway | None | `authorization_failed` | Standard missing-permission meta plus `app` when app-scoped |
 | `cf-cache-rule:remove` | `cf:cache:rule:remove` | gateway | None | `authorization_failed` | Standard missing-permission meta plus `app` when app-scoped |
@@ -43,14 +47,14 @@ classes](../architecture.md#authorization-classes).
 | `cf-ssl:disable` | `cf:ssl:disable` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `cf-ssl:enable` | `cf:ssl:enable` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `cf-zone:list` | `cf:zone:list` | gateway | None | `authorization_failed` | Standard missing-permission meta |
-| `codex:app add` | `codex:app` | app owning node and selected Codex App target node | No app permission implication; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus `app` and selected node |
+| `codex:app add` | `codex:app` | selected concrete Orbit app instance's serving node and selected Codex App target node | Requires a dotted Orbit app-instance selector; no app permission implication; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus `app`, `app_instance`, serving node, and selected Codex node |
 | `codex:app list` | `codex:app` | selected Codex App target node | No app permission implication; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus selected node |
-| `codex:app remove` | `codex:app` | app owning node and selected Codex App target node | No app permission implication; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus `app` and selected node |
-| `database:add` | `database:write` | target database host or app/workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
+| `codex:app remove` | `codex:app` | selected concrete Orbit app instance's serving node and selected Codex App target node | Requires a dotted Orbit app-instance selector; no app permission implication; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus `app`, `app_instance`, serving node, and selected Codex node |
+| `database:add` | `database:write` | target database host or selected app-instance/workspace serving node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
 | `database:add-user` | `database:write` | managed MySQL process node | None | `authorization_failed` | Standard missing-permission meta plus service |
-| `database:attach` | `database:write` | target database connection and app/workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus connection and target |
+| `database:attach` | `database:write` | target database connection and selected app-instance/workspace serving node | None | `authorization_failed` | Standard missing-permission meta plus connection and target |
 | `database:describe` | `database:read` | target database connection node | None | `authorization_failed` | Standard missing-permission meta plus connection |
-| `database:detach` | `database:write` | target database connection and app/workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus connection and target |
+| `database:detach` | `database:write` | target database connection and selected app-instance/workspace serving node | None | `authorization_failed` | Standard missing-permission meta plus connection and target |
 | `database:list` | `database:read` | per visible target | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible node |
 | `database:query` | `database:query`; `database:query:write` for mutating SQL | target database connection node | None | `authorization_failed` | Standard missing-permission meta plus connection and query mode |
 | `database:remove` | `database:write` | target database connection node | None | `authorization_failed` | Standard missing-permission meta plus connection |
@@ -58,12 +62,12 @@ classes](../architecture.md#authorization-classes).
 | `database:show` | `database:read` | target database connection node | None | `authorization_failed` | Standard missing-permission meta plus connection |
 | `database:tables` | `database:read` | target database connection node | None | `authorization_failed` | Standard missing-permission meta plus connection |
 | `database:update` | `database:write` | target database connection node | None | `authorization_failed` | Standard missing-permission meta plus connection |
-| `deploy:history` | `deploy:read` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
-| `deploy:log` | `deploy:read` | selected deployment run's app-instance owning node | None | `authorization_failed` | Standard missing-permission meta plus deployment run and `app_instance` |
-| `deploy:run` | `deploy:run` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
-| `deploy:step-add` | `deploy:step` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
-| `deploy:step-list` | `deploy:read` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
-| `deploy:step-remove` | `deploy:step` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
+| `deploy:history` | `deploy:read` | selected app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
+| `deploy:log` | `deploy:read` | selected deployment run's app-instance serving node | None | `authorization_failed` | Standard missing-permission meta plus deployment run and `app_instance` |
+| `deploy:run` | `deploy:run` | selected app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
+| `deploy:step-add` | `deploy:step` | selected app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
+| `deploy:step-list` | `deploy:read` | selected app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
+| `deploy:step-remove` | `deploy:step` | selected app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
 | `dns:list` | n/a - local-only | n/a | Deployment-context command | n/a | n/a |
 | `dns:resolve-tld` | n/a - local-only | n/a | Deployment-context command | n/a | n/a |
 | `doctor` verify mode | `doctor:verify` | per selected scope | None | `authorization_failed` | Standard missing-permission meta plus scope |
@@ -101,8 +105,8 @@ classes](../architecture.md#authorization-classes).
 | `node role:list` | `role:read` | target node | `role:read` implies `role:list` | `authorization_failed` | Standard missing-permission meta plus target node |
 | `node role:remove` | `role:remove` | target node | Triggers self-grant reconciliation | `authorization_failed` | Standard missing-permission meta plus target node and role |
 | `node role:update` | n/a | n/a | No command surface; use `node:update` for node metadata | n/a | n/a |
-| `php:list` | `php:read` | target node, app-instance serving node, or workspace-instance serving node | Missing or ambiguous app-instance placement is denied before runtime reads | `authorization_failed` | Standard missing-permission meta plus resolved serving node |
-| `php:use` | `php:write` | target node, app-instance serving node, or workspace-instance serving node | Missing or ambiguous app-instance placement is denied before runtime writes | `authorization_failed` | Standard missing-permission meta plus resolved serving node |
+| `php:list` | `php:read` | explicit target node, selected app-instance/workspace serving node, or each visible Orbit instance serving node for a logical-app inventory | Row-level filtering applies to logical-app inventory; external-driver instances expose no invented Orbit node | `authorization_failed` | Standard missing-permission meta plus resolved serving node when explicitly selected |
+| `php:use` | `php:write` | explicit CLI target node, selected workspace serving node, or every affected Orbit app instance serving node for a logical-app policy write | Logical-app policy writes preauthorize every affected Orbit instance and verify each node's image availability before mutation | `authorization_failed` | Standard missing-permission meta plus denied `app_instance` and serving node when app-scoped |
 | `process:add` | `process:add` | node owner, or concrete app-instance serving node | `app-dev` self-grants include same-node app-instance process definition creation; `app-prod` self-grants do not | `authorization_failed` | Standard missing-permission meta plus resolved process scope and app instance |
 | `process:list` | `process:read` | node owner, or concrete app-instance serving node | Row-level filtering applies; bare logical-app shorthand requires exactly one instance | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible serving node |
 | `process:logs` | `process:read` | node owner, or concrete app-instance serving node | None | `authorization_failed` | Standard missing-permission meta plus process and app instance when applicable |
@@ -112,9 +116,9 @@ classes](../architecture.md#authorization-classes).
 | `process:stop` | `process:stop` | node owner, or concrete app-instance serving node | Transitive calls inside `workspace:setup` do not re-authorize | `authorization_failed` | Standard missing-permission meta plus process and app instance when applicable |
 | `process:update` | `process:update` | node owner, or concrete app-instance serving node | Public mutation surface for command, policy, runtime, and supported identity renames; `app-dev` self-grants include same-node app-instance process definition updates | `authorization_failed` | Standard missing-permission meta plus resolved process scope and app instance |
 | `profile` | n/a - local-only | n/a | No gateway call, identity lookup, grant check, or activity entry | n/a | n/a |
-| `proxy:add` | `proxy:add` | target node, app owning node, or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
-| `proxy:list` | `proxy:read` | target node or each visible route owner | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible node |
-| `proxy:remove` | `proxy:remove` | route owning node | None | `authorization_failed` | Standard missing-permission meta plus route |
+| `proxy:add` | `proxy:add` | explicit target node, selected app-instance serving node, or workspace serving node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
+| `proxy:list` | `proxy:read` | explicit target node or each route's serving node | Row-level filtering applies independently per route serving node | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible route serving node |
+| `proxy:remove` | `proxy:remove` | selected route's serving node | None | `authorization_failed` | Standard missing-permission meta plus route and serving node |
 | `s3:credentials` | `tool:credentials` | selected active S3 node | V1 tool-backed permission for the `seaweedfs` tool row | `authorization_failed` | Standard missing-permission meta plus selected node and tool |
 | `s3:publish` | `tool:reconfigure` | selected active S3 node | V1 tool-backed permission; mutates S3-owned proxy publication intent through router and ingress route convergence | `authorization_failed` | Standard missing-permission meta plus selected node, host, and tool |
 | `s3:unpublish` | `tool:reconfigure` | selected active S3 node | V1 tool-backed permission; `--force` required in non-interactive mode, including `--json` | `authorization_failed` | Standard missing-permission meta plus selected node, host, and tool |
@@ -146,19 +150,19 @@ classes](../architecture.md#authorization-classes).
 | `vpn-client:new` | `vpn:write` | gateway | v1 gateway-coupled VPN role | `authorization_failed` | Standard missing-permission meta |
 | `vpn-client:remove` | `vpn:write` | gateway | v1 gateway-coupled VPN role | `authorization_failed` | Standard missing-permission meta plus client |
 | `vpn-web-ui:change-password` | `vpn:write` | gateway | v1 gateway-coupled VPN role | `authorization_failed` | Standard missing-permission meta |
-| `workspace:history` | `workspace:read` | resolved concrete workspace's owning node | None | `authorization_failed` | Standard missing-permission meta plus workspace and `app_instance` |
-| `workspace:list` | `workspace:read` | selected app-instance owner when filtered; otherwise each visible concrete workspace owner | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible node |
-| `workspace:log` | `workspace:read` | resolved concrete workspace's owning node | None | `authorization_failed` | Standard missing-permission meta plus workspace run and `app_instance` |
-| `workspace:new` | `workspace:new` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
-| `workspace:remove` | `workspace:remove` | workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus workspace |
-| `workspace:setup` | `workspace:setup` | workspace owning app-dev node | Self-grant case for app-dev nodes only; app-prod callers and targets are rejected before effects | `authorization_failed` | Standard missing-permission meta plus workspace/app |
-| `workspace:show` | `workspace:read` | workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus workspace |
-| `workspace-setup-step:add` | `workspace:setup` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
-| `workspace-setup-step:list` | `workspace:read` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
-| `workspace-setup-step:remove` | `workspace:setup` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
-| `workspace-teardown-step:add` | `workspace:setup` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
-| `workspace-teardown-step:list` | `workspace:read` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
-| `workspace-teardown-step:remove` | `workspace:setup` | selected app instance's owning node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
+| `workspace:history` | `workspace:read` | resolved concrete workspace's app-instance serving node | None | `authorization_failed` | Standard missing-permission meta plus workspace and `app_instance` |
+| `workspace:list` | `workspace:read` | selected app-instance serving node when filtered; otherwise each visible concrete workspace's serving node | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible node |
+| `workspace:log` | `workspace:read` | resolved concrete workspace's app-instance serving node | None | `authorization_failed` | Standard missing-permission meta plus workspace run and `app_instance` |
+| `workspace:new` | `workspace:new` | selected app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
+| `workspace:remove` | `workspace:remove` | workspace's app-instance serving node | None | `authorization_failed` | Standard missing-permission meta plus workspace and `app_instance` |
+| `workspace:setup` | `workspace:setup` | workspace's app-instance serving `app-dev` node | Self-grant case for app-dev nodes only; app-prod callers and targets are rejected before effects | `authorization_failed` | Standard missing-permission meta plus workspace, app, and `app_instance` |
+| `workspace:show` | `workspace:read` | workspace's app-instance serving node | None | `authorization_failed` | Standard missing-permission meta plus workspace and `app_instance` |
+| `workspace-setup-step:add` | `workspace:setup` | selected app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
+| `workspace-setup-step:list` | `workspace:read` | selected app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
+| `workspace-setup-step:remove` | `workspace:setup` | selected app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
+| `workspace-teardown-step:add` | `workspace:setup` | selected app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
+| `workspace-teardown-step:list` | `workspace:read` | selected app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
+| `workspace-teardown-step:remove` | `workspace:setup` | selected app instance's serving node | None | `authorization_failed` | Standard missing-permission meta plus `app_instance` |
 
 Internal `orbit:internal:*` commands are not public grant surfaces. They are
 invoked by controlled bootstrap/install flows and must not be exposed as remote

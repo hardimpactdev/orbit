@@ -9,7 +9,7 @@
 **Prerequisites:**
 - The caller is the gateway node, has `vpn:write` on the active gateway node,
   or has `gateway-admin` (`*`) on the active gateway node.
-- Every public CLI caller reaches the gateway through the typed HTTPS API over
+- This public VPN command reaches the gateway through the typed HTTPS API over
   WireGuard. Caller identity changes authorization, not transport.
 - The active `vpn` role is resolvable.
 - The VPN runtime backend is installed and reachable on the active `vpn` role host.

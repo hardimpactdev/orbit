@@ -24,17 +24,20 @@ The terms below define the core identity vocabulary for the app family.
   placement. `laravel-cloud` config records organization, application,
   environment, and domain selectors.
 - **Initial app instance:** Concrete instance created together with a logical
-  app by `app:new`. Instance-owned commands must resolve this or another
-  concrete instance. A logical app selector fails when more than one instance
-  could own the operation; it never falls back to app-owned placement state.
+  app by `app:new`. Orbit names it `development` when `--domain` is absent and
+  `production` when `--domain` is present. Instance-owned commands must resolve
+  this or another concrete instance. A logical app selector fails when more
+  than one instance could own the operation; it never falls back to app-owned
+  placement state.
 - **App identity slug:** Lowercase identity slug used as the app's globally
   unique gateway registry key. Maximum 40 characters.
 - **App name argument:** Positional `[name]` argument used by commands that
   create, adopt, or re-converge app configuration. It is not a hostname selector.
 - **App selector argument:** Positional `[app]` argument used by commands that
-  read, update, prune, or remove an existing app. May be a name or hostname when
-  the command contract opts into hostname resolution; name matches win over
-  hostname matches.
+  read or update existing app state. Placement-sensitive commands use a dotted
+  app-instance selector, with bare logical shorthand only when exactly one
+  eligible visible instance exists. The logical `app:remove` command is the
+  exception: it accepts only the logical slug and cascades across all instances.
 - **Orbit instance serving node:** Node selected explicitly for one Orbit app
   instance. Orbit instances may only run on nodes with an active `app-dev` or
   `app-prod` role; a node without either role is not a valid target.
@@ -68,8 +71,8 @@ app instance and its driver placement.
   Static apps do not have a runtime container. The concrete app runtime, managed
   through the process lifecycle, is represented as a process with Docker runtime.
 - **Development packages mount:** PHP app runtime containers on `app-dev` nodes
-  mount the owning node user's conventional packages root
-  (`/home/<node-user>/packages`) at `/packages`. This keeps Composer path
+  mount `/home/<node-user>/packages` from the selected instance's serving node
+  at `/packages`. This is the conventional packages root for that node user and keeps Composer path
   repository symlinks usable inside `/app/vendor` without mounting the host
   home directory wholesale. `app-prod` runtime containers and static apps do
   not receive this mount.
@@ -84,7 +87,8 @@ app instance and its driver placement.
   containers that use that instance. App-level runtime-mount rows are not a
   supported ownership form.
 - **Production app runtime container:** App-prod PHP runtime rendered as a
-  per-app Docker container running FrankenPHP on the owning node. It
+  per-instance Docker container running FrankenPHP on the instance's serving
+  node. It
   listens on internal port `8080`, publishes no public host ports, and is
   reached only by the app-host-owned private backend `orbit-caddy` route. The
   process family owns the concrete long-running lifecycle unit for the container.
@@ -104,9 +108,9 @@ app instance and its driver placement.
   `FRANKENPHP_CONFIG` (`max_threads auto` and `max_idle_time 1h`) so development
   runtimes keep idle capacity warm without enabling worker mode. The
   lifecycle-managed FrankenPHP runtime for a concrete app or workspace is
-  represented as a process with Docker runtime. The app family owns desired app
-  configuration, URL,
-  source path, app-instance deployment policy, and runtime selection; the process family owns
+  represented as a process with Docker runtime. The app family owns shared
+  runtime policy plus selected-instance URL, source path, deployment policy,
+  and runtime selection; the process family owns
   the concrete long-running lifecycle unit.
 - **Worker mode:** Opt-in FrankenPHP mode that keeps a validated Laravel app in
   memory on one concrete app instance. It is disabled by default per instance
@@ -125,28 +129,30 @@ app instance and its driver placement.
 - **App instance database target:** Mapping from a reusable database connection
   to one app instance and env prefix. Rendering the instance env injects
   supported database keys and redacts secret values in API responses.
-- **App WebSocket binding:** Gateway-owned app configuration that enables one
-  app to use the fleet websocket service. It owns per-app Reverb credentials,
-  allowed origins, public WebSocket hosts, and the app's private
+- **App WebSocket binding:** Gateway-owned binding for one concrete app instance
+  and site. It enables that instance to use the fleet websocket service and
+  owns Reverb credentials, allowed origins derived from instance placement,
+  public WebSocket hosts, and the instance's private
   `websocket.orbit` publishing configuration. Disabling an app WebSocket
   binding clears active public route intent without deleting the app's Reverb
   credential record.
-- **App analytics binding:** Gateway-owned app configuration that enables one
-  app to proxy browser analytics traffic to the fleet Plausible CE service. It
-  owns the enabled flag and public tracking hostnames such as
+- **App analytics binding:** Gateway-owned binding for one concrete app instance
+  and site. It enables that instance to proxy browser analytics traffic to the
+  fleet Plausible CE service and owns the enabled flag and public tracking hostnames such as
   `analytics.example.com`. In v1 it does not provision Plausible sites,
   generate credentials, or inject scripts into the app. App owners add the
   Plausible script manually. Public analytics hosts proxy tracking paths only;
   the dashboard and admin UI stay private at `analytics.orbit`.
 - **Reverb app credentials:** Reverb application id, key, and secret material
-  for one app, owned by an app WebSocket binding. These credentials are not
+  for one selected app-instance site, owned by its WebSocket binding. These credentials are not
   shared across apps; rotating or disabling one binding must not invalidate
   unrelated app bindings. Reading them requires the explicit
-  `app:credentials` permission on the app's owning node; `app:read` and
+  `app:credentials` permission on the instance's serving node; `app:read` and
   `app:write` do not imply credential access.
-- **App agent IDE adapter:** Optional gateway-owned override of the owning
-  node's default agent IDE adapter for app and workspace workflows. Set,
-  cleared, and shown through `app:agent-ide`.
+- **App instance agent IDE adapter:** Optional gateway-owned override for one
+  concrete app instance. Its effective adapter resolves from the instance
+  override, then the serving-node default, then no adapter. It is set, cleared,
+  and shown through `app:agent-ide`.
 - **App dependency audit posture:** Gateway-owned compact summary of a read-only
   package-manager audit for an app's source path. The v1 storage and presentation
   slice stores per-manager status, severity counts, bounded advisory detail, and
@@ -155,7 +161,8 @@ app instance and its driver placement.
   slice.
 - **Dependency audit manager:** Supported package-manager audit lane for one app
   path. V1 managers are `composer`, `npm`, and `bun`. Each manager is detected
-  independently from lockfiles and available binaries on the owning app node.
+  independently from lockfiles and available binaries at a concrete instance
+  source path; the logical app exposes only the aggregate summary.
 - **Dependency audit status:** Per-manager or aggregate posture state. `clean`
   means an audit succeeded with zero findings, and `findings` means the audit
   returned one or more advisories. `not_applicable` means no supported lockfile
@@ -177,14 +184,15 @@ The terms below describe how an app moves through its active states.
 - **App registration:** Idempotent convergence of app configuration and node artifacts
   performed by `app:register`. Used to install Orbit management on a new path,
   re-apply management to an existing app, or retry production domain activation.
-- **App adoption:** Result of `app:register` against an existing path with no
-  Orbit management. The resulting app entity reports `adopted=true`.
-- **App adoption flag:** Boolean entity field that records whether an app was
-  adopted from an existing path (`true`) or created fresh (`false`). Exposed in
-  JSON as `adopted`.
-- **App pruning:** Source-of-truth cleanup performed by `app:prune`. Removes
-  stale apps, workspaces, and configured agent IDE associations. It is not
-  doctor drift repair.
+- **App-instance adoption:** Result of `app:register` against an existing path
+  with no Orbit management. The resulting instance reports `adopted=true`.
+- **App-instance adoption flag:** Boolean instance field that records whether
+  that concrete path was adopted (`true`) or created fresh (`false`). Exposed
+  in the canonical app-instance JSON as `adopted`.
+- **App pruning:** Source-of-truth cleanup performed by `app:prune` for one
+  concrete `app-dev` instance. It removes only stale workspaces and adapter
+  associations owned by that instance. It is not logical-app deletion or doctor
+  drift repair.
 - **App setup pipeline:** Ordered app-instance-owned commands recorded with
   `app-setup-step:*` and run by `app:setup` on the selected instance's serving
   node and source path. Setup commands are for finite project bootstrap work
@@ -199,11 +207,13 @@ The terms below describe how an app moves through its active states.
 
 These boundaries define what the app family owns and what belongs to other families.
 
-- **App-owned route:** Proxy route whose lifecycle is owned by the app, edited
-  through app commands, and surfaced as inventory by the `proxy` family.
+- **App-instance-owned route:** Proxy route whose lifecycle is owned by one
+  concrete app instance, edited through app commands, and surfaced as
+  inventory by the `proxy` family.
 - **App-family boundaries:** App commands own app registry, app-instance
   registry, instance env rendering, runtime policy, app-instance deployment policy, app health
-  configuration, app WebSocket binding state, and app analytics binding state.
+  configuration, instance-bound WebSocket state, and instance-bound analytics
+  state.
   They do not own proxy route registry, workspace policy, process configuration,
   schedule definitions, tool registration, or firewall policy beyond what derives
   from app configuration.

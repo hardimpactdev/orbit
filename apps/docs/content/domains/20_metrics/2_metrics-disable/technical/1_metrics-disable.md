@@ -55,8 +55,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   cleaned up.
 - If no other active metrics role remains, metrics-owned node-exporter process
   intent, node-exporter tool intent, and protected firewall intent for
-  node-exporter are removed from active workload nodes as well as the removed
-  metrics node.
+  node-exporter are removed from active Ubuntu workload nodes as well as the
+  removed metrics node.
 
 ## Renderer Contracts
 

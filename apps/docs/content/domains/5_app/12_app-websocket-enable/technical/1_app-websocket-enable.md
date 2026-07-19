@@ -8,8 +8,9 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The authenticated peer holds `app:write` on the app's owning node.
-- The target app exists in the gateway registry.
+- The authenticated peer holds `app:write` on the selected app instance's
+  serving node.
+- The target resolves to one concrete app instance with a serving node.
 - An active router node and at least one active WebSocket backend node exist in
   the fleet; the gateway enforces this and returns `websocket.prerequisite_failed`
   when either is absent.
@@ -27,30 +28,32 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record by name or hostname. Name match wins; hostname match consulted when no name match exists. |
+| `app` | `[app]` | Always. | Never. | None. | Dotted `<app.instance>` selector. A bare logical app is shorthand only when exactly one eligible visible instance exists; otherwise fail with `error.meta.reason=app_instance_required`. |
 | `host` | `--host` | Optional. | Never. | `[]`. | Repeatable. Plain hostnames only (no scheme). Duplicates and empty values are discarded. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
 
-1. Validate `app` is provided. Reject with `validation_failed` (`field=app`)
-   when absent.
-2. Forward `public_hosts` (the `--host` values) to the gateway API.
+1. Resolve exactly one app instance. A dotted selector is explicit; a bare app
+   auto-resolves only a sole eligible visible instance.
+2. Resolve its serving node, domain, and authorization before any binding or
+   route write. Logical-app placement is never consulted.
+3. Forward `public_hosts` (the `--host` values) to the gateway API.
 
 ## Behavior Contract
 
 ### WebSocket Enable Rules
 
-1. **App resolution.** Resolve the app by matching `app` against app name and
-   then app hostname. Return `app.not_found` when no match exists.
-2. **Binding creation or update.** When no binding exists for the app, create
-   one and generate a `reverb_app_id` (equal to `app.name`), a 32-character
+1. **Instance resolution.** Resolve one concrete app instance and use its
+   serving node as the authorization boundary. Ambiguity fails before effects.
+2. **Binding creation or update.** When no binding exists for the selected
+   instance, create one and generate a binding-specific `reverb_app_id`, a 32-character
    random `reverb_app_key`, and a 48-character random `reverb_app_secret`.
    When a binding exists, update it in place and keep the existing credentials.
 3. **Binding state.** Set `enabled=true`. Record the supplied public hosts as
-   the canonical public host list. Derive `allowed_origins` from the app domain
-   as `["https://<domain>"]`; when the app has no domain, set `allowed_origins`
-   to `[]`.
+   the canonical public host list. Derive `allowed_origins` from the selected
+   instance's domain as `["https://<domain>"]`; a missing instance domain fails
+   before mutation.
 4. **Route sync.** Sync the WebSocket service route on the router node and
    register a public route for each hostname in the supplied list. The fleet
    must have an active router node and at least one active WebSocket backend
@@ -77,7 +80,7 @@ This command follows the shared
 
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
-| `POST` | `/api/apps/{app}/websocket/enable` | `app:write` | Enable WebSocket binding. |
+| `POST` | `/api/apps/{app}/websocket/enable` | `app:write` on instance serving node | Enable the selected instance binding; `{app}` is dotted or unambiguous sole-instance shorthand. |
 
 The request body is `{"public_hosts": ["<host>", ...]}`. The array is optional;
 omit it or pass `[]` to enable without binding public hosts.
@@ -88,12 +91,14 @@ denials.
 
 ## Response Payload
 
-The gateway response includes a `binding` object that carries the resulting
-binding state. The binding payload returned on success:
+The gateway response returns the canonical logical `app`, selected
+`app_instance`, `serving_node`, and resulting `binding` as separate fields:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `app` | string | App identity slug. |
+| `app` | object | Canonical logical app entity with no placement fields. |
+| `app_instance` | string | Selected instance name within `app`. |
+| `serving_node` | string | Selected instance's authorization and placement node. |
 | `internal_host` | string | WireGuard-internal service hostname (`websocket.orbit`). Fixed. |
 | `public_hosts` | array | Ordered list of public WebSocket hostnames bound to this app. |
 | `allowed_origins` | array | Origins permitted by Reverb for this app (`https://<app_domain>`). |
@@ -107,7 +112,8 @@ command-specific failures below.
 | --- | --- | --- |
 | Validation failed (app) | `app` is missing from the CLI invocation. | Failure — no gateway request sent. |
 | Validation failed (public_hosts) | A supplied `--host` value contains `://` or exceeds 255 characters. | Failure. |
-| App not found | No app record matches `app`. | Failure. |
+| App instance required | A bare selector resolves zero or multiple eligible instances. | `validation_failed` with `error.meta.reason=app_instance_required`. |
+| App instance not found | No concrete app instance matches `app`. | `app_instance.not_found`. |
 | WebSocket prerequisite failed | The fleet has no active router node or no active WebSocket backend node when the route sync runs. | Failure — no binding state written. |
 
 ## Doctor Relationship
@@ -127,8 +133,8 @@ enable attempt.
 | --- | --- |
 | Type | `api:POST /apps/{app}/websocket/enable` |
 | Effect | `write` |
-| Subject | App record resolved from `{app}`. |
-| Properties | `action=enable`, `target_app`, `public_hosts` (the hosts recorded on the binding). |
+| Subject | App instance resolved from `{app}`. |
+| Properties | `action=enable`, `target_app`, `target_app_instance`, `serving_node`, and `public_hosts`. |
 
 ## Test Mapping
 

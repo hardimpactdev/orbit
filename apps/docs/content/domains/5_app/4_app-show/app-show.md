@@ -5,9 +5,9 @@
 Show one app's gateway registry details.
 
 Use `app:show` when you need an app's gateway-owned registry record and
-placement breakdown: repository, paths, PHP version, agent IDE configuration,
-visible app instances, the workspaces owned by each instance, and durable
-configuration in related families (`process` and app-owned `proxy`). Live
+placement breakdown: repository, shared PHP version, visible app instances,
+and each instance's path, effective agent IDE, workspaces, processes, and
+WebSocket, analytics, or route bindings. Live
 runtime drift, readiness, and repair belong to
 [`doctor --family=app`](../app-doctor.md).
 
@@ -53,9 +53,10 @@ Run `app:show` to inspect a single app's gateway configuration without triggerin
 2. Validates that the current caller can inspect at least one concrete Orbit app
    instance, unless the caller is the gateway.
 3. Reads the logical app record from gateway-owned configuration: name,
-   repository, shared runtime policy, PHP version, and agent IDE configuration.
-4. Aggregates the caller-visible app instances, the workspaces owned by each
-   visible instance, processes, and app-owned proxy routes.
+   repository, shared runtime policy, and PHP version.
+4. Aggregates caller-visible app instances. Each instance nests only its own
+   effective agent IDE, workspaces, processes, and WebSocket, analytics, and
+   route bindings.
 5. Returns the app detail view backed by the registry.
 
 Workspace rows are exposed only below their owning instance and only for
@@ -67,14 +68,15 @@ Workspace rows are exposed only below their owning instance and only for
 - Mutate gateway configuration or node state.
 - Fix drift or adopt node reality (use [`doctor --family=app`](../app-doctor.md)).
 - Create new release or deployment artifacts.
-- SSH into the owning node directly from the caller.
+- SSH into any instance serving node directly from the caller.
 - Run live readiness, runtime container, document-root, route, or process probes.
 - Block on slow or unreachable node runtime checks.
 
 ## Output
 
-Human output is a registry summary followed by a table of visible instances and
-their nested workspace rows. Instance and workspace URLs are shown when the
+Human output is a logical registry summary followed by one section per visible
+instance with its effective IDE, processes, bindings, and nested workspace rows.
+Instance and workspace URLs are shown when the
 registry can derive them. Logical apps have no server, path, root, URL, domain,
 or environment fields. The `APP DEPS` column is the logical app's aggregate
 dependency posture; workspace rows render `—`.
@@ -98,7 +100,7 @@ Use these commands to take action after inspecting an app with `app:show`.
 - [`app:list`](../3_app-list/app-list.md) — list registered apps
 - [`app:remove`](../6_app-remove/app-remove.md) — remove an app
 - [`doctor --family=app`](../app-doctor.md) — verify and repair app drift
-- [`node:show`](../../1_node/4_node-show/node-show.md) — inspect the owning node
+- [`node:show`](../../1_node/4_node-show/node-show.md) — inspect a selected instance's serving node
 
 ## Technical Contract
 

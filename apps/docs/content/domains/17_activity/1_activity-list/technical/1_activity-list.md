@@ -29,7 +29,7 @@ This command follows the shared
 | `node` | `--node` | Optional. | Never. | `null`. | Non-empty node name matched against recorded activity relationships. |
 | `effect` | `--effect` | Optional. | Never. | `null`. | One of `read`, `write`, `destructive`. |
 | `correlation` | `--correlation` | Optional. | Never. | `null`. | UUID string. |
-| `include_internal` | `--include-internal` | Optional. | Never. | `false`. | Boolean. When `false`, current internal transport activity and pre-existing `remote_shell`/`local_executor` rows are excluded. |
+| `include_internal` | `--include-internal` | Optional. | Never. | `false`. | Boolean. When `false`, rows with `properties.lane = internal` are excluded. |
 | `limit` | `--limit` | Optional. | Never. | `25`. | Integer from `1` through `200`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -59,10 +59,9 @@ command does not prompt.
   rows use channel `api`, types `agent_push.dispatching` and
   `agent_push.completed`, and `properties.lane = internal` with
   `properties.transport = agent_push`. Bootstrap/provisioning SSH rows use
-  channel `api`, `ssh_bootstrap.*` types, and `properties.transport =
-  ssh_bootstrap`. Pre-existing `remote_shell` and `local_executor` channels and
-  the retained `local-executor` lane are also internal markers. Effect
-  filters alone must not surface these rows; `include_internal=true` does.
+  channel `api`, `ssh_bootstrap.*` types, `properties.lane = internal`, and
+  `properties.transport = ssh_bootstrap`. Effect filters alone must not surface
+  these rows; `include_internal=true` does.
 - Return every entry through the canonical Activity DTO in
   [`activity-concepts.md`](../../activity-concepts.md). `effect` is a top-level
   DTO field; `properties` contains only type-specific audit data.

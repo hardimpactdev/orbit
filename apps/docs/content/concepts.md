@@ -31,7 +31,7 @@ owning family concept document.
 - **Ingress role** — workload role that owns public production HTTP ingress, public `orbit-caddy` route artifacts, public TLS, and public edge hardening. It forwards public routes to `router` over WireGuard. See [Node Concepts](domains/1_node/node-concepts.md).
 - **WebSocket role** — private workload role that runs Laravel Reverb in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned private service routes. See [Node Concepts](domains/1_node/node-concepts.md).
 - **S3 role** — private workload role that runs one SeaweedFS S3-compatible object storage backend in a Docker runtime container managed by Orbit, binds only to WireGuard, and receives traffic through router-owned S3 service routes. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Metrics role** — optional private workload role that records and starts Prometheus and Grafana process runtimes for a metrics node and node-exporter tool/process runtimes for metrics and active workload nodes. See [Node Concepts](domains/1_node/node-concepts.md) and [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
+- **Metrics role** — optional private workload role that records and starts Prometheus and Grafana process runtimes for a metrics node and node-exporter tool/process runtimes for metrics and active Ubuntu workload nodes. See [Node Concepts](domains/1_node/node-concepts.md) and [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
 - **Analytics role** — private workload role that runs Plausible CE, binds only to WireGuard, and receives dashboard and tracking traffic through router-owned analytics routes. See [Node Concepts](domains/1_node/node-concepts.md) and [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
 - **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns it together with `gateway` and normal `node role:*` commands cannot manage it independently. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own app files, FrankenPHP app runtime policy, process-backed runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
@@ -235,18 +235,18 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **App WebSocket binding**
 - **App analytics binding**
 - **Reverb app credentials**
-- **App agent IDE adapter**
+- **App instance agent IDE adapter**
 - **App dependency audit posture**
 - **Dependency audit manager**
 - **Dependency audit status**
 - **Dependency audit severity bands**
 - **App registration**
-- **App adoption**
-- **App adoption flag**
+- **App-instance adoption**
+- **App-instance adoption flag**
 - **App pruning**
 - **App setup pipeline**
 - **App setup run**
-- **App-owned route**
+- **App-instance-owned route**
 - **App-family boundaries**
 - **Setup boundary**
 <!-- /concept-index -->

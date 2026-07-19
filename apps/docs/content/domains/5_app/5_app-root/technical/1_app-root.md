@@ -14,9 +14,9 @@ architecture and propagated across every app, workspace, proxy, and deployment
 command that writes production runtime state.
 
 **Prerequisites:**
-- The application record must exist in the gateway database.
-- The owning non-gateway node must be reachable through Agent push.
-- The caller has `app:root` on the app's owning node.
+- The selected app instance must exist in the gateway database.
+- Its non-gateway serving node must be reachable through Agent push.
+- The caller has `app:root` on that serving node.
 
 ## Signature
 
@@ -31,8 +31,8 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | Always. | Never. | None. | App name or hostname. Must resolve to exactly one app record visible to the caller. |
-| `root` | `[root]` | Always. | Never. | None. | Path relative to the app's base path. Must not resolve outside the app path; see [Validation](#validation). |
+| `app` | `[app]` | Always. | Never. | None. | Dotted app-instance selector. A bare logical slug resolves only one eligible visible instance; otherwise fail with `validation_failed`, `meta.reason=app_instance_required`. Hostnames are invalid. |
+| `root` | `[root]` | Always. | Never. | None. | Path relative to the selected instance's path. Must not resolve outside that path; see [Validation](#validation). |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
 ## Input Resolution
@@ -47,7 +47,13 @@ This command follows the shared
     - In interactive mode, if missing, prompt with `root` (Text).
     - If still missing, fail with `error.code=validation_failed` and
       `error.meta.field=root`.
-3.  **Validate `root`** (see [Validation](#validation)).
+3.  **Resolve instance:** Resolve the dotted selector, or sole-instance bare
+    shorthand. Unknown dotted selectors fail with `app_instance.not_found`;
+    ambiguous bare slugs fail with
+    `validation_failed`, `meta.reason=app_instance_required`.
+4.  **Authorize serving node:** Require `app:root` on the selected instance's
+    serving node before mutation.
+5.  **Validate `root`** (see [Validation](#validation)).
 
 ## Input Mode Contracts
 
@@ -60,14 +66,14 @@ This command follows the shared
 
 1. **Gateway-side, pre-side-effect (input contract).**
    - Reject empty/null inputs and any value that resolves to an absolute path.
-   - Resolve `root` against the gateway-known `app_path` purely as strings
-     (lexical normalization, e.g. `Path::canonicalize($app_path . '/' . $root)`).
+   - Resolve `root` lexically against the selected instance path stored by the
+     gateway (for example, `Path::canonicalize($instance_path . '/' . $root)`).
      No node transport and no filesystem touch.
-   - Require the normalized result to start with `app_path` (with `app_path`
+   - Require the normalized result to start with `instance_path` (with that path
      itself permitted when `root` is `.`).
    - Failure shape: `error.code=app.invalid_root` with
      `error.meta.field=root`, `error.meta.root`, `error.meta.resolved_path`,
-     and `error.meta.app_path`.
+     `error.meta.app_instance`, and `error.meta.instance_path`.
 2. **Node-side reality (doctor, not this command).**
    - A symlink inside the app path that points outside, or a missing document
      root directory on the node, is detected by the `app` doctor probe at
@@ -82,26 +88,27 @@ filesystem reality stays a doctor-owned convergence concern.
 
 ### App Root Resolution Rules
 
-`app:root` is convergent and idempotent. It always re-applies application so
-running it on an app that is already managed refreshes node artifacts even when configuration
+`app:root` is convergent and idempotent. It always re-applies the selected
+instance so running it on an instance that is already managed refreshes only
+its artifacts even when configuration
 is unchanged.
 
-1.  **Write Configuration:** Update the `document_root` field in the application's
-    gateway record. If the requested root equals the current configuration, the
+1.  **Write Configuration:** Update `root` in the selected app instance's
+    driver configuration. The logical app is unchanged. If the requested root equals the current configuration, the
     configuration write is a no-op and `success.data.result.changed=false`; the command
     still proceeds to artifact re-application.
 2.  **Identify Artifacts:** Determine which runtime container and proxy route artifacts
     are affected by the document root change.
 3.  **Re-apply Artifacts:**
     - Re-render the affected artifacts using the current configuration.
-    - Apply the artifacts to the concrete app-instance node through typed Agent
+    - Apply the artifacts to the selected instance's serving node through typed Agent
       push commands. Gateway-owned work, if any, executes locally.
     - The runtime container reload required to pick up the new document root is
       part of this step. It is not a separate user-facing surface; it is the
       apply plumbing for the runtime container artifact, in line with ARCHITECTURE
       Product Principle 5 ("Backend names are not product names"). When an
-      app-owned proxy route references the document root, `app:root` updates
-      the app configuration and leaves proxy backend artifact convergence to the
+      app-instance-owned proxy route references the document root, `app:root` updates
+      the instance configuration and leaves proxy backend artifact convergence to the
       `proxy` family.
     - `success.meta.artifacts_reenacted` reports whether application found
       observable changes on the node (`true`) or completed as a clean
@@ -121,11 +128,13 @@ to `success.meta.warnings[]`.
 
 ### Errors
 
-- `app.not_found`: The specified application could not be resolved.
+- `app_instance.not_found`: The specified dotted instance could not be resolved.
+- `validation_failed` with `error.meta.reason=app_instance_required`: A bare
+  logical slug did not resolve exactly one eligible visible instance.
 - `app.invalid_root`: `root` failed gateway-side string validation (resolves
   outside the app path, is empty, or is absolute).
   `error.meta.field=root`, `error.meta.root`, `error.meta.resolved_path`,
-  `error.meta.app_path`.
+  `error.meta.app_instance`, `error.meta.instance_path`.
 - `authorization_failed`: The caller does not have permission to manage the
   application.
 - `validation_failed`: A supplied input failed gateway-side static
@@ -145,7 +154,7 @@ reuse the vocabulary of the family that owns the drift:
 | `app.runtime_config_missing` | `app` | Managed app runtime configuration could not be installed while applying. |
 
 Process warnings use `doctor --family=process --restore`. Managed-configuration
-warnings use `doctor --family=app --app=<app> --restore`.
+warnings use `doctor --family=app --app=<app.instance> --restore`.
 
 `app.enactment_failed` and other drift codes specific to this command are
 not used. The process family already owns concrete runtime-unit drift, while
@@ -175,8 +184,8 @@ document-root updates.
 | --- | --- |
 | Type | `api:POST /apps/{app}/root` |
 | Effect | `write` |
-| Subject | `App` when the app is resolved and visible; `none` for not-found, validation, or authorization failures before the target app can be logged. |
-| Properties | `root` (string or null), the requested document root value after static request normalization. No raw shell command text, node-side output, or secrets. |
+| Subject | Selected `AppInstance`; `none` before instance resolution. |
+| Properties | `app` (string or null), `app_instance` (string or null), `serving_node` (string or null), and `root` (string or null). No raw shell command text, node-side output, or secrets. |
 | Description | derived |
 
 ## Test Mapping

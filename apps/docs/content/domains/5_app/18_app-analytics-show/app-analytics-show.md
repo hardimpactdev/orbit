@@ -2,22 +2,22 @@
 
 [Back to App commands.](../README.md)
 
-Show analytics tracking proxy configuration for an app.
+Show analytics tracking proxy configuration for one concrete app instance.
 
 ## Usage
 
 ```bash
-orbit app:analytics show [app] [--json]
+orbit app:analytics show [app.instance] [--json]
 ```
 
 ## Arguments and options
 
-- `app`: app name or hostname. Required.
-- `--json`: Output JSON.
+- `app.instance`: dotted selector; bare shorthand is allowed only for exactly one eligible visible instance.
+- `--json`: Select JSON output and non-interactive input only.
 
 ## Behavior Summary
 
-`app:analytics show` reads the app analytics binding and reports whether it is
+`app:analytics show` reads the selected instance's analytics binding and reports whether it is
 enabled, the private dashboard host, public tracking hosts, and the tracking
 paths public routes serve. It also reports the script base URL and event
 endpoint for each public host.
@@ -28,8 +28,8 @@ source, or check whether the app has installed the Plausible script.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The current node identity holds `app:read` on the app's owning node.
-- The app exists in the gateway registry.
+- The current node identity holds `app:read` on the selected instance's serving node.
+- The selected app instance exists in the gateway registry.
 
 ## Output Summary
 
@@ -39,8 +39,8 @@ in the standard machine-readable envelope.
 ## Examples
 
 ```bash
-orbit app:analytics show docs
-orbit app:analytics show docs --json
+orbit app:analytics show docs.production
+orbit app:analytics show docs.production --json
 ```
 
 ## Related

@@ -44,7 +44,7 @@ connection to either one app instance or one workspace and one env prefix.
 App-instance rows are rendered by `app:env render`.
 
 Orbit-derived runtime defaults are rendered from the selected instance's app and
-owning node. These defaults are not stored as explicit instance env rows.
+serving node. These defaults are not stored as explicit instance env rows.
 
 ## API Surface
 
@@ -70,7 +70,7 @@ owning node. These defaults are not stored as explicit instance env rows.
 5. **Secret redaction.** Rendered database password values are marked
    `secret=true` and redacted from responses.
 6. **Gateway-only by default.** `set` persists gateway intent only. `set --apply`
-   writes the selected instance's live `.env` on its owning node through
+   writes the selected instance's live `.env` on its serving node through
    authenticated Agent push over WireGuard. It cannot write the logical app
    default path or a sibling instance path. Workspace CWD never supplies an
    implicit app target; app and instance selection remains explicit.

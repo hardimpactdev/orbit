@@ -8,8 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The authenticated peer holds `app:read` on the app's owning node.
-- The target app exists in the gateway registry.
+- The authenticated peer holds `app:read` on the selected instance's serving node.
+- The target resolves to one concrete app instance.
 
 ## Signature
 
@@ -23,16 +23,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record by name or hostname. |
+| `app` | `[app.instance]` | Always. | Never. | None. | Dotted selector; bare shorthand succeeds only for exactly one eligible visible instance, otherwise `app_instance_required`. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 
 ## Behavior Contract
 
 ### Read Rules
 
-- Resolve the app by name or hostname.
-- Return `app.not_found` when no app matches.
-- Return `analytics.binding_missing` when the app has no analytics binding.
+- Resolve one concrete app instance and authorize its serving node; never read logical-app placement.
+- Return `app_instance.not_found` when no instance matches.
+- Return `analytics.binding_missing` when that instance has no binding.
 - Return the stored binding state without probing route or Plausible runtime
   reality.
 - Derive one tracking endpoint object per stored public host.
@@ -53,8 +53,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| App not found | No app record matches `app`. | `error.code=app.not_found` |
-| Binding missing | The app has no analytics binding. | `error.code=analytics.binding_missing` |
+| App instance required | Bare shorthand is ambiguous or ineligible. | `validation_failed` with `error.meta.reason=app_instance_required` |
+| App instance not found | No concrete instance matches. | `error.code=app_instance.not_found` |
+| Binding missing | The selected instance has no analytics binding. | `error.code=analytics.binding_missing` |
 
 ## Doctor Relationship
 
@@ -69,8 +70,8 @@ route drift.
 | --- | --- |
 | Type | `api:GET /apps/{app}/analytics` |
 | Effect | `read` |
-| Subject | App record resolved from `{app}`. |
-| Properties | `target_app`. |
+| Subject | App instance resolved from `{app}`. |
+| Properties | `target_app`, `target_app_instance`, and `serving_node`. |
 
 ## Test Mapping
 

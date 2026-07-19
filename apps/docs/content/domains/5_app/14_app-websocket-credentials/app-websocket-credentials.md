@@ -2,37 +2,38 @@
 
 [Back to App commands.](../README.md)
 
-Show WebSocket credentials for an app.
+Show WebSocket credentials for one concrete app instance.
 
-`app:websocket credentials` reads the Reverb app credentials stored on the app
-WebSocket binding and returns them alongside the binding configuration. The
-command requires the app to have an enabled WebSocket binding; it returns
+`app:websocket credentials` reads the Reverb credentials stored on the selected
+instance's WebSocket binding and returns them alongside that binding. The
+command requires the instance to have an enabled WebSocket binding; it returns
 `websocket.binding_missing` when the app is not enabled for WebSocket.
 
 ## Usage
 
 ```bash
-orbit app:websocket credentials <app> [--json]
+orbit app:websocket credentials <app.instance> [--json]
 ```
 
 ## Examples
 
 ```bash
-orbit app:websocket credentials docs
-orbit app:websocket credentials docs --json
+orbit app:websocket credentials docs.production
+orbit app:websocket credentials docs.production --json
 ```
 
 ## Arguments and options
 
-- `app`: app name or hostname. Required.
-- `--json`: Output JSON.
+- `app.instance`: dotted app-instance selector. A bare app slug is shorthand
+  only when exactly one eligible visible instance exists.
+- `--json`: Select JSON output and non-interactive input only.
 
 ## What Happens
 
 Run `app:websocket credentials` to retrieve the Reverb connection details for a
 WebSocket-enabled app.
 
-1. Resolves the app by name or hostname.
+1. Resolves exactly one concrete app instance and its serving node.
 2. Requires an existing and enabled WebSocket binding. Returns
    `websocket.binding_missing` when none exists or when the binding is not enabled.
 3. Returns the full credentials payload: internal host, public hosts, allowed
@@ -55,8 +56,9 @@ for the exact payload shape.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The current node identity holds `app:credentials` on the app's owning node.
-- The app exists in the gateway registry and has an enabled WebSocket binding.
+- The current node identity holds `app:credentials` on the selected instance's
+  serving node.
+- The selected app instance exists and has an enabled WebSocket binding.
 
 ## Related Commands
 

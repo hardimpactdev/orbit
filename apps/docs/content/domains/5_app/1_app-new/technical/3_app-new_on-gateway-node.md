@@ -10,9 +10,9 @@ is invoked from a peer the gateway identifies as a gateway node.
 - **Allowed:** The gateway identifies the caller through its WireGuard peer
   identity. When the peer's gateway-owned node role is `gateway`, gateway
   implicit authority authorizes the request.
-- **Apply:** The gateway writes app configuration to its local SQLite database
-  and applies `app-dev` or `app-prod` artifacts through the selected node
-  execution transport.
+- **Apply:** The gateway atomically writes the logical app and named first
+  instance to its local SQLite database and applies `app-dev` or `app-prod`
+  artifacts through that instance's selected serving-node transport.
   The observable result is identical to the operator-caller path.
 - **No CLI shortcut:** The CLI still calls the gateway API. There is no
   client-side bypass that skips the API just because the operator happens to be

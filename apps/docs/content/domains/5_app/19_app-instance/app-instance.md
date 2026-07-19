@@ -10,7 +10,7 @@ List or change concrete runtime/deploy instances for a logical app.
 orbit app:instance list [app] [--app=<app>] [--json]
 orbit app:instance show [app] [--app=<app>] --instance=<name> [--json]
 orbit app:instance add [app] [--app=<app>] --instance=<name> [--driver=orbit|laravel-cloud] [--json]
-orbit app:instance remove [app] [--app=<app>] --instance=<name> --force [--json]
+orbit app:instance remove [app] [--app=<app>] --instance=<name> [--force] [--json]
 ```
 
 ## Examples
@@ -36,8 +36,10 @@ orbit app:instance remove billing --instance=production-cloud --force
   `--cloud-organization-id`, `--cloud-organization-name`: explicit Laravel
   Cloud driver fields.
 - `--php-extension`: repeatable required PHP extension for this instance.
-- `--force`: required for `remove` in non-interactive mode.
-- `--json`: output JSON.
+- `--force`: skips interactive removal confirmation; required for every
+  non-interactive `remove`.
+- `--json`: output JSON and use non-interactive input. JSON never implies
+  destructive consent, so `remove --json` also requires `--force`.
 
 When both `[app]` and `--app` are supplied, they must match.
 
@@ -60,6 +62,13 @@ returns a validation error with the candidates instead of creating another
 environment. Creating a new Cloud environment requires explicit intent from the
 operator or agent.
 
+`remove` deletes only the named app instance and its instance-owned
+placement/dependents. It never removes the logical app or sibling instances.
+Interactive removal confirms the named placement unless `--force` is present;
+non-interactive removal requires `--force`. Orbit instances authorize
+`app:write` on the selected instance's serving node before confirmation or
+effects.
+
 ## Output
 
 Use `--json` when another tool needs the machine-readable envelope. Instance
@@ -69,7 +78,8 @@ payloads use the [App Instance JSON Entity](../README.md#app-instance-json-entit
 
 - The CLI caller can reach the Orbit gateway.
 - The caller has `app:read` for `list` and `show`.
-- The caller has `app:write` for `add` and `remove`.
+- The caller has `app:write` on the selected or target serving node for Orbit
+  `add` and `remove`; external-driver mutations use the gateway-only path.
 
 ## Related Commands
 

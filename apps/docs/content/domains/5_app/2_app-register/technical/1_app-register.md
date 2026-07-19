@@ -6,7 +6,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity has `app:register` on the resolved target app node.
+- The current node identity has `app:register` on the selected instance's
+  serving node, or on the proposed serving node for first adoption.
 - `app-dev` self-grants provide that permission only for the same node;
   `app-prod` self-grants do not.
 - The target non-gateway node is reachable through Agent push.
@@ -24,9 +25,9 @@ repository URL is metadata that is captured only at creation time by `app:new`.
 `app:register` re-applies management for an existing path; it never clones,
 re-clones, mutates app source, or changes repository metadata. Re-registering an
 existing app preserves its stored repository value. Explicitly supplying both
-`--node` and `--path` for an existing app may move the app record to that
-pre-existing path on another eligible app node. Adopting an unmanaged path
-through `app:register` stores `repository=null`.
+`--node` and `--path` for a dotted instance may move only that instance to the
+pre-existing path on another eligible app node. First adoption atomically
+creates the logical app with `repository=null` and its first instance.
 
 ## Input Contract
 
@@ -35,37 +36,42 @@ This command follows the shared
 
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
-| `name` | `text` | Always (can be prompted) | n/a | App name slug. |
-| `--path` | `text` | Adopting an unmanaged path. | n/a | Absolute path on the target node. Must not be owned by a different registered app on the same node. |
-| `--node` | `text` | No default can be resolved. | Existing owner / gateway-resolved default node | Valid node name. |
-| `--root` | `text` | Optional | `public` | Path relative to app path. |
+| `name` | `text` | Always (can be prompted) | n/a | Dotted app-instance selector for existing state. A bare logical slug resolves only a sole visible instance, or creates the deterministic first instance for a new app. No hostname input. |
+| `--path` | `text` | Adopting an unmanaged path. | Selected instance path. | Absolute path on the target node. Must not be owned by a different registered instance on the same node. |
+| `--node` | `text` | No default can be resolved. | Selected instance serving node; for first adoption, gateway-resolved default node. | Valid node name. |
+| `--root` | `text` | Optional | Selected instance root; otherwise `public`. | Path relative to instance path. |
 | `--php-version` | `text` | Optional | Existing app value; otherwise `8.5` | Supported app runtime container version. This is app runtime configuration, not a host PHP default. |
 | `--runtime-proxy-transport` | `text` | Optional | Existing app value; otherwise `http` | FrankenPHP app-dev transport between `orbit-caddy` and the runtime container. Accepted values: `http`, `https`. `https` opts the app into inner TLS on app-dev routes. |
-| `--domain`| `text` | Optional | n/a | Valid hostname. |
+| `--domain`| `text` | Optional | Selected instance domain. | Valid hostname. For first adoption it names the instance `production`; otherwise the first instance is `development`. |
 | `--json` | `flag` | Optional | `false` | n/a |
 
 ## Input Resolution
 
-1. **Resolve App Identity**: Resolve `name` from argument or interactive prompt.
+1. **Resolve App Instance**: Resolve `name` from argument or interactive prompt.
+   A dotted selector resolves that instance. A bare existing logical slug is
+   accepted only when exactly one eligible visible instance exists; otherwise
+   fail with `validation_failed`, `error.meta.reason=app_instance_required`.
+   A logical slug absent from the registry starts first adoption and derives the
+   instance name as `development` without `--domain` or `production` with it.
 2. **Resolve Target Node**:
    - Explicit `--node`.
-   - Existing app owner if `name` is already registered.
+   - Selected instance serving node when it already exists.
    - The CLI's stored `node:default` node.
    - Interactive prompt or non-interactive failure.
 3. **Resolve Path**:
    - Explicit `--path`.
-   - Existing app path if `name` is already registered.
+   - Selected instance path when it already exists.
    - Non-interactive failure if path is required for adoption.
 4. **Resolve PHP version**:
    - Explicit `--php-version`.
-   - Existing app PHP version when `name` is already registered.
+   - Existing logical app PHP version when registered.
    - Orbit's app runtime default (`8.5`) for first-time registration or
      adoption.
    - Do not read or inherit any host PHP default; app runtime container
      configuration is the architecture concept.
 5. **Resolve runtime proxy transport**:
    - Explicit `--runtime-proxy-transport`.
-   - Existing app runtime config when `name` is already registered.
+   - Existing logical app runtime config when registered.
    - `http` for first-time registration or adoption.
    - `https` stores PHP/FrankenPHP runtime config that makes app-dev app and
      workspace proxy routes use inner TLS.
@@ -77,13 +83,13 @@ This command follows the shared
      self-grant for an `app-dev` node authorizes registration only on that same
      node, and does not authorize registering on another app node.
    - Provided `--path` must exist on the target node.
-   - Provided `name` must not be owned by a different path or node unless both
-    `--node` and `--path` are explicit. Explicit app moves require the target
+   - An existing selected instance moves only when both `--node` and `--path`
+     are explicit. Explicit instance moves require the target
     path to already exist and pass the same path-collision checks as adoption.
    - Provided `--path` on the resolved node must not already be owned by a
-     different registered app. A collision fails before side effects with
+     different registered instance. A collision fails before side effects with
      `error.code=app.path_collision` and `error.meta.path`,
-     `error.meta.existing_app`, `error.meta.node`.
+     `error.meta.existing_instance`, `error.meta.serving_node`.
 
 ## Input Mode Contracts
 
@@ -94,9 +100,12 @@ This command follows the shared
 
 ### App Registration Rules
 
-`app:register` converges gateway app configuration and node artifacts:
+`app:register` converges one app instance and its node artifacts:
 
-- **Registry Convergence**: Ensures a gateway app record exists with the resolved name, node, path, root, and PHP version.
+- **Registry Convergence**: Ensures the logical app owns only identity,
+  repository, and shared runtime policy. Ensures the selected instance owns
+  node, path, root, URL, domain, environment, and `adopted`. First adoption
+  creates both rows atomically.
 - **Artifact Apply**: Sends typed apply commands to the concrete app-instance
   node through Agent push to:
   - Configure and restart the runtime container for the app.
@@ -109,35 +118,36 @@ This command follows the shared
   - Updates proxy routes to serve the app on the production domain.
   - If DNS or TLS prerequisites are not yet satisfied (propagation pending,
     certificate not yet issued), the command still completes successfully:
-    app configuration and production-domain configuration persist, and the inactive domain
+    logical app and selected-instance configuration persist, and the inactive domain
     is reported as a non-fatal warning under `success.meta.warnings[]` with
     `code=proxy.domain_inactive`, `family=proxy`, and a
-    self-pointing `next_command=app:register [name] --domain=<host>`. The
+    self-pointing `next_command=app:register <app.instance> --domain=<host>`. The
     retry command is safe to call repeatedly. Hard activation failures
     unrelated to propagation (malformed domain, registry conflict, internal
     proxy route registry write failure) fail validation up front before any
     side effects and use the `error` envelope.
 - **Idempotence (Re-apply Refresh)**: `app:register` always re-applies
-  management. Re-running on an app that is already managed re-renders artifacts and
+  management. Re-running on an instance that is already managed re-renders only its artifacts and
   verifies the result; if nothing changes, the command still
   succeeds. This verification does not assert application HTTP readiness. A new
-  or adopted app may still need project setup steps before it is healthy, and
+  or adopted instance may still need project setup steps before it is healthy, and
   durable runtime health belongs to `doctor --family=app`. The outcome layer
   reports which path was taken via `result.action`:
   - `registered` — first-time registration of a known path that is not yet
     managed by Orbit.
   - `adopted` — first-time registration where the path existed on the node
-    but was unmanaged. The durable `app.adopted` boolean on the app entity is
+    but was unmanaged. The durable `instance.adopted` boolean on the instance is
     set to `true` for this run only; subsequent re-runs report
-    `result.action=converged` with `app.adopted=true` preserved.
-  - `moved` — explicit re-application of an already-managed app to a different
+    `result.action=converged` with `instance.adopted=true` preserved.
+  - `moved` — explicit re-application of the selected instance to a different
     eligible node/path, requested with both `--node` and `--path`.
   - `converged` — idempotent re-application of an already-managed app where no
     observable artifact change was needed.
   - `partial` — the registry was already managed, but proxy enactment failed
     after recording intent or applying only part of the backend, router, and
-    ingress chain. The matching warning names the failed node and operation.
-  This separation keeps durable adoption state on the app entity while letting
+    ingress chain. The matching warning names the dotted instance, failed node,
+    and operation.
+  This separation keeps durable adoption state on the instance while letting
   `result.action` describe what this run did, mirroring the `node:new` and
   `gateway:add` exemplars.
 
@@ -149,10 +159,14 @@ This command follows the shared
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
+- **App instance required**: A bare existing logical slug resolves zero or
+  multiple eligible visible instances. Fail before authorization or effects
+  with `error.code=validation_failed`,
+  `error.meta.reason=app_instance_required`.
 - **Path Collision**: Provided `--path` is already owned by a different
-  registered app on the resolved node
+  registered instance on the resolved node
   (`error.code=app.path_collision`, `error.meta.path`,
-  `error.meta.existing_app`, `error.meta.node`). Fails before any side
+  `error.meta.existing_instance`, `error.meta.serving_node`). Fails before any side
   effects. The remediation is to pick a different path or remove the
   existing app first; there is no interactive re-assign prompt.
 - **Remote Execution Failures**: Agent-push timeout before configuration can be
@@ -186,8 +200,8 @@ registration attempts.
 | --- | --- |
 | Type | `api:POST /apps/register` |
 | Effect | `write` |
-| Subject | `App` when registration resolves to an app row; `none` for validation, authorization, or apply failures before an app row is resolved. |
-| Properties | `name` (string or null) and `node` (string or null). No raw path contents, shell command text, node-side output, repository credentials, or secrets. |
+| Subject | Selected `AppInstance`, plus its parent `App` when first adoption creates both; `none` before target resolution. |
+| Properties | `app` (string or null), `app_instance` (string or null), and `serving_node` (string or null). No raw path contents, shell command text, node-side output, repository credentials, or secrets. |
 | Description | derived |
 
 ## Test Mapping

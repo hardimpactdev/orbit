@@ -8,7 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized to manage tools for the resolved node or app.
+- The current node identity is authorized to manage tools for the resolved node
+  or selected app instance's serving node.
 
 ## Signature
 
@@ -24,9 +25,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Registered tool name.` |
 | `node` | `--node` or local `node:default` | Required when `app` is absent. | `Never.` | `node:default` if set. | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
-| `force` | `--force` | Required for non-JSON non-interactive destructive consent. | `Never.` | `false` | Explicit destructive consent. |
-| `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and implies destructive consent. |
+| `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app-instance selector used to resolve its serving node. Bare logical-app shorthand is valid only when exactly one instance is visible.` |
+| `force` | `--force` | Required for every non-interactive removal, including JSON mode. | `Never.` | `false` | Explicit destructive consent. |
+| `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode; never grants consent. |
 
 At least one target source is required: explicit `--node`, explicit `--app`,
 local `node:default`, or interactive target selection. `tool:remove` must not
@@ -42,12 +43,12 @@ fall back to the only visible non-gateway node in non-interactive mode.
 ### Tool configuration and apply rules
 
 - Verifies the tool supports managed removal.
-- Keeps gateway row and tool-owned configuration cleanup gateway-local and
+- Keeps gateway row and tool configuration cleanup local to the gateway. It
   dispatches target-node cleanup through Agent push. The command exposes no
   node transport selector and never falls back to SSH.
 - Requires destructive consent before side effects. Consent source is `force`
-  when `--force` is supplied, `json` when `--json` is supplied without `--force`,
-  and `interactive_confirm` when the operator accepts the prompt.
+  when `--force` is supplied or `interactive_confirm` when the operator accepts
+  the prompt. Renderer selection never grants consent.
 - Removes managed artifacts through the gateway.
 - Removes tool-owned credential material and service endpoint configuration when the
   tool definition owns those artifacts.
@@ -77,8 +78,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
 | Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |
-| Missing target | No `--node`, `--app`, local `node:default`, or interactive target selection resolved a target. | `error.code=validation_failed`, `error.meta.fields=["target"]` |
-| Missing destructive consent | Non-JSON non-interactive input omitted `--force`. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
+| Missing target | No `--node`, selected app instance, local `node:default`, or interactive target selection resolved a node. | `error.code=validation_failed`, `error.meta.fields=["target"]` |
+| Missing destructive consent | Non-interactive input omitted `--force`, including JSON mode. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 
 ## Doctor Relationship
 
@@ -88,6 +89,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI `tool:remove` destructive consent (`--json`, `--force`, interactive prompt), DELETE forwarding, and gateway error envelope pass-through. |
+| `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI `tool:remove` destructive consent (`--force` or interactive prompt), JSON non-interactive behavior, DELETE forwarding, and gateway error envelope pass-through. |
 | `apps/gateway/tests/Feature/Http/Api/ToolRemoveControllerTest.php` | Gateway API consent-source handling, explicit target requirement, authorization failure, and streaming removal consent. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |

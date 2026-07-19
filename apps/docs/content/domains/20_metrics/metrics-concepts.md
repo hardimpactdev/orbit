@@ -14,8 +14,8 @@ Use these terms when reading or writing metrics command contracts.
 - **Metrics role:** Optional private workload role that records and starts
   Prometheus and Grafana process runtimes for the metrics node and records,
   installs, and starts node-exporter tool/process runtime for the metrics node
-  plus active workload nodes. It can be dedicated or co-located with any
-  non-agent role, including a Debian gateway.
+  plus active Ubuntu workload nodes. It can be dedicated or co-located with
+  any non-agent role, including the gateway.
 - **Metrics backend:** The process-owned runtime set coordinated by the metrics
   role baseline: Prometheus, Grafana, and node-exporter. The node-exporter host
   binary capability is recorded as tool intent.
@@ -33,7 +33,7 @@ Use these terms when reading or writing metrics command contracts.
   labels so operators can switch between metrics and workload nodes.
 - **node-exporter host process:** Systemd process definition named
   `node-exporter`; depends on the `node-exporter` host binary tool and exposes
-  host resource metrics for the metrics node and active workload nodes.
+  host resource metrics for the metrics node and active Ubuntu workload nodes.
 - **Exporter firewall rule:** Protected firewall intent named
   `orbit-metrics-node-exporter`; allows the metrics node to scrape TCP port
   9100 on Ubuntu exporter hosts through the private WireGuard interface.

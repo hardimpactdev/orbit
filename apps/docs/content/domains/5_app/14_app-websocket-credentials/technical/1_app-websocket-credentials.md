@@ -8,8 +8,9 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The authenticated peer holds `app:credentials` on the app's owning node.
-- The target app exists in the gateway registry and has an enabled WebSocket
+- The authenticated peer holds `app:credentials` on the selected app
+  instance's serving node.
+- The target resolves to one concrete app instance with an enabled WebSocket
   binding.
 
 ## Signature
@@ -25,21 +26,22 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record by name or hostname. Name match wins; hostname match consulted when no name match exists. |
+| `app` | `[app]` | Always. | Never. | None. | Dotted `<app.instance>` selector. A bare logical app is shorthand only when exactly one eligible visible instance exists for `app:credentials`; otherwise fail with `error.meta.reason=app_instance_required`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
 
-1. Validate `app` is provided. Reject with `validation_failed` (`field=app`)
-   when absent.
-2. Forward the credentials request to the gateway API.
+1. Resolve exactly one app instance and serving node. Ambiguous shorthand fails
+   before authorization or secret access.
+2. Authorize `app:credentials` on that serving node, then read only that
+   instance's binding.
 
 ## Behavior Contract
 
 ### Credentials Retrieval Rules
 
-1. **App resolution.** Resolve the app by matching `app` against app name and
-   then app hostname. Return `app.not_found` when no match exists.
+1. **Instance resolution.** Resolve one concrete instance; logical-app
+   placement fields are never consulted.
 2. **Binding required and enabled.** Require an existing binding with
    `enabled=true`. Return `websocket.binding_missing` when no binding exists or
    when the binding has `enabled=false`.
@@ -64,7 +66,7 @@ This command follows the shared
 
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
-| `GET` | `/api/apps/{app}/websocket/credentials` | `app:credentials` | Read WebSocket credentials. |
+| `GET` | `/api/apps/{app}/websocket/credentials` | `app:credentials` on instance serving node | Read only the selected instance's credentials. |
 
 HTTP status codes: `200` for success, `404` for `app.not_found`, `422` for
 `websocket.binding_missing`, `403` for permission denials.
@@ -77,8 +79,9 @@ command-specific failures below.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Validation failed (app) | `app` is missing from the CLI invocation. | Failure — no gateway request sent. |
-| App not found | No app record matches `app`. | Failure. |
-| WebSocket binding missing | The app has no binding or the binding is not enabled. | Failure. |
+| App instance required | A bare selector resolves zero or multiple eligible instances. | `validation_failed` with `error.meta.reason=app_instance_required`. |
+| App instance not found | No concrete app instance matches `app`. | `app_instance.not_found`. |
+| WebSocket binding missing | The selected instance has no enabled binding. | Failure. |
 
 ## Doctor Relationship
 
@@ -96,8 +99,8 @@ The gateway API endpoint emits an activity entry for every credentials read.
 | --- | --- |
 | Type | `api:GET /apps/{app}/websocket/credentials` |
 | Effect | `read` |
-| Subject | App record resolved from `{app}`. |
-| Properties | `action=credentials`, `target_app`. |
+| Subject | App instance resolved from `{app}`. |
+| Properties | `action=credentials`, `target_app`, `target_app_instance`, and `serving_node`. Secret values are never logged. |
 
 ## Test Mapping
 

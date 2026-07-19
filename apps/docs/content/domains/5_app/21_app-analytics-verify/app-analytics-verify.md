@@ -2,22 +2,22 @@
 
 [Back to App commands.](../README.md)
 
-Verify the public readiness of an app's stored analytics tracking hosts.
+Verify the public readiness of one app instance's stored analytics tracking hosts.
 
 ## Usage
 
 ```bash
-orbit app:analytics verify [app] [--json]
+orbit app:analytics verify [app.instance] [--json]
 ```
 
 ## Arguments and options
 
-- `app`: app name or hostname. Required.
-- `--json`: Output JSON.
+- `app.instance`: dotted selector; bare shorthand is allowed only for exactly one eligible visible instance.
+- `--json`: Select JSON output and non-interactive input only.
 
 ## Behavior Summary
 
-`app:analytics verify` reads the app-level analytics binding and expected
+`app:analytics verify` reads the selected instance binding and its expected
 ingress targets from the gateway, then checks every stored public analytics
 host from the caller machine. It compares public `A` and `AAAA` answers with
 the selected ingress node to distinguish direct from intermediary routing,
@@ -38,8 +38,8 @@ Plausible site state and event persistence are reported as unchecked.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway and public analytics host.
-- The current node identity holds `app:read` on the app's owning node.
-- The app has an enabled analytics binding with stored public hosts.
+- The current node identity holds `app:read` on the selected instance's serving node.
+- The selected instance has an enabled analytics binding with stored public hosts.
 
 ## Output Summary
 
@@ -50,8 +50,8 @@ same structured verification facts for diagnosis.
 ## Examples
 
 ```bash
-orbit app:analytics verify docs
-orbit app:analytics verify docs --json
+orbit app:analytics verify docs.production
+orbit app:analytics verify docs.production --json
 ```
 
 ## Related

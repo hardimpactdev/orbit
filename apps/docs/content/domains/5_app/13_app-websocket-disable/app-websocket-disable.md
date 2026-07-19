@@ -2,37 +2,39 @@
 
 [Back to App commands.](../README.md)
 
-Disable WebSocket support for an app.
+Disable WebSocket support for one concrete app instance.
 
-`app:websocket disable` clears the enabled state on the app WebSocket binding,
-removes public host routes for the app, and syncs the Reverb runtime app
+`app:websocket disable` clears the selected instance binding's enabled state,
+removes that binding's public host routes, and syncs the Reverb runtime app
 configuration. The binding record and its Reverb credentials are retained so
 the app can be re-enabled later without generating new credentials.
 
 ## Usage
 
 ```bash
-orbit app:websocket disable <app> [--json]
+orbit app:websocket disable <app.instance> [--json]
 ```
 
 ## Examples
 
 ```bash
-orbit app:websocket disable docs
-orbit app:websocket disable docs --json
+orbit app:websocket disable docs.production
+orbit app:websocket disable docs.production --json
 ```
 
 ## Arguments and options
 
-- `app`: app name or hostname. Required.
-- `--json`: Output JSON.
+- `app.instance`: dotted app-instance selector. A bare app slug is shorthand
+  only when exactly one eligible visible instance exists.
+- `--json`: Select JSON output and non-interactive input. It does not select a
+  target or imply consent.
 
 ## What Happens
 
 Run `app:websocket disable` to detach an app from the fleet WebSocket service.
 
-1. Resolves the app by name or hostname.
-2. Requires an existing WebSocket binding for the app; returns
+1. Resolves exactly one concrete app instance and its serving node.
+2. Requires an existing WebSocket binding for that instance; returns
    `websocket.binding_missing` when none exists.
 3. Sets `enabled=false` and clears `public_hosts` to `[]` on the binding.
 4. Syncs public host routes so the cleared host list takes effect on the router.
@@ -58,8 +60,9 @@ for the exact payload shape.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The current node identity holds `app:write` on the app's owning node.
-- The app exists in the gateway registry and has an existing WebSocket binding.
+- The current node identity holds `app:write` on the selected instance's
+  serving node.
+- The selected app instance exists and has an existing WebSocket binding.
 
 ## Related Commands
 

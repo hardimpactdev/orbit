@@ -56,7 +56,7 @@ VPN client browser
   -> router orbit-caddy for `metrics.orbit`
   -> Grafana Docker Swarm service on the metrics role node
   -> Prometheus Docker Swarm service on the metrics role node
-  -> node-exporter host binary tool and systemd process on metrics and workload nodes
+  -> node-exporter host binary tool and systemd process on metrics and Ubuntu workload nodes
 
 Private analytics:
 
@@ -99,7 +99,7 @@ The sections below walk through each layer of the stack in the same order as the
 | App-dev PHP backend | `orbit-caddy` on `app-dev` nodes terminating the public site route and reverse-proxying to per-app or per-workspace FrankenPHP containers over plain HTTP by default, or over opt-in inner HTTPS on port `8443` when the app's PHP runtime config sets `proxy_transport=https` |
 | Realtime service backend | Laravel Reverb in a Docker runtime container managed by Orbit on `websocket` nodes, bound only to the node's WireGuard address and reached through router-owned WebSocket routes |
 | S3 service backend | SeaweedFS in a canonical node-owned Docker process on `s3` nodes, bound only to the node's WireGuard address and reached through router-owned S3 routes |
-| Metrics backend | Prometheus and Grafana as Docker Swarm process definitions on metrics role nodes; node-exporter as a host binary tool plus systemd process on metrics and workload nodes; Grafana private route `metrics.orbit` |
+| Metrics backend | Prometheus and Grafana as Docker Swarm process definitions on metrics role nodes; node-exporter as a host binary tool plus systemd process on metrics and active Ubuntu workload nodes; Grafana private route `metrics.orbit` |
 | Analytics service backend | Plausible CE 3.2.1 in a node-owned Docker process on `analytics` nodes, published only on the node's WireGuard address and reached through router-owned analytics routes. PostgreSQL 16 Alpine and ClickHouse 24.12 Alpine run as authenticated, node-owned Docker service processes published only on active `database` nodes' WireGuard addresses. |
 | Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
 | Network | WireGuard, served by the gateway-coupled `vpn` role |
@@ -132,10 +132,11 @@ Gateway maintenance in production is containerized: migrations and update work
 run through the gateway container entrypoint or durable one-shot runner. Source
 development can still use `bin/orbit-gateway-artisan` or direct
 `php apps/gateway/artisan` from a controlled checkout for local ergonomics.
-The public `orbit` command never dispatches to gateway Artisan. Public commands
-gather local input, call the gateway over the VPN, and render the result.
-Internal executor commands are dispatched by the gateway and require an
-operation token before side effects.
+The public `orbit` command never dispatches to gateway Artisan. Every public
+gateway-backed or remote command uses the typed gateway HTTPS API over
+WireGuard. Local-only, pre-grants-bootstrap, and identity-gated self-management
+commands follow their documented lanes. Internal executor commands are
+dispatched by the gateway and require an operation token before side effects.
 
 The Orbit CLI is a self-contained native binary with PHP 8.5 embedded, built
 per OS/arch and downloaded by the installer. The binary embeds PHP 8.5 and the
@@ -519,19 +520,17 @@ and does not use the gateway or FrankenPHP runtime images. The Reverb runtime
 application lives at `apps/reverb/` and is packaged as the
 `hardimpact/orbit-reverb` image, where Composer dependencies are installed at
 image build time. During role convergence, Orbit resolves the selected release
-manifest's `orbit-websocket` image. The target prefers the manifest's HTTPS
-image archive, verifies its SHA-256, and loads it without registry credentials;
-manifests without that artifact pull the digest-pinned image. The target
-verifies the self-contained label and only then updates the local
-`orbit-reverb:current` runtime alias. Newly generated manifests reject mutable
-websocket image references. Legacy manifests remain parseable, but convergence
-never installs a mutable websocket reference.
-If the manifest endpoint is unreachable, convergence continues with the
-existing local alias inspection and source-checkout fallback.
-Source sync to
-`/opt/orbit/websocket/current` and host Composer install remain a source-checkout
-fallback for non-self-contained local runtime images; packaged production
-gateways do not carry the Reverb source tree.
+manifest's `orbit-websocket` image. The current immutable manifest must provide
+either an HTTPS image archive with its SHA-256 or a digest-pinned image. The
+target verifies and loads the archive without registry credentials or pulls the
+digest-pinned image, verifies the self-contained label, and only then updates
+the local `orbit-reverb:current` runtime alias. Mutable websocket image
+references are rejected. If the manifest endpoint is unreachable, convergence
+continues with existing local alias inspection and the development
+source-checkout fallback. Source sync to `/opt/orbit/websocket/current` and host
+Composer install remain a development source-checkout fallback for
+non-self-contained local runtime images; packaged production gateways do not
+carry the Reverb source tree.
 The long-running service is `php artisan reverb:start` inside the Reverb runtime
 container. Reverb listens on `0.0.0.0:8080` inside that isolated container, and
 Docker publishes the port only on the node's WireGuard address. The router
@@ -634,7 +633,7 @@ The `metrics` role runs Orbit's host-resource observability backend. Prometheus
 and Grafana are node-owned service process definitions using the Docker Swarm
 runtime on the selected metrics node. node-exporter is a node-owned host binary
 tool with a node-owned host command process using systemd on the metrics node
-and every active non-gateway role-bearing workload node. The role baseline
+and every active Ubuntu non-gateway role-bearing workload node. The role baseline
 creates the expected process rows, Docker
 substrate intent, and node-exporter host binary tool intent; start, stop,
 restart, logs, and runtime drift remain process-family behavior.
@@ -645,7 +644,7 @@ gateway-owned process runtime configuration and exposes them through
 `metrics:credentials`. Grafana is file-provisioned with the Orbit Prometheus
 datasource and the built-in `Orbit Node Resources` dashboard. That dashboard
 uses the node-exporter `node` label as a selector so operators can view the
-metrics node or any active workload node scraped by Prometheus. The first slice
+metrics node or any active Ubuntu workload node scraped by Prometheus. The first slice
 tracks host resources only and does not claim app, container-specific,
 database-specific, or dynamic scrape discovery coverage.
 
@@ -658,8 +657,8 @@ and `metrics.orbit` route drift belongs to `proxy`.
 ### Process manager
 
 Processes are the Orbit lifecycle-managed long-running units. Each process
-runtime unit uses its owning node/app/workspace context, selected runtime
-backend, restart policy, and Orbit-managed environment or container
+runtime unit uses its owning node/app-instance/workspace context, selected
+runtime backend, restart policy, and Orbit-managed environment or container
 configuration. The supported runtime backends are systemd for Linux host command
 process units, launchd for macOS host command process units, Docker for
 containerized process units, and Docker Swarm for selected node-owned service
@@ -863,23 +862,37 @@ gateway entries and use `gateway:use <name>` to switch the active one.
 
 ### Platform and roles
 
-The Orbit CLI binary targets macOS arm64 and Ubuntu x86_64. The `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress`, `websocket`, `s3`, and `analytics` role drivers currently support Ubuntu only; `metrics` supports Ubuntu and Debian hosts; `app-dev` and `database` support Ubuntu and macOS. macOS role support applies to adopted/self-managed workload nodes and requires a reachable Docker-compatible container provider: Orbit uses an already-working Docker provider first and recommends Colima (`brew install docker colima`, `colima start --runtime docker`) when none is reachable, while OrbStack and Docker Desktop remain compatible when already installed and licensed/allowed for the user's context. Managed-host provisioning through `node:new` templates remains Ubuntu-only. See [Architecture: Node roles](architecture.md#node-roles) for the driver concept and [Node Concepts: Role Platform Support](domains/1_node/node-concepts.md#role-platform-support) for the full matrix.
+The Orbit CLI binary targets macOS arm64 and Ubuntu x86_64. Ubuntu is Orbit's
+only supported Linux host platform for roles in v1. The `gateway`, `vpn`,
+`router`, `app-prod`, `agent`, `ingress`, `websocket`, `s3`, `metrics`, and
+`analytics` role drivers support Ubuntu only; `app-dev` and `database` support
+Ubuntu and macOS. macOS role support applies to adopted/self-managed workload
+nodes and requires a reachable Docker-compatible container provider: Orbit uses
+an already-working Docker provider first and recommends Colima (`brew install
+docker colima`, `colima start --runtime docker`) when none is reachable, while
+OrbStack and Docker Desktop remain compatible when already installed and
+licensed/allowed for the user's context. Managed-host provisioning through
+`node:new` templates remains Ubuntu-only. See [Architecture: Node
+roles](architecture.md#node-roles) for the driver concept and [Node Concepts:
+Role Platform Support](domains/1_node/node-concepts.md#role-platform-support) for
+the full matrix.
 
-The CLI is always a thin gateway client. It has no client-side role awareness.
-On any machine, the CLI gathers local context (current app, workspace, paths),
-calls the gateway over the VPN, and renders the result. The gateway
-authenticates the WireGuard peer, derives grants from its own node records, and
-decides what to do. Gateway-owned reads/writes stay gateway-only. Node-local
-execution uses Agent push when the command family needs node-local work.
-Normal commands never select SSH, and break-glass access
-stays outside Orbit.
+The CLI has no client-side role awareness. Every public gateway-backed or
+remote command uses the typed gateway HTTPS API over WireGuard. Local-only,
+pre-grants-bootstrap, and identity-gated self-management commands follow their
+documented lanes. For gateway-backed calls, the CLI gathers local context
+(current app, workspace, paths), and the gateway authenticates the WireGuard
+peer, derives grants from its own node records, and decides what to do.
+Gateway-owned reads/writes stay gateway-only. Node-local execution uses Agent
+push when the command family needs node-local work. Normal managed execution
+never selects SSH, and break-glass access stays outside Orbit.
 
 One machine in the network carries the gateway service. Gateway code runs only
 in that runtime and assumes it is the gateway; it does not require a role flag
-in the environment. Public CLI calls, including calls made on the gateway host
-itself, enter the node-local Orbit CLI entry point and call the gateway API
-over the configured WireGuard/orbit-caddy HTTPS endpoint. Production installs
-still use the native CLI binary artifact; source-mounted Docker and Incus
+in the environment. Public gateway-backed CLI calls, including calls made on
+the gateway host itself, enter the node-local Orbit CLI entry point and call the
+gateway API over the configured WireGuard/orbit-caddy HTTPS endpoint. Production
+installs still use the native CLI binary artifact; source-mounted Docker and Incus
 development/E2E topologies point `/usr/local/bin/orbit` directly at
 `<source>/apps/cli/orbit`. The gateway finds its own node row through the
 singleton active `gateway` role assignment in its local registry.

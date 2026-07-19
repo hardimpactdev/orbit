@@ -14,9 +14,10 @@ response.
 - **Gateway Call:** Executes an HTTPS POST request to the gateway's `app:new`
   endpoint. The gateway identifies the WireGuard peer and decides whether the
   request is allowed.
-- **Apply:** After the CLI resolves the complete source plan, the gateway writes
-  app configuration locally and orchestrates all remote work to the target node
-  through authenticated Agent push over WireGuard.
+- **Apply:** After the CLI resolves the complete source plan, the gateway
+  atomically writes the logical app and its named first instance locally and
+  orchestrates all remote work to that instance's serving node through
+  authenticated Agent push over WireGuard.
 - **Progress:** The CLI consumes the gateway's progress stream and renders the
   human-facing tree or JSON envelope.
 

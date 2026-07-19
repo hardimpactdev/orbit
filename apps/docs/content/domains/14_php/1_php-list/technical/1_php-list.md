@@ -1,4 +1,4 @@
-# Technical Contract: `orbit php:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]`
+# Technical Contract: `orbit php:list [--app=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]`
 
 [Back to public `php:list` documentation.](../php-list.md)
 
@@ -8,14 +8,14 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity has `php:read` granted on the resolved target,
-  app-instance serving node, or workspace-instance serving node. Gateway
+- The current node identity has `php:read` granted on the selected app-instance
+  or workspace-instance serving node, or on the explicit node target. Gateway
   identity remains implicit.
 
 ## Signature
 
 ```bash
-orbit php:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]
+orbit php:list [--app=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | Optional. | Never. | Local `node:default` when no app or workspace context resolves a node. | Visible node slug. |
-| `app` | `--app` | Optional. | Never. | Cwd-inferred app when available. | Visible app selector. |
+| `app` | `--app` | Optional. | Never. | Cwd-inferred concrete app instance when available. | Visible dotted `<app.instance>` selector. A bare logical app fails with `error.meta.reason=app_instance_required`. |
 | `workspace` | `--workspace` | Optional. | Never. | Cwd-inferred workspace when available. | Visible workspace selector. Requires resolved parent app when the workspace name is ambiguous. |
 | `live` | `--live` | Optional. | Never. | `false`. | Requests live image inspection on the resolved node. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
@@ -34,14 +34,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Runtime Visibility Rules
 
-- Resolves target context from explicit options, cwd app/workspace context,
-  concrete app-instance placement, workspace-instance placement, local
-  `node:default`, or gateway-local node identity.
-- When an app or workspace context resolves an owning node, any explicit
-  `--node` selector must match that owner; `--node` is not an alternate image
-  inventory source for app or workspace runtime facts.
-- Reads gateway configuration for app PHP version and workspace override or
-  inheritance when those scopes are resolved.
+- Resolves exactly one target context from an explicit dotted app-instance
+  selector, concrete cwd app/workspace context, workspace-instance placement,
+  local `node:default`, or gateway-local node identity. It never chooses one
+  app instance to stand in for a logical app.
+- When an app instance or workspace context resolves a serving node, any
+  explicit `--node` selector must match that node; `--node` is not an alternate
+  image inventory source for app-instance or workspace runtime facts.
+- Reads the logical app's shared PHP policy and reports it alongside the
+  selected app instance and serving-node inventory. Reads workspace override or
+  inheritance when that scope is resolved.
 - Rejects an explicit workspace scope before configuration or live inventory
   reads unless its serving node is active `app-dev` and the caller is not
   `app-prod`. When the caller or selected app is production, the app view omits
@@ -69,6 +71,10 @@ read `.php-version`, mutate Composer constraints, or use SSH.
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
+A supplied bare logical app fails before reads with
+`error.code=validation_failed`, `error.meta.field=app`, and
+`error.meta.reason=app_instance_required`.
+
 ## Doctor Relationship
 
 `php:list` does not change runtime selection or runtime artifacts; live reads
@@ -81,6 +87,6 @@ own PHP runtime health for app and workspace artifacts.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Php/PhpListCommandTest.php` | CLI target resolution, filter forwarding, `--live` flag forwarding, human and JSON renderer selection, and gateway error pass-through. |
-| `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Permission-specific gateway authorization, app-instance/workspace placement, unresolved-target denial, runtime view reads, and structured success/error envelopes. |
+| `apps/cli/tests/Feature/Commands/Php/PhpListCommandTest.php` | Concrete app-instance target resolution, filter forwarding, `--live` flag forwarding, human and JSON renderer selection, and gateway error pass-through. |
+| `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Permission-specific gateway authorization, concrete app-instance/workspace placement, bare-app denial, runtime view reads, and structured success/error envelopes. |
 | `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Inherited workspace view mapping and PHP runtime view DTO shape. |

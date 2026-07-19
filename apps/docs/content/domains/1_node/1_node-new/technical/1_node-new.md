@@ -238,7 +238,7 @@ and receives traffic only through router-owned S3 service routes.
 Metrics assignment convergence creates Docker substrate intent,
 node-exporter host binary tool intent, node-owned Prometheus and Grafana Docker
 Swarm process definitions, node-exporter systemd process definitions on metrics
-and active workload nodes, the router-owned `metrics.orbit` route, and generated
+and active Ubuntu workload nodes, the router-owned `metrics.orbit` route, and generated
 Grafana admin credentials. Metrics has no role-local settings and records
 host-resource observability only in this slice.
 

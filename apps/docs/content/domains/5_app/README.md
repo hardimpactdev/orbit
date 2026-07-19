@@ -44,16 +44,22 @@ These rules govern all app family commands.
   convergence belong to the `proxy` family.
 - Commands that create or set up apps use explicit `--node` first, then the
   local `node:default` node when configured.
-- `app:new` creates or clones app source/path and then uses `app:register`
-  behavior to converge app configuration and node artifacts.
-- `app:register` is idempotent. It can adopt an existing app path, re-apply
-  Orbit management for an existing app, or retry production domain activation.
-- Apps may configure an agent IDE adapter through `app:agent-ide`. This
-  overrides the owning node default for app and workspace workflows.
+- `app:new` creates or clones one source path, then atomically creates the
+  logical app and its first named instance before using `app:register`
+  behavior to converge that instance's configuration and node artifacts. The
+  first instance is named `development` without `--domain` and `production`
+  with `--domain`.
+- `app:register` is idempotent for one concrete instance. It can create or
+  adopt a named instance, re-apply Orbit management for that instance, move
+  only that instance, or retry its production-domain activation. A first
+  adoption atomically creates the logical app and its first instance.
+- App instances may configure an agent IDE adapter through `app:agent-ide`.
+  Effective resolution is instance override, then that instance's serving-node
+  default, then no adapter.
 - Development-server behavior for app and workspace processes is owned by the
-  `process` family. App commands record the app URL, document root, and runtime
-  policy; they do not create Vite-specific proxy routes or rewrite app-side
-  frontend configuration.
+  `process` family. App commands record shared runtime policy, while the
+  selected app instance records URL and document root; they do not create
+  Vite-specific proxy routes or rewrite app-side frontend configuration.
 - Process definitions for app and workspace contexts belong to one concrete app
   instance. Process commands accept dotted selectors such as `docs.nmbp`; bare
   logical-app shorthand is valid only when the app has exactly one instance.
@@ -62,10 +68,10 @@ These rules govern all app family commands.
   process lifecycle, is represented as a process with Docker runtime. Changing
   `php_version` recreates the app runtime artifact from the selected PHP image;
   it does not install host PHP or render host FPM pools.
-- Ad-hoc PHP, Composer, or Artisan for an app runs on the app node's host PHP
-  toolchain (matched to the app's PHP version), against the app source the
-  FrankenPHP container serves. Orbit ships no command-`exec` surface; deploy
-  steps use the same host toolchain.
+- Ad-hoc PHP, Composer, or Artisan for an app instance runs on that instance's
+  serving node host PHP toolchain (matched to the app's PHP version), against
+  the instance source path the FrankenPHP container serves. Orbit ships no
+  command-`exec` surface; deploy steps use the same host toolchain.
 - App setup is lifecycle-specific, not a generic exec surface.
   `app-setup-step:*` records ordered setup commands for one app instance, and
   `app:setup` runs those commands on that instance's serving node and path
@@ -85,15 +91,17 @@ These rules govern all app family commands.
 - App instances record required PHP extensions. For Orbit-driven PHP instances,
   `doctor --family=app` reports missing or unverifiable extensions against the
   concrete FrankenPHP runtime container.
-- App WebSocket bindings are explicit app-owned configuration. They enable one
-  app to use the fleet websocket service, own per-app Reverb credentials,
-  allowed origins, public WebSocket hosts, and private `websocket.orbit`
-  publishing configuration. App commands own the binding state; `ingress`
+- App WebSocket bindings select one concrete app instance and site. They enable
+  that instance to use the fleet websocket service, own Reverb credentials,
+  allowed origins derived from that instance's domain, public WebSocket hosts,
+  and private `websocket.orbit` publishing configuration. App commands own the
+  binding state; `ingress`
   owns public route exposure, `router` owns route selection and backend pools,
   and the `websocket` role owns the Reverb runtime.
-- App analytics bindings are explicit app-owned configuration. They enable one
-  app to use the fleet analytics service through public tracking hostnames such
-  as `analytics.example.com`. App commands own the binding state and host list;
+- App analytics bindings select one concrete app instance and site. They enable
+  that instance to use the fleet analytics service through public tracking
+  hostnames such as `analytics.example.com`, derived by default from that
+  instance's domain. App commands own the binding state and host list;
   `ingress` owns public route exposure, `router` owns tracking-only route
   selection and backend pools, and the `analytics` role owns the Plausible CE
   runtime. V1 does not inject scripts, provision Plausible sites, or expose the
@@ -107,9 +115,10 @@ These rules govern all app family commands.
   logs, and latest status belong to one concrete app instance. `app:deploy`
   accepts the canonical dotted instance selector, while a bare app name is
   shorthand only when that app has exactly one instance.
-- `app:prune` is source-of-truth cleanup, not doctor drift repair. It checks
-  configured agent IDE adapters for the app, uses workspace removal semantics
-  for stale workspaces, and can be scheduled through normal schedules.
+- `app:prune` is source-of-truth cleanup for one concrete `app-dev` instance,
+  not doctor drift repair. It checks that instance's effective agent IDE
+  adapter, uses workspace removal semantics for stale workspaces owned by that
+  instance, and can be scheduled through normal schedules.
 - App dependency audit posture is gateway-owned summary state for registered
   app source paths. The v1 storage and presentation slice records compact
   per-manager summaries derived from lockfile-aware audit commands such as
@@ -130,6 +139,13 @@ These rules govern all app family commands.
   name succeeds for an app with exactly one instance; otherwise the command fails with
   a validation error requiring a concrete app-instance selector before
   authorization or side effects.
+
+The same concrete-instance rule applies to `app:register`, `app:root`,
+`app:prune`, `app:agent-ide`, WebSocket, analytics, and other placement-sensitive
+commands. `app:remove` is the deliberate exception: it accepts only a logical
+app slug and, with explicit destructive consent, removes that app plus every
+owned instance as one authorized cascade. Dotted selectors and instance
+hostnames belong to `app:instance remove`.
 
 Read commands over app registry state are fast gateway database reads unless
 their command contract explicitly opts into live inspection. App runtime drift
@@ -163,11 +179,17 @@ capability; they are not owned by `app-prod`.
 App command signatures use two positional names intentionally:
 
 - `[name]` is an app identity slug for commands that create, adopt, or
-  re-converge app configuration. It is not a hostname selector.
+  re-converge app configuration. It is not a hostname selector. When the
+  command targets placement, it creates or selects one named instance.
 - `[app]` is an existing-app selector for commands that read, update, prune, or
   remove an app. It may be an app name or app hostname when the command
   contract says hostname resolution is supported. Name matches win over
   hostname matches.
+
+Placement-sensitive commands use a dotted `<app>.<instance>` selector. Their
+contracts may admit a bare logical app slug only when exactly one eligible,
+visible instance exists. `app:remove` never uses this selector model: its
+`[app]` argument is a logical slug only.
 
 ## App JSON Entity
 
@@ -199,7 +221,6 @@ logical-app workspace fallback. Workspace expansion includes only active
     "proxy_transport": "http"
   },
   "php_version": "8.5",
-  "adopted": false,
   "dependency_audit_status": "unknown",
   "dependency_warning_count": 0,
   "dependency_danger_count": 0,
@@ -214,7 +235,6 @@ logical-app workspace fallback. Workspace expansion includes only active
 | `runtime` | string | Runtime for the app. `php` uses a FrankenPHP app runtime container; `static` serves without one. |
 | `runtime_config` | object \| null | Runtime-specific gateway configuration. PHP/FrankenPHP apps expose `proxy_transport`, which is `http` by default and may be `https` for app-dev inner TLS; static apps report `null`. |
 | `php_version` | string | PHP version recorded in gateway app configuration. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
-| `adopted` | boolean | `true` once the app path was adopted through `app:register`; `false` for app records created by `app:new` or first registered without adoption. |
 | `dependency_audit_status` | string | Aggregate dependency posture for the logical app. |
 | `dependency_warning_count` | integer | Number of warning-severity dependency findings in the latest summaries. |
 | `dependency_danger_count` | integer | Number of danger-severity dependency findings in the latest summaries. |
@@ -231,15 +251,17 @@ App-instance renderers return this shape under `success.data.instance`, or under
 ```json
 {
   "app": "docs",
-  "name": "production-cloud",
-  "driver": "laravel-cloud",
+  "name": "production",
+  "driver": "orbit",
   "driver_config": {
-    "application_id": "app_123",
-    "environment_id": "env_123",
-    "environment_reused": true,
-    "environment_created": false,
+    "environment": "production",
+    "node": "app-1",
+    "url": "https://docs.example.com",
+    "path": "/home/docs/app",
+    "root": "public",
     "domain": "docs.example.com"
   },
+  "adopted": false,
   "runtime": {
     "runtime": "php",
     "php_version": "8.5",
@@ -262,6 +284,7 @@ App-instance renderers return this shape under `success.data.instance`, or under
 | `name` | string | Instance name, unique within the app. |
 | `driver` | string | Instance driver: `orbit` or `laravel-cloud`. |
 | `driver_config` | object | Driver-specific Laravel Data object serialized through the gateway. |
+| `adopted` | boolean | Whether this concrete path was adopted through `app:register`. It never belongs to the logical app. |
 | `runtime` | object | Effective runtime metadata for this instance. |
 | `runtime.runtime` | string | Logical app runtime. |
 | `runtime.php_version` | string | PHP version recorded for the app runtime. |
@@ -283,8 +306,8 @@ repository value and stores `repository=null` when adopting an unmanaged path.
 
 App commands use gateway-owned access policy. The gateway authenticates the
 caller's WireGuard peer and applies the scoped permission set on the grant
-linking the caller to the app's owning node. The CLI never branches on
-caller role. Self-targeting commands are authorized by the node's
+linking the caller to each selected app instance's serving node. The CLI never
+branches on caller role. Self-targeting commands are authorized by the node's
 self-grant — see [Architecture: Self-grants and
 self-serving](../../architecture.md#self-grants-and-self-serving).
 [`workspace:setup`](../6_workspace/2_workspace-setup/workspace-setup.md) is
@@ -292,6 +315,9 @@ the most visible self-serving command in this family today; it works because
 the `app-dev` self-grant baseline includes the workspace permissions it needs.
 `app-prod` self-grants are read-only and include no wildcard or workspace
 permission; production app services never operate workspaces.
+
+Commands that affect several instances, including `app:remove`, authorize the
+complete affected serving-node set before consent or side effects.
 
 `app-dev` self-grants also include `app:register` for the node itself, so a
 local CLI on an app-dev node can register or re-apply management for apps hosted
@@ -311,9 +337,9 @@ Use these commands to create, inspect, and remove app records.
 2. [`orbit app:register [name]`](2_app-register/app-register.md)
 3. [`orbit app:list`](3_app-list/app-list.md)
 4. [`orbit app:show [app]`](4_app-show/app-show.md)
-5. [`orbit app:root [app] [root]`](5_app-root/app-root.md)
-6. [`orbit app:remove [app]`](6_app-remove/app-remove.md)
-7. [`orbit app:prune [app]`](7_app-prune/app-prune.md)
+5. [`orbit app:root [app.instance] [root]`](5_app-root/app-root.md)
+6. [`orbit app:remove [app-slug]`](6_app-remove/app-remove.md)
+7. [`orbit app:prune [app.instance]`](7_app-prune/app-prune.md)
 8. Reserved for a future app metadata update command. No `app:update` command
    contract exists in the current converted surface.
 
@@ -321,22 +347,22 @@ Use these commands to create, inspect, and remove app records.
 
 Use these commands to configure runtime-facing app capabilities.
 
-1. [`orbit app:agent-ide [app] [agent_ide]`](9_app-agent-ide/app-agent-ide.md)
+1. [`orbit app:agent-ide [app.instance] [agent_ide]`](9_app-agent-ide/app-agent-ide.md)
 2. Reserved. `app:exec` was removed; Orbit has no command-`exec` surface.
 3. [`orbit app:worker show|enable|disable [app]`](11_app-worker/app-worker.md)
-4. [`orbit app:websocket enable [app]`](12_app-websocket-enable/app-websocket-enable.md)
-5. [`orbit app:websocket disable [app]`](13_app-websocket-disable/app-websocket-disable.md)
-6. [`orbit app:websocket credentials [app]`](14_app-websocket-credentials/app-websocket-credentials.md)
-7. [`orbit app:mount list|add|remove [app]`](15_app-mount/app-mount.md)
+4. [`orbit app:websocket enable [app.instance]`](12_app-websocket-enable/app-websocket-enable.md)
+5. [`orbit app:websocket disable [app.instance]`](13_app-websocket-disable/app-websocket-disable.md)
+6. [`orbit app:websocket credentials [app.instance]`](14_app-websocket-credentials/app-websocket-credentials.md)
+7. [`orbit app:mount list|add|remove [app.instance]`](15_app-mount/app-mount.md)
 
 ### App Integrations
 
 Use these commands for analytics, app instances, and env values.
 
-1. [`orbit app:analytics enable [app]`](16_app-analytics-enable/app-analytics-enable.md)
-2. [`orbit app:analytics disable [app]`](17_app-analytics-disable/app-analytics-disable.md)
-3. [`orbit app:analytics show [app]`](18_app-analytics-show/app-analytics-show.md)
-4. [`orbit app:analytics verify [app]`](21_app-analytics-verify/app-analytics-verify.md)
+1. [`orbit app:analytics enable [app.instance]`](16_app-analytics-enable/app-analytics-enable.md)
+2. [`orbit app:analytics disable [app.instance]`](17_app-analytics-disable/app-analytics-disable.md)
+3. [`orbit app:analytics show [app.instance]`](18_app-analytics-show/app-analytics-show.md)
+4. [`orbit app:analytics verify [app.instance]`](21_app-analytics-verify/app-analytics-verify.md)
 5. [`orbit app:instance list|show|add|remove [app]`](19_app-instance/app-instance.md)
 6. [`orbit app:env list|set|render [app]`](20_app-env/app-env.md)
 

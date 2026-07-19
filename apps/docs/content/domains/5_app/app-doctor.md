@@ -6,40 +6,41 @@ The app family doctor implements the
 [Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
 `key()` returns `app`.
 
-`doctor --family=app` verifies whether gateway records for app instances match
-the facts that make those concrete placements runnable on their serving nodes.
-Logical app placement defaults are never probed as live state. The
-family also detects stale managed app configuration whose identity is absent
-from active gateway app-instance configuration. Concrete runtime units and
-containers are owned by the process family.
+`doctor --family=app` verifies whether selected app-instance records match the
+facts that make those concrete placements runnable on their serving nodes.
+Logical apps own identity and shared product configuration, not node, path,
+root, domain, adoption, runtime placement, or binding defaults. App Doctor
+therefore never probes a logical app as live placement. It also detects stale
+managed instance configuration whose dotted identity is absent from active
+gateway app-instance configuration. Concrete runtime units and containers are
+owned by the process family.
 
 ## Selection and scope
 
 Selection resolves app doctor to concrete placements before any probe begins.
 
-- `--app=<app.instance>` selects one concrete app instance.
-- A bare app name or hostname is shorthand only when the logical app has
-  exactly one instance. With zero or multiple instances, doctor fails before
+- `--app=<app.instance>` selects one concrete app instance. A targeted run
+  always requires the dotted name; a bare app name or hostname fails before
   probing with `error.code=validation_failed`, `error.meta.field=app`, and
   `error.meta.reason=app_instance_required`.
 - The selected instance determines the serving node, source path, document
-  root, domain, and runtime policy. Logical app defaults never override that
-  placement. An explicit `--node` must name the same serving node.
+  root, domain, adoption state, runtime policy, and bindings. An explicit
+  `--node` must name the same serving node.
 - Without `--app`, a node-scoped app-family run enumerates the concrete Orbit
   app instances served by that node and checks each independently. It does not
   synthesize a runtime target from a logical app's default fields.
 
 The app family owns these facts:
 
-- logical app identity and runtime defaults stored by the gateway only as
-  inputs to the selected instance; default node/path/root/domain values are
-  not observed placement;
+- logical app identity and shared product configuration only; every observed
+  placement, runtime, adoption, and binding fact below is scoped to a selected
+  app instance;
 - app instance records owned by the gateway: instance name, driver, driver
   configuration, required PHP extensions, instance env values, and related
   instance database targets;
-- app source location: the managed app path exists on the owning node and
+- app source location: the selected instance path exists on its serving node and
   the configured document root exists inside that path;
-- app runtime intent: app and Orbit app-instance PHP/image selection,
+- app runtime intent: the selected instance's effective PHP/image selection,
   production app user and ownership policy, managed app runtime configuration,
   and runtime readiness for the configured PHP image;
 - production app runtime security: app user isolation that applies only in
@@ -48,18 +49,14 @@ The app family owns these facts:
   reported as `app.security.*` issue keys inside the app family;
 - production app health: production app health checks plus deployment pipeline
   validity and latest deployment status recorded on each concrete app instance;
-- app-owned adoption facts: selected existing app paths that can be tied to an
-  explicit app name and node during `doctor --adopt`. During adoption,
-  `composer.json` is the only project file Orbit may inspect for PHP-version
-  hints, and only when the app path is a PHP project. Orbit must not read
-  `.php-version`, `package.json`, or other project files for app adoption
-  hints.
-- stale managed app runtime configuration with identities absent from active
-  gateway app records.
+- adoption facts recorded on the instance by `app:register`; Doctor never
+  infers or creates an app or instance from an observed path;
+- stale managed instance runtime configuration with dotted identities absent
+  from active gateway app-instance records.
 
 Node reachability belongs to the node family. App-owned proxy routes belong to
-`proxy`. Workspace artifacts belong to `workspace`. App and app-instance
-FrankenPHP runtime units, containers, lifecycle, and logs belong to `process`.
+`proxy`. Workspace artifacts belong to `workspace`. FrankenPHP runtime units,
+containers, lifecycle, and logs for apps and app instances belong to `process`.
 App schedules belong to `schedule`. Tool installation
 and firewall policy belong to `tool` and `firewall_rule`.
 
@@ -76,12 +73,12 @@ The apps probe reads gateway app records and checks these layers:
    is usable as the app source directory.
 4. **Document root:** the configured document root exists inside the app path
    and is not outside the app path.
-5. **PHP runtime:** the configured PHP image can serve the app runtime on the
-   owning node. Concrete FrankenPHP unit presence and shape are process-family
+5. **PHP runtime:** the configured PHP image can serve the selected instance
+   runtime on its serving node. Concrete FrankenPHP unit presence and shape are process-family
    checks.
 6. **Runtime artifacts:** managed app runtime configuration and filesystem
-   ownership match gateway app configuration and the production policy that
-   applies when the owning node carries `app-prod`.
+   ownership match selected app-instance configuration and the production policy that
+   applies when its serving node carries `app-prod`.
 7. **Production readiness:** production apps have required production runtime
    policy, app user isolation where configured, deployment pipeline configuration,
    configured health checks, and no unsuccessful or stale latest deployment
@@ -94,9 +91,10 @@ The apps probe reads gateway app records and checks these layers:
    configuration places them on the selected node are probed for app-owned
    PHP/image requirements, managed config such as
    `~/.config/orbit/apps/hauser-nmbp.ini`, and instance-scoped app policy.
-11. **Stale app configuration:** Managed runtime config whose encoded app
-   identity is absent from active app or Orbit app-instance records is reported
-   as app drift. Stale containers are process-family drift.
+11. **Stale instance configuration:** Managed runtime config whose encoded
+   dotted instance identity is absent from active app-instance records is
+   reported as app drift. Ambiguous or logical-app-only identities are not
+   adopted or bound automatically. Stale containers are process-family drift.
 
 The apps probe may mention related family drift only as a handoff. It must not
 duplicate proxy route, workspace, process, schedule, tool, firewall, or node
@@ -109,15 +107,15 @@ Each code below corresponds to a specific layer in the apps probe.
 | Code | Detected when |
 | --- | --- |
 | `app.record_incomplete` | A selected app instance lacks required identity, driver, or placement fields. |
-| `app.owner_node_invalid` | The selected Orbit app instance points at a missing node or a node that is not active. |
-| `app.path_missing` | The configured app path does not exist on the owning node. |
+| `app.serving_node_invalid` | The selected Orbit app instance points at a missing serving node or a node that is not active. |
+| `app.path_missing` | The selected instance path does not exist on its serving node. |
 | `app.path_unusable` | The configured app path exists but cannot be read, entered, or managed by Orbit. |
 | `app.root_missing` | The configured document root does not exist inside the app path. |
 | `app.root_outside_path` | The configured document root resolves outside the app path. |
-| `app.php_version_unavailable` | The app's configured PHP version cannot serve the app runtime on the owning node. |
-| `app.runtime_config_missing` | Managed app or app-instance runtime configuration required by Orbit is absent. |
-| `app.runtime_config_mismatch` | Managed app or app-instance runtime configuration exists but differs from gateway app configuration. |
-| `app.runtime_config_extra` | An Orbit-owned app runtime artifact exists on a node with an app role without matching active app configuration. |
+| `app.php_version_unavailable` | The selected instance's effective PHP version cannot serve its runtime on the serving node. |
+| `app.runtime_config_missing` | Managed runtime configuration required by the selected app instance is absent. |
+| `app.runtime_config_mismatch` | Managed instance runtime configuration differs from the selected app-instance configuration. |
+| `app.runtime_config_extra` | An Orbit-owned runtime artifact has a dotted identity with no matching active app instance. |
 | `app.runtime_config_probe_failed` | The managed runtime configuration directory could not be reliably scanned for orphan artifacts. Reported once per node so stale `app.runtime_config_extra` is not hidden. |
 | `app.runtime_extensions_unverifiable` | Required PHP extensions are configured for an Orbit app instance, but the FrankenPHP runtime cannot be queried. |
 | `app.runtime_extension_missing` | Required PHP extensions are configured for an Orbit app instance and one or more are absent from the running FrankenPHP runtime. |
@@ -131,7 +129,7 @@ Each code below corresponds to a specific layer in the apps probe.
 | `app.latest_deployment_failed` | The latest deployment run for a production app instance finished as `failed` or `cancelled` and no newer successful deployment exists. |
 | `app.deployment_run_stuck` | The latest deployment run for a production app instance is still `running` after the deployment staleness threshold. |
 | `app.agent_ide_default_invalid` | The app-level agent IDE default points at a missing or unsupported adapter. |
-| `app.unregistered_path` | During an explicit adoption scope, a selected app path exists on a node with an app role without a matching gateway app record. |
+| `app.unregistered_path` | An explicitly inspected path is not represented by a named app instance; the finding is a handoff to `app:register`, never an automatic adoption candidate. |
 
 ## App Fix Map
 
@@ -139,16 +137,16 @@ The table below shows what `doctor --restore` does for each fixable code.
 
 | Code | `doctor --restore` behavior |
 | --- | --- |
-| `app.runtime_config_missing` | Reinstall managed app or app-instance runtime configuration from gateway app configuration. |
-| `app.runtime_config_mismatch` | Rewrite managed app or app-instance runtime configuration to match gateway app configuration. |
-| `app.runtime_config_extra` | Remove the stale Orbit-owned app runtime artifact when its encoded identity is absent from active app configuration. |
+| `app.runtime_config_missing` | Reinstall managed runtime configuration from the selected app-instance configuration. |
+| `app.runtime_config_mismatch` | Rewrite managed runtime configuration to match the selected app instance. |
+| `app.runtime_config_extra` | Remove the stale Orbit-owned artifact only when its encoded dotted identity is unambiguous and absent from active app-instance configuration. |
 | `app.runtime_config_probe_failed` | Re-probe the directory. The drift clears if the underlying issue resolves; otherwise the action records a failed status with the error. |
 | `app.production_user_missing` | Create or restore the production app user and ownership policy when production configuration is complete. |
 | `app.production_user_mismatch` | Re-apply production app user and ownership policy from gateway app configuration. |
 | `app.security.system_user` | Restore the production app runtime user and group when the app configuration is complete. |
 | `app.security.fs_permissions` | Reapply production app ownership, permission, symlink, and release mount policy. |
 
-`doctor --restore` does not handle `app.record_incomplete`, `app.owner_node_invalid`,
+`doctor --restore` does not handle `app.record_incomplete`, `app.serving_node_invalid`,
 `app.path_missing`, `app.path_unusable`, `app.root_missing`,
 `app.root_outside_path`, `app.php_version_unavailable`,
 `app.security.runtime_container_isolation`,
@@ -169,17 +167,19 @@ or changes node reachability.
 
 ## App Adopt Map
 
-The table below shows what `doctor --adopt` does for each adoptable code.
+App Doctor never creates a logical app, chooses an instance name, or binds an
+observed path to an app automatically. `app.unregistered_path` always hands off
+to an explicit `app:register <app.instance> --node=<node> --path=<path>`
+invocation. The caller must name both the logical app and the
+instance. If more than one app, instance, node, path, domain, or runtime binding
+could match, Doctor stops with `validation_failed` and
+`error.meta.reason=ambiguous_app_instance`; it never chooses a candidate.
 
-| Code | `doctor --adopt` behavior |
-| --- | --- |
-| `app.unregistered_path` | Create app configuration only when the selected scope provides an explicit app name, node, and path, and the observed path is compatible with `app:register` adoption rules. |
-| `app.runtime_config_mismatch` | Update app runtime configuration only when the observed runtime configuration proves the same app identity and the observed values are supported. |
-
-`doctor --adopt` does not scan arbitrary filesystem paths for apps, adopt unknown
-virtual hosts, adopt proxy route backend artifacts as app configuration, infer database
-ownership, adopt deployment run outcomes, or adopt workspace/process/schedule
-artifacts as app facts.
+`doctor --adopt` may update supported observed values only for an already
+selected dotted app instance when the managed artifact encodes that exact
+identity. It does not adopt unknown virtual hosts, infer database ownership,
+adopt deployment outcomes, or adopt workspace/process/schedule artifacts as
+app facts.
 
 ## Deployment Health Recovery
 
@@ -207,7 +207,7 @@ Required test files:
 
 No current E2E test is mapped for app-family doctor coverage.
 
-`AppsProbeTest` covers registry configuration, owning node eligibility, source
+`AppsProbeTest` covers registry configuration, serving-node eligibility, source
 path, document root, PHP runtime, managed runtime configuration, the
 configuration for app-instance runtime targets, production
 user policy, and production health. It also covers deployment pipeline

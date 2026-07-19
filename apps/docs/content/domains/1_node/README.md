@@ -49,7 +49,7 @@ Orbit distinguishes these concepts:
 
   `metrics` is an optional host-resource observability role; it records and
   starts Prometheus and Grafana process runtimes on the metrics node, records
-  and starts node-exporter tool/process runtimes on metrics and active workload
+  and starts node-exporter tool/process runtimes on metrics and active Ubuntu workload
   nodes, and exposes Grafana through `metrics.orbit`.
   `analytics` is a private workload role for Plausible CE; it binds only to
   WireGuard and receives dashboard plus tracking traffic through router-owned
@@ -81,9 +81,10 @@ Gateway maintenance uses `bin/orbit-gateway-artisan` or direct
 command never dispatches to gateway Artisan.
 
 Nodes do not own fleet state or run a local control plane. They run workload
-services, call the gateway when a local command is invoked, and receive typed
-command envelopes that the gateway sends through Agent push. Work for the
-gateway executes locally. The Orbit Agent does not make a node a source of truth.
+services. Gateway-backed commands invoked on a node call the gateway, and nodes
+receive typed command envelopes that the gateway sends through Agent push.
+Gateway-owned work executes locally. The Orbit Agent does not make a node a
+source of truth.
 
 Node-side CLI availability is not general write permission. Any node-side
 write is authorized by the gateway before gateway-local handling or Agent push
@@ -129,14 +130,14 @@ Roles materialize baseline tool intent when a role assignment converges.
 | `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, gateway config root, SQLite database, and Orbit CA/certificate material |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and required DNS tool capability |
 | `router` | Private `orbit-caddy` router and proxy-family intent for private `.orbit` service names, route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
-| `app-dev` | App runtime baseline, node-owned wildcard DNS projection, `orbit-caddy` app/workspace routes, and process-backed runtime units using the platform-supported backend where configured |
-| `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and process-backed runtime units using the platform-supported backend where configured |
+| `app-dev` | Git, GitHub CLI, app runtime baseline, node-owned wildcard DNS projection, `orbit-caddy` app/workspace routes, and process-backed runtime units using the platform-supported backend where configured |
+| `app-prod` | Git, GitHub CLI, private `orbit-caddy` backend, FrankenPHP app containers, and process-backed runtime units using the platform-supported backend where configured |
 | `database` | Docker running as the substrate for managed database service processes |
-| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the node-owned wildcard DNS projection derived from `tld`, and any role-specific runtime containers the agent workload needs |
+| `agent` | Git, `orbit-caddy`, the shared unprivileged `agent` runtime user, the node-owned wildcard DNS projection derived from `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Valkey-backed scaling configuration |
 | `s3` | Docker installation and verification, SeaweedFS Docker runtime apply/start, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
-| `metrics` | Docker substrate, node-exporter binary, Prometheus/Grafana Swarm processes, node-exporter systemd processes on metrics/workload nodes, `metrics.orbit`, and Grafana credentials |
+| `metrics` | Docker substrate, node-exporter binary, Prometheus/Grafana Swarm processes, node-exporter systemd processes on metrics and active Ubuntu workload nodes, `metrics.orbit`, and Grafana credentials |
 | `analytics` | Docker verification, WireGuard-bound Plausible CE Docker apply/start, private routing, public tracking route support, backend pool registration, and authenticated PostgreSQL/ClickHouse endpoint configuration |
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
@@ -151,11 +152,13 @@ several of them.
 
 ## Thin CLI and gateway authority
 
-The Orbit CLI is a thin gateway client. It gathers input, calls the gateway,
-and renders the result. It does not classify itself as operator, gateway, or
-app, and it does not gate behavior on a local role label. The CLI calls the
-gateway; the gateway authenticates the presented WireGuard peer identity and
-applies the authorization policy attached to that node.
+For public gateway-backed and remote commands, the Orbit CLI gathers input,
+calls the typed gateway HTTPS API over WireGuard, and renders the result.
+Commands that run locally, bootstrap before grants exist, or self-manage through
+node identity follow their documented lanes. The CLI does not classify itself as operator,
+gateway, or app, and it does not gate behavior on a local role label. For
+gateway-backed calls, the gateway authenticates the presented WireGuard peer
+identity and applies the authorization policy attached to that node.
 
 A caller can be:
 

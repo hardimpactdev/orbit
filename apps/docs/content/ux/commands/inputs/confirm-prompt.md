@@ -8,7 +8,7 @@ input resolution.
 Use `confirm` in the following situations.
 
 - A destructive command needs explicit consent before side effects, and
-  neither `--force` nor `--json` was supplied.
+  `--force` was not supplied.
 - An interactive branch in input resolution can be skipped without prompting
   for further fields when the operator answers no.
 
@@ -30,11 +30,10 @@ These rules govern all uses of `confirm` in Orbit commands.
 - Destructive confirmation prompts render after target and subject resolution
   and before any side effect.
 - `--force` skips the prompt and is explicit destructive consent in any mode.
-- In `--json` mode the prompt is not rendered. `--json` implies destructive
-  consent for the JSON one-shot caller, while ordinary validation,
-  authorization, and target requirements still apply.
-- Destructive commands in input mode that is neither JSON nor interactive, without `--force`, fail before
-  side effects with `validation_failed`, `meta.field=force`, and
+- `--json` selects the JSON renderer and forces non-interactive input mode. It
+  never implies destructive consent, so the caller must also pass `--force`.
+- Destructive commands in non-interactive input mode without `--force` fail
+  before side effects with `validation_failed`, `meta.field=force`, and
   `meta.reason=destructive_consent_required`.
 - Declining or cancelling a destructive confirmation fails before side effects
   with `validation_failed`, `meta.field=force`, and `meta.reason=cancelled`.

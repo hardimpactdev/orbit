@@ -18,24 +18,25 @@ orbit tool:remove <tool> [--app=<app>] [--node=<node>] [--force] [--json]
 
 ```bash
 orbit tool:remove composer --node=app-1
-orbit tool:remove opencode-cli --app=docs --force
-orbit tool:remove composer --node=app-1 --json
+orbit tool:remove opencode-cli --app=docs.development --force
+orbit tool:remove composer --node=app-1 --json --force
 ```
 
 ## Arguments and options
 
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node. Defaults to local `node:default` when configured.
-- `--app`: Resolve the target node from an app.
+- `--app`: Resolve the target node from a concrete app instance. Bare logical
+  shorthand is valid only when exactly one instance is visible.
 - `--force`: Confirm destructive removal or skip the interactive confirmation
   prompt.
-- `--json`: Output JSON and imply destructive consent for automation.
+- `--json`: Output JSON and select non-interactive input mode. It does not
+  provide destructive consent.
 
 Target context is required when neither `--node`, `--app`, nor local
 `node:default` resolves a node. The command never guesses the only visible app
-node as the target. Non-interactive human use requires `--force`; JSON use does
-not require `--force` because `--json` is destructive consent. Interactive TTY
-use prompts for confirmation when `--force` is absent.
+instance as the target. Every non-interactive removal requires `--force`, including
+JSON use. Interactive TTY use prompts for confirmation when `--force` is absent.
 
 ## What Happens
 
@@ -45,15 +46,15 @@ Run this command to remove Orbit-managed artifacts for a tool and delete its gat
 
 1. Resolves the target node and registered tool row.
 2. Verifies the tool supports managed removal.
-3. Requires destructive consent from `--force`, `--json`, or an interactive
-   confirmation prompt.
+3. Requires destructive consent from `--force` or an interactive confirmation
+   prompt. Output mode never grants consent.
 4. Removes managed node artifacts through the gateway.
 5. Removes tool-owned credential material and service endpoint configuration when the
    selected tool owns those artifacts.
 6. Removes the gateway tool row when cleanup succeeds.
 7. Reports partial cleanup if gateway configuration and node reality diverge.
 
-Gateway row and tool-owned configuration cleanup stays gateway-local.
+The gateway cleans up its tool row and tool-owned configuration locally.
 Target-node cleanup uses Agent push; `tool:remove` exposes no node transport
 selector and never falls back to SSH.
 
@@ -75,7 +76,7 @@ warnings.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity is authorized to manage tools for the selected node
-  or app.
+  or app instance's serving node.
 - The tool is registered for the resolved node.
 - The tool definition supports managed removal.
 - The gateway can reach the target node through Orbit's node execution

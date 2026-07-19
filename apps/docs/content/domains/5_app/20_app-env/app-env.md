@@ -44,7 +44,7 @@ instance env values, and database connections attached to that same instance.
 Secret database values are redacted in API and CLI responses.
 
 `set` without `--apply` stores gateway intent only. `set --apply` also writes
-the selected instance's live `.env` on its owning node, clears Laravel
+the selected instance's live `.env` on its serving node, clears Laravel
 config/bootstrap cache at that instance path, and reapplies that instance's
 FrankenPHP runtime container for PHP apps. It never targets the logical app's
 default path or a sibling instance. Running from inside a workspace does not

@@ -245,10 +245,11 @@ execution context. Both let the internal command confirm the operation id,
 command, and token without spending the single-use verify token twice.
 
 Every completion-based `RemoteLocalExecutor::runInternal()` dispatch writes two
-gateway-owned activity records on the `local_executor` channel:
+gateway-owned internal activity records on the canonical `api` channel with
+`properties.lane = internal` and `properties.transport = local_executor`:
 
 - `local_executor.dispatching` before transport dispatch, after command
-  validation and token minting. It records `lane=local-executor`, operation id,
+  validation and token minting. It records the operation id,
   target node id and name, internal command name, scalar arguments/options, and
   the `LocalExecutorCommandBuilder::buildAuditLine()` command shape.
 - `local_executor.completed` after the transport returns or throws. It records

@@ -36,7 +36,7 @@ Role convergence records:
 - Prometheus and Grafana Docker Swarm process definitions on the metrics node.
 - Grafana provisioning for the Orbit Prometheus datasource and built-in
   `Orbit Node Resources` dashboard with a node selector.
-- node-exporter systemd process definitions on metrics and active workload nodes.
+- node-exporter systemd process definitions on metrics and active Ubuntu workload nodes.
 - Protected firewall intent that allows the metrics node to scrape
   node-exporter on TCP port 9100 through the private WireGuard interface.
 - The router-owned `metrics.orbit` route and Grafana admin credentials.

@@ -1,12 +1,12 @@
-# `orbit app:prune [app]`
+# `orbit app:prune [app.instance]`
 
 [Back to Apps commands.](../README.md)
 
-Remove stale workspaces for an app.
+Remove stale workspaces owned by one concrete `app-dev` instance.
 
-`app:prune` compares Orbit's workspace registry for an app with the workspaces
-reported by its configured agent IDE adapters and removes any workspace that no
-longer exists in any of those source-of-truth adapters.
+`app:prune` compares one instance's workspace registry with the workspaces
+reported by its effective agent IDE sources and removes only workspaces owned
+by that instance that are absent from every source.
 
 This is an `app-dev`-only workspace operation. `app-prod` callers and target
 apps are rejected before adapter discovery, including in dry-run mode.
@@ -15,21 +15,22 @@ apps are rejected before adapter discovery, including in dry-run mode.
 
 ```bash
 # Preview stale workspaces for the "docs" app
-orbit app:prune docs --dry-run
+orbit app:prune docs.development --dry-run
 
 # Remove stale workspaces with confirmation
-orbit app:prune docs
+orbit app:prune docs.development
 
 # Force-remove stale workspaces without confirmation (e.g. in a cron job)
-orbit app:prune docs --force
+orbit app:prune docs.development --force
 
 # Get machine-readable cleanup results
-orbit app:prune docs --json --force
+orbit app:prune docs.development --json --force
 ```
 
 ## Arguments and options
 
-- `app`: The name or hostname of the app to prune.
+- `app`: Dotted app-instance selector. A bare logical slug is shorthand only
+  when exactly one eligible visible instance exists. Hostnames are invalid.
 - `--dry-run`: Shows which workspaces would be removed without performing any side effects.
 - `--force`: Skips the interactive confirmation prompt. Required for
   non-interactive execution only when `--dry-run` is absent.
@@ -43,9 +44,13 @@ Run `app:prune` to compare Orbit's workspace registry against configured agent I
 
 Identifies workspaces tracked in Orbit's registry that have no match in any configured agent IDE adapter.
 
-### App-Scoped
+### Instance-Scoped
 
-Pruning is app-scoped even when the effective adapter is inherited from the owning node. Changing a node default with [`node:agent-ide`](../../1_node/10_node-agent-ide/node-agent-ide.md) does not automatically prune every inheriting app. Run `app:prune` for the affected apps when stale workspace cleanup is wanted.
+Pruning is instance-scoped even when the effective adapter is inherited from
+that instance's serving node. Changing a node default with
+[`node:agent-ide`](../../1_node/10_node-agent-ide/node-agent-ide.md) does not
+automatically prune every inheriting instance. Run `app:prune` for each affected
+instance when cleanup is wanted.
 
 ### Dry Run
 
@@ -61,12 +66,12 @@ Database cleanup requires Orbit to explicitly track a database as workspace-owne
 
 ## Requirements
 
-- The caller must have `app:prune` on the app's owning node. A gateway-role
+- The caller must have `app:prune` on the selected instance's serving node. A gateway-role
   caller has the architecture's documented implicit authority.
-- The caller must not be `app-prod`, and the target app must be served by an
+- The caller must not be `app-prod`, and the selected instance must be served by an
   active `app-dev` node.
-- The target app must be resolved and authorized.
-- The app must have at least one agent IDE adapter configured (directly or inherited).
+- The target instance must be resolved and authorized.
+- The instance must have an effective agent IDE adapter configured directly or inherited from its serving node.
 - The gateway must be able to query the effective agent IDE adapter(s).
   Agent reachability is not a pre-prune prerequisite. Node cleanup uses Agent
   push; cleanup
@@ -83,7 +88,8 @@ Progress grouped by stale workspace, showing the cleanup status for each artifac
 
 ### JSON
 
-A machine-readable result or failure containing the app details and a list of processed workspaces.
+A machine-readable result containing the logical app slug, dotted instance
+selector, serving node, and only that instance's processed workspaces.
 
 ## Related
 

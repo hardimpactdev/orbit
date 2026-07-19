@@ -68,9 +68,10 @@ create baseline tools from scratch unless the tool file says otherwise.
 | [`dns`](dns.md) | VPN-facing development DNS runtime |
 
 The `php` runtime images and `caddy` proxy run in Orbit-managed containers. The
-host PHP toolchain — `php-cli`, `composer`, `git`, and `laravel-installer` — installs
-on `app-dev`/`app-prod` nodes (the Laravel installer on `app-dev` only). `git` is also
-a role baseline on `agent` nodes for repository workflows.
+app host tool baseline — `php-cli`, `composer`, `git`, `gh`, and
+`laravel-installer` — installs on `app-dev`/`app-prod` nodes (the Laravel
+installer on `app-dev` only). `git` is also a role baseline on `agent` nodes for
+repository workflows.
 Linux host command process units use the process family's `systemd` runtime;
 there is no Supervisor tool or runtime fallback.
 
@@ -85,7 +86,7 @@ materialized by their owning role and only required on nodes carrying that role:
 | [`git`](git.md) | `app-dev`, `app-prod`, `agent` (repository clone and checkout workflows) |
 | [`gh`](gh.md) | `app-dev`, `app-prod` (repository cloning and deployment) |
 | [`seaweedfs`](seaweedfs.md) | `s3` |
-| [`node-exporter`](node-exporter.md) | `metrics`; active workload nodes selected by metrics convergence |
+| [`node-exporter`](node-exporter.md) | `metrics`; active Ubuntu workload nodes selected by metrics convergence |
 
 VitePlus is optional observational runtime inventory, not a role baseline tool.
 An explicitly selected existing `vp` binary may be adopted into a tool row, but

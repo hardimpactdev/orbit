@@ -12,7 +12,7 @@ model in Orbit.
 | Slug | `node-exporter` |
 | Label | node-exporter |
 | Backend | host binary at `/usr/local/bin/node_exporter` |
-| Support model | Role baseline tool for the `metrics` role and active workload nodes scraped by metrics |
+| Support model | Role baseline tool for the `metrics` role and active Ubuntu workload nodes scraped by metrics |
 | Category | `observability` |
 
 ## Capabilities
@@ -31,7 +31,7 @@ Start, stop, restart, and logs for node-exporter belong to the related
 ## Orbit Notes
 
 The `metrics` role baseline records node-exporter tool intent on the metrics
-node and every active workload node that metrics convergence scrapes. It also
+node and every active Ubuntu workload node that metrics convergence scrapes. It also
 records node-owned `systemd` process intent for the same nodes.
 
 Prometheus and Grafana stay Docker Swarm services owned by process rows on the

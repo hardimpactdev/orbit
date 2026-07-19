@@ -69,9 +69,9 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
    routing priority. For app/workspace routes, this includes the browser
    ingress baseline: document-root policy, PHP runtime target, security
    headers, sensitive path blocking, profiling timing markers, and immutable
-   cache headers for versioned build assets. App primary routes whose hostnames
-   resolve to app instances must target that concrete app instance runtime and
-   inner-TLS server name.
+   cache headers for versioned build assets. Every app primary route must keep
+   its logical app owner while targeting one concrete app instance, that
+   instance's serving node, runtime upstream, and inner-TLS server name.
 8. **TLS material:** the TLS material that Orbit manages exists and matches the
    route's policy. For DNS hostname routes, this includes the app-role
    compatibility material used by Laravel Vite TLS detection. Internal IP-only
@@ -136,6 +136,10 @@ the matching route still has drift, with the node, verification operation, and
 observed mismatch retained in the action details. Doctor reports convergence
 only when that readback is clean.
 
+For an app primary route, restoring a mismatch also persists its logical app
+owner, concrete instance target, serving node, runtime upstream, and inner-TLS
+server name before rendering.
+
 | Code | `doctor --restore` behavior |
 | --- | --- |
 | `proxy.caddy_container_missing` | Reconcile the `orbit-caddy` container on the serving node from its managed spec, then re-render the mounted Caddy config. |
@@ -143,7 +147,7 @@ only when that readback is clean.
 | `proxy.agent_tool_route_missing` | Recreate the expected tool-owned route row from the installed agent tool and node TLD, then render its Caddy artifact and TLS material. |
 | `proxy.agent_tool_route_mismatch` | Rewrite a same-tool route row to canonical proxy intent, then re-render its Caddy artifact and TLS material. |
 | `proxy.route_missing` | Recreate the backend route from gateway configuration when the node is reachable and eligible. |
-| `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when the route can be identified safely. For app primary routes that resolve to an app instance, restore also persists the concrete app-instance target, runtime upstream, and inner-TLS server name before writing the backend route. |
+| `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when it can be identified safely. |
 | `proxy.enactment_incomplete` | Retry the app route's complete backend → router → ingress enactment. The persisted state becomes converged only after every operation succeeds; a retry failure retains partial state and reports the exact node and operation. |
 | `proxy.dns_mapping_mismatch` | Re-render only `dnsmasq.d/20-proxy-records.conf`, atomically replace that artifact through the shared ownership-neutral materializer, and reload or restart DNS once. If the projection directory mount is not active, leave drift unresolved rather than reporting success. |
 | `proxy.websocket.router_route_missing` | Re-sync the private `websocket.orbit` service route from gateway WebSocket route intent. |

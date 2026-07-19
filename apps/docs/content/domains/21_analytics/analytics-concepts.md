@@ -30,14 +30,18 @@ These terms describe the analytics role and the routes around it.
   dashboard and admin endpoint served through router. Analytics role deployment
   converges its route and TLS after Plausible is healthy; removal deletes the
   route and its rendered artifacts.
-- **Public app analytics host:** App-owned public hostname such as
-  `analytics.example.com` that proxies Plausible script and event-ingest paths
-  only. The default is `analytics.<app-domain>`, so the app must have a
-  configured public domain before analytics can be enabled.
-- **App analytics binding:** App-owned state that records whether analytics is
-  enabled for an app and which public tracking hosts should exist. Enabling a
-  binding converges router and ingress artifacts before success; disabling or
-  replacing hosts removes obsolete artifacts before clearing their intent.
+- **Public app analytics host:** Public hostname such as
+  `analytics.example.com` attached to one selected concrete app instance. It
+  proxies Plausible script and event-ingest paths only. The default is
+  `analytics.<instance-domain>`, so the selected instance must have a public
+  domain before analytics can be enabled. Its serving node is the placement
+  and authorization boundary even though ingress and router serve the route.
+- **App analytics binding:** App-owned state that may keep shared
+  non-placement analytics policy on the logical app, while every public domain,
+  tracking host, route target, and serving-node authorization reference belongs
+  to one selected app instance. Enabling a binding converges router and ingress
+  artifacts before success; disabling or replacing hosts removes obsolete
+  artifacts before clearing their intent.
 
 ## Boundaries
 
@@ -49,5 +53,5 @@ app commands own per-app binding state, proxy owns route artifacts, process owns
 runtime lifecycle, and node owns role assignment settings.
 
 Generated PostgreSQL, ClickHouse, and Plausible secrets stay in the process
-row's encrypted credential field. Plain `runtime_config` contains non-secret
-container intent only.
+row's encrypted credential field. Plain `runtime_config` contains only
+container intent without secrets.

@@ -38,8 +38,8 @@ This command follows the shared
 | `app` | `[app]` or `--app` | Always. | None. | Selects one existing app. If both are supplied they must match. |
 | `instance` | `--instance` | `show`, `add`, `remove`. | None. | Unique within the selected app. |
 | `driver` | `--driver` | Optional for `add`. | `orbit`. | Must be `orbit` or `laravel-cloud`. |
-| `force` | `--force` | Required for non-interactive `remove`. | `false`. | Explicit destructive consent. |
-| `json` | `--json` | Optional. | `false`. | Selects the JSON renderer and non-interactive input mode. |
+| `force` | `--force` | Required for non-interactive `remove`, including `--json`; optional interactively. | `false`. | Explicit destructive consent for the named instance only. |
+| `json` | `--json` | Optional. | `false`. | Selects the JSON renderer and non-interactive input mode; never implies consent. |
 
 Driver-specific fields are accepted only by `add`.
 
@@ -81,14 +81,21 @@ Gateway-owned `app_instances` rows belong to one app. Each row stores:
    not store anonymous arrays as the durable contract.
 4. **Extension tracking.** Required PHP extensions are normalized and returned in
    the instance runtime payload.
-5. **Destructive remove.** Removing an instance requires `--force` or
-   `destructive_consent=true`.
+5. **Single-placement remove.** Removing an instance deletes only the named
+   instance and its instance-owned placement/dependents. It never removes the
+   logical app or sibling instances.
 6. **Deployment ownership.** Deployment policy, steps, warmup paths, runs,
    history, logs, and latest status belong to the concrete instance. Logical
    app rows do not carry deployment state.
 7. **Placement ownership.** Every `orbit` instance supplies its own node, path,
    root, and optional domain. Instance creation never inherits placement from
    the logical app.
+8. **Removal authorization.** Before confirmation or effects, an Orbit
+   instance removal requires `app:write` on that selected instance's serving
+   node. An external-driver removal uses the gateway-only authority path.
+9. **Removal consent.** Interactive removal renders confirmation for the named
+   instance unless `--force` is present. Non-interactive removal, including
+   `--json`, requires `--force`; JSON never implies consent.
 
 ### Laravel Cloud Environment Selection
 
@@ -120,6 +127,8 @@ operator or agent explicitly requested creation.
 | Ambiguous Cloud environment | Laravel Cloud discovery returned multiple candidates and no default or `main` environment could be selected. | `error.code=validation_failed`, `error.meta.field=cloud_environment`, `error.meta.reason=ambiguous_cloud_environment`. |
 | Instance authorization denied | The caller lacks the action's permission on the selected or target serving node. | `error.code=authorization_failed` with `missing_permission`, `serving_node`, and `app_instance` when an instance already exists. |
 | External instance authorization denied | A non-gateway caller selects a Laravel Cloud instance or tries to add one. | `error.code=authorization_failed` with `reason=gateway_only_external_instance`. |
+| Destructive consent required | Non-interactive `remove`, including `--json`, omits `--force`. | `error.code=validation_failed`, `error.meta.field=force`, and `error.meta.reason=destructive_consent_required`. |
+| Removal cancelled | The interactive confirmation is declined. | `error.code=validation_failed`, `error.meta.field=force`, and `error.meta.reason=cancelled`; no effects. |
 
 ## Doctor Relationship
 

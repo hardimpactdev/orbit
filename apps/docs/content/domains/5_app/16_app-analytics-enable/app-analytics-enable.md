@@ -2,33 +2,34 @@
 
 [Back to App commands.](../README.md)
 
-Enable analytics tracking proxy support for an app.
+Enable analytics tracking proxy support for one concrete app instance.
 
 ## Usage
 
 ```bash
-orbit app:analytics enable [app] [--host=<host>] [--json]
+orbit app:analytics enable [app.instance] [--host=<host>] [--json]
 ```
 
 ## Arguments and options
 
-- `app`: app name or hostname. Required.
+- `app.instance`: dotted app-instance selector. A bare app slug is shorthand
+  only when exactly one eligible visible instance exists.
 - `--host`: public analytics tracking hostname to bind. Repeatable up to ten
   unique hosts. Values must be multi-label DNS hostnames, not URLs, IP
-  addresses, or single-label names. When omitted and the app has a public
-  hostname, Orbit defaults to `analytics.<app-domain>`.
-- `--json`: Output JSON.
+  addresses, or single-label names. When omitted, Orbit defaults to
+  `analytics.<selected-instance-domain>`.
+- `--json`: Select JSON output and non-interactive input only.
 
 ## Behavior Summary
 
-`app:analytics enable` creates or updates the app analytics binding, records the
+`app:analytics enable` creates or updates the selected instance's analytics binding, records the
 public tracking hosts, and enacts tracking-only proxy routes. Public analytics
 hosts forward Plausible script and event-ingest paths through
 `ingress -> router -> analytics backend pool`.
 
-The app must have a configured public domain. When `--host` is omitted, Orbit
-derives `analytics.<app-domain>`. Success includes an exact generic
-`/js/script.js` snippet with the canonical app domain as `data-domain`, the
+The selected instance must have a configured public domain. When `--host` is omitted, Orbit
+derives `analytics.<instance-domain>`. Success includes an exact generic
+`/js/script.js` snippet with that instance domain as `data-domain`, the
 event endpoint, the selected ingress node's configured public address targets,
 and an explicit `not_verified` public-readiness state.
 
@@ -46,9 +47,8 @@ manually.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The current node identity holds `app:write` on the app's owning node.
-- The app exists in the gateway registry.
-- The app has a configured public domain.
+- The current node identity holds `app:write` on the selected instance's serving node.
+- The selected app instance exists and has a configured public domain.
 - The singleton analytics role is deployed and its private `analytics.orbit`
   service route exists.
 - Public tracking hosts require an active ingress path for the app's production
@@ -65,10 +65,10 @@ JSON output returns the same fields in the standard machine-readable envelope.
 ## Examples
 
 ```bash
-orbit app:analytics enable docs
-orbit app:analytics enable docs --host=analytics.docs.example.com
-orbit app:analytics enable docs --host=analytics.docs.example.com --host=metrics.docs.example.com
-orbit app:analytics enable docs --json
+orbit app:analytics enable docs.production
+orbit app:analytics enable docs.production --host=analytics.docs.example.com
+orbit app:analytics enable docs.production --host=analytics.docs.example.com --host=metrics.docs.example.com
+orbit app:analytics enable docs.production --json
 ```
 
 ## Related

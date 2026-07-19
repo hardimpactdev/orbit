@@ -8,9 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The authenticated peer holds `app:write` on the app's owning node.
-- The target app exists in the gateway registry.
-- The target app has a configured public domain.
+- The authenticated peer holds `app:write` on the selected app instance's serving node.
+- The target resolves to one concrete app instance with a public domain and serving node.
 - The singleton analytics role is active and its router-owned
   `analytics.orbit` service route exists.
 
@@ -26,39 +25,32 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record by name or hostname. Name match wins. |
-| `host` | `--host` | Optional. | Never. | `analytics.<app-domain>`. | Repeatable up to ten unique multi-label DNS hostnames. URLs, IP addresses, and single-label names are rejected. Duplicates and empty values are discarded. An explicit host does not bypass the app-domain prerequisite. |
+| `app` | `[app.instance]` | Always. | Never. | None. | Dotted selector; bare shorthand succeeds only for exactly one eligible visible instance, otherwise `app_instance_required`. |
+| `host` | `--host` | Optional. | Never. | `analytics.<instance-domain>`. | Repeatable up to ten unique multi-label DNS hostnames. An explicit host does not bypass the instance-domain prerequisite. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
 
-1. Validate `app` is provided. Reject with `validation_failed` (`field=app`)
-   when absent.
-2. Normalize supplied `--host` values by trimming, lowercasing, and discarding
+1. Resolve exactly one app instance, its serving node, public domain, and route association. Logical-app placement is never consulted.
+2. Authorize `app:write` on that serving node before effects.
+3. Normalize supplied `--host` values by trimming, lowercasing, and discarding
    duplicates.
-3. Forward `public_hosts` to the gateway API. When no hosts were supplied, the
-   gateway derives the default from the app hostname.
+4. Forward `public_hosts`; when omitted, derive the default from the selected instance domain.
 
 ## Behavior Contract
 
 ### Binding Enable Rules
 
-- Resolve the app by matching `app` against app name and then app hostname.
-  Return `app.not_found` when no match exists.
-- Create the app analytics binding when none exists, or update the existing
-  binding in place.
+- Resolve one concrete app instance and create or update only that instance's binding.
 - Serialize analytics binding mutations at the gateway so concurrent enable or
   disable requests do not compete for SQLite writes. Return a retryable busy
   failure when the bounded lock wait expires before any mutation begins. The
   lease is at least one hour and scales from the app's existing stored analytics
   route count plus the current ten-host request limit, using a 120-second
-  per-route budget and a 600-second buffer. This also covers bindings whose
-  stored route count predates and exceeds the current input limit.
+  per-route budget and a 600-second buffer.
 - Set `enabled=true`.
-- Store public tracking hosts. When the request omits hosts and the app has a
-  hostname, store `analytics.<app-domain>`.
-- Reject the operation before creating or updating binding state when the app
-  has no configured public domain, including when explicit hosts were supplied.
+- Store public tracking hosts; when omitted, store `analytics.<selected-instance-domain>`.
+- Reject before mutation when the selected instance has no public domain.
 - Require the private `analytics.orbit` service route created by analytics role
   deployment. App binding enable must not create or own that route.
 - Register one public `app-analytics` route for each public host, apply its
@@ -69,7 +61,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   before deleting their route rows. A cleanup failure leaves the previous
   binding unchanged.
 - Return one tracking endpoint object per public host with the public script
-  base URL, exact generic `/js/script.js` URL, canonical app `data-domain`,
+  base URL, exact generic `/js/script.js` URL, selected-instance `data-domain`,
   exact script snippet, and `/api/event` endpoint.
 - Return the selected ingress node and its configured public IPv4/IPv6 values
   as provider-neutral expected `A`/`AAAA` targets. Do not claim that provider
@@ -96,7 +88,7 @@ accepted event was stored by Plausible.
 
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
-| `POST` | `/api/apps/{app}/analytics/enable` | `app:write` | Enable app analytics binding. |
+| `POST` | `/api/apps/{app}/analytics/enable` | `app:write` on instance serving node | Enable the selected instance binding. |
 
 The request body is `{"public_hosts": ["<host>", ...]}`. The array is optional.
 
@@ -104,9 +96,11 @@ The request body is `{"public_hosts": ["<host>", ...]}`. The array is optional.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `binding.app` | string | App identity slug. |
+| `app` | object | Canonical logical app entity without placement fields. |
+| `app_instance` | string | Selected instance name. |
+| `serving_node` | string | Selected instance's serving and authorization node. |
 | `binding.enabled` | boolean | Whether the binding is enabled. |
-| `binding.site_domain` | string | Canonical app domain used as Plausible `data-domain`. |
+| `binding.site_domain` | string | Selected instance's canonical public domain used as Plausible `data-domain`. |
 | `binding.internal_host` | string | Private dashboard host, always `analytics.orbit`. |
 | `binding.dashboard_url` | string | Private dashboard URL, always `https://analytics.orbit`. |
 | `binding.public_hosts` | array | Public tracking hostnames bound to this app. |
@@ -123,8 +117,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| App not found | No app record matches `app`. | `error.code=app.not_found` |
-| Public domain required | The app has no configured public domain. | `error.code=analytics.domain_required` |
+| App instance required | Bare shorthand is ambiguous or ineligible. | `validation_failed` with `error.meta.reason=app_instance_required` |
+| App instance not found | No concrete instance matches. | `error.code=app_instance.not_found` |
+| Public domain required | The selected instance has no public domain. | `error.code=analytics.domain_required` |
 | Analytics prerequisite failed | Required router, ingress, or analytics backend is missing. | `error.code=analytics.prerequisite_failed` |
 | Route cleanup failed | Obsolete ingress or router artifacts cannot be removed before a host replacement. The previous binding remains unchanged. | `error.code=analytics.route_cleanup_failed` |
 | Route enactment failed | Router or ingress route application/reload fails. Durable binding and route intent remain available for doctor repair. | `error.code=analytics.route_enactment_failed` |
@@ -146,8 +141,8 @@ enable attempt.
 | --- | --- |
 | Type | `api:POST /apps/{app}/analytics/enable` |
 | Effect | `write` |
-| Subject | App record resolved from `{app}`. |
-| Properties | `action=enable`, `target_app`, and `public_hosts`. |
+| Subject | App instance resolved from `{app}`. |
+| Properties | `action=enable`, `target_app`, `target_app_instance`, `serving_node`, and `public_hosts`. |
 
 ## Test Mapping
 

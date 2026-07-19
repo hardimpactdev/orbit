@@ -1084,7 +1084,51 @@ it('requires every compact logical app list summary field', function (): void {
         );
 });
 
-it('reports instance-owned worker fields on canonical logical app entities', function (): void {
+it('accepts canonical logical app entities without instance placement', function (): void {
+    config()->set('librarian.rules', [JsonRendererExampleRule::class]);
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/5_app/4_app-show/technical/6.2_app-show_output-render_json.md',
+        contents: <<<'MARKDOWN'
+            # JSON Renderer
+
+            ```json
+            {
+              "success": {
+                "data": {
+                  "app": {
+                    "name": "docs",
+                    "repository": null,
+                    "runtime": "php",
+                    "runtime_config": null,
+                    "php_version": "8.5",
+                    "dependency_audit_status": "unknown",
+                    "dependency_warning_count": 0,
+                    "dependency_danger_count": 0,
+                    "last_dependency_audit_at": null
+                  }
+                },
+                "meta": []
+              }
+            }
+            ```
+            MARKDOWN,
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(findingsForRule($payload, 'command_docs.json_renderer_examples'))
+        ->toBeEmpty();
+});
+
+it('reports instance-owned placement and worker fields on canonical logical app entities', function (): void {
     config()->set('librarian.rules', [JsonRendererExampleRule::class]);
     writeOrbitDocsFile(
         root: $this->docsRoot,
@@ -1102,6 +1146,10 @@ it('reports instance-owned worker fields on canonical logical app entities', fun
                     "runtime": "frankenphp",
                     "runtime_config": null,
                     "php_version": "8.5",
+                    "node": "app-1",
+                    "url": "https://docs.example.com",
+                    "path": "/srv/docs/current",
+                    "root": "public",
                     "adopted": false,
                     "dependency_audit_status": "unknown",
                     "dependency_warning_count": 0,
@@ -1129,6 +1177,11 @@ it('reports instance-owned worker fields on canonical logical app entities', fun
         ->toBe(0)
         ->and(array_column(findingsForRule($payload, 'command_docs.json_renderer_examples'), 'message'))
         ->toContain(
+            'JSON example 1 success.data.app contains non-canonical app field `node`.',
+            'JSON example 1 success.data.app contains non-canonical app field `url`.',
+            'JSON example 1 success.data.app contains non-canonical app field `path`.',
+            'JSON example 1 success.data.app contains non-canonical app field `root`.',
+            'JSON example 1 success.data.app contains non-canonical app field `adopted`.',
             'JSON example 1 success.data.app contains non-canonical app field `worker_enabled`.',
             'JSON example 1 success.data.app contains non-canonical app field `worker_config`.',
         );

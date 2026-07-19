@@ -8,8 +8,9 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The authenticated peer holds `app:write` on the app's owning node.
-- The target app exists in the gateway registry and has an existing WebSocket
+- The authenticated peer holds `app:write` on the selected app instance's
+  serving node.
+- The target resolves to one concrete app instance with an existing WebSocket
   binding.
 
 ## Signature
@@ -25,22 +26,22 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record by name or hostname. Name match wins; hostname match consulted when no name match exists. |
+| `app` | `[app]` | Always. | Never. | None. | Dotted `<app.instance>` selector. A bare logical app is shorthand only when exactly one eligible visible instance exists; otherwise fail with `error.meta.reason=app_instance_required`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
 
-1. Validate `app` is provided. Reject with `validation_failed` (`field=app`)
-   when absent.
-2. Forward the disable request to the gateway API.
+1. Resolve exactly one app instance and its serving node. Ambiguous or missing
+   bare shorthand fails before authorization.
+2. Authorize `app:write` on that serving node, then forward the request.
 
 ## Behavior Contract
 
 ### WebSocket Disable Rules
 
-1. **App resolution.** Resolve the app by matching `app` against app name and
-   then app hostname. Return `app.not_found` when no match exists.
-2. **Binding required.** Require an existing binding for the app. Return
+1. **Instance resolution.** Resolve one concrete instance; logical-app
+   placement fields are never consulted.
+2. **Binding required.** Require an existing binding for that instance. Return
    `websocket.binding_missing` when none exists.
 3. **Binding state.** Set `enabled=false` and clear `public_hosts` to `[]`.
    The `reverb_app_id`, `reverb_app_key`, `reverb_app_secret`, and
@@ -68,7 +69,7 @@ This command follows the shared
 
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
-| `POST` | `/api/apps/{app}/websocket/disable` | `app:write` | Disable WebSocket binding. |
+| `POST` | `/api/apps/{app}/websocket/disable` | `app:write` on instance serving node | Disable the selected instance binding. |
 
 The request body is empty for disable.
 
@@ -83,8 +84,9 @@ command-specific failures below.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Validation failed (app) | `app` is missing from the CLI invocation. | Failure — no gateway request sent. |
-| App not found | No app record matches `app`. | Failure. |
-| WebSocket binding missing | The app has no WebSocket binding record. | Failure — no state written. |
+| App instance required | A bare selector resolves zero or multiple eligible instances. | `validation_failed` with `error.meta.reason=app_instance_required`. |
+| App instance not found | No concrete app instance matches `app`. | `app_instance.not_found`. |
+| WebSocket binding missing | The selected instance has no WebSocket binding record. | Failure — no state written. |
 
 ## Doctor Relationship
 
@@ -102,8 +104,8 @@ disable attempt.
 | --- | --- |
 | Type | `api:POST /apps/{app}/websocket/disable` |
 | Effect | `write` |
-| Subject | App record resolved from `{app}`. |
-| Properties | `action=disable`, `target_app`, `public_hosts` (the cleared host list, `[]`). |
+| Subject | App instance resolved from `{app}`. |
+| Properties | `action=disable`, `target_app`, `target_app_instance`, `serving_node`, and `public_hosts=[]`. |
 
 ## Test Mapping
 

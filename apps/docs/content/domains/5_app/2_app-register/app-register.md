@@ -1,15 +1,16 @@
-# `orbit app:register [name]`
+# `orbit app:register [app]`
 
 [Back to Apps commands.](../README.md)
 
-Register or re-apply Orbit management for an app.
+Create, adopt, move, or re-apply Orbit management for one concrete app
+instance.
 
 ## Usage
 
 ```bash
-orbit app:register [name]
-orbit app:register [name] --node=app-1 --path=/home/orbit/apps/my-app
-orbit app:register [name] --domain=example.com --json
+orbit app:register [app]
+orbit app:register [app] --node=app-1 --path=/home/orbit/apps/my-app
+orbit app:register [app] --domain=example.com --json
 ```
 
 ## Examples
@@ -19,20 +20,23 @@ orbit app:register [name] --domain=example.com --json
 orbit app:register my-app --node=app-1 --path=/home/orbit/apps/my-app
 
 # Re-apply Orbit management (e.g., after manual node changes)
-orbit app:register my-app
+orbit app:register my-app.development
 
 # Retry production activation for an existing app (safe to call repeatedly)
-orbit app:register my-app --domain=example.com
+orbit app:register my-app.production --domain=example.com
 ```
 
 ## Arguments and options
 
 The following arguments and options shape an `app:register` invocation.
 
-- `name`: The name of the app.
+- `app`: A dotted app-instance selector. A bare logical slug creates the
+  deterministic first instance for an unregistered app or resolves exactly one
+  visible existing instance; otherwise it fails with
+  `validation_failed`, `meta.reason=app_instance_required`.
 - `--path=<path>`: The absolute path to the app on the target node.
 - `--node=<name>`: The target node.
-- `--root=<path>`: The document root relative to the app path. Default: `public`.
+- `--root=<path>`: The document root relative to the selected instance path. Default: `public`.
 - `--php-version=<version>`: The app runtime container version to store in gateway app configuration.
 - `--runtime-proxy-transport=<http|https>`: The app-dev FrankenPHP transport between `orbit-caddy` and the runtime container. Default: existing value or `http`; `https` opts the app into inner TLS.
 - `--domain=<host>`: The production domain. Triggers or retries production activation.
@@ -44,21 +48,25 @@ The following arguments and options shape an `app:register` invocation.
 
 ### `--node` defaults
 
-`--node` defaults to the existing app owner, the local default node, or an interactive prompt.
+`--node` defaults to the selected instance's serving node. For first adoption,
+it uses the local default node or an interactive prompt.
 
 ### `--php-version` defaults
 
-When `--php-version` is omitted, existing apps keep their stored value. Newly adopted apps use Orbit's app runtime default (`8.5`), not any host PHP default.
+When `--php-version` is omitted, existing logical apps keep their shared runtime
+value. A newly adopted logical app uses Orbit's app runtime default (`8.5`),
+not any host PHP default.
 
 `--repo` is not accepted. In the current converted app command surface,
 repository URL is metadata that is captured only at creation time by
 [`app:new`](../1_app-new/app-new.md). `app:register` re-applies management for
 an existing path; it never clones, re-clones, mutates app source, or changes
 repository metadata. Re-registering an existing app preserves its stored
-repository value. Explicitly supplying both `--node` and `--path` for an
-existing app moves the app record to that pre-existing path on another eligible
-app node. Adopting an unmanaged path through `app:register` stores
-`repository=null`.
+repository value. Explicitly supplying both `--node` and `--path` for a
+selected instance moves only that instance to the pre-existing path on another
+eligible app node. Adopting the first unmanaged path atomically creates the
+logical app with `repository=null` and its first instance. That instance is
+named `development` without `--domain` or `production` with `--domain`.
 
 ## What Happens
 
@@ -73,12 +81,14 @@ local app-dev CLIs can register or re-apply apps hosted by themselves. `app-prod
 self-grants do not include `app:register`; production registration requires an
 explicit operator/deploy grant to the target app node.
 
-1. **Resolution**: Identifies the app and target node from the provided name,
-   options, or the CLI's stored `node:default` node.
-2. **Registration/Adoption**: Writes the app's configuration to the gateway
-   database. An existing path not yet managed by Orbit is adopted at this step.
-3. **Move**: Existing apps can move to another eligible node/path only when both
-   `--node` and `--path` are explicit.
+1. **Resolution**: Resolves exactly one dotted app instance. Bare logical
+   shorthand is valid only for exactly one visible existing instance; a first
+   adoption derives `development` or `production` as described above.
+2. **Registration/Adoption**: Writes or converges the selected instance. First
+   adoption atomically creates the logical app and first instance. Path-derived
+   `adopted` state belongs to the instance.
+3. **Move**: Moves only the selected instance to another eligible node/path,
+   and only when both `--node` and `--path` are explicit.
 4. **Apply**: Uses Agent push on the concrete app-instance node to configure the
    runtime container and install runtime configuration. It then records app-owned proxy route
    configuration for the `proxy` family to converge.
@@ -92,7 +102,12 @@ If DNS or TLS prerequisites are pending at Production Activation time, registrat
 
 ### Idempotency
 
-This command is idempotent. Re-running it on an app that is already managed re-renders artifacts and verifies the result; if nothing changes, the command still succeeds. The result reports which path the run took (`registered`, `adopted`, `moved`, `partial`, or `converged`) so operators and agents can see what changed. `partial` means route intent persisted but proxy enactment failed; the warning identifies the failed node and operation.
+This command is idempotent. Re-running it on an instance that is already
+managed re-renders that instance's artifacts and verifies the result; if
+nothing changes, the command still succeeds. The result reports which path the
+run took (`registered`, `adopted`, `moved`, `partial`, or `converged`). `partial`
+means selected-instance route intent persisted but proxy enactment failed; the
+warning identifies the dotted selector, failed node, and operation.
 
 ## Output
 
@@ -104,15 +119,19 @@ Progress showing each phase, followed by a success line keyed to the result (`re
 
 ### JSON
 
-A machine-readable result with the app's registry data. It includes a durable `adopted` flag, set when the path was first adopted via registration.
+A machine-readable result with separate canonical `app` and `instance`
+entities. The durable `adopted` flag is on `instance`.
 
 ## Requirements
 
 - The CLI caller must be able to reach the Orbit gateway.
 - The target non-gateway node must be reachable through Agent push.
 - The target node must be an active node.
-- The supplied `--path` on the resolved node must not already be owned by a different registered app. A path collision fails before side effects with `app.path_collision`.
-- Moving an existing app to another node/path requires explicit `--node` and `--path`.
+- The supplied `--path` on the resolved node must not already be owned by a
+  different app instance. A path collision fails before side effects with
+  `app.path_collision` and identifies that dotted instance.
+- Moving an existing instance to another node/path requires an explicit dotted
+  selector plus explicit `--node` and `--path`.
 
 ## Related Commands
 

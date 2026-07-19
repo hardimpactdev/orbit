@@ -42,8 +42,10 @@ These terms describe how public S3 access is exposed.
   `/data`. Root, traversal, duplicate separators, and sensitive paths outside
   those roots are rejected before role persistence.
 - **SeaweedFS managed configuration:** Credential-bearing `s3.json` content
-  stored in encrypted process credentials and written with mode `0600` before
-  the SeaweedFS Docker container is applied.
+  derived and materialized from the encrypted SeaweedFS credentials owned only
+  by the `seaweedfs` tool row. The renderer writes the derived file with mode
+  `0600` before applying the SeaweedFS Docker process; `s3.json` is not a
+  second credential source and the process row does not own another copy.
 
 ## Boundaries
 

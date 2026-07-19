@@ -152,6 +152,12 @@ Orbit-owned crash wrapper.
 services and selected node-owned platform services. Managed services own service
 version, image, endpoint, credentials, ports, volumes, labels, lifecycle, and
 logs on the process row. The process name does not imply the service identifier.
+
+SeaweedFS is the named credential-ownership exception: its encrypted service
+credentials belong only to the `seaweedfs` tool row. The process renderer
+consumes those credentials to materialize the derived mode-`0600` `s3.json`
+without storing a second credential source on the process row.
+
 Service identifiers remain independent of version and consumer identity. In
 particular, every PostgreSQL process uses `postgres`, selects an explicit
 version family and concrete version, and owns its initialization settings and
@@ -183,7 +189,7 @@ Supported managed services in this vertical slice:
 | `mailpit` | `latest` -> `latest` | `docker` | Publishes SMTP (`1025`) on the owning node. The Web UI stays private on the Docker network and should be exposed with a proxy route to `http://mailpit:8025`. |
 | `prometheus` | `3` -> `v3.12.0` | `docker-swarm` | Metrics-role service process for host-resource time-series storage. Uses local TSDB retention of 15 days. |
 | `grafana` | `13` -> `13.0.2` | `docker-swarm` | Metrics-role service process for dashboards, exposed through the private `metrics.orbit` route. |
-| `node-exporter` | `1` -> `1.11.1` | `systemd` | Metrics-role host process that exposes host resource metrics on metrics and active workload nodes through the owning node's WireGuard service address. |
+| `node-exporter` | `1` -> `1.11.1` | `systemd` | Host metrics process for metrics and active Ubuntu workload nodes; binds to the node's WireGuard service address. |
 | `plausible` | `3.2.1` -> `3.2.1` | `docker` | Plausible CE application service. The analytics role converges it as a node-owned Docker process with selected PostgreSQL and ClickHouse WireGuard endpoints. |
 
 `docker-swarm` is also admitted for node-owned managed services whose catalog

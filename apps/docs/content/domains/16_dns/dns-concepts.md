@@ -62,11 +62,14 @@ These terms define what the DNS command domain must not touch.
   wildcard/local-zone directives only for active `app-dev` and `agent` nodes.
   The node TLD `orbit` is reserved for the proxy-owned `.orbit` namespace. DNS
   commands must not create, inspect, or repair this projection.
-- **Private `.orbit` service name:** Stable service name such as `valkey.orbit`,
-  `postgres.orbit`, or `websocket.orbit` that resolves inside the Orbit network.
-  The proxy family projects router/private `.orbit` directives and exact
-  backend records into `dnsmasq.d/20-proxy-records.conf`. DNS commands must not
-  create, inspect, or repair these records.
+- **Private `.orbit` service name:** Router-owned service route such as
+  `websocket.orbit`, `s3.orbit`, `metrics.orbit`, or `analytics.orbit` that
+  resolves inside the Orbit network. The proxy family projects router/private
+  `.orbit` directives and exact backend records into
+  `dnsmasq.d/20-proxy-records.conf`. Database and cache processes use their
+  stored WireGuard service endpoints unless a separate proxy contract
+  explicitly creates a name for them. DNS commands must not create, inspect,
+  or repair these records.
 - **DNS tool runtime boundary:** The `dns` tool owns base `dnsmasq.conf`, its
   container/service, listener, VPN forwarding, and client-DNS settings. The
   `vpn` role requires the capability, but there is no `dns` role or state
@@ -84,6 +87,6 @@ These are the hard limits for everything in the `dns:*` command family.
   reads, writes, resets, backend refreshes, and local DNS reporting for `dns:*`.
   They do not own a state family or create `doctor --family=dns`. They do not
   mutate gateway configuration or node reality. They do not create node-family
-  DNS records, proxy-family private `.orbit` or exact backend records,
-  tool-owned DNS base/runtime state, app domains, proxy routes, public DNS records, or arbitrary
+  DNS records, proxy-family private `.orbit` or exact backend records, DNS base
+  and runtime state owned by tools, app domains, proxy routes, public DNS records, or arbitrary
   per-host DNS mappings.

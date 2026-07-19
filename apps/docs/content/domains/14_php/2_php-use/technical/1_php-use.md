@@ -8,9 +8,9 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity has `php:write` granted on the resolved target,
-  app-instance serving node, or workspace-instance serving node. Gateway
-  identity remains implicit.
+- The current node identity has `php:write` on every affected Orbit app
+  instance serving node for a logical-app write, or on the resolved workspace
+  or node-CLI target. Gateway identity remains implicit.
 
 ## Signature
 
@@ -24,12 +24,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `version` | `[version]` | Required unless `inherit=true`. | `inherit=true`. | None. | Orbit-supported PHP image version available on the resolved target node. For `cli=true`, only `8.5` is supported. |
-| `app` | `--app` | No app or workspace context resolves for app/workspace targets. | Never. | Cwd-inferred app when present. | Visible app selector. |
+| `version` | `[version]` | Required unless `inherit=true`. | `inherit=true`. | None. | Orbit-supported PHP image version available on every affected Orbit instance serving node for an app target, or on the resolved workspace node. For `cli=true`, only `8.5` is supported. |
+| `app` | `--app` | No app or workspace context resolves for app/workspace targets. | Never. | Cwd-inferred logical app when present. | Visible logical app selector for app policy; workspace resolution still selects one concrete instance. |
 | `workspace` | `--workspace` | `inherit=true`, unless cwd resolves a workspace. | Never. | Cwd-inferred workspace when present. | Visible workspace selector belonging to the resolved app. |
 | `inherit` | `--inherit` | Optional. | `version` present. | `false`. | Clears a workspace override only. |
 | `cli` | `--cli` | Optional. | `app`, `workspace`, or `inherit` present. | `false`. | Selects the node CLI PHP default; only PHP 8.5 is supported. |
-| `node` | `--node` | Optional. | Never. | Concrete app/workspace serving node for runtime scope; default node for CLI scope. | Visible node slug. For app and workspace targets, may only confirm the instance placement; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
+| `node` | `--node` | Optional. | Logical-app policy target. | Concrete workspace serving node for workspace scope; default node for CLI scope. | Visible node slug. For a workspace target it may only confirm placement; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
 ## Input Resolution
@@ -42,16 +42,18 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
      workspace choices; non-interactive mode fails.
 2. Resolve `version` from positional input or prompt unless `--inherit` is supplied.
 3. Validate mutually exclusive inputs.
-4. Validate the requested version against Orbit-supported versions and
-   available images on the target node. When stored inventory is stale or does
-   not contain the approved image, refresh it through the node's
-   Docker-compatible provider before rejecting the selection. CLI scope accepts
-   only PHP 8.5.
-5. Apply post-input authorization before side effects.
+4. For a logical-app target, enumerate every active `orbit` instance and its
+   serving node. Preauthorize `php:write` on every distinct serving node, then
+   verify the approved image on each node. Refresh stale inventory before
+   rejecting. Any denial, unavailable inventory, or missing image stops before
+   the shared policy write.
+5. For a workspace target, authorize and verify only its concrete serving node.
+   For CLI scope, accept only PHP 8.5 and use the host toolchain boundary.
+6. Begin side effects only after the complete target-specific preflight passes.
 
-For app and workspace runtime targets, the target node comes from the concrete
-app instance or workspace placement. An explicit `--node` may only confirm
-that serving node; it must not supply image facts from another node.
+Instances driven by external platforms remain in result inventory with their driver and
+`status=external`; they have no Orbit serving node, do not participate in
+Orbit-node authorization or image preflight, and are not reconciled.
 
 ## Input Mode Contracts
 
@@ -62,14 +64,17 @@ that serving node; it must not supply image facts from another node.
 
 ### App Runtime Selection
 
-- Writes the app PHP version in gateway app configuration.
-- Re-renders and applies app runtime container artifacts through Agent push.
-- Re-renders the proxy backend artifacts owned by the app when the route target
-  depends on the selected PHP runtime.
-- Reports app-family drift warnings when configuration was written but app artifact
-  application did not converge.
-- Reports proxy-family drift warnings when proxy backend artifact convergence for
-  the app did not complete.
+- Writes one shared logical-app PHP version after every affected Orbit instance
+  has passed authorization and image preflight.
+- Fans out app runtime-container and affected proxy-backend reconciliation to
+  every Orbit instance and waits for every result.
+- Returns one result with at least `app_instance`, `node`, `driver`, `status`,
+  and `image` for each instance. External-driver rows use `node=null`,
+  `image=null`, and `status=external` and are never presented as reconciled.
+- Returns success only when every affected Orbit instance is `reconciled` or
+  `unchanged`. A failed instance makes the command fail with the complete
+  result list; completed node effects and the desired logical policy remain
+  available for owning-family Doctor repair.
 
 ### Workspace Runtime Selection
 
@@ -121,6 +126,11 @@ not find the approved image fails validation as a confirmed missing image. An
 unreachable provider or otherwise failed inventory probe reports image
 inventory unavailability and does not claim that the image is missing.
 
+A logical-app reconciliation failure uses
+`error.code=php.reconciliation_failed` with every per-instance result in
+`error.meta.instances`. It never returns a success envelope with partial
+warnings.
+
 ## Doctor Relationship
 
 `php:use` writes runtime configuration owned by other state families. App runtime drift
@@ -136,6 +146,6 @@ verified and repaired by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Php/PhpUseCommandTest.php` | CLI posts version selections for app/workspace targets, inherit semantics, mutual exclusion validation, and gateway error pass-through. |
-| `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Permission-specific authorization for resolved app/workspace targets, concrete placement, wrong-permission denial, and gateway implicit authority. |
-| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Runtime selection and `view()` selection/inheritance behavior. |
+| `apps/cli/tests/Feature/Commands/Php/PhpUseCommandTest.php` | CLI posts logical-app/workspace selections, inherit semantics, mutual exclusion validation, per-instance rendering, and gateway error pass-through. |
+| `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | All-instance preauthorization, image preflight before mutation, concrete workspace placement, wrong-permission denial, and gateway implicit authority. |
+| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Shared app-policy fan-out, external-driver exclusion, per-instance results, failure aggregation, and workspace selection/inheritance behavior. |

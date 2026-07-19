@@ -34,11 +34,13 @@ These terms define how process definitions are identified, scoped, and ordered.
 - **Managed service:** Catalog entry selected with `process:add --service` for
   a runnable service such as MySQL, PostgreSQL, Valkey, ClickHouse, Prometheus,
   Grafana, node-exporter, or Plausible CE. Service version, runtime, endpoint,
-  credentials, lifecycle, and logs belong to the process row. The process name
-  does not imply the managed service identifier. The service endpoint host is
-  the owning node's WireGuard service address. Consumers on the same node rely
-  on the provisioning-owned WireGuard self-route, not on loopback or Docker
-  aliases.
+  credentials, lifecycle, and logs normally belong to the process row.
+  SeaweedFS is the named exception: its credentials belong only to the
+  `seaweedfs` tool row and the process renderer consumes them without storing a
+  second credential source. The process name does not imply the managed service
+  identifier. The service endpoint host is the owning node's WireGuard service
+  address. Consumers on the same node rely on the provisioning-owned WireGuard
+  self-route, not on loopback or Docker aliases.
 - **PostgreSQL service process:** Managed service whose identifier is always
   `postgres`, regardless of major version or consumer. Each process records an
   explicit version family and concrete image version, initial database and

@@ -2,25 +2,25 @@
 
 [Back to App commands.](../README.md)
 
-Disable analytics tracking proxy support for an app.
+Disable analytics tracking proxy support for one concrete app instance.
 
 ## Usage
 
 ```bash
-orbit app:analytics disable [app] [--json]
+orbit app:analytics disable [app.instance] [--json]
 ```
 
 ## Arguments and options
 
-- `app`: app name or hostname. Required.
-- `--json`: Output JSON.
+- `app.instance`: dotted selector; bare shorthand is allowed only for exactly
+  one eligible visible instance.
+- `--json`: Select JSON output and non-interactive input only; it is not consent.
 
 ## Behavior Summary
 
-`app:analytics disable` removes active public tracking host artifacts from
+`app:analytics disable` removes the selected binding's public tracking artifacts from
 ingress and router, removes their route intent, and then marks the app analytics
-binding disabled. A cleanup failure leaves the binding enabled for repair. The
-binding record remains so a later enable can reuse the same app-level state.
+binding disabled. A cleanup failure leaves that instance binding enabled for repair.
 
 The command does not remove Plausible sites, delete analytics data, stop the
 fleet analytics service, or remove the private `analytics.orbit` endpoint.
@@ -28,8 +28,8 @@ fleet analytics service, or remove the private `analytics.orbit` endpoint.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The current node identity holds `app:write` on the app's owning node.
-- The app exists in the gateway registry.
+- The current node identity holds `app:write` on the selected instance's serving node.
+- The selected app instance exists in the gateway registry.
 
 ## Output Summary
 
@@ -39,8 +39,8 @@ payload in the standard machine-readable envelope.
 ## Examples
 
 ```bash
-orbit app:analytics disable docs
-orbit app:analytics disable docs --json
+orbit app:analytics disable docs.production
+orbit app:analytics disable docs.production --json
 ```
 
 ## Related

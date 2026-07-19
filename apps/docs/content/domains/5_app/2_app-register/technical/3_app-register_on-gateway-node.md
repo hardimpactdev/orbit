@@ -14,8 +14,9 @@ a peer the gateway identifies as a **gateway node**.
   `app.ineligible_node`.
 - **Path resolution:** `--path` is resolved on the target node through
   gateway-owned Agent-push inspection and application, not on the gateway filesystem.
-- **Apply:** The gateway writes app configuration locally and applies app-role
-  artifacts to the target node through authenticated Agent push over WireGuard,
+- **Apply:** The gateway writes selected-instance configuration locally (plus
+  the parent app atomically for first adoption) and applies app-role artifacts
+  to the instance's serving node through authenticated Agent push over WireGuard,
   even when the CLI invocation originated on the gateway host. The CLI still
   calls the gateway API; there is no client-side bypass.
 
@@ -23,4 +24,4 @@ a peer the gateway identifies as a **gateway node**.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/AppRegisterControllerTest.php` | Gateway-peer register path, ineligible-node rejection, and app-role artifact application. |
+| `apps/gateway/tests/Feature/Http/Api/AppRegisterControllerTest.php` | Gateway-peer selected-instance registration, ineligible-node rejection, and app-role artifact application. |

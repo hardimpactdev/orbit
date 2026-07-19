@@ -1,49 +1,47 @@
-# `orbit app:agent-ide [app] [agent_ide]`
+# `orbit app:agent-ide [app.instance] [agent_ide]`
 
 [Back to App commands.](../README.md)
 
-Set the default agent IDE adapter for an app.
+Set the agent IDE adapter for one app instance.
 
-Stores the app-level agent IDE used by the app and its workspaces. Used when an
-app should use a different adapter than the owning node default for messages,
+Stores the instance-level agent IDE used by that instance and its workspaces.
+Use it when one instance should differ from its serving-node default for messages,
 process crash notifications, and workspace source discovery.
 
 ## Usage
 
 ```bash
-orbit app:agent-ide [app] [agent_ide] [--force] [--json]
+orbit app:agent-ide [app.instance] [agent_ide] [--force] [--json]
 ```
 
 ## Examples
 
 ```bash
-orbit app:agent-ide my-app opencode
-orbit app:agent-ide my-app inherit
-orbit app:agent-ide my-app none --force
-orbit app:agent-ide my-app polyscope --json
+orbit app:agent-ide my-app.development opencode
+orbit app:agent-ide my-app.development inherit
+orbit app:agent-ide my-app.development none --force
+orbit app:agent-ide my-app.development polyscope --json
 ```
 
 ## Arguments and options
 
-- `app`: app name or hostname. Name match wins; the hostname match is consulted
-  only when no name match exists.
+- `app`: dotted app-instance selector. Bare logical shorthand succeeds only for
+  exactly one eligible visible instance. Hostnames are invalid.
 - `agent_ide`: agent IDE input value. Core adapter names are `opencode` and
   `polyscope`. Installed Orbit extensions may register additional adapters with
   the gateway. `inherit` and `none` are reserved app-scope tokens, not
-  adapters: `inherit` clears the app override so the effective adapter resolves
-  through the current chain (`app → node → none`), while `none` disables agent
-  IDE resolution for the app and its workspaces. A future workspace-level
-  override would sit above app scope.
+  adapters: `inherit` clears the instance override so the effective adapter
+  resolves through `instance → serving node → none`, while `none` disables
+  agent IDE resolution for the instance and its workspaces.
 - `--force`: skip the destructive consent prompt during adapter switches that
   trigger workspace removal.
 - `--json`: Output JSON.
 
 ## What Happens
 
-Run `app:agent-ide` to set, clear, or disable the agent IDE adapter for an app.
+Run `app:agent-ide` to set, clear, or disable the adapter for one instance.
 
-`app:agent-ide` writes the app-default agent-IDE adapter into gateway app
-configuration.
+`app:agent-ide` writes the adapter into gateway app-instance configuration.
 
 An `app-prod` caller cannot run this command because adapter switches may plan
 workspace cleanup. A setting stored for an `app-prod` target applies only to
@@ -51,24 +49,24 @@ the app main context; production workspace discovery and cleanup never run.
 
 The command:
 
-1. Validates that the target app exists in gateway configuration.
+1. Resolves one concrete instance and authorizes its serving node.
 2. Validates that the requested adapter is supported.
 3. When switching away from a previous effective adapter, identifies
-   workspaces absent from the app under the new adapter. This
+   workspaces owned by the instance and absent under the new adapter. This
    operation requires explicit consent (`--force` or interactive confirmation)
    before any configuration is written.
-4. Stores the adapter as the app-level default.
+4. Stores the adapter as the instance-level override.
 5. Removes stale workspaces through `app:prune` / `workspace:remove`
    semantics.
-6. Reports the configured app default, effective resolution, and any workspace
+6. Reports the configured instance override, effective resolution, and any workspace
    cleanup that ran.
 
 `app:agent-ide` is a configuration write with potential side effects. `inherit`
-clears the app override so the effective adapter falls back to the owning node
-default. `none` disables agent IDE resolution for the app and its workspaces
+clears the instance override so the effective adapter falls back to its serving
+node default. `none` disables agent IDE resolution for the instance and its workspaces
 unless a future workspace-level override exists. Cleanup is intentionally
-app-scoped: `node:agent-ide` changes the inherited default for apps on a node but
-does not prune workspaces for those apps.
+instance-scoped: `node:agent-ide` changes inherited defaults but does not prune
+workspaces for those instances.
 
 `app:agent-ide` does not:
 
@@ -83,24 +81,24 @@ does not prune workspaces for those apps.
 - Notify running agent-IDE sessions, restart processes on the node, invalidate
   cached workspace-level overrides, or emit warnings for "downstream consumers
   still using the prior adapter". Current workspaces
-  resolve their effective agent IDE per-event through the app default, then the
-  owning node default, and pick up the new app default at the next
+  resolve their effective agent IDE per-event through the instance override,
+  then its serving-node default, and pick up the new value at the next
   consumer-side resolution event.
 
 ## Output
 
-Human output summarizes the configured app default, effective resolution, and
+Human output summarizes the configured instance override, effective resolution, and
 lists any workspaces removed during an adapter switch.
 
-JSON output returns the app name, the resulting adapter configuration, and any
-cleanup results. Cleanup that fails after the app configuration write is reported as
+JSON output returns the dotted instance target, resulting adapter configuration,
+and any cleanup results. Cleanup that fails after the instance configuration write is reported as
 success with structured warning metadata. See the
 [JSON renderer contract](technical/6.2_app-agent-ide_output-render_json.md) for the exact
 payload shape.
 
 ## Requirements
 
-- The caller's grant on the app's owning node must include the `app:agent`
+- The caller's grant on the instance's serving node must include the `app:agent`
   permission. Denials surface as `authorization_failed`.
 - The caller must not have active `app-prod`; existing grants do not bypass
   the workspace boundary.
@@ -111,10 +109,10 @@ payload shape.
 
 ## Related Commands
 
-Use these commands alongside `app:agent-ide` to inspect or prune app configurations.
+Use these commands alongside `app:agent-ide` to inspect or prune instance configuration.
 
 - [`app:show`](../4_app-show/app-show.md) — show app details
-- [`app:prune`](../7_app-prune/app-prune.md) — explicit app-level cleanup
+- [`app:prune`](../7_app-prune/app-prune.md) — explicit instance-level cleanup
 - [`node:agent-ide`](../../1_node/10_node-agent-ide/node-agent-ide.md) — set node-level default
 - [`doctor --family=app`](../app-doctor.md) — verify the agent IDE configuration owned by the app
 

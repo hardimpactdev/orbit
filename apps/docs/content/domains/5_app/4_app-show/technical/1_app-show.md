@@ -72,11 +72,11 @@ Supplying an unknown option fails with `error.code=validation_failed`.
    the app owns:
    - logical app registry: name, repository, shared runtime policy, and PHP
      version, with no placement defaults;
-   - agent IDE configuration: effective adapter and resolution source;
    - caller-visible app instances and their concrete placement fields, ordered
      by instance name;
-   - workspaces nested only under their visible app instance;
-   - processes and app-owned proxy routes (registry-shaped, not live status).
+   - each instance's effective agent IDE, workspaces, process definitions, and
+     WebSocket, analytics, and proxy-route bindings, nested only under that
+     instance (registry-shaped, not live status).
 
    Non-gateway callers receive only Orbit instances whose serving node grants
    `app:read` and workspaces owned by those instances. External driver-backed
@@ -88,7 +88,8 @@ Supplying an unknown option fails with `error.code=validation_failed`.
    grant that violates current workspace policy makes an `app-dev` instance
    visible; app and instance details remain readable.
 
-   The response has no `details.workspaces` fallback and no logical-app
+   The response has no flat `details.workspaces`, `details.processes`,
+   `details.agent_ide`, or `details.bindings` fallback and no logical-app
    `node`, `path`, `root`, `url`, `domain`, or `environment` field.
 
    Default `app:show` is a registry read, not a live readiness command.
@@ -98,7 +99,7 @@ Supplying an unknown option fails with `error.code=validation_failed`.
 `app:show` must not:
 - Mutate gateway configuration or node state.
 - Fix drift or adopt node reality.
-- SSH into the owning node directly from the caller.
+- SSH into any instance serving node directly from the caller.
 - Run live runtime container, document-root, route, or process probes.
 - Block on slow or unreachable node runtime checks.
 

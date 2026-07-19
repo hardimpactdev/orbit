@@ -8,8 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The authenticated peer holds `app:write` on the app's owning node.
-- The target app exists in the gateway registry.
+- The authenticated peer holds `app:write` on the selected instance's serving node.
+- The target resolves to one concrete app instance and its binding.
 
 ## Signature
 
@@ -23,16 +23,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record by name or hostname. |
+| `app` | `[app.instance]` | Always. | Never. | None. | Dotted selector; bare shorthand succeeds only for exactly one eligible visible instance, otherwise `app_instance_required`. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 
 ## Behavior Contract
 
 ### Disable Rules
 
-- Resolve the app by name or hostname.
-- Return `app.not_found` when no app matches.
-- Return `analytics.binding_missing` when the app has no analytics binding.
+- Resolve one concrete app instance and authorize its serving node; never use logical-app placement.
+- Return `app_instance.not_found` when no instance matches.
+- Return `analytics.binding_missing` when that instance has no analytics binding.
 - Remove active public `app-analytics` ingress and router artifacts, then their
   route rows.
 - Set `enabled=false` and clear `public_hosts` only after cleanup succeeds.
@@ -56,8 +56,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| App not found | No app record matches `app`. | `error.code=app.not_found` |
-| Binding missing | The app has no analytics binding. | `error.code=analytics.binding_missing` |
+| App instance required | Bare shorthand is ambiguous or ineligible. | `validation_failed` with `error.meta.reason=app_instance_required` |
+| App instance not found | No concrete instance matches. | `error.code=app_instance.not_found` |
+| Binding missing | The selected instance has no analytics binding. | `error.code=analytics.binding_missing` |
 | Route cleanup failed | An ingress or router artifact cannot be removed. | `error.code=analytics.route_cleanup_failed` |
 
 ## Doctor Relationship
@@ -73,8 +74,8 @@ owns route drift.
 | --- | --- |
 | Type | `api:POST /apps/{app}/analytics/disable` |
 | Effect | `write` |
-| Subject | App record resolved from `{app}`. |
-| Properties | `action=disable` and `target_app`. |
+| Subject | App instance resolved from `{app}`. |
+| Properties | `action=disable`, `target_app`, `target_app_instance`, and `serving_node`. |
 
 ## Test Mapping
 

@@ -6,15 +6,15 @@ the current app or workspace PHP selection.
 ## Usage
 
 ```bash
-orbit php:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]
+orbit php:list [--app=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit php:list
-orbit php:list --app=docs
-orbit php:list --app=docs --workspace=feature-docs
+orbit php:list --app=docs.development
+orbit php:list --app=docs.development --workspace=feature-docs
 orbit php:list --node=app-1 --live
 orbit php:list --node=app-1 --json
 ```
@@ -22,7 +22,8 @@ orbit php:list --node=app-1 --json
 ## Arguments and options
 
 - `--node=<node>`: Target node for available-image inspection.
-- `--app=<app>`: App context for app PHP version reporting.
+- `--app=<app.instance>`: Concrete dotted app-instance context for app PHP
+  version and serving-node image reporting. A bare logical app is not accepted.
 - `--workspace=<workspace>`: Workspace context for effective PHP version
   reporting. Requires `--app` unless the current directory resolves the parent
   app.
@@ -34,11 +35,13 @@ orbit php:list --node=app-1 --json
 
 Run this command to inspect PHP image support and selection for a node, app, or workspace.
 
-`php:list` resolves a node, app, or workspace context from explicit options,
-caller context, concrete app-instance placement, workspace-instance placement,
-or local `node:default`. It reads gateway configuration and the PHP image facts
-tracked by the gateway for the resolved node. With `--live`, it also asks the
-gateway to inspect the target node through its Docker-compatible provider and
+`php:list` resolves one node, concrete app instance, or workspace context from
+explicit options, caller context, concrete instance placement, or local
+`node:default`. It never chooses one instance to represent a logical app. It
+reads the shared app PHP policy and the PHP image facts tracked for the selected
+instance serving node.
+
+With `--live`, it also asks the gateway to inspect the target node through its Docker-compatible provider and
 records the approved image inventory. A failed live inventory probe is reported
 as unavailable. On an eligible node without a PHP inventory fact, Orbit
 registers that fact before probing. The probe through the Docker-compatible
@@ -59,8 +62,8 @@ available. Use `--json` for machine-readable output.
 
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
-- The current node identity has `php:read` granted on the resolved serving
-  node. Gateway identity remains implicit.
+- The current node identity has `php:read` granted on the selected instance or
+  workspace serving node. Gateway identity remains implicit.
 - `--live` image inspection requires an Agent-eligible, reachable target node.
 
 ## Related Commands

@@ -16,8 +16,11 @@ These terms define the types of routes that the proxy family owns and manages.
   or artifact.
 - **Route kind:** Route behavior at ingress. One of `app`, `workspace`,
   `internal`, `proxy`, or `redirect`.
-- **App route:** Proxy route whose owner is an app and whose kind is `app`.
-  Edited through app commands.
+- **App route:** Proxy route whose owner is the logical app and whose kind is
+  `app`, but whose target is always one concrete app instance. The route stores
+  the logical app slug as `owner.name`, the dotted instance selector as
+  `target.value`, and that instance's serving node as `node`. Edited through
+  app commands.
 - **Workspace route:** Proxy route whose owner is a workspace and whose kind is
   `workspace`. Edited through workspace commands.
 - **Internal route:** Proxy route with kind `internal`. Currently always paired

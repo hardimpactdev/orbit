@@ -12,7 +12,7 @@
   node for `show`, and `app:worker` on that node for `enable` and `disable`.
 - The target app instance exists in gateway configuration.
 - For `enable`, the serving node is reachable so the readiness probe can run
-  against the selected instance's installed app source.
+  against the selected instance's installed source path.
 
 ## Signature
 
@@ -88,7 +88,7 @@ Every required token must be present in the probe output:
 
 | Token | Meaning |
 | --- | --- |
-| `octane:installed` | `vendor/laravel/octane/` exists under the app source path. |
+| `octane:installed` | `vendor/laravel/octane/` exists under the selected instance's source path. |
 | `frankenphp-worker-file:present` | The FrankenPHP worker file exists at the path the runtime renderer points `FRANKENPHP_CONFIG` at. The path is resolved as `<document_root>/frankenphp-worker.php`, so an app with `document_root=web` is checked at `web/frankenphp-worker.php`. |
 | `frankenphp:configured` | `config/octane.php` references `frankenphp` outside of `//`, `#`, and `/* */` comments. |
 
@@ -106,8 +106,10 @@ Failure reasons that bypass the probe (and never mutate state):
 
 - `runtime != php`: `error.code=app.worker_unsupported_runtime`,
   `error.meta.runtime` reports the current value.
-- Owning node record is missing: `error.code=app.worker_unknown_node`.
-- App source path is empty: `error.code=app.worker_missing_path`.
+- The selected instance's `driver_config.node` is missing:
+  `error.code=app.worker_unknown_node`.
+- The selected instance's `driver_config.path` is empty:
+  `error.code=app.worker_missing_path`.
 
 ## Renderer Selection
 
@@ -171,8 +173,8 @@ failures below.
 | App not found | No app record matches `app`. | Failure |
 | App instance required | A bare app selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=app_instance_required`. |
 | Unsupported runtime | `enable` was called for an app with `runtime != php`. State unchanged. | Failure |
-| Owning node missing | `enable` was called for an app whose `node` relation is `null`. State unchanged. | Failure |
-| App path missing | `enable` was called for an app with an empty `path`. State unchanged. | Failure |
+| Serving node missing | `enable` was called for an instance whose `driver_config.node` is missing. State unchanged. | Failure |
+| Source path missing | `enable` was called for an instance whose `driver_config.path` is empty. State unchanged. | Failure |
 | Readiness failed | Probe output is missing at least one required token. State unchanged. | Failure |
 
 ## Doctor Relationship
@@ -192,7 +194,7 @@ configuration.
 Neither command:
 
 - Runs `composer require`, publishes Octane config, edits bootstrap files,
-  or otherwise mutates the app source.
+  or otherwise mutates the selected instance's source path.
 - Restarts or recreates the FrankenPHP runtime container directly. The
   app runtime renderer picks up the new worker setting the next time the
   runtime is enacted (for example through `app:root` or doctor adopt).

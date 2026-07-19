@@ -8,8 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The authenticated peer has `app:read` on the app's owning node for `list`.
-- The authenticated peer has `app:mount` on the app's owning node for `add`
+- The authenticated peer has `app:read` on the selected instance's serving node for `list`.
+- The authenticated peer has `app:mount` on the selected instance's serving node for `add`
   and `remove`.
 - The target app instance exists in gateway configuration.
 
@@ -77,7 +77,8 @@ validation failures, and `403` for permission denials.
 ### Selector Resolution
 
 1. **Dotted instance selectors.** Selectors containing one dot, such as
-   `hauser.nmbp`, resolve the named app instance. Every action targets
+   `hauser.nmbp`, resolve the named app instance. Its serving node is the sole
+   authorization and host-path boundary. Every action targets
    `app_instance_runtime_mounts`.
 2. **Bare app selectors.** Selectors without an instance suffix fail with
    `error.meta.reason=app_instance_required`.
@@ -91,7 +92,7 @@ validation failures, and `403` for permission denials.
 2. **Workspace inheritance.** Workspace runtime containers inherit mounts from
    the workspace's selected app instance.
 3. **PHP/app-dev only.** The current slice accepts configurable runtime mounts
-   only for PHP apps whose owning node has the active `app-dev` role.
+   only for PHP app instances whose serving node has the active `app-dev` role.
 4. **Read-only default.** New mounts default to `read_only=true`; callers must
    pass `--read-write` or `read_only=false` to make them writable.
 5. **Reserved target protection.** Custom mounts cannot target `/app`,
@@ -108,6 +109,9 @@ validation failures, and `403` for permission denials.
 8. **Directory preparation.** Before `docker run`, the runtime manager creates
    safe configured source directories with owner and group set to the source
    home user. Unsafe configured sources fail before Docker is invoked.
+9. **Entity separation.** Renderers return the logical `app` and concrete
+   `instance` separately. All node, URL, path,
+   root, domain, placement, and `adopted` fields belong only to `instance`.
 
 ## Failure Semantics
 
@@ -124,7 +128,8 @@ failures below.
 | Validation failed (target) | `add` or `remove` is missing `target`, or `target` is not an allowed absolute target path. | Failure |
 | App not found | No app record or app instance matches the selector. | Failure |
 | Unsupported app runtime | The app has `runtime != php`; `error.meta.reason=app_runtime_not_php`. | Failure |
-| Unsupported owning role | The app is not owned by an active `app-dev` node; `error.meta.reason=app_mounts_app_dev_only`. | Failure |
+| Unsupported serving role | The selected instance is not served by an active `app-dev` node; `error.meta.reason=app_mounts_app_dev_only`. | Failure |
+| Authorization denied | The caller lacks the action permission on the selected instance's serving node. | `authorization_failed` with `app_instance` and `serving_node`. |
 
 Validation failures use `error.code=validation_failed`. Source and target
 policy failures include `error.meta.reason`; current reasons include

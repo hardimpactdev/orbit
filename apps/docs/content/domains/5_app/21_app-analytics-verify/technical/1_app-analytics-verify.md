@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The authenticated peer holds `app:read` on the app's owning node.
+- The authenticated peer holds `app:read` on the selected instance's serving node.
 - The caller can resolve and reach the stored public analytics hosts.
 
 ## Signature
@@ -23,15 +23,15 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record by name or hostname. |
+| `app` | `[app.instance]` | Always. | Never. | None. | Dotted selector; bare shorthand succeeds only for exactly one eligible visible instance, otherwise `app_instance_required`. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 
 ## Behavior Contract
 
 ### Verification Rules
 
-- Read the enabled app analytics binding, public hosts, derived route intent,
-  and provider-neutral ingress targets through the typed gateway API.
+- Resolve one concrete app instance, authorize its serving node, and read only
+  that instance's enabled binding, public hosts, route intent, and ingress targets.
 - For every stored host, resolve public `A` and `AAAA` records from the caller
   and compare the normalized answers with the configured ingress targets.
   Report matching answers as `routing=direct` and differing resolved answers
@@ -66,7 +66,7 @@ successful public-route check is not presented as event persistence proof.
 
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
-| `GET` | `/api/apps/{app}/analytics/verify` | `app:read` | Return stored verification context without public probes or mutation. |
+| `GET` | `/api/apps/{app}/analytics/verify` | `app:read` on instance serving node | Return the selected instance's verification context without probes or mutation. |
 
 ## Renderer Contracts
 
@@ -77,8 +77,9 @@ successful public-route check is not presented as event persistence proof.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| App missing | No app record matches `app`. | `error.code=app.not_found` |
-| Binding missing | The app has no analytics binding. | `error.code=analytics.binding_missing` |
+| App instance required | Bare shorthand is ambiguous or ineligible. | `validation_failed` with `error.meta.reason=app_instance_required` |
+| App instance missing | No concrete instance matches. | `error.code=app_instance.not_found` |
+| Binding missing | The selected instance has no analytics binding. | `error.code=analytics.binding_missing` |
 | Binding disabled | The stored binding is disabled or has no public hosts. | `error.code=analytics.public_not_ready` with verification data. |
 | Public readiness incomplete | Route intent, public-safe DNS, TLS, script, or dashboard boundary is incomplete. | `error.code=analytics.public_not_ready` with verification data. |
 
@@ -95,8 +96,8 @@ repair surface for router and ingress artifacts.
 | --- | --- |
 | Type | `api:GET /apps/{app}/analytics/verify` |
 | Effect | `read` |
-| Subject | App record resolved from `{app}`. |
-| Properties | `action=verify` and `target_app`. |
+| Subject | App instance resolved from `{app}`. |
+| Properties | `action=verify`, `target_app`, `target_app_instance`, and `serving_node`. |
 
 ## Test Mapping
 

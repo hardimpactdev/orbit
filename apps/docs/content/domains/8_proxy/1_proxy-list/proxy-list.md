@@ -38,10 +38,11 @@ Use `--filter` to narrow the list:
 
 `proxy:list` reads gateway configuration only. It does not probe node proxy backends or verify TLS files. Use `doctor --family=proxy` for drift verification.
 
-For app-owned primary routes, the owner/target may be the logical app or a
-concrete app instance selector. A route such as `happie.nmbp` reports
-`target.type=app_instance` and `target.value=happie.nmbp` when gateway intent
-resolves that hostname to the `nmbp` app instance.
+Every app-owned primary route reports a concrete app-instance target. A route
+such as `happie.nmbp` keeps the logical app slug `happie` in `owner.name`,
+reports `target.type=app_instance` and `target.value=happie.nmbp`, and reports
+the selected instance's serving node in `node`. Logical apps are not route
+targets.
 
 ## Examples
 

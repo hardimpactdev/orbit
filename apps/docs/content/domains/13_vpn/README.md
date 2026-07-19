@@ -26,10 +26,10 @@ These rules govern all VPN commands and their gateway-execution contract.
 
 - VPN commands must start with a VPN compound command prefix before the colon,
   such as `vpn-client:*` or `vpn-web-ui:*`.
-- VPN commands execute against the active `vpn` role runtime. In this version
-  that runtime usually lives on the same machine as the `gateway` role, but the
-  command target is the `vpn` role node.
-- Every public CLI caller uses the typed gateway HTTPS API over WireGuard. The
+- In v1 the active `vpn` role is gateway-coupled and runs on the active gateway
+  node; commands still resolve the `vpn` role rather than assuming a backend
+  from the gateway role name.
+- Every public VPN command is gateway-backed and uses the typed gateway HTTPS API over WireGuard. The
   gateway executes the gateway-coupled VPN backend operation locally without a
   node command transport. Gateway API authorization requires `vpn:read` for list operations
   and `vpn:write` for client mutations and web UI password rotation on the

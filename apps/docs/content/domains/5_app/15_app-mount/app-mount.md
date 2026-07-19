@@ -47,16 +47,16 @@ orbit app:mount remove hauser.nmbp /projects --json
 
 Run `app:mount` to manage instance-scoped additional runtime mount intent.
 
-`app:mount list` reads the configured mounts for the resolved target without
+`app:mount list` reads the configured mounts for the selected instance without
 changing gateway state.
 
-`app:mount add` requires an app instance selector, validates the source and
-target against the selected instance's node and home boundary, then creates or
+`app:mount add` requires a dotted app instance selector, authorizes its serving
+node, validates the source and target against that node and home boundary, then creates or
 updates the mount for the target path.
 Adding the same target again updates the stored source or read/write mode.
 
-`app:mount remove` requires an app instance selector and deletes the configured
-mount for the target path on the resolved instance.
+`app:mount remove` requires a dotted app instance selector, authorizes its
+serving node, and deletes the configured mount for that instance and target.
 
 Configured mounts are rendered after Orbit's built-in runtime mounts. App and
 workspace runtime containers use the selected instance's mount rows. The runtime spec hash changes when mount
@@ -72,7 +72,7 @@ restart containers directly.
 - Replace the built-in app-dev `/packages` mount.
 - Configure static apps or `app-prod` apps in the current slice.
 - Grant filesystem permissions beyond creating safe bind-mount source
-  directories on the owning node before Docker starts the runtime container.
+  directories on the selected instance's serving node before Docker starts the runtime container.
 
 ## Safety Rules
 
@@ -96,8 +96,10 @@ boundary.
 
 ## Output
 
-You see the app, `app_instance` mount target, configured mounts, and
-whether they are inherited by workspaces that use the selected instance.
+You see the logical `app` entity and concrete `instance` entity separately,
+followed by configured mounts and whether they are inherited by workspaces
+that use the selected instance. Node, URL, path, root, domain, and `adopted`
+appear only on `instance`, never on the logical app.
 
 Use `--json` when another tool needs the machine-readable envelope. The exact
 payload shape is documented in the
@@ -106,8 +108,9 @@ payload shape is documented in the
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The caller has `app:read` on the app's owning node for `list`.
-- The caller has `app:mount` on the app's owning node for `add` and `remove`.
+- The caller has `app:read` on the selected instance's serving node for `list`.
+- The caller has `app:mount` on the selected instance's serving node for `add`
+  and `remove`.
 - Every action uses a dotted app instance selector such as `hauser.nmbp`.
 
 ## Related Commands

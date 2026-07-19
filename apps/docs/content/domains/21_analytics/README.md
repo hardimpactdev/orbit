@@ -19,20 +19,25 @@ These rules define the analytics command domain and its role boundary.
   failed deployment or cleanup is completed instead of duplicated on another
   node.
 - Public app analytics hosts, such as `https://analytics.example.com`, are
-  tracking-only routes created from app analytics bindings. They proxy Plausible
-  script and event paths only and must not expose the dashboard publicly.
-- Enabling app analytics requires the app to have a configured public domain.
-  Orbit defaults the tracking host to `analytics.<app-domain>`, enacts the
-  router and ingress artifacts before reporting success, and returns the
-  app-specific script base URL and event endpoint operators use to adapt the
-  Plausible-generated snippet.
+  tracking-only routes created for a selected concrete app instance. They use
+  that instance's public domain, proxy Plausible script and event paths only,
+  and must not expose the dashboard publicly.
+- Enabling app analytics resolves one app instance and its serving-node
+  authorization boundary before route effects. That instance must have a
+  configured public domain. Orbit defaults the tracking host to
+  `analytics.<instance-domain>`, enacts the router and ingress artifacts before
+  reporting success, and returns the script base URL for that instance plus the
+  event endpoint operators use to adapt the Plausible-generated snippet.
+  Shared analytics policy that carries no placement fact may remain owned by
+  the logical app; public domains, hosts, route targets, and serving-node
+  authorization never do.
 - Plausible version, environment, lifecycle, logs, and endpoint state belong to
   the process row generated for the analytics role. There is no
   `--plausible-version` option; commands use the generic `--version` field.
 - PostgreSQL and ClickHouse are service processes on active `database` role
   nodes. The analytics role stores the selected PostgreSQL process identity as
   well as the backing node identities and does not install or own either
-  database. A legacy assignment with multiple PostgreSQL candidates and no
+  database. An assignment with multiple PostgreSQL candidates and no
   stored process identity fails clearly instead of choosing one. Both services use generated
   credentials encrypted in gateway storage and publish only on WireGuard.
 - The default deployment follows the official Plausible CE 3.2.1 composition:
@@ -70,9 +75,10 @@ state owned by node, app, process, and proxy families.
   [`doctor --family=proxy`](../8_proxy/proxy-doctor.md) owns route artifact
   drift and restores a missing or divergent private analytics route from the
   singleton active role assignment.
-- [`app`](../5_app/README.md) owns binding state for each app and public
-  tracking host intent. [`doctor --family=app`](../5_app/app-doctor.md) owns
-  app binding drift.
+- [`app`](../5_app/README.md) owns shared non-placement binding policy for the
+  logical app and concrete public tracking-host placement for each selected
+  app instance. [`doctor --family=app`](../5_app/app-doctor.md) owns app
+  binding drift.
 
 There is no `doctor --family=analytics` contract in v1.
 

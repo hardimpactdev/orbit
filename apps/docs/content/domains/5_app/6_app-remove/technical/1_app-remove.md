@@ -1,4 +1,6 @@
-# `app:remove` Technical Contract
+# Technical Contract: `orbit app:remove [app]`
+
+[Back to public `app:remove` documentation.](../app-remove.md)
 
 **Owner:** `app`.
 
@@ -6,131 +8,122 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The target app exists in the gateway app registry.
-- The current node identity is authorized to remove the resolved app.
-- All runtime and residual cleanup uses Agent push to the concrete app-instance
-  node. Reachability is not a pre-configuration prerequisite; cleanup failures after removal become
-  structured warnings.
-- The caller has `app:remove` on the app's owning node.
-
-This is the canonical technical contract for the `app:remove` command. It owns the signature, input resolution, behavior, and failure semantics.
+- The target logical app exists.
+- The caller has `app:remove` on every affected Orbit instance's serving node.
 
 ## Signature
 
-`orbit app:remove [app] [--force] [--json]`
+```bash
+orbit app:remove [app] [--force] [--json]
+```
 
 ## Input Contract
 
 This command follows the shared
 [Invocation Model](../../../README.md#invocation-model).
 
-| Field | Source | Required when | Forbidden when | Default | Validation |
-| --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | Always. | Never. | None. | App name or hostname. Must resolve to exactly one gateway app record. |
-| `force` | `--force` | Optional. | Never. | `false`. | Explicit destructive consent. |
-| `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
+| Field | Source | Required when | Default | Validation |
+| --- | --- | --- | --- | --- |
+| `app` | `[app]` | Always. | None. | Exact logical app slug. Hostnames and dotted instance selectors are forbidden. |
+| `force` | `--force` | Every non-interactive invocation, including `--json`. | `false`. | Explicit approval for the complete logical-app cascade. |
+| `json` | `--json` | Optional. | `false`. | Selects JSON and non-interactive input; never implies destructive consent. |
 
 ## Input Resolution
 
-1. **App Resolution:** Resolve `app` against gateway app registry (name or hostname).
-2. **Caller Context:** Identify workspace context to detect self-targeting.
-3. **Consent Check:** Identify interactive presence or `--force` flag.
+1. Resolve `app` by exact logical slug.
+2. Enumerate every instance and its driver, serving node, and dependent
+   artifacts. Freeze this inventory for authorization, consent, execution, and
+   output.
+3. Authorize `app:remove` on every distinct serving node represented by the
+   affected Orbit instances. External-driver instances use the documented
+   gateway-only authority path.
+4. Stop before consent or side effects if any required authorization fails.
+5. Obtain interactive `app_remove.confirm` consent, or require `--force` in
+   non-interactive mode.
+
+The command has no parent-only mode. A dotted selector or hostname fails
+before inventory or effects; callers use `app:instance remove` for one
+placement.
 
 ## Input Mode Contracts
 
-- [`5.1_app-remove_input-mode_interactive.md`](5.1_app-remove_input-mode_interactive.md)
-- [`5.2_app-remove_input-mode_non-interactive.md`](5.2_app-remove_input-mode_non-interactive.md)
+- [Interactive input](5.1_app-remove_input-mode_interactive.md)
+- [Non-interactive input](5.2_app-remove_input-mode_non-interactive.md)
 
 ## Behavior Contract
 
-`app:remove` is a destructive-write command with cross-family cleanup.
+### Preflight and authorization
 
-### 1. Pre-flight
-- Resolve target app.
-- Check permissions.
-- If self-targeting (caller is inside a workspace of the target app), warn the operator.
+Orbit resolves the logical app, captures the complete instance/dependent
+inventory, and authorizes the complete serving-node set. Authorization is
+all-or-nothing and precedes destructive consent so the prompt never offers an
+operation the caller cannot perform.
 
-### 2. Destructive Consent
-- Identify confirmation or `--force`.
-- Interactive prompt must list major dependent artifacts (proxy routes, workspaces, processes).
+### Destructive consent
 
-### 3. Execution Sequence
-- **Step 1: Gateway App Configuration:** In one gateway transaction, delete the
-  app record and its gateway-owned dependent rows, including schedule
-  definitions. This is the point of no return. Failure rolls the transaction
-  back and returns `app.removal_failed`; there is no per-app scheduler runtime
-  unit that can remain as Doctor drift.
-- **Step 2: Dependent Configuration Cleanup:**
-    - Delete app-owned proxy route records.
-    - Delete app-owned `workspace` rows.
-    - Stop and delete app-owned `process`.
-- **Step 3: Node Artifact Cleanup:**
-    - Remove app runtime container and managed runtime configuration through
-      Agent push.
-    - Remove residual route/process artifacts and the eligible app path through
-      Agent push.
-    - Report any cleanup that cannot finish as drift; never select SSH.
+The interactive confirmation explicitly names every affected instance and
+shows aggregate dependent counts. `--force` approves that same complete
+cascade. Consent can never select only the logical record or a subset of
+instances.
 
-#### App path deletion eligibility
+### Execution
 
-The app path is removed only when Orbit created or managed it and no other app shares it. App-level removal does not honor per-workspace `--keep-files` preferences. Child workspace worktrees under the removed app path are removed together with the app path.
+After consent:
 
-### 4. Convergence and Drift
-- Once gateway configuration is removed, the app record is gone from gateway app
-  registry scope.
-- Remaining Orbit-owned app artifacts that failed to clean up are reported as
-  orphaned app drift by [`app-doctor.md`](../../app-doctor.md).
-- Artifacts belonging to other families (e.g. leftover workspace files) are reported as drift by their respective family doctors.
+1. In one gateway transaction, remove the logical app, every frozen instance,
+   and all gateway-owned proxy-route, schedule, workspace, process, and other
+   dependent rows. A transaction failure rolls back the complete cascade.
+2. For each frozen Orbit instance, remove its runtime container, managed runtime
+   configuration, residual managed artifacts, and eligible app path through
+   Agent push to that instance's serving node.
+3. Return aggregate cleanup totals plus one cleanup result per instance.
+
+An app path is removed only when Orbit created or adopted that concrete
+instance path and no retained instance shares it. Workspace worktrees below an
+eligible removed path are removed with it.
+
+The atomic gateway transaction is the point of no return. A transaction failure
+returns a command failure with no cascade rows removed and no node cleanup.
+Cleanup that fails after the transaction commits is successful removal with a
+structured drift warning; later instance cleanup continues.
 
 ## Failure Semantics
-Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
+
+Standard [Common Failures](../../../README.md#common-failures) apply.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| App not found | `app` does not match an existing app record. Already-absent removal is not idempotent. | Failure (`error.code=app.not_found`). |
-| Step 1 (gateway configuration) failure | Deleting the gateway app record itself fails. No dependent or node-side side effects have occurred. | Failure (`error.code=app.removal_failed`). |
+| Invalid selector | `app` is a hostname or dotted instance selector. | `validation_failed` with `meta.field=app` and `meta.reason=logical_slug_required`. |
+| App not found | No logical app matches the exact slug. | `app.not_found`. |
+| Authorization denied | Any serving node denies `app:remove`. | `authorization_failed` with complete serving-node and unauthorized-node metadata; no consent or effects. |
+| Consent missing | Non-interactive mode lacks `--force`. | `validation_failed` with `meta.field=force` and `meta.reason=destructive_consent_required`. |
+| Confirmation declined | The operator declines `app_remove.confirm`. | `validation_failed` with `meta.field=force` and `meta.reason=cancelled`; no effects. |
+| Gateway removal failed | Gateway configuration removal fails before the affected scope is deleted. | `app.removal_failed`. |
 
-Partial cleanup is **not** a command failure. Once Step 1 (gateway app configuration
-removal) succeeds, the app record is gone from gateway app registry scope by
-definition. Any failure during Step 2 (dependent gateway configuration) or Step 3
-(node-side artifact cleanup) is reported as `success` with a structured warning
-per affected family in `success.meta.warnings[]`. Each warning carries `code`,
-`family`, `message`, and `next_command` (typically
-`doctor --family=<family> --restore`). The exit code remains `0`; the warnings are
-the machine-readable signal.
-
-Gateway-owned configuration removal is the point of no return. Leftover dependent or
-node-side artifacts are convergence drift owned by the affected family doctor,
-not a removal failure.
+Partial cleanup after gateway removal is returned as success with one warning
+per affected family in `success.meta.warnings[]`. Each warning includes
+`code`, `family`, `message`, `app_instance`, `serving_node`, and
+`next_command`. The exit code remains `0`.
 
 ## Doctor Relationship
 
-- Removed apps disappear from `app:list` and `app:show`.
-- App-owned artifacts remaining after a failed cleanup are detected as orphaned
-  app drift by [`app-doctor.md`](../../app-doctor.md). Related-family artifacts
-  are detected by the affected family doctors (`proxy`, `workspace`, and
-  `process`). Gateway schedule-row deletion is part of the Step 1 transaction,
-  not a Schedule Doctor handoff.
-- `app:remove` does not duplicate drift item shapes for each family; it points operators at the affected `doctor --family=<family> --restore` via the warning's `next_command`.
+Remaining app artifacts are diagnosed by
+[`doctor --family=app`](../../app-doctor.md). Proxy, workspace, process, and
+other family artifacts remain owned by their respective family doctors.
 
 ## Activity Logging
-
-The gateway API endpoint emits an activity entry for successful and failed app
-removal attempts.
 
 | Field | Value |
 | --- | --- |
 | Type | `api:DELETE /apps/{app}` |
 | Effect | `destructive` |
-| Subject | `App` when the app is resolved before deletion; `none` for not-found or authorization failures before the target app can be logged. |
-| Properties | `name` (string), the requested route selector for the app being removed. No raw shell command text, node-side output, or secrets. |
+| Subject | Resolved logical `App`, or `none` when resolution/authorization fails before a subject is available. |
+| Properties | Logical `app`, `instance_names`, `instance_count`, `serving_nodes`, and aggregate dependent counts. Never raw node output or secrets. |
 | Description | derived |
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | CLI interactive confirmation, forced delete, human/json output, and drift warning payloads. |
-| `apps/gateway/tests/Feature/Http/Api/AppRemoveControllerTest.php` | Gateway API removal: app intent, dependent artifacts, authorization, and structured envelopes. |
-
-App resolution from name, hostname, and CWD context remains a coverage gap until focused tests land.
+| `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | Slug-only selection, all-instance confirmation, forced/non-interactive consent, progress, and JSON output. |
+| `apps/gateway/tests/Feature/Http/Api/AppRemoveControllerTest.php` | Complete inventory, multi-node authorization, cascade removal, per-instance cleanup, and warning payload shape. |

@@ -64,15 +64,11 @@ Each activity entry carries the following fields.
   command in the command's technical contract.
 - **Description:** Optional one-line human summary for human renderers.
   Renderers may fall back to type plus subject when description is absent.
-- **Channel:** Origin of the entry. Currently `cli` (command-side emission)
-  and `api` (gateway controller emission). Channel does not change which
-  fields are required. The retained `remote_shell` and `local_executor`
-  channel values can appear only on pre-existing rows requested through
-  `--include-internal`. Rows with a missing or empty channel are normalized to
-  `default` on read. Current code does not emit `remote_shell`,
-  `local_executor`, or `default`. Pre-existing `security` host-key rows are
-  normalized on read to channel `api` and effect `write`. Their stored key type
-  moves to `properties.host_key_type`.
+- **Channel:** Origin of the entry. The canonical public values are `cli`
+  (command-side emission) and `api` (gateway controller emission). Internal
+  execution rows use channel `api` plus `properties.lane = internal` and a
+  current `properties.transport` marker. Channel does not change which fields
+  are required.
 
 ### Canonical Activity DTO
 
@@ -90,7 +86,7 @@ Every activity read surface returns these exact fields:
 | `command` | string \| null | Orbit command name when one applies. |
 | `description` | string \| null | Optional human-readable description. Automation must not parse it. |
 | `properties` | object | Type-specific structured audit data after canonical top-level fields are removed. |
-| `channel` | string | Current origin channel, `cli` or `api`; pre-existing internal rows can retain their stored channel, known host-key security rows normalize to `api`, and a missing channel reads as `default`. |
+| `channel` | string | Canonical origin channel: `cli` or `api`. Internal rows use `api` plus lane and transport properties. |
 
 ## Correlation
 
@@ -192,24 +188,18 @@ These rules govern which activity rows a caller may read.
   which activity rows and correlated entries a caller may read. Visibility
   is computed against the caller's WireGuard-resolved node identity.
 - **Internal activity visibility:** Backend transport audit rows are durable
-  but hidden from default `activity:list` output. Current Agent-push dispatch,
-  success, and failure rows use channel `api`, types `agent_push.dispatching`
-  and `agent_push.completed`, and properties `lane = internal` plus `transport
-  = agent_push`. Bootstrap/provisioning SSH rows use channel `api`, types
-  `ssh_bootstrap.run` or `ssh_bootstrap.start`, and `transport =
-  ssh_bootstrap`.
+  but hidden from default `activity:list` output. Internal rows use channel
+  `api` and `properties.lane = internal`. Current Agent-push dispatch, success,
+  and failure rows use types `agent_push.dispatching` and
+  `agent_push.completed` with `properties.transport = agent_push`.
+  Bootstrap/provisioning SSH rows use types `ssh_bootstrap.run` or
+  `ssh_bootstrap.start` with `properties.transport = ssh_bootstrap`.
 
-  Default filtering uses the internal lane. It also recognizes pre-existing
-  rows with `remote_shell` or `local_executor` channels and the
-  `local-executor` lane, so those rows remain hidden. Operators inspect
-  internal rows with
-  `activity:list --include-internal` or the gateway `include_internal=true`
-  query parameter. Internal rows still use the public effect vocabulary
-  (`read`, `write`, `destructive`). Backend execution records a conservative
-  top-level `write` effect because execution may mutate node state, without
-  exposing raw scripts, stdin, or stdout. `remote_shell` is retained for read
-  compatibility only; normal current node execution is Agent push, while SSH
-  is restricted to the bootstrap/provisioning seam.
+  Operators inspect internal rows with `activity:list --include-internal` or
+  the gateway `include_internal=true` query parameter. Internal rows still use
+  the public effect vocabulary (`read`, `write`, `destructive`). Backend
+  execution records a conservative top-level `write` effect because execution
+  may mutate node state, without exposing raw scripts, stdin, or stdout.
 - **Filter denial versus empty:** When a caller filters by an entity it
   cannot see, the gateway returns an authorization failure rather than an
   empty result. This prevents leaking the existence of hidden activity
