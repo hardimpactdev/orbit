@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Process;
 
 final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
 {
+    private const int INLINE_COMMAND_BYTE_LIMIT = 4096;
+
     private ?string $ipv4 = null;
 
     public function __construct(
@@ -41,15 +43,15 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
 
     public function exec(string $command, ?int $timeoutSeconds = null): ProcessResult
     {
-        $authScript = E2EGitHubAuth::shellInputScript($command);
+        $inputScript = E2EGitHubAuth::shellInputScript($command);
 
-        if ($authScript !== null) {
+        if ($inputScript !== null || strlen($command) > self::INLINE_COMMAND_BYTE_LIMIT) {
             return $this->host->runWithInput(
                 sprintf(
                     'incus exec %s -- bash -s',
                     escapeshellarg($this->name),
                 ),
-                $authScript,
+                $inputScript ?? self::shellInputScript($command),
                 $timeoutSeconds,
             );
         }
@@ -59,6 +61,15 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
             escapeshellarg($this->name),
             escapeshellarg($command),
         ), $timeoutSeconds);
+    }
+
+    private static function shellInputScript(string $command): string
+    {
+        return implode(PHP_EOL, [
+            'set -euo pipefail',
+            'bash -lc '.escapeshellarg($command),
+            '',
+        ]);
     }
 
     public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult

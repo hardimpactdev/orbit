@@ -82,6 +82,17 @@ function incusAcquisitionReadinessCapturingHost(?string $failureNeedle = null): 
         #[Override]
         public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
         {
+            return $this->capture($command);
+        }
+
+        #[Override]
+        public function runWithInput(string $command, string $input, ?int $timeoutSeconds = null): ProcessResult
+        {
+            return $this->capture($command."\n".$input);
+        }
+
+        private function capture(string $command): ProcessResult
+        {
             $this->commands[] = $command;
 
             if ($this->failureNeedle !== null && str_contains($command, $this->failureNeedle)) {

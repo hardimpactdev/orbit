@@ -28,13 +28,20 @@ function dedicatedIngressBakeResult(string $output = ''): ProcessResult
 
 it('bakes dedicated ingress before app production references it', function (): void {
     $commands = [];
+    $capture = function (string $command) use (&$commands): ProcessResult {
+        $commands[] = $command;
+
+        return dedicatedIngressBakeResult();
+    };
     $host = m::mock(IncusHost::class, [E2EConfig::fromEnvironment()])->makePartial();
     $host->shouldReceive('run')
-        ->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
-            $commands[] = $command;
-
-            return dedicatedIngressBakeResult();
-        });
+        ->andReturnUsing(fn (string $command, ?int $timeoutSeconds = null): ProcessResult => $capture($command));
+    $host->shouldReceive('runWithInput')
+        ->andReturnUsing(
+            fn (string $command, string $input, ?int $timeoutSeconds = null): ProcessResult => $capture(
+                $command."\n".$input,
+            ),
+        );
 
     $builder = new IncusTopologyBuilder($host);
     $gateway = new IncusInstance($host, 'orbit-template-gateway-base', commandTransport: true);
@@ -67,39 +74,46 @@ it('refreshes the reused gateway checkout before dedicated ingress baking', func
         'wg pubkey' => Process::result(output: "public-key\n"),
     ]);
 
+    $capture = function (string $command) use (&$commands): ProcessResult {
+        $commands[] = $command;
+
+        if (str_contains($command, 'docker exec wg-easy wg show wg0 public-key')) {
+            return dedicatedIngressBakeResult("wg-easy-public-key\n");
+        }
+
+        if (str_contains($command, 'orbit-template-app-dev-base') && str_contains($command, '/state')) {
+            return dedicatedIngressBakeResult("10.201.0.12\n");
+        }
+
+        if (str_contains($command, 'orbit-template-app-prod-base') && str_contains($command, '/state')) {
+            return dedicatedIngressBakeResult("10.201.0.13\n");
+        }
+
+        if (str_contains($command, 'orbit-template-ingress-base') && str_contains($command, '/state')) {
+            return dedicatedIngressBakeResult("10.201.0.14\n");
+        }
+
+        if (str_contains($command, 'orbit-template-gateway-base') && str_contains($command, '/state')) {
+            return dedicatedIngressBakeResult("10.201.0.11\n");
+        }
+
+        if (str_contains($command, 'orbit-template-operator-base') && str_contains($command, '/state')) {
+            return dedicatedIngressBakeResult("10.201.0.10\n");
+        }
+
+        return dedicatedIngressBakeResult();
+    };
     $host = m::mock(IncusHost::class, [E2EConfig::fromEnvironment()])->makePartial();
     $host->shouldReceive('startInstance')->andReturn(dedicatedIngressBakeResult());
     $host->shouldReceive('launchTopologyInstance')->andReturn(dedicatedIngressBakeResult());
     $host->shouldReceive('run')
-        ->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
-            $commands[] = $command;
-
-            if (str_contains($command, 'docker exec wg-easy wg show wg0 public-key')) {
-                return dedicatedIngressBakeResult("wg-easy-public-key\n");
-            }
-
-            if (str_contains($command, 'orbit-template-app-dev-base') && str_contains($command, '/state')) {
-                return dedicatedIngressBakeResult("10.201.0.12\n");
-            }
-
-            if (str_contains($command, 'orbit-template-app-prod-base') && str_contains($command, '/state')) {
-                return dedicatedIngressBakeResult("10.201.0.13\n");
-            }
-
-            if (str_contains($command, 'orbit-template-ingress-base') && str_contains($command, '/state')) {
-                return dedicatedIngressBakeResult("10.201.0.14\n");
-            }
-
-            if (str_contains($command, 'orbit-template-gateway-base') && str_contains($command, '/state')) {
-                return dedicatedIngressBakeResult("10.201.0.11\n");
-            }
-
-            if (str_contains($command, 'orbit-template-operator-base') && str_contains($command, '/state')) {
-                return dedicatedIngressBakeResult("10.201.0.10\n");
-            }
-
-            return dedicatedIngressBakeResult();
-        });
+        ->andReturnUsing(fn (string $command, ?int $timeoutSeconds = null): ProcessResult => $capture($command));
+    $host->shouldReceive('runWithInput')
+        ->andReturnUsing(
+            fn (string $command, string $input, ?int $timeoutSeconds = null): ProcessResult => $capture(
+                $command."\n".$input,
+            ),
+        );
 
     $builder = new IncusTopologyBuilder($host);
     $builder->useBundle('/tmp/orbit-e2e-bundle-test');
@@ -124,39 +138,46 @@ it('does not push an empty source bundle for artifact backed dedicated ingress b
         'wg pubkey' => Process::result(output: "public-key\n"),
     ]);
 
+    $capture = function (string $command) use (&$commands): ProcessResult {
+        $commands[] = $command;
+
+        if (str_contains($command, 'docker exec wg-easy wg show wg0 public-key')) {
+            return dedicatedIngressBakeResult("wg-easy-public-key\n");
+        }
+
+        if (str_contains($command, 'orbit-template-app-dev-base') && str_contains($command, '/state')) {
+            return dedicatedIngressBakeResult("10.201.0.12\n");
+        }
+
+        if (str_contains($command, 'orbit-template-app-prod-base') && str_contains($command, '/state')) {
+            return dedicatedIngressBakeResult("10.201.0.13\n");
+        }
+
+        if (str_contains($command, 'orbit-template-ingress-base') && str_contains($command, '/state')) {
+            return dedicatedIngressBakeResult("10.201.0.14\n");
+        }
+
+        if (str_contains($command, 'orbit-template-gateway-base') && str_contains($command, '/state')) {
+            return dedicatedIngressBakeResult("10.201.0.11\n");
+        }
+
+        if (str_contains($command, 'orbit-template-operator-base') && str_contains($command, '/state')) {
+            return dedicatedIngressBakeResult("10.201.0.10\n");
+        }
+
+        return dedicatedIngressBakeResult();
+    };
     $host = m::mock(IncusHost::class, [E2EConfig::fromEnvironment()])->makePartial();
     $host->shouldReceive('startInstance')->andReturn(dedicatedIngressBakeResult());
     $host->shouldReceive('launchTopologyInstance')->andReturn(dedicatedIngressBakeResult());
     $host->shouldReceive('run')
-        ->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
-            $commands[] = $command;
-
-            if (str_contains($command, 'docker exec wg-easy wg show wg0 public-key')) {
-                return dedicatedIngressBakeResult("wg-easy-public-key\n");
-            }
-
-            if (str_contains($command, 'orbit-template-app-dev-base') && str_contains($command, '/state')) {
-                return dedicatedIngressBakeResult("10.201.0.12\n");
-            }
-
-            if (str_contains($command, 'orbit-template-app-prod-base') && str_contains($command, '/state')) {
-                return dedicatedIngressBakeResult("10.201.0.13\n");
-            }
-
-            if (str_contains($command, 'orbit-template-ingress-base') && str_contains($command, '/state')) {
-                return dedicatedIngressBakeResult("10.201.0.14\n");
-            }
-
-            if (str_contains($command, 'orbit-template-gateway-base') && str_contains($command, '/state')) {
-                return dedicatedIngressBakeResult("10.201.0.11\n");
-            }
-
-            if (str_contains($command, 'orbit-template-operator-base') && str_contains($command, '/state')) {
-                return dedicatedIngressBakeResult("10.201.0.10\n");
-            }
-
-            return dedicatedIngressBakeResult();
-        });
+        ->andReturnUsing(fn (string $command, ?int $timeoutSeconds = null): ProcessResult => $capture($command));
+    $host->shouldReceive('runWithInput')
+        ->andReturnUsing(
+            fn (string $command, string $input, ?int $timeoutSeconds = null): ProcessResult => $capture(
+                $command."\n".$input,
+            ),
+        );
 
     $builder = new IncusTopologyBuilder($host);
     $builder->useGatewayArtifactBundle('/tmp/orbit-e2e-gateway-artifacts');

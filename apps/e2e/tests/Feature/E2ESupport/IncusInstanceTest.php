@@ -72,3 +72,31 @@ it('requires an exact host source path for a source-mounted instance', function 
     ))
         ->toThrow(InvalidArgumentException::class, 'requires its exact host source path');
 });
+
+it('streams oversized guest commands instead of exceeding the ssh control message limit', function (): void {
+    $hostCommand = null;
+    $input = null;
+    $host = m::mock(IncusHost::class, [E2EConfig::fromEnvironment()])->makePartial();
+    $host->shouldReceive('run')->never();
+    $host
+        ->shouldReceive('runWithInput')
+        ->once()
+        ->andReturnUsing(function (string $command, string $script) use (&$hostCommand, &$input): ProcessResult {
+            $hostCommand = $command;
+            $input = $script;
+
+            return incusInstanceResult();
+        });
+
+    $payload = str_repeat(string: 'x', times: 4097);
+
+    new IncusInstance($host, 'orbit-e2e-gateway', commandTransport: true)->exec($payload);
+
+    expect($hostCommand)
+        ->toBeString()
+        ->toContain("incus exec 'orbit-e2e-gateway' -- bash -s")
+        ->and($input)
+        ->toBeString()
+        ->toStartWith("set -euo pipefail\n")
+        ->toContain($payload);
+});

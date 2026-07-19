@@ -55,6 +55,19 @@ it('reuses the baked wg-easy container when it is already healthy and recreates 
         {
             $this->commands[] = $command;
 
+            return $this->successfulResult();
+        }
+
+        #[Override]
+        public function runWithInput(string $command, string $input, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command."\n".$input;
+
+            return $this->successfulResult();
+        }
+
+        private function successfulResult(): ProcessResult
+        {
             $result = m::mock(ProcessResult::class);
             $result->shouldReceive('successful')->andReturn(true);
             $result->shouldReceive('output')->andReturn('');
