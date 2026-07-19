@@ -68,6 +68,8 @@ it('stops before schema mutation when historical app runtime ownership is ambigu
         DB::table('apps')->insert([
             'id' => 1,
             'name' => 'docs',
+            'node_id' => 1,
+            'path' => '/home/orbit/apps/legacy-docs',
             'worker_enabled' => true,
             'worker_config' => null,
         ]);
@@ -84,6 +86,65 @@ it('stops before schema mutation when historical app runtime ownership is ambigu
             ->toBeFalse()
             ->and(Schema::hasColumn('app_setup_steps', 'app_instance_id'))
             ->toBeFalse();
+    });
+});
+
+it('moves historical runtime ownership to the instance matching the logical app placement', function (): void {
+    with_historical_app_runtime_ownership_schema(function (): void {
+        $now = now();
+        DB::table('apps')->insert([
+            'id' => 1,
+            'name' => 'docs',
+            'node_id' => 3,
+            'path' => '/home/orbit/apps/docs',
+            'worker_enabled' => false,
+            'worker_config' => null,
+        ]);
+        DB::table('app_instances')->insert([
+            [
+                'id' => 10,
+                'app_id' => 1,
+                'name' => 'development',
+                'driver' => 'orbit',
+                'driver_config' => json_encode([
+                    'type' => 'orbit_app_instance_driver_config',
+                    'data' => [
+                        'node_id' => 3,
+                        'path' => '/home/orbit/apps/docs',
+                    ],
+                ], JSON_THROW_ON_ERROR),
+                'runtime_requirements' => null,
+            ],
+            [
+                'id' => 11,
+                'app_id' => 1,
+                'name' => 'preview',
+                'driver' => 'orbit',
+                'driver_config' => json_encode([
+                    'type' => 'orbit_app_instance_driver_config',
+                    'data' => [
+                        'node_id' => 4,
+                        'path' => '/home/orbit/apps/docs-preview',
+                    ],
+                ], JSON_THROW_ON_ERROR),
+                'runtime_requirements' => null,
+            ],
+        ]);
+        DB::table('app_setup_runs')->insert([
+            'id' => 30,
+            'app_id' => 1,
+            'status' => 'completed',
+            'step_set_hash' => 'hash',
+            'started_at' => $now,
+            'completed_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        app_runtime_instance_ownership_migration()->up();
+
+        expect(DB::table('app_setup_runs')->where('id', 30)->value('app_instance_id'))
+            ->toBe(10);
     });
 });
 
@@ -119,6 +180,8 @@ function create_historical_app_runtime_ownership_schema(): void
     Schema::create('apps', function (Blueprint $table): void {
         $table->id();
         $table->string('name');
+        $table->unsignedBigInteger('node_id')->nullable();
+        $table->string('path')->nullable();
         $table->boolean('worker_enabled')->default(false);
         $table->json('worker_config')->nullable();
     });
@@ -126,6 +189,8 @@ function create_historical_app_runtime_ownership_schema(): void
         $table->id();
         $table->foreignId('app_id')->constrained('apps')->cascadeOnDelete();
         $table->string('name');
+        $table->string('driver')->default('orbit');
+        $table->json('driver_config')->nullable();
         $table->json('runtime_requirements')->nullable();
     });
     Schema::create('app_setup_steps', function (Blueprint $table): void {

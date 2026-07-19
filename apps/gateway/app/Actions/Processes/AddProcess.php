@@ -29,6 +29,7 @@ final readonly class AddProcess
     ) {}
 
     /**
+     * @param  array<string, mixed>  $serviceOptions
      * @param  list<string>  $replaceContainers
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
@@ -44,6 +45,7 @@ final readonly class AddProcess
         ?string $service = null,
         ?string $version = null,
         ?string $image = null,
+        array $serviceOptions = [],
         array $replaceContainers = [],
         ?Node $consumer = null,
     ): array {
@@ -104,6 +106,7 @@ final readonly class AddProcess
                 node: $context->node,
                 processName: $name,
                 imageOverride: $image,
+                serviceOptions: $serviceOptions,
             );
 
             $command = $serviceDescriptor->command;
@@ -399,7 +402,10 @@ final readonly class AddProcess
 
             foreach ($requestedEndpoints as $endpoint) {
                 foreach ($this->endpoints($config) as $existingEndpoint) {
-                    if ($endpoint['port'] !== $existingEndpoint['port']) {
+                    if (
+                        $endpoint['port'] !== $existingEndpoint['port']
+                        || $endpoint['host'] !== $existingEndpoint['host']
+                    ) {
                         continue;
                     }
 
@@ -412,6 +418,7 @@ final readonly class AddProcess
                             'node' => $context->node->name,
                             'process' => $name,
                             'existing_process' => $process->name,
+                            'host' => $endpoint['host'],
                             'port' => $endpoint['port'],
                         ],
                     );
@@ -441,7 +448,7 @@ final readonly class AddProcess
 
     /**
      * @param  array<string, mixed>  $config
-     * @return list<array{name: string|null, port: int}>
+     * @return list<array{name: string|null, host: string, port: int}>
      */
     private function endpoints(array $config): array
     {
@@ -459,12 +466,27 @@ final readonly class AddProcess
             }
         }
 
+        if (is_array($config['ports'] ?? null)) {
+            foreach ($config['ports'] as $port) {
+                if (! is_array($port)) {
+                    continue;
+                }
+
+                $rawEndpoints[] = [
+                    'name' => $port['name'] ?? null,
+                    'host' => $port['host'] ?? null,
+                    'port' => $port['published'] ?? null,
+                ];
+            }
+        }
+
         $endpoints = [];
 
         foreach ($rawEndpoints as $endpoint) {
             $port = (int) ($endpoint['port'] ?? 0);
+            $host = is_string($endpoint['host'] ?? null) ? trim($endpoint['host']) : '';
 
-            if ($port < 1) {
+            if ($host === '' || $port < 1) {
                 continue;
             }
 
@@ -472,6 +494,7 @@ final readonly class AddProcess
 
             $endpoints[] = [
                 'name' => $name !== '' ? $name : null,
+                'host' => $host,
                 'port' => $port,
             ];
         }

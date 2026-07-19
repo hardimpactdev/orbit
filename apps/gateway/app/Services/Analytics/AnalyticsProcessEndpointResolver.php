@@ -9,8 +9,13 @@ use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use RuntimeException;
 
-final class AnalyticsProcessEndpointResolver
+/** @mago-expect lint:cyclomatic-complexity */
+final readonly class AnalyticsProcessEndpointResolver
 {
+    public function __construct(
+        private AnalyticsDatabaseResolver $analyticsDatabaseResolver,
+    ) {}
+
     /**
      * @return array{process: Process, host: string, port: int}
      */
@@ -18,6 +23,7 @@ final class AnalyticsProcessEndpointResolver
         NodeRoleAssignment $assignment,
         string $nodeIdSetting,
         string $service,
+        ?string $processIdSetting = null,
     ): array {
         $settings = $this->stringKeyedArray($assignment->settings);
         $nodeId = $settings[$nodeIdSetting] ?? null;
@@ -32,17 +38,48 @@ final class AnalyticsProcessEndpointResolver
             throw new RuntimeException("The analytics role requires an existing {$nodeIdSetting} node.");
         }
 
-        /** @var Process|null $process */
-        $process = Process::query()
+        $processQuery = Process::query()
             ->where('owner_type', $node->getMorphClass())
             ->where('owner_id', $node->getKey())
-            ->where('runtime_config->service', $service)
-            ->first();
+            ->where('runtime_config->service', $service);
+
+        $processId = $processIdSetting !== null ? $settings[$processIdSetting] ?? null : null;
+
+        if (is_int($processId) && $processId > 0) {
+            /** @var Process|null $process */
+            $process = (clone $processQuery)->whereKey($processId)->first();
+        } else {
+            $processes = $processQuery->orderBy('id')->get();
+
+            if ($processIdSetting !== null && $processes->count() > 1) {
+                $serviceLabel = $service === 'postgres' ? 'PostgreSQL' : $service;
+
+                throw new RuntimeException(
+                    "The analytics role {$serviceLabel} selection is ambiguous on node {$node->name}; store {$processIdSetting}.",
+                );
+            }
+
+            /** @var Process|null $process */
+            $process = $processes->first();
+        }
 
         if (! $process instanceof Process) {
+            if ($processIdSetting !== null && is_int($processId)) {
+                throw new RuntimeException(
+                    "The analytics role {$processIdSetting} must reference a {$service} process on its assigned database node.",
+                );
+            }
+
             throw new RuntimeException(
                 "The analytics role requires a {$service} process on its assigned database node.",
             );
+        }
+
+        if (
+            $service === 'postgres'
+            && ! $this->analyticsDatabaseResolver->isPlausiblePostgresProcess($process)
+        ) {
+            throw new RuntimeException('The analytics role requires PostgreSQL 16 for Plausible.');
         }
 
         $endpoint = $this->stringKeyedArray($process->runtime_config['endpoint'] ?? null);

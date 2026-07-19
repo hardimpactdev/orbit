@@ -8,6 +8,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Process;
 use App\Services\Analytics\AnalyticsDatabaseResolver;
 use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Dns\DnsmasqReconciler;
@@ -440,19 +441,39 @@ class NodeRoleAssignmentService
         }
 
         $postgresNodeId = $settings['postgres_node_id'] ?? null;
+        $postgresProcessId = $settings['postgres_process_id'] ?? null;
         $clickhouseNodeId = $settings['clickhouse_node_id'] ?? null;
+
+        $postgresNode = is_int($postgresNodeId)
+            ? $this->analyticsDatabaseResolver->usablePostgresNode($postgresNodeId)
+            : null;
+        $postgresProcess = $postgresNode instanceof Node && is_int($postgresProcessId)
+            ? Process::query()
+                ->whereKey($postgresProcessId)
+                ->where('owner_type', $postgresNode->getMorphClass())
+                ->where('owner_id', $postgresNode->getKey())
+                ->where('runtime_config->service', 'postgres')
+                ->first()
+            : null;
+
+        if (
+            $postgresProcess instanceof Process
+            && ! $this->analyticsDatabaseResolver->isPlausiblePostgresProcess($postgresProcess)
+        ) {
+            throw new InvalidArgumentException('The analytics role requires PostgreSQL 16 for Plausible.');
+        }
 
         if (
             is_int($postgresNodeId)
             && is_int($clickhouseNodeId)
-            && $this->analyticsDatabaseResolver->usablePostgresNode($postgresNodeId) instanceof Node
+            && $postgresProcess instanceof Process
             && $this->analyticsDatabaseResolver->usableClickHouseNode($clickhouseNodeId) instanceof Node
         ) {
             return;
         }
 
         throw new InvalidArgumentException(
-            'The analytics role requires postgres_node_id and clickhouse_node_id to reference active database nodes with PostgreSQL and ClickHouse processes.',
+            'The analytics role requires postgres_node_id, postgres_process_id, and clickhouse_node_id to reference active database services.',
         );
     }
 

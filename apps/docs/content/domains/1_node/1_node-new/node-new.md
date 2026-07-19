@@ -19,7 +19,7 @@ initiating client and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--ingress=<node>] [--valkey-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json|--stream-json]
+orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--ingress=<node>] [--valkey-node=<node>] [--postgres-node=<node>] [--postgres-process=<process>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json|--stream-json]
 orbit node:new
 ```
 
@@ -44,7 +44,7 @@ orbit node:new realtime-1 --template=websocket --host=203.0.113.30 --valkey-node
 orbit node:new storage-1 --template=s3 --host=203.0.113.31 --s3-data-path=/srv/orbit/s3/data --tld=storage
 orbit node:new metrics-1 --template=metrics --host=203.0.113.40 --tld=metrics
 orbit node:new app-1 --roles=app-dev,metrics --host=203.0.113.41 --tld=test
-orbit node:new analytics-1 --template=analytics --host=203.0.113.32 --postgres-node=db-1 --clickhouse-node=db-1 --tld=analytics
+orbit node:new analytics-1 --template=analytics --host=203.0.113.32 --postgres-node=db-1 --postgres-process=postgres --clickhouse-node=db-1 --tld=analytics
 orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --tld=gateway --operator-name=operator-1 --operator-tld=operator
 orbit node:new agent-1 --template=agent --host=192.0.2.10 --tld=agent --self-grant=default
 orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --agent-tool=openclaw --agent-tool=hermes
@@ -105,6 +105,10 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=al
 - `--postgres-node`: existing active `database` node whose PostgreSQL service
   backs a requested `analytics` role. Required when `--roles` includes
   `analytics`.
+- `--postgres-process`: node-owned PostgreSQL 16 `postgres` service process on
+  the selected `--postgres-node`. Required when `--roles` includes `analytics`;
+  Orbit stores the process ID in the role settings. Other PostgreSQL version
+  families are rejected because Plausible requires PostgreSQL 16.
 - `--clickhouse-node`: existing active `database` node whose ClickHouse service
   backs a requested `analytics` role. Required when `--roles` includes
   `analytics`.
@@ -226,14 +230,15 @@ Requires `--host`.
 **`analytics` template**
 
 Provisions a private analytics node and creates an active `analytics` role
-assignment whose settings point at the selected PostgreSQL and ClickHouse
-service nodes. Plausible runs as a node-owned Docker process published only on
+assignment whose settings point at the selected PostgreSQL 16 process and
+ClickHouse service node. Plausible runs as a node-owned Docker process published only on
 the analytics node's WireGuard address. The fleet permits one analytics role
 assignment. Provisioning rejects a second assignment before opening the target
 bootstrap path, and succeeds only after `analytics.orbit` and its TLS material
 are enacted on router.
 
-Requires `--host`, `--postgres-node`, and `--clickhouse-node`.
+Requires `--host`, `--postgres-node`, `--postgres-process`, and
+`--clickhouse-node`.
 
 **`agent` template**
 

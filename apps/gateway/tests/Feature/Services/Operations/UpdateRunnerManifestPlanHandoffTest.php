@@ -6,6 +6,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Operations\FleetUpdateVerifier;
 use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\GatewayServiceUpdater;
@@ -22,6 +23,7 @@ use Illuminate\Support\Str;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    app()->instance(OrbitCaService::class, new UpdateRunnerManifestPlanFakeCa);
     app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay {
         /**
          * @return array{url: string, sha256: string, source_url: string}
@@ -188,6 +190,15 @@ final class UpdateRunnerManifestPlanNoopVerifier extends FleetUpdateVerifier
     public function verify(OperationRun $operationRun, OperationUpdatePlan $plan): void
     {
         //
+    }
+}
+
+readonly class UpdateRunnerManifestPlanFakeCa extends OrbitCaService
+{
+    #[Override]
+    public function rootCert(): string
+    {
+        return "-----BEGIN CERTIFICATE-----\ndGVzdA==\n-----END CERTIFICATE-----\n";
     }
 }
 

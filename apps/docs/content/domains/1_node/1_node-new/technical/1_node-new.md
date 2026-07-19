@@ -20,7 +20,7 @@
 ## Signature
 
 ```bash
-orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--gateway-endpoint=<endpoint>] [--ingress=<node>] [--valkey-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--host-key-fingerprint=<fingerprint>] [--self-grant=<mode>] [--self-grant-permissions=<permissions>] [--grant-to=<node>] [--grant-to-preset=<preset>] [--grant-to-permissions=<permissions>] [--grant-from=<node>] [--grant-from-preset=<preset>] [--grant-from-permissions=<permissions>] [--agent-tool=<tool>] [--json|--stream-json]
+orbit node:new [name] --tld=<tld> [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--operator-tld=<tld>] [--user=<user>] [--gateway-endpoint=<endpoint>] [--ingress=<node>] [--valkey-node=<node>] [--postgres-node=<node>] [--postgres-process=<process>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--host-key-fingerprint=<fingerprint>] [--self-grant=<mode>] [--self-grant-permissions=<permissions>] [--grant-to=<node>] [--grant-to-preset=<preset>] [--grant-to-permissions=<permissions>] [--grant-from=<node>] [--grant-from-preset=<preset>] [--grant-from-permissions=<permissions>] [--agent-tool=<tool>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -43,6 +43,7 @@ This command follows the shared
 | `ingress_node` | `--ingress` | Private `app-prod` placement. | Every path other than private `app-prod` placement. | None. | Must match an active node with the `ingress` role. |
 | `valkey_node` | `--valkey-node` | `websocket`. | Every path that does not include `websocket`. | None. | Must match an active node with the `database` role and Valkey expected or installed. |
 | `postgres_node` | `--postgres-node` | `analytics`. | Every path that does not include `analytics`. | None. | Must match an active node with the `database` role and PostgreSQL expected or installed. |
+| `postgres_process` | `--postgres-process` | `analytics`. | Every path that does not include `analytics`. | None. | Must match a node-owned `postgres` service process on `postgres_node` with `version_family=16`; the gateway persists its process ID. Other families fail validation because Plausible requires PostgreSQL 16. |
 | `clickhouse_node` | `--clickhouse-node` | `analytics`. | Every path that does not include `analytics`. | None. | Must match an active node with the `database` role and ClickHouse expected or installed. |
 | `s3_data_path` | `--s3-data-path` | Never. | Every path that does not include `s3`. | `/srv/orbit/s3/data`. | Canonical host path under `/media`, `/mnt`, `/opt/orbit`, `/srv`, or `/var/lib/orbit`, mounted into SeaweedFS as `/data`. |
 | `host_key_fingerprint` | `--host-key-fingerprint` | Optional. | Never. | None. | Expected SSH host key SHA256 fingerprint verified by the initiating CLI during bootstrap. |
@@ -115,7 +116,8 @@ implementation lands.
      `node_new.s3_data_path`.
    - For `metrics`, resolve `node_new.host` and `node_new.user`.
    - For `analytics`, resolve `node_new.host`, `node_new.user`,
-     `node_new.postgres_node`, and `node_new.clickhouse_node`.
+     `node_new.postgres_node`, `node_new.postgres_process`, and
+     `node_new.clickhouse_node`.
    - For `database`, no extra input is required unless another requested role
      requires provisioning.
    - For `gateway`, resolve `node_new.host` always, plus
@@ -238,8 +240,8 @@ and active workload nodes, the router-owned `metrics.orbit` route, and generated
 Grafana admin credentials. Metrics has no role-local settings and records
 host-resource observability only in this slice.
 
-Analytics assignment convergence stores `settings.postgres_node_id` and
-`settings.clickhouse_node_id`. Plausible CE runs as a process-owned Docker
+Analytics assignment convergence stores `settings.postgres_node_id`,
+`settings.postgres_process_id`, and `settings.clickhouse_node_id`. Plausible CE runs as a process-owned Docker
 container published only on the node's WireGuard address, reads authenticated
 PostgreSQL and ClickHouse endpoints from those database-role process
 definitions, and receives traffic only through router-owned analytics service
@@ -370,6 +372,8 @@ contract.
 - Exit `2` only for invalid command usage before command execution.
 - Input contract violations fail before side effects through the selected input
   mode and output renderer.
+- Analytics requests whose selected PostgreSQL process is not version family
+  `16` fail validation before target provisioning or role assignment.
 - App-role requests fail before side effects when no gateway is available.
 - Fail before provisioning when the observed target host platform is not
   supported for the requested role. Supported role/platform pairs are defined in

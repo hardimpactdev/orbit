@@ -109,10 +109,11 @@ it('enacts Docker, Plausible, and the private route before activating the analyt
         'status' => NodeStatus::Provisioning,
     ]);
 
-    $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'analytics', [
-        'postgres_node_id' => $databaseNode->id,
-        'clickhouse_node_id' => $databaseNode->id,
-    ]);
+    $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation(
+        $node,
+        'analytics',
+        provisioned_service_role_analytics_settings($databaseNode),
+    );
 
     expect($assignment->last_error)
         ->toBeNull()
@@ -142,10 +143,7 @@ it('keeps provisioning incomplete when a service runtime cannot start', function
 
     if ($role === 'analytics') {
         $databaseNode = provisioned_service_role_database_node();
-        $settings = [
-            'postgres_node_id' => $databaseNode->id,
-            'clickhouse_node_id' => $databaseNode->id,
-        ];
+        $settings = provisioned_service_role_analytics_settings($databaseNode);
     }
 
     $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, $role, $settings);
@@ -183,10 +181,11 @@ it('keeps analytics provisioning incomplete when the private route cannot be ena
         'status' => NodeStatus::Provisioning,
     ]);
 
-    $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'analytics', [
-        'postgres_node_id' => $databaseNode->id,
-        'clickhouse_node_id' => $databaseNode->id,
-    ]);
+    $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation(
+        $node,
+        'analytics',
+        provisioned_service_role_analytics_settings($databaseNode),
+    );
 
     expect($assignment->status)
         ->toBe(NodeRoleStatus::Error)
@@ -219,10 +218,11 @@ it('removes the private analytics route and its artifacts with the role', functi
         'status' => NodeStatus::Active,
     ]);
 
-    app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'analytics', [
-        'postgres_node_id' => $databaseNode->id,
-        'clickhouse_node_id' => $databaseNode->id,
-    ]);
+    app(NodeRoleAssignmentService::class)->addDuringCreation(
+        $node,
+        'analytics',
+        provisioned_service_role_analytics_settings($databaseNode),
+    );
     app(NodeRoleAssignmentService::class)->remove($node, 'analytics', force: true);
 
     expect(ProxyRoute::query()->where('domain', 'analytics.orbit')->exists())
@@ -429,10 +429,7 @@ it('removes the node-owned runtime before deleting the role process', function (
 
     if ($role === 'analytics') {
         $databaseNode = provisioned_service_role_database_node();
-        $settings = [
-            'postgres_node_id' => $databaseNode->id,
-            'clickhouse_node_id' => $databaseNode->id,
-        ];
+        $settings = provisioned_service_role_analytics_settings($databaseNode);
     }
 
     $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, $role, $settings);
@@ -470,6 +467,7 @@ function provisioned_service_role_database_node(): Node
                 'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => [
                     'service' => $service,
+                    ...($service === 'postgres' ? ['version_family' => '16'] : []),
                     'endpoint' => [
                         'host' => '10.6.0.4',
                         'port' => $port,
@@ -487,6 +485,21 @@ function provisioned_service_role_database_node(): Node
     }
 
     return $node;
+}
+
+/** @return array{postgres_node_id: int, postgres_process_id: int, clickhouse_node_id: int} */
+function provisioned_service_role_analytics_settings(Node $databaseNode): array
+{
+    $postgres = Process::query()
+        ->ownedBy($databaseNode)
+        ->where('runtime_config->service', 'postgres')
+        ->sole();
+
+    return [
+        'postgres_node_id' => $databaseNode->id,
+        'postgres_process_id' => $postgres->id,
+        'clickhouse_node_id' => $databaseNode->id,
+    ];
 }
 
 final class ProvisionedServiceRoleRecordingRuntime extends RoleRuntimeConverger

@@ -152,6 +152,11 @@ Orbit-owned crash wrapper.
 services and selected node-owned platform services. Managed services own service
 version, image, endpoint, credentials, ports, volumes, labels, lifecycle, and
 logs on the process row. The process name does not imply the service identifier.
+Service identifiers remain independent of version and consumer identity. In
+particular, every PostgreSQL process uses `postgres`, selects an explicit
+version family and concrete version, and owns its initialization settings and
+published port. Multiple PostgreSQL processes may coexist on one node when
+their process identities and published endpoints are distinct.
 The endpoint host is always the owning node's WireGuard service address. Orbit
 does not fall back to the node SSH host, node name, loopback, or Docker network
 alias for managed service endpoints.
@@ -172,7 +177,7 @@ Supported managed services in this vertical slice:
 | Service | Versions | Default runtime | Notes |
 | --- | --- | --- | --- |
 | `mysql` | `8` -> `8.4`, `9` -> `9` | `docker` | Published ports are version-family specific, so MySQL 8 and 9 can coexist on one node. |
-| `postgres` | `16` -> `16-alpine` | `docker` | Publishes PostgreSQL on the owning node's WireGuard service address and can back the analytics role. |
+| `postgres` | `16` -> `16-alpine`, `18` -> `18-alpine` | `docker` | Requires an initial database, initial username, and per-process published port. Containers always target port `5432`; distinct WireGuard-bound published ports allow multiple PostgreSQL processes on one node. One explicitly selected process may back the analytics role. |
 | `clickhouse` | `24.12` -> `24.12-alpine` | `docker` | Publishes the ClickHouse HTTP endpoint on the owning node's WireGuard service address and can back the analytics role. |
 | `valkey` | `8` -> `8.1` | `docker` | Publishes the Valkey TCP endpoint from the owning node's WireGuard service address and is the required app-facing WebSocket broker. |
 | `mailpit` | `latest` -> `latest` | `docker` | Publishes SMTP (`1025`) on the owning node. The Web UI stays private on the Docker network and should be exposed with a proxy route to `http://mailpit:8025`. |

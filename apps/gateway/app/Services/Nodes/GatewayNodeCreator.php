@@ -15,7 +15,9 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeBootstrap;
 use App\Models\NodeRoleAssignment;
+use App\Models\Process;
 use App\Models\WireGuardPeer;
+use App\Services\Analytics\AnalyticsDatabaseResolver;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
@@ -55,6 +57,7 @@ final class GatewayNodeCreator
 {
     public function __construct(
         private readonly S3RouteRegistrar $s3RouteRegistrar,
+        private readonly AnalyticsDatabaseResolver $analyticsDatabaseResolver,
         private readonly DnsmasqReconciler $dnsmasqReconciler,
     ) {}
 
@@ -564,7 +567,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, postgresProcessId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
      *
      * @mago-expect lint:halstead
      */
@@ -685,6 +688,7 @@ final class GatewayNodeCreator
                 : $this->settingsForRole(
                     role: $role,
                     postgresNodeId: $inputs['postgresNodeId'] ?? null,
+                    postgresProcessId: $inputs['postgresProcessId'] ?? null,
                     clickhouseNodeId: $inputs['clickhouseNodeId'] ?? null,
                     s3DataPath: $inputs['s3DataPath'] ?? null,
                 );
@@ -1154,7 +1158,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, postgresProcessId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
      */
     private function prepareHostBootstrap(
         NodeRegistryWriter $registryWriter,
@@ -1200,7 +1204,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, postgresProcessId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
      */
     private function prepareHostBootstrapWithReservationLock(
         NodeRegistryWriter $registryWriter,
@@ -1409,7 +1413,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, postgresProcessId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
      *
      * @mago-expect lint:halstead
      */
@@ -1453,6 +1457,7 @@ final class GatewayNodeCreator
             appProductionIngressNodeId: $appProductionIngressNodeId,
             backingNodeIds: [
                 'postgres' => $inputs['postgresNodeId'] ?? null,
+                'postgres_process' => $inputs['postgresProcessId'] ?? null,
                 'clickhouse' => $inputs['clickhouseNodeId'] ?? null,
             ],
         );
@@ -1619,7 +1624,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  array<string, mixed>  $request
-     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
+     * @param  array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId?: int|null, postgresProcessId?: int|null, clickhouseNodeId?: int|null, s3DataPath?: string|null}  $inputs
      */
     private function pendingBootstrapIsCompatible(
         Node $node,
@@ -1854,6 +1859,7 @@ final class GatewayNodeCreator
             'ingress',
             'valkey-node',
             'postgres-node',
+            'postgres-process',
             'clickhouse-node',
             's3-data-path',
             'gateway-endpoint',
@@ -1919,7 +1925,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @return array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId: ?int, clickhouseNodeId: ?int, s3DataPath: ?string}|int
+     * @return array{host: string, tld: ?string, sshUser: ?string, gatewayEndpoint: ?string, hostKeyFingerprint: ?string, platform: string, architecture: string, postgresNodeId: ?int, postgresProcessId: ?int, clickhouseNodeId: ?int, s3DataPath: ?string}|int
      */
     private function resolveWorkloadRoleInputs(array $roles): array|int
     {
@@ -2054,6 +2060,7 @@ final class GatewayNodeCreator
             'platform' => $platform,
             'architecture' => $architecture,
             'postgresNodeId' => $analyticsDatabaseNodes['postgres_node_id'],
+            'postgresProcessId' => $analyticsDatabaseNodes['postgres_process_id'],
             'clickhouseNodeId' => $analyticsDatabaseNodes['clickhouse_node_id'],
             's3DataPath' => $s3DataPath,
         ];
@@ -2084,12 +2091,13 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @return array{postgres_node_id: ?int, clickhouse_node_id: ?int}|int
+     * @return array{postgres_node_id: ?int, postgres_process_id: ?int, clickhouse_node_id: ?int}|int
      */
     private function resolveAnalyticsDatabaseNodes(array $roles): array|int
     {
         $hasAnalytics = in_array(NodeRoleName::Analytics->value, $roles, true);
         $postgresNodeName = $this->stringOption('postgres-node');
+        $postgresProcessName = $this->stringOption('postgres-process');
         $clickhouseNodeName = $this->stringOption('clickhouse-node');
 
         if (! $hasAnalytics) {
@@ -2101,8 +2109,13 @@ final class GatewayNodeCreator
                 return $this->validationFailed('clickhouse_node', 'Only analytics nodes use --clickhouse-node.');
             }
 
+            if ($postgresProcessName !== null) {
+                return $this->validationFailed('postgres_process', 'Only analytics nodes use --postgres-process.');
+            }
+
             return [
                 'postgres_node_id' => null,
+                'postgres_process_id' => null,
                 'clickhouse_node_id' => null,
             ];
         }
@@ -2115,12 +2128,33 @@ final class GatewayNodeCreator
             return $this->validationFailed('clickhouse_node', 'Analytics nodes require --clickhouse-node.');
         }
 
+        if ($postgresProcessName === null) {
+            return $this->validationFailed('postgres_process', 'Analytics nodes require --postgres-process.');
+        }
+
         $postgresNode = $this->findActiveDatabaseNodeByName($postgresNodeName);
 
         if (! $postgresNode instanceof Node) {
             return $this->validationFailed(
                 'postgres_node',
                 'Analytics nodes require an active database node for PostgreSQL.',
+            );
+        }
+
+        $postgresProcess = Process::query()
+            ->where('owner_type', $postgresNode->getMorphClass())
+            ->where('owner_id', $postgresNode->getKey())
+            ->where('name', $postgresProcessName)
+            ->where('runtime_config->service', 'postgres')
+            ->first();
+
+        if (
+            ! $postgresProcess instanceof Process
+            || ! $this->analyticsDatabaseResolver->isPlausiblePostgresProcess($postgresProcess)
+        ) {
+            return $this->validationFailed(
+                'postgres_process',
+                'Analytics nodes require a PostgreSQL 16 process for Plausible on the assigned database node.',
             );
         }
 
@@ -2135,6 +2169,7 @@ final class GatewayNodeCreator
 
         return [
             'postgres_node_id' => $postgresNode->id,
+            'postgres_process_id' => $postgresProcess->id,
             'clickhouse_node_id' => $clickhouseNode->id,
         ];
     }
@@ -2158,12 +2193,14 @@ final class GatewayNodeCreator
     private function settingsForRole(
         string $role,
         ?int $postgresNodeId = null,
+        ?int $postgresProcessId = null,
         ?int $clickhouseNodeId = null,
         ?string $s3DataPath = null,
     ): array {
         if ($role === NodeRoleName::Analytics->value) {
             return [
                 'postgres_node_id' => $postgresNodeId,
+                'postgres_process_id' => $postgresProcessId,
                 'clickhouse_node_id' => $clickhouseNodeId,
             ];
         }
@@ -2179,7 +2216,7 @@ final class GatewayNodeCreator
 
     /**
      * @param  list<string>  $roles
-     * @param  array{postgres?: int|null, clickhouse?: int|null}  $backingNodeIds
+     * @param  array{postgres?: int|null, postgres_process?: int|null, clickhouse?: int|null}  $backingNodeIds
      */
     private function ensureInitialWorkloadRoles(
         Node $node,
@@ -2195,6 +2232,7 @@ final class GatewayNodeCreator
                 : $this->settingsForRole(
                     $role,
                     $backingNodeIds['postgres'] ?? null,
+                    $backingNodeIds['postgres_process'] ?? null,
                     $backingNodeIds['clickhouse'] ?? null,
                     $this->stringOption('s3-data-path') ?? S3RoleSettings::DefaultDataPath,
                 );

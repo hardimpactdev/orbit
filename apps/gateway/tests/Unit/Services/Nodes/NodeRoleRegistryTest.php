@@ -251,10 +251,7 @@ describe('node role registry', function (): void {
             ->definition('app-dev')
             ->settingsFromArray([]);
 
-        expect($settings)
-            ->toBeInstanceOf(AppDevelopmentRoleSettings::class)
-            ->and($settings->toArray())
-            ->toBe([]);
+        expect($settings)->toBeInstanceOf(AppDevelopmentRoleSettings::class)->and($settings->toArray())->toBe([]);
     });
 
     it('hydrates s3 settings dtos with default data path', function (): void {
@@ -273,17 +270,15 @@ describe('node role registry', function (): void {
             ->definition('agent')
             ->settingsFromArray([]);
 
-        expect($settings)
-            ->toBeInstanceOf(AgentRoleSettings::class)
-            ->and($settings->toArray())
-            ->toBe([]);
+        expect($settings)->toBeInstanceOf(AgentRoleSettings::class)->and($settings->toArray())->toBe([]);
     });
 
     it('rejects node tld data in agent role settings', function (): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition('agent')
-            ->settingsFromArray(['tld' => 'custom']))
-            ->toThrow(InvalidArgumentException::class, 'The agent role does not accept settings.');
+            ->settingsFromArray([
+                'tld' => 'custom',
+            ]))->toThrow(InvalidArgumentException::class, 'The agent role does not accept settings.');
     });
 
     it('hydrates vpn settings with defaults', function (): void {
@@ -339,6 +334,7 @@ describe('node role registry', function (): void {
             ->definition('analytics')
             ->settingsFromArray([
                 'postgres_node_id' => 12,
+                'postgres_process_id' => 120,
                 'clickhouse_node_id' => 13,
             ]);
 
@@ -347,19 +343,27 @@ describe('node role registry', function (): void {
             ->and($settings->toArray())
             ->toBe([
                 'postgres_node_id' => 12,
+                'postgres_process_id' => 120,
                 'clickhouse_node_id' => 13,
             ]);
     });
+
+    it('rejects invalid explicit analytics postgres process identities', function (mixed $processId): void {
+        expect(fn () => new NodeRoleRegistry()
+            ->definition('analytics')
+            ->settingsFromArray([
+                'postgres_node_id' => 12,
+                'postgres_process_id' => $processId,
+                'clickhouse_node_id' => 13,
+            ]))->toThrow(InvalidArgumentException::class, 'The analytics role requires a valid postgres_process_id when that setting is present.');
+    })->with([null, 0, -1, '120']);
 
     it('hydrates empty settings dtos for roles without settings', function (string $role, string $class): void {
         $settings = new NodeRoleRegistry()
             ->definition($role)
             ->settingsFromArray([]);
 
-        expect($settings)
-            ->toBeInstanceOf($class)
-            ->and($settings->toArray())
-            ->toBe([]);
+        expect($settings)->toBeInstanceOf($class)->and($settings->toArray())->toBe([]);
     })->with([
         ['gateway',  EmptyRoleSettings::class],
         ['router',   EmptyRoleSettings::class],
@@ -371,43 +375,51 @@ describe('node role registry', function (): void {
     it('rejects invalid app development settings', function (): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition('app-dev')
-            ->settingsFromArray(['tld' => '']))
-            ->toThrow(InvalidArgumentException::class, 'The app-dev role does not accept settings.');
+            ->settingsFromArray([
+                'tld' => '',
+            ]))->toThrow(InvalidArgumentException::class, 'The app-dev role does not accept settings.');
     });
 
     it('rejects path-like app development tld settings', function (): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition('app-dev')
-            ->settingsFromArray(['tld' => '../../orbit']))
-            ->toThrow(InvalidArgumentException::class, 'The app-dev role does not accept settings.');
+            ->settingsFromArray([
+                'tld' => '../../orbit',
+            ]))->toThrow(InvalidArgumentException::class, 'The app-dev role does not accept settings.');
     });
 
     it('rejects unknown app development settings', function (): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition('app-dev')
-            ->settingsFromArray(['tld' => 'test', 'unexpected' => 'value']))
-            ->toThrow(InvalidArgumentException::class, 'The app-dev role does not accept settings.');
+            ->settingsFromArray([
+                'tld' => 'test',
+                'unexpected' => 'value',
+            ]))->toThrow(InvalidArgumentException::class, 'The app-dev role does not accept settings.');
     });
 
     it('rejects invalid agent settings', function (): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition('agent')
-            ->settingsFromArray(['tld' => '']))
-            ->toThrow(InvalidArgumentException::class, 'The agent role does not accept settings.');
+            ->settingsFromArray([
+                'tld' => '',
+            ]))->toThrow(InvalidArgumentException::class, 'The agent role does not accept settings.');
     });
 
     it('rejects path-like agent tld settings', function (): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition('agent')
-            ->settingsFromArray(['tld' => '../../orbit']))
-            ->toThrow(InvalidArgumentException::class, 'The agent role does not accept settings.');
+            ->settingsFromArray([
+                'tld' => '../../orbit',
+            ]))->toThrow(InvalidArgumentException::class, 'The agent role does not accept settings.');
     });
 
     it('rejects unknown agent settings', function (): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition('agent')
-            ->settingsFromArray(['tld' => 'test', 'unexpected' => 'value']))
-            ->toThrow(InvalidArgumentException::class, 'The agent role does not accept settings.');
+            ->settingsFromArray([
+                'tld' => 'test',
+                'unexpected' => 'value',
+            ]))->toThrow(InvalidArgumentException::class, 'The agent role does not accept settings.');
     });
 
     it('rejects invalid vpn settings', function (array $settings, string $message): void {
@@ -476,8 +488,9 @@ describe('node role registry', function (): void {
     it('rejects settings for roles without settings', function (string $role): void {
         expect(fn () => new NodeRoleRegistry()
             ->definition($role)
-            ->settingsFromArray(['unexpected' => 'value']))
-            ->toThrow(InvalidArgumentException::class, 'This role does not accept settings.');
+            ->settingsFromArray([
+                'unexpected' => 'value',
+            ]))->toThrow(InvalidArgumentException::class, 'This role does not accept settings.');
     })->with(['gateway', 'router', 'database', 'ingress', 'metrics']);
 
     it('rejects invalid analytics settings', function (array $settings, string $message): void {
@@ -519,10 +532,7 @@ describe('node role registry', function (): void {
             ->definition('app-prod')
             ->settingsFromArray([]);
 
-        expect($settings)
-            ->toBeInstanceOf(AppProductionRoleSettings::class)
-            ->and($settings->toArray())
-            ->toBe([]);
+        expect($settings)->toBeInstanceOf(AppProductionRoleSettings::class)->and($settings->toArray())->toBe([]);
     });
 
     it('rejects invalid app production settings', function (array $settings, string $message): void {
@@ -553,10 +563,7 @@ describe('node role registry', function (): void {
     });
 
     it('defines the node role name enum values', function (): void {
-        expect(array_map(
-            static fn (NodeRoleName $role): string => $role->value,
-            NodeRoleName::cases(),
-        ))->toBe([
+        expect(array_map(static fn (NodeRoleName $role): string => $role->value, NodeRoleName::cases()))->toBe([
             'gateway',
             'vpn',
             'router',
@@ -573,10 +580,7 @@ describe('node role registry', function (): void {
     });
 
     it('defines the node role status enum values', function (): void {
-        expect(array_map(
-            static fn (NodeRoleStatus $status): string => $status->value,
-            NodeRoleStatus::cases(),
-        ))->toBe([
+        expect(array_map(static fn (NodeRoleStatus $status): string => $status->value, NodeRoleStatus::cases()))->toBe([
             'pending',
             'active',
             'error',

@@ -20,6 +20,7 @@ orbit process:add opencode-server "opencode serve -a" --node=app-dev-1 --runtime
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3 --image=docker.io/library/mysql:8.3
 orbit process:add valkey --node=database-1 --service=valkey --runtime=docker --version=8
+orbit process:add postgres-food --node=database-1 --service=postgres --version=18 --database=mealou_food_catalog --username=mealou_food_catalog --published-port=5433 --restart-policy=always
 orbit process:add mailpit --node=beast --service=mailpit --runtime=docker
 orbit process:add mailpit --node=beast --service=mailpit --runtime=docker --replace-container=dngdmt-mailpit-1 --force
 orbit process:add file-watcher "watch.sh" --app=static-site.production --runtime=systemd
@@ -50,8 +51,16 @@ Use this command to define a managed process for a node, app instance, or worksp
   `http://mailpit:8025` when browser access is needed.
   `--version` selects the service version. For Docker services, service +
   runtime + version resolve the default official image; `--image` overrides that
-  image explicitly. Managed services cannot use `--tool` and are not valid for
-  app or workspace scopes.
+  image explicitly. PostgreSQL image overrides must retain the selected major
+  version. Managed services cannot use `--tool` and are not valid for app or
+  workspace scopes.
+- **PostgreSQL Instances**: `postgres` is the generic service identifier for
+  every PostgreSQL process. New PostgreSQL processes require `--database`,
+  `--username`, and `--published-port`. Both supported majors listen on
+  container port `5432`; the published port belongs to the individual process,
+  so PostgreSQL 16 on `5432` and PostgreSQL 18 on `5433` may coexist on one
+  node. Orbit generates and encrypts a distinct password for each process and
+  never renders it in command output, process metadata, activity, or scripts.
 - **Replacement Containers**: `--replace-container=<name>` is an explicit
   migration escape hatch for node-owned Docker managed services. It removes the
   named Docker container on the target node before creating the Orbit-managed

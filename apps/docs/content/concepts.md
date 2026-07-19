@@ -293,6 +293,7 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Process tool dependency**
 - **External macOS runtime provider**
 - **Managed service**
+- **PostgreSQL service process**
 - **Process order**
 - **Runtime unit**
 - **Process runtime**
@@ -446,6 +447,7 @@ Source: [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
 - **Analytics role**
 - **Plausible CE process**
 - **Analytics backing database**
+- **Analytics PostgreSQL selection**
 - **Private analytics endpoint**
 - **Public app analytics host**
 - **App analytics binding**

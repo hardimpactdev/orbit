@@ -26,8 +26,9 @@ Use this command to inspect process configuration and last known state without l
 - **Placement**: App-instance and workspace contexts read runtime identities from the instance's serving node.
 - **Runtime Identity**: Derives expected runtime unit identities for that context.
 - **Service Metadata**: Includes safe connection metadata for service process
-  definitions, including endpoint and credential field names but not credential
-  values.
+  definitions, including service identifier, version family, concrete version,
+  endpoint, and credential field names but not credential values. Human output
+  renders service, version, and endpoint for every managed service process.
 - **Lifecycle Events**: Shows the latest durable process lifecycle event when one exists.
 - **No Live Probing**: Does not SSH to the owning node and does not run live runtime probes.
 

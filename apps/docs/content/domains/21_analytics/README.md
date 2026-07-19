@@ -30,8 +30,10 @@ These rules define the analytics command domain and its role boundary.
   the process row generated for the analytics role. There is no
   `--plausible-version` option; commands use the generic `--version` field.
 - PostgreSQL and ClickHouse are service processes on active `database` role
-  nodes. The analytics role selects those backing nodes by role settings and
-  does not install or own either database. Both services use generated
+  nodes. The analytics role stores the selected PostgreSQL process identity as
+  well as the backing node identities and does not install or own either
+  database. A legacy assignment with multiple PostgreSQL candidates and no
+  stored process identity fails clearly instead of choosing one. Both services use generated
   credentials encrypted in gateway storage and publish only on WireGuard.
 - The default deployment follows the official Plausible CE 3.2.1 composition:
   `postgres:16-alpine` and
@@ -56,7 +58,7 @@ The `analytics` command domain does not own a state family. It coordinates
 state owned by node, app, process, and proxy families.
 
 - [`node`](../1_node/README.md) owns the `analytics` role assignment and its
-  `postgres_node_id` and `clickhouse_node_id` settings.
+  `postgres_node_id`, `postgres_process_id`, and `clickhouse_node_id` settings.
   [`doctor --family=node`](../1_node/node-doctor.md) owns role assignment
   drift.
 - [`process`](../7_process/README.md) owns the Plausible CE, PostgreSQL, and

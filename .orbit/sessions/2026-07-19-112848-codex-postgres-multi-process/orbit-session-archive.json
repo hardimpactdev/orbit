@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-19T09:28:48+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-postgres-multi-process/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-19-112848-codex-postgres-multi-process",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/postgres-multi-process-retained-proof.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/postgres-multi-process-retained-proof.txt": "6949f6a1c5ed31f474f12931dd89b2951162ea81bc783930764f6d17e7588813",
+        "loop.md": "251c9c02509a40ae60ce46adeec04d3cc07481498234f44d37e65d5fb3a312a3"
+    },
+    "branch": "codex/postgres-multi-process",
+    "candidate_commit": "9faff21cb5a7918ae5767892a0361a94674e06f2",
+    "accepted_feature_tip": "9faff21cb5a7918ae5767892a0361a94674e06f2",
+    "accepted_main_tip": "25169b42a9e6102e510080521fed1375f5c886aa",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -1152,6 +1152,7 @@ describe('node write commands', function (): void {
             '--host' => '192.0.2.30',
             '--tld' => 'analytics',
             '--postgres-node' => 'database-1',
+            '--postgres-process' => 'postgres',
             '--clickhouse-node' => 'database-2',
             '--json' => true,
         ]);
@@ -1161,6 +1162,7 @@ describe('node write commands', function (): void {
                 $request->url() === 'https://gateway.test/api/nodes/bootstrap'
                 && $request['roles'] === ['analytics']
                 && $request['postgres_node'] === 'database-1'
+                && $request['postgres_process'] === 'postgres'
                 && $request['clickhouse_node'] === 'database-2'
             ),
         );
@@ -1178,6 +1180,7 @@ describe('node write commands', function (): void {
             'node' => 'analytics-1',
             'role' => 'analytics',
             '--postgres-node' => 'database-1',
+            '--postgres-process' => 'postgres',
             '--clickhouse-node' => 'database-2',
             '--json' => true,
         ]);
@@ -1189,6 +1192,7 @@ describe('node write commands', function (): void {
                 && $request['role'] === 'analytics'
                 && $request['settings'] === [
                     'postgres_node' => 'database-1',
+                    'postgres_process' => 'postgres',
                     'clickhouse_node' => 'database-2',
                 ]
             ),
@@ -1222,8 +1226,27 @@ describe('node write commands', function (): void {
             ->and($decoded['error']['meta']['field'])
             ->toBe($field);
     })->with([
-        'missing postgres' => [['--clickhouse-node' => 'database-2'], 'postgres_node'],
-        'missing clickhouse' => [['--postgres-node' => 'database-1'], 'clickhouse_node'],
+        'missing postgres' => [
+            [
+                '--postgres-process' => 'postgres',
+                '--clickhouse-node' => 'database-2',
+            ],
+            'postgres_node',
+        ],
+        'missing postgres process' => [
+            [
+                '--postgres-node' => 'database-1',
+                '--clickhouse-node' => 'database-2',
+            ],
+            'postgres_process',
+        ],
+        'missing clickhouse' => [
+            [
+                '--postgres-node' => 'database-1',
+                '--postgres-process' => 'postgres',
+            ],
+            'clickhouse_node',
+        ],
     ]);
 
     it('requires analytics backing node selectors before node role:add gateway IO', function (
@@ -1250,8 +1273,27 @@ describe('node write commands', function (): void {
             ->and($decoded['error']['meta']['field'])
             ->toBe($field);
     })->with([
-        'missing postgres' => [['--clickhouse-node' => 'database-2'], 'postgres_node'],
-        'missing clickhouse' => [['--postgres-node' => 'database-1'], 'clickhouse_node'],
+        'missing postgres' => [
+            [
+                '--postgres-process' => 'postgres',
+                '--clickhouse-node' => 'database-2',
+            ],
+            'postgres_node',
+        ],
+        'missing postgres process' => [
+            [
+                '--postgres-node' => 'database-1',
+                '--clickhouse-node' => 'database-2',
+            ],
+            'postgres_process',
+        ],
+        'missing clickhouse' => [
+            [
+                '--postgres-node' => 'database-1',
+                '--postgres-process' => 'postgres',
+            ],
+            'clickhouse_node',
+        ],
     ]);
 
     it('rejects gateway-coupled node role:add roles before gateway IO', function (): void {

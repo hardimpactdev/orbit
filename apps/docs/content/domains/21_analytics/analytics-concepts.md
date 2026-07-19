@@ -16,11 +16,16 @@ These terms describe the analytics role and the routes around it.
   3.2.1. The row owns the image version, endpoint, lifecycle, logs, restart
   policy, and encrypted runtime credentials. Its published port binds directly
   to the analytics node's WireGuard address.
-- **Analytics backing database:** PostgreSQL or ClickHouse service process
-  selected from an active `database` role node. A single database node may back
-  both services. The supported Plausible pairing is PostgreSQL 16 Alpine and
+- **Analytics backing database:** Explicitly identified PostgreSQL process and
+  a ClickHouse service process selected from active `database` role nodes. A
+  single database node may back both services. The supported Plausible pairing is PostgreSQL 16 Alpine and
   ClickHouse 24.12 Alpine; both are authenticated Docker services published
   only on the database node's WireGuard address.
+- **Analytics PostgreSQL selection:** Analytics role settings persist the
+  selected PostgreSQL process ID. Existing assignments with exactly one
+  PostgreSQL candidate remain compatible and may be backfilled. A legacy
+  assignment with multiple candidates and no stored process ID fails with a
+  clear ambiguity error; candidate ordering never selects a database.
 - **Private analytics endpoint:** `https://analytics.orbit`, the internal
   dashboard and admin endpoint served through router. Analytics role deployment
   converges its route and TLS after Plausible is healthy; removal deletes the

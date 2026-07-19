@@ -25,6 +25,7 @@ final readonly class NodeBootstrapArguments
             '--tld' => 'tld',
             '--valkey-node' => 'valkey_node',
             '--postgres-node' => 'postgres_node',
+            '--postgres-process' => 'postgres_process',
             '--clickhouse-node' => 'clickhouse_node',
             '--s3-data-path' => 's3_data_path',
             '--user' => 'user',

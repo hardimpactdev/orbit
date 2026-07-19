@@ -133,6 +133,54 @@ describe('process:list', function (): void {
             ->not->toContain('"last_event"');
     });
 
+    it('renders each PostgreSQL service version and published endpoint', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'context' => ['node' => 'database1', 'app' => null, 'workspace' => null],
+            'processes' => [
+                [
+                    'name' => 'postgres',
+                    'command' => 'postgres',
+                    'restart_policy' => 'always',
+                    'tool' => null,
+                    'service' => [
+                        'service' => 'postgres',
+                        'version_family' => '16',
+                        'version' => '16-alpine',
+                        'endpoint' => ['host' => '10.6.0.4', 'port' => 5432],
+                    ],
+                    'last_event' => ['id' => 1, 'type' => 'started'],
+                ],
+                [
+                    'name' => 'postgres-food',
+                    'command' => 'postgres',
+                    'restart_policy' => 'always',
+                    'tool' => null,
+                    'service' => [
+                        'service' => 'postgres',
+                        'version_family' => '18',
+                        'version' => '18-alpine',
+                        'endpoint' => ['host' => '10.6.0.4', 'port' => 5433],
+                    ],
+                    'last_event' => ['id' => 2, 'type' => 'started'],
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:list', ['--node' => 'database1']);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('SERVICE')
+            ->toContain('VERSION')
+            ->toContain('ENDPOINT')
+            ->toContain('postgres-food')
+            ->toContain('16-alpine')
+            ->toContain('18-alpine')
+            ->toContain('10.6.0.4:5432')
+            ->toContain('10.6.0.4:5433');
+    });
+
     it('renders the missing-tool cell as an em dash', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'context' => ['app' => 'docs', 'workspace' => null],

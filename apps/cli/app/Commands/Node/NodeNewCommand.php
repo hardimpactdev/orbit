@@ -43,6 +43,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         {--ingress= : Existing ingress node for private app-prod placement}
         {--valkey-node= : Existing database node for websocket Valkey}
         {--postgres-node= : Existing database node for analytics PostgreSQL}
+        {--postgres-process= : PostgreSQL process for analytics}
         {--clickhouse-node= : Existing database node for analytics ClickHouse}
         {--s3-data-path= : Host data path for the s3 role}
         {--host-key-fingerprint= : Expected SSH host key SHA256 fingerprint}
@@ -95,6 +96,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
                 ingressNode: $this->stringOption('ingress'),
                 valkeyNode: $this->stringOption('valkey-node'),
                 postgresNode: $this->stringOption('postgres-node'),
+                postgresProcess: $this->stringOption('postgres-process'),
                 clickhouseNode: $this->stringOption('clickhouse-node'),
                 s3DataPath: $this->stringOption('s3-data-path'),
                 hostKeyFingerprint: $this->stringOption('host-key-fingerprint'),

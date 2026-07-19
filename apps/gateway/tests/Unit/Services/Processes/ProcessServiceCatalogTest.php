@@ -233,7 +233,18 @@ it('resolves PostgreSQL, ClickHouse, and Plausible managed services into process
 
     $registry = app(ProcessServiceCatalog::class);
 
-    $postgres = $registry->resolve('postgres', '16', ProcessRuntime::Docker, $node, 'postgres16');
+    $postgres = $registry->resolve(
+        service: 'postgres',
+        version: '16',
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'postgres',
+        serviceOptions: [
+            'database' => 'plausible_db',
+            'username' => 'orbit',
+            'published_port' => 5432,
+        ],
+    );
     $clickhouse = $registry->resolve('clickhouse', '24.12', ProcessRuntime::Docker, $node, 'clickhouse24');
     $plausible = $registry->resolve('plausible', '3.2.1', ProcessRuntime::Docker, $node, 'plausible');
 
@@ -330,6 +341,102 @@ it('resolves PostgreSQL, ClickHouse, and Plausible managed services into process
         ->not->toContain($clickhouse->credentials['password']);
 });
 
+it('resolves independent PostgreSQL 16 and 18 process identities and published ports', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'database1',
+        'wireguard_address' => '10.6.0.4',
+    ]);
+    $catalog = app(ProcessServiceCatalog::class);
+
+    $postgres16 = $catalog->resolve(
+        service: 'postgres',
+        version: '16',
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'postgres',
+        serviceOptions: [
+            'database' => 'plausible_db',
+            'username' => 'orbit',
+            'published_port' => 5432,
+        ],
+    );
+    $postgres18 = $catalog->resolve(
+        service: 'postgres',
+        version: '18',
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'postgres-food',
+        serviceOptions: [
+            'database' => 'mealou_food_catalog',
+            'username' => 'mealou_food_catalog',
+            'published_port' => 5433,
+        ],
+    );
+
+    expect($postgres16->runtimeConfig)
+        ->toMatchArray([
+            'service' => 'postgres',
+            'version_family' => '16',
+            'version' => '16-alpine',
+            'image' => 'postgres:16-alpine',
+            'service_name' => 'orbit-postgres',
+            'service_options' => [
+                'database' => 'plausible_db',
+                'username' => 'orbit',
+                'published_port' => 5432,
+            ],
+        ])
+        ->and($postgres18->runtimeConfig)
+        ->toMatchArray([
+            'service' => 'postgres',
+            'version_family' => '18',
+            'version' => '18-alpine',
+            'image' => 'postgres:18-alpine',
+            'service_name' => 'orbit-postgres-food',
+            'service_options' => [
+                'database' => 'mealou_food_catalog',
+                'username' => 'mealou_food_catalog',
+                'published_port' => 5433,
+            ],
+        ])
+        ->and($postgres16->runtimeConfig['ports'][0])
+        ->toMatchArray(['host' => '10.6.0.4', 'published' => 5432, 'target' => 5432])
+        ->and($postgres18->runtimeConfig['ports'][0])
+        ->toMatchArray(['host' => '10.6.0.4', 'published' => 5433, 'target' => 5432])
+        ->and($postgres16->runtimeConfig['mounts'][0]['source'])
+        ->toBe('/var/lib/orbit/processes/postgres')
+        ->and($postgres18->runtimeConfig['mounts'][0]['source'])
+        ->toBe('/var/lib/orbit/processes/postgres-food')
+        ->and($postgres16->runtimeConfig['mounts'][0]['target'])
+        ->toBe('/var/lib/postgresql/data')
+        ->and($postgres18->runtimeConfig['mounts'][0]['target'])
+        ->toBe('/var/lib/postgresql')
+        ->and($postgres16->runtimeConfig['volumes'][0]['name'])
+        ->toBe('orbit-postgres')
+        ->and($postgres18->runtimeConfig['volumes'][0]['name'])
+        ->toBe('orbit-postgres-food')
+        ->and($postgres16->credentials['password'])
+        ->not->toBe($postgres18->credentials['password']);
+});
+
+it('rejects a PostgreSQL image override whose major differs from selected metadata', function (): void {
+    $node = Node::factory()->create(['wireguard_address' => '10.6.0.4']);
+
+    app(ProcessServiceCatalog::class)->resolve(
+        service: 'postgres',
+        version: '16',
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'postgres-food',
+        imageOverride: 'postgres:18-alpine',
+        serviceOptions: [
+            'database' => 'mealou_food_catalog',
+            'username' => 'mealou_food_catalog',
+            'published_port' => 5433,
+        ],
+    );
+})->throws(GatewayApiException::class, 'PostgreSQL image major must match selected version family 16.');
+
 it('requires service process endpoints to use the owner node WireGuard address', function (): void {
     $node = Node::factory()->create([
         'name' => 'database-1',
@@ -394,6 +501,9 @@ it('allows database services on macos through Docker but not Docker Swarm', func
         runtime: ProcessRuntime::Docker,
         node: $node,
         processName: $service,
+        serviceOptions: $service === 'postgres'
+            ? ['database' => 'orbit', 'username' => 'orbit', 'published_port' => 5432]
+            : [],
     );
 
     expect($descriptor->runtimeConfig['service'])
@@ -408,6 +518,9 @@ it('allows database services on macos through Docker but not Docker Swarm', func
             runtime: ProcessRuntime::DockerSwarm,
             node: $node,
             processName: $service,
+            serviceOptions: $service === 'postgres'
+                ? ['database' => 'orbit', 'username' => 'orbit', 'published_port' => 5432]
+                : [],
         );
     } catch (GatewayApiException $exception) {
         expect($exception->errorCode())

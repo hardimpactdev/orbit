@@ -1,0 +1,51 @@
+Retained PostgreSQL multi-process proof
+Date: 2026-07-19
+Topology: dev-3752a1
+Kind/provider/host: operator_gateway_app-dev / incus / beast
+Instances: operator=orbit-e2e-dev-3752a1-operator, gateway=orbit-e2e-dev-3752a1-gateway, dev=orbit-e2e-dev-3752a1-dev
+Checkout roles: operator,gateway,dev
+Solo terminal process: 1092 (Postgres retained dev-483680)
+Reproved runtime candidate: d7fa0fdea57c7ca827db591cfce0381e5a0b539f
+Final candidate: 9faff21cb5a7918ae5767892a0361a94674e06f2 (runtime-code-equivalent descendant of the reproved candidate)
+
+Launcher identity (operator and dev):
+  cwd=/home/orbit/orbit-run
+  launcher=/home/orbit/orbit-run/apps/cli/orbit
+
+Commands exercised from the agent-owned Solo terminal:
+  orbit process:add postgres16 --node=app-dev-1 --service=postgres --version=16 --database=plausible_db --username=orbit --published-port=5432 --restart-policy=always --json
+  orbit process:add postgres18 --node=app-dev-1 --service=postgres --version=18 --database=mealou_food_catalog --username=mealou_food_catalog --published-port=5433 --restart-policy=always --json
+  orbit process:list --node=app-dev-1
+  orbit process:list --node=app-dev-1 --json
+  orbit process:add postgres-conflict --node=app-dev-1 --service=postgres --version=18 --database=conflict_db --username=conflict_user --published-port=5433 --restart-policy=always --json
+  orbit process:add postgres-mismatch --node=app-dev-1 --service=postgres --version=18 --image=postgres:16-alpine --database=mismatch_db --username=mismatch_user --published-port=5434 --restart-policy=always --json
+  docker ps --no-trunc
+  docker inspect postgres16 postgres18 --format '{{.Name}}|{{.Config.Image}}|{{range .Mounts}}{{.Name}}:{{.Destination}} {{end}}'
+  docker exec postgres16 pg_isready -U orbit -d plausible_db
+  docker exec postgres18 pg_isready -U mealou_food_catalog -d mealou_food_catalog
+  orbit node role:add app-dev-1 analytics --postgres-node=app-dev-1 --postgres-process=postgres18 --clickhouse-node=app-dev-1 --json
+
+Observed pass evidence:
+  postgres16 | service=postgres | version_family=16 | version=16-alpine | endpoint=10.6.0.4:5432
+  postgres18 | service=postgres | version_family=18 | version=18-alpine | endpoint=10.6.0.4:5433
+  postgres16 container: postgres:16-alpine, 10.6.0.4:5432->5432/tcp, volume orbit-postgres16:/var/lib/postgresql/data
+  postgres18 container: postgres:18-alpine, 10.6.0.4:5433->5432/tcp, volume orbit-postgres18:/var/lib/postgresql
+  postgres16 readiness: /var/run/postgresql:5432 - accepting connections
+  postgres18 readiness: /var/run/postgresql:5432 - accepting connections
+  PostgreSQL 18 analytics selection: validation_failed, field=postgres_process; Plausible requires a PostgreSQL 16 process
+  duplicate 10.6.0.4:5433: validation_failed, reason=endpoint_conflict, existing_process=postgres18
+  postgres:16-alpine with version family 18: validation_failed, reason=process_service_image_version_mismatch
+  final process list contains only valkey, postgres16, and postgres18; neither rejected process was persisted or started.
+
+Candidate refresh proof:
+  The retained source overlay was synchronized for operator, gateway, and dev at candidate d7fa0fdea57c7ca827db591cfce0381e5a0b539f.
+  The disposable gateway HTTP/TLS containers were restarted after the overlay refresh so their bind mounts followed the remounted checkout.
+  The refreshed CLI list returned both version families and the refreshed analytics role request rejected postgres18 before assignment.
+  Candidate 9faff21cb5a7918ae5767892a0361a94674e06f2 changes only node command contracts and an isolated quality-gate test fixture after that runtime proof; docs lint and the full quality gate pass.
+
+Runtime correction discovered and reproved:
+  Initial topology dev-483680 exposed PostgreSQL 18 restarting because the image rejects /var/lib/postgresql/data in 18+.
+  The catalogue now uses /var/lib/postgresql for family 18 and retains /var/lib/postgresql/data for family 16.
+  dev-483680 was released. The passing observations above come only from fresh topology dev-3752a1 after the correction.
+
+Live production database1 was not contacted or mutated.

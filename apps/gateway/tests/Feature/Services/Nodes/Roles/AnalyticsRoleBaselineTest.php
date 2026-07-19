@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
+use App\Services\Analytics\AnalyticsProcessEndpointResolver;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\RoleBaselines\RoleRuntimeConverger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -45,6 +46,7 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
             'name' => 'unrelated-postgres',
             'runtime_config' => [
                 'service' => 'postgres',
+                'version_family' => '16',
                 'endpoint' => [
                     'host' => '10.6.0.99',
                     'port' => 5432,
@@ -57,13 +59,14 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
             ],
         ]);
 
-    Process::factory()
+    $postgresProcess = Process::factory()
         ->forOwner($databaseNode)
         ->create([
-            'name' => 'postgres16',
+            'name' => 'postgres',
             'runtime' => ProcessRuntime::Docker,
             'runtime_config' => [
                 'service' => 'postgres',
+                'version_family' => '16',
                 'endpoint' => [
                     'host' => '10.6.0.4',
                     'port' => 5432,
@@ -111,6 +114,7 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
         'status' => NodeRoleStatus::Pending,
         'settings' => [
             'postgres_node_id' => $databaseNode->id,
+            'postgres_process_id' => $postgresProcess->id,
             'clickhouse_node_id' => $databaseNode->id,
         ],
     ]);
@@ -172,14 +176,124 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
         ->not->toContain($clickHousePassword)
         ->not->toContain((string) $secretKeyBase);
 
+    Process::factory()
+        ->forOwner($databaseNode)
+        ->create([
+            'name' => 'postgres-food',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'service' => 'postgres',
+                'endpoint' => [
+                    'host' => '10.6.0.4',
+                    'port' => 5433,
+                ],
+            ],
+            'credentials' => [
+                'database' => 'mealou_food_catalog',
+                'username' => 'mealou_food_catalog',
+                'password' => Str::random(32),
+            ],
+        ]);
+
     $converger->converge($analyticsNode, $assignment);
 
-    expect(
-        Process::query()
-            ->ownedBy($analyticsNode)
-            ->withRuntimeService('plausible')
-            ->firstOrFail()
-            ->credentials['environment']['SECRET_KEY_BASE'],
-    )
-        ->toBe($secretKeyBase);
+    $reconvergedCredentials = Process::query()
+        ->ownedBy($analyticsNode)
+        ->withRuntimeService('plausible')
+        ->firstOrFail()
+        ->credentials['environment'];
+
+    expect($reconvergedCredentials['SECRET_KEY_BASE'])
+        ->toBe($secretKeyBase)
+        ->and($reconvergedCredentials['DATABASE_URL'])
+        ->toBe("postgres://orbit:{$databasePassword}@10.6.0.4:5432/plausible_db");
+});
+
+it('fails clearly when persisted analytics settings select PostgreSQL 18', function (): void {
+    $databaseNode = Node::factory()->create([
+        'name' => 'database1',
+        'wireguard_address' => '10.6.0.4',
+        'status' => NodeStatus::Active,
+    ]);
+    $postgres = Process::factory()
+        ->forOwner($databaseNode)
+        ->create([
+            'name' => 'postgres-food',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'service' => 'postgres',
+                'version_family' => '18',
+                'endpoint' => ['host' => '10.6.0.4', 'port' => 5433],
+            ],
+        ]);
+    $analyticsNode = Node::factory()->create([
+        'name' => 'services1',
+        'wireguard_address' => '10.6.0.14',
+        'status' => NodeStatus::Active,
+    ]);
+    $assignment = NodeRoleAssignment::factory()->for($analyticsNode)->create([
+        'role' => 'analytics',
+        'settings' => [
+            'postgres_node_id' => $databaseNode->id,
+            'postgres_process_id' => $postgres->id,
+            'clickhouse_node_id' => $databaseNode->id,
+        ],
+    ]);
+
+    expect(fn () => app(AnalyticsProcessEndpointResolver::class)->resolve(
+        assignment: $assignment,
+        nodeIdSetting: 'postgres_node_id',
+        service: 'postgres',
+        processIdSetting: 'postgres_process_id',
+    ))
+        ->toThrow(RuntimeException::class, 'The analytics role requires PostgreSQL 16 for Plausible.');
+});
+
+it('fails clearly when legacy analytics settings have multiple PostgreSQL candidates', function (): void {
+    $databaseNode = Node::factory()->create([
+        'name' => 'database1',
+        'wireguard_address' => '10.6.0.4',
+        'status' => NodeStatus::Active,
+    ]);
+
+    foreach ([
+        ['postgres',      5432],
+        ['postgres-food', 5433],
+    ] as [$name, $port]) {
+        Process::factory()
+            ->forOwner($databaseNode)
+            ->create([
+                'name' => $name,
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'service' => 'postgres',
+                    'version_family' => '16',
+                    'endpoint' => ['host' => '10.6.0.4', 'port' => $port],
+                ],
+            ]);
+    }
+
+    $analyticsNode = Node::factory()->create([
+        'name' => 'services1',
+        'wireguard_address' => '10.6.0.14',
+        'status' => NodeStatus::Active,
+    ]);
+    $assignment = NodeRoleAssignment::factory()->for($analyticsNode)->create([
+        'role' => 'analytics',
+        'settings' => [
+            'postgres_node_id' => $databaseNode->id,
+            'clickhouse_node_id' => $databaseNode->id,
+        ],
+    ]);
+
+    expect(fn () => app(AnalyticsProcessEndpointResolver::class)->resolve(
+        assignment: $assignment,
+        nodeIdSetting: 'postgres_node_id',
+        service: 'postgres',
+        processIdSetting: 'postgres_process_id',
+    ))
+        ->toThrow(
+            RuntimeException::class,
+            'The analytics role PostgreSQL selection is ambiguous on node database1; store postgres_process_id.',
+        );
 });

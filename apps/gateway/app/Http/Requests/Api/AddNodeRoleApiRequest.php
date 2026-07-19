@@ -7,6 +7,7 @@ namespace App\Http\Requests\Api;
 use App\Http\Requests\Api\Concerns\HandlesOrbitApiValidationFailure;
 use Illuminate\Foundation\Http\FormRequest;
 
+/** @mago-expect lint:too-many-methods */
 class AddNodeRoleApiRequest extends FormRequest
 {
     use HandlesOrbitApiValidationFailure;
@@ -26,6 +27,7 @@ class AddNodeRoleApiRequest extends FormRequest
             'settings' => ['nullable', 'array'],
             'ingress_node' => ['nullable', 'string'],
             'postgres_node' => ['nullable', 'string'],
+            'postgres_process' => ['nullable', 'string'],
             'clickhouse_node' => ['nullable', 'string'],
             'reconverge_existing' => ['nullable', 'boolean'],
         ];
@@ -67,6 +69,13 @@ class AddNodeRoleApiRequest extends FormRequest
         return is_string($value) && $value !== '' ? $value : null;
     }
 
+    public function postgresProcess(): ?string
+    {
+        $value = $this->validated('postgres_process');
+
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
     public function reconvergeExisting(): bool
     {
         return $this->boolean('reconverge_existing');
@@ -74,7 +83,15 @@ class AddNodeRoleApiRequest extends FormRequest
 
     protected function validationFailureFields(): array
     {
-        return ['role', 'settings', 'ingress_node', 'postgres_node', 'clickhouse_node', 'reconverge_existing'];
+        return [
+            'role',
+            'settings',
+            'ingress_node',
+            'postgres_node',
+            'postgres_process',
+            'clickhouse_node',
+            'reconverge_existing',
+        ];
     }
 
     protected function validationMessageFor(string $field): string
@@ -83,6 +100,7 @@ class AddNodeRoleApiRequest extends FormRequest
             'settings' => 'Settings must be an object.',
             'ingress_node' => 'Ingress node must be a string.',
             'postgres_node' => 'PostgreSQL node must be a string.',
+            'postgres_process' => 'PostgreSQL process must be a string.',
             'clickhouse_node' => 'ClickHouse node must be a string.',
             'reconverge_existing' => 'Reconverge existing must be a boolean.',
             default => 'Role is required.',

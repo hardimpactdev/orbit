@@ -10,7 +10,7 @@ You can run this command to add an additional role assignment to an
 existing node.
 
 ```bash
-orbit node role:add [node] [role] [--valkey-node=] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
+orbit node role:add [node] [role] [--valkey-node=] [--postgres-node=<node>] [--postgres-process=<process>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
 ```
 
 ## Behavior
@@ -34,7 +34,11 @@ This command validates the role assignment, applies role-local options, and repo
   is required.
 - `websocket` requires `--valkey-node`; the selected node must have an active
   `database` role and Valkey expected or installed.
-- `analytics` requires `--postgres-node` and `--clickhouse-node`; the selected
+- `analytics` requires `--postgres-node`, `--postgres-process`, and
+  `--clickhouse-node`; the selected PostgreSQL process must be a `postgres`
+  service process with version family `16` owned by the selected database
+  node. Other PostgreSQL families are rejected because Plausible requires
+  PostgreSQL 16. The selected
   nodes must have active `database` roles and PostgreSQL or ClickHouse expected
   or installed. The same database node can satisfy both options. A second
   fleet analytics role is rejected before provisioning. Success means both

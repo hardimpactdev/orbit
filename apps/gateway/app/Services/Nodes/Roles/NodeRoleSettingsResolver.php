@@ -8,10 +8,17 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Process;
+use App\Services\Analytics\AnalyticsDatabaseResolver;
 use Illuminate\Http\JsonResponse;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class NodeRoleSettingsResolver
 {
+    public function __construct(
+        private AnalyticsDatabaseResolver $analyticsDatabaseResolver,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $settings
      * @return array<string, mixed>|JsonResponse
@@ -80,12 +87,16 @@ final readonly class NodeRoleSettingsResolver
     public function resolveAnalytics(
         array $settings,
         ?string $postgresNodeName,
+        ?string $postgresProcessName,
         ?string $clickhouseNodeName,
     ): array|JsonResponse {
         $postgresNodeName ??= is_string($settings['postgres_node'] ?? null) ? $settings['postgres_node'] : null;
         $clickhouseNodeName ??= is_string($settings['clickhouse_node'] ?? null) ? $settings['clickhouse_node'] : null;
+        $postgresProcessName ??= is_string($settings['postgres_process'] ?? null)
+            ? $settings['postgres_process']
+            : null;
 
-        unset($settings['postgres_node'], $settings['clickhouse_node']);
+        unset($settings['postgres_node'], $settings['postgres_process'], $settings['clickhouse_node']);
 
         if (! array_key_exists('postgres_node_id', $settings)) {
             if ($postgresNodeName === null) {
@@ -109,6 +120,42 @@ final readonly class NodeRoleSettingsResolver
             }
 
             $settings['postgres_node_id'] = $postgresNode->id;
+        }
+
+        if (! array_key_exists('postgres_process_id', $settings)) {
+            if ($postgresProcessName === null) {
+                return $this->error(
+                    'validation_failed',
+                    'The analytics role requires an explicit PostgreSQL process.',
+                    ['field' => 'postgres_process'],
+                    422,
+                );
+            }
+
+            $postgresNodeId = $settings['postgres_node_id'] ?? null;
+            $postgresNode = is_int($postgresNodeId) ? Node::query()->find($postgresNodeId) : null;
+            $postgresProcess = $postgresNode instanceof Node
+                ? Process::query()
+                    ->where('owner_type', $postgresNode->getMorphClass())
+                    ->where('owner_id', $postgresNode->getKey())
+                    ->where('name', $postgresProcessName)
+                    ->where('runtime_config->service', 'postgres')
+                    ->first()
+                : null;
+
+            if (
+                ! $postgresProcess instanceof Process
+                || ! $this->analyticsDatabaseResolver->isPlausiblePostgresProcess($postgresProcess)
+            ) {
+                return $this->error(
+                    'validation_failed',
+                    'The analytics role requires a PostgreSQL 16 process for Plausible on its assigned database node.',
+                    ['field' => 'postgres_process', 'value' => $postgresProcessName],
+                    422,
+                );
+            }
+
+            $settings['postgres_process_id'] = $postgresProcess->id;
         }
 
         if (! array_key_exists('clickhouse_node_id', $settings)) {

@@ -25,6 +25,16 @@ final readonly class AnalyticsDatabaseResolver
         return $this->usableDatabaseNode($nodeId, 'clickhouse');
     }
 
+    public function isPlausiblePostgresProcess(Process $process): bool
+    {
+        $runtimeConfig = $process->runtime_config;
+
+        return (
+            ($runtimeConfig['service'] ?? null) === 'postgres'
+            && ($runtimeConfig['version_family'] ?? null) === '16'
+        );
+    }
+
     private function usableDatabaseNode(int $nodeId, string $service): ?Node
     {
         $node = Node::query()->find($nodeId);
@@ -41,10 +51,7 @@ final readonly class AnalyticsDatabaseResolver
             return null;
         }
 
-        $hasProcess = Process::query()
-            ->ownedBy($node)
-            ->withRuntimeService($service)
-            ->exists();
+        $hasProcess = Process::query()->ownedBy($node)->withRuntimeService($service)->exists();
 
         return $hasProcess ? $node : null;
     }

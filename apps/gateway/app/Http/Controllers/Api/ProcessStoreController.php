@@ -74,6 +74,7 @@ final class ProcessStoreController implements Loggable
                 service: $input['service'],
                 version: $input['version'],
                 image: $input['image'],
+                serviceOptions: $input['service_options'],
                 replaceContainers: $input['replace_containers'],
                 consumer: $caller,
             );
@@ -99,7 +100,7 @@ final class ProcessStoreController implements Loggable
     }
 
     /**
-     * @return array{node: string|null, app: string|null, workspace: string|null, name: string, command: string|null, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, service: string|null, version: string|null, image: string|null, replace_containers: list<string>, start: bool}|JsonResponse
+     * @return array{node: string|null, app: string|null, workspace: string|null, name: string, command: string|null, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, service: string|null, version: string|null, image: string|null, service_options: array<string, mixed>, replace_containers: list<string>, start: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
@@ -116,6 +117,7 @@ final class ProcessStoreController implements Loggable
         $service = $this->optionalString($request, 'service');
         $version = $this->optionalString($request, 'version');
         $image = $this->optionalString($request, 'image');
+        $serviceOptions = $request->input('service_options');
         $replaceContainers = $this->stringList($request, 'replace_containers');
         $noStart = $request->boolean('no_start');
         $startExplicit = $request->has('start') ? $request->boolean('start') : null;
@@ -123,6 +125,38 @@ final class ProcessStoreController implements Loggable
         if ($replaceContainers instanceof JsonResponse) {
             return $replaceContainers;
         }
+
+        if ($serviceOptions === null) {
+            $serviceOptions = [];
+        }
+
+        if (! is_array($serviceOptions)) {
+            return $this->error(
+                'validation_failed',
+                'Service options must be an object.',
+                [
+                    'field' => 'service_options',
+                    'reason' => 'invalid_type',
+                ],
+                422,
+            );
+        }
+
+        foreach (array_keys($serviceOptions) as $key) {
+            if (! is_string($key)) {
+                return $this->error(
+                    'validation_failed',
+                    'Service options must be an object with named fields.',
+                    [
+                        'field' => 'service_options',
+                        'reason' => 'invalid_field_name',
+                    ],
+                    422,
+                );
+            }
+        }
+
+        /** @var array<string, mixed> $serviceOptions */
 
         if ($noStart && $startExplicit === true) {
             return $this->error(
@@ -376,6 +410,7 @@ final class ProcessStoreController implements Loggable
             'service' => $service,
             'version' => $version,
             'image' => $image,
+            'service_options' => $serviceOptions,
             'replace_containers' => $replaceContainers,
             'start' => $start,
         ];
