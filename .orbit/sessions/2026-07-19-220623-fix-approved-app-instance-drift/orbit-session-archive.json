@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-19T20:06:24+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-approved-app-instance-drift/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-19-220623-fix-approved-app-instance-drift",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-07-19T200453Z-8fd915758d30.json"
+    ],
+    "entry_digests": {
+        "loop.md": "732a1a41b97ab44141e7dfeda564a075a842f34801ac9a1e08f40290996ba1c5",
+        "quality-gates/quality-check-2026-07-19T200453Z-8fd915758d30.json": "67640dd29c43bb4afc063f82820b17a878548942fd826032d20e86a22ee50c04"
+    },
+    "branch": "fix-approved-app-instance-drift",
+    "candidate_commit": "254f556a27953a0d91fdd9f1f345b4ea751bb2ce",
+    "accepted_feature_tip": "254f556a27953a0d91fdd9f1f345b4ea751bb2ce",
+    "accepted_main_tip": "a79e2cf1a6dca63215132394643770be34da84c0",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
