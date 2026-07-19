@@ -89,6 +89,8 @@ describe('workspace:history', function (): void {
     });
 
     it('renders human output as a run-history table with header and columns', function (): void {
+        $completedRunStartedAt = now()->subMinutes(2);
+
         fakeGateway(fakeSuccessEnvelope([
             'runs' => [
                 [
@@ -97,8 +99,8 @@ describe('workspace:history', function (): void {
                     'app' => 'ohdear',
                     'action' => 'setup',
                     'status' => 'completed',
-                    'started_at' => now()->subMinutes(2)->toIso8601String(),
-                    'finished_at' => now()->subMinutes(2)->addSeconds(45)->toIso8601String(),
+                    'started_at' => $completedRunStartedAt->toIso8601String(),
+                    'finished_at' => $completedRunStartedAt->copy()->addSeconds(45)->toIso8601String(),
                 ],
                 [
                     'id' => 11,
