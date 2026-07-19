@@ -1,0 +1,34 @@
+release_scope=current-version live topology candidate; no GitHub release, Git tag, or stable promotion
+source_commit=589411b172c47dd246957f3152e27a36f001e9ce
+origin_main_at_build=589411b172c47dd246957f3152e27a36f001e9ce
+version=0.1.190
+build_id=20260719T121607Z-589411b17
+channel=live-test
+channel_manifest=https://s3.hardimpact.dev/orbit/channels/live-test/orbit-release-manifest.json
+gateway_digest=sha256:4c35481f361f5e8f55eed30f5fd9df3becc5840a6a25647440e6dfdaf40d1e2c
+reverb_digest=sha256:26664b218c7e4d60146837d7abb2dbd25738a7513c51598441c10d1109920473
+reverb_archive_sha256=51a7006ea8c80229a2589c56cda6f436931d02d269b364f0a12f75bc18cb3389
+
+candidate_verify=passed all CLI and Agent artifact SHA-256 checks
+initial_operation_run=7cad2a0e-006a-4155-91b0-2de5d4a1ba62
+initial_result=failed final role-image verification because the already-running pre-fix gateway process did not include role_image_artifacts; gateway, scheduler, migrations, CLI, Agent, and workloads completed safely
+retry_operation_run=664a79bb-72b7-4b73-8422-53b48a790894
+retry_activity_id=210698
+retry_result=completed
+retry_gateway_digest=sha256:4c35481f361f5e8f55eed30f5fd9df3becc5840a6a25647440e6dfdaf40d1e2c
+services1_install_activity_id=210653
+services1_install_result=downloaded hash-addressed role archive, verified SHA-256, loaded image, resolved exact digest reference locally, and did not require registry credentials
+services1_role_verify_activity_id=210697
+services1_role_verify_result=verified exact digest-pinned Reverb image
+fleet_final_verification=gateway, scheduler, CLI artifacts, Agent artifacts, and required role images passed
+
+pre_gateway_version=0.1.190
+post_gateway_version=0.1.190
+pre_active_nodes=9
+post_active_nodes=9
+pre_doctor_issues=122
+post_doctor_issues=129
+doctor_non_nmbp_difference=none
+doctor_nmbp_pre=1 local executor probe failure, which hid deeper checks
+doctor_nmbp_post=8 visible pre-existing app, workspace, process, proxy, and database-connection issues after the probe recovered
+doctor_interpretation=no release-attributable issue identity changed; the count delta is entirely restored NMBP visibility

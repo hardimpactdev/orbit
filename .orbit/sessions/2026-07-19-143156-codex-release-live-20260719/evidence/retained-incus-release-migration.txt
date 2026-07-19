@@ -1,0 +1,14 @@
+5d1b28b425add437a812f5f3a06effb2c65e2a65a03f159fb4b6e7dec0a9a6a3  apps/gateway/database/migrations/2026_07_19_020000_canonicalize_app_runtime_instance_ownership.php
+48c75d7fe234c7bf705a40722cccece7a41f20893a32bea23bdf57b84f0c178c  apps/gateway/tests/Feature/Migrations/CanonicalizeAppRuntimeInstanceOwnershipTest.php
+5d1b28b425add437a812f5f3a06effb2c65e2a65a03f159fb4b6e7dec0a9a6a3  apps/gateway/database/migrations/2026_07_19_020000_canonicalize_app_runtime_instance_ownership.php
+48c75d7fe234c7bf705a40722cccece7a41f20893a32bea23bdf57b84f0c178c  apps/gateway/tests/Feature/Migrations/CanonicalizeAppRuntimeInstanceOwnershipTest.php
+Version       0.1.190
+Released at   unknown
+Installed at  19-07-2026 - 09:58
+  2026_07_19_000000_restrict_workspaces_to_app_development_nodes ..... [3] Ran  
+  2026_07_19_010000_canonicalize_schedule_app_instance_ownership ..... [3] Ran  
+  2026_07_19_020000_canonicalize_app_runtime_instance_ownership ...... [3] Ran  
+  2026_07_19_030000_backfill_analytics_postgres_process_identity ..... [3] Ran  
+{"success":{"data":{"version":"0.1.190","time":"2026-07-19T10:30:30Z"},"meta":[]}}orbit-gateway-e2e-topology-lease-http Up About a minute (unhealthy)
+orbit-gateway-e2e-topology-lease-tls Up About a minute (unhealthy)
+wg-easy Up About a minute (healthy)

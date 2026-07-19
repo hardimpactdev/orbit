@@ -1,0 +1,20 @@
+{"event":"tree","data":{"title":"Update all","steps":[{"key":"plan","label":"Resolve update plan"},{"key":"runner","label":"Start update runner"},{"key":"gateway","label":"Update gateway"},{"key":"workloads","label":"Update workload nodes"},{"key":"verification","label":"Verify fleet"}]}}
+{"event":"step","data":{"key":"plan","status":"done","message":"Update plan persisted"}}
+{"event":"step","data":{"key":"runner","status":"running","message":"Update runner started"}}
+{"event":"step","data":{"key":"check-updates","status":"running","message":"Checking"}}
+{"event":"step","data":{"key":"check-updates","status":"done","message":"Done: latest version is 0.1.190"}}
+{"event":"step","data":{"key":"check-fleet-versions","status":"running","message":"Checking"}}
+{"event":"step","data":{"key":"check-fleet-versions","status":"done","message":"Done: 9 outdated nodes found","update_targets":["gateway","local","NMBP","agent","beast","database1","ingress1","main1","mini","services1"]}}
+{"event":"step","data":{"key":"lease.fleet","status":"done","message":"Fleet update lease acquired"}}
+{"event":"step","data":{"key":"update-artifacts","status":"running","message":"Staging update artifacts on gateway"}}
+{"event":"step","data":{"key":"update-artifacts","status":"done","message":"Update artifacts staged on gateway"}}
+{"event":"step","data":{"key":"gateway","status":"running","message":"Updating gateway services"}}
+{"event":"step","data":{"key":"lease.gateway","status":"done","message":"Gateway and scheduler update leases acquired"}}
+{"event":"step","data":{"key":"scheduler.stop","status":"running","message":"Stopping orbit-scheduler service"}}
+{"event":"step","data":{"key":"scheduler.stop","status":"done","message":"orbit-scheduler service stopped"}}
+{"event":"step","data":{"key":"migrations","status":"running","message":"Running gateway migrations"}}
+{"event":"step","data":{"key":"migrations","status":"fail","message":"Failed to run gateway migrations: INFO  Running migrations.  \n\n  2026_07_19_000000_restrict_workspaces_to_app_development_nodes . 1.95ms DONE\n  2026_07_19_010000_canonicalize_schedule_app_instance_ownership . 8.04ms DONE\n  2026_07_19_020000_canonicalize_app_runtime_instance_ownership .. 0.24ms FAIL\n\nIn 2026_07_19_020000_canonicalize_app_runtime_instance_ownership.php line 85:\n                                                                               \n  Canonical app runtime ownership requires manual assignment before migration  \n  : mealou#25 (instances=2, setup_steps=0, setup_runs=1, worker=disabled, wor  \n  ker_config=none). Assign worker and setup state to one concrete app instanc  \n  e, then rerun migrations."}}
+{"event":"step","data":{"key":"scheduler.recovery","status":"running","message":"Restoring orbit-scheduler service"}}
+{"event":"step","data":{"key":"scheduler.recovery","status":"done","message":"orbit-scheduler service restored"}}
+{"event":"step","data":{"key":"gateway","status":"fail","message":"Failed to run gateway migrations: INFO  Running migrations.  \n\n  2026_07_19_000000_restrict_workspaces_to_app_development_nodes . 1.95ms DONE\n  2026_07_19_010000_canonicalize_schedule_app_instance_ownership . 8.04ms DONE\n  2026_07_19_020000_canonicalize_app_runtime_instance_ownership .. 0.24ms FAIL\n\nIn 2026_07_19_020000_canonicalize_app_runtime_instance_ownership.php line 85:\n                                                                               \n  Canonical app runtime ownership requires manual assignment before migration  \n  : mealou#25 (instances=2, setup_steps=0, setup_runs=1, worker=disabled, wor  \n  ker_config=none). Assign worker and setup state to one concrete app instanc  \n  e, then rerun migrations."}}
+{"event":"error","error":{"code":"update_runner_failed","message":"Update runner failed.","meta":[]}}

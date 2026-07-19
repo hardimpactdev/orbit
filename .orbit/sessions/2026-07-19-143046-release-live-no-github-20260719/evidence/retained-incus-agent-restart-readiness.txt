@@ -1,0 +1,22 @@
+topology=dev-5ae503 kind=operator_gateway_app-dev host=beast
+reviewed_head=5588ef2ed280e46f660572c2718e5c6e42c88747
+local_hashes
+558d635ee6eec0553e9fe54ea317a8a0b9e41bb7afebdd2de4ed3f2de71933b6  apps/gateway/app/Services/Operations/FleetUpdateAgentRestartReadiness.php
+3035c6238ab1b9b581df132e2791c2bdaa4756bc4fe67d87131ecaf224c73036  apps/gateway/app/Services/Operations/FleetUpdateVerifier.php
+93dfa4f6062bfcfe5b35569ae9c2956a96a790a81c9dc2a67faf96a9cdf8ba15  apps/gateway/tests/Feature/Services/Operations/FleetUpdateVerifierTest.php
+gateway_vm_proof
+558d635ee6eec0553e9fe54ea317a8a0b9e41bb7afebdd2de4ed3f2de71933b6  /home/orbit/orbit-run/apps/gateway/app/Services/Operations/FleetUpdateAgentRestartReadiness.php
+3035c6238ab1b9b581df132e2791c2bdaa4756bc4fe67d87131ecaf224c73036  /home/orbit/orbit-run/apps/gateway/app/Services/Operations/FleetUpdateVerifier.php
+93dfa4f6062bfcfe5b35569ae9c2956a96a790a81c9dc2a67faf96a9cdf8ba15  /home/orbit/orbit-run/apps/gateway/tests/Feature/Services/Operations/FleetUpdateVerifierTest.php
+dev_agent_readiness_http=405
+
+  [44;1m INFO [49;22m Warning: mkdir(): Permission denied in /home/orbit/orbit-run/apps/gateway/vendor/pestphp/pest-plugin-mutate/src/Cache/FileStore.php on line 23.
+
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m10 passed[39;22m[90m (50 assertions)[39m
+  [90mDuration:[39m [39m3.19s[39m
+
+gateway_api_status
+{"success":{"data":{"version":"0.1.190","time":"2026-07-19T11:21:10Z"},"meta":[]}}
