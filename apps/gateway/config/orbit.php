@@ -82,6 +82,10 @@ return [
         'artifact_base_url' => env('ORBIT_UPDATE_ARTIFACT_BASE_URL', env('APP_URL', 'http://localhost')),
         'artifact_cache_ttl_seconds' => env('ORBIT_UPDATE_ARTIFACT_CACHE_TTL_SECONDS', 86400),
         'artifact_download_timeout_seconds' => env(key: 'ORBIT_UPDATE_ARTIFACT_DOWNLOAD_TIMEOUT_SECONDS', default: 60),
+        'agent_restart_settle_milliseconds' => (int) env(
+            key: 'ORBIT_UPDATE_AGENT_RESTART_SETTLE_MILLISECONDS',
+            default: 6000,
+        ),
         'gateway_image' => env('ORBIT_GATEWAY_IMAGE'),
         'gateway_image_archive' => env('ORBIT_GATEWAY_IMAGE_ARCHIVE'),
         'lease_ttl_seconds' => env(key: 'ORBIT_UPDATE_LEASE_TTL_SECONDS', default: 300),

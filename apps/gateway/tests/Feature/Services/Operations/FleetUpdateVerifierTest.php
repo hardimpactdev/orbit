@@ -36,6 +36,7 @@ function fleet_update_verifier_use_agent_push(): void
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
+    config()->set('orbit.updates.agent_restart_settle_milliseconds', 0);
     app()->instance(OrbitCaService::class, new FleetVerifierFakeCa);
     app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay {
         /**
@@ -206,6 +207,97 @@ it('verifies macos workload CLI through the user launcher and skips required rol
         ])
         ->and($requests[0]['input'])
         ->toBe(json_encode(['bin_path' => '/Users/nckrtl/.local/bin/orbit'], JSON_THROW_ON_ERROR));
+});
+
+it('waits for freshly restarted workload agents before verifying their artifacts', function (): void {
+    fleet_update_verifier_use_agent_push();
+    Process::fake([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
+            output: "gateway-image\n",
+        ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
+            output: "scheduler-image\n",
+        ),
+    ]);
+
+    Http::preventStrayRequests();
+    Http::fake(fn (Request $request): mixed => fleet_verifier_agent_response($request));
+
+    $run = fleetVerifierRun();
+    Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.44.0.12',
+        ]);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        fleetVerifierSnapshot(agentArtifacts: [
+            'linux-amd64' => [
+                'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-linux-x64',
+                'sha256' => str_repeat('9', times: 64),
+            ],
+        ]),
+    );
+
+    app(FleetUpdateVerifier::class)->verify($run, $plan);
+
+    $requests = Http::recorded()->map(fn (array $record): array => [
+        'method' => $record[0]->method(),
+        'url' => $record[0]->url(),
+    ])->all();
+
+    expect($requests[0])
+        ->toBe([
+            'method' => 'GET',
+            'url' => 'http://10.44.0.12:9477/v1/commands',
+        ])
+        ->and($requests[1]['method'])
+        ->toBe('POST');
+});
+
+it('fails verification when an updated workload agent does not become ready', function (): void {
+    fleet_update_verifier_use_agent_push();
+    config()->set('orbit.node_bootstrap.readiness_attempts', 1);
+    Process::fake([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
+            output: "gateway-image\n",
+        ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
+            output: "scheduler-image\n",
+        ),
+    ]);
+
+    Http::preventStrayRequests();
+    Http::fake(fn (): mixed => Http::response(status: 503));
+
+    $run = fleetVerifierRun();
+    Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.44.0.12',
+        ]);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        fleetVerifierSnapshot(agentArtifacts: [
+            'linux-amd64' => [
+                'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-linux-x64',
+                'sha256' => str_repeat('9', times: 64),
+            ],
+        ]),
+    );
+
+    expect(fn () => app(FleetUpdateVerifier::class)->verify($run, $plan))
+        ->toThrow(FleetUpdateVerificationFailed::class, 'Orbit Agent readiness verification failed')
+        ->and(fleetVerifierStepEvents($run))
+        ->toContain(['verification.cli', 'fail']);
 });
 
 it('verifies Orbit Agent artifacts on agent-capable workload nodes and excludes the gateway', function (): void {
@@ -658,6 +750,10 @@ function fleetVerifierStepEvents(OperationRun $run): array
 
 function fleet_verifier_agent_response(Request $request, ?string $failCheck = null): mixed
 {
+    if ($request->method() === 'GET') {
+        return Http::response(status: 405);
+    }
+
     $argv = $request['argv'];
     $command = is_array($argv) && is_string($argv[0] ?? null) ? $argv[0] : 'unknown';
     $check = is_array($argv) && is_string($argv[1] ?? null) ? $argv[1] : 'unknown';
@@ -768,7 +864,9 @@ function fleet_verifier_agent_requests(): array
                 'input' => is_string($request['input'] ?? null) ? $request['input'] : null,
             ];
         },
-        Http::recorded()->all(),
+        Http::recorded()
+            ->filter(fn (array $record): bool => $record[0]->method() === 'POST')
+            ->all(),
     );
 }
 

@@ -293,6 +293,9 @@ The expected target shape per calling context:
 
 ## Final Verification Rules
 
+- When the manifest includes Orbit Agent artifacts, final verification waits
+  through the scheduled self-restart window and confirms each updated Agent
+  listener is ready before dispatching CLI, Agent-hash, or role-image checks.
 - The runner emits terminal success only after verifying gateway health,
   scheduler health, selected workload CLI execution, and required role image
   availability.

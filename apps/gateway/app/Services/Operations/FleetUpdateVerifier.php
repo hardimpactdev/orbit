@@ -41,7 +41,7 @@ class FleetUpdateVerifier
             'verification.cli',
             'Verifying workload CLI artifacts',
             'Workload CLI artifacts verified',
-            fn (): null => $this->verifyWorkloadCli($operationRun),
+            fn (): null => $this->verifyWorkloadCli($operationRun, $plan),
         );
         $this->runVerificationStep(
             $operationRun,
@@ -80,8 +80,10 @@ class FleetUpdateVerifier
         return null;
     }
 
-    private function verifyWorkloadCli(OperationRun $operationRun): null
+    private function verifyWorkloadCli(OperationRun $operationRun, OperationUpdatePlan $plan): null
     {
+        app(FleetUpdateAgentRestartReadiness::class)->wait($plan);
+
         foreach ($this->targets->workloadNodes() as $node) {
             foreach (FleetUpdateNodeCliLauncher::binPathsToVerify($node) as $binPath) {
                 $result = $this->localExecutor()->runInternal(
