@@ -135,6 +135,17 @@ function incusTopologyBuilderPreparedRoleResult(string $command): ?ProcessResult
     ]));
 }
 
+function incus_topology_builder_capture_streamed_commands(IncusHost $host): void
+{
+    $host->shouldReceive('runWithInput')
+        ->andReturnUsing(
+            fn (string $command, string $input, ?int $timeoutSeconds = null): ProcessResult => $host->run(
+                $command."\n".$input,
+                $timeoutSeconds,
+            ),
+        );
+}
+
 function incusTopologyBuilderConfig(): E2EConfig
 {
     return new E2EConfig(
@@ -589,6 +600,7 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
         ]);
 
         $host = m::mock(IncusHost::class, [$config])->makePartial();
+        incus_topology_builder_capture_streamed_commands($host);
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
         $host
@@ -830,6 +842,7 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
         ]);
 
         $host = m::mock(IncusHost::class, [$config])->makePartial();
+        incus_topology_builder_capture_streamed_commands($host);
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
         $host
@@ -1051,6 +1064,7 @@ it('keeps successful app-dev agent and websocket checkpoints when app production
         ]);
 
         $host = m::mock(IncusHost::class, [$config])->makePartial();
+        incus_topology_builder_capture_streamed_commands($host);
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
         $host
@@ -1207,6 +1221,7 @@ it('reuses valid app production and agent checkpoints while retrying missing app
         ]);
 
         $host = m::mock(IncusHost::class, [$config])->makePartial();
+        incus_topology_builder_capture_streamed_commands($host);
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('readTextFile')->andReturn(json_encode(E2EProvisionCheckpointManifest::create(
             kind: $kind,
@@ -1386,6 +1401,7 @@ it('retries websocket bake when all concrete role checkpoints are valid but the 
         ]);
 
         $host = m::mock(IncusHost::class, [$config])->makePartial();
+        incus_topology_builder_capture_streamed_commands($host);
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('readTextFile')->andReturn(json_encode(E2EProvisionCheckpointManifest::create(
             kind: $kind,
@@ -1637,6 +1653,7 @@ it('reauthorizes app development runtime ssh before dedicated ingress baking', f
     ]);
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
+    incus_topology_builder_capture_streamed_commands($host);
     $host->shouldReceive('instanceExists')->andReturn(false);
     $host
         ->shouldReceive('startInstancesIfStopped')
@@ -1810,6 +1827,7 @@ it('records detailed gateway artifact provisioning timings', function (): void {
     ]);
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
+    incus_topology_builder_capture_streamed_commands($host);
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
     $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (
@@ -1871,6 +1889,7 @@ it('builds artifact backed prepared websocket topology through a gateway first c
         $commands = [];
 
         $host = m::mock(IncusHost::class, [$config])->makePartial();
+        incus_topology_builder_capture_streamed_commands($host);
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
         $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (
@@ -1981,6 +2000,7 @@ it('builds prepared topology templates through staged internal gateway baking', 
     ]);
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
+    incus_topology_builder_capture_streamed_commands($host);
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
     $host
@@ -2133,6 +2153,7 @@ it('builds app production ingress on the prod template without development or ag
     ]);
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
+    incus_topology_builder_capture_streamed_commands($host);
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
     $host

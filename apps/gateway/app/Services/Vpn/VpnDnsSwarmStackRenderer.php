@@ -187,7 +187,14 @@ final readonly class VpnDnsSwarmStackRenderer
             '        - |-',
             ...array_map(
                 static fn (string $line): string => '          '.$line,
-                explode("\n", $this->escapeComposeInterpolation($this->renderDnsForwardingScript())),
+                explode(
+                    "\n",
+                    str_replace(
+                        search: '$',
+                        replace: '$$',
+                        subject: $this->renderDnsForwardingScript(),
+                    ),
+                ),
             ),
             '      interval: 10s',
             '      timeout: 5s',
@@ -288,11 +295,6 @@ final readonly class VpnDnsSwarmStackRenderer
         }
 
         return rtrim($path, '/');
-    }
-
-    private function escapeComposeInterpolation(string $value): string
-    {
-        return str_replace('$', '$$', $value);
     }
 
     private function quoted(string $value): string
