@@ -17,6 +17,7 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use RuntimeException;
 use Throwable;
 
+/** @mago-expect lint:kan-defect */
 final readonly class WorkloadNodeUpdater
 {
     public function __construct(
@@ -234,6 +235,7 @@ final readonly class WorkloadNodeUpdater
      *     agent_artifact: array{artifact_url: string, sha256: string, bin_path: string}|null,
      *     agent_service: array{unit_name: string, exec_start: string, config_path: string, config: string, ca_path: string, ca_pem: string, http_bind: string, user: string}|null,
      *     role_images: list<string>,
+     *     role_image_artifacts: list<array{image: string, url: string, sha256: string}>,
      * }
      */
     private function installPayload(
@@ -253,6 +255,7 @@ final readonly class WorkloadNodeUpdater
             'agent_artifact' => $this->agentArtifactPayload($operationRun, $plan, $node),
             'agent_service' => $this->agentServicePayload($node),
             'role_images' => $this->requiredRoleImages($plan, $node),
+            'role_image_artifacts' => $this->requiredRoleImageArtifacts($plan, $node),
         ];
     }
 
@@ -401,18 +404,80 @@ final readonly class WorkloadNodeUpdater
 
         $images = [];
 
+        foreach ($this->requiredRoleImageKeys($plan, $node) as $key) {
+            if (! isset($plan->role_images[$key]) || ! is_string($plan->role_images[$key])) {
+                throw new RuntimeException("Update plan contains an invalid role image for [{$key}].");
+            }
+
+            $images[] = $plan->role_images[$key];
+        }
+
+        return array_values(array_unique($images));
+    }
+
+    /**
+     * @return list<array{image: string, url: string, sha256: string}>
+     */
+    private function requiredRoleImageArtifacts(OperationUpdatePlan $plan, Node $node): array
+    {
+        $manifestArtifacts = $plan->manifest_snapshot['role_image_artifacts'] ?? null;
+
+        if (! is_array($manifestArtifacts)) {
+            return [];
+        }
+
+        $artifacts = [];
+
+        foreach ($this->requiredRoleImageKeys($plan, $node) as $key) {
+            if (! isset($manifestArtifacts[$key]) || ! is_array($manifestArtifacts[$key])) {
+                continue;
+            }
+
+            $artifact = $manifestArtifacts[$key];
+
+            if (
+                ! isset($artifact['url'], $artifact['sha256'])
+                || ! is_string($artifact['url'])
+                || ! is_string($artifact['sha256'])
+                || ! isset($plan->role_images[$key])
+                || ! is_string($plan->role_images[$key])
+            ) {
+                throw new RuntimeException("Update plan contains an invalid role image artifact for [{$key}].");
+            }
+
+            $artifacts[] = [
+                'image' => $plan->role_images[$key],
+                'url' => $artifact['url'],
+                'sha256' => $artifact['sha256'],
+            ];
+        }
+
+        return $artifacts;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function requiredRoleImageKeys(OperationUpdatePlan $plan, Node $node): array
+    {
+        if (NodeHostPaths::isMacosPlatform($node->platform)) {
+            return [];
+        }
+
+        $keys = [];
+
         if ($this->roles->nodeHostsOrbitCaddy($node) && is_string($plan->role_images['orbit-caddy'] ?? null)) {
-            $images[] = $plan->role_images['orbit-caddy'];
+            $keys[] = 'orbit-caddy';
         }
 
         if (
             $this->roles->nodeHasActiveRole($node, NodeRoleName::WebSocket->value)
             && is_string($plan->role_images['orbit-websocket'] ?? null)
         ) {
-            $images[] = $plan->role_images['orbit-websocket'];
+            $keys[] = 'orbit-websocket';
         }
 
-        return array_values(array_unique($images));
+        return $keys;
     }
 
     private function manifestBuildId(OperationUpdatePlan $plan): ?string

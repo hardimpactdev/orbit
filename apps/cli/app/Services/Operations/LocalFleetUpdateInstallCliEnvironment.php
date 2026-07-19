@@ -43,6 +43,17 @@ final readonly class LocalFleetUpdateInstallCliEnvironment
             'ORBIT_AGENT_SERVICE_HTTP_BIND' => $agentService->httpBind ?? '',
             'ORBIT_AGENT_SERVICE_USER' => $agentService->user ?? '',
             'ORBIT_ROLE_IMAGES_JSON' => json_encode($payload->roleImages, JSON_THROW_ON_ERROR),
+            'ORBIT_ROLE_IMAGE_ARTIFACTS_JSON' => json_encode(
+                array_map(
+                    static fn (LocalFleetUpdateInstallRoleImageArtifactPayload $artifact): array => [
+                        'image' => $artifact->image,
+                        'url' => $artifact->artifactUrl,
+                        'sha256' => strtolower($artifact->sha256),
+                    ],
+                    $payload->roleImageArtifacts,
+                ),
+                JSON_THROW_ON_ERROR,
+            ),
         ];
     }
 

@@ -506,8 +506,29 @@ final readonly class LocalFleetUpdateInstallCliAction
                 if ! command -v docker >/dev/null 2>&1; then
                     echo skip_required_images_no_docker
                 else
+                    role_image_artifacts_json="${ORBIT_ROLE_IMAGE_ARTIFACTS_JSON:-[]}"
+                    if [ "$role_image_artifacts_json" != "[]" ]; then
+                        echo load_required_image_artifacts
+                        php -r '$artifacts = json_decode(getenv("ORBIT_ROLE_IMAGE_ARTIFACTS_JSON"), true, 512, JSON_THROW_ON_ERROR); foreach ($artifacts as $artifact) { echo base64_encode($artifact["image"]), " ", base64_encode($artifact["url"]), " ", $artifact["sha256"], "\n"; }' | while IFS=' ' read -r image_encoded url_encoded image_sha256; do
+                            image="$(printf %s "$image_encoded" | base64 --decode)"
+                            image_url="$(printf %s "$url_encoded" | base64 --decode)"
+                            image_archive="$tmp/role-image-$image_sha256.tar"
+
+                            echo "download_required_image_artifact $image"
+                            download_artifact "$image_url" "$image_archive"
+                            check_sha256 "$image_sha256" "$image_archive"
+                            docker load --input "$image_archive"
+                            docker image inspect "$image" >/dev/null
+                        done
+                    fi
+
                     echo pull_required_images
                     php -r '$images = json_decode(getenv("ORBIT_ROLE_IMAGES_JSON"), true, 512, JSON_THROW_ON_ERROR); foreach ($images as $image) { echo $image, "\n"; }' | while IFS= read -r image; do
+                        if docker image inspect "$image" >/dev/null 2>&1; then
+                            echo "required_image_present $image"
+                            continue
+                        fi
+
                         if ! docker pull "$image"; then
                             echo "skip_required_image_pull_failed $image"
                             continue

@@ -20,6 +20,9 @@ final class LocalFleetUpdateInstallCliPayload
 
     public ?LocalFleetUpdateInstallAgentServicePayload $agentService;
 
+    /** @var list<LocalFleetUpdateInstallRoleImageArtifactPayload> */
+    public array $roleImageArtifacts;
+
     /**
      * @param  list<string>  $roleImages
      */
@@ -63,6 +66,9 @@ final class LocalFleetUpdateInstallCliPayload
         );
         $typedPayload->agentService = LocalFleetUpdateInstallAgentServicePayload::fromPayload(
             $payload['agent_service'] ?? null,
+        );
+        $typedPayload->roleImageArtifacts = LocalFleetUpdateInstallRoleImageArtifactPayload::listFromPayload(
+            $payload['role_image_artifacts'] ?? null,
         );
 
         return $typedPayload;
