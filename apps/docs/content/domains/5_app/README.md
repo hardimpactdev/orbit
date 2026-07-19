@@ -32,11 +32,9 @@ These rules govern all app family commands.
   named `main`, then the sole existing environment. If multiple environments
   remain possible, Orbit fails and returns the candidates instead of creating
   another environment.
-- The app `node`, `path`, `root`, URL, and environment fields define logical
-  defaults used only when creating an Orbit instance. They are discovery and
-  input conveniences, never live placement. Runtime work always resolves a
-  concrete app instance and uses that instance's serving node, path, root, and
-  domain.
+- Logical apps store shared project identity and runtime policy only. They do
+  not store a server, path, root, URL, domain, or environment default.
+  Every placement fact belongs to one concrete app instance.
 - App instance env values and database targets belong to the instance, not the
   logical app. Rendering an instance env merges explicit app env values with
   database attachments for that instance.
@@ -173,9 +171,10 @@ App command signatures use two positional names intentionally:
 
 ## App JSON Entity
 
-When a JSON renderer in the app family returns one concrete placement, it
-embeds the canonical app entity under `success.data.app`. Command-specific
-result state belongs beside the entity, not inside it.
+When a JSON renderer in the app family returns a logical app, it embeds the
+canonical app entity under `success.data.app`. Concrete placement is returned
+separately under `success.data.instance` or a command-specific instance list.
+Command-specific result state belongs beside the entity, not inside it.
 
 `app:list` is the intentional exception: `success.data.apps[]` contains compact
 logical-app summaries, not this placement-shaped entity. Each summary carries
@@ -183,42 +182,43 @@ logical-app summaries, not this placement-shaped entity. Each summary carries
 `workspace_count`. Concrete node, URL, path, runtime, instance, and workspace
 rows belong to `app:show` and `app:instance`.
 
-`app:show` follows that same rule: `success.data.app` is the canonical app
-entity, while show-only registry expansion such as bound workspaces, process
-definitions, routes, and effective agent IDE details lives under
-`success.data.details`. Do not merge those show-only relationships into the
-canonical app entity. Workspace expansion includes only active `app-dev`
-placements and is omitted entirely for `app-prod` callers.
+`app:show` follows this rule: `success.data.app` is the canonical
+logical-app entity, while show-only registry expansion such as concrete
+instances, instance-nested workspaces, process definitions, routes, and
+effective agent IDE details lives under `success.data.details`. Do not merge
+those show-only relationships into the canonical app entity. There is no flat
+logical-app workspace fallback. Workspace expansion includes only active
+`app-dev` placements and is omitted entirely for `app-prod` callers.
 
 ```json
 {
   "name": "docs",
-  "node": "app-1",
-  "url": "https://docs.example.com",
-  "path": "/home/docs/app",
-  "root": "public",
   "repository": "git@github.com:my/repo.git",
   "runtime": "php",
   "runtime_config": {
     "proxy_transport": "http"
   },
   "php_version": "8.5",
-  "adopted": false
+  "adopted": false,
+  "dependency_audit_status": "unknown",
+  "dependency_warning_count": 0,
+  "dependency_danger_count": 0,
+  "last_dependency_audit_at": null
 }
 ```
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | App identity slug. Globally unique in the gateway app registry. |
-| `node` | string | Owning node slug. The node's active role (`app-dev` or `app-prod`) determines the app's environment; the app entity does not carry a separate `environment` field. |
-| `url` | string | Primary intended URL for the app. |
-| `path` | string | Absolute app path on the owning node. |
-| `root` | string | Document root relative to `path`. |
 | `repository` | string \| null | Source repository URL recorded for the app, or `null` when none is configured. |
 | `runtime` | string | Runtime for the app. `php` uses a FrankenPHP app runtime container; `static` serves without one. |
 | `runtime_config` | object \| null | Runtime-specific gateway configuration. PHP/FrankenPHP apps expose `proxy_transport`, which is `http` by default and may be `https` for app-dev inner TLS; static apps report `null`. |
 | `php_version` | string | PHP version recorded in gateway app configuration. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
 | `adopted` | boolean | `true` once the app path was adopted through `app:register`; `false` for app records created by `app:new` or first registered without adoption. |
+| `dependency_audit_status` | string | Aggregate dependency posture for the logical app. |
+| `dependency_warning_count` | integer | Number of warning-severity dependency findings in the latest summaries. |
+| `dependency_danger_count` | integer | Number of danger-severity dependency findings in the latest summaries. |
+| `last_dependency_audit_at` | string \| null | Latest completed dependency audit time, or `null` when no audit has completed. |
 
 Structural fields are always present. Use `null` only for structural fields
 whose value is inapplicable, such as an absent repository.

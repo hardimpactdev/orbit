@@ -262,7 +262,8 @@ describe('AppStoreController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'created')
             ->assertJsonPath('success.data.app.name', 'docs')
-            ->assertJsonPath('success.data.app.node', 'app-1')
+            ->assertJsonPath('success.data.instance.node', 'app-1')
+            ->assertJsonMissingPath('success.data.app.node')
             ->assertJsonPath('success.data.app.php_version', '8.4')
             ->assertJsonPath('success.data.app.runtime', 'php')
             ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'http')
@@ -619,7 +620,8 @@ describe('AppStoreController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.app.url', 'https://docs.example.com')
+            ->assertJsonPath('success.data.instance.url', 'https://docs.example.com')
+            ->assertJsonMissingPath('success.data.app.url')
             ->assertJsonPath('success.meta.warnings.0.code', 'proxy.domain_inactive');
 
         expect(App::query()->where('name', 'docs')->value('environment'))->toBe('production');

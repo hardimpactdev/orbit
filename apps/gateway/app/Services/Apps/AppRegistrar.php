@@ -178,6 +178,7 @@ final class AppRegistrar
             [
                 'result' => ['action' => $action],
                 'app' => $this->appPayload($app),
+                'instance' => $this->instancePayload($app),
             ],
             $warnings,
             $node->name,
@@ -207,6 +208,7 @@ final class AppRegistrar
             [
                 'result' => ['action' => $action],
                 'app' => $this->appPayload($app),
+                'instance' => $this->instancePayload($app),
             ],
             $warnings,
             $node->name,
@@ -276,7 +278,7 @@ final class AppRegistrar
 
     private function ensureDefaultInstance(App $app, Node $node): void
     {
-        $app->instances()->firstOrCreate(
+        $app->instances()->updateOrCreate(
             ['name' => $app->environment],
             [
                 'driver' => AppInstanceDriver::Orbit,
@@ -572,18 +574,30 @@ final class AppRegistrar
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    private function instancePayload(App $app): array
+    {
+        $instance = $app->instances()->where('name', $app->environment)->firstOrFail();
+
+        return app(AppInstancePayloads::class)->placement($instance);
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      * @param  list<array<string, mixed>>  $warnings
      */
     private function successCommand(array $data, array $warnings, string $nodeName): int
     {
         if (! $this->wantsJson()) {
-            /** @var array{name?: string, url?: string} $app */
+            /** @var array{name?: string} $app */
             $app = is_array($data['app'] ?? null) ? $data['app'] : [];
+            /** @var array{url?: string} $instance */
+            $instance = is_array($data['instance'] ?? null) ? $data['instance'] : [];
             $action = (string) ($data['result']['action'] ?? '');
 
             $this->line($this->successLine($action, $app));
-            $this->line('URL: '.($app['url'] ?? ''));
+            $this->line('URL: '.($instance['url'] ?? ''));
 
             if ($warnings !== []) {
                 $this->line('Warnings:');

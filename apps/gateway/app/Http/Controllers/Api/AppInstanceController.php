@@ -10,12 +10,13 @@ use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\ActivityLogType;
 use App\Enums\Apps\AppInstanceDriver;
-use App\Http\Authorization\RequiresPermission;
-use App\Http\Authorization\ServingNode;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Apps\AppInstancePayloads;
+use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,20 +30,47 @@ final class AppInstanceController implements Loggable
 
     public function __construct(
         private readonly AppInstancePayloads $payloads,
+        private readonly NodeAccessAuthorizer $authorizer,
+        private readonly NodeRoleAssignments $nodeRoleAssignments,
+        private readonly WorkspacePlacement $workspacePlacement,
     ) {}
 
-    #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
-    public function index(string $app): JsonResponse
+    public function index(string $app, Request $request): JsonResponse
     {
         $this->currentAction = 'list';
         $targetApp = $this->resolveApp($app);
+
+        if ($targetApp instanceof JsonResponse) {
+            return $targetApp;
+        }
+
         $this->activitySubject = $targetApp;
 
         if (! $targetApp instanceof App) {
             return $this->appNotFound($app);
         }
 
-        $instances = $targetApp->instances()->with(['app.node', 'runtimeMounts'])->get();
+        $caller = $this->caller($request);
+
+        if ($caller instanceof JsonResponse) {
+            return $caller;
+        }
+
+        $instances = $targetApp->instances()->with(['runtimeMounts'])->get();
+        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+        $instances = $instances->filter(function (AppInstance $instance) use ($caller, $callerIsGateway): bool {
+            if ($instance->driver !== AppInstanceDriver::Orbit) {
+                return $callerIsGateway;
+            }
+
+            $servingNode = $this->workspacePlacement->nodeForInstance($instance);
+
+            return $servingNode instanceof Node && $this->authorizer->allows($caller, $servingNode, 'app:read');
+        })->values();
+
+        if (! $callerIsGateway && $instances->isEmpty()) {
+            return $this->authorizationFailed('app:read');
+        }
 
         return $this->success([
             'app' => $targetApp->name,
@@ -53,8 +81,7 @@ final class AppInstanceController implements Loggable
         ], ['count' => $instances->count()]);
     }
 
-    #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
-    public function show(string $app, string $instance): JsonResponse
+    public function show(string $app, string $instance, Request $request): JsonResponse
     {
         $this->currentAction = 'show';
         $resolved = $this->resolveAppInstance($app, $instance);
@@ -66,14 +93,24 @@ final class AppInstanceController implements Loggable
         [$targetApp, $targetInstance] = $resolved;
         $this->activitySubject = $targetApp;
 
+        $authorization = $this->authorizeInstance($request, $targetInstance, 'app:read');
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         return $this->success($this->payloads->withCompatibility($targetInstance));
     }
 
-    #[RequiresPermission('app:write', servingNode: ServingNode::AppOwning)]
     public function store(string $app, Request $request): JsonResponse
     {
         $this->currentAction = 'add';
         $targetApp = $this->resolveApp($app);
+
+        if ($targetApp instanceof JsonResponse) {
+            return $targetApp;
+        }
+
         $this->activitySubject = $targetApp;
 
         if (! $targetApp instanceof App) {
@@ -108,13 +145,31 @@ final class AppInstanceController implements Loggable
             return $driver;
         }
 
+        $caller = $this->caller($request);
+
+        if ($caller instanceof JsonResponse) {
+            return $caller;
+        }
+
+        if ($driver === AppInstanceDriver::LaravelCloud && ! $this->nodeRoleAssignments->nodeIsGateway($caller)) {
+            return $this->externalInstanceAuthorizationFailed();
+        }
+
         $driverConfig = match ($driver) {
-            AppInstanceDriver::Orbit => $this->orbitDriverConfig($targetApp, $request),
+            AppInstanceDriver::Orbit => $this->orbitDriverConfig($request),
             AppInstanceDriver::LaravelCloud => $this->laravelCloudDriverConfig($request),
         };
 
         if ($driverConfig instanceof JsonResponse) {
             return $driverConfig;
+        }
+
+        if ($driver === AppInstanceDriver::Orbit) {
+            $targetNode = Node::query()->find($driverConfig->node_id);
+
+            if (! $targetNode instanceof Node || ! $this->authorizer->allows($caller, $targetNode, 'app:write')) {
+                return $this->authorizationFailed('app:write', $targetNode, $name);
+            }
         }
 
         $instance = $targetApp
@@ -123,15 +178,14 @@ final class AppInstanceController implements Loggable
                 'name' => $name,
                 'driver' => $driver,
                 'driver_config' => $driverConfig,
-                'runtime_requirements' => new AppInstanceRuntimeRequirementsData(
-                    php_extensions: $this->phpExtensions($request),
-                ),
+                'runtime_requirements' => new AppInstanceRuntimeRequirementsData(php_extensions: $this->phpExtensions(
+                    $request,
+                )),
             ]);
 
         return $this->success($this->payloads->withCompatibility($instance));
     }
 
-    #[RequiresPermission('app:write', servingNode: ServingNode::AppOwning)]
     public function destroy(string $app, string $instance, Request $request): JsonResponse
     {
         $this->currentAction = 'remove';
@@ -143,6 +197,12 @@ final class AppInstanceController implements Loggable
 
         [$targetApp, $targetInstance] = $resolved;
         $this->activitySubject = $targetApp;
+
+        $authorization = $this->authorizeInstance($request, $targetInstance, 'app:write');
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
 
         if (! $request->boolean('destructive_consent') && ! $request->boolean('force')) {
             return $this->validationFailed(
@@ -190,13 +250,10 @@ final class AppInstanceController implements Loggable
         }
     }
 
-    private function orbitDriverConfig(App $app, Request $request): OrbitAppInstanceDriverConfigData|JsonResponse
+    private function orbitDriverConfig(Request $request): OrbitAppInstanceDriverConfigData|JsonResponse
     {
         $nodeSelector = $this->stringInput($request, 'node');
-        $app->loadMissing('node');
-        $node = $nodeSelector === null
-            ? $app->node
-            : Node::query()->where('name', $nodeSelector)->first();
+        $node = $nodeSelector === null ? null : Node::query()->where('name', $nodeSelector)->first();
 
         if (! $node instanceof Node) {
             return $this->validationFailed(
@@ -210,12 +267,23 @@ final class AppInstanceController implements Loggable
             );
         }
 
+        $path = $this->stringInput($request, 'path');
+
+        if ($path === null) {
+            return $this->validationFailed('path', 'Orbit app instances require a valid --path value.');
+        }
+
+        $documentRoot = $this->stringInput($request, 'root') ?? $this->stringInput($request, 'document_root');
+
+        if ($documentRoot === null) {
+            return $this->validationFailed('root', 'Orbit app instances require a valid --root value.');
+        }
+
         return new OrbitAppInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $this->stringInput($request, 'path') ?? $app->path,
-            document_root: $this->stringInput($request, 'root') ?? $this->stringInput($request, 'document_root')
-                ?? $app->document_root,
+            path: $path,
+            document_root: $documentRoot,
             domain: $this->stringInput($request, 'domain'),
         );
     }
@@ -498,6 +566,10 @@ final class AppInstanceController implements Loggable
     {
         $targetApp = $this->resolveApp($app);
 
+        if ($targetApp instanceof JsonResponse) {
+            return $targetApp;
+        }
+
         if (! $targetApp instanceof App) {
             return $this->appNotFound($app);
         }
@@ -524,13 +596,50 @@ final class AppInstanceController implements Loggable
         return [$targetApp, $targetInstance];
     }
 
-    private function resolveApp(string $selector): ?App
+    private function resolveApp(string $selector): App|JsonResponse|null
     {
-        return App::query()
-            ->with(['node', 'instances'])
-            ->where('name', $selector)
-            ->orWhere('domain', $selector)
-            ->first();
+        $baseQuery = App::query()->with(['node', 'instances']);
+        $nameMatch = (clone $baseQuery)->where('name', $selector)->first();
+
+        if ($nameMatch instanceof App) {
+            return $nameMatch;
+        }
+
+        $matches = $baseQuery
+            ->get()
+            ->filter(function (App $app) use ($selector): bool {
+                foreach ($app->instances as $instance) {
+                    if (! $instance instanceof AppInstance) {
+                        continue;
+                    }
+
+                    $placement = $this->payloads->placement($instance);
+                    $host = parse_url((string) ($placement['url'] ?? ''), PHP_URL_HOST);
+
+                    if (($placement['domain'] ?? null) === $selector || $host === $selector) {
+                        return true;
+                    }
+                }
+
+                return false;
+            })
+            ->values();
+
+        if ($matches->count() > 1) {
+            return $this->validationFailed(
+                'app',
+                "App selector '{$selector}' is ambiguous; use the app name.",
+                [
+                    'reason' => 'ambiguous_app_selector',
+                    'selector' => $selector,
+                ],
+                422,
+            );
+        }
+
+        $match = $matches->first();
+
+        return $match instanceof App ? $match : null;
     }
 
     private function stringInput(Request $request, string $key): ?string
@@ -622,6 +731,80 @@ final class AppInstanceController implements Loggable
                 'meta' => $meta === [] ? ['field' => $field] : ['field' => $field, ...$meta],
             ],
         ], $status);
+    }
+
+    private function caller(Request $request): Node|JsonResponse
+    {
+        /** @var mixed $caller */
+        $caller = $request->user();
+
+        return $caller instanceof Node
+            ? $caller
+            : $this->authorizationFailed('app:read', message: 'Peer identity unknown.');
+    }
+
+    private function authorizeInstance(Request $request, AppInstance $instance, string $permission): ?JsonResponse
+    {
+        $caller = $this->caller($request);
+
+        if ($caller instanceof JsonResponse) {
+            return $caller;
+        }
+
+        if ($instance->driver !== AppInstanceDriver::Orbit) {
+            return $this->nodeRoleAssignments->nodeIsGateway($caller)
+                ? null
+                : $this->externalInstanceAuthorizationFailed($instance->name);
+        }
+
+        $servingNode = $this->workspacePlacement->nodeForInstance($instance);
+
+        if (! $servingNode instanceof Node || ! $this->authorizer->allows($caller, $servingNode, $permission)) {
+            return $this->authorizationFailed($permission, $servingNode, $instance->name);
+        }
+
+        return null;
+    }
+
+    private function authorizationFailed(
+        string $permission,
+        ?Node $servingNode = null,
+        ?string $instance = null,
+        ?string $message = null,
+    ): JsonResponse {
+        return response()->json([
+            'error' => [
+                'code' => 'authorization_failed',
+                'message' =>
+                    $message ?? "This node is not authorized for '{$permission}' on the selected app instance.",
+                'meta' => array_filter(
+                    [
+                        'reason' => 'missing_permission',
+                        'missing_permission' => $permission,
+                        'serving_node' => $servingNode?->name,
+                        'app_instance' => $instance,
+                    ],
+                    static fn (mixed $value): bool => $value !== null,
+                ),
+            ],
+        ], 403);
+    }
+
+    private function externalInstanceAuthorizationFailed(?string $instance = null): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => 'authorization_failed',
+                'message' => 'External app instances can only be managed by the gateway.',
+                'meta' => array_filter(
+                    [
+                        'reason' => 'gateway_only_external_instance',
+                        'app_instance' => $instance,
+                    ],
+                    static fn (mixed $value): bool => $value !== null,
+                ),
+            ],
+        ], 403);
     }
 
     public function subject(): ?Model

@@ -8,11 +8,18 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The authenticated peer has `app:read` on the app's default owning node for
-  reads.
-- The authenticated peer has `app:write` on the app's default owning node for
-  writes.
 - The target app exists in gateway configuration.
+
+**Post-input path eligibility:**
+- `list` returns only Orbit instances whose serving nodes grant `app:read`;
+  external-driver instances are gateway-only.
+- `show` requires `app:read` on the selected Orbit instance's serving node;
+  an external-driver instance is gateway-only.
+- `add --driver=orbit` requires `app:write` on the explicitly selected target
+  node before effects. There is no logical-app default node.
+- `add --driver=laravel-cloud` is gateway-only.
+- `remove` requires `app:write` on the selected Orbit instance's serving
+  node; removing an external-driver instance is gateway-only.
 
 ## Signature
 
@@ -79,6 +86,9 @@ Gateway-owned `app_instances` rows belong to one app. Each row stores:
 6. **Deployment ownership.** Deployment policy, steps, warmup paths, runs,
    history, logs, and latest status belong to the concrete instance. Logical
    app rows do not carry deployment state.
+7. **Placement ownership.** Every `orbit` instance supplies its own node, path,
+   root, and optional domain. Instance creation never inherits placement from
+   the logical app.
 
 ### Laravel Cloud Environment Selection
 
@@ -108,6 +118,8 @@ operator or agent explicitly requested creation.
 | App not found | No app record matches `app`. | `error.code=app.not_found`. |
 | Instance not found | No instance record matches `instance` for the app. | `error.code=app_instance.not_found`. |
 | Ambiguous Cloud environment | Laravel Cloud discovery returned multiple candidates and no default or `main` environment could be selected. | `error.code=validation_failed`, `error.meta.field=cloud_environment`, `error.meta.reason=ambiguous_cloud_environment`. |
+| Instance authorization denied | The caller lacks the action's permission on the selected or target serving node. | `error.code=authorization_failed` with `missing_permission`, `serving_node`, and `app_instance` when an instance already exists. |
+| External instance authorization denied | A non-gateway caller selects a Laravel Cloud instance or tries to add one. | `error.code=authorization_failed` with `reason=gateway_only_external_instance`. |
 
 ## Doctor Relationship
 

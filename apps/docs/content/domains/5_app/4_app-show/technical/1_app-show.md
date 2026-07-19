@@ -70,12 +70,12 @@ Supplying an unknown option fails with `error.code=validation_failed`.
    not authorized, fail before side effects.
 3. **Result assembly.** Return the app record and the durable gateway configuration
    the app owns:
-   - app registry: name, default node metadata, repository, app path,
-     document root, PHP version, primary domain;
+   - logical app registry: name, repository, shared runtime policy, and PHP
+     version, with no placement defaults;
    - agent IDE configuration: effective adapter and resolution source;
-   - caller-visible app instances, ordered by instance name;
-   - workspaces nested under their visible app instance and also retained in
-     the flat `details.workspaces` compatibility inventory;
+   - caller-visible app instances and their concrete placement fields, ordered
+     by instance name;
+   - workspaces nested only under their visible app instance;
    - processes and app-owned proxy routes (registry-shaped, not live status).
 
    Non-gateway callers receive only Orbit instances whose serving node grants
@@ -84,9 +84,12 @@ Supplying an unknown option fails with `error.code=validation_failed`.
 
    Workspace expansion is available only for active `app-dev` placements. A
    workspace row attached to `app-prod` is omitted as invalid configuration.
-   An `app-prod` caller receives no nested or flat workspace facts, even when a
+   An `app-prod` caller receives no workspace facts, even when a
    grant that violates current workspace policy makes an `app-dev` instance
    visible; app and instance details remain readable.
+
+   The response has no `details.workspaces` fallback and no logical-app
+   `node`, `path`, `root`, `url`, `domain`, or `environment` field.
 
    Default `app:show` is a registry read, not a live readiness command.
 

@@ -1098,15 +1098,15 @@ it('reports instance-owned worker fields on canonical logical app entities', fun
                 "data": {
                   "app": {
                     "name": "docs",
-                    "node": "beast",
-                    "url": "https://docs.beast.test",
-                    "path": "/srv/orbit/apps/docs",
-                    "root": "public",
                     "repository": null,
                     "runtime": "frankenphp",
                     "runtime_config": null,
                     "php_version": "8.5",
                     "adopted": false,
+                    "dependency_audit_status": "unknown",
+                    "dependency_warning_count": 0,
+                    "dependency_danger_count": 0,
+                    "last_dependency_audit_at": null,
                     "worker_enabled": true,
                     "worker_config": {"workers": "auto", "max_requests": 500}
                   }

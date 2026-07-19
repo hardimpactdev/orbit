@@ -52,15 +52,15 @@ Run `app:show` to inspect a single app's gateway configuration without triggerin
    interactive prompt.
 2. Validates that the current caller can inspect at least one concrete Orbit app
    instance, unless the caller is the gateway.
-3. Reads the app record from gateway-owned app configuration: name, default
-   node metadata, repository, paths, PHP version, and agent IDE configuration.
+3. Reads the logical app record from gateway-owned configuration: name,
+   repository, shared runtime policy, PHP version, and agent IDE configuration.
 4. Aggregates the caller-visible app instances, the workspaces owned by each
    visible instance, processes, and app-owned proxy routes.
 5. Returns the app detail view backed by the registry.
 
-Workspace rows are expanded only for `app-dev`. Production placements never
-contribute workspaces, and an `app-prod` caller receives app and instance
-details without nested or flat workspace facts.
+Workspace rows are exposed only below their owning instance and only for
+`app-dev`. Production placements never contribute workspaces, and an
+`app-prod` caller receives app and instance details without workspace facts.
 
 `app:show` does not:
 
@@ -75,7 +75,8 @@ details without nested or flat workspace facts.
 
 Human output is a registry summary followed by a table of visible instances and
 their nested workspace rows. Instance and workspace URLs are shown when the
-registry can derive them. The `APP DEPS` column is the logical app's aggregate
+registry can derive them. Logical apps have no server, path, root, URL, domain,
+or environment fields. The `APP DEPS` column is the logical app's aggregate
 dependency posture; workspace rows render `—`.
 
 JSON output returns the app record under a machine-readable output. See the

@@ -9,8 +9,8 @@ the [Architecture](../../architecture.md).
 The terms below define the core identity vocabulary for the app family.
 
 - **App:** Logical application record owned by the gateway, with a stable
-  identity slug, default source metadata, runtime policy, and optional
-  repository. An app may have multiple app instances.
+  identity slug, shared runtime policy, and optional repository. An app may
+  have multiple app instances and owns no placement defaults.
 - **App instance:** Concrete runtime or deployment target for one app. An
   instance belongs to exactly one app, has a name unique within that app, selects
   one driver, and owns driver configuration, app env values, worker policy,
@@ -23,10 +23,10 @@ The terms below define the core identity vocabulary for the app family.
   Data object under `driver_config`. `orbit` config records node/path/root/domain
   placement. `laravel-cloud` config records organization, application,
   environment, and domain selectors.
-- **Canonical app instance:** Concrete Orbit instance created when an app is
-  registered without one. Instance-owned commands must resolve this or another
+- **Initial app instance:** Concrete instance created together with a logical
+  app by `app:new`. Instance-owned commands must resolve this or another
   concrete instance. A logical app selector fails when more than one instance
-  could own the operation; it never falls back to app-owned runtime state.
+  could own the operation; it never falls back to app-owned placement state.
 - **App identity slug:** Lowercase identity slug used as the app's globally
   unique gateway registry key. Maximum 40 characters.
 - **App name argument:** Positional `[name]` argument used by commands that
@@ -35,22 +35,21 @@ The terms below define the core identity vocabulary for the app family.
   read, update, prune, or remove an existing app. May be a name or hostname when
   the command contract opts into hostname resolution; name matches win over
   hostname matches.
-- **Default node:** Node slug stored on the logical app and used when creating
-  its initial Orbit instance. Placement-specific behavior uses app instances. Orbit
-  instances may only run on nodes with an active `app-dev` or `app-prod` role;
-  a node without either role is not a valid Orbit app instance target.
+- **Orbit instance serving node:** Node selected explicitly for one Orbit app
+  instance. Orbit instances may only run on nodes with an active `app-dev` or
+  `app-prod` role; a node without either role is not a valid target.
 
 ## Environment and hosting
 
-These terms describe runtime/deployment environments. The app record remains the
-logical identity. The concrete environment is represented by an app instance and
-its driver/placement. Environment fields on the app record describe the logical
-app defaults used when creating an instance.
+These terms describe runtime and deployment environments. The app record
+remains the logical identity. A concrete environment is represented only by an
+app instance and its driver placement.
 
-- **Development app:** App whose owning node carries the `app-dev`
-  role. Hostname uses the development TLD. Workspaces may attach to the app for
-  branch-style isolation.
-- **Production app:** App whose owning node carries the `app-prod` role.
+- **Development app instance:** Orbit instance whose serving node carries the
+  `app-dev` role. Its hostname uses the development TLD. Workspaces may attach
+  to that instance for branch-style isolation.
+- **Production app instance:** Orbit instance whose serving node carries the
+  `app-prod` role.
   Hostname is a public DNS name. Production domains are globally unique across
   the Orbit network and are activated only after DNS verification against the
   selected ingress placement. Public traffic terminates at

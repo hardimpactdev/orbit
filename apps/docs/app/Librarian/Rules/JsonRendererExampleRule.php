@@ -357,6 +357,30 @@ final readonly class JsonRendererExampleRule implements GroupedRule
     private function commandSpecificEntitySchema(string $path, string $entity, string $label): ?array
     {
         if (
+            in_array($path, [
+                'docs/domains/5_app/2_app-register/technical/6.2_app-register_output-render_json.md',
+                'docs/domains/5_app/4_app-show/technical/6.2_app-show_output-render_json.md',
+            ], strict: true)
+            && $entity === 'app'
+            && $label === 'success.data.app'
+        ) {
+            return [
+                'required' => [
+                    'name' => 'string',
+                    'repository' => 'string|null',
+                    'runtime' => 'string',
+                    'runtime_config' => 'object|null',
+                    'php_version' => 'string',
+                    'adopted' => 'bool',
+                    'dependency_audit_status' => 'string',
+                    'dependency_warning_count' => 'int',
+                    'dependency_danger_count' => 'int',
+                    'last_dependency_audit_at' => 'string|null',
+                ],
+            ];
+        }
+
+        if (
             $path === 'docs/domains/5_app/3_app-list/technical/6.2_app-list_output-render_json.md'
             && $entity === 'app'
             && str_starts_with($label, 'success.data.apps[')

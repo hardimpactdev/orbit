@@ -266,9 +266,10 @@ These rules apply to all node commands and define the invariants the family enfo
   service backs Reverb scaling; `database`, `gateway`, and `metrics` have no
   role-assignment settings. `s3` stores `data_path`, which defaults to
   `/srv/orbit/s3/data` and is mounted into the SeaweedFS container as `/data`.
-  `analytics` stores `postgres_node_id` and `clickhouse_node_id`, which point
-  at active `database` role nodes whose managed PostgreSQL and ClickHouse
-  service processes back Plausible CE.
+  `analytics` stores `postgres_node_id`, `postgres_process_id`, and
+  `clickhouse_node_id`. The process ID selects the exact supported PostgreSQL
+  process on the PostgreSQL node; the node IDs point at active `database` role
+  nodes whose managed PostgreSQL and ClickHouse services back Plausible CE.
 - Role add and role update converge synchronously. Failed convergence makes the
   mutating command fail, while leaving the role assignment in `error` for a
   later `doctor --family=node --restore` retry.

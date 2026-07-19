@@ -162,7 +162,8 @@ describe('AppSetupController', function (): void {
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:write');
+            ->assertJsonPath('error.meta.missing_permission', 'app:write')
+            ->assertJsonPath('error.meta.app_instance', 'development');
     });
 
     it('requires a concrete instance when a bare app selector is ambiguous', function (): void {

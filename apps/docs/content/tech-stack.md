@@ -600,6 +600,13 @@ row. V1 does not create per-app bucket credentials, bucket lifecycle commands,
 virtual-hosted bucket routes, wildcard DNS/TLS for bucket hostnames, distributed
 SeaweedFS, or HA guarantees.
 
+Focused S3 E2E coverage lives in the dedicated `apps/e2e` runner. It covers the
+private `s3.orbit` route, credentials output, public ingress publication, and
+SeaweedFS WireGuard-only bind posture through prepared topologies. New S3 E2E
+coverage must keep SeaweedFS on the canonical process runtime substrate and must
+not add role-local Docker Compose, host Caddy, host PHP, PHP-FPM, or Supervisor
+to make object-storage assertions pass. See [Testing](testing/README.md).
+
 ### Analytics runtime
 
 The `analytics` role uses the official Plausible CE 3.2.1 service pairing:
@@ -620,13 +627,6 @@ are injected into the remote Docker specification only during convergence;
 they are not stored in `runtime_config`. Plausible receives authenticated
 PostgreSQL and ClickHouse URLs plus its generated `SECRET_KEY_BASE` through the
 same encrypted process-credential boundary.
-
-Focused S3 E2E coverage lives in the dedicated `apps/e2e` runner. It covers the
-private `s3.orbit` route, credentials output, public ingress publication, and
-SeaweedFS WireGuard-only bind posture through prepared topologies. New S3 E2E
-coverage must keep SeaweedFS on the canonical process runtime substrate and must
-not add role-local Docker Compose, host Caddy, host PHP, PHP-FPM, or Supervisor
-to make object-storage assertions pass. See [Testing](testing/README.md).
 
 ### Metrics runtime
 

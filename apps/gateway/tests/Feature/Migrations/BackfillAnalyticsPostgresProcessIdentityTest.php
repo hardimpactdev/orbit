@@ -41,7 +41,7 @@ it('backfills a legacy analytics assignment with its sole PostgreSQL process ide
         ]);
 });
 
-it('leaves an ambiguous legacy analytics assignment unresolved for a clear runtime failure', function (): void {
+it('stops migration when the existing analytics PostgreSQL process is ambiguous', function (): void {
     $databaseNode = Node::factory()->create();
     $analyticsNode = Node::factory()->create();
 
@@ -66,11 +66,37 @@ it('leaves an ambiguous legacy analytics assignment unresolved for a clear runti
         database_path(
             'migrations/2026_07_19_030000_backfill_analytics_postgres_process_identity.php',
         );
-    $migration->up();
+    expect(fn () => $migration->up())
+        ->toThrow(
+            RuntimeException::class,
+            "analytics_assignment_id={$assignment->id}",
+        );
 
     $storedSettings = DB::table('node_role')
         ->where('id', $assignment->id)
         ->value('settings');
 
     expect((string) $storedSettings)->not->toContain('postgres_process_id');
+});
+
+it('stops migration when the existing analytics PostgreSQL node is missing', function (): void {
+    $analyticsNode = Node::factory()->create();
+    $assignment = NodeRoleAssignment::factory()->for($analyticsNode)->create([
+        'role' => 'analytics',
+        'settings' => [
+            'postgres_node_id' => 999999,
+            'clickhouse_node_id' => 999999,
+        ],
+    ]);
+
+    $migration = require
+        database_path(
+            'migrations/2026_07_19_030000_backfill_analytics_postgres_process_identity.php',
+        );
+
+    expect(fn () => $migration->up())
+        ->toThrow(
+            RuntimeException::class,
+            "analytics_assignment_id={$assignment->id}",
+        );
 });

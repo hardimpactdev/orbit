@@ -58,6 +58,28 @@ function createAppSetupStepTarget(): array
 }
 
 describe('AppSetupStepController', function (): void {
+    it('includes the selected instance when permission is denied', function (): void {
+        [$node] = createAppSetupStepTarget();
+        $caller = createAppSetupStepCallerNode();
+        grantAppSetupStepAccess($caller, $node, ['app:read']);
+
+        $this
+            ->call(
+                'POST',
+                '/api/apps/docs.development/setup-steps',
+                ['command' => 'composer install'],
+                [],
+                [],
+                [
+                    'REMOTE_ADDR' => APP_SETUP_STEP_CALLER_WG_IP,
+                    'CONTENT_TYPE' => 'application/json',
+                ],
+            )
+            ->assertForbidden()
+            ->assertJsonPath('error.meta.missing_permission', 'app:write')
+            ->assertJsonPath('error.meta.app_instance', 'development');
+    });
+
     it('creates app setup steps for authorized callers', function (): void {
         [$node] = createAppSetupStepTarget();
         $caller = createAppSetupStepCallerNode();

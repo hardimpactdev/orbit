@@ -10,7 +10,6 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Builder;
 
 final readonly class AppShowVisibility
@@ -18,7 +17,6 @@ final readonly class AppShowVisibility
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
         private NodeAccessAuthorizer $authorizer,
-        private WorkspacePlacement $workspacePlacement,
     ) {}
 
     public function callerIsGateway(Node $caller): bool
@@ -54,21 +52,6 @@ final readonly class AppShowVisibility
         return $instances;
     }
 
-    public function firstServingNodeName(App $app): ?string
-    {
-        $app->loadMissing('instances');
-
-        foreach ($app->instances as $instance) {
-            $node = $this->instanceNodeName($instance);
-
-            if ($node !== null) {
-                return $node;
-            }
-        }
-
-        return $app->node?->name;
-    }
-
     /**
      * @return list<int>
      */
@@ -100,16 +83,5 @@ final readonly class AppShowVisibility
         $config = $instance->driver_config;
 
         return $config instanceof OrbitAppInstanceDriverConfigData ? $config->node_id : null;
-    }
-
-    private function instanceNodeName(AppInstance $instance): ?string
-    {
-        $config = $instance->driver_config;
-
-        if ($config instanceof OrbitAppInstanceDriverConfigData && is_string($config->node) && $config->node !== '') {
-            return $config->node;
-        }
-
-        return $this->workspacePlacement->nodeForInstance($instance)?->name;
     }
 }

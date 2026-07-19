@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
+use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRuntimeMount;
 use App\Services\Php\PhpRuntimeCatalog;
+use App\Services\Workspaces\WorkspacePlacement;
 use InvalidArgumentException;
 
 final readonly class AppInstancePayloads
 {
     public function __construct(
+        private WorkspacePlacement $workspacePlacement,
         private PhpRuntimeCatalog $phpRuntimeCatalog = new PhpRuntimeCatalog,
         private LaravelCloudRuntimeCompatibility $cloudCompatibility = new LaravelCloudRuntimeCompatibility,
     ) {}
@@ -26,8 +30,7 @@ final readonly class AppInstancePayloads
 
         return [
             'app' => $instance->app->name,
-            'name' => $instance->name,
-            'driver' => $instance->driver->value,
+            ...$this->placement($instance),
             'driver_config' => $instance->driver_config?->toArray() ?? [],
             'runtime' => $this->runtime($instance),
             'worker_enabled' => $instance->worker_enabled,
@@ -35,6 +38,38 @@ final readonly class AppInstancePayloads
             'deploy_warmup_paths' => $instance->deploy_warmup_paths ?? [],
             'latest_deployment_status' => $instance->latest_deployment_status,
             'latest_deployment_run_id' => $instance->latest_deployment_run_id,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function placement(AppInstance $instance): array
+    {
+        $instance->loadMissing('app');
+        $config = $instance->driver_config;
+        $domain = match (true) {
+            $config instanceof OrbitAppInstanceDriverConfigData => $config->domain,
+            $config instanceof LaravelCloudAppInstanceDriverConfigData => $config->domain,
+            default => null,
+        };
+        $host = $config instanceof LaravelCloudAppInstanceDriverConfigData
+            ? $domain
+            : $this->workspacePlacement->instanceUrlHost($instance, $instance->app);
+
+        return [
+            'name' => $instance->name,
+            'driver' => $instance->driver->value,
+            'environment' => $config instanceof LaravelCloudAppInstanceDriverConfigData
+                ? $config->environment_name
+                : $instance->name,
+            'node' => $config instanceof OrbitAppInstanceDriverConfigData
+                ? $config->node ?? $this->workspacePlacement->nodeForInstance($instance)?->name
+                : null,
+            'url' => is_string($host) && $host !== '' ? "https://{$host}" : null,
+            'path' => $config instanceof OrbitAppInstanceDriverConfigData ? $config->path : null,
+            'root' => $config instanceof OrbitAppInstanceDriverConfigData ? $config->document_root : null,
+            'domain' => $domain,
         ];
     }
 

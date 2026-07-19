@@ -16,9 +16,11 @@ use App\Enums\Apps\AppInstanceDriver;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\ProxyRoute;
+use App\Services\Apps\AppInstancePayloads;
 use App\Services\Apps\AppResponsePayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Operations\OperationRunRecorder;
@@ -40,6 +42,7 @@ final class AppStoreController implements Loggable
 
     public function __construct(
         private readonly NodeRoleAssignments $nodeRoleAssignments,
+        private readonly AppInstancePayloads $instancePayloads,
     ) {}
 
     public function __invoke(
@@ -139,7 +142,7 @@ final class AppStoreController implements Loggable
         ]);
 
         $app->setRelation('node', $node);
-        $this->ensureDefaultInstance($app, $node);
+        $instance = $this->ensureDefaultInstance($app, $node);
         $this->activitySubject = $app;
         $warnings = $enactAppRuntime->handle($app);
 
@@ -148,6 +151,7 @@ final class AppStoreController implements Loggable
                 'data' => [
                     'result' => ['action' => 'created'],
                     'app' => $this->appPayload($app),
+                    'instance' => $this->instancePayloads->placement($instance),
                 ],
                 'meta' => ['warnings' => $warnings],
             ],
@@ -242,7 +246,7 @@ final class AppStoreController implements Loggable
                 ]);
 
                 $app->setRelation('node', $node);
-                $this->ensureDefaultInstance($app, $node);
+                $instance = $this->ensureDefaultInstance($app, $node);
                 $this->activitySubject = $app;
                 $events->stepEvent('registry', 'done', 'App registered');
                 $events->stepEvent('runtime', 'running', "Applying runtime for {$app->name}");
@@ -255,10 +259,12 @@ final class AppStoreController implements Loggable
                     'operation_run' => $this->operationRunPayload($operationRuns->succeeded($operationRun->id, 0, [
                         'result' => ['action' => 'created'],
                         'app' => $this->appPayload($app),
+                        'instance' => $this->instancePayloads->placement($instance),
                         'warnings' => $warnings,
                     ])),
                     'result' => ['action' => 'created'],
                     'app' => $this->appPayload($app),
+                    'instance' => $this->instancePayloads->placement($instance),
                     'warnings' => $warnings,
                 ];
 
@@ -287,9 +293,9 @@ final class AppStoreController implements Loggable
         return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
     }
 
-    private function ensureDefaultInstance(App $app, Node $node): void
+    private function ensureDefaultInstance(App $app, Node $node): AppInstance
     {
-        $app->instances()->firstOrCreate(
+        return $app->instances()->updateOrCreate(
             ['name' => $app->environment],
             [
                 'driver' => AppInstanceDriver::Orbit,

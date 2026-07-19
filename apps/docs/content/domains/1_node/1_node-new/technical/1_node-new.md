@@ -211,8 +211,10 @@ Caller-path behavior is split out into:
   stay minimal: `app-prod` assignments store `settings.ingress_node_id`,
   `websocket` assignments store `settings.valkey_node_id`, `s3` assignments
   store `settings.data_path`, and `analytics` assignments store
-  `settings.postgres_node_id` and `settings.clickhouse_node_id`. `database`
-  and `metrics` assignments use empty settings. The
+  `settings.postgres_node_id`, `settings.postgres_process_id`, and
+  `settings.clickhouse_node_id`. `settings.postgres_process_id` must identify
+  one compatible PostgreSQL process owned by `settings.postgres_node_id`.
+  `database` and `metrics` assignments use empty settings. The
   every active node requires the node-level `tld` field, not a role-assignment
   setting. Role features consume that node-level value when they need DNS.
 - `app-prod` placement must be explicit. The command's public and

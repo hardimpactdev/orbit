@@ -81,7 +81,7 @@ describe('DashboardRuntimeInventoryController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.apps.0.name', 'docs')
-            ->assertJsonPath('success.data.apps.0.node', 'app-1')
+            ->assertJsonPath('success.data.apps.0.instances.0.node', 'app-1')
             ->assertJsonPath('success.data.processes.0.name', 'queue')
             ->assertJsonPath('success.data.processes.0.node', 'app-1')
             ->assertJsonPath('success.data.processes.0.app', 'docs')

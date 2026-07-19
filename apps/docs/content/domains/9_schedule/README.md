@@ -9,7 +9,15 @@ database.
 
 The scheduler evaluates due schedules at least once per minute, aligned to wall-clock minute boundaries. Each tick reads every enabled schedule from the gateway database, claims a per-schedule lock, then dispatches each due schedule. Schedules whose target resolves to the gateway run locally; schedules targeting any other node execute on that node through the signed `internal:schedule:run` local-executor command over agent-push.
 
-The schedule payload is authorized and recorded by the gateway, then delivered through the typed local-executor command surface. The result of every run — success, failure, exit code, captured output, dispatch failure — is recorded centrally in `schedule_runs`. Schedule expressions remain minute-resolution; the tick interval is an implementation detail. `orbit schedule:run` performs one such tick on demand and shares its evaluation logic with the daemon.
+User authorization is checked when a caller manages a schedule or manually
+requests a run. Recurring execution is initiated by the gateway and does not
+re-check a user permission. The gateway resolves the persisted target, then
+delivers the schedule payload through the authenticated typed local-executor
+surface. The result of every run — success, failure, exit code, captured
+output, dispatch failure — is recorded centrally in `schedule_runs`. Schedule
+expressions remain minute-resolution; the tick interval is an implementation
+detail. `orbit schedule:run` performs one such tick on demand and shares its
+evaluation logic with the daemon.
 
 ## Domain Rules
 
@@ -107,6 +115,13 @@ node.
 
 Authorization failures use `authorization_failed` with standard
 `missing_permission` metadata.
+
+These checks apply to user-facing add, list, show, remove, logs, and manual run
+requests. Once a request is accepted—or a recurring schedule becomes
+due—the gateway dispatches under gateway implicit authority. Internal
+gateway-to-node authentication protects transport; it is not a second user
+permission check. Moving an app instance changes the serving node resolved at
+execution time and does not reauthorize each stored schedule.
 
 ## Schedule JSON Entity
 

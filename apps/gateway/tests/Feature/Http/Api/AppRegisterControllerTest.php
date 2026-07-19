@@ -127,7 +127,8 @@ describe('AppRegisterController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'adopted')
             ->assertJsonPath('success.data.app.name', 'docs')
-            ->assertJsonPath('success.data.app.node', 'app-1')
+            ->assertJsonPath('success.data.instance.node', 'app-1')
+            ->assertJsonMissingPath('success.data.app.node')
             ->assertJsonPath('success.data.app.runtime', 'php')
             ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'http')
             ->assertJsonMissingPath('success.data.app.worker_enabled')
@@ -188,7 +189,7 @@ describe('AppRegisterController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'adopted')
-            ->assertJsonPath('success.data.app.node', 'dev-1');
+            ->assertJsonPath('success.data.instance.node', 'dev-1');
 
         $denied = $this->call(
             'POST',
@@ -442,8 +443,9 @@ describe('AppRegisterController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'moved')
-            ->assertJsonPath('success.data.app.node', 'new-app')
-            ->assertJsonPath('success.data.app.path', '/srv/docs');
+            ->assertJsonPath('success.data.instance.node', 'new-app')
+            ->assertJsonPath('success.data.instance.path', '/srv/docs')
+            ->assertJsonMissingPath('success.data.app.path');
 
         $app = App::query()->where('name', 'docs')->firstOrFail();
 
@@ -522,7 +524,8 @@ describe('AppRegisterController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'partial')
-            ->assertJsonPath('success.data.app.url', 'https://happie.nmbp')
+            ->assertJsonPath('success.data.instance.url', 'https://happie.nmbp')
+            ->assertJsonMissingPath('success.data.app.url')
             ->assertJsonPath('success.meta.warnings.0.code', 'proxy.enactment_failed')
             ->assertJsonPath('success.meta.warnings.0.node', 'app-1')
             ->assertJsonPath('success.meta.warnings.0.operation', 'runtime_trust_pool.ensure');

@@ -8,7 +8,10 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized to run the selected schedule.
+- A user-facing manual request is authorized once against the selected
+  schedule's persisted target.
+- The resident gateway scheduler executes recurring work through gateway
+  implicit authority and has no historical-user permission check.
 
 ## Signature
 
@@ -32,6 +35,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 `schedule:run` triggers one Orbit Scheduler tick on the gateway: query the gateway database for enabled schedules, evaluate which are due in the current minute, and dispatch them. Dispatch runs locally on the gateway when the target resolves to the gateway, and through the signed `internal:schedule:run` local-executor command over agent-push when the target is any other node. The same logic runs inside the resident `orbit-scheduler` daemon at least once per minute. Operators use `schedule:run` to fire a tick on demand for testing, troubleshooting, or recovery; the daemon's loop is the steady-state path.
 
 When called with a schedule name, `schedule:run [name]` force-runs that one schedule regardless of its interval and records the resulting run.
+
+After a manual request passes its gateway permission check, dispatch uses the
+same gateway-authority path as recurring execution. Internal agent-push
+authentication is transport security and does not re-check the caller's grant.
 
 ### One-Off Execution Rules
 

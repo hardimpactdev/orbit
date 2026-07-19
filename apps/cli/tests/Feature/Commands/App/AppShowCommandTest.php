@@ -44,9 +44,6 @@ describe('app:show', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'app' => [
                 'name' => 'orbit-docs',
-                'node' => 'app-1',
-                'path' => '/srv/orbit-docs',
-                'root' => 'public',
                 'repository' => 'orbit/docs',
                 'php_version' => '8.5',
                 'dependency_audit_status' => 'findings',
@@ -54,9 +51,6 @@ describe('app:show', function (): void {
                 'dependency_danger_count' => 2,
             ],
             'details' => [
-                'domain' => 'orbit-docs.test',
-                'document_root' => '/srv/orbit-docs/public',
-                'node' => ['name' => 'app-1', 'host' => '192.0.2.10'],
                 'instances' => [
                     [
                         'name' => 'development',
@@ -95,10 +89,6 @@ describe('app:show', function (): void {
             ->and($output)
             ->toContain('App: orbit-docs')
             ->and($output)
-            ->toContain('Domain')
-            ->and($output)
-            ->toContain('orbit-docs.test')
-            ->and($output)
             ->toContain('Repository')
             ->and($output)
             ->toContain('NAME')
@@ -130,6 +120,12 @@ describe('app:show', function (): void {
             ->toContain('laravel-cloud')
             ->and($output)
             ->toContain('findings (2 danger, 14 warning)')
+            ->and($output)
+            ->not->toContain('Domain')
+            ->and($output)
+            ->not->toContain('Path')
+            ->and($output)
+            ->not->toContain('Root')
             ->and($output)
             ->not->toContain('app: {');
     });

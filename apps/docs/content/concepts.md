@@ -211,13 +211,13 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **App instance**
 - **App instance driver**
 - **Driver config**
-- **Canonical app instance**
+- **Initial app instance**
 - **App identity slug**
 - **App name argument**
 - **App selector argument**
-- **Default node**
-- **Development app**
-- **Production app**
+- **Orbit instance serving node**
+- **Development app instance**
+- **Production app instance**
 - **App PHP version**
 - **App runtime kind**
 - **App runtime container**

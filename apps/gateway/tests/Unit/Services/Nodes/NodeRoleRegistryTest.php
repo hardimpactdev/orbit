@@ -355,8 +355,21 @@ describe('node role registry', function (): void {
                 'postgres_node_id' => 12,
                 'postgres_process_id' => $processId,
                 'clickhouse_node_id' => 13,
-            ]))->toThrow(InvalidArgumentException::class, 'The analytics role requires a valid postgres_process_id when that setting is present.');
+            ]))->toThrow(InvalidArgumentException::class, 'The analytics role requires a valid postgres_process_id.');
     })->with([null, 0, -1, '120']);
+
+    it('rejects analytics settings without a PostgreSQL process identity', function (): void {
+        expect(fn () => new NodeRoleRegistry()
+            ->definition('analytics')
+            ->settingsFromArray([
+                'postgres_node_id' => 12,
+                'clickhouse_node_id' => 13,
+            ]))
+            ->toThrow(
+                InvalidArgumentException::class,
+                'The analytics role requires a valid postgres_process_id.',
+            );
+    });
 
     it('hydrates empty settings dtos for roles without settings', function (string $role, string $class): void {
         $settings = new NodeRoleRegistry()

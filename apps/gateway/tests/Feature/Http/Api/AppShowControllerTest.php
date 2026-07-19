@@ -95,32 +95,35 @@ describe('AppShowController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.app.name', 'docs')
-            ->assertJsonPath('success.data.app.node', 'app-1')
-            ->assertJsonPath('success.data.app.url', 'https://docs.example.com')
             ->assertJsonPath('success.data.app.runtime', 'php')
             ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'http')
             ->assertJsonPath('success.data.app.dependency_audit_status', 'unknown')
             ->assertJsonPath('success.data.app.dependency_warning_count', 0)
             ->assertJsonPath('success.data.app.dependency_danger_count', 0)
             ->assertJsonPath('success.data.app.last_dependency_audit_at', null)
-            ->assertJsonPath('success.data.details.domain', 'docs.example.com')
-            ->assertJsonPath('success.data.details.document_root', '/srv/docs/public')
-            ->assertJsonPath('success.data.details.node.name', 'app-1')
-            ->assertJsonPath('success.data.details.node.host', '10.6.0.7')
             ->assertJsonPath('success.data.details.dependency_audits', [])
             ->assertJsonPath('success.data.details.instances.0.name', 'development')
             ->assertJsonPath('success.data.details.instances.0.driver', 'orbit')
             ->assertJsonPath('success.data.details.instances.0.node', 'app-1')
             ->assertJsonPath('success.data.details.instances.0.url', 'https://docs.example.com')
+            ->assertJsonPath('success.data.details.instances.0.path', '/srv/docs')
+            ->assertJsonPath('success.data.details.instances.0.root', 'public')
+            ->assertJsonPath('success.data.details.instances.0.domain', 'docs.example.com')
             ->assertJsonPath('success.data.details.instances.0.workspaces.0.name', 'feature-docs')
             ->assertJsonPath(
                 'success.data.details.instances.0.workspaces.0.url',
                 'https://feature-docs.docs.example.com',
             )
-            ->assertJsonPath('success.data.details.workspaces.0.name', 'feature-docs')
-            ->assertJsonPath('success.data.details.workspaces.0.app_instance', 'development')
             ->assertJsonPath('success.data.details.processes', [])
-            ->assertJsonPath('success.data.details.routes.0.host', 'docs.example.com');
+            ->assertJsonPath('success.data.details.routes.0.host', 'docs.example.com')
+            ->assertJsonMissingPath('success.data.app.node')
+            ->assertJsonMissingPath('success.data.app.url')
+            ->assertJsonMissingPath('success.data.app.path')
+            ->assertJsonMissingPath('success.data.app.root')
+            ->assertJsonMissingPath('success.data.details.domain')
+            ->assertJsonMissingPath('success.data.details.document_root')
+            ->assertJsonMissingPath('success.data.details.node')
+            ->assertJsonMissingPath('success.data.details.workspaces');
     });
 
     it('returns dependency audit posture details by app name', function (): void {
@@ -262,7 +265,7 @@ describe('AppShowController', function (): void {
                 'success.data.details.instances.0.workspaces.0.url',
                 'https://visible-workspace.docs.visible',
             )
-            ->assertJsonCount(1, 'success.data.details.workspaces')
+            ->assertJsonMissingPath('success.data.details.workspaces')
             ->assertJsonMissing(['name' => 'production'])
             ->assertJsonMissing(['name' => 'hidden-workspace']);
     });
@@ -282,7 +285,7 @@ describe('AppShowController', function (): void {
             ->call('GET', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP])
             ->assertOk()
             ->assertJsonPath('success.data.details.instances.0.workspaces', [])
-            ->assertJsonPath('success.data.details.workspaces', []);
+            ->assertJsonMissingPath('success.data.details.workspaces');
 
         $caller->roleAssignments()->delete();
         NodeRoleAssignment::factory()->create([
@@ -302,7 +305,7 @@ describe('AppShowController', function (): void {
             ->call('GET', '/api/apps/shop', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP])
             ->assertOk()
             ->assertJsonPath('success.data.details.instances.0.workspaces', [])
-            ->assertJsonPath('success.data.details.workspaces', []);
+            ->assertJsonMissingPath('success.data.details.workspaces');
     });
 
     it('lets gateway callers inspect external instances with configured URLs', function (): void {
@@ -336,6 +339,25 @@ describe('AppShowController', function (): void {
             ->assertJsonPath('success.data.details.instances.0.driver', 'laravel-cloud')
             ->assertJsonPath('success.data.details.instances.0.node', null)
             ->assertJsonPath('success.data.details.instances.0.url', 'https://docs.example.com');
+    });
+
+    it('lets gateway callers resolve external instances by hostname', function (): void {
+        createAppShowCallerNode(role: 'gateway');
+        $app = App::factory()->create(['name' => 'docs']);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver' => AppInstanceDriver::LaravelCloud,
+            'driver_config' => new LaravelCloudAppInstanceDriverConfigData(
+                application_name: 'docs',
+                environment_name: 'production',
+                domain: 'docs.example.com',
+            ),
+        ]);
+
+        $this
+            ->call('GET', '/api/apps/docs.example.com', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP])
+            ->assertOk()
+            ->assertJsonPath('success.data.app.name', 'docs');
     });
 
     it('resolves by hostname when no app name matches', function (): void {
@@ -405,7 +427,7 @@ describe('AppShowController', function (): void {
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:read')
-            ->assertJsonPath('error.meta.serving_node', $node->name);
+            ->assertJsonMissingPath('error.meta.serving_node');
     });
 
     it('authorizes hostname selectors against the owning node', function (): void {
@@ -432,7 +454,7 @@ describe('AppShowController', function (): void {
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:read')
-            ->assertJsonPath('error.meta.serving_node', $node->name);
+            ->assertJsonMissingPath('error.meta.serving_node');
     });
 
     it('lets an app role node show only its own app registry rows through its self grant', function (): void {
@@ -464,7 +486,7 @@ describe('AppShowController', function (): void {
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:read')
-            ->assertJsonPath('error.meta.serving_node', $otherNode->name);
+            ->assertJsonMissingPath('error.meta.serving_node');
     });
 
     it('returns not found for absent apps', function (): void {

@@ -6,11 +6,14 @@ namespace App\Services\Dashboard;
 
 use App\Enums\Nodes\NodeStatus;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Apps\AppInstancePayloads;
 use App\Services\Apps\AppResponsePayload;
+use App\Services\Apps\AppShowVisibility;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -23,6 +26,8 @@ final readonly class RuntimeInventoryPayload
         private NodeRoleAssignments $nodeRoleAssignments,
         private NodeAccessAuthorizer $authorizer,
         private AppResponsePayload $appPayload,
+        private AppInstancePayloads $instancePayloads,
+        private AppShowVisibility $appVisibility,
         private ToolPayloadMapper $toolPayload,
     ) {}
 
@@ -38,12 +43,7 @@ final readonly class RuntimeInventoryPayload
     {
         return [
             'nodes' => $this->nodePayloads($this->fetchNodes()),
-            'apps' => array_values(
-                $this
-                    ->fetchApps($caller)
-                    ->map(fn (App $app): array => $this->appPayload->forApp($app))
-                    ->all(),
-            ),
+            'apps' => $this->appPayloads($caller),
             'processes' => $this->processPayloads($this->fetchProcesses($caller)),
             'tools' => array_values(
                 $this
@@ -77,28 +77,35 @@ final readonly class RuntimeInventoryPayload
      */
     private function fetchApps(Node $caller): Collection
     {
-        $visibleNodeIds = $this->visibleNodeIds(
-            $caller,
-            'app:read',
-            $this->nodeRoleAssignments->activeAppHostNodeIds(),
-        );
-
-        $query = App::query()->with(['node', 'dependencyAuditSummaries']);
-
-        if ($visibleNodeIds !== null) {
-            $query->whereIn('node_id', $visibleNodeIds);
-        }
-
-        $apps = $query
+        $apps = App::query()
+            ->with(['instances', 'dependencyAuditSummaries'])
             ->get()
-            ->sortBy(static fn (App $app): array => [
-                mb_strtolower((string) $app->node?->name),
-                mb_strtolower($app->name),
-            ])
+            ->filter(fn (App $app): bool => $this->appVisibility->visibleInstances($app, $caller) !== [])
+            ->sortBy(static fn (App $app): string => mb_strtolower($app->name))
             ->values();
 
         /** @var Collection<int, App> $apps */
         return $apps;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function appPayloads(Node $caller): array
+    {
+        return array_values(
+            $this->fetchApps($caller)->map(function (App $app) use ($caller): array {
+                $instances = array_map(
+                    fn (AppInstance $instance): array => $this->instancePayloads->placement($instance),
+                    $this->appVisibility->visibleInstances($app, $caller),
+                );
+
+                return [
+                    ...$this->appPayload->forApp($app),
+                    'instances' => $instances,
+                ];
+            })->all(),
+        );
     }
 
     /**

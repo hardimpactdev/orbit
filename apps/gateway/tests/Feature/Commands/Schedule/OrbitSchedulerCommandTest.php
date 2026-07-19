@@ -71,10 +71,11 @@ it('renders scheduler repair through the gateway Swarm scheduler service instead
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'docker restart'));
 });
 
-it('dispatches due app schedules from the gateway and records run history centrally', function (): void {
+it('dispatches due app schedules with gateway authority on the instance current serving node', function (): void {
     $gateway = createOrbitSchedulerGatewayNode();
     $logicalDefaultNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
-    $instanceNode = createOrbitSchedulerAppHostNode(['name' => 'app-2']);
+    $originalInstanceNode = createOrbitSchedulerAppHostNode(['name' => 'app-2']);
+    $currentInstanceNode = createOrbitSchedulerAppHostNode(['name' => 'app-3']);
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $logicalDefaultNode->id,
@@ -84,8 +85,8 @@ it('dispatches due app schedules from the gateway and records run history centra
         'name' => 'production',
         'driver' => AppInstanceDriver::Orbit,
         'driver_config' => new OrbitAppInstanceDriverConfigData(
-            node_id: $instanceNode->id,
-            node: $instanceNode->name,
+            node_id: $originalInstanceNode->id,
+            node: $originalInstanceNode->name,
             path: '/srv/docs-production',
             document_root: 'public',
         ),
@@ -98,6 +99,14 @@ it('dispatches due app schedules from the gateway and records run history centra
             'execution_value' => 'php artisan schedule:run',
             'interval' => 'every minute',
         ]);
+    $instance->update([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $currentInstanceNode->id,
+            node: $currentInstanceNode->name,
+            path: '/srv/docs-production',
+            document_root: 'public',
+        ),
+    ]);
     $localExecutor = new OrbitSchedulerRecordingInternalExecutor([
         OrbitSchedulerRecordingInternalExecutor::result(stdout: "ran\n", durationMs: 25),
     ]);
@@ -114,7 +123,7 @@ it('dispatches due app schedules from the gateway and records run history centra
         ->and($result->executedSchedules)
         ->toBe(1)
         ->and($localExecutor->nodes)
-        ->toBe(['app-2'])
+        ->toBe(['app-3'])
         ->and($localExecutor->commands)
         ->toBe([InternalCommand::ScheduleRun->value])
         ->and($localExecutor->transportOptions[0]['timeout'])
@@ -132,7 +141,7 @@ it('dispatches due app schedules from the gateway and records run history centra
         ->and($payload['timeout'] ?? null)
         ->toBe(900)
         ->and($run->node_id)
-        ->toBe($instanceNode->id)
+        ->toBe($currentInstanceNode->id)
         ->and($run->schedule_key)
         ->toBe('app:docs.production:laravel-scheduler')
         ->and($run->status)

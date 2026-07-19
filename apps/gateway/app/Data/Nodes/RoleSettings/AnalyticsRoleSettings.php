@@ -10,12 +10,12 @@ final readonly class AnalyticsRoleSettings implements NodeRoleSettings
 {
     public function __construct(
         public int $postgresNodeId,
-        public ?int $postgresProcessId,
+        public int $postgresProcessId,
         public int $clickhouseNodeId,
     ) {
-        if ($postgresNodeId < 1 || $clickhouseNodeId < 1) {
+        if ($postgresNodeId < 1 || $postgresProcessId < 1 || $clickhouseNodeId < 1) {
             throw new InvalidArgumentException(
-                'The analytics role requires valid postgres_node_id and clickhouse_node_id settings.',
+                'The analytics role requires valid postgres_node_id, postgres_process_id, and clickhouse_node_id settings.',
             );
         }
     }
@@ -38,25 +38,26 @@ final readonly class AnalyticsRoleSettings implements NodeRoleSettings
         $clickhouseNodeId = $settings['clickhouse_node_id'] ?? null;
         $postgresProcessId = $settings['postgres_process_id'] ?? null;
 
-        if (! is_int($postgresNodeId) || ! is_int($clickhouseNodeId)) {
+        if (
+            ! is_int($postgresNodeId)
+            || $postgresNodeId < 1
+            || ! is_int($clickhouseNodeId)
+            || $clickhouseNodeId < 1
+        ) {
             throw new InvalidArgumentException(
                 'The analytics role requires valid postgres_node_id and clickhouse_node_id settings.',
             );
         }
 
-        if (
-            array_key_exists('postgres_process_id', $settings)
-            && (! is_int($postgresProcessId)
-            || $postgresProcessId < 1)
-        ) {
+        if (! is_int($postgresProcessId) || $postgresProcessId < 1) {
             throw new InvalidArgumentException(
-                'The analytics role requires a valid postgres_process_id when that setting is present.',
+                'The analytics role requires a valid postgres_process_id.',
             );
         }
 
         return new self(
             postgresNodeId: $postgresNodeId,
-            postgresProcessId: is_int($postgresProcessId) ? $postgresProcessId : null,
+            postgresProcessId: $postgresProcessId,
             clickhouseNodeId: $clickhouseNodeId,
         );
     }
@@ -66,7 +67,7 @@ final readonly class AnalyticsRoleSettings implements NodeRoleSettings
     {
         return [
             'postgres_node_id' => $this->postgresNodeId,
-            ...($this->postgresProcessId !== null ? ['postgres_process_id' => $this->postgresProcessId] : []),
+            'postgres_process_id' => $this->postgresProcessId,
             'clickhouse_node_id' => $this->clickhouseNodeId,
         ];
     }

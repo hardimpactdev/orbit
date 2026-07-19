@@ -103,11 +103,8 @@ final class AppShowCommand extends GatewayCommand
         $placements = app(AppShowPlacementRows::class);
 
         $this->renderShowDetails("App: {$name}", [
-            'Domain' => $this->domainLabel($app, $details),
             'Repository' => $app['repository'] ?? null,
             'PHP' => $app['php_version'] ?? null,
-            'Path' => $app['path'] ?? null,
-            'Root' => $details['document_root'] ?? $app['root'] ?? null,
             'Processes' => $this->nameLabels($details['processes'] ?? []),
             'Routes' => $this->routeLabels($details['routes'] ?? []),
             'App deps' => $placements->dependencyLabel($app),
@@ -122,22 +119,6 @@ final class AppShowCommand extends GatewayCommand
         }
 
         table(headers: ['NAME', 'DRIVER', 'NODE', 'URL', 'APP DEPS'], rows: $rows);
-    }
-
-    /**
-     * @param  array<string, mixed>  $app
-     * @param  array<string, mixed>  $details
-     */
-    private function domainLabel(array $app, array $details): ?string
-    {
-        if (is_string($details['domain'] ?? null) && $details['domain'] !== '') {
-            return $details['domain'];
-        }
-
-        $url = is_string($app['url'] ?? null) ? $app['url'] : null;
-        $host = $url === null ? null : parse_url($url, PHP_URL_HOST);
-
-        return is_string($host) && $host !== '' ? $host : $url;
     }
 
     /**

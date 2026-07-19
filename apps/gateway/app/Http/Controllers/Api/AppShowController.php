@@ -11,6 +11,7 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Services\Apps\AppAgentIdeDefaults;
+use App\Services\Apps\AppInstancePayloads;
 use App\Services\Apps\AppResponsePayload;
 use App\Services\Apps\AppShowPlacementPayload;
 use App\Services\Apps\AppShowVisibility;
@@ -27,6 +28,7 @@ final class AppShowController implements Loggable
     public function __construct(
         private readonly AppShowVisibility $visibility,
         private readonly AppShowPlacementPayload $placementPayload,
+        private readonly AppInstancePayloads $instancePayloads,
     ) {}
 
     public function __invoke(Request $request, string $app): JsonResponse
@@ -58,20 +60,12 @@ final class AppShowController implements Loggable
         $instances = $this->visibility->visibleInstances($model, $caller);
 
         if (! $callerIsGateway && $instances === []) {
-            $servingNode = $this->visibility->firstServingNodeName($model);
-
             return $this->authorizationFailed(
-                $servingNode === null
-                    ? 'This node is not authorized to read this app.'
-                    : "This node is not authorized for 'app:read' on '{$servingNode}'.",
-                array_filter(
-                    [
-                        'reason' => 'missing_permission',
-                        'missing_permission' => 'app:read',
-                        'serving_node' => $servingNode,
-                    ],
-                    static fn (mixed $value): bool => $value !== null,
-                ),
+                'This node is not authorized to read this app.',
+                [
+                    'reason' => 'missing_permission',
+                    'missing_permission' => 'app:read',
+                ],
             );
         }
 
@@ -91,7 +85,7 @@ final class AppShowController implements Loggable
 
     private function resolveApp(string $selector): ?App
     {
-        $baseQuery = App::query()->with('node');
+        $baseQuery = App::query()->with('instances');
 
         $nameMatch = (clone $baseQuery)->where('name', $selector)->first();
 
@@ -99,7 +93,29 @@ final class AppShowController implements Loggable
             return $nameMatch;
         }
 
-        return $baseQuery->where('domain', $selector)->first();
+        $matches = $baseQuery
+            ->get()
+            ->filter(function (App $app) use ($selector): bool {
+                foreach ($app->instances as $instance) {
+                    if (! $instance instanceof AppInstance) {
+                        continue;
+                    }
+
+                    $placement = $this->instancePayloads->placement($instance);
+                    $host = parse_url((string) ($placement['url'] ?? ''), PHP_URL_HOST);
+
+                    if (($placement['domain'] ?? null) === $selector || $host === $selector) {
+                        return true;
+                    }
+                }
+
+                return false;
+            })
+            ->values();
+
+        $match = $matches->first();
+
+        return $matches->count() === 1 && $match instanceof App ? $match : null;
     }
 
     /**
@@ -161,24 +177,11 @@ final class AppShowController implements Loggable
         }
 
         return [
-            'domain' => $this->domain($app),
-            'document_root' => $app->documentRootPath(),
-            'node' => [
-                'name' => $app->node?->name,
-                'host' => $app->node?->host,
-            ],
             'agent_ide' => $this->agentIdePayload($app),
             'dependency_audits' => app(AppDependencyAuditAggregatePayload::class)->managerDetailsFor($app),
             'instances' => $placements['instances'],
-            'workspaces' => $placements['workspaces'],
             'processes' => $processes,
-            'routes' => [
-                [
-                    'host' => $this->domain($app),
-                    'kind' => 'app',
-                    'owner' => 'app',
-                ],
-            ],
+            'routes' => $this->routes($placements['instances']),
         ];
     }
 
@@ -196,15 +199,35 @@ final class AppShowController implements Loggable
         ], 403);
     }
 
-    private function domain(App $app): ?string
+    /**
+     * @param  list<array<string, mixed>>  $instances
+     * @return list<array{host: string, kind: string, owner: string}>
+     */
+    private function routes(array $instances): array
     {
-        if (is_string($app->domain) && $app->domain !== '') {
-            return $app->domain;
+        $routes = [];
+
+        foreach ($instances as $instance) {
+            $host = $instance['domain'] ?? null;
+
+            if (! is_string($host) || $host === '') {
+                $host = parse_url((string) ($instance['url'] ?? ''), PHP_URL_HOST);
+            }
+
+            if (! is_string($host) || $host === '') {
+                continue;
+            }
+
+            $routes[$host] = [
+                'host' => $host,
+                'kind' => 'app',
+                'owner' => 'app-instance',
+            ];
         }
 
-        $host = parse_url($app->url(), PHP_URL_HOST);
+        ksort($routes);
 
-        return is_string($host) ? $host : null;
+        return array_values($routes);
     }
 
     /**

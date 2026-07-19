@@ -212,7 +212,7 @@ not transfer ownership to the role.
 | `websocket` | `valkey_node_id` | — |
 | `s3` | `data_path` | — |
 | `metrics` | — | — |
-| `analytics` | `postgres_node_id`, `clickhouse_node_id` | — |
+| `analytics` | `postgres_node_id`, `postgres_process_id`, `clickhouse_node_id` | — |
 
 A node can hold at most one `tld` value at a time. Roles that depend on `tld`
 read and consume the same node-level field; only node-owned command paths write
@@ -245,9 +245,12 @@ that Valkey service but does not install or own Valkey.
 the SeaweedFS container as `/data` and is role-owned persistent data. Removing the
 role without `--purge-data` must not delete this path.
 
-`postgres_node_id` and `clickhouse_node_id` reference active `database` role
-nodes whose managed PostgreSQL and ClickHouse service processes back
-Plausible CE. The two references may point at the same database role node. They
+`postgres_node_id` and `clickhouse_node_id` reference active `database`
+role nodes whose managed PostgreSQL and ClickHouse service processes back
+Plausible CE. `postgres_process_id` identifies the single managed PostgreSQL
+process consumed by Plausible. It must belong to `postgres_node_id`, carry the
+supported PostgreSQL version family, and resolve unambiguously before role
+convergence. The node references may point at the same database role node and
 may point at the analytics node only when that node also has an active
 `database` role. The analytics role uses those service processes but does not
 install or own PostgreSQL or ClickHouse itself.

@@ -86,8 +86,10 @@ describe('AppStore node role eligibility', function (): void {
             ['REMOTE_ADDR' => APP_STORE_ROLE_CALLER_WG_IP],
         );
 
-        $response->assertOk()
-            ->assertJsonPath('success.data.app.node', $target->name);
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.instance.node', $target->name)
+            ->assertJsonMissingPath('success.data.app.node');
 
         expect(App::query()->where('name', 'docs')->exists())
             ->toBeTrue()
@@ -130,8 +132,10 @@ describe('AppStore node role eligibility', function (): void {
             ['REMOTE_ADDR' => APP_STORE_ROLE_CALLER_WG_IP],
         );
 
-        $response->assertOk()
-            ->assertJsonPath('success.data.app.url', 'https://docs.example.com');
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.instance.url', 'https://docs.example.com')
+            ->assertJsonMissingPath('success.data.app.url');
 
         expect(App::query()->where('name', 'docs')->value('environment'))->toBe('production');
     });

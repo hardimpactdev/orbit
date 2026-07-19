@@ -203,7 +203,7 @@ final class AppSetupController implements Loggable
         $authorization = $this->authorizer->authorize($caller, $node, 'app:write');
 
         if (! $authorization->allowed) {
-            return $this->forbidden($node, $authorization, 'app:write');
+            return $this->forbidden($node, $instance, $authorization, 'app:write');
         }
 
         return [
@@ -259,14 +259,19 @@ final class AppSetupController implements Loggable
         return $this->error('authorization_failed', $message, empty($meta) ? [] : $meta, 403);
     }
 
-    private function forbidden(Node $servingNode, AuthorizationResult $result, string $permission): JsonResponse
-    {
+    private function forbidden(
+        Node $servingNode,
+        AppInstance $instance,
+        AuthorizationResult $result,
+        string $permission,
+    ): JsonResponse {
         return $this->authorizationFailed(
             "This node is not authorized for '{$permission}' on '{$servingNode->name}'.",
             [
                 'reason' => $result->reason,
                 'missing_permission' => $result->missingPermission,
                 'serving_node' => $servingNode->name,
+                'app_instance' => $instance->name,
             ],
         );
     }

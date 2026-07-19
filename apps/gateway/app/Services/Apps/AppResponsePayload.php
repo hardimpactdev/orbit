@@ -19,15 +19,11 @@ final readonly class AppResponsePayload
      */
     public function forApp(App $app): array
     {
-        $app->loadMissing(['node', 'dependencyAuditSummaries']);
+        $app->loadMissing('dependencyAuditSummaries');
         $runtime = $app->runtimeKind();
 
         return [
             'name' => $app->name,
-            'node' => $app->node?->name,
-            'url' => $app->url(),
-            'path' => $app->path,
-            'root' => $app->document_root,
             'repository' => $app->repository,
             'runtime' => $runtime->value,
             'runtime_config' => $runtime === AppRuntimeKind::Php ? $app->runtimeConfig()->toArray() : null,

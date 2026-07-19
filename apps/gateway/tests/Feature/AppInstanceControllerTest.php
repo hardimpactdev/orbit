@@ -7,6 +7,7 @@ use App\Enums\Apps\AppInstanceDriver;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -17,11 +18,19 @@ const APP_INSTANCE_API_CALLER_WG_IP = '10.6.0.117';
 
 function createAppInstanceApiCaller(): Node
 {
-    return Node::factory()->create([
+    $caller = Node::factory()->create([
         'name' => 'instance-caller',
         'host' => APP_INSTANCE_API_CALLER_WG_IP,
         'wireguard_address' => APP_INSTANCE_API_CALLER_WG_IP,
     ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $caller->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    return $caller;
 }
 
 /**
@@ -200,7 +209,7 @@ describe('AppInstanceController', function (): void {
         $caller = createAppInstanceApiCaller();
         $devNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
         $prodNode = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
-        grantAppInstanceApiAccess($caller, $devNode);
+        grantAppInstanceApiAccess($caller, $prodNode);
         $app = App::factory()->for($devNode, 'node')->create(['name' => 'billing']);
 
         $created = appInstanceApiJson('POST', '/api/apps/billing/instances', [
