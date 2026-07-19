@@ -1221,6 +1221,16 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
         E2EGatewayApi::seedOperatorIdentity($gateway, self::OperatorWireGuardIp, $config->operatorUser);
 
+        if ($sourceMountedCheckout) {
+            $this->runGatewayArtisan(
+                $gateway,
+                $sshKeyPair,
+                'orbit:internal:converge-vpn-dns-runtime gateway',
+                true,
+                timeoutSeconds: 240,
+            );
+        }
+
         $this->retargetOperator($operator, $config, $sshKeyPair, $sourceMountedCheckout);
 
         if ($beforeDownstreamBake !== null) {

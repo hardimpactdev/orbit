@@ -470,17 +470,25 @@ it('starts the gateway api before acquisition retarget bakes downstream roles', 
     $joined = implode("\n", $commands());
     $gatewayApiStart = strpos($joined, 'orbit-gateway-e2e-topology-lease-http');
     $sourceMountedLauncher = strpos($joined, '/home/orbit/.local/bin/orbit');
+    $dnsLayoutConvergence = strpos(
+        haystack: $joined,
+        needle: 'orbit:internal:converge-vpn-dns-runtime gateway',
+    );
     $downstreamBake = strpos($joined, 'orbit:internal:bake-app-node app-dev-1');
 
     expect($gatewayApiStart)
         ->toBeInt()
         ->and($sourceMountedLauncher)
         ->toBeInt()
+        ->and($dnsLayoutConvergence)
+        ->toBeInt()
         ->and($downstreamBake)
         ->toBeInt()
         ->and($gatewayApiStart)
         ->toBeLessThan($downstreamBake)
         ->and($sourceMountedLauncher)
+        ->toBeLessThan($downstreamBake)
+        ->and($dnsLayoutConvergence)
         ->toBeLessThan($downstreamBake)
         ->and($joined)
         ->toContain('/home/orbit/orbit/bin/orbit');
