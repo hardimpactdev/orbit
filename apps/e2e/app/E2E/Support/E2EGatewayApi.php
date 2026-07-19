@@ -14,6 +14,8 @@ final readonly class E2EGatewayApi
 
     private const string GatewayContainerOrbitCliPath = '/usr/local/bin/orbit-cli';
 
+    private const string SourceMountedGatewayContainerOrbitCliPath = '/opt/orbit/apps/cli/orbit';
+
     private const string GatewayWireGuardHttpUrl = 'http://10.6.0.2';
 
     private const string WgEasyStatePath = '/home/orbit/.wg-easy';
@@ -150,6 +152,7 @@ final readonly class E2EGatewayApi
             self::dockerGatewayStateBootstrapCommand(),
             self::sudoRepairGatewayConfigRootOwnershipCommand(),
             self::appKeyCommand(self::gatewayStatePath('.env')),
+            self::sourceMountedGatewayLocalExecutorCommand(),
             'php apps/gateway/artisan migrate --force --no-interaction --ansi',
         ]);
     }
@@ -2296,6 +2299,25 @@ final readonly class E2EGatewayApi
             "(grep -Eq '^APP_KEY=base64:.+' {$envPath} || php apps/gateway/artisan key:generate --force --no-interaction)",
             "grep -Eq '^APP_KEY=base64:.+' {$envPath}",
         ]);
+    }
+
+    private static function sourceMountedGatewayLocalExecutorCommand(): string
+    {
+        $environmentPath = escapeshellarg(self::gatewayStatePath('.env'));
+        $environmentLine = escapeshellarg(
+            'ORBIT_LOCAL_EXECUTOR_BINARY='.self::SourceMountedGatewayContainerOrbitCliPath,
+        );
+
+        return sprintf(
+            "(grep -q '^ORBIT_LOCAL_EXECUTOR_BINARY=' %1\$s && sed -i %2\$s %1\$s || printf '%%s\\n' %3\$s >> %1\$s)",
+            $environmentPath,
+            escapeshellarg(
+                's|^ORBIT_LOCAL_EXECUTOR_BINARY=.*|ORBIT_LOCAL_EXECUTOR_BINARY='
+                .self::SourceMountedGatewayContainerOrbitCliPath
+                .'|',
+            ),
+            $environmentLine,
+        );
     }
 
     private static function stopServerShellScript(): string

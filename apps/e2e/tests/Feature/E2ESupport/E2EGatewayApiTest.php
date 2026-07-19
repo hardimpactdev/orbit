@@ -9,6 +9,15 @@ use App\E2E\Support\SshKeyPair;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 
+it('routes source-mounted gateway-local actions through the candidate orbit cli', function (): void {
+    $command = E2EGatewayApi::sourceMountedGatewayStateCommand();
+
+    expect($command)
+        ->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/opt/orbit/apps/cli/orbit')
+        ->and(strpos(haystack: $command, needle: 'ORBIT_LOCAL_EXECUTOR_BINARY=/opt/orbit/apps/cli/orbit'))
+        ->toBeLessThan(strpos(haystack: $command, needle: 'php apps/gateway/artisan migrate'));
+});
+
 it('binds the source-mounted checkout orbit cli into retained incus gateway shims', function (): void {
     $gateway = new class implements E2EInstance, SourceMountedCheckoutInstance {
         /** @var list<string> */
