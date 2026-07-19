@@ -121,12 +121,9 @@ describe('app:show', function (): void {
             ->and($output)
             ->toContain('findings (2 danger, 14 warning)')
             ->and($output)
-            ->not->toContain('Domain')
-            ->and($output)
-            ->not->toContain('Path')
-            ->and($output)
-            ->not->toContain('Root')
-            ->and($output)
+            ->not->toContain('Domain')->and($output)
+            ->not->toContain('Path')->and($output)
+            ->not->toContain('Root')->and($output)
             ->not->toContain('app: {');
     });
 

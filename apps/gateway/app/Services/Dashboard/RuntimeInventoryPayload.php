@@ -6,7 +6,6 @@ namespace App\Services\Dashboard;
 
 use App\Enums\Nodes\NodeStatus;
 use App\Models\App;
-use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Process;
@@ -26,7 +25,6 @@ final readonly class RuntimeInventoryPayload
         private NodeRoleAssignments $nodeRoleAssignments,
         private NodeAccessAuthorizer $authorizer,
         private AppResponsePayload $appPayload,
-        private AppInstancePayloads $instancePayloads,
         private AppShowVisibility $appVisibility,
         private ToolPayloadMapper $toolPayload,
     ) {}
@@ -77,15 +75,19 @@ final readonly class RuntimeInventoryPayload
      */
     private function fetchApps(Node $caller): Collection
     {
+        /** @var Collection<int, App> $apps */
         $apps = App::query()
             ->with(['instances', 'dependencyAuditSummaries'])
-            ->get()
+            ->get();
+
+        /** @mago-expect lint:inline-variable-return */
+        $visibleApps = $apps
             ->filter(fn (App $app): bool => $this->appVisibility->visibleInstances($app, $caller) !== [])
             ->sortBy(static fn (App $app): string => mb_strtolower($app->name))
             ->values();
 
-        /** @var Collection<int, App> $apps */
-        return $apps;
+        /** @var Collection<int, App> $visibleApps */
+        return $visibleApps;
     }
 
     /**
@@ -93,10 +95,12 @@ final readonly class RuntimeInventoryPayload
      */
     private function appPayloads(Node $caller): array
     {
+        $instancePayloads = app(AppInstancePayloads::class);
+
         return array_values(
-            $this->fetchApps($caller)->map(function (App $app) use ($caller): array {
+            $this->fetchApps($caller)->map(function (App $app) use ($caller, $instancePayloads): array {
                 $instances = array_map(
-                    fn (AppInstance $instance): array => $this->instancePayloads->placement($instance),
+                    $instancePayloads->placement(...),
                     $this->appVisibility->visibleInstances($app, $caller),
                 );
 

@@ -34,31 +34,30 @@ final readonly class AnalyticsRoleSettings implements NodeRoleSettings
             throw new InvalidArgumentException('The analytics role does not accept unknown settings.');
         }
 
-        $postgresNodeId = $settings['postgres_node_id'] ?? null;
-        $clickhouseNodeId = $settings['clickhouse_node_id'] ?? null;
-        $postgresProcessId = $settings['postgres_process_id'] ?? null;
-
         if (
-            ! is_int($postgresNodeId)
-            || $postgresNodeId < 1
-            || ! is_int($clickhouseNodeId)
-            || $clickhouseNodeId < 1
+            ! is_int($settings['postgres_node_id'] ?? null)
+            || $settings['postgres_node_id'] < 1
+            || ! is_int($settings['clickhouse_node_id'] ?? null)
+            || $settings['clickhouse_node_id'] < 1
         ) {
             throw new InvalidArgumentException(
                 'The analytics role requires valid postgres_node_id and clickhouse_node_id settings.',
             );
         }
 
-        if (! is_int($postgresProcessId) || $postgresProcessId < 1) {
+        if (
+            ! is_int($settings['postgres_process_id'] ?? null)
+            || $settings['postgres_process_id'] < 1
+        ) {
             throw new InvalidArgumentException(
                 'The analytics role requires a valid postgres_process_id.',
             );
         }
 
         return new self(
-            postgresNodeId: $postgresNodeId,
-            postgresProcessId: $postgresProcessId,
-            clickhouseNodeId: $clickhouseNodeId,
+            postgresNodeId: $settings['postgres_node_id'],
+            postgresProcessId: $settings['postgres_process_id'],
+            clickhouseNodeId: $settings['clickhouse_node_id'],
         );
     }
 

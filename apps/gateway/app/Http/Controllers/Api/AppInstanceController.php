@@ -56,29 +56,33 @@ final class AppInstanceController implements Loggable
             return $caller;
         }
 
-        $instances = $targetApp->instances()->with(['runtimeMounts'])->get();
+        /** @var list<AppInstance> $instances */
+        $instances = $targetApp->instances()->with(['runtimeMounts'])->get()->all();
         $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
-        $instances = $instances->filter(function (AppInstance $instance) use ($caller, $callerIsGateway): bool {
-            if ($instance->driver !== AppInstanceDriver::Orbit) {
-                return $callerIsGateway;
-            }
+        $instances = array_values(array_filter(
+            $instances,
+            function (AppInstance $instance) use ($caller, $callerIsGateway): bool {
+                if ($instance->driver !== AppInstanceDriver::Orbit) {
+                    return $callerIsGateway;
+                }
 
-            $servingNode = $this->workspacePlacement->nodeForInstance($instance);
+                $servingNode = $this->workspacePlacement->nodeForInstance($instance);
 
-            return $servingNode instanceof Node && $this->authorizer->allows($caller, $servingNode, 'app:read');
-        })->values();
+                return $servingNode instanceof Node && $this->authorizer->allows($caller, $servingNode, 'app:read');
+            },
+        ));
 
-        if (! $callerIsGateway && $instances->isEmpty()) {
+        if (! $callerIsGateway && $instances === []) {
             return $this->authorizationFailed('app:read');
         }
 
         return $this->success([
             'app' => $targetApp->name,
-            'instances' => $instances
-                ->map(fn (AppInstance $instance): array => $this->payloads->instance($instance))
-                ->values()
-                ->all(),
-        ], ['count' => $instances->count()]);
+            'instances' => array_map(
+                fn (AppInstance $instance): array => $this->payloads->instance($instance),
+                $instances,
+            ),
+        ], ['count' => count($instances)]);
     }
 
     public function show(string $app, string $instance, Request $request): JsonResponse
@@ -164,12 +168,10 @@ final class AppInstanceController implements Loggable
             return $driverConfig;
         }
 
-        if ($driver === AppInstanceDriver::Orbit) {
-            $targetNode = Node::query()->find($driverConfig->node_id);
+        $authorization = $this->authorizeOrbitTarget($caller, $driverConfig, $name);
 
-            if (! $targetNode instanceof Node || ! $this->authorizer->allows($caller, $targetNode, 'app:write')) {
-                return $this->authorizationFailed('app:write', $targetNode, $name);
-            }
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
         }
 
         $instance = $targetApp
@@ -609,10 +611,6 @@ final class AppInstanceController implements Loggable
             ->get()
             ->filter(function (App $app) use ($selector): bool {
                 foreach ($app->instances as $instance) {
-                    if (! $instance instanceof AppInstance) {
-                        continue;
-                    }
-
                     $placement = $this->payloads->placement($instance);
                     $host = parse_url((string) ($placement['url'] ?? ''), PHP_URL_HOST);
 
@@ -766,6 +764,24 @@ final class AppInstanceController implements Loggable
         return null;
     }
 
+    private function authorizeOrbitTarget(
+        Node $caller,
+        OrbitAppInstanceDriverConfigData|LaravelCloudAppInstanceDriverConfigData $driverConfig,
+        string $instance,
+    ): ?JsonResponse {
+        if (! $driverConfig instanceof OrbitAppInstanceDriverConfigData) {
+            return null;
+        }
+
+        $targetNode = Node::query()->find($driverConfig->node_id);
+
+        if (! $targetNode instanceof Node || ! $this->authorizer->allows($caller, $targetNode, 'app:write')) {
+            return $this->authorizationFailed('app:write', $targetNode, $instance);
+        }
+
+        return null;
+    }
+
     private function authorizationFailed(
         string $permission,
         ?Node $servingNode = null,
@@ -777,15 +793,12 @@ final class AppInstanceController implements Loggable
                 'code' => 'authorization_failed',
                 'message' =>
                     $message ?? "This node is not authorized for '{$permission}' on the selected app instance.",
-                'meta' => array_filter(
-                    [
-                        'reason' => 'missing_permission',
-                        'missing_permission' => $permission,
-                        'serving_node' => $servingNode?->name,
-                        'app_instance' => $instance,
-                    ],
-                    static fn (mixed $value): bool => $value !== null,
-                ),
+                'meta' => array_filter([
+                    'reason' => 'missing_permission',
+                    'missing_permission' => $permission,
+                    'serving_node' => $servingNode?->name,
+                    'app_instance' => $instance,
+                ]),
             ],
         ], 403);
     }
@@ -796,13 +809,10 @@ final class AppInstanceController implements Loggable
             'error' => [
                 'code' => 'authorization_failed',
                 'message' => 'External app instances can only be managed by the gateway.',
-                'meta' => array_filter(
-                    [
-                        'reason' => 'gateway_only_external_instance',
-                        'app_instance' => $instance,
-                    ],
-                    static fn (mixed $value): bool => $value !== null,
-                ),
+                'meta' => array_filter([
+                    'reason' => 'gateway_only_external_instance',
+                    'app_instance' => $instance,
+                ]),
             ],
         ], 403);
     }
