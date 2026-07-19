@@ -18,13 +18,13 @@ use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmInstaller;
 use App\Services\Security\SshHostKeyPinner;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
+use App\Services\Vpn\WgEasyAdminCredentialStore;
 use App\Services\WireGuard\WireGuardInterfaceInstaller;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
 use JsonException;
 use Orbit\Core\Nodes\NodeTld;
 use RuntimeException;
@@ -49,6 +49,7 @@ class BootstrapGatewayLocalCommand extends Command
         WireGuardInterfaceInstaller $wireGuard,
         GatewaySwarmInstaller $gatewaySwarmInstaller,
         VpnDnsSwarmInstaller $vpnDnsSwarmInstaller,
+        WgEasyAdminCredentialStore $wgEasyCredentials,
     ): int {
         $name = $this->stringArgument('name');
         $wireguardAddress = $this->stringArgument('wireguard-address');
@@ -207,7 +208,7 @@ class BootstrapGatewayLocalCommand extends Command
 
         if (! (bool) $this->option('skip-gateway-service-install')) {
             if ($publicHost !== null) {
-                $password = $this->ensureWgEasyPassword();
+                $password = $wgEasyCredentials->ensurePassword();
                 $username = (string) config('services.wg_easy.username', 'orbit');
                 $vpnDnsSwarmInstaller->install(publicHost: $publicHost, username: $username, password: $password);
                 $wireguardServerPublicKey = $vpnDnsSwarmInstaller->publicKey();
@@ -314,22 +315,6 @@ class BootstrapGatewayLocalCommand extends Command
         $mode = config('orbit.gateway.exposure_mode', GatewayExposureMode::RouterColocated->value);
 
         return GatewayExposureMode::parse((string) $mode);
-    }
-
-    private function ensureWgEasyPassword(): string
-    {
-        $existing = $this->readEnvVar('WG_EASY_PASSWORD');
-
-        if ($existing !== null) {
-            return $existing;
-        }
-
-        $password = Str::random(32);
-
-        $this->writeEnvVar('WG_EASY_PASSWORD', $password);
-        config(['services.wg_easy.password' => $password]);
-
-        return $password;
     }
 
     private function writeGatewayLocalCliConfig(string $wireguardAddress, string $rootCert): void
@@ -466,54 +451,6 @@ class BootstrapGatewayLocalCommand extends Command
             'wireguard_port' => 51820,
             'dns_ip' => '10.6.0.1',
         ])->toArray();
-    }
-
-    private function readEnvVar(string $key): ?string
-    {
-        $path = app()->environmentFilePath();
-
-        if (! File::exists($path)) {
-            return null;
-        }
-
-        $contents = File::get($path);
-
-        if (preg_match('/^'.preg_quote($key, '/').'=(.*)$/m', $contents, $matches) === 1) {
-            $value = trim($matches[1]);
-
-            if ($value === '') {
-                return null;
-            }
-
-            if (str_starts_with($value, '"') && str_ends_with($value, '"')) {
-                return stripcslashes(substr($value, 1, -1));
-            }
-
-            if (str_starts_with($value, "'") && str_ends_with($value, "'")) {
-                return str_replace("\\'", "'", substr($value, 1, -1));
-            }
-
-            return $value;
-        }
-
-        return null;
-    }
-
-    private function writeEnvVar(string $key, string $value): void
-    {
-        $path = app()->environmentFilePath();
-        $contents = File::exists($path) ? File::get($path) : '';
-        $line = "{$key}={$value}";
-
-        if (preg_match('/^'.preg_quote($key, '/').'=/m', $contents) === 1) {
-            $contents = (string) preg_replace('/^'.preg_quote($key, delimiter: '/').'=.*$/m', $line, $contents);
-        } else {
-            $contents = rtrim($contents)."\n{$line}\n";
-        }
-
-        File::put($path, $contents);
-        $_ENV[$key] = $value;
-        putenv("{$key}={$value}");
     }
 
     private function stringOption(string $name): ?string

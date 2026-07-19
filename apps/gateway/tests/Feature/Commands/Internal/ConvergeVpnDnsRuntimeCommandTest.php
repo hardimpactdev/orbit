@@ -7,17 +7,23 @@ use App\Models\NodeRoleAssignment;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\File;
 
 uses(RefreshDatabase::class);
 
 it('converges the existing vpn role runtime through its installer', function (): void {
+    $environmentPath = sys_get_temp_dir().'/orbit-vpn-dns-runtime-'.uniqid();
+    File::ensureDirectoryExists($environmentPath);
+    File::put("{$environmentPath}/.env", "APP_NAME=Orbit\n");
+    $originalEnvironmentPath = app()->environmentPath();
+    app()->useEnvironmentPath($environmentPath);
+
     $installer = Mockery::mock(VpnDnsSwarmInstaller::class);
     $installer->shouldReceive('install')->once();
 
     app()->instance(VpnDnsSwarmInstaller::class, $installer);
     config()->set('services.wg_easy.username', 'orbit-test');
-    config()->set('services.wg_easy.password', Str::random(32));
+    config()->set('services.wg_easy.password', null);
 
     $node = Node::factory()->create([
         'name' => 'gateway',
@@ -37,8 +43,25 @@ it('converges the existing vpn role runtime through its installer', function ():
         ],
     ]);
 
-    expect(Artisan::all())
-        ->toHaveKey('orbit:internal:converge-vpn-dns-runtime')
-        ->and(Artisan::call('orbit:internal:converge-vpn-dns-runtime', ['node' => 'gateway']))
-        ->toBe(0);
+    $exitCode = null;
+
+    try {
+        expect(Artisan::all())->toHaveKey('orbit:internal:converge-vpn-dns-runtime');
+        expect(function () use (&$exitCode): void {
+            $exitCode = Artisan::call('orbit:internal:converge-vpn-dns-runtime', ['node' => 'gateway']);
+        })
+            ->not
+            ->toThrow(RuntimeException::class);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(File::get(app()->environmentFilePath()))
+            ->toContain('WG_EASY_PASSWORD=')
+            ->and(config('services.wg_easy.password'))
+            ->toBeString()
+            ->not->toBeEmpty();
+    } finally {
+        app()->useEnvironmentPath($originalEnvironmentPath);
+        File::deleteDirectory($environmentPath);
+    }
 });

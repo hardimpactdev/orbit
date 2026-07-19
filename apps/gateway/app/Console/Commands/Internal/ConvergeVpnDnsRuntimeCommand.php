@@ -9,6 +9,7 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\Roles\RoleBaselines\VpnRoleBaseline;
+use App\Services\Vpn\WgEasyAdminCredentialStore;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -21,8 +22,10 @@ class ConvergeVpnDnsRuntimeCommand extends Command
     #[\Override]
     protected $hidden = true;
 
-    public function handle(VpnRoleBaseline $vpnRoleBaseline): int
-    {
+    public function handle(
+        VpnRoleBaseline $vpnRoleBaseline,
+        WgEasyAdminCredentialStore $wgEasyCredentials,
+    ): int {
         $name = $this->argument('node');
 
         if (! is_string($name) || trim($name) === '') {
@@ -47,6 +50,7 @@ class ConvergeVpnDnsRuntimeCommand extends Command
             throw new RuntimeException("Node [{$node->name}] does not have an active VPN role.");
         }
 
+        $wgEasyCredentials->ensurePassword();
         $vpnRoleBaseline->converge($node, $assignment);
 
         return self::SUCCESS;
