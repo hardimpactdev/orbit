@@ -32,6 +32,7 @@ final readonly class ProcessServiceCatalog
         return array_key_exists($service, $this->services());
     }
 
+    /** @param array<string, mixed> $serviceOptions */
     public function resolve(
         string $service,
         ?string $version,
@@ -39,6 +40,7 @@ final readonly class ProcessServiceCatalog
         Node $node,
         string $processName,
         ?string $imageOverride = null,
+        array $serviceOptions = [],
     ): ProcessServiceDescriptor {
         $catalog = $this->services();
         $entry = $catalog[$service] ?? null;
@@ -71,18 +73,25 @@ final readonly class ProcessServiceCatalog
             );
         }
 
-        $resolved = $this->resolveVersion($service, $entry['versions'], $version);
+        $serviceOptions = $this->resolveServiceOptions($service, $serviceOptions);
+        /** @var array<array-key, array{default: string, versions: list<string>, port: int, data_path?: string}> $versions */
+        $versions = $entry['versions'];
+        $resolved = $this->resolveVersion($service, $versions, $version);
+        $entry = $this->withServiceOptions($service, $entry, $serviceOptions);
+
+        if ($resolved['data_path'] !== null) {
+            $entry['data_path'] = $resolved['data_path'];
+        }
+
+        $publishedPort = is_int($serviceOptions['published_port'] ?? null)
+            ? $serviceOptions['published_port']
+            : $resolved['published_port'];
+        $this->assertImageMatchesVersionFamily($service, $resolved['family'], $imageOverride);
         $host = $this->serviceHost($node);
         $serviceName = "orbit-{$processName}";
         $volumeName = "orbit-{$processName}";
         $dataPath = $this->hostPaths->processDataRoot($node, $processName);
-        $servicePorts = $this->servicePorts(
-            $entry,
-            $host,
-            $resolved['published_port'],
-            $processName,
-            $runtime,
-        );
+        $servicePorts = $this->servicePorts($entry, $host, $publishedPort, $processName, $runtime);
         $credentials = $this->encryptedCredentials($service, $entry);
 
         $runtimeConfig = [
@@ -100,6 +109,10 @@ final readonly class ProcessServiceCatalog
                 'parallelism' => 1,
             ],
         ];
+
+        if ($serviceOptions !== []) {
+            $runtimeConfig['service_options'] = $serviceOptions;
+        }
 
         if ($credentials === []) {
             $runtimeConfig['credentials'] = $entry['credentials'];
@@ -346,16 +359,10 @@ final readonly class ProcessServiceCatalog
                 'command' => 'postgres',
                 'target_port' => 5432,
                 'data_path' => '/var/lib/postgresql/data',
-                'environment' => [
-                    'POSTGRES_DB' => 'plausible_db',
-                    'POSTGRES_USER' => 'orbit',
-                ],
-                'credentials' => [
-                    'database' => 'plausible_db',
-                    'username' => 'orbit',
-                ],
+                'environment' => [],
+                'credentials' => [],
                 'healthcheck' => [
-                    'command' => 'pg_isready -U orbit',
+                    'command' => 'pg_isready',
                     'kind' => 'command',
                 ],
                 'versions' => [
@@ -363,6 +370,13 @@ final readonly class ProcessServiceCatalog
                         'default' => '16-alpine',
                         'versions' => ['16-alpine'],
                         'port' => 5432,
+                        'data_path' => '/var/lib/postgresql/data',
+                    ],
+                    '18' => [
+                        'default' => '18-alpine',
+                        'versions' => ['18-alpine'],
+                        'port' => 5432,
+                        'data_path' => '/var/lib/postgresql',
                     ],
                 ],
             ],
@@ -442,6 +456,134 @@ final readonly class ProcessServiceCatalog
     }
 
     /**
+     * @param  array<string, mixed>  $serviceOptions
+     * @return array<string, mixed>
+     */
+    private function resolveServiceOptions(string $service, array $serviceOptions): array
+    {
+        if ($service !== 'postgres') {
+            if ($serviceOptions !== []) {
+                throw new GatewayApiException(
+                    "Managed service '{$service}' does not accept PostgreSQL service options.",
+                    'validation_failed',
+                    ['field' => 'service_options', 'reason' => 'process_service_options_unsupported'],
+                );
+            }
+
+            return [];
+        }
+
+        foreach (array_keys($serviceOptions) as $key) {
+            if (! in_array($key, ['database', 'username', 'published_port'], true)) {
+                throw new GatewayApiException('PostgreSQL service option is not supported.', 'validation_failed', [
+                    'field' => "service_options.{$key}",
+                    'reason' => 'unsupported_field',
+                ]);
+            }
+        }
+
+        foreach (['database', 'username'] as $key) {
+            $value = $serviceOptions[$key] ?? null;
+
+            if (! is_string($value) || trim($value) === '') {
+                throw new GatewayApiException("PostgreSQL {$key} is required.", 'validation_failed', [
+                    'field' => "service_options.{$key}",
+                    'reason' => 'required',
+                ]);
+            }
+
+            $value = trim($value);
+
+            if (preg_match('/^[a-z_][a-z0-9_]{0,62}$/', $value) !== 1) {
+                throw new GatewayApiException("PostgreSQL {$key} is not a valid identifier.", 'validation_failed', [
+                    'field' => "service_options.{$key}",
+                    'value' => $value,
+                    'reason' => 'invalid_postgres_identifier',
+                ]);
+            }
+
+            $serviceOptions[$key] = $value;
+        }
+
+        $publishedPort = $serviceOptions['published_port'] ?? null;
+
+        if (! is_int($publishedPort) || $publishedPort < 1 || $publishedPort > 65535) {
+            throw new GatewayApiException(
+                'PostgreSQL published port must be between 1 and 65535.',
+                'validation_failed',
+                [
+                    'field' => 'service_options.published_port',
+                    'value' => $publishedPort,
+                    'reason' => $publishedPort === null ? 'required' : 'out_of_range',
+                ],
+            );
+        }
+
+        return $serviceOptions;
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @param  array<string, mixed>  $serviceOptions
+     * @return array<string, mixed>
+     */
+    private function withServiceOptions(string $service, array $entry, array $serviceOptions): array
+    {
+        if ($service !== 'postgres') {
+            return $entry;
+        }
+
+        $database = (string) $serviceOptions['database'];
+        $username = (string) $serviceOptions['username'];
+        $entry['environment'] = [
+            'POSTGRES_DB' => $database,
+            'POSTGRES_USER' => $username,
+        ];
+        $entry['credentials'] = [
+            'database' => $database,
+            'username' => $username,
+        ];
+        $entry['healthcheck'] = [
+            'command' => "pg_isready -U {$username} -d {$database}",
+            'kind' => 'command',
+        ];
+
+        return $entry;
+    }
+
+    private function assertImageMatchesVersionFamily(
+        string $service,
+        string $versionFamily,
+        ?string $imageOverride,
+    ): void {
+        if ($service !== 'postgres' || $imageOverride === null || $imageOverride === '') {
+            return;
+        }
+
+        $lastSlash = strrpos($imageOverride, '/');
+        $tagSeparator = strrpos($imageOverride, ':');
+        $tag =
+            $tagSeparator !== false && ($lastSlash === false || $tagSeparator > $lastSlash)
+                ? substr($imageOverride, $tagSeparator + 1)
+                : '';
+
+        if (preg_match('/^(?<major>\d+)(?:[.-]|$)/', $tag, $matches) === 1 && $matches['major'] === $versionFamily) {
+            return;
+        }
+
+        throw new GatewayApiException(
+            "PostgreSQL image major must match selected version family {$versionFamily}.",
+            'validation_failed',
+            [
+                'field' => 'image',
+                'value' => $imageOverride,
+                'reason' => 'process_service_image_version_mismatch',
+                'version_family' => $versionFamily,
+            ],
+        );
+    }
+
+    /**
      * @param  array<string, mixed>  $service
      * @return list<ProcessRuntime>
      */
@@ -469,8 +611,8 @@ final readonly class ProcessServiceCatalog
     }
 
     /**
-     * @param  array<array-key, array{default: string, versions: list<string>, port: int}>  $versions
-     * @return array{family: string, version: string, published_port: int}
+     * @param  array<array-key, array{default: string, versions: list<string>, port: int, data_path?: string}>  $versions
+     * @return array{family: string, version: string, published_port: int, data_path: string|null}
      */
     private function resolveVersion(string $service, array $versions, ?string $version): array
     {
@@ -492,6 +634,7 @@ final readonly class ProcessServiceCatalog
                 'family' => $family,
                 'version' => $metadata['default'],
                 'published_port' => $metadata['port'],
+                'data_path' => $metadata['data_path'] ?? null,
             ];
         }
 
@@ -507,6 +650,7 @@ final readonly class ProcessServiceCatalog
                     'family' => $family,
                     'version' => $version === $family ? $metadata['default'] : $version,
                     'published_port' => $metadata['port'],
+                    'data_path' => $metadata['data_path'] ?? null,
                 ];
             }
         }
@@ -525,15 +669,12 @@ final readonly class ProcessServiceCatalog
     }
 
     /**
-     * @param  array<array-key, array{default: string, versions: list<string>, port: int}>  $versions
+     * @param  array<array-key, array{default: string, versions: list<string>, port: int, data_path?: string}>  $versions
      * @return list<string>
      */
     private function versionFamilies(array $versions): array
     {
-        return array_map(
-            static fn (int|string $family): string => (string) $family,
-            array_keys($versions),
-        );
+        return array_map(static fn (int|string $family): string => (string) $family, array_keys($versions));
     }
 
     private function serviceHost(Node $node): string
@@ -680,10 +821,6 @@ final readonly class ProcessServiceCatalog
     {
         ksort($spec);
 
-        return substr(
-            string: hash('sha256', json_encode($spec, JSON_THROW_ON_ERROR)),
-            offset: 0,
-            length: 16,
-        );
+        return substr(string: hash('sha256', json_encode($spec, JSON_THROW_ON_ERROR)), offset: 0, length: 16);
     }
 }

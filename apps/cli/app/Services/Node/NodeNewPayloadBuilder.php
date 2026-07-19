@@ -55,6 +55,7 @@ class NodeNewPayloadBuilder
         ?string $ingressNode,
         ?string $valkeyNode,
         ?string $postgresNode,
+        ?string $postgresProcess,
         ?string $clickhouseNode,
         ?string $s3DataPath,
         ?string $hostKeyFingerprint,
@@ -165,6 +166,7 @@ class NodeNewPayloadBuilder
         $this->putString($payload, 'ingress_node', $ingressNode);
         $this->putString($payload, 'valkey_node', $valkeyNode);
         $this->putString($payload, 'postgres_node', $postgresNode);
+        $this->putString($payload, 'postgres_process', $postgresProcess);
         $this->putString($payload, 'clickhouse_node', $clickhouseNode);
         $this->putString($payload, 's3_data_path', $s3DataPath);
         $this->putString($payload, 'host_key_fingerprint', $hostKeyFingerprint);
@@ -222,6 +224,7 @@ class NodeNewPayloadBuilder
             'ingress_node' => 'ingress',
             'valkey_node' => 'valkey-node',
             'postgres_node' => 'postgres-node',
+            'postgres_process' => 'postgres-process',
             'clickhouse_node' => 'clickhouse-node',
             's3_data_path' => 's3-data-path',
             'host_key_fingerprint' => 'host-key-fingerprint',
@@ -334,6 +337,7 @@ class NodeNewPayloadBuilder
     {
         $hasAnalytics = in_array('analytics', $roles, true) || ($payload['template'] ?? null) === 'analytics';
         $postgresNode = $payload['postgres_node'] ?? null;
+        $postgresProcess = $payload['postgres_process'] ?? null;
         $clickhouseNode = $payload['clickhouse_node'] ?? null;
 
         if ($hasAnalytics) {
@@ -351,6 +355,14 @@ class NodeNewPayloadBuilder
                 );
             }
 
+            if (! is_string($postgresProcess) || $postgresProcess === '') {
+                throw new NodeWriteInputException(
+                    'validation_failed',
+                    'The analytics role requires --postgres-process.',
+                    ['field' => 'postgres_process'],
+                );
+            }
+
             return $payload;
         }
 
@@ -365,6 +377,14 @@ class NodeNewPayloadBuilder
                 'validation_failed',
                 'Only the analytics role accepts --clickhouse-node.',
                 ['field' => 'clickhouse_node'],
+            );
+        }
+
+        if ($postgresProcess !== null) {
+            throw new NodeWriteInputException(
+                'validation_failed',
+                'Only the analytics role accepts --postgres-process.',
+                ['field' => 'postgres_process'],
             );
         }
 

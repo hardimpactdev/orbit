@@ -51,6 +51,41 @@ afterEach(function (): void {
 });
 
 describe('node role assignment service', function (): void {
+    it('rejects persisted analytics settings that select PostgreSQL 18 before provisioning', function (): void {
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger {
+            public function __construct() {}
+
+            public function converge(Node $node, NodeRoleAssignment $assignment): void {}
+        });
+
+        $databaseNode = Node::factory()
+            ->database()
+            ->create(['name' => 'database-1', 'status' => 'active']);
+        $postgres = Process::factory()
+            ->forOwner($databaseNode)
+            ->create(['runtime_config' => ['service' => 'postgres', 'version_family' => '18']]);
+        Process::factory()
+            ->forOwner($databaseNode)
+            ->create(['runtime_config' => ['service' => 'clickhouse']]);
+        $target = Node::factory()->create([
+            'name' => 'analytics-1',
+            'platform' => 'ubuntu',
+            'status' => 'active',
+        ]);
+
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($target, 'analytics', [
+            'postgres_node_id' => $databaseNode->id,
+            'postgres_process_id' => $postgres->id,
+            'clickhouse_node_id' => $databaseNode->id,
+        ]))
+            ->toThrow(
+                InvalidArgumentException::class,
+                'The analytics role requires PostgreSQL 16 for Plausible.',
+            );
+
+        expect($target->roleAssignments()->where('role', 'analytics')->exists())->toBeFalse();
+    });
+
     it('rejects a second analytics role assignment before provisioning', function (): void {
         app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger {
             public function __construct() {}

@@ -52,6 +52,7 @@ final class NodeRoleAddController implements Loggable
         $settings = $request->settings();
         $ingressNode = $request->ingressNode();
         $postgresNode = $request->postgresNode();
+        $postgresProcess = $request->postgresProcess();
         $clickhouseNode = $request->clickhouseNode();
 
         if ($request->role() !== 'app-prod' && $ingressNode !== null) {
@@ -63,11 +64,21 @@ final class NodeRoleAddController implements Loggable
             );
         }
 
-        if ($request->role() !== 'analytics' && ($postgresNode !== null || $clickhouseNode !== null)) {
+        if (
+            $request->role() !== 'analytics'
+            && ($postgresNode !== null
+            || $postgresProcess !== null
+            || $clickhouseNode !== null)
+        ) {
             return $this->error(
                 'validation_failed',
                 "Role '{$request->role()}' does not accept analytics database nodes.",
-                ['field' => $postgresNode !== null ? 'postgres_node' : 'clickhouse_node', 'role' => $request->role()],
+                [
+                    'field' => $postgresNode !== null
+                        ? 'postgres_node'
+                        : ($postgresProcess !== null ? 'postgres_process' : 'clickhouse_node'),
+                    'role' => $request->role(),
+                ],
                 422,
             );
         }
@@ -81,7 +92,12 @@ final class NodeRoleAddController implements Loggable
         }
 
         if ($request->role() === 'analytics') {
-            $settings = $this->settingsResolver->resolveAnalytics($settings, $postgresNode, $clickhouseNode);
+            $settings = $this->settingsResolver->resolveAnalytics(
+                $settings,
+                $postgresNode,
+                $postgresProcess,
+                $clickhouseNode,
+            );
 
             if ($settings instanceof JsonResponse) {
                 return $settings;

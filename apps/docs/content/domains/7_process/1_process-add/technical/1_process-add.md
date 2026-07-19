@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:add [name] [process_command] [--app=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--replace-container=<name>] [--force] [--no-start] [--json]
+orbit process:add [name] [process_command] [--app=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--database=<name>] [--username=<name>] [--published-port=<port>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--replace-container=<name>] [--force] [--no-start] [--json]
 ```
 
 ## Input Contract
@@ -31,7 +31,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `tool` | `--tool` | Optional. | Never. | `null`. | Tool slug for the installed node capability this process uses. Tools do not own lifecycle. |
 | `service` | `--service` | Optional. | When `tool` is present or when owner scope is app/workspace. | `null`. | Supported managed service identifier from the gateway service catalog. The process name does not imply the service. |
 | `version` | `--version` | Optional for one-version services; required when the service has multiple version families. | When `service` is absent. | Service default when unambiguous. | Supported managed service version or version family. CLI implementation normalizes public `--version` to internal `--service-version` because Symfony reserves the global `--version` flag. |
-| `image` | `--image` | Optional. | When `service` is absent or runtime is not Docker-compatible. | Resolved official image for `service` + `runtime` + `version`. | Explicit Docker image reference overriding the catalog default. |
+| `database` | `--database` / `service_options.database` | `service=postgres`. | Every other service or host-command process. | None. | Lowercase PostgreSQL identifier containing letters, digits, and underscores, starting with a letter or underscore, max 63 characters. |
+| `username` | `--username` / `service_options.username` | `service=postgres`. | Every other service or host-command process. | None. | Lowercase PostgreSQL identifier containing letters, digits, and underscores, starting with a letter or underscore, max 63 characters. |
+| `published_port` | `--published-port` / `service_options.published_port` | `service=postgres`. | Every other service or host-command process. | None. | Integer from 1 through 65535. The container target remains `5432`. |
+| `image` | `--image` | Optional. | When `service` is absent or runtime is not Docker-compatible. | Resolved official image for `service` + `runtime` + `version`. | Explicit Docker image reference overriding the catalog default. A PostgreSQL override must expose a tag whose major matches the selected version family; an override cannot represent a different major while retaining stale metadata. |
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `agent_ide`. |
 | `runtime` | `--runtime` | Optional. | Never. | `docker` for managed services; `systemd` for Linux node-, app-, and workspace-owned host command processes; `launchd` for macOS node-, app-, and workspace-owned host command processes. | One of `docker`, `docker-swarm`, `systemd`, `launchd`. Host-command processes use `systemd` on Linux and `launchd` on macOS. Managed services accept `docker`, and accept `docker-swarm` only when their catalog entry and Linux node platform admit it. |
@@ -53,7 +56,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 1. Resolve a target node, concrete app instance, or workspace context from supplied input or local context. Reject a bare logical-app selector with `validation_failed`, `field=app`, and `reason=app_instance_required` unless that app has exactly one instance.
 2. Send the request to the gateway, which validates the authenticated peer's authorization and process name uniqueness within the owner scope.
-3. Validate managed-service endpoint and volume conflicts before any destructive replacement-container cleanup.
+3. Resolve typed managed-service options, then validate the requested WireGuard
+   host and published port plus volume names against every process on the node
+   before any runtime, configuration, or destructive replacement-container
+   effect.
 4. When explicit `replace_containers` are present, remove only those named Docker containers on the resolved node.
 5. Resolve the runtime backend. Host-command processes default to `systemd` on
    Linux nodes and `launchd` on macOS nodes. Managed services default to
@@ -94,11 +100,14 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Invalid host-command platform runtime | `--runtime=systemd` is supplied for a macOS host-command process, or `--runtime=launchd` is supplied for a Linux host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=systemd_runtime_requires_linux` or `launchd_runtime_requires_macos`). |
 | Launchd crash notification deferred | `--runtime=launchd` is combined with `--crash-notification=agent_ide`. | Failure (`error.code=validation_failed`; `error.meta.field=crash_notification`; `error.meta.reason=launchd_crash_notification_deferred`). |
 | Version without managed service | `--version` is supplied without `--service`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_version_requires_service`). |
+| Missing or invalid PostgreSQL option | `service=postgres` omits or supplies an invalid database, username, or published port. | Failure (`error.code=validation_failed`; `error.meta.field=service_options.<field>`). No runtime or configuration effect occurs. |
+| PostgreSQL options for another service | PostgreSQL initialization options are supplied when `service` is absent or not `postgres`. | Failure (`error.code=validation_failed`; `error.meta.field=service_options`; `error.meta.reason=process_service_options_unsupported`). |
+| PostgreSQL image major mismatch | An explicit PostgreSQL image tag does not retain the selected PostgreSQL version family. | Failure (`error.code=validation_failed`; `error.meta.field=image`; `error.meta.reason=process_service_image_version_mismatch`). |
 | Invalid managed service scope | `--service` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_requires_node_owned_process`). |
 | Managed service with tool | `--service` is combined with `--tool`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_cannot_reference_tool`). |
 | Unsupported managed service | `--service` names an unsupported service. | Failure (`error.code=validation_failed`; `error.meta.reason=unsupported_value`). |
 | Unsupported managed service runtime | `--service` is combined with a runtime other than `docker` or `docker-swarm`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_runtime_unsupported`). |
-| Managed service resource conflict | The managed service endpoint port or volume conflicts with another process on the node. | Failure (`error.code=validation_failed`; `error.meta.reason=endpoint_conflict` or `volume_conflict`). |
+| Managed service resource conflict | The managed service WireGuard host and published port or volume conflicts with another process on the node. | Failure (`error.code=validation_failed`; `error.meta.reason=endpoint_conflict` or `volume_conflict`). |
 | Replacement cleanup without consent | `--replace-container` is supplied in non-interactive mode without `--force`. | Failure (`error.code=validation_failed`; `error.meta.field=force`; `error.meta.reason=destructive_consent_required`). |
 | Invalid replacement cleanup scope | `--replace-container` is supplied outside a node-owned Docker managed service. | Failure (`error.code=validation_failed`; `error.meta.field=replace_containers`; `error.meta.reason=replace_container_requires_node_docker_service`). |
 | Replacement cleanup failed | The gateway could not remove one explicitly named replacement container. | Failure (`error.code=process.replace_container_failed`; `error.meta.container=<name>`). No process configuration is written. |
@@ -116,7 +125,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | Type | `api:POST /processes` |
 | Effect | `write` |
 | Subject | Resolved `Node` for node-owned processes or `AppInstance` for app-instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
-| Properties | `node`, `app`, `app_instance`, `workspace`, `name`, `tool`, and `service`. No raw command text, env, runtime output, replacement-container names, or secrets. |
+| Properties | `node`, `app`, `app_instance`, `workspace`, `name`, `tool`, and `service`. No raw command text, service options, env, runtime output, replacement-container names, or secrets. |
 | Description | derived |
 
 ## Test Mapping

@@ -39,6 +39,14 @@ These terms define how process definitions are identified, scoped, and ordered.
   the owning node's WireGuard service address. Consumers on the same node rely
   on the provisioning-owned WireGuard self-route, not on loopback or Docker
   aliases.
+- **PostgreSQL service process:** Managed service whose identifier is always
+  `postgres`, regardless of major version or consumer. Each process records an
+  explicit version family and concrete image version, initial database and
+  username, and a WireGuard-bound published port. Its container target remains
+  `5432`. Process-derived container name, service name, host data path, and
+  volume keep multiple PostgreSQL processes independent on one node. PostgreSQL
+  16 mounts its volume at `/var/lib/postgresql/data`; PostgreSQL 18 mounts at
+  `/var/lib/postgresql` to retain the image's major-version data layout.
 - **Process order:** Stable order of process definitions inside their owning
   scope. Read and bulk lifecycle commands use that order.
 

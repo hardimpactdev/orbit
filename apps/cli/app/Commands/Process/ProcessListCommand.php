@@ -83,9 +83,12 @@ final class ProcessListCommand extends GatewayCommand
         }
 
         table(
-            headers: ['NAME', 'COMMAND', 'RESTART', 'TOOL', 'STATUS'],
+            headers: ['NAME', 'SERVICE', 'VERSION', 'ENDPOINT', 'COMMAND', 'RESTART', 'TOOL', 'STATUS'],
             rows: array_map(fn (array $process): array => [
                 $this->processString($process, 'name'),
+                $this->serviceString($process, 'service'),
+                $this->serviceString($process, 'version'),
+                $this->serviceEndpoint($process),
                 $this->processString($process, 'command'),
                 $this->processString($process, 'restart_policy'),
                 $this->processString($process, 'tool'),
@@ -175,5 +178,27 @@ final class ProcessListCommand extends GatewayCommand
         }
 
         return '—';
+    }
+
+    /** @param  array<string, mixed>  $process */
+    private function serviceString(array $process, string $key): string
+    {
+        $service = $process['service'] ?? null;
+        $value = is_array($service) ? $service[$key] ?? null : null;
+
+        return is_scalar($value) && (string) $value !== '' ? (string) $value : '—';
+    }
+
+    /** @param  array<string, mixed>  $process */
+    private function serviceEndpoint(array $process): string
+    {
+        $service = $process['service'] ?? null;
+        $endpoint = is_array($service) ? $service['endpoint'] ?? null : null;
+        $host = is_array($endpoint) ? $endpoint['host'] ?? null : null;
+        $port = is_array($endpoint) ? $endpoint['port'] ?? null : null;
+
+        return is_string($host) && $host !== '' && is_int($port) && $port > 0
+            ? "{$host}:{$port}"
+            : '—';
     }
 }

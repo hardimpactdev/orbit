@@ -5236,6 +5236,7 @@
             "options": [
                 "valkey-node",
                 "postgres-node",
+                "postgres-process",
                 "clickhouse-node",
                 "s3-data-path",
                 "json"
@@ -5756,6 +5757,7 @@
                 "ingress",
                 "valkey-node",
                 "postgres-node",
+                "postgres-process",
                 "clickhouse-node",
                 "s3-data-path",
                 "host-key-fingerprint",
@@ -6435,6 +6437,9 @@
                 "tool",
                 "service",
                 "service-version",
+                "database",
+                "username",
+                "published-port",
                 "image",
                 "restart-policy",
                 "crash-notification",

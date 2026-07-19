@@ -42,6 +42,12 @@ final class NodeRoleAddCommand extends GatewayCommand
             'Existing database node for analytics PostgreSQL',
         );
         $this->addOption(
+            'postgres-process',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'PostgreSQL process for analytics',
+        );
+        $this->addOption(
             'clickhouse-node',
             null,
             InputOption::VALUE_REQUIRED,
@@ -61,6 +67,7 @@ final class NodeRoleAddCommand extends GatewayCommand
                 role: $role,
                 valkeyNode: $this->stringOption('valkey-node'),
                 postgresNode: $this->stringOption('postgres-node'),
+                postgresProcess: $this->stringOption('postgres-process'),
                 clickhouseNode: $this->stringOption('clickhouse-node'),
                 s3DataPath: $this->stringOption('s3-data-path'),
             );

@@ -4,6 +4,12 @@ Database commands manage reusable database connection intent for app instances
 and workspaces, converge that intent into target `.env` files, inspect schemas, and
 run audited SQL through Orbit's supported drivers.
 
+PostgreSQL runtime ownership belongs to the process domain. A database node may
+host multiple `service=postgres` processes when each has its own process name,
+database, username, published port, encrypted password, data path, and Docker
+resource identity. The database domain consumes an explicit process identity
+for connection behavior; it does not treat PostgreSQL as a node-wide singleton.
+
 ## Domain Rules
 
 These rules govern what the database command family owns and what it may not

@@ -110,10 +110,7 @@ describe('ProcessStoreController', function (): void {
             ->assertJsonPath('error.meta.node', 'app-prod-caller')
             ->assertJsonPath('error.meta.role', 'app-prod');
 
-        expect(Process::query()->where('name', 'horizon')->exists())
-            ->toBeFalse()
-            ->and($remoteShell->scripts)
-            ->toBe([]);
+        expect(Process::query()->where('name', 'horizon')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
     });
 
     it('does not derive or enact workspace units during app-context writes from app-prod callers', function (): void {
@@ -155,10 +152,7 @@ describe('ProcessStoreController', function (): void {
             ->assertJsonPath('success.data.runtime_units.0.context', 'main')
             ->assertJsonMissing(['context' => 'feature-docs']);
 
-        expect($remoteShell->scripts)
-            ->toHaveCount(1)
-            ->and($remoteShell->scripts[0])
-            ->not->toContain('feature-docs');
+        expect($remoteShell->scripts)->toHaveCount(1)->and($remoteShell->scripts[0])->not->toContain('feature-docs');
     });
 
     it('requires an app instance when a bare app selector is ambiguous', function (): void {
@@ -243,10 +237,7 @@ describe('ProcessStoreController', function (): void {
 
         $process = Process::query()->where('name', 'vite')->firstOrFail();
 
-        expect($process->app_instance_id)
-            ->toBe($production->id)
-            ->and($process->node_id)
-            ->toBe($productionNode->id);
+        expect($process->app_instance_id)->toBe($production->id)->and($process->node_id)->toBe($productionNode->id);
     });
 
     it('allows the same process name on separate app instances', function (): void {
@@ -589,8 +580,7 @@ describe('ProcessStoreController', function (): void {
             ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
         );
 
-        $response->assertOk()
-            ->assertJsonPath('success.data.process.runtime', 'systemd');
+        $response->assertOk()->assertJsonPath('success.data.process.runtime', 'systemd');
 
         expect(Process::query()->where('name', 'legacy')->value('runtime')->value)->toBe('systemd');
     });
@@ -877,10 +867,7 @@ describe('ProcessStoreController', function (): void {
         $create = collect($remoteShell->scripts)
             ->first(fn (string $script): bool => str_contains($script, 'internal:process-docker-container'));
 
-        expect($create)
-            ->toBeString()
-            ->toContain('internal:process-docker-container')
-            ->toContain('--json');
+        expect($create)->toBeString()->toContain('internal:process-docker-container')->toContain('--json');
     });
 
     it('removes explicit replacement containers before creating a Docker managed service process', function (): void {
@@ -923,8 +910,9 @@ describe('ProcessStoreController', function (): void {
             ->assertJsonPath('success.data.replaced_containers', ['dngdmt-mailpit-1', 'orbit-mailpit']);
 
         expect(collect($remoteShell->scripts)
-            ->contains(fn (string $script): bool => str_contains($script, 'internal:process-docker-container')))
-            ->toBeTrue();
+            ->contains(
+                fn (string $script): bool => str_contains($script, 'internal:process-docker-container'),
+            ))->toBeTrue();
     });
 
     it('requires destructive consent before replacing containers', function (): void {
@@ -1122,20 +1110,25 @@ describe('ProcessStoreController', function (): void {
                 '/api/processes',
                 [
                     'node' => 'database-1',
-                    'name' => 'postgres16',
+                    'name' => 'postgres',
                     'service' => 'postgres',
                     'version' => '16',
                     'runtime' => 'docker',
+                    'service_options' => [
+                        'database' => 'plausible_db',
+                        'username' => 'orbit',
+                        'published_port' => 5432,
+                    ],
                 ],
                 [],
                 [],
                 ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
             )
             ->assertOk()
-            ->assertJsonPath('success.data.process.name', 'postgres16')
+            ->assertJsonPath('success.data.process.name', 'postgres')
             ->assertJsonPath('success.data.process.runtime', 'docker');
 
-        $process = Process::query()->where('name', 'postgres16')->firstOrFail();
+        $process = Process::query()->where('name', 'postgres')->firstOrFail();
         $credentials = $process->credentials;
         $password = is_array($credentials) ? $credentials['password'] ?? null : null;
         $rawCredentials = (string) $process->getRawOriginal('credentials');
@@ -1164,6 +1157,107 @@ describe('ProcessStoreController', function (): void {
             ->not->toContain($password)->and($runtimeConfigJson)
             ->not->toContain($password)->and(implode("\n", $remoteShell->scripts))
             ->not->toContain($password);
+    });
+
+    it('lets PostgreSQL 16 and 18 coexist with independent process resources on one node', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $node = createTestAppHostNode([
+            'name' => 'database1',
+            'wireguard_address' => '10.6.0.4',
+        ]);
+        app()->instance(
+            RemoteShell::class,
+            new ProcessStoreRemoteShell(array_fill(
+                0,
+                6,
+                new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            )),
+        );
+
+        foreach ([
+            ['postgres',      '16', 'plausible_db',        'orbit',               5432],
+            ['postgres-food', '18', 'mealou_food_catalog', 'mealou_food_catalog', 5433],
+        ] as [$name, $version, $database, $username, $publishedPort]) {
+            $this->call(
+                'POST',
+                '/api/processes',
+                [
+                    'node' => 'database1',
+                    'name' => $name,
+                    'service' => 'postgres',
+                    'version' => $version,
+                    'restart_policy' => 'always',
+                    'service_options' => [
+                        'database' => $database,
+                        'username' => $username,
+                        'published_port' => $publishedPort,
+                    ],
+                ],
+                [],
+                [],
+                ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+            )->assertOk();
+        }
+
+        $this
+            ->call(
+                'POST',
+                '/api/processes',
+                [
+                    'node' => 'database1',
+                    'name' => 'postgres-conflict',
+                    'service' => 'postgres',
+                    'version' => '18',
+                    'service_options' => [
+                        'database' => 'conflict',
+                        'username' => 'conflict',
+                        'published_port' => 5432,
+                    ],
+                ],
+                [],
+                [],
+                ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+            )
+            ->assertStatus(422)
+            ->assertJsonPath('error.meta.reason', 'endpoint_conflict')
+            ->assertJsonPath('error.meta.host', '10.6.0.4')
+            ->assertJsonPath('error.meta.port', 5432);
+
+        $postgres16 = Process::query()->where('name', 'postgres')->firstOrFail();
+        $postgres18 = Process::query()->where('name', 'postgres-food')->firstOrFail();
+
+        expect($postgres16->owner_id)
+            ->toBe($node->id)
+            ->and($postgres18->owner_id)
+            ->toBe($node->id)
+            ->and($postgres16->runtime_config['service'])
+            ->toBe('postgres')
+            ->and($postgres18->runtime_config['service'])
+            ->toBe('postgres')
+            ->and($postgres16->runtime_config['version_family'])
+            ->toBe('16')
+            ->and($postgres18->runtime_config['version_family'])
+            ->toBe('18')
+            ->and($postgres16->runtime_config['version'])
+            ->toBe('16-alpine')
+            ->and($postgres18->runtime_config['version'])
+            ->toBe('18-alpine')
+            ->and($postgres16->runtime_config['endpoint']['port'])
+            ->toBe(5432)
+            ->and($postgres18->runtime_config['endpoint']['port'])
+            ->toBe(5433)
+            ->and($postgres16->runtime_config['service_name'])
+            ->toBe('orbit-postgres')
+            ->and($postgres18->runtime_config['service_name'])
+            ->toBe('orbit-postgres-food')
+            ->and($postgres16->runtime_config['mounts'][0]['source'])
+            ->not->toBe($postgres18->runtime_config['mounts'][0]['source'])->and(
+                $postgres16->runtime_config['volumes'][0]['name'],
+            )
+            ->not->toBe($postgres18->runtime_config['volumes'][0]['name'])->and($postgres16->credentials['password'])
+            ->not->toBe($postgres18->credentials['password'])->and(
+                Process::query()->where('name', 'postgres-conflict')->exists(),
+            )->toBeFalse();
     });
 
     it('lets MySQL 8 and MySQL 9 managed services coexist on one node', function (): void {
@@ -1311,6 +1405,81 @@ describe('ProcessStoreController', function (): void {
             'image',
             'process_service_image_requires_docker_runtime',
         ],
+        'missing PostgreSQL database' => [
+            [
+                'node' => 'database-1',
+                'name' => 'postgres-food',
+                'service' => 'postgres',
+                'version' => '18',
+                'service_options' => [
+                    'username' => 'mealou_food_catalog',
+                    'published_port' => 5433,
+                ],
+            ],
+            'service_options.database',
+            'required',
+        ],
+        'invalid PostgreSQL username' => [
+            [
+                'node' => 'database-1',
+                'name' => 'postgres-food',
+                'service' => 'postgres',
+                'version' => '18',
+                'service_options' => [
+                    'database' => 'mealou_food_catalog',
+                    'username' => 'Mealou User',
+                    'published_port' => 5433,
+                ],
+            ],
+            'service_options.username',
+            'invalid_postgres_identifier',
+        ],
+        'invalid PostgreSQL published port' => [
+            [
+                'node' => 'database-1',
+                'name' => 'postgres-food',
+                'service' => 'postgres',
+                'version' => '18',
+                'service_options' => [
+                    'database' => 'mealou_food_catalog',
+                    'username' => 'mealou_food_catalog',
+                    'published_port' => 65536,
+                ],
+            ],
+            'service_options.published_port',
+            'out_of_range',
+        ],
+        'PostgreSQL options for another service' => [
+            [
+                'node' => 'database-1',
+                'name' => 'valkey',
+                'service' => 'valkey',
+                'version' => '8',
+                'service_options' => [
+                    'database' => 'ignored',
+                    'username' => 'ignored',
+                    'published_port' => 5433,
+                ],
+            ],
+            'service_options',
+            'process_service_options_unsupported',
+        ],
+        'PostgreSQL image major mismatch' => [
+            [
+                'node' => 'database-1',
+                'name' => 'postgres-food',
+                'service' => 'postgres',
+                'version' => '16',
+                'image' => 'postgres:18-alpine',
+                'service_options' => [
+                    'database' => 'mealou_food_catalog',
+                    'username' => 'mealou_food_catalog',
+                    'published_port' => 5433,
+                ],
+            ],
+            'image',
+            'process_service_image_version_mismatch',
+        ],
     ]);
 
     it('rejects managed service endpoint conflicts before runtime side effects', function (): void {
@@ -1358,6 +1527,58 @@ describe('ProcessStoreController', function (): void {
         expect(Process::query()->where('name', 'valkey')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
     });
 
+    it('rejects managed service conflicts with existing published ports before runtime side effects', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $node = createTestAppHostNode([
+            'name' => 'database-1',
+            'wireguard_address' => '10.6.0.44',
+        ]);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'seaweedfs',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'ports' => [
+                        ['host' => '10.6.0.44', 'published' => 5432, 'target' => 8333, 'protocol' => 'tcp'],
+                    ],
+                ],
+            ]);
+        $remoteShell = new ProcessStoreRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'database-1',
+                'name' => 'postgres',
+                'service' => 'postgres',
+                'version' => '16',
+                'service_options' => [
+                    'database' => 'plausible_db',
+                    'username' => 'orbit',
+                    'published_port' => 5432,
+                ],
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.reason', 'endpoint_conflict')
+            ->assertJsonPath('error.meta.existing_process', 'seaweedfs')
+            ->assertJsonPath('error.meta.port', 5432);
+
+        expect(Process::query()->where('name', 'postgres')->exists())
+            ->toBeFalse()
+            ->and($remoteShell->scripts)
+            ->toBeEmpty();
+    });
+
     it('returns duplicate process conflicts', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
@@ -1378,8 +1599,7 @@ describe('ProcessStoreController', function (): void {
             ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
         );
 
-        $response->assertStatus(409)
-            ->assertJsonPath('error.code', 'process.name_collision');
+        $response->assertStatus(409)->assertJsonPath('error.code', 'process.name_collision');
     });
 
     it('creates node owned MySQL processes from the service selector with default start', function (): void {
@@ -1605,9 +1825,7 @@ describe('ProcessStoreController', function (): void {
             ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
         );
 
-        $response
-            ->assertOk()
-            ->assertJsonPath('success.data.process.runtime', 'launchd');
+        $response->assertOk()->assertJsonPath('success.data.process.runtime', 'launchd');
 
         expect(Process::query()->where('name', 'feedback-worker')->value('runtime'))->toBe(ProcessRuntime::Launchd);
     });

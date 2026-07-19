@@ -205,8 +205,11 @@ dashboard and tracking traffic through router-owned private service routes. The 
 dashboard/admin endpoint is `analytics.orbit`. App-owned public analytics hosts
 such as `analytics.example.com` enter through `ingress`, flow to `router`, and
 proxy only Plausible script and event-ingest paths to the analytics backend.
-The role depends on authenticated PostgreSQL and ClickHouse Docker service
-processes selected from active `database` role nodes. Those services publish
+The role depends on one explicitly identified PostgreSQL process and a
+ClickHouse Docker service process selected from active `database` role nodes.
+The PostgreSQL process identity is stored in the analytics role settings; a
+legacy assignment with one candidate remains compatible, while multiple
+candidates without a stored identity fail as ambiguous. Those services publish
 only on their database nodes' WireGuard addresses and keep generated
 credentials in encrypted gateway storage. The database processes may live on
 the same node as each other, and may live on the analytics node only when that

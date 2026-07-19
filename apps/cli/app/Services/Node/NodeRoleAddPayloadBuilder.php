@@ -15,6 +15,7 @@ class NodeRoleAddPayloadBuilder
         string $role,
         ?string $valkeyNode,
         ?string $postgresNode,
+        ?string $postgresProcess,
         ?string $clickhouseNode,
         ?string $s3DataPath,
     ): array {
@@ -66,7 +67,16 @@ class NodeRoleAddPayloadBuilder
                 );
             }
 
+            if ($postgresProcess === null) {
+                throw new NodeWriteInputException(
+                    'validation_failed',
+                    'The analytics role requires --postgres-process.',
+                    ['field' => 'postgres_process'],
+                );
+            }
+
             $settings['postgres_node'] = $postgresNode;
+            $settings['postgres_process'] = $postgresProcess;
             $settings['clickhouse_node'] = $clickhouseNode;
         } else {
             if ($postgresNode !== null) {
@@ -82,6 +92,14 @@ class NodeRoleAddPayloadBuilder
                     'validation_failed',
                     "Role '{$role}' does not accept --clickhouse-node.",
                     ['field' => 'clickhouse_node', 'role' => $role],
+                );
+            }
+
+            if ($postgresProcess !== null) {
+                throw new NodeWriteInputException(
+                    'validation_failed',
+                    "Role '{$role}' does not accept --postgres-process.",
+                    ['field' => 'postgres_process', 'role' => $role],
                 );
             }
         }

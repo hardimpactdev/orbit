@@ -50,6 +50,104 @@ describe('process:add managed service selector contract', function (): void {
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['process']['name'])->toBe('mysql8');
     });
 
+    it('posts typed PostgreSQL instance options with the public version selector', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => [
+                'name' => 'postgres-food',
+                'node' => 'database1',
+                'tool' => null,
+                'runtime' => 'docker',
+            ],
+            'runtime_units' => [['name' => 'orbit-postgres-food', 'context' => 'node']],
+        ], ['warnings' => []]));
+
+        [$exitCode] = runCommand($this, 'process:add', [
+            'name' => 'postgres-food',
+            '--node' => 'database1',
+            '--service' => 'postgres',
+            '--version' => '18',
+            '--database' => 'mealou_food_catalog',
+            '--username' => 'mealou_food_catalog',
+            '--published-port' => '5433',
+            '--restart-policy' => 'always',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/processes'
+                && $request->data() === [
+                    'node' => 'database1',
+                    'name' => 'postgres-food',
+                    'restart_policy' => 'always',
+                    'crash_notification' => 'none',
+                    'start' => true,
+                    'service' => 'postgres',
+                    'version' => '18',
+                    'service_options' => [
+                        'database' => 'mealou_food_catalog',
+                        'username' => 'mealou_food_catalog',
+                        'published_port' => 5433,
+                    ],
+                ]
+            ),
+        );
+
+        expect($exitCode)->toBe(0);
+    });
+
+    it('rejects missing and invalid PostgreSQL instance options before gateway IO', function (
+        array $arguments,
+        string $field,
+    ): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'postgres-food',
+            '--node' => 'database1',
+            '--service' => 'postgres',
+            '--version' => '18',
+            '--json' => true,
+            ...$arguments,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe($field);
+    })->with([
+        'missing database' => [
+            [
+                '--username' => 'mealou_food_catalog',
+                '--published-port' => '5433',
+            ],
+            'database',
+        ],
+        'invalid username' => [
+            [
+                '--database' => 'mealou_food_catalog',
+                '--username' => 'Mealou User',
+                '--published-port' => '5433',
+            ],
+            'username',
+        ],
+        'out of range port' => [
+            [
+                '--database' => 'mealou_food_catalog',
+                '--username' => 'mealou_food_catalog',
+                '--published-port' => '65536',
+            ],
+            'published_port',
+        ],
+    ]);
+
     it('posts optional image overrides for managed service processes', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => [

@@ -150,6 +150,7 @@ final readonly class NodeStoreController implements Loggable
         $this->addStringOption($arguments, '--operator-tld', $request, 'operator_tld');
         $this->addStringOption($arguments, '--valkey-node', $request, 'valkey_node');
         $this->addStringOption($arguments, '--postgres-node', $request, 'postgres_node');
+        $this->addStringOption($arguments, '--postgres-process', $request, 'postgres_process');
         $this->addStringOption($arguments, '--clickhouse-node', $request, 'clickhouse_node');
         $this->addStringOption($arguments, '--s3-data-path', $request, 's3_data_path');
         $this->addStringOption($arguments, '--user', $request, 'user');
@@ -347,6 +348,7 @@ final readonly class NodeStoreController implements Loggable
             'tld' => $this->requestString('tld') ?? $this->createdNodeTld(),
             'valkey_node' => $this->requestString('valkey_node'),
             'postgres_node' => $this->requestString('postgres_node'),
+            'postgres_process' => $this->requestString('postgres_process'),
             'clickhouse_node' => $this->requestString('clickhouse_node'),
             's3_data_path' => $this->requestString('s3_data_path'),
         ];

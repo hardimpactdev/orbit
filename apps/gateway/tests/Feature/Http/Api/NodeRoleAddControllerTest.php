@@ -11,6 +11,8 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
+use App\Models\ProxyRoute;
+use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\RoleBaselines\AgentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
@@ -198,6 +200,93 @@ describe('NodeRoleAddController', function (): void {
                 ->where('settings->valkey_node_id', $database->id)
                 ->exists(),
         )->toBeTrue();
+    });
+
+    it('resolves and persists the selected analytics PostgreSQL process identity', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
+        $database = createNodeRoleApiContractTarget([
+            'name' => 'database-1',
+            'host' => '10.6.0.30',
+            'wireguard_address' => '10.6.0.30',
+        ]);
+        createNodeRoleApiContractAssignment($database, role: 'database');
+        $postgres = Process::factory()
+            ->forOwner($database)
+            ->create([
+                'name' => 'postgres',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => ['service' => 'postgres', 'version_family' => '16'],
+            ]);
+        Process::factory()
+            ->forOwner($database)
+            ->create([
+                'name' => 'clickhouse',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => ['service' => 'clickhouse'],
+            ]);
+
+        app()->instance(NodeRoleBaselineConverger::class, new NodeRoleAddNoopConverger);
+        app()->instance(AnalyticsRouteRegistrar::class, new NodeRoleAddNoopAnalyticsRouteRegistrar);
+
+        postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
+            'role' => 'analytics',
+            'settings' => [
+                'postgres_node' => 'database-1',
+                'postgres_process' => 'postgres',
+                'clickhouse_node' => 'database-1',
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('success.data.assignment.settings.postgres_node_id', $database->id)
+            ->assertJsonPath('success.data.assignment.settings.postgres_process_id', $postgres->id)
+            ->assertJsonPath('success.data.assignment.settings.clickhouse_node_id', $database->id)
+            ->assertJsonMissingPath('success.data.assignment.settings.postgres_process');
+
+        expect(
+            $target
+                ->roleAssignments()
+                ->where('role', 'analytics')
+                ->where('settings->postgres_process_id', $postgres->id)
+                ->exists(),
+        )->toBeTrue();
+    });
+
+    it('rejects PostgreSQL 18 as the selected analytics process', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
+        $database = createNodeRoleApiContractTarget([
+            'name' => 'database-1',
+            'host' => '10.6.0.30',
+            'wireguard_address' => '10.6.0.30',
+        ]);
+        createNodeRoleApiContractAssignment($database, role: 'database');
+        Process::factory()
+            ->forOwner($database)
+            ->create([
+                'name' => 'postgres-food',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => ['service' => 'postgres', 'version_family' => '18'],
+            ]);
+        Process::factory()
+            ->forOwner($database)
+            ->create([
+                'name' => 'clickhouse',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => ['service' => 'clickhouse'],
+            ]);
+
+        postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
+            'role' => 'analytics',
+            'settings' => [
+                'postgres_node' => 'database-1',
+                'postgres_process' => 'postgres-food',
+                'clickhouse_node' => 'database-1',
+            ],
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'postgres_process');
+
+        expect($target->roleAssignments()->where('role', 'analytics')->exists())->toBeFalse();
     });
 
     it('rejects an unsafe S3 data path before assigning the role', function (): void {
@@ -464,4 +553,15 @@ final class NodeRoleAddNoopConverger extends NodeRoleBaselineConverger
 
     #[\Override]
     public function converge(Node $node, NodeRoleAssignment $assignment): void {}
+}
+
+final class NodeRoleAddNoopAnalyticsRouteRegistrar extends AnalyticsRouteRegistrar
+{
+    public function __construct() {}
+
+    #[\Override]
+    public function convergeServiceRoute(?Node $backend = null): ProxyRoute
+    {
+        return new ProxyRoute;
+    }
 }

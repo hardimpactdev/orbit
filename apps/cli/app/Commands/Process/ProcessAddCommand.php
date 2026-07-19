@@ -20,6 +20,9 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {--tool= : Tool capability this process uses}
         {--service= : Managed service identifier to materialize}
         {--service-version= : Managed service version selector}
+        {--database= : PostgreSQL database name}
+        {--username= : PostgreSQL username}
+        {--published-port= : PostgreSQL host port}
         {--image= : Explicit Docker image override}
         {--restart-policy=never : Restart policy (never|on_failure|always)}
         {--crash-notification=none : Crash notification policy (none|agent_ide)}
@@ -46,6 +49,9 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         $service = $this->stringOption('service');
         $version = $this->stringOption('service-version');
         $image = $this->stringOption('image');
+        $database = $this->stringOption('database');
+        $username = $this->stringOption('username');
+        $publishedPort = $this->stringOption('published-port');
         $replaceContainers = $this->replaceContainers();
         $noStart = $this->option('no-start') === true;
 
@@ -110,6 +116,11 @@ final class ProcessAddCommand extends ProcessGatewayCommand
                         'value' => $tool,
                         'reason' => 'process_service_cannot_reference_tool',
                     ]) : null
+            ) ?? $this->validatePostgresServiceOptions(
+                $service,
+                $database,
+                $username,
+                $publishedPort,
             ) ?? $this->validateReplaceContainers(
                 $replaceContainers,
                 $node,
@@ -122,6 +133,13 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         }
 
         $start = ! $noStart;
+        $serviceOptions = $service === 'postgres'
+            ? [
+                'database' => $database,
+                'username' => $username,
+                'published_port' => (int) $publishedPort,
+            ]
+            : null;
 
         $payload = $this->filledQuery([
             'node' => $node,
@@ -137,6 +155,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
             'service' => $service,
             'version' => $version,
             'image' => $image,
+            'service_options' => $serviceOptions,
             'replace_containers' => $replaceContainers === [] ? null : $replaceContainers,
             'destructive_consent' => $replaceContainers === [] ? null : true,
             'destructive_consent_source' => $replaceContainers === [] ? null : $this->replaceContainerConsentSource(),
@@ -233,6 +252,64 @@ final class ProcessAddCommand extends ProcessGatewayCommand
                 'value' => $service,
             ],
         );
+    }
+
+    private function validatePostgresServiceOptions(
+        ?string $service,
+        ?string $database,
+        ?string $username,
+        ?string $publishedPort,
+    ): ?int {
+        $optionsSupplied = $database !== null || $username !== null || $publishedPort !== null;
+
+        if ($service !== 'postgres') {
+            return (
+                $optionsSupplied
+                    ? $this->failValidation(
+                        'service_options',
+                        'PostgreSQL service options require --service=postgres.',
+                        ['reason' => 'process_service_options_unsupported'],
+                    )
+                    : null
+            );
+        }
+
+        if ($database === null) {
+            return $this->failValidation('database', 'PostgreSQL requires --database.', ['reason' => 'required']);
+        }
+
+        if (preg_match('/^[a-z_][a-z0-9_]{0,62}$/', $database) !== 1) {
+            return $this->failValidation('database', 'PostgreSQL database is not a valid identifier.', [
+                'value' => $database,
+                'reason' => 'invalid_postgres_identifier',
+            ]);
+        }
+
+        if ($username === null) {
+            return $this->failValidation('username', 'PostgreSQL requires --username.', ['reason' => 'required']);
+        }
+
+        if (preg_match('/^[a-z_][a-z0-9_]{0,62}$/', $username) !== 1) {
+            return $this->failValidation('username', 'PostgreSQL username is not a valid identifier.', [
+                'value' => $username,
+                'reason' => 'invalid_postgres_identifier',
+            ]);
+        }
+
+        if ($publishedPort === null) {
+            return $this->failValidation('published_port', 'PostgreSQL requires --published-port.', [
+                'reason' => 'required',
+            ]);
+        }
+
+        if (preg_match('/^\d+$/', $publishedPort) !== 1 || (int) $publishedPort < 1 || (int) $publishedPort > 65535) {
+            return $this->failValidation('published_port', 'PostgreSQL published port must be between 1 and 65535.', [
+                'value' => $publishedPort,
+                'reason' => 'out_of_range',
+            ]);
+        }
+
+        return null;
     }
 
     /**

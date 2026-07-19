@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit node role:add [node] [role] [--valkey-node=] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
+orbit node role:add [node] [role] [--valkey-node=] [--postgres-node=<node>] [--postgres-process=<process>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--json]
 ```
 
 ## Input Contract
@@ -28,6 +28,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `role` | `[role]` | Always. | Never. | None. | `gateway`, `vpn`, `router`, and `agent` are rejected. |
 | `valkey_node` | `--valkey-node` | Required for `websocket`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and Valkey expected or installed. |
 | `postgres_node` | `--postgres-node` | Required for `analytics`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and PostgreSQL expected or installed. |
+| `postgres_process` | `--postgres-process` | Required for new `analytics` assignments. | Forbidden for roles that do not support it. | Existing compatible assignment's stored process identity. | Must match a node-owned `postgres` service process on `postgres_node` with `version_family=16`. The gateway persists its process ID. Other families fail validation because Plausible requires PostgreSQL 16. |
 | `clickhouse_node` | `--clickhouse-node` | Required for `analytics`. | Forbidden for roles that do not support it. | None. | Must match an active node with the `database` role and ClickHouse expected or installed. |
 | `s3_data_path` | `--s3-data-path` | Never. | Forbidden for roles that do not support it. | `/srv/orbit/s3/data` for `s3`. | Canonical host path under `/media`, `/mnt`, `/opt/orbit`, `/srv`, or `/var/lib/orbit`, mounted into SeaweedFS as `/data`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and forces non-interactive input mode. |
@@ -48,7 +49,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   mandatory node-owned TLD.
 - `websocket` requires `--valkey-node`. The resolved node must have an active
   `database` role and Valkey expected or installed.
-- `analytics` requires `--postgres-node` and `--clickhouse-node`. The resolved
+- `analytics` requires `--postgres-node`, `--postgres-process`, and
+  `--clickhouse-node`. The resolved PostgreSQL process must be owned by the
+  selected PostgreSQL node, retain `service=postgres`, and have
+  `version_family=16`. The resolved
   nodes must have active `database` roles and matching PostgreSQL and ClickHouse
   service processes expected or installed. Both options may point at the same
   database node. Either option may point at the target analytics node only when
@@ -130,6 +134,7 @@ Renderer-specific test mapping lives in:
 | --- | --- | --- |
 | Node not found | No active node matches `node`. | Failure |
 | Analytics role already assigned | Another analytics assignment exists in the fleet, including an incomplete deployment or removal. | `error.code=validation_failed` |
+| Analytics PostgreSQL version unsupported | The selected PostgreSQL process does not have `version_family=16`. | `error.code=validation_failed` before role assignment |
 | Convergence failed | Role assignment was stored but baseline convergence ended in `error`. | `error.code=node_role.convergence_failed`, `error.meta.last_error=<recorded convergence error>` |
 
 ## Doctor Relationship

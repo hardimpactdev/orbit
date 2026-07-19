@@ -21,7 +21,12 @@ final readonly class PlausibleRuntimeConfig
         ?Process $existingProcess,
         array $runtimeConfig,
     ): PlausibleRuntimeSettings {
-        $postgres = $this->endpointResolver->resolve($assignment, 'postgres_node_id', 'postgres');
+        $postgres = $this->endpointResolver->resolve(
+            $assignment,
+            'postgres_node_id',
+            'postgres',
+            'postgres_process_id',
+        );
         $clickHouse = $this->endpointResolver->resolve($assignment, 'clickhouse_node_id', 'clickhouse');
         $postgresCredentials = $this->endpointResolver->credentials($postgres['process'], 'PostgreSQL');
         $clickHouseCredentials = $this->endpointResolver->credentials($clickHouse['process'], 'ClickHouse');
