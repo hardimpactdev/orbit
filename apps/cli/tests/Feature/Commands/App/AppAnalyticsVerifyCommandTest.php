@@ -77,7 +77,7 @@ describe('AppAnalyticsVerifyCommand', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('Verifying App Analytics')
+            ->toContain('Verifying Instance Analytics')
             ->and($output)
             ->toContain('route_intent: registered')
             ->and($output)

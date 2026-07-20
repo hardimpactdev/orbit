@@ -1,7 +1,7 @@
 # `orbit php:list`
 
 List PHP image versions Orbit supports, images available on a target node, and
-the current app or workspace PHP selection.
+the current project, instance, or workspace PHP selection.
 
 ## Usage
 
@@ -22,23 +22,23 @@ orbit php:list --node=app-1 --json
 ## Arguments and options
 
 - `--node=<node>`: Target node for available-image inspection.
-- `--instance=<project.instance>`: Concrete dotted instance context for app PHP
+- `--instance=<project.instance>`: Concrete dotted instance context for project PHP
   version and serving-node image reporting. A bare project is not accepted.
 - `--workspace=<workspace>`: Workspace context for effective PHP version
   reporting. Requires `--instance` unless the current directory resolves the parent
-  app.
+  project.
 - `--live`: Inspect the target node for available PHP images during this
   command instead of using gateway-tracked runtime facts.
 - `--json`: Return the PHP runtime view in the JSON output.
 
 ## What Happens
 
-Run this command to inspect PHP image support and selection for a node, app, or workspace.
+Run this command to inspect PHP image support and selection for a node, instance, or workspace.
 
 `php:list` resolves one node, concrete instance, or workspace context from
 explicit options, caller context, concrete instance placement, or local
 `node:default`. It never chooses one instance to represent a project. It
-reads the shared app PHP policy and the PHP image facts tracked for the selected
+reads the shared project PHP policy and the PHP image facts tracked for the selected
 instance serving node.
 
 With `--live`, it also asks the gateway to inspect the target node through its Docker-compatible provider and
@@ -47,14 +47,14 @@ as unavailable. On an eligible node without a PHP inventory fact, Orbit
 registers that fact before probing. The probe through the Docker-compatible
 provider still has to succeed before the inventory is confirmed.
 
-The command does not install PHP, remove PHP, change app configuration, change
+The command does not install PHP, remove PHP, change project configuration, change
 workspace overrides, or edit project files.
 
 ## Output
 
 Your output shows the resolved PHP versions and selections for each available scope.
 
-Human output renders supported versions, available images, app selection, and
+Human output renders supported versions, available images, project and instance selection, and
 workspace effective selection when those contexts are
 available. Use `--json` for machine-readable output.
 

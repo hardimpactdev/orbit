@@ -67,7 +67,7 @@ These terms define the inheritance chain used to resolve the effective adapter f
 
 - **Node Agent IDE default:** Node-owned gateway configuration set through
   `node:agent-ide`. It is the root of the current inheritance chain.
-- **App Agent IDE override:** App-owned gateway configuration set through
+- **Instance Agent IDE override:** Instance-owned gateway configuration set through
   `instance:agent-ide`. It may select an adapter, clear the app override with
   `inherit`, or explicitly disable Agent IDE resolution for the app and its
   workspaces with `none`.

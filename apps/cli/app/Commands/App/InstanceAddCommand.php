@@ -13,7 +13,7 @@ final class InstanceAddCommand extends InstanceCommand
         {instance? : project.instance selector}
         {--driver=orbit : Instance driver (orbit|laravel-cloud)}
         {--node= : Orbit node for orbit driver}
-        {--path= : Orbit app path for orbit driver}
+        {--path= : Orbit instance path for orbit driver}
         {--root= : Orbit document root for orbit driver}
         {--domain= : Primary domain}
         {--cloud-app= : Laravel Cloud application id or name}

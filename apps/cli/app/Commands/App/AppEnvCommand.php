@@ -20,7 +20,7 @@ final class AppEnvCommand extends AppGatewayCommand
         {instance? : project.instance selector}
         {--key= : Env key for set}
         {--value= : Env value for set}
-        {--apply : Persist and apply set values to the remote app runtime}
+        {--apply : Persist and apply set values to the remote instance runtime}
         {--secret : Mark value as secret (not supported in this slice)}
         {--json : Output JSON}';
 
@@ -176,12 +176,15 @@ final class AppEnvCommand extends AppGatewayCommand
         $response = [];
 
         $outcome = $this->runStepOperation(
-            'Applying App Env',
+            'Applying Instance Env',
             [
                 ['label' => 'Save env value in gateway state', 'doneLabel' => 'Saved env value in gateway state'],
                 ['label' => 'Update remote .env file', 'doneLabel' => 'Updated remote .env file'],
                 ['label' => 'Clear Laravel caches', 'doneLabel' => 'Cleared Laravel caches'],
-                ['label' => 'Reapply app runtime container', 'doneLabel' => 'Reapplied app runtime container'],
+                [
+                    'label' => 'Reapply instance runtime container',
+                    'doneLabel' => 'Reapplied instance runtime container',
+                ],
             ],
             work: function () use ($app, $instance, $key, $value, &$response): array {
                 return $response = $this->setEnvOnGatewayForHuman($app, $instance, $key, $value);

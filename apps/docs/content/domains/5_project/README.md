@@ -14,7 +14,7 @@ These rules govern all instance family commands.
   instance deployment policy, and project health configuration.
 - Project names are identity slugs: lowercase letters, digits, and hyphens only.
   They cannot start or end with a hyphen and are limited to 40 characters.
-- App-host artifacts on non-gateway nodes are applied through Agent push.
+- Instance-host artifacts on non-gateway nodes are applied through Agent push.
   Gateway-owned work executes locally. Provisioning is the sole permanent
   Orbit SSH lane.
 - Projects may have one or more instances. Instance names are unique within the

@@ -32,7 +32,6 @@ final readonly class ToolUpdater
         ?string $node = null,
         ?string $app = null,
         ?string $expectedVersion = null,
-        ?string $instance = null,
     ): array|ToolRegistryFailure {
         if (! $this->catalog->supports($tool)) {
             return ToolRegistryFailure::unsupportedAction($tool, 'update');
@@ -42,7 +41,7 @@ final readonly class ToolUpdater
             return ToolRegistryFailure::unsupportedAction($tool, 'update');
         }
 
-        $model = $this->registry->show(tool: $tool, node: $node, app: $app, instance: $instance);
+        $model = $this->registry->show(tool: $tool, node: $node, app: $app);
 
         if ($model instanceof ToolRegistryFailure) {
             return $model;

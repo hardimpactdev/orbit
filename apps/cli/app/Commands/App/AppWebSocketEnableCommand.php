@@ -14,7 +14,7 @@ final class AppWebSocketEnableCommand extends AppGatewayCommand
     protected $name = 'instance:websocket enable';
 
     #[\Override]
-    protected $description = 'Enable WebSocket support for an app.';
+    protected $description = 'Enable WebSocket support for an instance.';
 
     #[\Override]
     protected function configure(): void

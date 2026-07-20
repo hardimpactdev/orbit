@@ -75,7 +75,7 @@ The output format depends on whether `--json` is passed.
 ## Related
 
 - [`orbit node:agent-ide [name] [agent_ide]`](../../1_node/10_node-agent-ide/node-agent-ide.md)
-- [`orbit instance:agent-ide [app] [agent_ide]`](../../5_project/9_instance-agent-ide/instance-agent-ide.md)
+- [`orbit instance:agent-ide [instance] [agent_ide]`](../../5_project/9_instance-agent-ide/instance-agent-ide.md)
 - [`doctor --family=instance`](../../5_project/instance-doctor.md)
 - [`doctor --family=node`](../../1_node/node-doctor.md)
 - [`doctor --family=tool`](../../3_tool/tool-doctor.md)

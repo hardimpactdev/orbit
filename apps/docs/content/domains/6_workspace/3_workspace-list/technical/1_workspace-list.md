@@ -26,12 +26,12 @@ options are optional.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `--instance` | Optional. | Never. | None. | Parent project slug or instance selector present in the gateway registry. Dot notation such as `happie.nmbp` selects one concrete instance. Single value only; comma-separated input fails as `validation_failed` because it is not a valid single app selector. Unknown selectors fail before side effects. |
-| `node` | `--node` | Optional. | Never. | None. | App-role slug present in the gateway registry. Single value only; comma-separated input fails as `validation_failed` because it is not a valid single node slug. Unknown slugs fail before side effects. |
+| `instance` | `--instance` | Optional. | Never. | None. | Parent project slug or instance selector present in the gateway registry. Dot notation such as `happie.nmbp` selects one concrete instance. Single value only; comma-separated input fails as `validation_failed` because it is not a valid single instance selector. Unknown selectors fail before side effects. |
+| `node` | `--node` | Optional. | Never. | None. | Instance-serving node slug present in the gateway registry. Single value only; comma-separated input fails as `validation_failed` because it is not a valid single node slug. Unknown slugs fail before side effects. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 `--instance` and `--node` are scalar filters. Multi-value semantics are not part of
-the initial contract. Operators who need to query multiple apps, app
+the initial contract. Operators who need to query multiple projects, instance
 instances, or nodes at once should run `workspace:list --json` without that
 filter and post-filter the result, or run separate scoped invocations.
 

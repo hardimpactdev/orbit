@@ -73,7 +73,7 @@ These terms describe the runtime side of deployments — how runs are tracked an
   is captured gateway history, not live streaming output, process manager log
   output, or a node filesystem read.
 - **Latest deployment status:** Gateway state owned by the instance that records the
-  newest deployment outcome. App doctor uses it when evaluating production project
+  newest deployment outcome. Instance doctor uses it when evaluating production project
   health.
 
 ## Health and boundaries

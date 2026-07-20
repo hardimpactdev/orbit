@@ -46,8 +46,8 @@ final class SetupAppProgressPlan
         $steps = [
             [
                 'key' => 'resolve_app',
-                'label' => 'Resolve app',
-                'doneLabel' => 'Resolved app',
+                'label' => 'Resolve instance',
+                'doneLabel' => 'Resolved instance',
                 'run' => fn (): string => $this->app->name,
             ],
         ];
@@ -55,8 +55,8 @@ final class SetupAppProgressPlan
         if ($this->hasSetupSteps()) {
             $steps[] = [
                 'key' => 'run_app_setup_steps',
-                'label' => 'Run app setup steps',
-                'doneLabel' => 'Ran app setup steps',
+                'label' => 'Run instance setup steps',
+                'doneLabel' => 'Ran instance setup steps',
                 'run' => function (): string {
                     $this->setupResult = $this->setupApp->runSetupSteps(
                         $this->app,

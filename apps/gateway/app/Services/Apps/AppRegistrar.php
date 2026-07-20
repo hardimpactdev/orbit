@@ -86,11 +86,14 @@ final class AppRegistrar
         $path = $input['path'] ?? $existingApp?->path;
 
         if ((! is_string($path) || $path === '') && $this->isInteractiveInput()) {
-            $path = trim(text(label: 'App path on node', required: true));
+            $path = trim(text(label: 'Instance path on node', required: true));
         }
 
         if (! is_string($path) || $path === '') {
-            return $this->failValidation('path', 'The --path option is required when registering an unmanaged app.');
+            return $this->failValidation(
+                'path',
+                'The --path option is required when registering an unmanaged instance.',
+            );
         }
 
         if (! str_starts_with($path, '/')) {

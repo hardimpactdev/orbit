@@ -38,7 +38,7 @@ the parent project path, including external agent worktree directories.
 
 ## Input Resolution
 
-1. **Resolve Workspace Identity**: Resolve `[name]` and parent `app` in this
+1. **Resolve Workspace Identity**: Resolve `[name]` and parent `project` in this
    order:
    - Explicit `[name]` positional + explicit `--instance`.
    - **Explicit `--path` Codex metadata:** when `[name]` is missing and
@@ -245,7 +245,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 registry, Agent-push, or runtime effects. This failure uses
 `error.code=workspace.unsupported_for_production`.
 
-- **Path Is App Root**: The resolved CWD is a registered app's own path, not
+- **Path Is Instance Root**: The resolved CWD is a registered instance's own path, not
   a workspace path under it. Fails before side effects with
   `error.code=workspace.path_is_app_root`, `error.meta.project=<project>`,
   `error.meta.path=<cwd>`, and
@@ -258,7 +258,7 @@ registry, Agent-push, or runtime effects. This failure uses
   `error.code=workspace.agent_ide_path_resolution_failed`,
   `error.meta.adapter=<name>`, and `error.meta.reason=<short>`. The probe
   does not silently fall through on adapter errors.
-- **Path Is App Root (Explicit `--path`)**: The supplied `--path` equals the
+- **Path Is Instance Root (Explicit `--path`)**: The supplied `--path` equals the
   parent project's own root path. Fails before side effects with
   `error.code=workspace.path_is_app_root`, `error.meta.project=<project>`,
   `error.meta.path=<path>`, and

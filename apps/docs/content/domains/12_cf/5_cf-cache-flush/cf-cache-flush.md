@@ -1,6 +1,6 @@
 # `orbit cf-cache:flush`
 
-Purge Cloudflare cache for a zone or app-owned domain.
+Purge Cloudflare cache for a zone or project-owned domain.
 
 ## Usage
 

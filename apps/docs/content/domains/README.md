@@ -47,7 +47,7 @@ These rules govern every command contract in this directory.
   split `family:compound-action` spellings.
 - Documentation domains and doctor state families are related but not
   interchangeable. A command belongs to a documentation domain; drift
-  convergence belongs to a stable state family such as `node`, `app`,
+  convergence belongs to a stable state family such as `node`, `instance`,
   `workspace`, `process`, `proxy`, `firewall_rule`, `tool`,
   `schedule`, or `database_connection`.
 - Tool and capability command families are explicitly admitted product
@@ -59,7 +59,7 @@ These rules govern every command contract in this directory.
   ownership fails explicitly; there is no generic related-process adapter.
   A tool-specific or capability-specific family is valid only when it owns a
   distinct Orbit workflow whose natural operator vocabulary is the tool or
-  capability name. `php:*` owns PHP image selection across apps and
+  capability name. `php:*` owns PHP image selection across instances and
   workspaces; future Valkey data-plane operations may use
   `valkey:*`. Database connection inventory, env convergence, schema
   inspection, audited SQL execution, and database backup/restore workflows
@@ -173,7 +173,7 @@ contracts need separate ownership.
 Command directories are documentation domains. State families are doctor and
 convergence families. They often align, but they are not the same concept.
 
-Stable state families are `node`, `app`, `workspace`, `process`,
+Stable state families are `node`, `instance`, `workspace`, `process`,
 `proxy`, `firewall_rule`, `tool`, `schedule`, and `database_connection`.
 These are the keys accepted by `doctor --family=<family>` and the values
 carried by warning or doctor `family` fields. Machine-readable issue and
@@ -185,7 +185,7 @@ warning codes use singular product prefixes, such as `node.wireguard_peer_missin
 Security is a cross-family section pattern, not a command domain or state
 family. Do not add a `security` command domain or `doctor --family=security`.
 Security issue codes live under the family that owns the state being checked,
-such as `node.security.*`, `app.security.*`, or `workspace.security.*`.
+such as `node.security.*`, `instance.security.*`, or `workspace.security.*`.
 
 Warning `family` is `null` only for command-owned warnings that are not doctor
 issue codes and do not point at `doctor` as the recovery command. Warning codes
@@ -682,7 +682,7 @@ in-memory contract owner listed in each command's test mapping.
 
 Domains are ordered by dependency: nodes define fleet membership, gateway
 defines control-plane authority and trust, tools and firewall rules establish
-node capabilities and network policy, and apps and app-owned runtime behavior
+node capabilities and network policy, and projects and instance-owned runtime behavior
 build on top of that foundation.
 
 ### Foundation domains

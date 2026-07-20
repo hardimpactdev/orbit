@@ -109,7 +109,7 @@ This command follows the shared
 - Change activity logs.
 - Mutate serving-node host state.
 - End in-flight RPCs, invalidate tokens, or mark sessions stale.
-- Block revocation when the grant is referenced by active apps or workspaces.
+- Block revocation when the grant is referenced by active instances or workspaces.
 - Remove the node itself.
 
 ## Renderer Contracts

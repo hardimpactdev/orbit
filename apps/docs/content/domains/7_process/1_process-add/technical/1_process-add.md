@@ -25,11 +25,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Process slug: lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the resolved owner scope. |
 | `process_command` | `[process_command]` | When `service` is absent. | Never. | Managed service command when `service` is present. | Non-empty command string. Stored as process configuration without shell rewriting by the input adapter. |
-| `node` | `--node` | Required when adding a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:add`. |
-| `app` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:add`. |
+| `node` | `--node` | Required when adding a node-owned process. | `instance` or `workspace` is present. | None. | Must resolve to a node that grants `process:add`. |
+| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:add`. |
 | `workspace` | `--workspace` or workspace context | Required when adding a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:add`; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
 | `tool` | `--tool` | Optional. | Never. | `null`. | Tool slug for the installed node capability this process uses. Tools do not own lifecycle. |
-| `service` | `--service` | Optional. | When `tool` is present or when owner scope is app/workspace. | `null`. | Supported managed service identifier from the gateway service catalog. The process name does not imply the service. |
+| `service` | `--service` | Optional. | When `tool` is present or when owner scope is instance/workspace. | `null`. | Supported managed service identifier from the gateway service catalog. The process name does not imply the service. |
 | `version` | `--version` | Optional for one-version services; required when the service has multiple version families. | When `service` is absent. | Service default when unambiguous. | Supported managed service version or version family. CLI implementation normalizes public `--version` to internal `--service-version` because Symfony reserves the global `--version` flag. |
 | `database` | `--database` / `service_options.database` | `service=postgres`. | Every other service or host-command process. | None. | Lowercase PostgreSQL identifier containing letters, digits, and underscores, starting with a letter or underscore, max 63 characters. |
 | `username` | `--username` / `service_options.username` | `service=postgres`. | Every other service or host-command process. | None. | Lowercase PostgreSQL identifier containing letters, digits, and underscores, starting with a letter or underscore, max 63 characters. |
@@ -125,7 +125,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | Type | `api:POST /processes` |
 | Effect | `write` |
 | Subject | Resolved `Node` for node-owned processes or `AppInstance` for instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
-| Properties | `node`, `app`, `instance`, `workspace`, `name`, `tool`, and `service`. No raw command text, service options, env, runtime output, replacement-container names, or secrets. |
+| Properties | `node`, `instance`, `workspace`, `name`, `tool`, and `service`. No raw command text, service options, env, runtime output, replacement-container names, or secrets. |
 | Description | derived |
 
 ## Test Mapping

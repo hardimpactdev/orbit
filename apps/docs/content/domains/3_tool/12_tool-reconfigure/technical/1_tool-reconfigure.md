@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized to manage tools for the resolved node or app.
+- The current node identity is authorized to manage tools for the resolved node or instance.
 
 ## Signature
 
@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Required in non-interactive input mode.` | `Never.` | `interactive selection from reconfigurable tools` | `Registered reconfigurable tool name.` |
 | `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `app` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
+| `instance` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve the owning node.` |
 | `password` | `--password` | `Optional.` | `when the tool definition does not support password reconfiguration.` | `None.` | `Tool-definition-specific password value.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 | `stream-json` | `--stream-json` | `Optional.` | `Never.` | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
@@ -55,7 +55,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-reconfigure` must not create apps, workspaces, processes, schedules,
+`tool-reconfigure` must not create projects, instances, workspaces, processes, schedules,
 custom proxy routes, non-tool firewall rules, node identities, or node grants.
 Tool-owned endpoint updates are allowed only when declared by the selected tool
 definition. Related drift belongs to each owning family doctor contract.

@@ -4,7 +4,7 @@
 
 Set the default agent IDE adapter for a node.
 
-Stores the default agent IDE for the node, used by apps and workspaces on that node
+Stores the default agent IDE for the node, used by instances and workspaces on that node
 when they do not define an instance-level override. Used to make agent IDE messaging
 and crash-notification workflows work by default on a development node.
 
@@ -54,7 +54,7 @@ resolve their effective agent IDE per-event using the current inheritance chain
 override slot above instance scope. A change to the node default is naturally picked
 up at the next consumer-side resolution event without a push from this command.
 Workspace cleanup remains instance-scoped: changing a node default does not prune
-workspaces for inheriting apps. Run
+workspaces for inheriting instances. Run
 [`instance:prune`](../../5_project/7_instance-prune/instance-prune.md) for each affected app when
 stale workspace cleanup is wanted after a node-default change.
 
@@ -67,7 +67,7 @@ stale workspace cleanup is wanted after a node-default change.
 - Trigger downstream session restart or instance-level invalidation.
 - Notify running agent-IDE sessions or invalidate instance-level or workspace-level
   overrides.
-- Remove or prune workspaces for apps that inherit the node default.
+- Remove or prune workspaces for instances that inherit the node default.
 
 ### Recovery from doctor warnings
 

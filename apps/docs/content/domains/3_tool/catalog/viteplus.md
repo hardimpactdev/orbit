@@ -28,7 +28,7 @@ surface. Runtime lifecycle and logs belong to the process family.
 
 ## Orbit Notes
 
-VitePlus supplies frontend development runtime support. App, workspace, and
+VitePlus supplies frontend development runtime support. Instance, workspace, and
 process behavior remain owned by their respective command families.
 
 Vite-backed development servers that need browser/HMR access across the Orbit

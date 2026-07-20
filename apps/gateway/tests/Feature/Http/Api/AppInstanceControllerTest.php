@@ -68,6 +68,24 @@ function get_app_instance_json(string $uri): TestResponse
 }
 
 describe('AppInstanceController', function (): void {
+    it('returns empty lists when the caller may read instances on an active app node', function (): void {
+        $caller = create_app_instance_caller();
+        $appNode = createTestAppHostNode(['name' => 'app-dev-1']);
+        grant_app_instance_access($caller, $appNode);
+        Project::factory()->for($appNode, 'node')->create(['name' => 'docs']);
+
+        get_app_instance_json('/api/instances')
+            ->assertOk()
+            ->assertJsonPath('success.data.instances', [])
+            ->assertJsonPath('success.meta.count', 0);
+
+        get_app_instance_json('/api/projects/docs/instances')
+            ->assertOk()
+            ->assertJsonPath('success.data.project', 'docs')
+            ->assertJsonPath('success.data.instances', [])
+            ->assertJsonPath('success.meta.count', 0);
+    });
+
     it('reports configured mounts from each app instance', function (): void {
         $caller = create_app_instance_caller();
         $appNode = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);

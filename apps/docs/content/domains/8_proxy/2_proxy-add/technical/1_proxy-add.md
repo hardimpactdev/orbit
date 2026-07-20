@@ -22,7 +22,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `domain` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Hostname or documented host/path route identity not owned by an app, app WebSocket binding, workspace, gateway, websocket service, S3 service, or tool route. |
+| `domain` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Hostname or documented host/path route identity not owned by a project, instance, WebSocket binding, workspace, gateway, websocket service, S3 service, or tool route. |
 | `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | Visible active Ubuntu node with proxy capability. |
 | `upstream` | `--upstream` | `Required when `redirect` is absent.` | `Forbidden with `redirect` or `code`.` | `None.` | HTTP or HTTPS upstream URL reachable from the serving node. |
 | `redirect` | `--redirect` | `Required when `upstream` is absent.` | `Forbidden with `upstream`.` | `None.` | Absolute HTTP or HTTPS redirect URL. |
@@ -62,14 +62,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 These rules govern how `proxy:add` interacts with routes owned by other families and what consent is required to replace a custom route.
 
 The command fails before side effects if the domain is already owned by an app,
-app WebSocket binding, workspace, gateway, websocket service, S3 service, or
+project, instance, WebSocket binding, workspace, gateway, websocket service, S3 service, or
 tool route. It never uses `--force` to overwrite a non-custom route. Updating
 an existing custom route with a different target requires explicit replacement
 consent, supplied either as an interactive confirmation prompt or `--force`.
 
 ### Scope Boundaries
 
-`proxy-add` must not create apps, app WebSocket bindings, workspaces, tools,
+`proxy-add` must not create projects, instances, WebSocket bindings, workspaces, tools,
 nodes, firewall rules, DNS records, or process definitions. It must not infer
 tool ownership from a port, WebSocket ownership from a hostname, or S3
 ownership from a hostname. When an upstream targets a service on the same host
@@ -99,7 +99,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Domain conflict | The selected domain is owned by an app, app WebSocket binding, workspace, gateway, websocket service, S3 service, or tool route. | `error.code=proxy.domain_conflict` |
+| Domain conflict | The selected domain is owned by a project, instance, WebSocket binding, workspace, gateway, websocket service, S3 service, or tool route. | `error.code=proxy.domain_conflict` |
 | Replacement consent missing | Existing custom route differs and non-interactive input omitted `--force`. | `error.code=proxy.replacement_consent_required` |
 | Apply failed | Gateway configuration was written, but proxy or TLS backend apply failed. | `error.code=proxy.enactment_failed` |
 

@@ -35,11 +35,11 @@ This command follows the shared
 
 1. Resolve `action`. Reject any value other than `show`, `enable`, or
    `disable` with `validation_failed`.
-2. Resolve `app` from `[instance]`. When omitted, an interactive prompt selects an
+2. Resolve the concrete instance from `[instance]`. When omitted, an interactive prompt selects an
    instance the caller can see; non-interactive callers without an `[instance]`
    argument fail with `validation_failed`.
 3. Require one concrete instance. A dotted selector is explicit. A bare
-   app selector auto-resolves only a sole instance; zero or multiple instances
+   project selector auto-resolves only a sole instance; zero or multiple instances
    fail before authorization or side effects with `validation_failed`,
    `error.meta.field=instance`, and
    `error.meta.reason=instance_required`.
@@ -169,8 +169,8 @@ failures below.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Validation failed (action) | `action` is missing or not one of `show`, `enable`, `disable`. | Failure |
-| Validation failed (app) | `app` is missing in non-interactive mode. | Failure |
-| Instance not found | No project record matches `app`. | Failure |
+| Validation failed (instance) | `instance` is missing in non-interactive mode. | Failure |
+| Instance not found | No concrete instance matches `instance`. | Failure |
 | Instance required | A bare project selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=instance_required`. |
 | Unsupported runtime | `enable` was called for an app with `runtime != php`. State unchanged. | Failure |
 | Serving node missing | `enable` was called for an instance whose `driver_config.node` is missing. State unchanged. | Failure |

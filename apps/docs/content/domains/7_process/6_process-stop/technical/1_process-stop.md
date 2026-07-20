@@ -24,8 +24,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Optional. | Never. | None. | Existing process slug within the resolved runtime context when supplied. Omit to stop all process definitions in process order. |
-| `node` | `--node` | Required when stopping node-owned processes. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:stop`. |
-| `app` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:stop`. |
+| `node` | `--node` | Required when stopping node-owned processes. | `instance` or `workspace` is present. | None. | Must resolve to a node that grants `process:stop`. |
+| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:stop`. |
 | `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:stop`; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -79,7 +79,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | Type | `api:POST /processes/stop` |
 | Effect | `write` |
 | Subject | Resolved `Node` for node-owned processes or `AppInstance` for instance/workspace contexts; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
-| Properties | `node` (string or null), `app` (string or null), `instance` (string or null), `workspace` (string or null), and `name` (string or null). No runtime output, backend command text, or secrets. |
+| Properties | `node` (string or null), `instance` (string or null), `workspace` (string or null), and `name` (string or null). No runtime output, backend command text, or secrets. |
 | Description | derived |
 
 ## Test Mapping

@@ -503,7 +503,7 @@ or separate approval UI. Orbit still installs and updates the owner-user Agent
 artifact and restarts an existing managed service; bootstrap owns first service
 creation and updates do not create a missing service. Agent execution is
 limited to explicitly supported binary argv envelopes with node-local binary
-allowlisting. App-dev convergence uses direct command envelopes that the
+allowlisting. `app-dev` convergence uses direct command envelopes that the
 gateway constructs, authorizes, and sends through Agent push.
 
 ## Access Policy
@@ -627,7 +627,7 @@ family.
   the active gateway projection anchor. Both paths use
   `node.dns_mapping_mismatch`; this is semantic comparison, not a byte-exact
   whole-file comparison on every node.
-- **App-dev HTTP address for callers:** Optional node `public_ipv4`
+- **`app-dev` HTTP address for callers:** Optional node `public_ipv4`
   metadata used when an operator wants local resolver overrides to send
   `*.{tld}` traffic to a trusted RFC1918 LAN address instead of the WireGuard
   service address. When that value is a private IPv4 on an `app-dev` node, the

@@ -29,10 +29,10 @@ The process family owns these facts:
   services, including service identifier, version family, concrete
   version, runtime unit name, spec hash, endpoint metadata, and credential
   field names;
-- canonical FrankenPHP process rows for every PHP app/workspace runtime and the
+- canonical FrankenPHP process rows for every PHP instance/workspace runtime and the
   canonical node-owned `seaweedfs` process row for each active `s3` baseline;
   these rows own concrete container presence, unit shape, lifecycle, logs, and
-  repair even though app/workspace/tool families retain their desired policy,
+  repair even though instance/workspace/tool families retain their desired policy,
   PHP/image, and credential facts;
 - metrics-role Prometheus, Grafana, and node-exporter runtime artifacts created
   from process definitions; the metrics command domain does not add a separate
@@ -45,7 +45,7 @@ The process family owns these facts:
 
 Node reachability and WireGuard route mutation belong to `node` provisioning
 and topology work. Project source policy, PHP runtime, and instance runtime configuration
-belong to `app`. Workspace source directories and setup state belong to
+belong to `instance`. Workspace source directories and setup state belong to
 `workspace`. Proxy routes, schedules, tools, and firewall rules remain outside
 the process family.
 
@@ -60,7 +60,7 @@ Main instance and node-owned process drift remains visible.
 
 ### Registry configuration
 
-Every selected app/workspace process definition has valid project and
+Every selected instance/workspace process definition has valid project and
 concrete instance references, plus a process name, command, restart policy,
 and crash-notification policy. Node-owned service process definitions have a
 valid active node owner instead of an instance owner.
@@ -114,7 +114,7 @@ actions only for launchd labels that Orbit owns.
 
 ### Runtime-unit identity
 
-Each app/workspace runtime context maps to exactly one runtime unit name that
+Each instance/workspace runtime context maps to exactly one runtime unit name that
 Orbit owns, using `orbit_<project>_<instance>_<workspace|main>_<process>`. Node-owned services
 may declare a stable configured unit name, such as `orbit-seaweedfs` for the
 `seaweedfs` process row.
@@ -168,7 +168,7 @@ Each code below identifies a specific process-family drift condition that the pr
 
 | Code | Detected when |
 | --- | --- |
-| `process.record_incomplete` | A selected app/workspace process definition lacks project, concrete instance, name, command, restart policy, or crash-notification policy. |
+| `process.record_incomplete` | A selected instance/workspace process definition lacks project, concrete instance, name, command, restart policy, or crash-notification policy. |
 | `process.owner_app_invalid` | The process definition points at a missing project, missing instance, or instance whose serving node is not active. |
 | `process.owner_node_invalid` | The process definition points at a node owner that is not active. |
 | `process.runtime_context_unresolved` | The expected main instance or same-instance workspace runtime context cannot be derived from gateway configuration. |

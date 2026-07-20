@@ -22,7 +22,7 @@ The terms below define the core identity vocabulary for the workspace family.
   name. Unique within the parent project, maximum 63 characters, independent of the
   parent project slug.
 - **Workspace hostname:** Hostname formed by prepending the workspace slug as
-  its own DNS label to the parent project's primary hostname. For development apps
+  its own DNS label to the parent project's primary hostname. For development instances
   this yields `{workspace}.{project}.{tld}`.
 - **Workspace path:** Absolute path on the owning instance node where
   workspace files live. Derived from gateway configuration and applied through

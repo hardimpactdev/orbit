@@ -61,10 +61,10 @@ orbit workspace:new feature-a --instance=my-app.development --stream-json
 `workspace:new` resolves one concrete instance from the caller's current
 directory when `--instance` is not supplied. The gateway path-ownership lookup keyed
 on (caller node identity, absolute CWD) accepts registered instance and
-workspace paths directly. An app's main path or parent-project marker is only
+workspace paths directly. An instance's main path or parent-project marker is only
 shorthand: it must map to exactly one registered instance. Zero or multiple
 matches fail with `validation_failed` and
-the `instance_required` reason. Orbit never falls back to a canonical app
+the `instance_required` reason. Orbit never falls back to a project-level
 node or creates a parent-project-only workspace. See the
 [JSON renderer contract](technical/6.2_workspace-new_output-render_json.md)
 for the exact envelope.

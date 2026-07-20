@@ -79,9 +79,8 @@ final class ToolUpdateController implements Loggable
         }
 
         $version = $this->requestString($request, 'version');
-        $instance = $this->requestString($request, 'instance');
 
-        return $this->executeUpdate($request, $tool, $updater, $streams, $caller, $node, $app, $version, $instance);
+        return $this->executeUpdate($request, $tool, $updater, $streams, $caller, $node, $app, $version);
     }
 
     private function isAgentSelfWithUpdatePermission(Node $caller): bool
@@ -122,7 +121,6 @@ final class ToolUpdateController implements Loggable
         }
 
         $version = $this->requestString($request, 'version');
-        $instance = $this->requestString($request, 'instance');
 
         return $this->executeUpdate(
             $request,
@@ -133,7 +131,6 @@ final class ToolUpdateController implements Loggable
             $caller->name,
             null,
             $version,
-            $instance,
         );
     }
 
@@ -146,14 +143,12 @@ final class ToolUpdateController implements Loggable
         ?string $node,
         ?string $app,
         ?string $version,
-        ?string $instance,
     ): JsonResponse|StreamedResponse {
         $operation = fn (): array|ToolRegistryFailure => $updater->update(
             tool: $tool,
             node: $node,
             app: $app,
             expectedVersion: $version,
-            instance: $instance,
         );
 
         if ($this->wantsEventStream($request)) {

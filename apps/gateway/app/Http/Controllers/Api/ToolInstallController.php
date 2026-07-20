@@ -90,7 +90,6 @@ final class ToolInstallController implements Loggable
             config: $toolConfig,
             version: $this->requestTargetString($request, 'version'),
             runtime: $this->requestTargetString($request, 'runtime'),
-            instance: $this->requestTargetString($request, 'instance'),
             withProcess: $request->boolean('with_process', true),
         );
 
@@ -177,7 +176,7 @@ final class ToolInstallController implements Loggable
 
         if (
             $this->requestTargetString($request, 'node') === null
-            && $this->requestTargetString($request, 'app') === null
+            && $this->requestTargetString($request, 'instance') === null
         ) {
             return response()->json([
                 'error' => [

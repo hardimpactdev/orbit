@@ -37,7 +37,7 @@ verification is explicit `--all` only.
 - Reject `--self` combined with `--node` before forwarding.
 - The CLI may forward its configured local default node for omitted scope.
 - The CLI forwards `self=true` for omitted scope when no default node exists.
-- App and workspace filters are forwarded only when explicit options are present.
+- Instance and workspace filters are forwarded only when explicit options are present.
 
 ## Category Set by Target Eligibility
 

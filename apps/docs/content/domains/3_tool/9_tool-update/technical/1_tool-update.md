@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized to manage tools for the resolved node or app.
+- The current node identity is authorized to manage tools for the resolved node or instance.
 
 ## Signature
 
@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `tool` | `argument` | `Optional.` | `Never.` | `all update-capable managed tools on the node` | `Registered managed tool name.` |
 | `expected_version` | `--expected-version` | `Optional.` | `when tool is omitted.` | `latest supported version` | Supported version string for the selected tool definition. |
 | `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `app` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
+| `instance` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve the owning node.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 | `stream-json` | `--stream-json` | `Optional.` | `Never.` | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
 
@@ -49,7 +49,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-update` must not create apps, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
+`tool-update` must not create projects, instances, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
 
 ## Renderer Contracts
 

@@ -32,7 +32,7 @@ trait LogsScheduleApiActivity
         return array_filter(
             [
                 'name' => $request->route('name') ?? $this->optionalActivityString($request, 'name'),
-                'app' => $this->optionalActivityString($request, 'app'),
+                'instance' => $this->optionalActivityString($request, 'instance'),
                 'node' => $this->optionalActivityString($request, 'node'),
                 'run' => $request->query('run'),
                 'lines' => $request->query('lines'),

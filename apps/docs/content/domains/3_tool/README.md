@@ -43,7 +43,7 @@ These rules govern what the tool command family owns and what it may not touch.
   routes. TCP endpoints for runnable services such as databases and caches
   belong to process definitions, not tool rows.
 - Tools supply capabilities that other domains depend on, but they do not own
-  apps, workspaces, processes, schedules, custom proxy routes, or non-tool
+  projects, instances, workspaces, processes, schedules, custom proxy routes, or non-tool
   firewall policy.
 - Processes are the lifecycle-managed long-running units. A process may
   reference a tool with a canonical `tool` dependency when it needs that

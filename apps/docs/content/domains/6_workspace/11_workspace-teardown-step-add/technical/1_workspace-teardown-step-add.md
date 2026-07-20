@@ -40,7 +40,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ## Input Resolution
 
 1. **Resolve Command**: Resolve `--command` from flag or interactive prompt.
-2. **Resolve App Instance**: Mirror the `workspace:new` precedence chain:
+2. **Resolve Instance**: Mirror the `workspace:new` precedence chain:
    - Explicit `--instance=<project.instance>`, which must be a dotted instance
      selector such as `happie.nmbp` for gateway writes. Bare project
      slugs are rejected with `error.meta.reason=instance_required`.
@@ -137,8 +137,8 @@ teardown phase, before destructive workspace cleanup.
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
-- **App Not Found**: Resolved project slug does not exist in gateway configuration
-  (`error.code=workspace.app_not_found`, `error.meta.project`).
+- **Instance Not Found**: Resolved instance selector does not exist in gateway configuration
+  (`error.code=workspace.instance_not_found`, `error.meta.instance`).
 - **Production app unsupported**: The selected instance is served by an
   `app-prod` node (`error.code=workspace.unsupported_for_production`). No
   workspace lifecycle policy is stored.

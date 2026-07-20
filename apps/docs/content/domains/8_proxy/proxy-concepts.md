@@ -9,18 +9,18 @@ These terms define the types of routes that the proxy family owns and manages.
 - **Proxy route:** Gateway-owned record of one hostname or host/path Orbit
   exposes through its HTTP ingress, with an owner, a kind, a serving node, a
   target, and TLS configuration.
-- **Route owner:** The domain that owns route lifecycle. One of `app`,
-  `app-websocket`, `app-analytics`, `workspace`, `gateway`, `router`, `s3`,
+- **Route owner:** The domain that owns route lifecycle. One of `project`,
+  `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`,
   `tool`, or `custom`. The `owner` value classifies which domain's convergence
   edits the route record; it is not necessarily the role that owns the hostname
   or artifact.
-- **Route kind:** Route behavior at ingress. One of `app`, `workspace`,
+- **Route kind:** Route behavior at ingress. One of `project`, `instance`, `workspace`,
   `internal`, `proxy`, or `redirect`.
-- **App route:** Proxy route whose owner is the project and whose kind is
-  `app`, but whose target is always one concrete instance. The route stores
+- **Project route:** Proxy route whose owner is the project and whose kind is
+  `instance`, and whose target is always one concrete instance. The route stores
   the project slug as `owner.name`, the dotted instance selector as
   `target.value`, and that instance's serving node as `node`. Edited through
-  app commands.
+  project and instance commands.
 - **Workspace route:** Proxy route whose owner is a workspace and whose kind is
   `workspace`. Edited through workspace commands.
 - **Internal route:** Proxy route with kind `internal`. Currently always paired
@@ -33,12 +33,12 @@ These terms define the types of routes that the proxy family owns and manages.
 - **Tool-owned route:** Proxy route whose owner is `tool` and kind is `proxy`.
   Represents an HTTP or WebSocket tool ingress; TCP tool service endpoints are
   not HTTP proxy routes.
-- **App WebSocket route:** Public WebSocket route whose owner is
-  `app-websocket` and whose kind is `proxy`. It is created from an app
+- **Instance WebSocket route:** Public WebSocket route whose public owner is
+  `websocket` and whose kind is `proxy`. It is created from an instance
   WebSocket binding, rendered on an `ingress` node, and forwards to `router`;
   it must not target a concrete websocket node.
-- **App analytics route:** Public analytics tracking route whose owner is
-  `app-analytics` and whose kind is `proxy`. It is created from an app
+- **Project analytics route:** Public analytics tracking route whose public owner is
+  `analytics` and whose kind is `proxy`. It is created from a project
   analytics binding, rendered on an `ingress` node, forwards to `router`, and
   proxies only Plausible script and event-ingest paths. It must not expose the
   Plausible dashboard or target a concrete analytics node.
@@ -50,7 +50,7 @@ These terms define the types of routes that the proxy family owns and manages.
   owned by `router`. It exists while at least one active `websocket` role
   assignment exists in the topology and is removed when none remains. It
   targets the websocket backend pool owned by the router and is the stable
-  private publishing endpoint apps use.
+  private publishing endpoint projects and instances use.
 - **Public S3 route:** Public S3 route whose owner is `s3` and whose kind is
   `proxy`. It is rendered on an `ingress` node, forwards to `router`, preserves
   S3 request metadata needed for uploads, and must not target a concrete s3
@@ -58,7 +58,7 @@ These terms define the types of routes that the proxy family owns and manages.
 - **S3 service route:** Private router route for `s3.orbit`, owned by
   `router`. It exists while at least one active `s3` role assignment exists in
   the topology and is removed when none remains. It targets the S3 backend
-  pool owned by the router and is the stable private S3 endpoint apps and
+  pool owned by the router and is the stable private S3 endpoint projects and
   VPN clients use.
 - **Metrics service route:** Private router route for `metrics.orbit`, owned by
   `router`. It exists while an active `metrics` role assignment has converged
@@ -89,7 +89,7 @@ These terms define the types of routes that the proxy family owns and manages.
   operation failed, and `converged` means every planned operation completed.
   `intent_only` is custom intent deferred to doctor; `unknown` is an existing
   row without enactment evidence.
-- **Production enactment order:** App production artifacts are applied backend
+- **Production enactment order:** Project production artifacts are applied backend
   first, router second, and ingress last. Orbit never reports convergence if
   any layer fails and records the exact layer, node, and operation for repair.
 - **Router backend pool:** Ordered list of URLs for app-prod backends.
@@ -128,7 +128,7 @@ These terms define certificate authority, leaf certificate scope, and hostname c
 - **TLS authority boundary:** The gateway owns certificate signing authority.
   Nodes receive route-scoped leaf certificates and private keys as serving
   artifacts only; they do not act as Orbit certificate authorities.
-- **Hostname compatibility material:** App-role files derived from route TLS
+- **Hostname compatibility material:** Instance-role files derived from route TLS
   configuration that let common Laravel Vite TLS detection paths find the route
   certificate. Owned by proxy convergence, not by the app or workspace family.
 
@@ -136,15 +136,15 @@ These terms define certificate authority, leaf certificate scope, and hostname c
 
 These terms define the ingress behavior applied to app and workspace routes.
 
-- **App ingress baseline:** Standard browser ingress contract applied to app
+- **Project ingress baseline:** Standard browser ingress contract applied to project and instance
   and workspace routes: TLS termination, dynamic routing to the resolved
   FrankenPHP runtime container,
   static file serving from the configured document root, baseline security
   headers, sensitive-file blocking, profiling timing markers, and immutable
   caching for `/build/*`.
 - **Document-root policy:** Route-level policy that determines how aggressively
-  ingress blocks adjacent sensitive files. Public-document-root apps and
-  workspaces use the lighter policy; project-root apps and workspaces use the
+  ingress blocks adjacent sensitive files. Public-document-root instances and
+  workspaces use the lighter policy; project-root instances and workspaces use the
   stronger blocking policy.
 
 ## Boundaries
@@ -156,7 +156,7 @@ These terms define what the proxy family owns and what remains outside its scope
   proxy and TLS artifacts. The family also owns
   `dnsmasq.d/20-proxy-records.conf` for router/private `.orbit` and exact
   backend DNS records. It uses the shared ownership-neutral DNS materializer
-  and restart path when that projection changes. It does not own app, app WebSocket binding, app
+  and restart path when that projection changes. It does not own project, instance WebSocket binding, project
   analytics binding, workspace, gateway, websocket service, S3 service,
   analytics service, or tool identity, do not create or remove owner-side
   records, and do not manage TCP tool service endpoints or firewall policy.

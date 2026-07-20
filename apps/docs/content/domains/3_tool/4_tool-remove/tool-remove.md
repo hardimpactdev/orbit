@@ -34,7 +34,7 @@ orbit tool:remove composer --node=app-1 --json --force
   provide destructive consent.
 
 Target context is required when neither `--node`, `--instance`, nor local
-`node:default` resolves a node. The command never guesses the only visible app
+`node:default` resolves a node. The command never guesses the only visible instance
 instance as the target. Every non-interactive removal requires `--force`, including
 JSON use. Interactive TTY use prompts for confirmation when `--force` is absent.
 

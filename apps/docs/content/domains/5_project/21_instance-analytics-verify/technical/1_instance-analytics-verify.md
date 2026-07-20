@@ -86,7 +86,7 @@ successful public-route check is not presented as event persistence proof.
 ## Doctor Relationship
 
 This command observes public readiness and stored analytics route intent only.
-It never fixes drift. [App Doctor](../../instance-doctor.md) owns app-family drift,
+It never fixes drift. [Instance Doctor](../../instance-doctor.md) owns instance-family drift,
 while [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md) remains the
 repair surface for router and ingress artifacts.
 
@@ -94,7 +94,7 @@ repair surface for router and ingress artifacts.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:GET /apps/{instance}/analytics/verify` |
+| Type | `api:GET /instances/{instance}/analytics/verify` |
 | Effect | `read` |
 | Subject | Instance resolved from `{instance}`. |
 | Properties | `action=verify`, `target_instance`, `target_instance`, and `serving_node`. |

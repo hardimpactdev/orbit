@@ -8,7 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The caller is authorized to read at least one selected instance.
+- The caller is authorized for `instance:read` on at least one active app-role
+  serving node, or is the gateway.
 
 ## Signature
 
@@ -55,8 +56,10 @@ and `name`.
 
 ## Failure Semantics
 
-Unknown project filters return `project.not_found`. A caller with no readable
-selected placement receives `authorization_failed` with
+Unknown project filters return `project.not_found`. An authorized caller
+receives an empty successful list when no instance rows are visible. A
+non-gateway caller with no `instance:read` grant on any active app-role serving
+node receives `authorization_failed` with
 `error.meta.missing_permission=instance:read`.
 
 ## Doctor Relationship
@@ -78,4 +81,4 @@ owns live runtime verification and drift convergence.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php` | CLI list filtering, human rows, and JSON forwarding. |
-| `apps/gateway/tests/Feature/AppInstanceControllerTest.php` | Global instance visibility, project filtering, and payload shape. |
+| `apps/gateway/tests/Feature/Http/Api/AppInstanceControllerTest.php` | Global instance visibility, authorized empty lists, project filtering, and payload shape. |

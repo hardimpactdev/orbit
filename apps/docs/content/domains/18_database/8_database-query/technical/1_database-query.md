@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
-| `target` | `argument` | Always. | n/a | Dotted instance selector, workspace selector, or direct connection slug. Bare app selectors are invalid. |
+| `target` | `argument` | Always. | n/a | Dotted instance selector, workspace selector, or direct connection slug. Bare project selectors are invalid. |
 | `sql` | `--sql` | Always. | n/a | Non-empty SQL string. |
 | `connection` | `--connection` | Required when the target has more than one attached connection. | Unique attached mapping. | Visible connection slug attached to the target. |
 | `limit` | `--limit` | Optional. | `50`. | Positive integer row cap for row-returning statements. |

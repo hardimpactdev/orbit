@@ -22,7 +22,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
-| `target` | `argument` | Always. | n/a | Dotted instance selector, workspace selector, or direct connection slug. Bare app selectors are invalid. |
+| `target` | `argument` | Always. | n/a | Dotted instance selector, workspace selector, or direct connection slug. Bare project selectors are invalid. |
 | `table` | `argument` | Always. | n/a | Table name visible to the resolved connection. |
 | `connection` | `--connection` | Required when the target has more than one attached connection. | Unique attached mapping. | Visible attached connection slug. |
 | `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |

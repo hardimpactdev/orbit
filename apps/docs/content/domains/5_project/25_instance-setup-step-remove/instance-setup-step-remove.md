@@ -16,7 +16,7 @@ Use this command to delete a bootstrap command from the app setup pipeline.
 
 | Input | Meaning |
 | --- | --- |
-| `instance` | Dotted instance selector, or a bare app shorthand when exactly one instance exists. |
+| `instance` | Dotted instance selector, or a bare project shorthand when exactly one instance exists. |
 | `--step` | Setup step id. |
 | `--instance` | Instance selector for scripts where the positional argument is awkward. |
 | `--force` | Skip destructive confirmation. |

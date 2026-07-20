@@ -563,7 +563,7 @@ describe('app instance eligibility', function (): void {
 
         expect(issue($drift, 'workspace.app_instance_invalid')?->kind)
             ->toBe(DriftKind::Divergent)
-            ->and(issue($drift, 'workspace.parent_app_invalid'))
+            ->and(issue($drift, 'workspace.parent_project_invalid'))
             ->toBeNull();
     });
 
@@ -576,7 +576,7 @@ describe('app instance eligibility', function (): void {
 
         expect(issue($drift, 'workspace.app_instance_invalid')?->kind)
             ->toBe(DriftKind::Divergent)
-            ->and(issue($drift, 'workspace.parent_app_invalid'))
+            ->and(issue($drift, 'workspace.parent_project_invalid'))
             ->toBeNull();
     })->with([
         'gateway instance node' => [fn (): Node => Node::factory()->gateway()->create(['status' => 'active'])],

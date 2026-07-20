@@ -23,8 +23,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` or interactive schedule data table | `Required in non-interactive mode.` | `Never.` | `None.` | Existing visible schedule slug. |
-| `app` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
-| `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or node the caller may manage. |
+| `instance` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `project.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
+| `node` | `--node` | `Optional.` | `Forbidden with `instance`.` | `None.` | Visible active gateway or node the caller may manage. |
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -92,7 +92,7 @@ schedule removal attempts.
 | Type | `api:DELETE /schedules/{name}` |
 | Effect | `destructive` |
 | Subject | `Schedule` when the schedule is resolved before removal; `none` for not-found, validation, or authorization failures before a schedule can be logged. |
-| Properties | `name` (string), `app` (string or null), and `node` (string or null). No runtime output or secrets. |
+| Properties | `name` (string), `instance` (string or null), and `node` (string or null). No runtime output or secrets. |
 | Description | derived |
 
 ## Test Mapping

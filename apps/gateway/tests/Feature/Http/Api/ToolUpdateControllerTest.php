@@ -3,10 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -94,6 +97,99 @@ it('updates host capability expected versions without service instance fields', 
         ->toHaveKeys(['instance_key', 'version_family', 'runtime', 'runtime_config'])
         ->and($shell->scripts)
         ->toHaveCount(1);
+});
+
+it('updates a host capability through an instance target', function (): void {
+    $caller = createToolUpdateApiCallerNode();
+    $node = Node::factory()->create(['name' => 'app-update-api-1', 'status' => 'active']);
+    assignToolUpdateApiRole($node, 'app-dev');
+    grantToolUpdateApiAccess($caller, $node);
+    $project = Project::factory()->create(['name' => 'docs']);
+    AppInstance::factory()->for($project)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+            domain: 'docs.test',
+        ),
+    ]);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'php-cli',
+        'expected_version' => '8.4',
+    ]);
+    $shell = new ToolUpdateApiRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/php-cli/update',
+        [
+            'instance' => 'docs.development',
+            'version' => '8.5',
+        ],
+        [],
+        [],
+        tool_update_api_server_headers(),
+    );
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('success.data.tool.node', 'app-update-api-1')
+        ->assertJsonPath('success.data.tool.version', '8.5');
+
+    expect($shell->scripts)->toHaveCount(1);
+});
+
+it('limits bulk updates to the selected instance node', function (): void {
+    $caller = createToolUpdateApiCallerNode();
+    $targetNode = Node::factory()->create(['name' => 'app-update-api-1', 'status' => 'active']);
+    $otherNode = Node::factory()->create(['name' => 'app-update-api-2', 'status' => 'active']);
+    assignToolUpdateApiRole($targetNode, 'app-dev');
+    assignToolUpdateApiRole($otherNode, 'app-dev');
+    grantToolUpdateApiAccess($caller, $targetNode);
+    $project = Project::factory()->create(['name' => 'docs']);
+    AppInstance::factory()->for($project)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $targetNode->id,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+            domain: 'docs.test',
+        ),
+    ]);
+    NodeTool::factory()->create([
+        'node_id' => $targetNode->id,
+        'name' => 'node-exporter',
+        'expected_version' => 'old',
+    ]);
+    $otherTool = NodeTool::factory()->create([
+        'node_id' => $otherNode->id,
+        'name' => 'node-exporter',
+        'expected_version' => 'old',
+    ]);
+    $shell = new ToolUpdateApiRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/update',
+        ['instance' => 'docs.development'],
+        [],
+        [],
+        tool_update_api_server_headers(),
+    );
+
+    $response
+        ->assertOk()
+        ->assertJsonCount(1, 'success.data.updated')
+        ->assertJsonPath('success.data.updated.0.node', 'app-update-api-1');
+
+    expect($shell->scripts)
+        ->toHaveCount(1)
+        ->and($otherTool->fresh()->expected_version)
+        ->toBe('old');
 });
 
 it('requires agent-push transport before running tool update scripts', function (): void {

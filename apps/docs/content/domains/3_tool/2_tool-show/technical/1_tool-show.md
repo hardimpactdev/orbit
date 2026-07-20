@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized to inspect tool state for the resolved node or app.
+- The current node identity is authorized to inspect tool state for the resolved node or instance.
 
 ## Signature
 
@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Tool name from Orbit's tool catalog.` |
 | `node` | `--node` | `Required when no `--instance`, local `node:default`, or interactive target selection resolves a target.` | `Never.` | `node:default if set.` | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `app` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
+| `instance` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve the owning node.` |
 | `live` | `--live` | `Optional.` | `Never.` | `false` | `Request gateway live inspection.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
@@ -48,7 +48,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-show` must not create apps, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
+`tool-show` must not create projects, instances, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
 
 ## Renderer Contracts
 
@@ -87,5 +87,5 @@ tool registry reads.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Tool/ToolShowCommandTest.php` | CLI target resolution, live inspection, human detail rendering, JSON envelope passthrough, and gateway/WireGuard failure passthrough. |
-| `apps/gateway/tests/Feature/Http/Api/ToolShowControllerTest.php` | Gateway tool registry reads by tool/node, Agent-push live inspection, app selector resolution, not-found and unsupported-tool failures, and authorization failures. |
+| `apps/gateway/tests/Feature/Http/Api/ToolShowControllerTest.php` | Gateway tool registry reads by tool/node, Agent-push live inspection, instance selector resolution, not-found and unsupported-tool failures, and authorization failures. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |

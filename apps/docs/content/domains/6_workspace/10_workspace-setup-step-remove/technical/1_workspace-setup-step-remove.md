@@ -30,13 +30,13 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `step` | `--step` | Always. | Never. | None. | Strict positive integer. Must reference an existing setup-step record belonging to the resolved app and `phase=setup`. |
-| `app` | `--instance` | Always for writes unless caller context resolves a concrete instance. | Never. | Concrete cwd-inferred instance. | Must resolve to an existing instance selector such as `happie.nmbp`. Bare project slugs are rejected with `error.meta.reason=instance_required`. Deletes only instance-owned rows for the selected instance. |
+| `instance` | `--instance` | Always for writes unless caller context resolves a concrete instance. | Never. | Concrete cwd-inferred instance. | Must resolve to an existing instance selector such as `happie.nmbp`. Bare project slugs are rejected with `error.meta.reason=instance_required`. Deletes only instance-owned rows for the selected instance. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
 ## Input Resolution
 
-1. **Resolve App Instance.** Mirror the resolved
+1. **Resolve Instance.** Mirror the resolved
    [`workspace:new`](../../1_workspace-new/workspace-new.md) and
    [`workspace-setup-step:add`](../../8_workspace-setup-step-add/workspace-setup-step-add.md)
    precedence chain:
@@ -139,7 +139,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Step not a positive integer | `--step` is non-numeric, zero, or negative. | Failure (`error.code=validation_failed`, `error.meta.field=step`, `error.meta.reason=must_be_positive_integer`). |
 | Instance required | Bare project slug or path-only resolution without a concrete instance. | Failure (`error.code=validation_failed`, `error.meta.field=instance`, `error.meta.reason=instance_required`). |
 | Step not found | No setup-step record matches `(step_id, instance, phase=setup)`. Already-absent removal is not idempotent. | Failure (`error.code=workspace.step_not_found`, `error.meta.{step_id, app}`). |
-| App not found | Resolved project slug does not exist in gateway configuration. | Failure (`error.code=workspace.app_not_found`, `error.meta.project`). |
+| Instance not found | Resolved instance selector does not exist in gateway configuration. | Failure (`error.code=workspace.instance_not_found`, `error.meta.instance`). |
 | Instance unresolved | A concrete instance cannot be resolved from `--instance`, `.orbit/config`, or gateway path-ownership lookup, and prompting is disabled. | Failure (`error.code=validation_failed`, `error.meta.field=instance`). |
 | Production app unsupported | The selected instance is served by an `app-prod` node. | Failure (`error.code=workspace.unsupported_for_production`) before policy deletion. |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |

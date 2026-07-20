@@ -2,10 +2,10 @@
 
 [Back to Workspace commands.](../README.md)
 
-List workspaces registered for apps.
+List workspaces registered for projects and instances.
 
 `workspace:list` provides a high-level summary of workspace configuration,
-showing which workspaces belong to which apps, on which nodes, and their
+showing which workspaces belong to which projects and instances, on which nodes, and their
 registry lifecycle status. For live workspace drift and runtime artifact
 verification, use [`doctor --family=workspace`](../workspace-doctor.md).
 There is intentionally no `workspace:list --doctor` flag; workspace list

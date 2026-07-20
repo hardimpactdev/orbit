@@ -26,7 +26,7 @@ This command follows the shared
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `name` | `text` | Always (can be prompted). | n/a | Workspace identity slug; `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`; maximum 63 characters. Reserved name `main` is rejected. Must not collide with an existing workspace under the same parent project. |
-| `--instance` | `text` | No explicit selector or usable local context. | CWD-inferred concrete instance. | Dotted selectors choose one instance directly. Bare app or path context must resolve uniquely. |
+| `--instance` | `text` | No explicit selector or usable local context. | CWD-inferred concrete instance. | Dotted selectors choose one instance directly. A bare project or path context must resolve uniquely. |
 | `--base` | `text` | Optional. | `main` | Source git ref/branch used by the selected workspace source driver. Generic and OpenCode worktrees create branch `<workspace>` from this ref; PolyScope passes it as `base_branch` to the PolyScope API. |
 | `--php-version` | `text` | Optional. | (parent project PHP version) | Supported PHP version. When omitted, the workspace row stores `null` and inherits the parent project's PHP version. |
 | `--json` | `flag` | Optional. | `false` | Forces non-interactive mode and JSON output. |
@@ -39,34 +39,34 @@ one registered instance matches. Zero or multiple matches fail with
 When `--base` is omitted, the default source ref is hard-coded to `main`.
 Operators may supply another explicit ref with `--base=<ref>`. Inheriting an
 instance-level default branch is not supported because the project domain does not yet
-track a `default_branch` field on app configuration. Adding gateway-tracked
+track a `default_branch` field on project configuration. Adding gateway-tracked
 default-branch support is a future explicit feature on `project:update`/project
-configuration; until then `workspace:new` does not consult app configuration
+configuration; until then `workspace:new` does not consult project configuration
 for this default.
 
 ### Input Resolution
 
-1. **Resolve Concrete App Instance (`--instance`):**
+1. **Resolve Concrete Instance (`--instance`):**
    - An explicit dotted selector such as `happie.nmbp` resolves that concrete
      instance directly.
    - An explicit bare parent project slug is shorthand only when the gateway finds
-     exactly one registered instance for that app.
+     exactly one registered instance for that project.
    - **CWD inference (gateway-authoritative):** if `--instance` is missing, Orbit
      resolves a concrete instance from gateway-tracked metadata, not from
      project file inspection:
      - **`.orbit/config` marker** installed on the caller filesystem by
        `project:new`/`instance:register` (and any workspace-installed marker),
-       identifying an app or concrete instance;
+       identifying a project or concrete instance;
      - **gateway path lookup** keyed on (caller node identity, absolute
        cwd): a path owned by an instance resolves that instance directly.
-       The same applies to a workspace path owned by an instance. An app main
+       The same applies to a workspace path owned by an instance. An instance main
        path or parent-project-only marker is shorthand and must resolve to exactly
        one registered instance.
    - If a bare selector or inferred parent project has zero or multiple concrete
      instances, fail before side effects with `error.code=validation_failed`,
      `error.meta.field=instance`, and
      `error.meta.reason=instance_required`. Do not fall back to a canonical
-     app node.
+     instance serving node.
    - Orbit must not read `composer.json`, `package.json`, `.php-version`,
      or any other project file content during `workspace:new` to infer the
      parent project. Project-file inspection is reserved for
@@ -89,9 +89,9 @@ for this default.
      still validate final generated names such as runtime containers, Docker
      process services, systemd process units on supported Linux nodes, launchd
      process jobs on macOS, and certificate paths before writing them.
-   - Per-app uniqueness: the workspace name must not already exist for the
-     resolved parent project. Workspace identity is unique within an app, not
-     globally - unlike the `app` slug, which is globally unique. An instance
+   - Per-project uniqueness: the workspace name must not already exist for the
+     resolved parent project. Workspace identity is unique within a project, not
+     globally - unlike the `project` slug, which is globally unique. An instance
      selector chooses placement and URL context. It does not create a separate
      namespace for duplicate workspace names under the same parent project.
 4. **Resolve PHP Version (`--php-version`):** If supplied, validate against
@@ -117,7 +117,7 @@ register an existing path use
 `doctor --family=workspace --adopt` instead. The command performs:
 
 1. **Workspace Source Provisioning:** Resolve the parent project's effective
-   agent IDE adapter from app -> selected node -> default, then create the
+   agent IDE adapter from instance -> selected node -> default, then create the
    source through the selected source driver.
    - With no effective adapter, create a generic Git worktree on the effective
      workspace node at `<selected app path>/.worktrees/<name>` by creating
@@ -190,7 +190,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 - **Parent project ineligible** — the resolved parent project is missing,
   unauthorized, or unable to own workspaces
-  (`error.code=workspace.parent_app_invalid`).
+  (`error.code=workspace.parent_project_invalid`).
 - **Production app unsupported** — the selected instance is served by an
   `app-prod` node (`error.code=workspace.unsupported_for_production`). The
   command fails before source-driver, registry, Agent-push, or runtime effects.

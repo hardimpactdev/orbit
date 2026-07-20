@@ -188,7 +188,7 @@ See [Architecture: State Model](architecture.md#state-model) and [Architecture: 
 
 - A configuration row describes a desired physical fact on a node; the node-side artifact is the applied representation of that row.
 - Process lifecycle events are stored as durable history, not as a separate process-state table.
-- Agent IDE defaults are gateway configuration owned by nodes and apps — not a separate state family.
+- Agent IDE defaults are gateway configuration owned by nodes and instances — not a separate state family.
 - Renderers turn gateway-tracked configuration into the artifacts a node should hold. They must take target-specific inputs from gateway data or explicit probe results, never from gateway-local host state, when rendering for another node.
 - Implementation-specific names (`orbit-caddy` sites, UFW rules, Docker container names, systemd unit names, package installs) live in renderer, probe, and migration code. They are not product-level Orbit concepts.
 
@@ -406,7 +406,7 @@ Caddy configuration is split by exposure boundary, not by who happens to write t
 
 Files under `/etc/caddy/orbit/*.caddy` must be reachable only through the Orbit/WireGuard network or another explicitly internal gateway interface. Gateway API proxy routes belong here only when the gateway is in `router-colocated` mode, where router-owned `orbit-caddy` forwards to `orbit-gateway` over `orbit-network`. In `gateway-direct` mode, `orbit-gateway` publishes gateway HTTPS directly and no gateway API Caddy route is required. Gateway API exposure must not create a broad public virtual host.
 
-Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. App routes, workspace routes, and custom proxy routes write here because they may be served on public or project domains. These files may import shared snippets from the managed `orbit-caddy` Caddyfile, but they must not define Orbit control-plane endpoints.
+Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. Project, instance, workspace, and custom proxy routes write here because they may be served on public or project domains. These files may import shared snippets from the managed `orbit-caddy` Caddyfile, but they must not define Orbit control-plane endpoints.
 
 Installer and doctor repair code must be additive: ensure required imports and managed include files exist in the `orbit-caddy` mount or managed volume, but never replace unrelated site blocks or remove existing imports.
 
@@ -432,7 +432,7 @@ executor artifact runs in the native CLI binary's embedded PHP; source-mounted
 Docker/Incus development and E2E nodes invoke `<source>/apps/cli/orbit`. Host
 PHP and PHP-FPM are not app/workspace runtime fallbacks.
 
-App and workspace FrankenPHP containers are private backends behind
+Instance and workspace FrankenPHP containers are private backends behind
 `orbit-caddy`, not durable Caddy storage owners. Their Caddy/FrankenPHP XDG
 homes are container-local and ephemeral: `XDG_CONFIG_HOME` is
 `/tmp/orbit-frankenphp/config`, and `XDG_DATA_HOME` is
@@ -546,7 +546,7 @@ runs as root and receives the files through read-only bind mounts.
 
 The `router` role owns `websocket.orbit`, the websocket backend pool, and
 private router-to-websocket TLS verification. Apps publish to
-`https://websocket.orbit`. Public clients subscribe through app-owned public
+`https://websocket.orbit`. Public clients subscribe through instance-owned public
 hosts such as `wss://ws.example.com`; `ingress` terminates public TLS and
 forwards those WebSocket routes to `router`, never directly to websocket nodes.
 
@@ -705,7 +705,7 @@ Each tick:
 
 1. Queries the gateway database for every enabled schedule and selects the ones that are due in the current minute.
 2. Claims a per-schedule lock in the gateway database (`schedule_locks`). Locks are gateway-owned; there is no node-local lock state.
-3. Dispatches the due schedules. App schedules resolve their persisted concrete
+3. Dispatches the due schedules. Instance schedules resolve their persisted concrete
    instance and execute on that instance's serving node with its path as the
    working directory. Schedules whose target resolves to the gateway run
    locally; schedules targeting any other node run on that node through

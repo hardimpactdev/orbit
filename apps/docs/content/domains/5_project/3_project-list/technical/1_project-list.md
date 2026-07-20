@@ -65,7 +65,7 @@ once.
 
 ## Behavior Contract
 
-### App Registry Listing Rules
+### Project Registry Listing Rules
 
 1. **Query gateway registry.** Read visible project registry configuration scoped to the
    current consuming node's access policy. No host probing is performed.
@@ -114,7 +114,7 @@ Requesting human output without an interactive terminal also returns
 - `project:list` reports configuration. `doctor --family=instance` verifies reality.
 - `project:list` does not expose `--doctor`; live verification belongs to
   `doctor --family=instance`.
-- See [`instance-doctor.md`](../../instance-doctor.md) for the authoritative app-family
+- See [`instance-doctor.md`](../../instance-doctor.md) for the authoritative instance-family
   probe, drift, fix, and adopt contract.
 
 ## Activity Logging

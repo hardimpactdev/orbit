@@ -17,7 +17,7 @@
 
 `project:new` is the primary creation command for Orbit applications. It orchestrates
 remote source creation, writes gateway registry configuration, and executes
-the app-family registration pipeline.
+the instance-family registration pipeline.
 
 ## Signature
 
@@ -65,7 +65,7 @@ This command follows the shared
    GitHub `owner/repo` identities. Repository credentials remain target-node
    state and are never prompted for or forwarded.
 4. **Collision Check:** Fail if `name` is already taken in the gateway app
-   registry. App slugs are globally unique across all nodes; there is no
+   registry. Project slugs are globally unique across all nodes; there is no
    per-node uniqueness namespace and no `--node`-disambiguation prompt.
    Path collisions are evaluated against concrete Orbit instances and identify
    each conflicting dotted instance selector and serving node.
@@ -96,7 +96,7 @@ Apply the source branch resolved before the gateway request:
 `project:new` never creates an empty app directory. Existing source is adopted with
 `instance:register`.
 
-- App path is derived from the project name and the target node's app root.
+- Instance path is derived from the project name and the target node's app root.
 - Remote source creation is applied through authenticated Agent push from the
   gateway to the selected first-instance serving node over WireGuard.
 - `--repo` accepts either a full Git URL or a GitHub-only `owner/repo` shorthand.
@@ -247,7 +247,7 @@ slice.
 | --- | --- |
 | Type | `api:POST /projects` |
 | Effect | `write` |
-| Subject | Created logical `App` plus first `AppInstance` when the atomic registry write completes; `none` for failures before both rows exist. |
+| Subject | Created `Project` plus first `AppInstance` when the atomic registry write completes; `none` for failures before both rows exist. |
 | Properties | `name` (string or null), `instance` (string or null), `serving_node` (string or null), `environment` (`development`, `production`, or null), `domain` (string or null), `repository` (boolean), `source_created` (boolean). No secrets, raw repository credentials, SSH command text, or node-side command output. |
 | Description | `derived`, for example `"Created app docs and instance docs.development on app-1."` |
 

@@ -39,8 +39,8 @@ This command follows the shared
 
 ## Input Resolution
 
-1. Resolve `app` from `[instance]`.
-2. Validate `app` immediately. A dotted selector must exist; an ambiguous bare
+1. Resolve the concrete instance from `[instance]`.
+2. Validate `instance` immediately. A dotted selector must exist; an ambiguous bare
    logical slug fails with `validation_failed`,
    `meta.reason=instance_required`. Authorize `instance:agent` on the selected
    instance's serving node.
@@ -68,7 +68,7 @@ This command follows the shared
 
 ## Behavior Contract
 
-### App Instance Agent IDE Rules
+### Instance Agent IDE Rules
 
 An `app-prod` caller is rejected with
 `workspace.unsupported_for_production` before adapter validation,
@@ -176,7 +176,7 @@ agent-IDE override attempts.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /apps/{instance}/agent-ide` |
+| Type | `api:POST /instances/{instance}/agent-ide` |
 | Effect | `write` |
 | Subject | Selected `AppInstance`; `none` before target resolution. |
 | Properties | `target_instance` (string), `instance` (string), `serving_node` (string or null), `agent_ide` (string or null effective adapter), and `action` (`set`, `cleared`, `converged`, or null). No adapter credentials, workspace paths, raw cleanup output, or secrets. |

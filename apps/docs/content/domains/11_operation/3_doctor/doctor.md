@@ -8,7 +8,7 @@ target node, or explicitly inspect the fleet with `--all`.
 `doctor` is Orbit's convergence command. Plain `orbit doctor`, `--self`, and
 `--node=<name>` each resolve exactly one target node. Fleet verification is
 available only through explicit `--all`. It orchestrates state-family probes for
-families such as `node`, `app`, `database_connection`, `firewall_rule`,
+families such as `node`, `instance`, `database_connection`, `firewall_rule`,
 `process`, `proxy`, `schedule`, `tool`, and `workspace`. The global command
 owns scope resolution, mode selection, authorization, result handling, and
 output selection. Family doctor contracts own concrete probe facts, issue
@@ -24,9 +24,9 @@ role-derived base set is:
 - `database` target: `Node`, `Tools`, `Processes`.
 - `agent` target: `Node`, `Tools`, `Proxy routes`, `Processes`.
 - `router` target: `Node`, `Proxy routes`, `Processes`.
-- `app-dev` target: `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`,
+- `app-dev` target: `Node`, `Instances`, `Workspaces`, `Processes`, `Proxy routes`,
   `Tools`, `Databases`.
-- `app-prod` target: `Node`, `Apps`, `Processes`, `Proxy routes`, `Tools`,
+- `app-prod` target: `Node`, `Instances`, `Processes`, `Proxy routes`, `Tools`,
   `Databases`.
 - `ingress` target: `Node`, `Proxy routes`, `Tools`, `Processes`.
 - `websocket` target: `Node`, `Tools`, `Processes`.
@@ -35,7 +35,7 @@ role-derived base set is:
 - `vpn` or `analytics` target (no other role-specific category): `Node`, `Processes`.
 
 For an `app-prod` target, `Processes`, `Proxy routes`, and `Databases` diagnose
-only production app and node facts. Workspace rows and workspace-derived facts
+only production instance and node facts. Workspace rows and workspace-derived facts
 are removed before those probes run. The gateway rejects an explicit workspace
 family or scope before dispatch, and an `app-prod` caller cannot use a mixed or
 workspace-adjacent doctor request to inspect an `app-dev` workspace.
@@ -97,7 +97,7 @@ orbit doctor --all --stream-json
 
 - `--family`: Limit the run to one product state family. Repeatable.
   `security` is not a family. Security issue keys are reported inside their
-  owning families, such as `node.security.*`, `app.security.*`, and
+  owning families, such as `node.security.*`, `instance.security.*`, and
   `workspace.security.*`.
 - `--key`: Limit reported drift to a single exact issue-key filter inside the selected family/families.
 - `--node`: Limit the run to one gateway-known node.
@@ -106,7 +106,7 @@ orbit doctor --all --stream-json
   only fleet mode and is mutually exclusive with `--node`, `--self`, `--instance`,
   and `--workspace`. Use `--all`; `--node=all` is rejected as
   `validation_failed` before probes.
-- `--instance`: Limit the run to one app and the family facts owned by that app.
+- `--instance`: Limit the run to one concrete `<project.instance>` and its owned family facts.
 - `--workspace`: Limit the run to one workspace and its owned facts.
 
 **Resolution modes:**
@@ -176,7 +176,7 @@ own concrete issue codes and action maps:
 - [`doctor --family=tool`](../../3_tool/tool-doctor.md)
 - [`doctor --family=firewall_rule`](../../4_firewall/firewall-doctor.md)
 
-**App families:**
+**Project runtime families:**
 
 - [`doctor --family=instance`](../../5_project/instance-doctor.md)
 - [`doctor --family=workspace`](../../6_workspace/workspace-doctor.md)

@@ -39,12 +39,14 @@ class ProxyRouteIntent
             ->first();
 
         if ($existing instanceof ProxyRoute && $existing->owner_type !== 'custom') {
+            $ownerType = $this->publicOwnerType($existing);
+
             throw new GatewayApiException(
-                "Domain '{$domain}' is owned by {$existing->owner_type}.",
+                "Domain '{$domain}' is owned by {$ownerType}.",
                 'proxy.domain_conflict',
                 [
                     'domain' => $domain,
-                    'owner_type' => $existing->owner_type,
+                    'owner_type' => $ownerType,
                 ],
             );
         }
@@ -117,12 +119,14 @@ class ProxyRouteIntent
         }
 
         if ($route->owner_type !== 'custom') {
+            $ownerType = $this->publicOwnerType($route);
+
             throw new GatewayApiException(
-                "Domain '{$domain}' is owned by {$route->owner_type}.",
+                "Domain '{$domain}' is owned by {$ownerType}.",
                 'proxy.owned_route_denied',
                 [
                     'domain' => $domain,
-                    'owner_type' => $route->owner_type,
+                    'owner_type' => $ownerType,
                 ],
             );
         }
@@ -143,6 +147,11 @@ class ProxyRouteIntent
                 'warnings' => [$this->cleanupWarning($node->name)],
             ],
         ];
+    }
+
+    private function publicOwnerType(ProxyRoute $route): string
+    {
+        return $this->query->publicOwnerType($route);
     }
 
     private function resolveServingNode(string $nodeName, ?Node $caller, string $permission): Node

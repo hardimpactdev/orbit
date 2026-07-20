@@ -22,7 +22,7 @@ This command follows the shared [Invocation Model](../../../../README.md#invocat
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `--instance` | Optional. | Never. | None. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must authorize inspection. |
+| `instance` | `--instance` | Optional. | Never. | None. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must authorize inspection. |
 | `workspace` | `--workspace` | Optional. | Never. | None. | Must resolve to a workspace, its instance, and a serving node the caller may inspect. |
 | `node` | `--node` | Optional. | Never. | None. | Must resolve to a node whose process events are visible to the caller. |
 | `process` | `--process` | Optional. | Never. | None. | Process slug filter. |
@@ -43,9 +43,9 @@ Every stream frame is one JSON object with a `type` discriminator:
 | `event` | `id`, `event`, `scope`, `process`, `occurred_at` | Durable lifecycle event read from `process_events`. `event` is one of `started`, `stopped`, or `crashed`. |
 | `error` | `code`, `message`, `meta` | Terminal stream failure after the stream has opened. |
 
-`scope` contains the stable filters applied to the stream: `app`,
+`scope` contains the stable filters applied to the stream: `project`,
 `instance`, `workspace`, `node`, and `process`, with absent filters omitted.
-App/workspace frames include both `app` and `instance`. Stream frames do
+Instance/workspace frames include both `project` and `instance`. Stream frames do
 not include top-level `success` or `error` keys.
 
 ## Behavior Contract

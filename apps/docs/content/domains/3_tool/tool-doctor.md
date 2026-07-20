@@ -37,7 +37,7 @@ container/service, port-53 listener, VPN forwarding, and client-DNS settings.
 The node and proxy families own the two included record projections. Tool
 doctor neither compares nor restores their content.
 
-Node reachability belongs to `node`. App, workspace, process, schedule, proxy
+Node reachability belongs to `node`. Instance, workspace, process, schedule, proxy
 route, and firewall drift remain outside the tool family even when those
 families depend on a tool.
 
@@ -156,7 +156,7 @@ credential repair logic.
 restore does not create tool rows).
 
 Tools without a safe repair path are reported with the required manual action.
-Tool doctor never creates apps, workspaces, processes, schedules, custom proxy
+Tool doctor never creates projects, instances, workspaces, processes, schedules, custom proxy
 routes, non-tool firewall rules, node identities, or node grants. It may repair
 endpoint configuration owned by the tool only when the selected tool definition declares that
 ownership; live proxy and firewall artifact drift remains in the `proxy` and

@@ -27,7 +27,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- |
 | `action` | `{action}` | Always. | None. | `list`, `set`, or `render`. |
 | `name` | `[name]` | CWD does not resolve one registered workspace. | Registered workspace containing `ORBIT_HOST_CWD`. | Workspace identity slug. |
-| `app` | `--instance` | Matching workspace names are ambiguous. | None. | App or concrete instance selector. |
+| `instance` | `--instance` | Matching workspace names are ambiguous. | None. | Project or concrete instance selector. |
 | `key` | `--key` | `set`. | None. | Uppercase env key pattern. |
 | `value` | `--value` | `set`. | None. | Any non-secret string, including production-like values. |
 | `apply` | `--apply` | Optional for `set`. | `false`. | Rejected outside `set`. |
@@ -50,10 +50,9 @@ database values are redacted from responses.
 | `GET` | `/api/workspaces/{workspace}/env/render` | `workspace:read` | Render the effective map. |
 | `GET` | `/api/workspaces/env/resolve-by-path?path=<absolute>` | `workspace:read` | Resolve the workspace containing caller CWD. |
 
-The workspace routes accept optional `app` and `instance` query parameters for
-disambiguation. An `instance` query parameter is valid only when `app` is also
-present, so authorization and target selection resolve the same concrete app
-instance.
+The workspace routes accept an optional `instance` query parameter for
+disambiguation. It accepts `project.instance`, or a bare project only when that
+project resolves to one concrete instance.
 
 ## Behavior Contract
 
@@ -68,12 +67,12 @@ instance.
 
 5. `set --apply` reads and writes only `<workspace path>/.env`, clears Laravel
    caches at the workspace path, and reapplies only the workspace runtime.
-6. Parent app paths, sibling workspace paths, and remote unrelated nodes are
+6. Parent instance paths, sibling workspace paths, and remote unrelated nodes are
    outside the side-effect boundary.
 
 ### Result metadata
 
-7. Every success response includes `scope=workspace`, `app`, `instance`,
+7. Every success response includes `scope=workspace`, `project`, `instance`,
    `workspace`, `path`, `stored`, `applied`, and `runtime_restarted`.
 
 ## Failure Semantics
@@ -82,8 +81,8 @@ instance.
 | --- | --- | --- |
 | Workspace not found | No visible workspace matches. | `error.code=workspace.not_found`. |
 | Workspace ambiguous | Name matches more than one visible target. | `error.code=validation_failed`, `error.meta.field=workspace`. |
-| Instance without app | The raw API supplies `instance` without `app`. | `error.code=validation_failed`, `error.meta.field=instance`. |
-| Production app unsupported | The selected workspace belongs to an `app-prod` instance. | `error.code=workspace.unsupported_for_production` before storage, file, cache, or runtime effects. |
+| Instance ambiguous | A bare project selector resolves to more than one instance. | `error.code=validation_failed`, `error.meta.field=instance`, `error.meta.reason=instance_required`. |
+| Production instance unsupported | The selected workspace belongs to an `app-prod` instance. | `error.code=workspace.unsupported_for_production` before storage, file, cache, or runtime effects. |
 | Runtime apply failed | Gateway state saved but workspace file/cache/runtime application failed. | `error.code=workspace.env_apply_failed`. |
 
 ## Doctor Relationship

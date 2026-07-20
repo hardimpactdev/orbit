@@ -264,7 +264,7 @@ describe('AppAnalyticsBindingService', function (): void {
         expect(fn () => app(AppAnalyticsBindingService::class)->enable($app, []))
             ->toThrow(
                 AnalyticsDomainRequired::class,
-                "App 'docs' requires a configured valid public domain before analytics can be enabled.",
+                "Project 'docs' requires a configured valid public domain before analytics can be enabled.",
             );
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
@@ -280,7 +280,7 @@ describe('AppAnalyticsBindingService', function (): void {
         expect(fn () => app(AppAnalyticsBindingService::class)->enable($app, ['analytics.docs.test']))
             ->toThrow(
                 AnalyticsDomainRequired::class,
-                "App 'docs' requires a configured valid public domain before analytics can be enabled.",
+                "Project 'docs' requires a configured valid public domain before analytics can be enabled.",
             );
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())

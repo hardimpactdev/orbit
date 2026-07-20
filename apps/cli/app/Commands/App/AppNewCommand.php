@@ -21,11 +21,11 @@ final class AppNewCommand extends AppGatewayCommand
     #[\Override]
     protected $signature = 'project:new
         {name? : Project name}
-        {--node= : Target app node}
+        {--node= : Target instance node}
         {--repo= : Repository to clone}
         {--template-repo= : GitHub template repository (owner/repo)}
         {--new-repo= : New private GitHub repository (owner/repo)}
-        {--root=public : Document root relative to app path}
+        {--root=public : Document root relative to instance path}
         {--php-version=8.5 : PHP version}
         {--domain= : Production domain}
         {--runtime-proxy-transport=http : FrankenPHP inner proxy transport (http|https)}
@@ -33,7 +33,7 @@ final class AppNewCommand extends AppGatewayCommand
         {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
-    protected $description = 'Create a new project and its first instance on an app node.';
+    protected $description = 'Create a new project and its first instance on a serving node.';
 
     public function handle(): int
     {

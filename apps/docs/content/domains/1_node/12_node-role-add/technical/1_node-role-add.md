@@ -88,7 +88,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   alias inspection and source-checkout fallback. Existing mutable websocket
   references are never installed and use that same safe fallback; newly
   generated manifests reject them.
-- App-development convergence runs as direct gateway-pushed command envelopes.
+- `app-dev` convergence runs as direct gateway-pushed command envelopes.
 - Active workload roles supply Agent intent. A roleless non-gateway operator
   may instead opt in through `managed`; platform and WireGuard eligibility
   still apply, and gateway nodes are never Agent targets.

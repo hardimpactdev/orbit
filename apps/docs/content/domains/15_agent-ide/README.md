@@ -28,7 +28,7 @@ There is no `doctor --family=agent-ide` contract.
 
 These rules define the Agent IDE command domain and its authorization model.
 
-- Agent IDE defaults are gateway configuration owned by nodes and apps.
+- Agent IDE defaults are gateway configuration owned by nodes and instances.
 - `node:agent-ide` defines the node default.
 - `instance:agent-ide` defines the app override.
 - The effective adapter for an app or workspace resolves workspace setting
@@ -65,7 +65,7 @@ The Agent IDE family provides the following commands.
 ## Related
 
 - [`orbit node:agent-ide [name] [agent_ide]`](../1_node/10_node-agent-ide/node-agent-ide.md)
-- [`orbit instance:agent-ide [app] [agent_ide]`](../5_project/9_instance-agent-ide/instance-agent-ide.md)
+- [`orbit instance:agent-ide [instance] [agent_ide]`](../5_project/9_instance-agent-ide/instance-agent-ide.md)
 - [`doctor --family=node`](../1_node/node-doctor.md)
 - [`doctor --family=instance`](../5_project/instance-doctor.md)
 - [`doctor --family=workspace`](../6_workspace/workspace-doctor.md)

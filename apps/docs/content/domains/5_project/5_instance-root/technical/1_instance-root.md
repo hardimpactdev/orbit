@@ -37,9 +37,9 @@ This command follows the shared
 
 ## Input Resolution
 
-1.  **Resolve `app`**:
+1.  **Resolve `instance`**:
     - From positional argument.
-    - In interactive mode, if still missing, prompt with `app` (Select).
+    - In interactive mode, if still missing, prompt with `instance` (Select).
     - If still missing, fail with `error.code=validation_failed` and
       `error.meta.field=instance`.
 2.  **Resolve `root`**:
@@ -76,7 +76,7 @@ This command follows the shared
      `error.meta.instance`, and `error.meta.instance_path`.
 2. **Node-side reality (doctor, not this command).**
    - A symlink inside the app path that points outside, or a missing document
-     root directory on the node, is detected by the `app` doctor probe at
+     root directory on the node, is detected by the `instance` doctor probe at
      layer 4 (Document root) and surfaced as `instance.root_outside_path` or
      `instance.root_missing` with no `doctor --restore` mapping. Filesystem-level reality
      is not part of `instance:root` input validation.
@@ -86,7 +86,7 @@ filesystem reality stays a doctor-owned convergence concern.
 
 ## Behavior Contract
 
-### App Root Resolution Rules
+### Instance Root Resolution Rules
 
 `instance:root` is convergent and idempotent. It always re-applies the selected
 instance so running it on an instance that is already managed refreshes only
@@ -163,13 +163,13 @@ the instance family owns managed app runtime configuration.
 ## Doctor Relationship
 
 - This command updates gateway configuration that is verified by `doctor --family=instance`.
-  See [`instance-doctor.md`](../../instance-doctor.md) for the app-family probe and
+  See [`instance-doctor.md`](../../instance-doctor.md) for the instance-family probe and
   issue-code contract.
 - If re-application fails, `doctor --family=process` reports concrete
   `process.runtime_unit_*` drift, while `doctor --family=instance` reports managed
   `instance.runtime_config_*` drift.
 - Repairing drift caused by a partial success of `instance:root` uses the Doctor
-  family named by each warning: `process` for runtime units and `app` for
+  family named by each warning: `process` for runtime units and `instance` for
   managed runtime configuration.
 - The filesystem reality of the document root (`instance.root_outside_path`,
   `instance.root_missing`) is doctor-owned and never duplicated as `instance:root`
@@ -182,10 +182,10 @@ document-root updates.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /apps/{instance}/root` |
+| Type | `api:POST /instances/{instance}/root` |
 | Effect | `write` |
 | Subject | Selected `AppInstance`; `none` before instance resolution. |
-| Properties | `app` (string or null), `instance` (string or null), `serving_node` (string or null), and `root` (string or null). No raw shell command text, node-side output, or secrets. |
+| Properties | `project` (string or null), `instance` (string or null), `serving_node` (string or null), and `root` (string or null). No raw shell command text, node-side output, or secrets. |
 | Description | derived |
 
 ## Test Mapping

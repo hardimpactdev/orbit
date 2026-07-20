@@ -96,7 +96,7 @@ These rules govern all workspace family commands.
 ## Workspace Source Drivers
 
 Workspace source creation is driver-owned. `workspace:new` resolves the parent
-app's effective agent IDE adapter from app configuration, then node defaults,
+instance's effective agent IDE adapter from instance configuration, then node defaults,
 then no adapter. The selected source driver creates the source directory and
 returns the physical path that Orbit stores on the gateway workspace record.
 
@@ -146,7 +146,7 @@ result state, such as the git ref used by `workspace:new`, belongs beside the
 entity rather than inside it.
 
 List renderers are the one documented exception: `workspace:list` rows are
-summary rows carrying only `name`, `app`, `instance`, `node`, `url`, and
+summary rows carrying only `name`, `project`, `instance`, `node`, `url`, and
 `lifecycle_status`. Summary rows must be a strict subset of the canonical
 entity fields with identical meanings; they never add fields the canonical
 entity does not define.
@@ -173,7 +173,7 @@ entity does not define.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | Workspace identity slug. Unique within the parent project. |
-| `app` | string | Parent project slug. |
+| `project` | string | Parent project slug. |
 | `instance` | string | Required selected instance name. |
 | `node` | string | Effective workspace node slug resolved from the selected instance. |
 | `path` | string | Absolute workspace path on the owning node. |

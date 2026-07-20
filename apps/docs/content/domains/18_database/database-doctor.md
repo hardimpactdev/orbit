@@ -28,7 +28,7 @@ The database family owns these facts:
   workspaces during rollout, using their current `.env` files as the observed
   source.
 
-App runtime health belongs to `app`. Workspace path and runtime artifacts
+Instance runtime health belongs to `instance`. Workspace path and runtime artifacts
 belong to `workspace`. Database service lifecycle and credentials generated for
 managed MySQL/PostgreSQL/Valkey instances belong to process-owned service
 definitions. WireGuard route mutation belongs to node provisioning/topology

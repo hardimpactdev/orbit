@@ -46,7 +46,7 @@ preserves that instance's existing setup run history.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Instance not found | No project record matches `app`. | `error.code=instance.not_found` |
+| Instance not found | No concrete instance matches `instance`. | `error.code=instance.not_found` |
 | Instance required | A bare project selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=instance_required`. |
 | Step not found | No setup step matches `step`. | `error.code=instance.setup_step_not_found` |
 
@@ -60,10 +60,10 @@ setup steps.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:DELETE /apps/{instance}/setup-steps/{step}` |
+| Type | `api:DELETE /instances/{instance}/setup-steps/{step}` |
 | Effect | `write` |
-| Subject | `App` on success; `none` on validation or authorization failure. |
-| Properties | `app`, `instance`, removed setup step id, and title. |
+| Subject | `AppInstance` on success; `none` on validation or authorization failure. |
+| Properties | `project`, `instance`, removed setup step id, and title. |
 | Description | derived |
 
 ## Test Mapping

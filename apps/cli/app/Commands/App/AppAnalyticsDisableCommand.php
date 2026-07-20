@@ -20,7 +20,7 @@ final class AppAnalyticsDisableCommand extends AppGatewayCommand
     protected $name = 'instance:analytics disable';
 
     #[\Override]
-    protected $description = 'Disable analytics tracking proxy support for an app.';
+    protected $description = 'Disable analytics tracking proxy support for an instance.';
 
     #[\Override]
     protected function configure(): void

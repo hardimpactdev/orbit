@@ -14,7 +14,7 @@ final class AppWebSocketCredentialsCommand extends AppGatewayCommand
     protected $name = 'instance:websocket credentials';
 
     #[\Override]
-    protected $description = 'Show WebSocket credentials for an app.';
+    protected $description = 'Show WebSocket credentials for an instance.';
 
     #[\Override]
     protected function configure(): void

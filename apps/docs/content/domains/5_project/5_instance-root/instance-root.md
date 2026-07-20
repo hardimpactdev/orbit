@@ -20,7 +20,7 @@ orbit instance:root my-app.production .
 
 ## Arguments and options
 
-- `app`: Dotted instance selector. A bare logical slug is shorthand only
+- `instance`: Dotted instance selector. A bare logical slug is shorthand only
   when exactly one eligible visible instance exists. Hostnames are not input.
 - `root`: The new document root path, relative to the selected instance's path.
 - `--json`: Output JSON.
@@ -38,7 +38,7 @@ and then re-applies only that instance's runtime artifacts on its serving node.
 2.  **Artifact Re-application:** Triggers the gateway to re-render and apply the
     runtime container configuration to the selected instance's serving node through
     Agent push. The runtime container restart
-    required to pick up the new document root is part of this step. App-owned
+    required to pick up the new document root is part of this step. Instance-owned
     proxy route configuration remains bound to the instance, but backend proxy
     artifact convergence belongs to the `proxy` family.
 3.  **No File Movement:** The command only updates the path configuration; it
@@ -58,8 +58,8 @@ Use `--json` to receive structured output; omit it for a human-readable summary.
 
 - **Human Output:** Summarizes the changed runtime configuration and the
   status of re-applied artifacts on the node.
-- **JSON Output:** Returns separate canonical logical `app` and updated
-  `instance` entities. Drift during a successful run is reported as app-family
+- **JSON Output:** Returns separate canonical logical `project` and updated
+  `instance` entities. Drift during a successful run is reported as instance-family
   warning metadata.
 
 ## Requirements

@@ -30,8 +30,8 @@ orbit instance:register my-app.production --domain=example.com
 
 The following arguments and options shape an `instance:register` invocation.
 
-- `app`: A dotted instance selector. A bare logical slug creates the
-  deterministic first instance for an unregistered app or resolves exactly one
+- `project`: A dotted instance selector. A bare project slug creates the
+  deterministic first instance for an unregistered project or resolves exactly one
   visible existing instance; otherwise it fails with
   `validation_failed`, `meta.reason=instance_required`.
 - `--path=<path>`: The absolute path to the app on the target node.
@@ -70,14 +70,14 @@ named `development` without `--domain` or `production` with `--domain`.
 
 ## What Happens
 
-Run `instance:register` when you need to install, re-apply, or retry Orbit management for an app.
+Run `instance:register` when you need to install, re-apply, or retry Orbit management for a project instance.
 
 `instance:register` ensures that an application is correctly recorded in the Orbit
 gateway and that its runtime artifacts are properly applied on the target app
 node.
 
 An `app-dev` node's self-grant includes `instance:register` for that same node, so
-local app-dev CLIs can register or re-apply apps hosted by themselves. `app-prod`
+local app-dev CLIs can register or re-apply instances hosted by themselves. `app-prod`
 self-grants do not include `instance:register`; production registration requires an
 explicit operator/deploy grant to the target app node.
 
@@ -90,7 +90,7 @@ explicit operator/deploy grant to the target app node.
 3. **Move**: Moves only the selected instance to another eligible node/path,
    and only when both `--node` and `--path` are explicit.
 4. **Apply**: Uses Agent push on the concrete instance node to configure the
-   runtime container and install runtime configuration. It then records app-owned proxy route
+   runtime container and install runtime configuration. It then records instance-owned proxy route
    configuration for the `proxy` family to converge.
 5. **Production Activation**: Performs DNS and TLS checks to activate production routing.
 
@@ -119,7 +119,7 @@ Progress showing each phase, followed by a success line keyed to the result (`re
 
 ### JSON
 
-A machine-readable result with separate canonical `app` and `instance`
+A machine-readable result with separate canonical `project` and `instance`
 entities. The durable `adopted` flag is on `instance`.
 
 ## Requirements

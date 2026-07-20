@@ -3897,7 +3897,8 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/App/AppInstanceCommandTest.php",
-                "apps/gateway/tests/Feature/AppInstanceControllerTest.php"
+                "apps/gateway/tests/Feature/AppInstanceControllerTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppInstanceControllerTest.php"
             ],
             "verification_hints": [
                 {
@@ -3913,6 +3914,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/AppInstanceControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/AppInstanceControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppInstanceControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/AppInstanceControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppInstanceControllerTest.php"
                 }
             ],
             "p4_mapping": {

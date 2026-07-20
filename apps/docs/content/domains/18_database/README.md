@@ -127,8 +127,8 @@ The database command domain owns the `database_connection` state family.
 
 - [`doctor --family=database_connection`](database-doctor.md) owns connection
   drift, restore, and adopt behavior for instance and workspace `.env` mappings.
-- [`doctor --family=instance`](../5_project/instance-doctor.md) owns app runtime health and
-  app runtime artifacts that are not part of database env mapping.
+- [`doctor --family=instance`](../5_project/instance-doctor.md) owns instance runtime health and
+  instance runtime artifacts that are not part of database env mapping.
 - [`doctor --family=workspace`](../6_workspace/workspace-doctor.md) owns
   workspace runtime artifacts and workspace path drift.
 - [`doctor --family=process`](../7_process/process-doctor.md) owns managed
@@ -141,7 +141,7 @@ Database-family JSON renderers that return one connection entity embed this
 shape under `success.data.connection`, or under
 `success.data.connections[]` for list items. Target-specific renderers may add
 target data beside the connection entity. Instance targets use
-`type=instance` and carry both `app` and `instance`.
+`type=instance` and carry both `project` and `instance`.
 
 ```json
 {
@@ -236,6 +236,6 @@ These hidden commands support gateway orchestration and are not public workflow 
 ## Related
 
 - [`doctor --family=database_connection`](database-doctor.md)
-- [`orbit app:*`](../5_project/README.md)
+- [`orbit project:*` and `orbit instance:*`](../5_project/README.md)
 - [`orbit workspace:*`](../6_workspace/README.md)
 - [`orbit tool:*`](../3_tool/README.md)

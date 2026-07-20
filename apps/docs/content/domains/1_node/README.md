@@ -229,8 +229,8 @@ These rules apply to all node commands and define the invariants the family enfo
   and no app or workspace context already determines the owning node.
 - `node:new` never sets the local default node automatically.
   The caller must run `node:default` explicitly.
-- Nodes may store a default agent IDE adapter for apps and workspaces on that
-  node. App-level settings override the node default.
+- Nodes may store a default agent IDE adapter for instances and workspaces on that
+  node. Instance-level settings override the node default.
 - Node access grants decide which consuming nodes may operate on which serving
   nodes. Authorization runs two gates: the grant edge from consuming to
   serving must exist, and the scoped permission set stored on that edge must

@@ -133,7 +133,7 @@ images are harness-only fixture acceleration. They do not redefine the public
 Feature tests clone only their requested roles from that full prepared source.
 
 App-dev carries database, Valkey, Caddy, and FrankenPHP app-serving readiness by
-default. App-prod carries the ingress role by default. Websocket carries the
+default. `app-prod` carries the ingress role by default. Websocket carries the
 Reverb runtime baseline and uses app-dev Valkey.
 
 The shared prepared Incus artifact set is `base`: role templates are named

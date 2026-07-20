@@ -17,7 +17,7 @@ final readonly class AppOwningNodeResolver
         $node = $app->node;
 
         if (! $node instanceof Node) {
-            throw new RuntimeException("App '{$app->name}' has no owning node.");
+            throw new RuntimeException("Project '{$app->name}' has no owning node.");
         }
 
         return $node;

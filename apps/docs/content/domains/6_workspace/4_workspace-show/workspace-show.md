@@ -58,7 +58,7 @@ Does not SSH to nodes, probe filesystems, check live process status, or verify l
 
 ### Show a workspace by name
 
-Use this form when the workspace name is unique across all apps.
+Use this form when the workspace name is unique across all projects.
 
 ```bash
 orbit workspace:show feature-docs

@@ -311,7 +311,7 @@ trait ResolvesVisibleToolNodes
 
         $expected = $field === 'node'
             ? ($allowAnyActiveNode ? 'Expected a visible node name.' : 'Expected a visible tool node name.')
-            : 'Expected a visible app name or domain.';
+            : 'Expected a visible instance selector.';
 
         return $this->toolTargetValidationFailed(
             $field,

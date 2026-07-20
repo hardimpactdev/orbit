@@ -3,10 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -101,6 +104,44 @@ describe('ToolInstallController', function (): void {
             ->toHaveKeys(['instance_key', 'version_family', 'runtime', 'runtime_config'])
             ->and($shell->scripts)
             ->toHaveCount(1);
+    });
+
+    it('installs a host capability through an instance target', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        $node = Node::factory()->create(['name' => 'app-install-api-1', 'status' => 'active']);
+        assignToolInstallApiRole($node, 'app-dev');
+        grantToolInstallApiAccess($caller, $node);
+        $project = Project::factory()->create(['name' => 'docs']);
+        AppInstance::factory()->for($project)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+                domain: 'docs.test',
+            ),
+        ]);
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/php-cli/install',
+            [
+                'instance' => 'docs.development',
+                'version' => '8.5',
+            ],
+            [],
+            [],
+            tool_install_api_server_headers(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.tool.node', 'app-install-api-1')
+            ->assertJsonPath('success.data.tool.version', '8.5');
+
+        expect($shell->scripts)->toHaveCount(1);
     });
 
     it('requires agent-push transport before installing host capabilities', function (): void {
@@ -598,7 +639,7 @@ describe('ToolInstallController', function (): void {
         expect(NodeTool::query()->count())->toBe(0)->and($shell->scripts)->toBe([]);
     });
 
-    it('rejects runtime and instance options for tool installs before side effects', function (
+    it('rejects runtime options for tool installs before side effects', function (
         array $payload,
         string $field,
         ?string $reason,
@@ -636,7 +677,6 @@ describe('ToolInstallController', function (): void {
         expect(NodeTool::query()->count())->toBe(0)->and($shell->scripts)->toBe([]);
     })->with([
         'runtime' => [['runtime' => 'docker'], 'runtime', 'unsupported_field'],
-        'instance' => [['instance' => 'php-cli:8.5'], 'instance', null],
     ]);
 
     it('rejects database and cache services as tool installs before side effects', function (string $tool): void {

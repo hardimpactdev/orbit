@@ -25,8 +25,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owning scope. |
-| `node` | `--node` | Required when reading logs for a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:logs`. |
-| `app` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:logs`. |
+| `node` | `--node` | Required when reading logs for a node-owned process. | `instance` or `workspace` is present. | None. | Must resolve to a node that grants `process:logs`. |
+| `instance` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:logs`. |
 | `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:logs`; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
 | `follow` | `--follow` | Optional. | Never. | `false`. | Boolean flag. Keeps the human log stream open when true. |
 | `lines` | `--lines` | Optional. | Never. | `100`. | Positive integer. How many prior log lines to read before streaming or returning. |
@@ -89,7 +89,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | Type | `api:GET /processes/{name}/log` for bounded reads; `api:POST /processes/{name}/log-stream` for follow operation creation |
 | Effect | `read` |
 | Subject | Resolved `Node` for node-owned processes or `AppInstance` for instance/workspace contexts; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
-| Properties | `node` (string or null), `app` (string or null), `instance` (string or null), and `workspace` (string or null). No captured stdout, stderr, log payload, backend command text, or secrets. |
+| Properties | `node` (string or null), `instance` (string or null), and `workspace` (string or null). No captured stdout, stderr, log payload, backend command text, or secrets. |
 | Description | derived |
 
 ## Test Mapping

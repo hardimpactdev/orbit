@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized to inspect tool credentials for the resolved node or app.
+- The current node identity is authorized to inspect tool credentials for the resolved node or instance.
 
 ## Signature
 
@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Required in non-interactive input mode.` | `Never.` | `interactive selection from credential-bearing tools` | `Registered credential-bearing tool name.` |
 | `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `app` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
+| `instance` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve the owning node.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
 ## Input Mode Contracts
@@ -46,7 +46,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-credentials` must not create apps, workspaces, processes, schedules,
+`tool-credentials` must not create projects, instances, workspaces, processes, schedules,
 proxy routes, firewall rules, node identities, node grants, service endpoints,
 or credentials. Related drift belongs to each owning family doctor contract.
 

@@ -18,7 +18,7 @@ These rules define the analytics command domain and its role boundary.
   active, errored, and removing assignments reserve that singleton slot so a
   failed deployment or cleanup is completed instead of duplicated on another
   node.
-- Public app analytics hosts, such as `https://analytics.example.com`, are
+- Public instance analytics hosts, such as `https://analytics.example.com`, are
   tracking-only routes created for a selected concrete instance. They use
   that instance's public domain, proxy Plausible script and event paths only,
   and must not expose the dashboard publicly.
@@ -53,7 +53,7 @@ These rules define the analytics command domain and its role boundary.
 - Removing the analytics role removes its live Plausible Docker container, the
   `analytics.orbit` route row, rendered Caddy site, certificate, and key before
   completing role removal.
-- The analytics command family coordinates node, process, proxy, and app-owned
+- The analytics command family coordinates node, process, proxy, and project-owned
   binding state. It does not own an independent `doctor --family=analytics`
   state family in v1.
 
@@ -75,7 +75,7 @@ state owned by node, app, process, and proxy families.
   [`doctor --family=proxy`](../8_proxy/proxy-doctor.md) owns route artifact
   drift and restores a missing or divergent private analytics route from the
   singleton active role assignment.
-- [`app`](../5_project/README.md) owns shared non-placement binding policy for the
+- [`project`](../5_project/README.md) owns shared non-placement binding policy for the
   project and concrete public tracking-host placement for each selected
   instance. [`doctor --family=instance`](../5_project/instance-doctor.md) owns app
   binding drift.

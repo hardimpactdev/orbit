@@ -15,7 +15,7 @@ final class AppSetupCommand extends AppGatewayCommand
         {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
-    protected $description = 'Run configured setup steps for an app.';
+    protected $description = 'Run configured setup steps for an instance.';
 
     public function handle(): int
     {

@@ -25,7 +25,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `--instance` | Optional. | Never. | `null`. | Non-empty app key matched against recorded activity relationships. |
+| `project` | `--project` | Optional. | Never. | `null`. | Non-empty project key matched against recorded activity relationships. |
 | `node` | `--node` | Optional. | Never. | `null`. | Non-empty node name matched against recorded activity relationships. |
 | `effect` | `--effect` | Optional. | Never. | `null`. | One of `read`, `write`, `destructive`. |
 | `correlation` | `--correlation` | Optional. | Never. | `null`. | UUID string. |
@@ -40,7 +40,7 @@ This command follows the shared
 3. Validate field-local input.
    - `correlation` must be a UUID when present.
    - `limit` must be an integer from `1` through `200`.
-   - `app` and `node` must be non-empty when present.
+   - `project` and `node` must be non-empty when present.
    - `effect` must be one of `read`, `write`, `destructive` when present.
 4. Request visible activity history from the gateway.
 
@@ -53,8 +53,8 @@ command does not prompt.
 
 - Read durable activity history recorded by the gateway database.
 - Return entries newest first.
-- Apply `app`, `node`, `effect`, and `correlation` filters against recorded
-  activity relationships, not live node or app probes.
+- Apply `project`, `node`, `effect`, and `correlation` filters against recorded
+  activity relationships, not live node or project probes.
 - Exclude internal backend transport activity by default. Current Agent-push
   rows use channel `api`, types `agent_push.dispatching` and
   `agent_push.completed`, and `properties.lane = internal` with
@@ -84,7 +84,7 @@ command does not prompt.
 
 `activity:list` must not:
 - Mutate gateway configuration, local settings, or node reality.
-- Inspect live node state, app runtimes, process manager programs, process
+- Inspect live node state, instance runtimes, process manager programs, process
   logs, Caddy, or filesystem state.
 - Fix drift, adopt reality, or enqueue repair work.
 - Collapse correlated activity into one synthetic row; correlation is metadata,
@@ -114,7 +114,7 @@ Emitted through the cross-cutting Loggable contract. See
 | Type | `activity.listed` |
 | Effect | `read` |
 | Subject | `null`. The command returns a filtered set, not a single record. |
-| Properties | `filter_app` (string\|null), `filter_node` (string\|null), `filter_effect` (`read`\|`write`\|`destructive`\|null), `filter_correlation` (uuid\|null), `filter_include_internal` (bool), `filter_limit` (int), `result_count` (int). No secrets, no raw argv. |
+| Properties | `filter_project` (string\|null), `filter_node` (string\|null), `filter_effect` (`read`\|`write`\|`destructive`\|null), `filter_correlation` (uuid\|null), `filter_include_internal` (bool), `filter_limit` (int), `result_count` (int). No secrets, no raw argv. |
 | Description | `derived` from filter set. Renderers may show `"listed N activity entries"` and the applied filters. |
 
 A successful read produces one entry. Authorization or validation failures

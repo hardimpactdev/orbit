@@ -6,12 +6,12 @@ describe('AppNewStream command', function (): void {
     it('renders gateway-authored project:new progress in human mode', function (): void {
         fakeGatewayProgressStream(
             gatewayProgressFrame('tree', [
-                'title' => 'Creating App',
+                'title' => 'Creating Project',
                 'steps' => [
-                    ['key' => 'operation', 'label' => 'Prepare app creation'],
-                    ['key' => 'source', 'label' => 'Create app source'],
-                    ['key' => 'registry', 'label' => 'Register app'],
-                    ['key' => 'runtime', 'label' => 'Apply app runtime'],
+                    ['key' => 'operation', 'label' => 'Prepare project creation'],
+                    ['key' => 'source', 'label' => 'Create project source'],
+                    ['key' => 'registry', 'label' => 'Register project'],
+                    ['key' => 'runtime', 'label' => 'Apply instance runtime'],
                 ],
             ])
                 .gatewayProgressFrame('step', [
@@ -21,7 +21,7 @@ describe('AppNewStream command', function (): void {
                 ])
                 .gatewayProgressFrame('complete', [
                     'exit_code' => 0,
-                    'data' => ['footer' => "App 'docs' created."],
+                    'data' => ['footer' => "Project 'docs' created."],
                 ]),
         );
 
@@ -34,26 +34,26 @@ describe('AppNewStream command', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('Creating App')
-            ->toContain('Prepare app creation')
-            ->toContain('Create app source')
-            ->toContain('Register app')
-            ->toContain('Apply app runtime')
+            ->toContain('Creating Project')
+            ->toContain('Prepare project creation')
+            ->toContain('Create project source')
+            ->toContain('Register project')
+            ->toContain('Apply instance runtime')
             ->toContain('Creating source for docs')
-            ->toContain("App 'docs' created.");
+            ->toContain("Project 'docs' created.");
     });
 
-    it('emits only the final AppNewStream complete frame in json mode', function (): void {
+    it('emits only the final project:new complete frame in json mode', function (): void {
         $complete = [
             'exit_code' => 0,
             'data' => [
-                'footer' => "App 'docs' created.",
-                'app' => ['name' => 'docs', 'node' => 'app-1'],
+                'footer' => "Project 'docs' created.",
+                'project' => ['name' => 'docs', 'node' => 'app-1'],
             ],
         ];
 
         fakeGatewayProgressStream(
-            gatewayProgressFrame('tree', ['title' => 'Creating App'])
+            gatewayProgressFrame('tree', ['title' => 'Creating Project'])
                 .gatewayProgressFrame('step', [
                     'key' => 'source',
                     'status' => 'running',
@@ -88,8 +88,8 @@ describe('AppNewStream command', function (): void {
             ->not->toContain('Creating source');
     });
 
-    it('preserves AppNewStream gateway errors before a stream starts', function (): void {
-        fakeGatewayProgressStream(json_encode(fakeErrorEnvelope('authorization_failed', 'Missing app permission.', [
+    it('preserves project:new gateway errors before a stream starts', function (): void {
+        fakeGatewayProgressStream(json_encode(fakeErrorEnvelope('authorization_failed', 'Missing project permission.', [
             'missing_permission' => 'project:new',
         ]), JSON_THROW_ON_ERROR), 403);
 

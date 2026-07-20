@@ -5,7 +5,7 @@ instances. The command family owns the `deploy:*` command prefix.
 
 Deployments are an operator workflow, not a standalone state family. Deployment
 step definitions, warmup paths, deployment runs, run logs, and latest deployment
-status are instance-owned gateway state. App doctor may use the selected
+status are instance-owned gateway state. Instance doctor may use the selected
 instance's deployment policy and latest run state when evaluating production project
 health.
 
@@ -137,5 +137,5 @@ Use these commands to manage deployment steps, run deployments, and inspect depl
 
 ## Related
 
-- [`orbit app:*`](../5_project/README.md)
+- [`orbit project:*` and `orbit instance:*`](../5_project/README.md)
 - [`doctor --family=instance`](../5_project/instance-doctor.md)

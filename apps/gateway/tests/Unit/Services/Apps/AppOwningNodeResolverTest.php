@@ -57,5 +57,5 @@ it('throws when the app has no owning node', function (): void {
     $app->setRelation('node', null);
 
     expect(fn () => new AppOwningNodeResolver()->resolve($app))
-        ->toThrow(RuntimeException::class, "App 'orphan' has no owning node.");
+        ->toThrow(RuntimeException::class, "Project 'orphan' has no owning node.");
 });

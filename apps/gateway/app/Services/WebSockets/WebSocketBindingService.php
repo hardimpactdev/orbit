@@ -100,7 +100,7 @@ final readonly class WebSocketBindingService
         $binding = $this->existingBinding($app);
 
         if (! $binding instanceof AppWebSocketBinding) {
-            throw new RuntimeException("App '{$app->name}' does not have a websocket binding.");
+            throw new RuntimeException("Project '{$app->name}' does not have a websocket binding.");
         }
 
         return $binding;
@@ -111,7 +111,7 @@ final readonly class WebSocketBindingService
         $binding = $this->binding($app);
 
         if (! $binding->enabled) {
-            throw new RuntimeException("App '{$app->name}' does not have an enabled websocket binding.");
+            throw new RuntimeException("Project '{$app->name}' does not have an enabled websocket binding.");
         }
 
         return $binding;

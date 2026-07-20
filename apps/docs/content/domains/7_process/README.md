@@ -24,10 +24,10 @@ These rules cover who owns process configuration and how process definitions are
   to the project. A workspace-scoped definition belongs to a workspace
   that already identifies its instance. The scope selects the serving node
   and default runtime context.
-- Canonical instance identity stores and returns both the logical `app` slug
+- Canonical instance identity stores and returns both the logical `project` slug
   and the concrete `instance` slug. Public commands prefer
   `--instance=<project.instance>`. A bare project slug is shorthand only when that
-  app has exactly one instance; otherwise commands fail with
+  project has exactly one instance; otherwise commands fail with
   `error.code=validation_failed`, `error.meta.field=instance`, and
   `error.meta.reason=instance_required`.
 - Process definitions have a stable order inside their owning scope.
@@ -59,16 +59,16 @@ These rules describe how runtime units are derived from process definitions.
   node-owned managed service processes.
 - Public instance/workspace host-command process definitions use the host
   command runtime for their serving node: `systemd` on Linux and `launchd` on macOS.
-  App/workspace `docker` rows remain reserved for Orbit-managed runtime
+  Instance/workspace `docker` rows remain reserved for Orbit-managed runtime
   processes such as generated FrankenPHP web-runtime units, not arbitrary
   public host commands.
 - The process definition supplies shared fields such as command, restart policy,
   runtime backend, runtime configuration, and crash notification policy. The
-  rendering context supplies per-instance fields such as node/app/instance/workspace
+  rendering context supplies per-instance fields such as node/project/instance/workspace
   identity, path, URL, environment, ports, and volumes.
 - Runtime unit names use Orbit-owned backend-safe names such as
-  `orbit_<scope>_<process>`. App/workspace identities include both project
-  and instance slugs so two instances of one app cannot collide. When process identity is renamed, Orbit replaces
+  `orbit_<scope>_<process>`. Instance/workspace identities include both project
+  and instance slugs so two instances of one project cannot collide. When process identity is renamed, Orbit replaces
   derived runtime units and removes names from the previous identity instead of leaving
   orphaned units.
 - The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
@@ -250,7 +250,7 @@ operates a runtime backend directly.
 ## Runtime Unit Environment
 
 Derived process runtime units expose a runtime environment that is separate
-from workspace setup and teardown step environment. App and workspace process
+from workspace setup and teardown step environment. Instance and workspace process
 contexts receive the URL/TLS variables below when applicable; node-level
 processes receive only variables meaningful to their selected runtime. Runtime
 units do not receive `ORBIT_*` lifecycle variables by contract.
@@ -280,7 +280,7 @@ Process commands store the operator-provided command and do not rewrite it for a
 npm run dev -- --host=0.0.0.0
 ```
 
-Equivalent package-manager or framework adapter commands are valid when they produce the same non-loopback bind behavior. Orbit supplies `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT` so the process can serve the app/workspace URL over Orbit-managed HTTPS and keep browser HMR connected through the network path.
+Equivalent package-manager or framework adapter commands are valid when they produce the same non-loopback bind behavior. Orbit supplies `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT` so the process can serve the instance/workspace URL over Orbit-managed HTTPS and keep browser HMR connected through the network path.
 
 Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by their respective families. The process family owns the stored command, runtime unit environment, and process lifecycle, not public exposure policy.
 

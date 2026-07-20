@@ -24,7 +24,7 @@ and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
   `--workspace`, `--fix`, `--restore`, and `--adopt`.
 - Reject `--node=all` with `validation_failed` and `field=node` metadata before
   probes.
-- Reject unresolvable family, node, app, or workspace scopes before probes.
+- Reject unresolvable family, node, instance, or workspace scopes before probes.
 - Reject family selections outside the target node's resolved eligibility set
   before probes. Active roles provide the base set; gateway-owned facts and
   platform support add overlays. `process` is eligible for every role-bearing

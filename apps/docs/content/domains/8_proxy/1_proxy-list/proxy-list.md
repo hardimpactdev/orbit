@@ -15,7 +15,7 @@ orbit proxy:list [--node=<node>] [--filter=<filter>] [--json]
 ## Description
 
 `proxy:list` shows the unified HTTP ingress registry. By default it includes
-app routes, app WebSocket routes, workspace routes, gateway/internal routes,
+project routes, instance routes, WebSocket routes, workspace routes, gateway/internal routes,
 websocket service routes, S3 service and public host routes, tool-owned routes,
 custom upstream routes, and redirects.
 
@@ -24,21 +24,20 @@ Use `--filter` to narrow the list:
 | Filter | Meaning |
 | --- | --- |
 | `all` | All visible proxy routes. |
-| `app` | App-owned hostnames. |
-| `app-websocket` | App-owned public WebSocket hostnames. |
-| `app-analytics` | App-owned public analytics tracking hostnames. |
+| `instance` | Instance-owned hostnames. |
+| `project` | Project-owned hostnames without a concrete instance target. |
 | `workspace` | Workspace-owned hostnames. |
 | `gateway` | Gateway-owned internal routes such as the gateway API ingress. |
-| `websocket` | Router-owned private websocket service routes such as `websocket.orbit`. |
+| `websocket` | Instance-owned public WebSocket hosts and router-owned private service routes such as `websocket.orbit`. |
 | `s3` | S3 public host routes and router-owned private S3 service routes such as `s3.orbit`. |
-| `analytics` | Public app analytics host routes and router-owned private analytics service routes such as `analytics.orbit`. |
+| `analytics` | Public project analytics host routes and router-owned private analytics service routes such as `analytics.orbit`. |
 | `tool` | Tool-owned proxy routes for node tools or services. |
 | `custom` | User-authored upstream routes created by `proxy:add --upstream`. |
 | `redirect` | User-authored redirect routes created by `proxy:add --redirect`. |
 
 `proxy:list` reads gateway configuration only. It does not probe node proxy backends or verify TLS files. Use `doctor --family=proxy` for drift verification.
 
-Every app-owned primary route reports a concrete instance target. A route
+Every instance-owned primary route reports a concrete instance target. A route
 such as `happie.nmbp` keeps the project slug `happie` in `owner.name`,
 reports `target.type=instance` and `target.value=happie.nmbp`, and reports
 the selected instance's serving node in `node`. Projects are not route

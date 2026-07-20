@@ -136,7 +136,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`codex:app` is a direct app-to-Codex-App configuration bridge. It is not
+`codex:app` is a direct project-to-Codex-App configuration bridge. It is not
 currently restored by [`doctor --family=instance`](../../../5_project/instance-doctor.md); later drift
 automation must use the same source-agnostic config services.
 

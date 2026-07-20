@@ -419,7 +419,7 @@ final readonly class WorkspacesProbe
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: 'workspace.parent_app_invalid',
+                    key: 'workspace.parent_project_invalid',
                     kind: DriftKind::Divergent,
                     summary: "Workspace {$workspace->name} points at a missing parent project.",
                 ),

@@ -61,7 +61,7 @@ final readonly class AnalyticsPublicHostNormalizer
 
         if (! $this->isPublicDnsHostname($domain)) {
             throw new AnalyticsDomainRequired(
-                "App '{$app->name}' requires a configured valid public domain before analytics can be enabled.",
+                "Project '{$app->name}' requires a configured valid public domain before analytics can be enabled.",
             );
         }
 

@@ -68,7 +68,7 @@ route drift.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:GET /apps/{instance}/analytics` |
+| Type | `api:GET /instances/{instance}/analytics` |
 | Effect | `read` |
 | Subject | Instance resolved from `{instance}`. |
 | Properties | `target_instance`, `target_instance`, and `serving_node`. |

@@ -11,24 +11,24 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - The proxy command family owns the `proxy:*` command prefix.
 - The `proxy` state family is the canonical registry of every hostname Orbit
   exposes.
-- Every proxy route has an owner: `app`, `app-websocket`, `app-analytics`,
+- Every proxy route has a public owner: `project`, `instance`, `analytics`, `websocket`,
   `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom`. The owner value
   classifies which domain's convergence edits the route record; the private
   `websocket.orbit`, `s3.orbit`, and `analytics.orbit` service routes are owned
   by `router`.
-- Every proxy route has a kind: `app`, `workspace`, `internal`, `proxy`, or
+- Every proxy route has a kind: `project`, `instance`, `workspace`, `internal`, `proxy`, or
   `redirect`.
 - `proxy:list` shows all proxy routes by default, including app routes,
   workspace routes, gateway/internal routes, tool-owned routes, custom upstream
   routes, and redirects.
 - `proxy:list --filter=<filter>` narrows the unified view. Supported filters are
-  `all`, `app`, `app-websocket`, `app-analytics`, `workspace`, `gateway`,
+  `all`, `project`, `instance`, `workspace`, `gateway`,
   `websocket`, `s3`, `analytics`, `tool`, `custom`, and `redirect`.
   `websocket`, `s3`, and `analytics` are service filters:
   `websocket` selects the router-owned `websocket.orbit` service route, and
   `s3` selects the router-owned `s3.orbit` service route plus public S3 host
   routes, and `analytics` selects the router-owned `analytics.orbit` service
-  route plus public app analytics host routes. They are not owner-enum mirrors.
+  route plus public project analytics host routes. They are not owner-enum mirrors.
   The router-owned `metrics.orbit` route is visible in the unified/default
   inventory; no dedicated metrics filter is exposed in this slice.
 - Workspace-owned routes are visible only when their serving node is active
@@ -37,19 +37,19 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   routes. An explicit `proxy:list --filter=workspace` request fails with
   `workspace.unsupported_for_production` before route facts are returned when
   either side crosses that boundary.
-- App, workspace, gateway, and tool-owned routes are visible through proxy
+- Project, instance, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
-- Every app-owned primary route targets one concrete instance. The route
+- Every instance-owned primary route targets one concrete instance. The route
   keeps `owner.type=app` and the project slug in `owner.name`, while
   `target.type=instance`, `target.value=<project.instance>`, and `node` identify
   the concrete instance and its serving node. A project is never a valid
   primary-route target.
-- App WebSocket routes are visible through proxy commands but edited through
-  app WebSocket binding commands. Public WebSocket hosts are `ingress` routes
+- Instance WebSocket routes are visible through proxy commands but edited through
+  instance WebSocket binding commands. Public WebSocket hosts are `ingress` routes
   that forward to `router`; they must not route directly to websocket role
   nodes.
-- App analytics routes are visible through proxy commands but edited through
-  app analytics binding commands. Public analytics hosts are `ingress` routes
+- Project analytics routes are visible through proxy commands but edited through
+  project analytics binding commands. Public analytics hosts are `ingress` routes
   that forward to `router`, preserve forwarding identity for event attribution,
   and expose only Plausible tracking paths; they must not route directly to
   analytics role nodes or expose the Plausible dashboard publicly.
@@ -94,7 +94,7 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   routine route serving, because a node with an app role with intermediate signing
   authority could mint trusted certificates for arbitrary hosts if compromised.
 - Nodes serve TLS material only. They do not become certificate authorities
-  and do not sign certificates for apps, workspaces, or tools.
+  and do not sign certificates for projects, instances, workspaces, or tools.
 - For DNS hostname routes, the TLS managed by Orbit also applies
   compatibility material on the node. That material lets common Laravel
   Vite TLS detection paths find the route certificate.
@@ -122,9 +122,9 @@ Proxy API requests are authorized against the route's serving node.
 Authorization failures use `authorization_failed` with standard
 `missing_permission` metadata.
 
-## App and workspace ingress baseline
+## Project, instance, and workspace ingress baseline
 
-App and workspace proxy routes are not generic reverse proxies. They provide the standard Orbit browser ingress contract for PHP-backed apps and workspaces:
+Instance and workspace proxy routes are not generic reverse proxies. They provide the standard Orbit browser ingress contract for PHP-backed instances and workspaces:
 
 - terminate Orbit-managed TLS for the app or workspace host;
 - route dynamic requests to the resolved app/workspace FrankenPHP runtime
@@ -216,16 +216,16 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `domain` | string | Hostname or host/path route identity. |
-| `kind` | `app`, `workspace`, `internal`, `proxy`, or `redirect` | Route behavior at ingress. |
-| `owner.type` | `app`, `app-websocket`, `app-analytics`, `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom` | Domain whose convergence edits the route record. Router-owned service routes (`websocket.orbit`, `s3.orbit`, `analytics.orbit`) use `router`; `s3` is used by public S3 host routes and `app-analytics` by public analytics host routes. |
-| `owner.name` | string \| null | Owning app, app WebSocket binding, workspace, gateway route, router service, S3 publication, or tool identity when applicable. |
+| `kind` | `project`, `instance`, `workspace`, `internal`, `proxy`, or `redirect` | Route behavior at ingress. |
+| `owner.type` | `project`, `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom` | Public domain whose convergence edits the route record. Router-owned service routes (`websocket.orbit`, `s3.orbit`, `analytics.orbit`) use `router`; `s3` is used by public S3 host routes and `analytics` by public analytics host routes. |
+| `owner.name` | string \| null | Owning project, instance, WebSocket binding, workspace, gateway route, router service, S3 publication, or tool identity when applicable. |
 
 The remaining fields describe placement, backend target, TLS, and status.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `node` | string | Serving node where proxy artifacts are expected. |
-| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `instance`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, or `tool`. App primary routes always use `instance`. |
+| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `instance`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, or `tool`. Project primary routes always use `instance`. |
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |
 | `redirect_code` | integer \| null | HTTP redirect status code for redirect routes. |
 | `tls` | object | Orbit-managed TLS state expected for the route. |
@@ -241,7 +241,7 @@ Each command links to its public documentation and technical contract:
 ## Related
 
 - [`doctor --family=proxy`](proxy-doctor.md)
-- [`orbit app:*`](../5_project/README.md)
+- [`orbit project:*` and `orbit instance:*`](../5_project/README.md)
 - [`orbit workspace:*`](../6_workspace/README.md)
 - [`orbit tool:*`](../3_tool/README.md)
 - [`orbit s3:*`](../19_s3/README.md)

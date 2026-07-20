@@ -82,7 +82,7 @@ Use these commands alongside `project:list` to manage and inspect projects.
 
 - [`project:new`](../1_project-new/project-new.md) — create or clone an app
 - [`instance:list`](../19_instance-list/instance-list.md) — inspect concrete placements
-- [`project:show`](../4_project-show/project-show.md) — inspect a single app's details
+- [`project:show`](../4_project-show/project-show.md) — inspect a single project's details
 - [`doctor --family=instance`](../instance-doctor.md) — verify and repair app drift
 - [`node:list`](../../1_node/3_node-list/node-list.md) — list registered nodes
 

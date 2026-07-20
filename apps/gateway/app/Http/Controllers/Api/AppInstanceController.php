@@ -44,6 +44,12 @@ final class AppInstanceController implements Loggable
             return $caller;
         }
 
+        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+
+        if (! $callerIsGateway && ! $this->callerMayReadAnyInstance($caller)) {
+            return $this->authorizationFailed('instance:read');
+        }
+
         $project = $this->stringInput($request, 'project');
         $query = AppInstance::query()->with(['project.node', 'runtimeMounts']);
 
@@ -58,7 +64,6 @@ final class AppInstanceController implements Loggable
             $query->where('app_id', $targetProject->id);
         }
 
-        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
         $instances = [];
 
         foreach ($query
@@ -83,10 +88,6 @@ final class AppInstanceController implements Loggable
                 && $this->authorizer->allows($caller, $servingNode, 'instance:read');
             },
         ));
-
-        if (! $callerIsGateway && $instances === []) {
-            return $this->authorizationFailed('instance:read');
-        }
 
         return $this->success([
             'instances' => array_map($this->payloads->instance(...), $instances),
@@ -115,9 +116,14 @@ final class AppInstanceController implements Loggable
             return $caller;
         }
 
+        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+
+        if (! $callerIsGateway && ! $this->callerMayReadAnyInstance($caller)) {
+            return $this->authorizationFailed('instance:read');
+        }
+
         /** @var list<AppInstance> $instances */
         $instances = $targetApp->instances()->with(['runtimeMounts'])->get()->all();
-        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
         $instances = array_values(array_filter(
             $instances,
             function (AppInstance $instance) use ($caller, $callerIsGateway): bool {
@@ -132,10 +138,6 @@ final class AppInstanceController implements Loggable
             },
         ));
 
-        if (! $callerIsGateway && $instances === []) {
-            return $this->authorizationFailed('instance:read');
-        }
-
         return $this->success([
             'project' => $targetApp->name,
             'instances' => array_map(
@@ -143,6 +145,28 @@ final class AppInstanceController implements Loggable
                 $instances,
             ),
         ], ['count' => count($instances)]);
+    }
+
+    private function callerMayReadAnyInstance(Node $caller): bool
+    {
+        $appNodeIds = array_values(array_unique([
+            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-dev'),
+            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-prod'),
+        ]));
+
+        foreach ($appNodeIds as $appNodeId) {
+            $node = Node::query()->find($appNodeId);
+
+            if (! $node instanceof Node) {
+                continue;
+            }
+
+            if ($this->authorizer->allows($caller, $node, 'instance:read')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function show(string $project, string $instance, Request $request): JsonResponse
@@ -196,7 +220,7 @@ final class AppInstanceController implements Loggable
         if ($targetApp->instances()->where('name', $name)->exists()) {
             return $this->validationFailed(
                 'name',
-                "Instance '{$name}' already exists for app '{$targetApp->name}'.",
+                "Instance '{$name}' already exists for project '{$targetApp->name}'.",
                 [
                     'project' => $targetApp->name,
                     'instance' => $name,

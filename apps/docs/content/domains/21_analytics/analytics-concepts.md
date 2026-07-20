@@ -30,14 +30,13 @@ These terms describe the analytics role and the routes around it.
   dashboard and admin endpoint served through router. Analytics role deployment
   converges its route and TLS after Plausible is healthy; removal deletes the
   route and its rendered artifacts.
-- **Public app analytics host:** Public hostname such as
+- **Public instance analytics host:** Public hostname such as
   `analytics.example.com` attached to one selected concrete instance. It
   proxies Plausible script and event-ingest paths only. The default is
   `analytics.<instance-domain>`, so the selected instance must have a public
   domain before analytics can be enabled. Its serving node is the placement
   and authorization boundary even though ingress and router serve the route.
-- **App analytics binding:** App-owned state that may keep shared
-  non-placement analytics policy on the project, while every public domain,
+- **Instance analytics binding:** Instance-owned state whose public domain,
   tracking host, route target, and serving-node authorization reference belongs
   to one selected instance. Enabling a binding converges router and ingress
   artifacts before success; disabling or replacing hosts removes obsolete
@@ -48,8 +47,8 @@ These terms describe the analytics role and the routes around it.
 The analytics family owns the public `analytics:*` command vocabulary and the
 operator workflow for updating the fleet Plausible CE process version.
 
-It does not own app bindings, proxy rows, or process lifecycle in isolation:
-app commands own per-app binding state, proxy owns route artifacts, process owns
+It does not own instance bindings, proxy rows, or process lifecycle in isolation:
+instance commands own per-instance binding state, proxy owns route artifacts, process owns
 runtime lifecycle, and node owns role assignment settings.
 
 Generated PostgreSQL, ClickHouse, and Plausible secrets stay in the process

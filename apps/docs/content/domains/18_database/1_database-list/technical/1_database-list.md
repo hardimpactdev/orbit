@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized to inspect the selected app, workspace, or node scope.
+- The current node identity is authorized to inspect the selected instance, workspace, or node scope.
 
 ## Signature
 
@@ -22,7 +22,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
-| `app` | `--instance` | Optional. | None. | Visible app selector. |
+| `instance` | `--instance` | Optional. | None. | Visible instance selector. |
 | `workspace` | `--workspace` | Optional. | None. | Visible workspace selector. |
 | `node` | `--node` | Optional. | None. | Visible node slug. |
 | `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |
@@ -74,7 +74,7 @@ The gateway API emits an activity entry for successful and failed list requests.
 | Type | `api:GET /database-connections` |
 | Effect | `read` |
 | Subject | `DatabaseConnection` for scoped reads; `none` for broad list or validation failure. |
-| Properties | `app`, `workspace`, and `node` selectors only. No decrypted credentials. |
+| Properties | `instance`, `workspace`, and `node` selectors only. No decrypted credentials. |
 | Description | derived |
 
 ## Test Mapping

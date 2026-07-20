@@ -67,7 +67,7 @@ metadata.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity is authorized to inspect tool credentials for the
-  selected node or app.
+  selected node or instance.
 - The tool is registered for the resolved node and declares credentials.
 
 ## Related Commands

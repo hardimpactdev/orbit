@@ -19,7 +19,7 @@ activity subject. The nine family doctors are:
 | Family | Doctor command |
 | --- | --- |
 | `node` | `doctor --family=node` |
-| `app` | `doctor --family=instance` |
+| `instance` | `doctor --family=instance` |
 | `workspace` | `doctor --family=workspace` |
 | `process` | `doctor --family=process` |
 | `proxy` | `doctor --family=proxy` |

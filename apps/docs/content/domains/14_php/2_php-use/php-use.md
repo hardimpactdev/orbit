@@ -1,6 +1,6 @@
 # `orbit php:use [version]`
 
-Change the PHP image version used by an app or workspace runtime container.
+Change the PHP image version used by an instance or workspace runtime container.
 
 ## Usage
 
@@ -21,11 +21,12 @@ orbit php:use 8.5 --instance=docs --json
 ## Arguments and options
 
 - `version`: PHP version to select. Required unless `--inherit` is supplied.
-- `--instance=<project.instance>`: Target the project's shared PHP runtime policy. This is
-  not an instance selector and affects every Orbit instance of the app.
+- `--instance=<project.instance>`: Select the concrete instance whose parent
+  project's shared PHP runtime policy is changed. All instances of that project
+  consume the shared policy.
 - `--workspace=<workspace>`: Target workspace override.
 - `--inherit`: Clear a workspace override so the workspace inherits the parent
-  app PHP version.
+  project PHP version.
 - `--cli`: Select the node CLI PHP default. Only PHP 8.5 is supported,
   matching the production native Orbit CLI binary artifact's embedded PHP
   version. Source-mounted Docker/Incus development and E2E nodes invoke
@@ -42,16 +43,16 @@ orbit php:use 8.5 --instance=docs --json
 
 ## What Happens
 
-Run this command to select the PHP image version for an app or workspace.
+Run this command to select the PHP image version for an instance or workspace.
 
 `php:use` resolves exactly one target scope: project runtime policy, workspace runtime
-override, workspace inheritance, or node CLI default. It validates that app and
-workspace versions are supported by Orbit. Before an app-policy write it
+override, workspace inheritance, or node CLI default. It validates that project
+and workspace versions are supported by Orbit. Before a project-policy write it
 preauthorizes every affected Orbit instance serving node and verifies the image
 on every one; any denial or missing image stops before policy mutation. Node CLI
 selection only accepts PHP 8.5.
 
-For an app target, the command writes the shared policy only after that complete
+For an instance target, the command writes the parent project's shared policy only after that complete
 preflight, then fans out runtime-container and proxy-backend reconciliation to
 all Orbit instances. It returns one `{instance, node, status, ...}` result
 per instance and does not report partial success. External-driver instances are
@@ -65,7 +66,7 @@ mutate Composer constraints.
 ## Output
 
 Your output shows the resolved target, selected version, and per-instance
-reconciliation results for an app-policy write.
+reconciliation results for a project-policy write.
 
 Human output renders progress and a short result summary. Use `--json` for
 machine-readable output.
@@ -75,9 +76,9 @@ machine-readable output.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity has `php:write` on every affected Orbit instance
-  serving node for an app-policy write, or on the resolved workspace/CLI node.
+  serving node for a project-policy write, or on the resolved workspace/CLI node.
   Gateway identity remains implicit.
-- The requested app PHP version is available on every affected Orbit instance
+- The requested project PHP version is available on every affected Orbit instance
   serving node; a workspace version is available on that workspace's serving
   node. Node CLI selection requires PHP 8.5.
 - The concrete instance-serving node is Agent-eligible and reachable when

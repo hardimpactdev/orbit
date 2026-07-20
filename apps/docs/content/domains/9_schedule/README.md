@@ -47,7 +47,7 @@ the gateway always dispatches.
   another serving node explicitly.
 - A Laravel scheduler is a normal instance-scoped schedule that runs `php artisan schedule:run` every minute.
 
-App selectors use `app.instance`, such as `docs.production`. A bare project
+Instance selectors use `project.instance`, such as `docs.production`. A bare project
 name is shorthand only when exactly one eligible instance is visible to the
 caller for the requested schedule permission. Ambiguity fails before reads,
 writes, dispatch, or destructive side effects. Schedule names are unique within
@@ -132,9 +132,9 @@ items.
 ```json
 {
   "name": "laravel-scheduler",
-  "scope": "app",
+  "scope": "instance",
   "target": {
-    "type": "app",
+    "type": "instance",
     "name": "docs.production",
     "node": "app-1"
   },
@@ -161,9 +161,9 @@ items.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | Schedule slug, unique within the selected concrete target. |
-| `scope` | `app`, `node`, or `orbit` | Scope that owns the schedule. |
+| `scope` | `instance`, `node`, or `orbit` | Scope that owns the schedule. |
 | `target.type` | string | Target kind. |
-| `target.name` | string | Concrete `app.instance` selector, node, or Orbit maintenance target. |
+| `target.name` | string | Concrete `project.instance` selector, node, or Orbit maintenance target. |
 | `target.node` | string | Node the dispatched command executes on. The gateway scheduler dispatches over agent-push when the target is not the gateway. |
 | `interval` | string | Portable Orbit interval expression. |
 | `timezone` | string | Timezone used to interpret the interval. |
@@ -191,5 +191,5 @@ Use these commands to manage schedules across the full lifecycle.
 These references cover schedule diagnostics and the neighboring command families that schedules interact with.
 
 - [`doctor --family=schedule`](schedule-doctor.md)
-- [`orbit app:*`](../5_project/README.md)
+- [`orbit project:*` and `orbit instance:*`](../5_project/README.md)
 - [`orbit node:*`](../1_node/README.md)

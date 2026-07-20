@@ -357,7 +357,7 @@ receives its concrete `orbit.{tld}` record in the node projection.
 For provisioned Linux nodes, `node:new` configures node-owned security policy
 by default. That policy belongs to the `node` family and may surface as
 `node.security.*` doctor findings. `node:new` does not configure tools,
-user-facing firewall rules, apps, or workspaces.
+user-facing firewall rules, projects, instances, or workspaces.
 
 If initial role validation fails, the command stops before provisioning
 or writing the node identity. If an initial role is persisted but its
@@ -420,7 +420,7 @@ Agent setup does not offer `gateway-admin` by default. `node:new` itself
 requires the caller to hold a grant to the gateway with `node:new` or `*`.
 The normal way to grant that authority is the `gateway-admin` preset.
 
-It does not configure tools, user apps, workspaces, processes, schedules,
+It does not configure tools, projects, instances, workspaces, processes, schedules,
 firewall rules, or user proxy routes. Those are managed by their own commands
 and by `doctor --family=<family> --restore` or `doctor --family=<family> --adopt`.
 

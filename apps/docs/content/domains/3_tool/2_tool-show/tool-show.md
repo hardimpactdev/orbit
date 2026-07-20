@@ -69,7 +69,7 @@ metadata that is not secret may be included in the machine-readable output.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity is authorized to inspect tools for the selected
-  node or app.
+  node or instance.
 - The tool is registered for the resolved node.
 - The target node must be Agent eligible and reachable when `--live` is used.
 

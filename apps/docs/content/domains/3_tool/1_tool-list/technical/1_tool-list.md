@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized to inspect tool state for the resolved node or app.
+- The current node identity is authorized to inspect tool state for the resolved node or instance.
 
 ## Signature
 
@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | `Optional.` | `Never.` | `None.` | Visible active non-gateway node slug. |
-| `app` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
+| `instance` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve the owning node.` |
 | `all` | `--all` | `Optional.` | `Never.` | `false` | When true, lists all visible tool rows instead of defaulting to a single node. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
@@ -42,7 +42,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-list` must not create apps, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
+`tool-list` must not create projects, instances, workspaces, processes, schedules, proxy routes, firewall rules, node identities, or node grants. Related drift belongs to each owning family doctor contract.
 
 ## Renderer Contracts
 

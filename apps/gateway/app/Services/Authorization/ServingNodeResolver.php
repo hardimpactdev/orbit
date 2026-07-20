@@ -61,7 +61,7 @@ final class ServingNodeResolver
 
     private function resolveAppOwning(Request $request): ?Node
     {
-        foreach (['project', 'instance', 'app'] as $parameter) {
+        foreach (['project', 'instance'] as $parameter) {
             $node = $this->appNodeFromValue($this->requestValue($request, $parameter));
 
             if ($node instanceof Node) {
@@ -72,7 +72,7 @@ final class ServingNodeResolver
         foreach (['process', 'process_name', 'name'] as $parameter) {
             $process = $this->processFromValue(
                 value: $this->requestValue($request, $parameter),
-                app: $this->appFromValue($this->requestValue($request, 'app')),
+                app: $this->appFromValue($this->requestValue($request, 'instance')),
             );
 
             if ($process instanceof OrbitProcess) {
@@ -99,12 +99,12 @@ final class ServingNodeResolver
 
     private function resolveWorkspaceOwning(Request $request): ?Node
     {
-        $selection = $this->appSelectionFromValue($this->requestValue($request, 'app'));
+        $selection = $this->appSelectionFromValue($this->requestValue($request, 'instance'));
 
         foreach (['workspace', 'name'] as $parameter) {
             $workspace = $this->workspaceFromValue(
                 value: $this->requestValue($request, $parameter),
-                app: $selection?->app ?? $this->appFromValue($this->requestValue($request, 'app')),
+                app: $selection?->app ?? $this->appFromValue($this->requestValue($request, 'instance')),
             );
 
             if ($workspace instanceof Workspace) {
@@ -135,7 +135,7 @@ final class ServingNodeResolver
 
         if (! $selection instanceof AppSelection) {
             $selection = $this->appInstanceSelectionFromValues(
-                appSelector: $this->requestValue($request, 'project') ?? $this->requestValue($request, 'app'),
+                appSelector: $this->requestValue($request, 'project'),
                 instanceSelector: $instanceSelector,
             );
         }

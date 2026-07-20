@@ -27,13 +27,13 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `family` | `--family` | Never. | Never. | The target node's resolved eligibility set: its role-derived base plus owned-fact and platform overlays. | Repeatable product family key: `node`, `app`, `database_connection`, `firewall_rule`, `process`, `proxy`, `schedule`, `tool`, or `workspace`. `security` is not a valid family; security-section findings live under the owning family key. Must intersect with the target's resolved eligibility set. |
+| `family` | `--family` | Never. | Never. | The target node's resolved eligibility set: its role-derived base plus owned-fact and platform overlays. | Repeatable product family key: `node`, `instance`, `database_connection`, `firewall_rule`, `process`, `proxy`, `schedule`, `tool`, or `workspace`. `security` is not a valid family; security-section findings live under the owning family key. Must intersect with the target's resolved eligibility set. |
 | `key` | `--key` | Never. | Never. | All issue keys from the selected family/families. | Single exact doctor issue-key filter. Filters reported drift after probes and before action planning. Does not imply or select a family. |
 | `node` | `--node` | Never. | `--self` or `--all` is present. | The locally configured default node when one is selected; otherwise omitted with `self=true` so the caller node is selected. | Gateway-known node name. Selects the single target node. The literal value `all` is invalid; use `--all` for fleet verification. |
 | `self` | `--self` | Never. | `--node` or `--all` is present. | `false`. | Forwarded to the gateway; the gateway resolves it to the calling peer's identified node. |
 | `all` | `--all` | Never. | `--node`, `--self`, `--instance`, `--workspace`, `--fix`, `--restore`, or `--adopt` is present. | `false`. | Selects verify-only fleet mode across eligible active role-bearing nodes. This is the only fleet mode. |
-| `app` | `--instance` | Never. | A selected family contract forbids app scoping. | Apps selected by each family contract after authorization and node/workspace filters. | Gateway-known project slug. |
-| `workspace` | `--workspace` | Never. | A selected family contract forbids workspace scoping. | Workspaces selected by each family contract after authorization and node/app filters. | Gateway-known workspace name, resolved inside instance scope when applicable. |
+| `instance` | `--instance` | Never. | A selected family contract forbids instance scoping. | Instances selected by each family contract after authorization and node/workspace filters. | Gateway-known `<project.instance>` selector; a bare project is accepted only when it resolves unambiguously to one concrete instance. |
+| `workspace` | `--workspace` | Never. | A selected family contract forbids workspace scoping. | Workspaces selected by each family contract after authorization and node/instance filters. | Gateway-known workspace name, resolved inside instance scope when applicable. |
 | `fix` | `--fix` | Never. | `--restore` or `--adopt` is present. | `false`. | Selects interactive resolution mode. Every attempted action must be declared safe by its family doctor contract. |
 | `restore` | `--restore` | Never. | `--fix` or `--adopt` is present. | `false`. | Selects bulk restore mode (gateway configuration to node reality). |
 | `adopt` | `--adopt` | Never. | `--fix` or `--restore` is present. | `false`. | Selects bulk adopt mode (node reality into gateway configuration). |
@@ -54,8 +54,8 @@ eligibility. A displayed role label is derived output and grants nothing.
 | active `database` role only | `Node`, `Tools`, `Processes` |
 | active `agent` role | `Node`, `Tools`, `Proxy routes`, `Processes` |
 | active `router` role | `Node`, `Proxy routes`, `Processes` |
-| active `app-dev` role | `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`, `Tools`, `Databases` |
-| active `app-prod` role | `Node`, `Apps`, `Processes`, `Proxy routes`, `Tools`, `Databases` |
+| active `app-dev` role | `Node`, `Instances`, `Workspaces`, `Processes`, `Proxy routes`, `Tools`, `Databases` |
+| active `app-prod` role | `Node`, `Instances`, `Processes`, `Proxy routes`, `Tools`, `Databases` |
 | active `ingress` role | `Node`, `Proxy routes`, `Tools`, `Processes` |
 | active `websocket` role | `Node`, `Tools`, `Processes` |
 | active `s3` role | `Node`, `Tools`, `Proxy routes`, `Processes` |
@@ -63,7 +63,7 @@ eligibility. A displayed role label is derived output and grants nothing.
 | active `vpn` or `analytics` role without another role-specific category | `Node`, `Processes` |
 
 The `Processes`, `Proxy routes`, and `Databases` categories on an `app-prod`
-target cover only production app and node facts. They never admit workspace
+target cover only production instance and node facts. They never admit workspace
 rows, workspace-derived runtime units, workspace routes, workspace database
 targets, or unsupported owner markers into a probe. An explicit workspace family or
 scope is rejected before dispatch. An `app-prod` caller is also rejected before
@@ -97,7 +97,7 @@ findings in `Tools`. There is no separate DNS row or DNS state family.
 2. Resolve mode: `verify` (no flag), `interactive` (`--fix`), `restore` (`--restore`), or `adopt` (`--adopt`). `--fix`, `--restore`, and `--adopt` are mutually exclusive. `--dry-run` is valid only with `--restore` or `--adopt`.
 3. Resolve the target scope.
    - `--all` selects verify-only fleet mode. It is mutually exclusive with
-     single-node, app, and workspace scope.
+     single-node, instance, and workspace scope.
    - `--self` is forwarded to the gateway; the gateway resolves it to the calling peer's identified node.
    - `--node=<node>` is forwarded to the gateway and resolved against gateway configuration.
    - `--node=all` is rejected with `validation_failed` before probes.
@@ -122,7 +122,7 @@ Input-mode-specific contracts are required for resolution modes:
 ### Family Dispatch Rules
 
 - Run only product-family doctor probes. Backend-shaped implementation probes are folded into product families before they become public scope keys.
-- Security is a cross-family issue-code section, not a product family. `node.security.*`, `app.security.*`, `workspace.security.*`, and future firewall-owned `firewall_rule.security.*` findings dispatch through their owning families.
+- Security is a cross-family issue-code section, not a product family. `node.security.*`, `instance.security.*`, `workspace.security.*`, and future firewall-owned `firewall_rule.security.*` findings dispatch through their owning families.
 - Dispatch each selected family through its family doctor contract.
 - Do not duplicate family issue codes, probe facts, restore actions, or adopt actions in the global command.
 - Preserve family-owned diagnostic details for the selected output renderer.
@@ -172,7 +172,7 @@ an authorization concern, not repairable drift in that record.
 - Invent a state family outside the stable family keys.
 - Treat backend names such as Caddy, systemd, UFW, or package
   managers as public doctor families.
-- Create new fleet membership, apps, workspaces, processes, schedules, tools,
+- Create new fleet membership, projects, instances, workspaces, processes, schedules, tools,
   proxy routes, or firewall rules unless the selected family explicitly declares
   a compatible adoption action.
 - Hide remaining drift after a failed restore/adopt action.
@@ -187,7 +187,7 @@ uniformly. Family-specific behavior lives in the family doctor doc.
 
 | Method | Purpose |
 | --- | --- |
-| `key()` | Returns the **singular** state family key (`node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, `firewall_rule`, `database_connection`). Plural keys are invalid and must be rejected by family-doctor tests. |
+| `key()` | Returns the **singular public** state family key (`node`, `instance`, `workspace`, `process`, `proxy`, `schedule`, `tool`, `firewall_rule`, `database_connection`). Plural keys are invalid and must be rejected by family-doctor tests. |
 | `label()` | Returns the human-readable family label used by renderers. |
 | `introspect(<owner>)` | Reads physical reality needed for ordinary drift checks. Returns the family-specific `ProbeSnapshot`. May return an empty snapshot when the family's diff layers do not need preloaded state. |
 | `diff(<owner>, ProbeSnapshot $snapshot)` | Compares gateway configuration with snapshot reality into `DriftEntry` results. |
@@ -225,9 +225,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Scope not found | A requested family, node, app, or workspace scope cannot be resolved. | Failure before probes |
+| Scope not found | A requested family, node, instance, or workspace scope cannot be resolved. | Failure before probes |
 | Reserved fleet node value | `--node=all` or API `node=all` is supplied. | `validation_failed` before probes with `field=node` and `value=all` metadata |
-| Fleet scope conflict | `--all` is combined with single-node, app/workspace, or resolution-mode scope. | `validation_failed` before probes |
+| Fleet scope conflict | `--all` is combined with single-node, instance/workspace, or resolution-mode scope. | `validation_failed` before probes |
 | Mode not supported | A selected family or issue does not support the requested `--restore` or `--adopt` action. | Failure with diagnostic payload when available |
 | Probe failed | A family probe fails in a way that prevents a healthy result. | Failure with diagnostic payload |
 | Drift detected | Drift remains after the selected mode completes. | Failure with diagnostic payload |
@@ -272,7 +272,7 @@ Required contract tests:
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API input contract, `--key`, `--dry-run`, scope resolution, family-key validation, gateway authorization failures, exit-code semantics, JSON envelope, and family dispatch boundaries. |
 | `apps/cli/tests/Feature/Commands/Operation/DoctorCommandTest.php` | CLI default-node payload resolution, caller fallback payload, `--all` payload, `--node=all` validation, renderer compatibility for `--json`, `--stream-json`, ambiguous renderer rejection, and `--fix --stream-json` rejection. |
 | `apps/cli/tests/Feature/Commands/Operation/DoctorFixCommandTest.php` | CLI interactive `--fix` prompt flow, cancellation, selected issue forwarding, and `--json --fix` rejection. |
-| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Role-aware category set per target active roles, universal process-family support for role-bearing nodes, app-dev/app-prod workspace split, `--family` rejection through scope validation, and per-node probe scoping for app/workspace/proxy families. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Role-aware category set per target active roles, universal process-family support for role-bearing nodes, app-dev/app-prod workspace split, `--family` rejection through scope validation, and per-node probe scoping for instance/workspace/proxy families. |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
 | `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |
 

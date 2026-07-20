@@ -25,7 +25,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `--instance` | When no instance can be inferred from the caller filesystem. | Never. | Cwd-inferred instance. | Dotted instance selector such as `happie.nmbp`, present in the gateway registry and authorized for this caller. Single value only. |
+| `instance` | `--instance` | When no instance can be inferred from the caller filesystem. | Never. | Cwd-inferred instance. | Dotted instance selector such as `happie.nmbp`, present in the gateway registry and authorized for this caller. Single value only. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 ## Visibility Behavior
@@ -36,11 +36,11 @@ to read.
 
 - An authorized caller for an app with no configured teardown steps
   receives an empty list (`success.data.steps=[]` in JSON,
-  `No teardown steps defined for [app].` in human output) with exit zero.
+  `No teardown steps defined for [project.instance].` in human output) with exit zero.
 - A caller whose identity is not authorized to read the resolved app's
   policy receives `error.code=authorization_failed`.
-- Explicitly requested apps that do not exist receive
-  `error.code=workspace.app_not_found`.
+- Explicitly requested instances that do not exist receive
+  `error.code=workspace.instance_not_found`.
 
 ## Input Resolution
 
@@ -61,7 +61,7 @@ to read.
      `workspace:new` and `workspace-teardown-step:add` contracts and the
      `architecture.md` "Workspaces" project-file inspection prohibition.
 2. **Validate resolved app.** Confirm the app exists in gateway configuration.
-   Unknown apps fail with `error.code=workspace.app_not_found` before any
+   Unknown instances fail with `error.code=workspace.instance_not_found` before any
    read.
 3. **Select renderer.** Use the shared invocation model to select the output
    renderer.
@@ -114,7 +114,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| App not found | The resolved project slug does not exist in gateway configuration (`error.code=workspace.app_not_found`, `error.meta.project`). | Failure |
+| Instance not found | The resolved instance selector does not exist in gateway configuration (`error.code=workspace.instance_not_found`, `error.meta.instance`). | Failure |
 | Instance required | The selector does not resolve a concrete instance. | Failure (`error.code=validation_failed`, `error.meta.reason=instance_required`) |
 | Production app unsupported | The selected instance is served by an `app-prod` node. | Failure (`error.code=workspace.unsupported_for_production`) |
 | Unauthorized app | The caller is not authorized to read the resolved app's teardown-step policy (`error.code=authorization_failed`). | Failure |

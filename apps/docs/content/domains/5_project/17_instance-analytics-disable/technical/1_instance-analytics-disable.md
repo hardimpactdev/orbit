@@ -63,7 +63,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`instance:analytics disable` writes app-owned binding intent and removes public
+`instance:analytics disable` writes instance-owned binding intent and removes public
 analytics route intent. [`doctor --family=instance`](../../instance-doctor.md) owns app
 binding drift, and [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md)
 owns route drift.
@@ -72,7 +72,7 @@ owns route drift.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /apps/{instance}/analytics/disable` |
+| Type | `api:POST /instances/{instance}/analytics/disable` |
 | Effect | `write` |
 | Subject | Instance resolved from `{instance}`. |
 | Properties | `action=disable`, `target_instance`, `target_instance`, and `serving_node`. |

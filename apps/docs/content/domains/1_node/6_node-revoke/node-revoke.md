@@ -73,7 +73,7 @@ mutation. Gateway-local revokes are gateway-owned writes and do not report
 - Change activity logs.
 - Mutate serving-node host state.
 - End in-flight RPCs, invalidate tokens, or mark sessions stale.
-- Block revocation when the grant is referenced by active apps or workspaces.
+- Block revocation when the grant is referenced by active instances or workspaces.
 - Remove the node itself; use [`node:remove`](../8_node-remove/node-remove.md)
 for node removal.
 

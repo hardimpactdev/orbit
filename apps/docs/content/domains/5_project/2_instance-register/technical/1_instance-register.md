@@ -47,7 +47,7 @@ This command follows the shared
 
 ## Input Resolution
 
-1. **Resolve App Instance**: Resolve `name` from argument or interactive prompt.
+1. **Resolve Project Instance**: Resolve `name` from argument or interactive prompt.
    A dotted selector resolves that instance. A bare existing logical slug is
    accepted only when exactly one eligible visible instance exists; otherwise
    fail with `validation_failed`, `error.meta.reason=instance_required`.
@@ -98,7 +98,7 @@ This command follows the shared
 
 ## Behavior Contract
 
-### App Registration Rules
+### Instance Registration Rules
 
 `instance:register` converges one instance and its node artifacts:
 
@@ -110,7 +110,7 @@ This command follows the shared
   node through Agent push to:
   - Configure and restart the runtime container for the app.
   - Install managed app runtime configuration (e.g., environment files).
-  - Ensure app-owned route configuration exists in `proxy`.
+  - Ensure instance-owned route configuration exists in `proxy`.
   - Hand proxy backend artifact convergence to the `proxy` family.
 - **Production Activation**: If `--domain` is supplied:
   - Verifies DNS records point to the Orbit fleet.
@@ -198,10 +198,10 @@ registration attempts.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /apps/register` |
+| Type | `api:POST /instances/register` |
 | Effect | `write` |
-| Subject | Selected `AppInstance`, plus its parent `App` when first adoption creates both; `none` before target resolution. |
-| Properties | `app` (string or null), `instance` (string or null), and `serving_node` (string or null). No raw path contents, shell command text, node-side output, repository credentials, or secrets. |
+| Subject | Selected `AppInstance`, plus its parent `Project` when first adoption creates both; `none` before target resolution. |
+| Properties | `project` (string or null), `instance` (string or null), and `serving_node` (string or null). No raw path contents, shell command text, node-side output, repository credentials, or secrets. |
 | Description | derived |
 
 ## Test Mapping

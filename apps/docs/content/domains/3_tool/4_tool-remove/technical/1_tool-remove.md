@@ -24,8 +24,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Registered tool name.` |
-| `node` | `--node` or local `node:default` | Required when `app` is absent. | `Never.` | `node:default` if set. | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `app` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve its serving node. Bare project shorthand is valid only when exactly one instance is visible.` |
+| `node` | `--node` or local `node:default` | Required when `instance` is absent. | `Never.` | `node:default` if set. | Visible active non-gateway node slug; selected tool must support the node operating system. |
+| `instance` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve its serving node. Bare project shorthand is valid only when exactly one instance is visible.` |
 | `force` | `--force` | Required for every non-interactive removal, including JSON mode. | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode; never grants consent. |
 
@@ -60,7 +60,7 @@ fall back to the only visible non-gateway node in non-interactive mode.
 
 ### Scope Boundaries
 
-`tool-remove` must not create apps, workspaces, processes, schedules, custom
+`tool-remove` must not create projects, instances, workspaces, processes, schedules, custom
 proxy routes, non-tool firewall rules, node identities, or node grants.
 Tool-owned endpoint cleanup is allowed only when declared by the selected tool
 definition. Related drift belongs to each owning family doctor contract.

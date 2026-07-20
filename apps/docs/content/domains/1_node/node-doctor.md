@@ -38,7 +38,7 @@ The node family owns these facts:
   `node:default` preferences for `--self`, Orbit launcher/runtime readiness,
   and agent IDE defaults at the node level.
 
-Tools, firewall rules, apps, workspaces, processes, proxy routes, schedules,
+Tools, firewall rules, projects, instances, workspaces, processes, proxy routes, schedules,
 and deployments depend on node reachability, but their own artifacts are not
 node probe facts.
 
@@ -340,7 +340,7 @@ exactly one unambiguous allowed address.
 `doctor --family=node --adopt` does not handle `node.runtime_missing`,
 unselected hosts, unresolved caller identities, unknown WireGuard peers,
 public IPv4/IPv6 metadata, security settings, evidence for SSH host keys, or
-artifacts that belong to tools, firewall rules, apps, workspaces,
+artifacts that belong to tools, firewall rules, projects, instances, workspaces,
 processes, proxy routes, schedules, or deployments.
 
 Node doctor never stores, probes, compares, restores, or adopts SSH host keys.

@@ -16,7 +16,7 @@ Use this command to record finite bootstrap work for one concrete instance.
 
 | Input | Meaning |
 | --- | --- |
-| `instance` | Dotted instance selector, or a bare app shorthand when exactly one instance exists. |
+| `instance` | Dotted instance selector, or a bare project shorthand when exactly one instance exists. |
 | `--command` | Shell command to run from the app path during `instance:setup`. |
 | `--instance` | Instance selector for scripts where the positional argument is awkward. |
 | `--before` | Insert before this setup step id. |

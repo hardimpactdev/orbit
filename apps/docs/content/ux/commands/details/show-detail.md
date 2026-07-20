@@ -66,7 +66,7 @@ Commands use `App\Console\Commands\Concerns\RendersShowDetails` from their
 human renderer path:
 
 ```php
-$this->renderShowDetails("App: {$app['name']}", [
+$this->renderShowDetails("Project: {$project['name']}", [
     'Domain' => $domain,
     'Environment' => $environment,
     'Node' => $node,

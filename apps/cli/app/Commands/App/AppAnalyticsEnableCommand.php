@@ -20,7 +20,7 @@ final class AppAnalyticsEnableCommand extends AppGatewayCommand
     protected $name = 'instance:analytics enable';
 
     #[\Override]
-    protected $description = 'Enable analytics tracking proxy support for an app.';
+    protected $description = 'Enable analytics tracking proxy support for an instance.';
 
     #[\Override]
     protected function configure(): void

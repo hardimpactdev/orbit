@@ -22,7 +22,7 @@ orbit proxy:add <domain> --redirect=<url> [--node=<node>] [--code=<code>] [--for
 
 Redirects are part of the proxy command family and are created with `proxy:add --redirect=<url>`.
 
-`proxy:add` does not edit routes owned by apps, app WebSocket bindings,
+`proxy:add` does not edit routes owned by projects, instances, WebSocket bindings,
 workspaces, gateways, websocket services, S3 services, or tools. Those routes
 are listed by `proxy:list`, but their lifecycle belongs to their owning domain
 command.
@@ -53,7 +53,7 @@ and a summary naming the domain, route kind, serving node, and target.
 
 - The caller can reach the Orbit gateway.
 - The caller is authorized to manage custom proxy routes on the selected serving node.
-- The selected domain is not owned by an app, app WebSocket binding, workspace,
+- The selected domain is not owned by a project, instance, WebSocket binding, workspace,
   gateway, websocket service, S3 service, or tool route.
 - Exactly one of `--upstream` or `--redirect` is supplied before side effects.
 

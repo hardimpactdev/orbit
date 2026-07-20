@@ -35,7 +35,7 @@ orbit instance:worker disable docs.development --json
 ## Arguments and options
 
 - `action`: one of `show`, `enable`, `disable`. Required.
-- `app`: dotted instance selector such as `docs.development`. A bare app
+- `instance`: dotted instance selector such as `docs.development`. A bare project
   name or hostname is shorthand only when that project has exactly one instance.
 - `--json`: Output JSON.
 

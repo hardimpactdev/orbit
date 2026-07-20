@@ -376,7 +376,7 @@ contract.
   mode and output renderer.
 - Analytics requests whose selected PostgreSQL process is not version family
   `16` fail validation before target provisioning or role assignment.
-- App-role requests fail before side effects when no gateway is available.
+- Workload-role requests fail before side effects when no gateway is available.
 - Fail before provisioning when the observed target host platform is not
   supported for the requested role. Supported role/platform pairs are defined in
   [`node-concepts.md`](../../node-concepts.md#role-platform-support).
@@ -398,7 +398,7 @@ probe, drift, restore, and adopt contract.
 `node:new` can create or resolve node-family drift by writing gateway
 configuration before host applying completes, installing gateway/operator/app
 bootstrap artifacts, and creating development TLD readiness artifacts. Drift in
-tools, firewall rules, apps, workspaces, processes, schedules, and proxy
+tools, firewall rules, projects, instances, workspaces, processes, schedules, and proxy
 routes is verified by those family contracts after the node exists.
 
 ## Test Mapping

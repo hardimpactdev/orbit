@@ -9,14 +9,14 @@ These terms define the core entities in the schedule domain.
 - **Schedule:** Gateway-owned record of one piece of recurring work, with a
   scope, a target, an interval, an execution source, an enabled flag, and
   durable run history.
-- **Schedule scope:** Ownership scope of the schedule. One of `app`, `node`, or
+- **Schedule scope:** Ownership scope of the schedule. One of `instance`, `node`, or
   `orbit`.
-- **Instance-scoped schedule:** Schedule whose scope is `app` and whose durable
+- **Instance-scoped schedule:** Schedule whose scope is `instance` and whose durable
   owner is exactly one concrete instance. Executes on that instance's
   serving node and path; the gateway dispatches through the signed
   `internal:schedule:run` local-executor command over agent-push when the target
   is not the gateway itself.
-- **Schedule app selector:** Concrete `app.instance` identity such as
+- **Schedule instance selector:** Concrete `project.instance` identity such as
   `docs.production`. A bare project is shorthand only when exactly one
   eligible instance is visible for the requested permission; otherwise
   resolution fails without side effects.

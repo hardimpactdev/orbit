@@ -117,7 +117,7 @@ other family artifacts remain owned by their respective family doctors.
 | --- | --- |
 | Type | `api:DELETE /projects/{project}` |
 | Effect | `destructive` |
-| Subject | Resolved logical `App`, or `none` when resolution/authorization fails before a subject is available. |
+| Subject | Resolved logical `Project`, or `none` when resolution/authorization fails before a subject is available. |
 | Properties | Logical `project`, `instance_names`, `instance_count`, `serving_nodes`, and aggregate dependent counts. Never raw node output or secrets. |
 | Description | derived |
 

@@ -20,7 +20,7 @@ final class ProcessRemoveCommand extends ProcessGatewayCommand
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Remove an app process definition.';
+    protected $description = 'Remove a process definition.';
 
     public function handle(): int
     {

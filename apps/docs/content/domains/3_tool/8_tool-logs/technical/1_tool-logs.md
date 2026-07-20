@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | Always. | Never. | None. | Registered tool that declares `logs`. |
 | `node` | `--node` | When no `--instance` or local `node:default` is available. | For gateway-local tools, any node other than the active serving gateway. | `node:default` when set. | Visible active node slug; selected tool must satisfy its operating-system, runtime-user, TLD/route, isolation, and gateway-local constraints. |
-| `app` | `--instance` | Optional. | For gateway-local tools. | None. | Visible app selector used to resolve the owning node. |
+| `instance` | `--instance` | Optional. | For gateway-local tools. | None. | Visible instance selector used to resolve the owning node. |
 | `lines` | `--lines` | Optional. | Never. | `100`. | Positive integer. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 

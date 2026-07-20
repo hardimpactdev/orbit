@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized to manage tools for the resolved node or app.
+- The current node identity is authorized to manage tools for the resolved node or instance.
 
 ## Signature
 
@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | Always. | Never. | None. | Registered lifecycle-capable tool name. |
 | `node` | `--node` | When no `--instance` or local `node:default` is available. | Never. | `node:default` when set. | Visible active node slug; selected tool must satisfy its operating-system, runtime-user, TLD/route, isolation, and gateway-local constraints. |
-| `app` | `--instance` | Optional. | Never. | None. | Visible app selector used to resolve the owning node. |
+| `instance` | `--instance` | Optional. | Never. | None. | Visible instance selector used to resolve the owning node. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 | `stream-json` | `--stream-json` | Optional. | Never. | `false` | Selects newline-delimited progress frames and non-interactive input mode. Mutually exclusive with `--json`. |
 
@@ -44,7 +44,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`tool-start` must not create apps, workspaces, processes, schedules, proxy
+`tool-start` must not create projects, instances, workspaces, processes, schedules, proxy
 routes, firewall rules, node identities, or node grants. It may address the
 one exact matching process row but never creates or repairs that row and never
 falls back to a similarly named process.

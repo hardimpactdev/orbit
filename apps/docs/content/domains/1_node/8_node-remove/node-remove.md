@@ -8,11 +8,11 @@ Use `node:remove` when decommissioning servers or moving a host to a different
 Orbit project. The command removes the node from gateway-owned node configuration,
 deletes node access grants, tears down the node's WireGuard peer identity, and
 rematerializes private DNS projections without the removed node. It
-does not clean up apps, workspaces, processes, schedules, tools, firewall rules,
+does not clean up projects, instances, workspaces, processes, schedules, tools, firewall rules,
 proxy routes, or deploy artifacts on the target server.
 
-Before removing a node with an app role that still owns apps, remove or migrate those apps
-through app-family commands such as
+Before removing a node with an app role that still owns instances, remove or migrate those instances
+through instance-family commands such as
 [`project:remove`](../../5_project/6_project-remove/project-remove.md). `node:remove` does not
 block on downstream family state and does not cascade into app cleanup.
 
@@ -86,7 +86,7 @@ peer. Local settings and local WireGuard configuration are left untouched.
 - Remove or retire gateway nodes. Gateway retirement requires a future explicit
   gateway migration/removal flow.
 - Treat an already-absent node as successful removal.
-- Stop, remove, or modify apps, workspaces, tools, processes, schedules,
+- Stop, remove, or modify projects, instances, workspaces, tools, processes, schedules,
   operator-managed firewall rules, proxy routes, or deploy artifacts on the
   server. Removing the deleted node's firewall-rule registry rows from gateway
   state is part of deleting the node identity.
@@ -140,7 +140,7 @@ Use these commands to clean up downstream state before or after removing a node.
 - [`node:new`](../1_node-new/node-new.md) — add a node to the fleet
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes
 - [`node:show`](../4_node-show/node-show.md) — show node details
-- [`project:remove`](../../5_project/6_project-remove/project-remove.md) — remove apps before
+- [`project:remove`](../../5_project/6_project-remove/project-remove.md) — remove projects before
   decommissioning their owning node
 - [`doctor --family=node`](../node-doctor.md) — verify and repair node drift
 

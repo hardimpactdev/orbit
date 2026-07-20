@@ -18,11 +18,11 @@ These terms define how process definitions are identified, scoped, and ordered.
   instance, or workspace. The scope selects the serving node, working
   context, default environment, and lifecycle authorization boundary.
 - **Instance selector:** Dotted `<project.instance>` identity used by public
-  process commands. A bare project slug is shorthand only when the app has
+  process commands. A bare project slug is shorthand only when the project has
   exactly one instance. If it has more than one, resolution fails with
   `validation_failed`, `field=instance`, and `reason=instance_required`.
 - **Canonical project identity:** Instance and workspace process identities and
-  JSON include both the logical `app` slug and concrete `instance` slug.
+  JSON include both the logical `project` slug and concrete `instance` slug.
 - **Process tool dependency:** Optional catalog tool slug used by the process,
   such as `php-cli`, `viteplus`, `opencode-cli`, or `polyscope`. The dependency
   asserts required capability; it does not transfer lifecycle ownership to the
@@ -73,11 +73,11 @@ These terms describe the runtime objects that Orbit derives from process definit
   managed service process as an Orbit-managed Swarm service. It is currently
   admitted for managed-service MySQL, PostgreSQL, Valkey, ClickHouse,
   Prometheus, Grafana, and Plausible CE processes.
-  App/workspace Swarm runtime remains deferred and is rejected before runtime
+  Instance/workspace Swarm runtime remains deferred and is rejected before runtime
   side effects.
 - **Systemd process runtime:** Runtime backend for Linux host command units,
   including node-level services such as OpenCode Server or PolyScope Server and
-  app/workspace command processes. The process row owns start/stop/restart/log
+  instance/workspace command processes. The process row owns start/stop/restart/log
   lifecycle; any related tool row supplies only the installed capability.
 - **Launchd process runtime:** Runtime backend for macOS host command units.
   The first slice renders user LaunchAgent plists under the configured node
@@ -91,7 +91,7 @@ These terms describe the runtime objects that Orbit derives from process definit
   process definitions may render one main-instance unit plus one unit for each
   active workspace belonging to that same instance.
 - **Runtime unit filename:** Backend-safe identity for a rendered runtime unit.
-  Systemd units use `orbit_<scope>_<process>` segment names for app/workspace
+  Systemd units use `orbit_<scope>_<process>` segment names for instance/workspace
   command processes, with project and instance slugs as separate scope
   segments; Docker units use equivalent Orbit-owned container names.
   Launchd labels use `dev.hardimpact.orbit.<runtimeUnit>` and plist files use
@@ -124,7 +124,7 @@ These terms define per-process behavioral rules that apply to every derived runt
   `launchd_crash_notification_deferred` until Orbit owns a macOS crash wrapper
   that can emit gateway-authenticated `crashed` events.
 - **Process runtime selection:** Process-definition field that records which
-  backend renders the runtime units. App and workspace host-command processes
+  backend renders the runtime units. Instance and workspace host-command processes
   default to `systemd` on Linux and `launchd` on macOS. Node-owned host-command
   processes follow the same platform default. Managed services default to
   `docker` unless their catalog entry and node platform admit another service

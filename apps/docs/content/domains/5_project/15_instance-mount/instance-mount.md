@@ -34,7 +34,7 @@ orbit instance:mount remove hauser.nmbp /projects --json
 ## Arguments and options
 
 - `action`: one of `list`, `add`, `remove`. Required.
-- `app`: dotted instance selector such as `hauser.nmbp`. Required for every
+- `instance`: dotted instance selector such as `hauser.nmbp`. Required for every
   action and must resolve the named instance under the app.
 - `source`: host source path. Required for `add`. Must live under the resolved
   instance node's home directory.
@@ -58,7 +58,7 @@ Adding the same target again updates the stored source or read/write mode.
 `instance:mount remove` requires a dotted instance selector, authorizes its
 serving node, and deletes the configured mount for that instance and target.
 
-Configured mounts are rendered after Orbit's built-in runtime mounts. App and
+Configured mounts are rendered after Orbit's built-in runtime mounts. Instance and
 workspace runtime containers use the selected instance's mount rows. The runtime spec hash changes when mount
 configuration changes, so the runtime manager can recreate the affected app or
 workspace container during normal runtime convergence. The command does not
@@ -96,7 +96,7 @@ boundary.
 
 ## Output
 
-You see the logical `app` entity and concrete `instance` entity separately,
+You see the logical `project` entity and concrete `instance` entity separately,
 followed by configured mounts and whether they are inherited by workspaces
 that use the selected instance. Node, URL, path, root, domain, and `adopted`
 appear only on `instance`, never on the project.

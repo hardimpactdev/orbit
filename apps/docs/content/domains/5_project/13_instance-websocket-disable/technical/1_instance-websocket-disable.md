@@ -83,16 +83,16 @@ command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed (app) | `app` is missing from the CLI invocation. | Failure — no gateway request sent. |
+| Validation failed (instance) | `instance` is missing from the CLI invocation. | Failure — no gateway request sent. |
 | Instance required | A bare selector resolves zero or multiple eligible instances. | `validation_failed` with `error.meta.reason=instance_required`. |
-| Instance not found | No concrete instance matches `app`. | `instance.not_found`. |
+| Instance not found | No concrete instance matches `instance`. | `instance.not_found`. |
 | WebSocket binding missing | The selected instance has no WebSocket binding record. | Failure — no state written. |
 
 ## Doctor Relationship
 
 Binding drift — a disabled binding with stale router routes or runtime entries
 still present — belongs to `doctor --family=instance`. See
-[`instance-doctor.md`](../../instance-doctor.md) for the authoritative app-family probe
+[`instance-doctor.md`](../../instance-doctor.md) for the authoritative instance-family probe
 and repair contract; doctor semantics are not restated here.
 
 ## Activity Logging
@@ -102,7 +102,7 @@ disable attempt.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /apps/{instance}/websocket/disable` |
+| Type | `api:POST /instances/{instance}/websocket/disable` |
 | Effect | `write` |
 | Subject | Instance resolved from `{instance}`. |
 | Properties | `action=disable`, `target_instance`, `target_instance`, `serving_node`, and `public_hosts=[]`. |

@@ -11,19 +11,19 @@ describe('proxy:list', function (): void {
             'routes' => [
                 [
                     'domain' => 'docs.test',
-                    'kind' => 'app',
-                    'owner' => ['type' => 'app', 'name' => 'docs'],
+                    'kind' => 'project',
+                    'owner' => ['type' => 'project', 'name' => 'docs'],
                     'node' => 'app-1',
-                    'target' => ['type' => 'app', 'value' => 'docs'],
+                    'target' => ['type' => 'project', 'value' => 'docs'],
                     'tls' => ['managed_by' => 'orbit'],
                     'status' => 'expected',
                 ],
             ],
-        ], ['filter' => 'app', 'node' => 'app-1', 'count' => 1]));
+        ], ['filter' => 'project', 'node' => 'app-1', 'count' => 1]));
 
         [$exitCode, $output] = runCommand($this, 'proxy:list', [
             '--node' => 'app-1',
-            '--filter' => 'app',
+            '--filter' => 'project',
             '--json' => true,
         ]);
 
@@ -36,7 +36,7 @@ describe('proxy:list', function (): void {
                 $request->method() === 'GET'
                 && str_contains($url, '/api/proxy-routes')
                 && str_contains($url, 'node=app-1')
-                && str_contains($url, 'filter=app')
+                && str_contains($url, 'filter=project')
             );
         });
 
@@ -45,7 +45,7 @@ describe('proxy:list', function (): void {
             ->and($decoded['success']['data']['routes'][0]['domain'])
             ->toBe('docs.test')
             ->and($decoded['success']['meta']['filter'])
-            ->toBe('app');
+            ->toBe('project');
     });
 
     it('renders human output as a table with uppercase headers and route cells', function (): void {
@@ -53,10 +53,10 @@ describe('proxy:list', function (): void {
             'routes' => [
                 [
                     'domain' => 'docs.test',
-                    'kind' => 'app',
-                    'owner' => ['type' => 'app', 'name' => 'docs'],
+                    'kind' => 'instance',
+                    'owner' => ['type' => 'instance', 'name' => 'docs.development'],
                     'node' => 'app-1',
-                    'target' => ['type' => 'app', 'value' => 'docs'],
+                    'target' => ['type' => 'instance', 'value' => 'docs.development'],
                     'tls' => ['managed_by' => 'orbit'],
                     'status' => 'expected',
                 ],
@@ -93,7 +93,7 @@ describe('proxy:list', function (): void {
             ->and($output)
             ->toContain('docs.test')
             ->and($output)
-            ->toContain('app:docs')
+            ->toContain('instance:docs.development')
             ->and($output)
             ->toContain('app-1')
             ->and($output)
@@ -112,14 +112,14 @@ describe('proxy:list', function (): void {
     });
 
     it('renders a scope-aware empty state when filtered with no matches', function (): void {
-        fakeGateway(fakeSuccessEnvelope(['routes' => []], ['filter' => 'app', 'node' => 'app-1', 'count' => 0]));
+        fakeGateway(fakeSuccessEnvelope(['routes' => []], ['filter' => 'project', 'node' => 'app-1', 'count' => 0]));
 
         [$exitCode, $output] = runCommand($this, 'proxy:list', [
-            '--filter' => 'app',
+            '--filter' => 'project',
             '--node' => 'app-1',
         ]);
 
-        expect($exitCode)->toBe(0)->and($output)->toBe('No app proxy routes found on node app-1.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No project proxy routes found on node app-1.');
     });
 
     it('renders a plain empty state when unfiltered with no routes', function (): void {

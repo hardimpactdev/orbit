@@ -53,11 +53,11 @@ TLS fields.
 
 | Variable | Value | Why it is exposed |
 | --- | --- | --- |
-| `ORBIT_APP` | App slug | Lets scripts identify the app being set up. |
+| `ORBIT_APP` | Project slug | Lets scripts identify the project being set up. |
 | `ORBIT_APP_INSTANCE` | Instance name | Lets scripts distinguish placements for one project. |
 | `ORBIT_APP_PATH` | Selected instance root path | Lets scripts use the concrete path without recomputing it. |
 | `ORBIT_URL` | Selected instance HTTPS URL | Lets scripts write canonical URL config such as `.env` values. |
-| `ORBIT_PHP_VERSION` | App PHP version | Lets scripts run PHP-version-specific setup. |
+| `ORBIT_PHP_VERSION` | Instance PHP version | Lets scripts run PHP-version-specific setup. |
 | `APP_URL` | App HTTPS URL | Gives Laravel and framework tooling the canonical public URL. |
 | `VITE_APP_URL` | App HTTPS URL | Keeps Vite-aware app config aligned with the app URL. |
 | `VITE_VALET_HOST` | App host without scheme | Supports Herd/Valet-style Laravel Vite configuration that keys off a host. |
@@ -73,23 +73,23 @@ TLS fields.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Instance not found | No project record matches `app`. | `error.code=instance.not_found` |
+| Instance not found | No concrete instance matches `instance`. | `error.code=instance.not_found` |
 | Instance required | A bare project selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=instance_required`. |
 | Setup step failed | A setup command exits non-zero. | `error.code=instance.setup_failed` |
 
 ## Doctor Relationship
 
-App setup is lifecycle-specific app bootstrap. Doctor does not replay setup
-runs. App runtime drift remains owned by [`doctor --family=instance`](../../instance-doctor.md).
+Instance setup is lifecycle-specific application bootstrap. Doctor does not replay setup
+runs. Instance runtime drift remains owned by [`doctor --family=instance`](../../instance-doctor.md).
 
 ## Activity Logging
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /apps/{instance}/setup` |
+| Type | `api:POST /instances/{instance}/setup` |
 | Effect | `write` |
 | Subject | `AppInstance` on success; `none` on validation or authorization failure. |
-| Properties | `app`, `instance`, and setup run status. |
+| Properties | `project`, `instance`, and setup run status. |
 | Description | derived |
 
 ## Test Mapping

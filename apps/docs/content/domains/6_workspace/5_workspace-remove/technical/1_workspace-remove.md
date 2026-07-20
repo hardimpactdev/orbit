@@ -33,7 +33,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | When CWD is not inside a registered workspace path. | Never. | None. | Workspace name or slug. Must resolve to exactly one gateway workspace record (with `--instance` for cross-app disambiguation). |
-| `app` | `--instance=<project.instance>` | When `name` resolves to more than one workspace across apps. | Never. | None. | Parent project slug or instance selector. Dot notation such as `happie.nmbp` selects one concrete instance. Used to disambiguate the workspace lookup. |
+| `instance` | `--instance=<project.instance>` | When `name` resolves to more than one workspace across projects. | Never. | None. | Parent project slug or instance selector. Dot notation such as `happie.nmbp` selects one concrete instance. Used to disambiguate the workspace lookup. |
 | `keep_files` | `--keep-files` | Optional. | Never. | `false`. | Boolean flag. When `true`, the worktree directory is left on the node after configuration removal. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
@@ -149,7 +149,7 @@ runs.
 1. **Registry First:** Phase A (gateway configuration removal of
    workspace-owned proxy route rows and the `workspace` row) commits before
    any Phase B node-side cleanup begins.
-2. **Parent App Integrity:** Removing a workspace must not remove or modify
+2. **Parent Instance Integrity:** Removing a workspace must not remove or modify
    process definitions, runtime container configuration, or proxy routes owned by the
    parent project.
 3. **Worktree Cleanup:**
@@ -162,7 +162,7 @@ runs.
 5. **Authorization:**
    - Control and gateway peers must be authorized by the gateway to manage
      the target workspace or its parent project.
-   - App-role peers are denied by the gateway before any side effects.
+   - Instance-role peers are denied by the gateway before any side effects.
 6. **Idempotence Boundary:**
    - If the workspace record exists, the command proceeds.
    - If the workspace record is absent, the command fails with

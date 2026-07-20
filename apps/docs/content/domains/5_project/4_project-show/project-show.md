@@ -44,9 +44,9 @@ already addresses an app uniquely; `project:show` does not accept a `--node` fla
 
 ## What Happens
 
-Run `project:show` to inspect a single app's gateway configuration without triggering any writes.
+Run `project:show` to inspect a single project's gateway configuration without triggering any writes.
 
-`project:show` performs a read-only registry inspection of a single app:
+`project:show` performs a read-only registry inspection of a single project:
 
 1. Resolves the target app from input, current directory context, or
    interactive prompt.

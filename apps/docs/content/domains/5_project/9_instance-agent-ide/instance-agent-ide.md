@@ -25,7 +25,7 @@ orbit instance:agent-ide my-app.development polyscope --json
 
 ## Arguments and options
 
-- `app`: dotted instance selector. Bare logical shorthand succeeds only for
+- `instance`: dotted instance selector. Bare logical shorthand succeeds only for
   exactly one eligible visible instance. Hostnames are invalid.
 - `agent_ide`: agent IDE input value. Core adapter names are `opencode` and
   `polyscope`. Installed Orbit extensions may register additional adapters with

@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
-- The current node identity is authorized to manage tools for the resolved node or app.
+- The current node identity is authorized to manage tools for the resolved node or instance.
 
 ## Signature
 
@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Supported tool name.` |
 | `node` | `--node` | When no `--instance`, local `node:default`, or interactive target selection resolves a target. | `Never.` | `node:default` if set; otherwise interactive selection in TTY mode. | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `app` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
+| `instance` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve the owning node.` |
 | `version` | `--tool-version` | Optional. | When the selected tool definition does not explicitly support install versions. | Tool-defined latest supported version when applicable. | Specific version or installer channel supported by the selected tool definition. |
 | `config.install_users` | `--user` (repeatable) | Optional for user-scoped CLI tools. | For tools that are not user-scoped CLI tools. | `None.` | Additional existing Linux usernames for user-scoped CLI installs. Each value must match a conservative Linux username allow-list; Orbit does not create the account. |
 | `status` | `--status` | `Optional.` | `Never.` | `installed` | Expected capability state: installed or running. This does not start a process. |
@@ -105,7 +105,7 @@ the concrete Claude Code binary version returned by `claude --version`.
 
 ### Scope Boundaries
 
-`tool-install` must not create apps, workspaces, schedules, custom proxy routes,
+`tool-install` must not create projects, instances, workspaces, schedules, custom proxy routes,
 non-tool firewall rules, node identities, or node grants. It may configure only
 the singleton service process a tool definition declares as its related process;
 all other process creation belongs to the process family. Tool-owned endpoint

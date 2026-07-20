@@ -44,7 +44,7 @@ The command returns setup steps for the resolved instance ordered by
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Instance not found | No project record matches `app`. | `error.code=instance.not_found` |
+| Instance not found | No concrete instance matches `instance`. | `error.code=instance.not_found` |
 | Instance required | A bare project selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=instance_required`. |
 
 ## Doctor Relationship
@@ -57,10 +57,10 @@ setup steps.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:GET /apps/{instance}/setup-steps` |
+| Type | `api:GET /instances/{instance}/setup-steps` |
 | Effect | `read` |
 | Subject | `none` (read-only list). |
-| Properties | `app`, `instance`, and setup step count. |
+| Properties | `project`, `instance`, and setup step count. |
 | Description | derived |
 
 ## Test Mapping

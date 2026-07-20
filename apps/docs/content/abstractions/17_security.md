@@ -7,7 +7,7 @@ Orbit keeps security findings under the family that owns the protected state:
 | Owning family | Security issue-key section |
 | --- | --- |
 | `node` | `node.security.*` for provisioned Linux runtime-user posture, WireGuard-bound SSH, public SSH denial, unattended upgrades, sysctl, and bake-time home permissions |
-| `app` | `app.security.*` for production app runtime isolation |
+| `instance` | `instance.security.*` for production app runtime isolation |
 | `workspace` | `workspace.security.*` for development workspace runtime isolation |
 | `firewall_rule` | `firewall_rule.security.*` only when the firewall family owns protected-rule representation drift |
 
@@ -21,8 +21,8 @@ orbit doctor --family=workspace --key=workspace.security.fs_permissions
 ```
 
 Node-owned security policy applies to every provisioned Linux node unless a
-role contract documents a narrower exception. App production and development
-roles have different runtime surfaces: `app-prod` uses `app.security.*`
+role contract documents a narrower exception. Production and development instance
+roles have different runtime surfaces: `app-prod` uses `instance.security.*`
 and has no workspace workflow; `app-dev` keeps workspace checks and
 uses `workspace.security.*`.
 

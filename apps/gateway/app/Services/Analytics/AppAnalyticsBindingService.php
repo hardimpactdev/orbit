@@ -135,7 +135,7 @@ final readonly class AppAnalyticsBindingService
         $binding = $this->existingBinding($app);
 
         if (! $binding instanceof AppAnalyticsBinding) {
-            throw new RuntimeException("App '{$app->name}' does not have an analytics binding.");
+            throw new RuntimeException("Project '{$app->name}' does not have an analytics binding.");
         }
 
         return $binding;

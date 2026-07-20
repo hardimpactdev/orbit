@@ -10,7 +10,7 @@ a peer the gateway identifies as a **gateway node**.
 - **Allowed:** The gateway authorizes the request based on the authenticated
   WireGuard peer identity.
 - **Target eligibility:** The resolved target must be an active node. The
-  gateway is never a valid app target. `--node=<gateway-slug>` is rejected with
+  gateway is never a valid instance target. `--node=<gateway-slug>` is rejected with
   `project.ineligible_node`.
 - **Path resolution:** `--path` is resolved on the target node through
   gateway-owned Agent-push inspection and application, not on the gateway filesystem.

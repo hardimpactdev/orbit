@@ -29,7 +29,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `message` | `[message]` or stdin | Always. | `[message]` is present and `--stdin` is true. | None. | Non-empty UTF-8 text. Positional message trims surrounding whitespace; stdin preserves the body except for one trailing newline added by common shells. |
 | `stdin` | `--stdin` | Never. | `[message]` is present. | `false`. | Reads message body from standard input. |
-| `app` | `--instance` | Required when neither `--workspace` nor current-directory context resolves a target. | `--workspace` is present. | Current-directory instance context when available. | Visible dotted instance selector. A bare project may resolve only when exactly one instance exists. |
+| `instance` | `--instance` | Required when neither `--workspace` nor current-directory context resolves a target. | `--workspace` is present. | Current-directory instance context when available. | Visible dotted instance selector. A bare project may resolve only when exactly one instance exists. |
 | `workspace` | `--workspace` | Required when neither `--instance` nor current-directory context resolves a target. | `--instance` is present. | Current workspace context when the command runs from a workspace path. | Existing workspace name or hostname, resolved inside instance scope when an app context is known. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -79,7 +79,7 @@ selected instance.
   with `workspace.unsupported_for_production` before target lookup, adapter
   session lookup, or delivery. Messages to the app's main context remain
   available under their normal authorization contract.
-- App-context authorization, path resolution, and the effective node adapter
+- Instance-context authorization, path resolution, and the effective node adapter
   use the selected instance's serving node. They never use a project
   owning-node field.
 - If the requested target is hidden from the caller, return
@@ -110,8 +110,8 @@ selected instance.
   failure with adapter context.
 - A successful delivery means the adapter accepted the message for the active
   session; it does not guarantee that the IDE completed the requested work.
-- Adapter session lookup is adapter-specific. App-context delivery may resolve
-  the most recent active app-owned session when the adapter represents sessions
+- Adapter session lookup is adapter-specific. Instance-context delivery may resolve
+  the most recent active instance-owned session when the adapter represents sessions
   as workspaces, but it must not cross app authorization boundaries.
 
 ### Scope Boundaries
@@ -155,7 +155,7 @@ adapter credentials, raw adapter output, or secrets.
 | --- | --- |
 | Type | `api:POST /agent-ide/message` |
 | Effect | `write` |
-| Subject | `App` for app-target delivery; `Workspace` for workspace-target delivery; `none` when no authorized target is resolved. |
+| Subject | `AppInstance` for instance-target delivery; `Workspace` for workspace-target delivery; `none` when no authorized target is resolved. |
 | Properties | `target_app`, `target_workspace`, `adapter`, `source`, `delivery_status`, and `failure_code` when delivery fails. |
 | Description | `Agent IDE message sent to {target} through {adapter}` or `Agent IDE message failed for {target} through {adapter}`. |
 

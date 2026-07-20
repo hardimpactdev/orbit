@@ -323,6 +323,11 @@ class ProxyRouteQuery
         return $entity;
     }
 
+    public function publicOwnerType(ProxyRoute $route): string
+    {
+        return $this->ownerType($route);
+    }
+
     /**
      * @param  array<string, mixed>  $config
      */

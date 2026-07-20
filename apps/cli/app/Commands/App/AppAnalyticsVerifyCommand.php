@@ -23,7 +23,7 @@ final class AppAnalyticsVerifyCommand extends AppGatewayCommand
     protected $name = 'instance:analytics verify';
 
     #[\Override]
-    protected $description = 'Verify public analytics tracking readiness for an app.';
+    protected $description = 'Verify public analytics tracking readiness for an instance.';
 
     #[\Override]
     protected function configure(): void
@@ -73,7 +73,7 @@ final class AppAnalyticsVerifyCommand extends AppGatewayCommand
     {
         $verification = [];
         $outcome = $this->runStepOperation(
-            'Verifying App Analytics',
+            'Verifying Instance Analytics',
             [
                 ['label' => 'Read analytics binding and route intent'],
                 ['label' => 'Resolve public DNS'],

@@ -42,7 +42,7 @@ Run this command to read the tools Orbit expects or manages on the selected node
 `tool:list`:
 
 1. Resolves the caller's gateway connection and visibility.
-2. Resolves optional node or app filters; when neither is provided, uses the
+2. Resolves optional node or instance filters; when neither is provided, uses the
    local default node or current caller node.
 3. Reads visible gateway tool rows.
 4. Shows a node-scoped list, or a grouped node list when `--all` is provided.
@@ -65,8 +65,8 @@ Use `--json` for machine-readable tool entities and applied filters.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity is authorized to inspect tools for the selected
-  node or app.
-- Requested node or app filters are visible to the current node identity.
+  node or instance.
+- Requested node or instance filters are visible to the current node identity.
 
 ## Related Commands
 

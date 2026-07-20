@@ -24,14 +24,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | Argument `app` | `Always.` | `Never.` | `None.` | Existing Orbit project name with a Cloudflare-backed real domain. |
+| `project` | Argument `project` | `Always.` | `Never.` | `None.` | Existing Orbit project name with a Cloudflare-backed real domain. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract
 
-### App Zone Resolution Rules
+### Project Zone Resolution Rules
 
-- Resolves `app` from gateway app state.
+- Resolves `project` from gateway project state.
 - Resolves the app's real domain to a Cloudflare zone.
 - Fails before provider mutation when the app has no real Cloudflare-backed
   domain.
@@ -64,7 +64,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 ## Doctor Relationship
 
 `cf-cache-rule:add` may support app performance policy, but it does not create a
-Cloudflare doctor family. App-domain and deployment health remain owned by
+Cloudflare doctor family. Project-domain and deployment health remain owned by
 [`doctor --family=instance`](../../../5_project/instance-doctor.md). Ingress route health
 remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 

@@ -17,7 +17,7 @@ orbit cf-cache-rule:add docs --json
 
 ## Arguments and options
 
-- `app`: Orbit project name whose primary domain resolves to a Cloudflare zone.
+- `project`: Orbit project name whose primary domain resolves to a Cloudflare zone.
 - `--json`: Return the cache rule result in the JSON output.
 
 ## What Happens

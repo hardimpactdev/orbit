@@ -41,7 +41,7 @@ provider DNS is configured.
 The Plausible dashboard and admin UI remain private at `analytics.orbit`. V1
 does not inject tracking scripts, create Plausible sites, or manage Plausible
 credentials. This command consumes the private service route created by role
-deployment; it does not create that route. App owners add the Plausible script
+deployment; it does not create that route. Project owners add the Plausible script
 manually.
 
 ## Requirements

@@ -70,7 +70,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 ## Doctor Relationship
 
 `cf-cache:flush` does not create a doctor issue, fix drift, or adopt provider
-state. App deployment health remains owned by [`doctor --family=instance`](../../../5_project/instance-doctor.md).
+state. Instance deployment health remains owned by [`doctor --family=instance`](../../../5_project/instance-doctor.md).
 Ingress route health remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
 ## Test Mapping

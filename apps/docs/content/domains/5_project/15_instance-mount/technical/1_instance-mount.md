@@ -80,14 +80,14 @@ validation failures, and `403` for permission denials.
    `hauser.nmbp`, resolve the named instance. Its serving node is the sole
    authorization and host-path boundary. Every action targets
    `instance_runtime_mounts`.
-2. **Bare app selectors.** Selectors without an instance suffix fail with
+2. **Bare project selectors.** Selectors without an instance suffix fail with
    `error.meta.reason=instance_required`.
-3. **Name precedence.** App and instance resolution follow the shared app
+3. **Name precedence.** Project and instance resolution follow the shared instance
    selector rules used elsewhere in the project and instance command surface.
 
 ### Runtime Mount Rules
 
-1. **Instance-scoped intent.** New configurable runtime mounts belong to app
+1. **Instance-scoped intent.** New configurable runtime mounts belong to
    instances, not projects.
 2. **Workspace inheritance.** Workspace runtime containers inherit mounts from
    the workspace's selected instance.
@@ -109,7 +109,7 @@ validation failures, and `403` for permission denials.
 8. **Directory preparation.** Before `docker run`, the runtime manager creates
    safe configured source directories with owner and group set to the source
    home user. Unsafe configured sources fail before Docker is invoked.
-9. **Entity separation.** Renderers return the logical `app` and concrete
+9. **Entity separation.** Renderers return the logical `project` and concrete
    `instance` separately. All node, URL, path,
    root, domain, placement, and `adopted` fields belong only to `instance`.
 
@@ -122,8 +122,8 @@ failures below.
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Validation failed (action) | `action` is missing or not one of `list`, `add`, `remove`. | Failure |
-| Validation failed (app) | `app` is missing in non-interactive mode. | Failure |
-| Instance required | Any action resolves a bare app instead of an instance. | Failure with `error.meta.reason=instance_required`. |
+| Validation failed (instance) | `instance` is missing in non-interactive mode. | Failure |
+| Instance required | Any action resolves a bare project instead of an instance. | Failure with `error.meta.reason=instance_required`. |
 | Validation failed (source) | `add` is missing `source`, or `source` is not an allowed absolute host path. | Failure |
 | Validation failed (target) | `add` or `remove` is missing `target`, or `target` is not an allowed absolute target path. | Failure |
 | Instance not found | No project record or instance matches the selector. | Failure |

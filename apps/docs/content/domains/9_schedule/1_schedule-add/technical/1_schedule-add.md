@@ -24,8 +24,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Schedule slug unique within the selected concrete target. |
-| `app` | `--instance` | `Required when no node target resolves and no target can be prompted.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
-| `node` | `--node` | `Required when no app target resolves and no target can be prompted.` | `Forbidden with `app`.` | `local node:default when configured` | Visible active gateway or node with schedule capability. |
+| `instance` | `--instance` | `Required when no node target resolves and no target can be prompted.` | `Forbidden with `node`.` | `None.` | Visible eligible `project.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
+| `node` | `--node` | `Required when no instance target resolves and no target can be prompted.` | `Forbidden with `instance`.` | `local node:default when configured` | Visible active gateway or node with schedule capability. |
 | `command` | `--command` | `Required when `script` is absent.` | `Forbidden with `script`.` | `None.` | Non-empty command line accepted by the schedule execution policy for the target scope. |
 | `script` | `--script` | `Required when `command` is absent.` | `Forbidden with `command`.` | `None.` | Managed script path readable by the gateway policy and executable by the target node. |
 | `interval` | `--interval` | `Required in non-interactive mode.` | `Never.` | `None.` | Portable Orbit interval expression renderable by the active schedule backend. |
@@ -52,7 +52,7 @@ These rules describe how `schedule:add` resolves scope and writes the gateway sc
 - Stores the schedule name, scope, concrete `instance_id` when applicable,
   target, interval, timezone, execution source, execution timeout, enabled state, and initial
   status.
-- Rejects ambiguous app selectors and writes that collide with an existing
+- Rejects ambiguous instance selectors and writes that collide with an existing
   schedule name in the selected concrete target before any side effects.
 
 ### Execution Source Rules
@@ -74,7 +74,7 @@ These rules describe how `schedule:add` resolves scope and writes the gateway sc
 
 ### Scope Boundaries
 
-`schedule-add` must not create apps, nodes, workspaces, tools, proxy routes, firewall rules, DNS records, or any artifacts on the scheduler side that go beyond what gateway configuration tracks. Drift detection belongs to [`schedule-doctor.md`](../../schedule-doctor.md).
+`schedule-add` must not create projects, instances, nodes, workspaces, tools, proxy routes, firewall rules, DNS records, or any artifacts on the scheduler side that go beyond what gateway configuration tracks. Drift detection belongs to [`schedule-doctor.md`](../../schedule-doctor.md).
 
 ## Renderer Contracts
 
@@ -106,7 +106,7 @@ schedule creation attempts.
 | Type | `api:POST /schedules` |
 | Effect | `write` |
 | Subject | `Schedule` when schedule configuration is written; `none` for validation, target-resolution, or authorization failures before a schedule can be logged. |
-| Properties | `name` (string or null), `app` (string or null), and `node` (string or null). No raw command text, script contents, runtime output, or secrets. |
+| Properties | `name` (string or null), `instance` (string or null), and `node` (string or null). No raw command text, script contents, runtime output, or secrets. |
 | Description | derived |
 
 ## Test Mapping

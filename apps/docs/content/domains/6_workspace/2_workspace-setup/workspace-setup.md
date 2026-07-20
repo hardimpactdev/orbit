@@ -66,7 +66,7 @@ when explicit input is not supplied. The gateway path-ownership lookup keyed
 on (caller node identity, absolute CWD) returns one of:
 
 - **A registered workspace path** — the workspace identity (`name` and
-  parent `app`, required selected instance, and `path` are resolved
+  parent `project`, required selected instance, and `path` are resolved
   from gateway configuration. The
   command proceeds as a re-converge or repair of that workspace.
 - **A registered app's own root path** — the CWD is the parent project's own

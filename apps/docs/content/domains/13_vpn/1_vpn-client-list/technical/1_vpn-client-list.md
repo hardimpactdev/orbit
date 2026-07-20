@@ -55,7 +55,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Create, remove, enable, or disable peers.
 - Verify live node reachability.
 - Repair stale node peers or missing node peers.
-- Read nodes or app-owned runtime state.
+- Read nodes or instance-owned runtime state.
 
 ## Renderer Contracts
 

@@ -283,7 +283,7 @@ under `success.meta.warnings[]`. See the
   drift created by failed artifact re-applying.
 - `node:update` does not probe, infer, validate, restore, adopt, or drift-check
   public IPv4/IPv6 metadata. See [`node-doctor.md`](../../node-doctor.md).
-- Broader drift in tools, firewall rules, apps, workspaces, processes,
+- Broader drift in tools, firewall rules, projects, instances, workspaces, processes,
   schedules, and proxy routes is verified by those family contracts.
 
 ## Activity Logging

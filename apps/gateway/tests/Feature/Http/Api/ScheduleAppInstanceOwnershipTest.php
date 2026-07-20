@@ -14,6 +14,7 @@ use App\Models\SchedulerState;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -51,6 +52,27 @@ it('creates same-named schedules for explicit concrete instances', function (): 
         ->toBe('app:docs.development:nightly')
         ->and(Schedule::query()->where('app_id', $app->id)->count())
         ->toBe(2);
+});
+
+it('records the concrete instance selector in schedule activity', function (): void {
+    $caller = scheduleInstanceCaller(gateway: true);
+    scheduleGatewayHeartbeat($caller);
+    scheduleAppWithTwoInstances();
+
+    schedulePost([
+        'name' => 'nightly',
+        'instance' => 'docs.production',
+        'interval' => 'daily at 02:00',
+        'timezone' => 'UTC',
+        'command' => 'php artisan reports:send',
+    ])->assertCreated();
+
+    $activity = Activity::query()->sole();
+
+    expect($activity->properties->get('instance'))
+        ->toBe('docs.production')
+        ->and($activity->properties->has('app'))
+        ->toBeFalse();
 });
 
 it('stores and returns a bounded schedule execution timeout', function (): void {

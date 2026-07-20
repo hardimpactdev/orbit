@@ -34,7 +34,7 @@ This command follows the shared
 
 ## Input Resolution
 
-1. Resolve exactly one instance. A dotted selector is explicit; a bare app
+1. Resolve exactly one instance. A dotted selector is explicit; a bare project
    auto-resolves only a sole eligible visible instance.
 2. Resolve its serving node, domain, and authorization before any binding or
    route write. Logical-app placement is never consulted.
@@ -91,13 +91,13 @@ denials.
 
 ## Response Payload
 
-The gateway response returns the canonical logical `app`, selected
+The gateway response returns the canonical logical `project`, selected
 `instance`, `serving_node`, and resulting `binding` as separate fields:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `project` | object | Canonical project entity with no placement fields. |
-| `instance` | string | Selected instance name within `app`. |
+| `instance` | string | Selected instance name within `project`. |
 | `serving_node` | string | Selected instance's authorization and placement node. |
 | `internal_host` | string | WireGuard-internal service hostname (`websocket.orbit`). Fixed. |
 | `public_hosts` | array | Ordered list of public WebSocket hostnames bound to this app. |
@@ -110,10 +110,10 @@ command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed (app) | `app` is missing from the CLI invocation. | Failure — no gateway request sent. |
+| Validation failed (instance) | `instance` is missing from the CLI invocation. | Failure — no gateway request sent. |
 | Validation failed (public_hosts) | A supplied `--host` value contains `://` or exceeds 255 characters. | Failure. |
 | Instance required | A bare selector resolves zero or multiple eligible instances. | `validation_failed` with `error.meta.reason=instance_required`. |
-| Instance not found | No concrete instance matches `app`. | `instance.not_found`. |
+| Instance not found | No concrete instance matches `instance`. | `instance.not_found`. |
 | WebSocket prerequisite failed | The fleet has no active router node or no active WebSocket backend node when the route sync runs. | Failure — no binding state written. |
 
 ## Doctor Relationship
@@ -121,7 +121,7 @@ command-specific failures below.
 `instance:websocket enable` writes gateway-owned binding configuration and triggers
 route and runtime syncs. Binding drift — an enabled binding with no matching
 runtime entry or router route — belongs to `doctor --family=instance`. See
-[`instance-doctor.md`](../../instance-doctor.md) for the authoritative app-family probe
+[`instance-doctor.md`](../../instance-doctor.md) for the authoritative instance-family probe
 and repair contract; doctor semantics are not restated here.
 
 ## Activity Logging
@@ -131,7 +131,7 @@ enable attempt.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /apps/{instance}/websocket/enable` |
+| Type | `api:POST /instances/{instance}/websocket/enable` |
 | Effect | `write` |
 | Subject | Instance resolved from `{instance}`. |
 | Properties | `action=enable`, `target_instance`, `target_instance`, `serving_node`, and `public_hosts`. |

@@ -14,7 +14,7 @@ final class AppWebSocketDisableCommand extends AppGatewayCommand
     protected $name = 'instance:websocket disable';
 
     #[\Override]
-    protected $description = 'Disable WebSocket support for an app.';
+    protected $description = 'Disable WebSocket support for an instance.';
 
     #[\Override]
     protected function configure(): void

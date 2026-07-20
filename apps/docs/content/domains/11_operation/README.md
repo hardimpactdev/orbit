@@ -2,7 +2,7 @@
 
 Operation commands cut across Orbit's command surface. They update Orbit installations, verify convergence, and run diagnostic workflows. Activity history reads live in their own family; see [`docs/domains/17_activity`](../17_activity/README.md).
 
-The operation domain does not own a state family. Operation commands may read, write, verify, or repair state that belongs to other families, but permanent drift keys remain the product family keys defined by the architecture, such as `node`, `app`, `workspace`, `process`, `proxy`, `schedule`, `tool`, `firewall_rule`, and `database_connection`.
+The operation domain does not own a state family. Operation commands may read, write, verify, or repair state that belongs to other families, but permanent drift keys remain the product family keys defined by the architecture, such as `node`, `instance`, `workspace`, `process`, `proxy`, `schedule`, `tool`, `firewall_rule`, and `database_connection`.
 
 ## State Ownership
 

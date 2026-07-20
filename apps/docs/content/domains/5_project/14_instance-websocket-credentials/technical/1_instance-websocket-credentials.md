@@ -78,9 +78,9 @@ command-specific failures below.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Validation failed (app) | `app` is missing from the CLI invocation. | Failure — no gateway request sent. |
+| Validation failed (instance) | `instance` is missing from the CLI invocation. | Failure — no gateway request sent. |
 | Instance required | A bare selector resolves zero or multiple eligible instances. | `validation_failed` with `error.meta.reason=instance_required`. |
-| Instance not found | No concrete instance matches `app`. | `instance.not_found`. |
+| Instance not found | No concrete instance matches `instance`. | `instance.not_found`. |
 | WebSocket binding missing | The selected instance has no enabled binding. | Failure. |
 
 ## Doctor Relationship
@@ -88,7 +88,7 @@ command-specific failures below.
 `instance:websocket credentials` is a read-only registry command. It does not probe
 live Reverb reachability or verify runtime state. Binding configuration drift
 belongs to `doctor --family=instance`. See
-[`instance-doctor.md`](../../instance-doctor.md) for the authoritative app-family probe
+[`instance-doctor.md`](../../instance-doctor.md) for the authoritative instance-family probe
 and repair contract; doctor semantics are not restated here.
 
 ## Activity Logging
@@ -97,7 +97,7 @@ The gateway API endpoint emits an activity entry for every credentials read.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:GET /apps/{instance}/websocket/credentials` |
+| Type | `api:GET /instances/{instance}/websocket/credentials` |
 | Effect | `read` |
 | Subject | Instance resolved from `{instance}`. |
 | Properties | `action=credentials`, `target_instance`, `target_instance`, and `serving_node`. Secret values are never logged. |

@@ -133,7 +133,7 @@ describe('ProxyRouteIntent', function (): void {
             code: null,
             force: true,
         );
-    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by app.");
+    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by project.");
 
     it('removes only custom route intent and returns cleanup warning', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
@@ -199,5 +199,5 @@ describe('ProxyRouteIntent', function (): void {
             code: null,
             force: true,
         );
-    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by app.");
+    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by project.");
 });

@@ -42,7 +42,7 @@ final class ToolUpdateBulkController implements Loggable
         }
 
         $node = $this->requestString($request, 'node');
-        $app = $this->requestString($request, 'app');
+        $app = $this->requestString($request, 'instance');
 
         $operation = fn (): array => $updater->updateAll(node: $node, app: $app);
 

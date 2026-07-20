@@ -24,7 +24,7 @@ orbit schedule:logs backups --node=app-1 --lines=200
 
 - `name`: schedule slug. When omitted in interactive mode, Orbit shows a
   schedule data table.
-- `--instance`: select the owning `app.instance`. A bare project name is shorthand only
+- `--instance`: select the owning `project.instance`. A bare project name is shorthand only
   when exactly one eligible instance is visible.
 - `--node`: disambiguate a node-scoped schedule.
 - `--run`: specific run id. Defaults to the latest run.

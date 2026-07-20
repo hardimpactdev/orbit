@@ -17,7 +17,7 @@ final class AppAnalyticsShowCommand extends AppGatewayCommand
     protected $name = 'instance:analytics show';
 
     #[\Override]
-    protected $description = 'Show analytics tracking proxy configuration for an app.';
+    protected $description = 'Show analytics tracking proxy configuration for an instance.';
 
     #[\Override]
     protected function configure(): void

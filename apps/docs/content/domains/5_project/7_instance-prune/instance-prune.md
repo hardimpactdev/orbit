@@ -29,7 +29,7 @@ orbit instance:prune docs.development --json --force
 
 ## Arguments and options
 
-- `app`: Dotted instance selector. A bare logical slug is shorthand only
+- `instance`: Dotted instance selector. A bare logical slug is shorthand only
   when exactly one eligible visible instance exists. Hostnames are invalid.
 - `--dry-run`: Shows which workspaces would be removed without performing any side effects.
 - `--force`: Skips the interactive confirmation prompt. Required for

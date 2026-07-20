@@ -149,7 +149,7 @@ These rules define what tool commands may and may not change.
   tool maps to exactly one runtime: either one direct tool-owned runtime or one
   process row whose `tool` equals the canonical slug. Ambiguity fails with
   `tool.runtime_ambiguous`; no generic related-process fallback is permitted.
-- They do not own apps, workspaces, process lifecycle, schedules, custom proxy
+- They do not own projects, instances, workspaces, process lifecycle, schedules, custom proxy
   routes, or non-tool firewall policy. Tool-specific or capability-specific
   command families (such as `php:*`) are admitted only when the workflow is
   clearer as its own product surface.

@@ -9,7 +9,7 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The target project and instance exist.
-- The authenticated peer has `instance:read` or `instance:write` on the selected app
+- The authenticated peer has `instance:read` or `instance:write` on the selected
   instance's serving node for the selected action.
 
 ## Signature
@@ -26,8 +26,7 @@ This command follows the shared
 | Field | Source | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `action` | `{action}` | Always. | None. | Must be `list`, `set`, or `render`. |
-| `instance` | `[instance]` or `--instance` | Always. | None. | Selects one existing project. If both are supplied they must match. |
-| `instance` | `--instance` | Always. | None. | Must select an instance belonging to the app. |
+| `instance` | `[instance]` | Always. | None. | Must be a dotted `project.instance` selector for an existing instance. |
 | `key` | `--key` | `set`. | None. | Uppercase env key pattern. |
 | `value` | `--value` | `set`. | None. | Stored as a non-secret string. |
 | `apply` | `--apply` | `set` when applying to runtime. | `false`. | Fails with `validation_failed` outside `set`. |
@@ -43,7 +42,7 @@ Gateway-owned `database_connection_targets` rows connect one database
 connection to either one instance or one workspace and one env prefix.
 Instance rows are rendered by `instance:env render`.
 
-Orbit-derived runtime defaults are rendered from the selected instance's app and
+Orbit-derived runtime defaults are rendered from the selected instance's project and
 serving node. These defaults are not stored as explicit instance env rows.
 
 ## API Surface
@@ -59,12 +58,12 @@ serving node. These defaults are not stored as explicit instance env rows.
 ### Env Rules
 
 1. **Instance ownership.** Env values belong to an instance, not the logical
-   app.
+   project.
 2. **Non-secret only.** Explicit secret values are rejected until secret storage
    is designed.
 3. **Orbit defaults.** Rendered env includes non-secret Orbit-derived
    `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and
-   `VITE_DEV_SERVER_CERT` values for the selected app.
+   `VITE_DEV_SERVER_CERT` values for the selected instance.
 4. **Database merge.** Rendered env includes supported database keys for database
    connections attached to the same instance.
 5. **Secret redaction.** Rendered database password values are marked
@@ -73,13 +72,13 @@ serving node. These defaults are not stored as explicit instance env rows.
    writes the selected instance's live `.env` on its serving node through
    authenticated Agent push over WireGuard. It cannot write the project
    default path or a sibling instance path. Workspace CWD never supplies an
-   implicit app target; project and instance selection remains explicit.
+   implicit instance target; project and instance selection remains explicit.
 7. **Runtime apply.** When `apply` is requested for a PHP app, Orbit clears
    Laravel config/bootstrap cache at the selected instance path on the host PHP
    toolchain and reapplies the selected instance's FrankenPHP runtime container
    through `AppRuntimeContainerManager`.
 8. **Explicit scope output.** Every success response carries
-   `scope=instance`, `app`, `instance`, `workspace=null`, the concrete
+   `scope=instance`, `project`, `instance`, `workspace=null`, the concrete
    `.env` `path`, and `stored`, `applied`, and `runtime_restarted` booleans.
 
 ## Renderer Contracts
@@ -91,8 +90,8 @@ serving node. These defaults are not stored as explicit instance env rows.
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Instance not found | No project record matches `app`. | `error.code=instance.not_found`. |
-| Instance not found | No instance record matches `instance` for the app. | `error.code=instance.not_found`. |
+| Instance not found | No concrete instance matches `instance`. | `error.code=instance.not_found`. |
+| Instance not found | No instance record matches `instance` for the project. | `error.code=instance.not_found`. |
 | Instance driver cannot apply env | The selected instance does not expose an Orbit-managed node and path. | Gateway state remains saved; `error.code=instance.env_apply_failed`. |
 | Runtime apply failed | Gateway state saved but the selected instance's remote `.env`, cache clear, or runtime reapply failed. | `error.code=instance.env_apply_failed`. |
 
@@ -100,13 +99,13 @@ serving node. These defaults are not stored as explicit instance env rows.
 
 [`instance-doctor.md`](../../instance-doctor.md) does not write instance env files in
 this slice. Instance env rendering is gateway state. Database connection
-drift and restore for app/workspace `.env` files remain owned by
+drift and restore for instance/workspace `.env` files remain owned by
 [`doctor --family=database_connection`](../../../18_database/database-doctor.md).
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppEnvCommandTest.php` | CLI validation, app selector behavior, gateway forwarding, render, and secret rejection. |
+| `apps/cli/tests/Feature/Commands/App/AppEnvCommandTest.php` | CLI validation, instance selector behavior, gateway forwarding, render, and secret rejection. |
 | `apps/gateway/tests/Feature/AppInstanceEnvControllerTest.php` | API env persistence, apply behavior, database attachment rendering, redaction, and secret rejection. |
 | `apps/gateway/tests/Unit/Services/Apps/AppInstanceEnvApplierTest.php` | Remote `.env` writes, Laravel cache clearing, and runtime container reapply. |

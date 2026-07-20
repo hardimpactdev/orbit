@@ -34,9 +34,9 @@ owning family concept document.
 - **Metrics role** — optional private workload role that records and starts Prometheus and Grafana process runtimes for a metrics node and node-exporter tool/process runtimes for metrics and active Ubuntu workload nodes. See [Node Concepts](domains/1_node/node-concepts.md) and [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
 - **Analytics role** — private workload role that runs Plausible CE, binds only to WireGuard, and receives dashboard and tracking traffic through router-owned analytics routes. See [Node Concepts](domains/1_node/node-concepts.md) and [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
 - **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns it together with `gateway` and normal `node role:*` commands cannot manage it independently. See [Node Concepts](domains/1_node/node-concepts.md).
-- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own app files, FrankenPHP app runtime policy, process-backed runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
-- **App WebSocket binding** — gateway-owned app configuration that enables one app to use the fleet websocket service, including per-app Reverb credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [App Concepts](domains/5_project/project-concepts.md).
-- **Reverb app credentials** — per-app Reverb application id, key, and secret material owned by an app WebSocket binding. See [App Concepts](domains/5_project/project-concepts.md).
+- **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own project files, FrankenPHP instance runtime policy, process-backed runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
+- **Instance WebSocket binding** — gateway-owned instance configuration that enables one instance to use the fleet websocket service, including Reverb app credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
+- **Reverb app credentials** — Reverb application id, key, and secret material owned by an instance WebSocket binding. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
 - **WebSocket backend pool** — router-owned ordered set of websocket role backends behind `websocket.orbit`. See [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **S3 service endpoint** — stable router-owned private HTTPS endpoint `https://s3.orbit` for Orbit-managed S3-compatible object storage. See [S3 Concepts](domains/19_s3/s3-concepts.md).
 - **SeaweedFS backend** — the SeaweedFS runtime behind the `s3` role, reached by router through the S3 backend pool. See [S3 Concepts](domains/19_s3/s3-concepts.md).
@@ -46,7 +46,7 @@ owning family concept document.
 - **Metrics backend** — process-owned Prometheus, Grafana, and node-exporter runtime coordinated by the `metrics` role baseline, with node-exporter host binary capability tracked by the tool family. See [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
 - **Grafana admin credentials** — generated service-level Grafana admin username and password exposed through `metrics:credentials`. See [Metrics Concepts](domains/20_metrics/metrics-concepts.md).
 - **Private analytics endpoint** — stable router-owned private HTTPS endpoint `https://analytics.orbit` for the Plausible dashboard and admin UI. See [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
-- **App analytics binding** — gateway-owned app configuration that enables public tracking hosts for one app without provisioning Plausible sites or injecting scripts. See [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
+- **Instance analytics binding** — gateway-owned instance configuration that enables public tracking hosts for one instance without provisioning Plausible sites or injecting scripts. See [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
 - **Orbit launcher** — host `orbit` entry point. Production installs still use the native CLI binary artifact; source-mounted Docker and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. Mutable node-local Orbit state lives under `~/.config/orbit`. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit gateway image** — first-party `ghcr.io/hardimpactdev/orbit-gateway:<version>` FrankenPHP image that bundles the gateway application code and is used by both gateway Swarm services. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Orbit gateway service** — Swarm-managed `orbit-gateway` service that serves the typed gateway API and mounts `ORBIT_CONFIG_ROOT` for mutable gateway state. See [Node Concepts](domains/1_node/node-concepts.md).
@@ -57,38 +57,38 @@ owning family concept document.
 - **Local executor** — hidden internal CLI command surface used by `RemoteLocalExecutor`; it validates a gateway-issued operation token before reading or mutating node-local state and is not a normal user command surface. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Operation token** — gateway-issued token attached to a recorded operation and validated by local executor commands before side effects. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Orbit Caddy container** — standalone `orbit-caddy` fleet proxy container; one per node when that node needs HTTP routing. See [Node Concepts](domains/1_node/node-concepts.md).
-- **App runtime container** — dedicated Docker container for one PHP app or workspace runtime, represented as a process-backed runtime unit. See [App Concepts](domains/5_project/project-concepts.md).
-- **FrankenPHP app runtime** — the PHP web runtime used by app and workspace containers. Classic mode is the default; worker mode is opt-in. See [App Concepts](domains/5_project/project-concepts.md).
-- **Worker mode** — opt-in FrankenPHP mode that keeps a validated Laravel app in memory. See [App Concepts](domains/5_project/project-concepts.md).
-- **Worker config** — gateway-tracked worker settings stored separately from the enabled flag. See [App Concepts](domains/5_project/project-concepts.md).
-- **Process runtime** — backend selection for process units scoped to a node, app, or workspace; supported runtime families are `systemd`, `launchd`, `docker`, and `docker-swarm`, with owner-scope restrictions documented in [Process Concepts](domains/7_process/process-concepts.md).
+- **App runtime container** — dedicated Docker container for one PHP project instance or workspace runtime, represented as a process-backed runtime unit. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
+- **FrankenPHP app runtime** — the PHP web runtime used by instance and workspace containers. Classic mode is the default; worker mode is opt-in. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
+- **Worker mode** — opt-in FrankenPHP mode that keeps a validated Laravel project in memory. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
+- **Worker config** — gateway-tracked worker settings stored separately from the enabled flag. See [Project and Instance Concepts](domains/5_project/project-concepts.md).
+- **Process runtime** — backend selection for process units scoped to a node, instance, or workspace; supported runtime families are `systemd`, `launchd`, `docker`, and `docker-swarm`, with owner-scope restrictions documented in [Process Concepts](domains/7_process/process-concepts.md).
 - **Docker process runtime** — Docker backend for containerized processes such as databases, caches, and FrankenPHP app or workspace web runtimes. See [Process Concepts](domains/7_process/process-concepts.md).
-- **Systemd process runtime** — Linux service backend for host-command process units scoped to nodes, apps, or workspaces; `systemctl` is only the command adapter. See [Process Concepts](domains/7_process/process-concepts.md).
-- **Launchd process runtime** — macOS user LaunchAgent backend for host-command process units scoped to nodes, apps, or workspaces; `launchctl` is only the command adapter. See [Process Concepts](domains/7_process/process-concepts.md).
-- **Host cwd context** — entrypoint-provided `ORBIT_HOST_CWD` value used to preserve local app/workspace context for the dispatched node-local Orbit CLI entry point. The source CLI entrypoint initializes it from the process cwd when absent and preserves supplied values. Production installs still use the native CLI binary artifact; source-mounted Docker and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. See [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
+- **Systemd process runtime** — Linux service backend for host-command process units scoped to nodes, instances, or workspaces; `systemctl` is only the command adapter. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Launchd process runtime** — macOS user LaunchAgent backend for host-command process units scoped to nodes, instances, or workspaces; `launchctl` is only the command adapter. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Host cwd context** — entrypoint-provided `ORBIT_HOST_CWD` value used to preserve local instance/workspace context for the dispatched node-local Orbit CLI entry point. The source CLI entrypoint initializes it from the process cwd when absent and preserves supplied values. Production installs still use the native CLI binary artifact; source-mounted Docker and Incus development/E2E topologies point `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit`. See [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 - **VPN role settings** — `public_endpoint`, `wireguard_cidr`, `wireguard_port`, and `dns_ip` settings stored on the `vpn` role assignment. See [Node Concepts](domains/1_node/node-concepts.md).
 - **VPN-role runtime administration** — VPN command-domain exception where `vpn-client:*` and `vpn-web-ui:*` commands are authorized by the gateway and execute against the active `vpn` role runtime. See [VPN Concepts](domains/13_vpn/vpn-concepts.md).
 - **Process manager** — the runtime backend that runs Orbit process units. Systemd handles Linux host-command process units, launchd handles macOS host-command process units, Docker handles containerized process units, and Docker Swarm handles selected node-owned service processes. See [Tech Stack: Process Manager](tech-stack.md#process-manager).
-- **Runtime unit** — concrete runnable realization of a process definition in a node, app, or workspace context. See [Process Concepts](domains/7_process/process-concepts.md).
+- **Runtime unit** — concrete runnable realization of a process definition in a node, instance, or workspace context. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Orbit Scheduler** — the resident schedule executor loop that runs as the `orbit-scheduler` Swarm service using the Orbit gateway image. It owns schedule evaluation, dispatch (locally for gateway-target schedules, through `internal:schedule:run` over agent-push for every other target), overlap policy, run history, and heartbeat. See [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 - **Host init** — the host's own service manager. In the production substrate, its steady-state Orbit responsibility is keeping Docker available for Docker-backed artifacts, systemd available for Linux host command processes, and launchd available for macOS host command processes.
 - **Node command transport envelope** — the typed executable unit sent from gateway to node: command id plus payload contract. Managed execution converges on `gateway-only` for gateway-owned work and `agent-push` for node-local execution. Agent support is explicit per envelope, allowlisted, operation-token scoped, and not arbitrary shell. See [Tech Stack: Gateway To Node](tech-stack.md#gateway-to-node) and execution lanes.
-- **Security section** — cross-family doctor issue-code section for security-owned state. Security is not a state family; findings live under owning families such as `node.security.*`, `app.security.*`, and `workspace.security.*`. See [Architecture: State Families](architecture.md#state-families).
+- **Security section** — cross-family doctor issue-code section for security-owned state. Security is not a state family; findings live under owning families such as `node.security.*`, `instance.security.*`, and `workspace.security.*`. See [Architecture: State Families](architecture.md#state-families).
 - **CLI caller** — an Orbit CLI invocation from a client, the gateway host, or any other node. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Gateway API** — typed HTTPS API served on the gateway WireGuard address. See [Tech Stack: Gateway API](tech-stack.md#gateway-api).
-- **Agent IDE adapter** — Orbit's integration point for an agent IDE (PolyScope, OpenCode, or similar), configured per node with an optional per-app override. See [Architecture: Agent IDE Integration](architecture.md#agent-ide-integration).
+- **Agent IDE adapter** — Orbit's integration point for an agent IDE (PolyScope, OpenCode, or similar), configured per node with an optional per-instance override. See [Architecture: Agent IDE Integration](architecture.md#agent-ide-integration).
 - **Command contract** — user-visible command behavior, input, output, and failure contract. See [Architecture: Command And API Model](architecture.md#command-and-api-model) and [Command Contracts](domains/README.md).
 - **Public command ownership** — public operator commands are owned by the `apps/cli` application; gateway Artisan is gateway maintenance and internal automation only, and moved public commands are not gateway command targets. See [Architecture: CLI](architecture.md#cli).
 - **E2E verification ownership** — E2E is root-owned monorepo verification run through root Composer scripts and implemented by the dedicated external `apps/e2e` black-box/gray-box runner (the harness, support layer, test suites, and `e2e:*` runner commands all live in `apps/e2e`); there is no gateway-owned E2E runner. New S3/SeaweedFS E2E coverage is added under `apps/e2e`. See [Testing](testing/README.md).
-- **Database connection restore** — doctor direction that writes gateway-owned database connection values into a selected app or workspace `.env` while preserving unrelated keys. See [Database Doctor](domains/18_database/database-doctor.md).
-- **Database connection adopt** — doctor direction that reads supported database env prefixes from a selected app or workspace `.env` and records them into gateway state. See [Database Doctor](domains/18_database/database-doctor.md).
+- **Database connection restore** — doctor direction that writes gateway-owned database connection values into a selected instance or workspace `.env` while preserving unrelated keys. See [Database Doctor](domains/18_database/database-doctor.md).
+- **Database connection adopt** — doctor direction that reads supported database env prefixes from a selected instance or workspace `.env` and records them into gateway state. See [Database Doctor](domains/18_database/database-doctor.md).
 
 ## Product Families
 
 Permanent state-family keys are singular product names:
 
 - `node`
-- `app`
+- `instance`
 - `workspace`
 - `process`
 - `proxy`
@@ -174,7 +174,7 @@ Source: [Node Concepts](domains/1_node/node-concepts.md).
 - **Agent wildcard DNS mapping**
 - **Node DNS materializer**
 - **Node DNS projection probe**
-- **App-dev HTTP address for callers**
+- **`app-dev` HTTP address for callers**
 <!-- /concept-index -->
 
 ## Gateway Concepts
@@ -321,14 +321,14 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Proxy route**
 - **Route owner**
 - **Route kind**
-- **App route**
+- **Project route**
 - **Workspace route**
 - **Internal route**
 - **Custom route**
 - **Redirect route**
 - **Tool-owned route**
-- **App WebSocket route**
-- **App analytics route**
+- **Instance WebSocket route**
+- **Project analytics route**
 - **Analytics service route**
 - **WebSocket service route**
 - **Public S3 route**
@@ -351,7 +351,7 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Intermediate CA certificate**
 - **TLS authority boundary**
 - **Hostname compatibility material**
-- **App ingress baseline**
+- **Project ingress baseline**
 - **Document-root policy**
 - **Proxy-family boundaries**
 <!-- /concept-index -->
@@ -364,7 +364,7 @@ Source: [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 - **Schedule**
 - **Schedule scope**
 - **Instance-scoped schedule**
-- **Schedule app selector**
+- **Schedule instance selector**
 - **Node-scoped schedule**
 - **Orbit-scoped schedule**
 - **Laravel scheduler**
@@ -449,8 +449,8 @@ Source: [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
 - **Analytics backing database**
 - **Analytics PostgreSQL selection**
 - **Private analytics endpoint**
-- **Public app analytics host**
-- **App analytics binding**
+- **Public instance analytics host**
+- **Instance analytics binding**
 <!-- /concept-index -->
 
 ## Deploy Concepts
@@ -593,7 +593,7 @@ Source: [PHP Concepts](domains/14_php/php-concepts.md).
 - **Gateway-tracked image facts**
 - **Live image inspection**
 - **PHP runtime view**
-- **App PHP runtime selection**
+- **Project PHP runtime policy**
 - **Workspace PHP runtime override**
 - **Workspace PHP inheritance**
 - **Effective workspace PHP version**
@@ -677,7 +677,7 @@ Source: [Agent IDE Concepts](domains/15_agent-ide/agent-ide-concepts.md).
 - **Workspace discovery capability**
 - **Workspace path resolution capability**
 - **Node Agent IDE default**
-- **App Agent IDE override**
+- **Instance Agent IDE override**
 - **Effective Agent IDE adapter**
 - **Agent IDE input token**
 - **Agent IDE message**

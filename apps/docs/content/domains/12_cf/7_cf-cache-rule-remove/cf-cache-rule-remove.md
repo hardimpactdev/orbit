@@ -17,7 +17,7 @@ orbit cf-cache-rule:remove docs --force --json
 
 ## Arguments and options
 
-- `app`: Orbit project name whose Cloudflare cache rule should be removed.
+- `project`: Orbit project name whose Cloudflare cache rule should be removed.
 - `--force`: Confirm removal without an interactive prompt.
 - `--json`: Return the removal result in the JSON output.
 

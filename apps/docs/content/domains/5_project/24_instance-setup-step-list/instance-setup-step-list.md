@@ -17,7 +17,7 @@ ordered step set.
 
 | Input | Meaning |
 | --- | --- |
-| `instance` | Dotted instance selector, or a bare app shorthand when exactly one instance exists. |
+| `instance` | Dotted instance selector, or a bare project shorthand when exactly one instance exists. |
 | `--instance` | Instance selector for scripts where the positional argument is awkward. |
 | `--json` | Render JSON. |
 

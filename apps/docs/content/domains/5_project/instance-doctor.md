@@ -4,7 +4,7 @@
 
 The instance family doctor implements the
 [Family Doctor Implementation Contract](../11_operation/3_doctor/technical/1_doctor.md#family-doctor-implementation-contract).
-`key()` returns `app`.
+The public family key is `instance`; private compatibility internals may still use `app`.
 
 `doctor --family=instance` verifies whether selected instance records match the
 facts that make those concrete placements runnable on their serving nodes.
@@ -54,10 +54,10 @@ The instance family owns these facts:
 - stale managed instance runtime configuration with dotted identities absent
   from active gateway instance records.
 
-Node reachability belongs to the node family. App-owned proxy routes belong to
+Node reachability belongs to the node family. Instance-owned proxy routes belong to
 `proxy`. Workspace artifacts belong to `workspace`. FrankenPHP runtime units,
 containers, lifecycle, and logs for apps and instances belong to `process`.
-App schedules belong to `schedule`. Tool installation
+Instance schedules belong to `schedule`. Tool installation
 and firewall policy belong to `tool` and `firewall_rule`.
 
 ## Probe Layers
@@ -86,7 +86,7 @@ The instance probe reads gateway project and instance records and checks these l
 8. **Production runtime security:** instances on nodes with the `app-prod`
    role satisfy the instance-owned security posture. These findings use
    `instance.security.*` keys and do not depend on workspaces.
-9. **App agent IDE default:** a configured agent IDE default set at the app level must point at a supported adapter.
+9. **Instance agent IDE default:** a configured agent IDE default set on an instance must point at a supported adapter.
 10. **Instance runtime targets:** Orbit instances whose driver
    configuration places them on the selected node are probed for instance-owned
    PHP/image requirements, managed config such as

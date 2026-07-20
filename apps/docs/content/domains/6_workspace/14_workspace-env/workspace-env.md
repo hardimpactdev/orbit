@@ -32,7 +32,7 @@ the selected workspace's `.env`, clears Laravel caches at the workspace path,
 and reapplies that workspace runtime when it uses PHP. It never writes the
 parent instance or a sibling workspace.
 
-Every response identifies `scope=workspace`, `app`, `instance`, `workspace`,
+Every response identifies `scope=workspace`, `project`, `instance`, `workspace`,
 the concrete `.env` `path`, and `stored`, `applied`, and
 `runtime_restarted` outcomes.
 

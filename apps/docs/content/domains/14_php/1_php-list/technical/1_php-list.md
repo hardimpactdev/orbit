@@ -24,8 +24,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `node` | `--node` | Optional. | Never. | Local `node:default` when no app or workspace context resolves a node. | Visible node slug. |
-| `app` | `--instance` | Optional. | Never. | Cwd-inferred concrete instance when available. | Visible dotted `<project.instance>` selector. A bare project fails with `error.meta.reason=instance_required`. |
+| `node` | `--node` | Optional. | Never. | Local `node:default` when no instance or workspace context resolves a node. | Visible node slug. |
+| `instance` | `--instance` | Optional. | Never. | Cwd-inferred concrete instance when available. | Visible dotted `<project.instance>` selector. A bare project fails with `error.meta.reason=instance_required`. |
 | `workspace` | `--workspace` | Optional. | Never. | Cwd-inferred workspace when available. | Visible workspace selector. Requires resolved parent project when the workspace name is ambiguous. |
 | `live` | `--live` | Optional. | Never. | `false`. | Requests live image inspection on the resolved node. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
@@ -35,7 +35,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Runtime Visibility Rules
 
 - Resolves exactly one target context from an explicit dotted instance
-  selector, concrete cwd app/workspace context, workspace-instance placement,
+  selector, concrete cwd instance/workspace context, workspace-instance placement,
   local `node:default`, or gateway-local node identity. It never chooses one
   instance to stand in for a project.
 - When an instance or workspace context resolves a serving node, any
@@ -46,7 +46,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   inheritance when that scope is resolved.
 - Rejects an explicit workspace scope before configuration or live inventory
   reads unless its serving node is active `app-dev` and the caller is not
-  `app-prod`. When the caller or selected app is production, the app view omits
+  `app-prod`. When the caller or selected instance is production, the project view omits
   workspace inheritance and override facts.
 - Reads the Orbit-supported PHP version set from the PHP runtime catalog.
 - Reads gateway-tracked image facts by default.
@@ -81,12 +81,12 @@ A supplied bare project fails before reads with
 may reconcile their PHP inventory fact. [`doctor --family=tool`](../../../3_tool/tool-doctor.md)
 owns PHP image capability drift. [`doctor --family=instance`](../../../5_project/instance-doctor.md)
 and [`doctor --family=workspace`](../../../6_workspace/workspace-doctor.md)
-own PHP runtime health for app and workspace artifacts.
+own PHP runtime health for instance and workspace artifacts.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Php/PhpListCommandTest.php` | Concrete instance target resolution, filter forwarding, `--live` flag forwarding, human and JSON renderer selection, and gateway error pass-through. |
-| `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Permission-specific gateway authorization, concrete instance/workspace placement, bare-app denial, runtime view reads, and structured success/error envelopes. |
+| `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Permission-specific gateway authorization, concrete instance/workspace placement, bare-project denial, runtime view reads, and structured success/error envelopes. |
 | `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Inherited workspace view mapping and PHP runtime view DTO shape. |

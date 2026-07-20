@@ -52,7 +52,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Store public tracking hosts; when omitted, store `analytics.<selected-instance-domain>`.
 - Reject before mutation when the selected instance has no public domain.
 - Require the private `analytics.orbit` service route created by analytics role
-  deployment. App binding enable must not create or own that route.
+  deployment. Instance binding enable must not create or own that route.
 - Register one public `app-analytics` route for each public host, apply its
   router artifact before its ingress artifact, and report success only after
   both Caddy reloads complete. Public routes must proxy only Plausible script
@@ -127,7 +127,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`instance:analytics enable` writes app-owned binding intent and converges only public
+`instance:analytics enable` writes instance-owned binding intent and converges only public
 app analytics routes.
 [`doctor --family=instance`](../../instance-doctor.md) owns app binding drift and
 [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md) owns route drift.
@@ -139,7 +139,7 @@ enable attempt.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /apps/{instance}/analytics/enable` |
+| Type | `api:POST /instances/{instance}/analytics/enable` |
 | Effect | `write` |
 | Subject | Instance resolved from `{instance}`. |
 | Properties | `action=enable`, `target_instance`, `target_instance`, `serving_node`, and `public_hosts`. |

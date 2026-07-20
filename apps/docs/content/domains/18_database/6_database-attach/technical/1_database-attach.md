@@ -24,14 +24,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `connection` | `argument` | Always. | n/a | Visible database connection slug. |
-| `app` | `--instance` | Required when `workspace` is absent. | None. | Visible active app the caller may manage. |
-| `instance` | `--instance` | Required with `app`. | None. | Instance belonging to the selected app. |
-| `workspace` | `--workspace` | Required when `app` is absent. | None. | Visible workspace the caller may manage. |
+| `instance` | `--instance` | Required when `workspace` is absent. | None. | Visible active instance the caller may manage. |
+| `workspace` | `--workspace` | Required when `instance` is absent. | None. | Visible workspace the caller may manage. |
 | `env_prefix` | `--env-prefix` | Optional. | `DB`. | Stored on the target mapping, not on the connection record. |
 | `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |
 
-Exactly one of `--instance` or `--workspace` is required. `--instance` is required
-with `--instance`; a bare app is never a database target. `--env-prefix` defaults to
+Exactly one of `--instance` or `--workspace` is required. A bare project selector
+is shorthand only when it resolves to exactly one instance. `--env-prefix` defaults to
 `DB` and is stored on the target mapping,
 not on the connection record.
 
