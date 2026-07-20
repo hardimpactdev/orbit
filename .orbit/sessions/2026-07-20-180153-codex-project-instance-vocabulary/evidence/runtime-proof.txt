@@ -1,0 +1,117 @@
+Project and instance vocabulary retained-topology proof
+Date: 2026-07-20
+Feature tip: 2f0b75b70a8d67cdbba4a98da5704342a832ea16
+Topology id: dev-2f1e0e
+Topology kind: operator_gateway_app-dev
+Host: beast
+Roles inspected: operator, gateway, dev
+Gateway API: http://10.6.0.2
+Runtime checkout: /home/orbit/orbit-run
+Solo project id: 4
+Solo terminal process id: 1096
+Solo terminal name: project-instance-vocabulary-retained-proof
+
+Exact sync command:
+composer e2e:incus -- --sync --id=dev-2f1e0e
+
+Sync result:
+Synced retained Incus topology [dev-2f1e0e].
+The sync restarted both retained gateway API containers and ran
+`php artisan migrate --force --no-interaction --no-ansi` in the HTTP API
+container. Immediate project:list and instance:list requests succeeded.
+
+All Orbit CLI commands below ran in the retained operator instance from
+`/home/orbit/orbit-run` via `php apps/cli/orbit`.
+
+Precondition commands:
+project:list --json
+instance:list --json
+
+Precondition result:
+Both inventories were empty and returned success envelopes.
+
+Registration command:
+instance:register vocabulary-proof --node=app-dev-1 --path=/home/orbit/apps/vocabulary-proof --json
+
+Registration result:
+result.action=adopted
+project.name=vocabulary-proof
+project contained no node, URL, path, root, environment, or adopted field
+instance.name=development
+instance.node=app-dev-1
+instance.adopted=true
+
+Read commands:
+project:list --json
+project:show vocabulary-proof --json
+instance:list --project=vocabulary-proof --json
+instance:show vocabulary-proof.development --json
+workspace:list --instance=vocabulary-proof.development --json
+
+Read results:
+project:list reported one logical project, one instance, and zero workspaces.
+project:show reported the development instance and an instance-owned route.
+instance:list and instance:show resolved vocabulary-proof.development with
+the Orbit driver, app-dev-1 placement, and adopted=true.
+workspace:list returned an empty successful workspace inventory.
+
+Removal command:
+project:remove vocabulary-proof --force --json
+
+Removal result:
+project contained only logical identity/runtime/dependency fields.
+instances contained vocabulary-proof.development with adopted=true.
+cleanup.aggregate reported instances_removed=1, proxy_routes_removed=1,
+processes_removed=1, runtime_containers_removed=1,
+runtime_configs_removed=1, and paths_removed=0.
+cleanup.instances[0] reported the app-dev-1 serving node and successful
+runtime cleanup with path_removed=false.
+
+Postcondition commands:
+project:list --json
+instance:list --json
+
+Postcondition result:
+Both inventories were empty. The adopted source directory
+`/home/orbit/apps/vocabulary-proof` still existed on the dev instance.
+
+Solo terminal confirmation:
+The final feature tip was also exercised inside Solo terminal process 1096.
+From that ready terminal, the operator registered `vocabulary-proof-solo`, ran
+project:show, instance:show, and workspace:list, then ran project:remove with
+force and JSON. Registration returned project-only logical fields and
+instance.adopted=true. Removal returned the frozen project and instance plus
+the same aggregate/per-instance cleanup contract, including path_removed=false.
+
+Retained permission-migration regression proof:
+The exact feature tip was synced again after the independent review fix. In
+Solo terminal process 1096, a retained operator-to-development-node grant was
+seeded with the private rollback token `app:read` plus its canonical
+`project:read` and `instance:read` replacements.
+
+`node:permissions operator-1 app-dev-1 --json` returned only
+`instance:read`, `node:read`, and `project:read`; it did not expose `app:read`.
+`doctor --node=operator-1 --family=node --json` reported two unrelated retained
+topology issues and did not report `node.access_permission_invalid`.
+`node:permissions ... --add=tool:read --json` succeeded, and a private gateway
+database inspection confirmed that the rollback token remained stored beside
+the canonical permissions. `node:permissions ... --remove=project:read --json`
+also succeeded, returned only the remaining canonical permissions, and removed
+the no-longer-compatible rollback token. The pre-proof wildcard grant was then
+restored and read back as `permissions=["*"]`.
+
+Host macOS rendered dashboard proof:
+The exact feature tip's macOS frontend was served on the host from
+`apps/macos` with Vite at `http://127.0.0.1:5175`. Agent Browser loaded the
+actual dashboard module with a mocked Tauri configuration bridge and a
+deterministic runtime-inventory response shaped as two projects, two concrete
+instances, two nodes, and one project-owned process.
+
+The rendered dashboard reported 2 Projects; each node row reported 1 instance;
+and the Projects list showed `orbit-docs` and `billing` with one instance each.
+Opening node `mini` defaulted to the Instances tab and rendered the columns
+Project, Instance, Environment, Status with the row
+`orbit-docs / local / development / ready`. The Processes tab rendered Project
+instead of App and associated `queue` with `orbit-docs`. Agent Browser reported
+no page errors. Screenshot:
+`.orbit/evidence/macos-project-instance-dashboard.png`.

@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-20T16:01:54+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-project-instance-vocabulary/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-20-180153-codex-project-instance-vocabulary",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/profiles/2026-07-20T15-41-17Z-2f0b75b70a8d/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "a85f745263ecd5c73e9565535533ae205569b8e243178499c9396347203f2472",
+        "loop.md": "c1f2febab27cb83b93bde31a2512c894bf5d9887dbca3829e5c038bcea27d5a1",
+        "quality-gates/profiles/2026-07-20T15-41-17Z-2f0b75b70a8d/gateway_pest.junit.xml": "d61e34c26b75d9b38ec23e8cb2dce4baf66ffafbd43df4091d6f2579a337b390"
+    },
+    "branch": "codex/project-instance-vocabulary",
+    "candidate_commit": "2f0b75b70a8d67cdbba4a98da5704342a832ea16",
+    "accepted_feature_tip": "2f0b75b70a8d67cdbba4a98da5704342a832ea16",
+    "accepted_main_tip": "8122a8e871dfb92579cd1c2a9e83cdbae250c9a0",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
