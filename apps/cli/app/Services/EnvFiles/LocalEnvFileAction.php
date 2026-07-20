@@ -14,7 +14,9 @@ final readonly class LocalEnvFileAction
         '/var/www/',
     ];
 
-    private const string ProductionAppEnvPattern = '#\A/home/[a-z_][a-z0-9_-]*/app/\.env\z#';
+    private const string PRODUCTION_APP_ENV_PATTERN = '#\A/home/[a-z_][a-z0-9_-]*/app/\.env\z#';
+
+    private const string DEVELOPMENT_APP_ENV_PATTERN = '#\A(?:/home/[a-z_][a-z0-9_-]*|/Users/[A-Za-z0-9][A-Za-z0-9._-]*)/apps/[a-z0-9][a-z0-9._-]*/\.env\z#';
 
     /**
      * @param  array<string, mixed>  $payload
@@ -119,7 +121,10 @@ final readonly class LocalEnvFileAction
             throw $this->invalidPath();
         }
 
-        if (preg_match(self::ProductionAppEnvPattern, $value) === 1) {
+        if (
+            preg_match(self::PRODUCTION_APP_ENV_PATTERN, $value) === 1
+            || preg_match(self::DEVELOPMENT_APP_ENV_PATTERN, $value) === 1
+        ) {
             return $value;
         }
 

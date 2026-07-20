@@ -108,6 +108,56 @@ describe('internal env-file command', function (): void {
         '/home/mealou-production/app/config/.env',
         '/home/mealou-production/app/../.env',
     ]);
+
+    it('accepts Orbit-managed development app env paths', function (string $path): void {
+        [$exitCode, $output] = runInternalEnvFileCommand(
+            [
+                '--operation-token' => envFileSignedOperationToken(),
+                '--json' => true,
+            ],
+            json_encode([
+                'action' => 'read',
+                'path' => $path,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('env_file.not_found');
+    })->with([
+        'linux app-dev' => '/home/orbit-test-user/apps/mealou-env-test/.env',
+        'macOS app-dev' => '/Users/orbit-test-user/apps/mealou-env-test/.env',
+    ]);
+
+    it('keeps development env access bounded to the exact app root', function (string $path): void {
+        [$exitCode, $output] = runInternalEnvFileCommand(
+            [
+                '--operation-token' => envFileSignedOperationToken(),
+                '--json' => true,
+            ],
+            json_encode([
+                'action' => 'read',
+                'path' => $path,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('validation_failed');
+    })->with([
+        '/home/nckrtl/mealou/.env',
+        '/home/nckrtl/apps/mealou/config/.env',
+        '/home/nckrtl/apps/mealou/../.env',
+        '/Users/nckrtl/mealou/.env',
+        '/Users/nckrtl/apps/mealou/config/.env',
+        '/Users/nckrtl/apps/mealou/../.env',
+    ]);
 });
 
 function configureEnvFileOperationTokenGuard(): void
