@@ -108,7 +108,7 @@ describe('AppRemoveController', function (): void {
                 'app_id' => $app->id,
                 'owner_type' => 'app',
                 'kind' => 'app',
-                'source_hash' => str_repeat('a', 64),
+                'source_hash' => str_repeat('a', times: 64),
             ]);
             Schedule::factory()->forAppInstance($instance)->create();
             $workspace = Workspace::factory()->for($app)->create([
@@ -192,7 +192,7 @@ describe('AppRemoveController', function (): void {
             'app_id' => $app->id,
             'owner_type' => 'app',
             'kind' => 'app',
-            'source_hash' => str_repeat('a', 64),
+            'source_hash' => str_repeat('a', times: 64),
         ]);
 
         OrbitProcess::factory()
@@ -280,7 +280,7 @@ describe('AppRemoveController', function (): void {
             'app_id' => $app->id,
             'owner_type' => 'app',
             'kind' => 'app',
-            'source_hash' => str_repeat('a', 64),
+            'source_hash' => str_repeat('a', times: 64),
         ]);
 
         $shell = new AppRemoveApiSequencedRemoteShell([]);

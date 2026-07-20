@@ -40,8 +40,6 @@ final readonly class RemoveApp
         private AppRuntimeContainerManager $appRuntimeContainerManager,
         private ToolScriptDispatcher $scripts,
         private WorkspacePlacement $placement,
-        private AppResponsePayload $projectPayloads,
-        private AppInstancePayloads $instancePayloads,
     ) {}
 
     /**
@@ -76,10 +74,10 @@ final readonly class RemoveApp
             'workspaces.processes.appInstance',
         ]);
 
-        $projectPayload = $this->projectPayloads->forApp($app);
+        $projectPayload = app(AppResponsePayload::class)->forApp($app);
         $instancePayloads = $app
             ->instances
-            ->map(fn (AppInstance $instance): array => $this->instancePayloads->instance($instance))
+            ->map(static fn (AppInstance $instance): array => app(AppInstancePayloads::class)->instance($instance))
             ->values()
             ->all();
         /** @var list<array<string, mixed>> $instancePayloads */
@@ -96,7 +94,7 @@ final readonly class RemoveApp
         $schedulesRemoved = $app->schedules->count();
         $processesRemoved =
             $app->processes->count()
-            + $app->workspaces->sum(fn (Workspace $workspace): int => $workspace->processes->count());
+            + $app->workspaces->sum(static fn (Workspace $workspace): int => $workspace->processes->count());
         DB::transaction(function () use ($app, $proxyRouteIds): void {
             $workspaceIds = Workspace::query()
                 ->where('app_id', $app->id)
@@ -424,7 +422,7 @@ final readonly class RemoveApp
 
         foreach ($app->instances as $instance) {
             $node = $this->placement->nodeForInstance($instance);
-            $placement = $this->instancePayloads->placement($instance);
+            $placement = app(AppInstancePayloads::class)->placement($instance);
             $url = is_string($placement['url'] ?? null) ? $placement['url'] : '';
             $host = parse_url($url, PHP_URL_HOST);
             $proxyRoutesRemoved = 0;
@@ -433,13 +431,15 @@ final readonly class RemoveApp
 
             foreach ($proxyRoutes as $route) {
                 if (
-                    $node instanceof Node
-                    && $route->node_id === $node->id
-                    && is_string($host)
-                    && $route->domain === $host
+                    ! $node instanceof Node
+                    || $route->node_id !== $node->id
+                    || ! is_string($host)
+                    || $route->domain !== $host
                 ) {
-                    $proxyRoutesRemoved++;
+                    continue;
                 }
+
+                $proxyRoutesRemoved++;
             }
 
             foreach ($app->workspaces as $workspace) {
@@ -452,9 +452,11 @@ final readonly class RemoveApp
             }
 
             foreach ($app->processes as $process) {
-                if ($process->app_instance_id === $instance->id) {
-                    $processesRemoved++;
+                if ($process->app_instance_id !== $instance->id) {
+                    continue;
                 }
+
+                $processesRemoved++;
             }
 
             $rowIndexByInstanceId[$instance->id] = count($rows);

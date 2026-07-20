@@ -999,7 +999,7 @@ class E2EIncusCommand extends Command
         $result = $this->hostFor($host)->run(sprintf(
             'incus exec %s -- docker restart %s',
             escapeshellarg($gateway),
-            implode(' ', array_map('escapeshellarg', self::RetainedGatewayApiContainers)),
+            implode(' ', array_map(escapeshellarg(...), self::RetainedGatewayApiContainers)),
         ));
 
         if (! $result->successful()) {

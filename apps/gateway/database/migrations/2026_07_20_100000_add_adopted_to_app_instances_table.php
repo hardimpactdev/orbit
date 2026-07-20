@@ -17,7 +17,7 @@ return new class extends Migration {
         DB::table('apps')
             ->select(['id', 'adopted'])
             ->orderBy('id')
-            ->each(function (object $project): void {
+            ->each(static function (object $project): void {
                 /** @var object{id: int, adopted: bool|int} $project */
                 DB::table('app_instances')
                     ->where('app_id', $project->id)
