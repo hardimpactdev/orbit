@@ -43,7 +43,7 @@ The instance family owns these facts:
 - app runtime intent: the selected instance's effective PHP/image selection,
   production instance runtime user and ownership policy, managed app runtime configuration,
   and runtime readiness for the configured PHP image;
-- production app runtime security: instance runtime user isolation that projectlies only in
+- production app runtime security: instance runtime user isolation that applies only in
   production, filesystem permissions, release mount boundaries, and runtime
   container isolation,
   reported as `instance.security.*` issue keys inside the instance family;

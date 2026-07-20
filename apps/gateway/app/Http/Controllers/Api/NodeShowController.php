@@ -8,6 +8,7 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Nodes\Access\ProjectInstancePermissionMigrator;
 use App\Services\Nodes\NodeAgentIdeDefaults;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use Illuminate\Database\Eloquent\Model;
@@ -16,6 +17,10 @@ use Illuminate\Http\JsonResponse;
 final class NodeShowController implements Loggable
 {
     private ?Node $activitySubject = null;
+
+    public function __construct(
+        private readonly ProjectInstancePermissionMigrator $permissionMigrator,
+    ) {}
 
     public function __invoke(string $name): JsonResponse
     {
@@ -120,7 +125,9 @@ final class NodeShowController implements Loggable
         foreach ($nodes as $node) {
             $grants[] = [
                 'name' => $node->name,
-                'permissions' => $this->decodePermissions($node->pivot->permissions ?? null),
+                'permissions' => $this->permissionMigrator->current(
+                    $this->decodePermissions($node->pivot->permissions ?? null),
+                ),
             ];
         }
 

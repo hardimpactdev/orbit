@@ -205,6 +205,30 @@ describe('RoleSelfGrantMaterializer', function (): void {
             ->toBe(['tool:read']);
     });
 
+    it('rematerializes migrated custom permissions without exposing or rejecting rollback tokens', function (): void {
+        $node = roleSelfGrantNode();
+        roleSelfGrantAssign($node, NodeRoleName::Agent);
+
+        NodeAccess::query()->create([
+            'consumer_node_id' => $node->id,
+            'serving_node_id' => $node->id,
+            'permissions' => ['app:read', 'project:read', 'instance:read'],
+            'custom_permissions' => ['app:read', 'project:read', 'instance:read'],
+        ]);
+
+        $materializer = app(RoleSelfGrantMaterializer::class);
+
+        expect($materializer->effectiveSelfPermissions($node))
+            ->toContain('project:read', 'instance:read');
+
+        $materializer->materializeOnRoleApplied($node, NodeRoleName::Agent);
+
+        expect(roleSelfGrant($node)?->permissions)
+            ->toContain('app:read', 'project:read', 'instance:read')
+            ->and(roleSelfGrant($node)?->custom_permissions)
+            ->toContain('app:read', 'project:read', 'instance:read');
+    });
+
     it('supports node new custom self-grant override before later rematerialization', function (): void {
         $node = roleSelfGrantNode();
         roleSelfGrantAssign($node, NodeRoleName::Agent);

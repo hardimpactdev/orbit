@@ -11,6 +11,7 @@ use App\Models\NodeAccess;
 use App\Services\Nodes\Access\NodePermissionNormalizer;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Access\NodePermissionRegistry;
+use App\Services\Nodes\Access\ProjectInstancePermissionMigrator;
 use Illuminate\Database\Eloquent\Builder;
 
 /** @mago-expect lint:cyclomatic-complexity */
@@ -20,6 +21,7 @@ final readonly class RoleSelfGrantMaterializer
         private NodePermissionPresets $presets,
         private NodePermissionNormalizer $normalizer,
         private NodePermissionRegistry $registry,
+        private ProjectInstancePermissionMigrator $permissionMigrator,
     ) {}
 
     public function materializeOnRoleApplied(Node $node, NodeRoleName $role): void
@@ -105,6 +107,7 @@ final readonly class RoleSelfGrantMaterializer
     {
         $customPermissions = $this->customSelfPermissions($node);
         $effectivePermissions = $this->effectiveSelfPermissions($node);
+        $existingGrant = $this->selfGrantQuery($node)->first();
 
         if ($effectivePermissions === [] && $customPermissions === []) {
             $this->selfGrantQuery($node)->delete();
@@ -116,8 +119,16 @@ final readonly class RoleSelfGrantMaterializer
             'consumer_node_id' => $node->id,
             'serving_node_id' => $node->id,
         ], [
-            'permissions' => $effectivePermissions,
-            'custom_permissions' => $customPermissions,
+            'permissions' => $this->permissionMigrator->forStorage(
+                $existingGrant?->permissions ?? [],
+                $effectivePermissions,
+                $this->registry,
+            ),
+            'custom_permissions' => $this->permissionMigrator->forStorage(
+                $existingGrant?->custom_permissions ?? [],
+                $customPermissions,
+                $this->registry,
+            ),
         ]);
     }
 
@@ -132,9 +143,24 @@ final readonly class RoleSelfGrantMaterializer
             ->get();
 
         foreach ($grants as $grant) {
+            $permissions = $this->withoutWorkspacePermissions(
+                $this->permissionMigrator->current($grant->permissions ?? ['*']),
+            );
+            $customPermissions = $this->withoutWorkspacePermissions(
+                $this->permissionMigrator->current($grant->custom_permissions ?? []),
+            );
+
             $grant->forceFill([
-                'permissions' => $this->withoutWorkspacePermissions($grant->permissions ?? ['*']),
-                'custom_permissions' => $this->withoutWorkspacePermissions($grant->custom_permissions ?? []),
+                'permissions' => $this->permissionMigrator->forStorage(
+                    $grant->permissions ?? ['*'],
+                    $permissions,
+                    $this->registry,
+                ),
+                'custom_permissions' => $this->permissionMigrator->forStorage(
+                    $grant->custom_permissions ?? [],
+                    $customPermissions,
+                    $this->registry,
+                ),
             ])->save();
         }
     }
@@ -176,7 +202,9 @@ final readonly class RoleSelfGrantMaterializer
             return [];
         }
 
-        return $this->normalize($grant->custom_permissions ?? []);
+        return $this->normalize(
+            $this->permissionMigrator->current($grant->custom_permissions ?? []),
+        );
     }
 
     /**

@@ -55,3 +55,10 @@ it('expands app permissions into their project and instance equivalents', functi
         ['node:read', 'app:read', 'project:read', 'instance:read'],
     ],
 ]);
+
+it('exposes only current permissions while retaining legacy tokens in storage', function (): void {
+    $migrator = new ProjectInstancePermissionMigrator;
+
+    expect($migrator->current(['app:read', 'project:read', 'instance:read', 'node:read']))
+        ->toBe(['instance:read', 'node:read', 'project:read']);
+});

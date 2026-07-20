@@ -1919,6 +1919,40 @@ describe('access permission validity', function (): void {
         expect($permission)->toHaveCount(0);
     });
 
+    it('ignores retained app permission tokens on migrated grants', function (): void {
+        $consumer = nodes_probe_node([
+            'name' => 'consumer',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'macos_14',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+
+        $serving = nodes_probe_node([
+            'name' => 'serving',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+        ]);
+
+        NodeAccess::create([
+            'consumer_node_id' => $consumer->id,
+            'serving_node_id' => $serving->id,
+            'permissions' => ['app:read', 'project:read', 'instance:read'],
+        ]);
+
+        $drift = $this->probe->diff($consumer, new ProbeSnapshot([]));
+        $permission = array_filter(
+            $drift,
+            fn (DriftEntry $entry): bool => $entry->key === 'node.access_permission_invalid',
+        );
+
+        expect($permission)->toHaveCount(0);
+    });
+
     it('passes normalized permissions on grants', function (): void {
         $consumer = nodes_probe_node([
             'name' => 'consumer',

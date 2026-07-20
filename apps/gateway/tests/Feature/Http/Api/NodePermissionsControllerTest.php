@@ -109,6 +109,56 @@ describe('NodePermissionsController', function (): void {
             ->assertJsonPath('success.data.permissions', ['node:read', 'tool:read']);
     });
 
+    it('hides retained app permissions and can update a migrated grant', function (): void {
+        createPermsCallerNode('gateway');
+        $controlId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'control-1',
+            'wireguard_address' => '10.6.0.11',
+        ]));
+        $appId = (int) DB::table('nodes')->insertGetId(apiPermsNodeRow([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.12',
+        ]));
+
+        $grant = NodeAccess::query()->create([
+            'consumer_node_id' => $controlId,
+            'serving_node_id' => $appId,
+            'permissions' => ['app:read', 'project:read', 'instance:read'],
+        ]);
+
+        postNodePermissionsJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+        ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP])
+            ->assertOk()
+            ->assertJsonPath('success.data.permissions', ['instance:read', 'project:read']);
+
+        postNodePermissionsJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'add' => 'node:read',
+        ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP])
+            ->assertOk()
+            ->assertJsonPath('success.data.permissions', ['instance:read', 'node:read', 'project:read']);
+
+        expect($grant->fresh()?->permissions)
+            ->toContain('app:read')
+            ->toContain('project:read', 'instance:read', 'node:read');
+
+        postNodePermissionsJson([
+            'consuming_node' => 'control-1',
+            'serving_node' => 'app-1',
+            'remove' => 'project:read',
+        ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP])
+            ->assertOk()
+            ->assertJsonPath('success.data.permissions', ['instance:read', 'node:read']);
+
+        expect($grant->fresh()?->permissions)
+            ->not
+            ->toContain('app:read')
+            ->toBe(['instance:read', 'node:read']);
+    });
+
     it('fails with node.grant_not_found for missing grant in read mode', function (): void {
         createPermsCallerNode('gateway');
         DB::table('nodes')->insert(apiPermsNodeRow([

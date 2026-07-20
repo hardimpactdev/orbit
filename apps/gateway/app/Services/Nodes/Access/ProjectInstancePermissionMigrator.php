@@ -57,6 +57,65 @@ final class ProjectInstancePermissionMigrator
     }
 
     /**
+     * Return the canonical permissions understood and exposed by the current runtime.
+     *
+     * @param  list<string>  $permissions
+     * @return list<string>
+     */
+    public function current(array $permissions): array
+    {
+        $containsLegacyPermission = array_any(
+            $permissions,
+            static fn (string $permission): bool => array_key_exists($permission, self::Replacements),
+        );
+        $currentPermissions = array_values(array_filter(
+            $this->migrate($permissions),
+            static fn (string $permission): bool => ! array_key_exists($permission, self::Replacements),
+        ));
+
+        if ($containsLegacyPermission) {
+            sort($currentPermissions);
+        }
+
+        return $currentPermissions;
+    }
+
+    /**
+     * Keep rollback tokens only while their replacement permissions remain granted.
+     *
+     * @param  list<string>  $storedPermissions
+     * @param  list<string>  $currentPermissions
+     * @return list<string>
+     */
+    public function forStorage(
+        array $storedPermissions,
+        array $currentPermissions,
+        NodePermissionRegistry $registry,
+    ): array {
+        $storagePermissions = [];
+
+        foreach ($storedPermissions as $permission) {
+            $replacements = self::Replacements[$permission] ?? null;
+
+            if (
+                $replacements !== null
+                && array_all(
+                    $replacements,
+                    static fn (string $replacement): bool => $registry->allows($currentPermissions, $replacement),
+                )
+            ) {
+                $this->appendUnique($storagePermissions, $permission);
+            }
+        }
+
+        foreach ($currentPermissions as $permission) {
+            $this->appendUnique($storagePermissions, $permission);
+        }
+
+        return $storagePermissions;
+    }
+
+    /**
      * @param  list<string>  $permissions
      */
     private function appendUnique(array &$permissions, string $permission): void
