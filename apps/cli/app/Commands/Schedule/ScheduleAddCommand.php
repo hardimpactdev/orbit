@@ -26,6 +26,7 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
         {--app= : Target app instance (app.instance; bare app only when unambiguous)}
         {--node= : Target node scope}
         {--timezone=UTC : IANA timezone}
+        {--timeout=900 : Maximum execution time in seconds}
         {--json : Output JSON}';
 
     #[\Override]
@@ -73,12 +74,19 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
             ]);
         }
 
+        $timeout = $this->resolveTimeout();
+
+        if ($timeout === false) {
+            return $this->failValidation('timeout', 'The schedule timeout must be between 1 and 86400 seconds.');
+        }
+
         $payload = $this->filledQuery([
             'name' => $name,
             'app' => $target['app'],
             'node' => $target['node'],
             'interval' => $interval,
             'timezone' => $timezone,
+            'timeout' => $timeout,
             'command' => $execution['command'],
             'script' => $execution['script'],
         ]);
@@ -174,6 +182,10 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
             $this->line('  Interval: '.$this->stringField($schedule, 'interval'));
             $this->line('  Timezone: '.$this->stringField($schedule, 'timezone'));
             $this->line('  Execution: '.$this->executionSummary($schedule));
+            $execution = is_array($schedule['execution'] ?? null) ? $schedule['execution'] : [];
+            $this->line(
+                '  Timeout: '.(is_int($execution['timeout_seconds'] ?? null) ? $execution['timeout_seconds'].'s' : '—'),
+            );
             $this->line('  Enabled: '.(($schedule['enabled'] ?? null) === true ? 'true' : 'false'));
         }
 
@@ -194,6 +206,19 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
         }
 
         return null;
+    }
+
+    private function resolveTimeout(): int|false
+    {
+        $value = $this->stringOption('timeout') ?? '900';
+
+        if (! ctype_digit($value)) {
+            return false;
+        }
+
+        $timeout = (int) $value;
+
+        return $timeout >= 1 && $timeout <= 86_400 ? $timeout : false;
     }
 
     private function validateName(string $name): ?int

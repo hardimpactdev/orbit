@@ -28,6 +28,7 @@ final readonly class AddSchedule
         string $timezone,
         string $executionType,
         string $executionValue,
+        int $timeoutSeconds,
     ): array {
         $scope = $target instanceof AppInstance ? 'app' : 'node';
         $targetName = $target instanceof AppInstance
@@ -58,6 +59,7 @@ final readonly class AddSchedule
             'timezone' => $timezone,
             'execution_type' => $executionType,
             'execution_value' => $executionValue,
+            'timeout_seconds' => $timeoutSeconds,
             'enabled' => true,
             'status' => 'expected',
         ]);

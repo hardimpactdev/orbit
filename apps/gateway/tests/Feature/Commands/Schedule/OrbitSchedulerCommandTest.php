@@ -98,6 +98,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
             'schedule_key' => 'app:docs.production:laravel-scheduler',
             'execution_value' => 'php artisan schedule:run',
             'interval' => 'every minute',
+            'timeout_seconds' => 7200,
         ]);
     $instance->update([
         'driver_config' => new OrbitAppInstanceDriverConfigData(
@@ -127,7 +128,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
         ->and($localExecutor->commands)
         ->toBe([InternalCommand::ScheduleRun->value])
         ->and($localExecutor->transportOptions[0]['timeout'])
-        ->toBe(915)
+        ->toBe(7215)
         ->and($localExecutor->transportOptions[0]['strict'])
         ->toBeFalse()
         ->and($localExecutor->transportOptions[0]['metadata']['ORBIT_OPERATION_ID'] ?? null)
@@ -139,7 +140,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
         ->and($payload['cwd'] ?? null)
         ->toBe('/srv/docs-production')
         ->and($payload['timeout'] ?? null)
-        ->toBe(900)
+        ->toBe(7200)
         ->and($run->node_id)
         ->toBe($currentInstanceNode->id)
         ->and($run->schedule_key)

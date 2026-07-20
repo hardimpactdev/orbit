@@ -9,7 +9,7 @@ Use `schedule:add` when an app or node needs recurring work managed by Orbit. Th
 ## Usage
 
 ```bash
-orbit schedule:add [name] (--command=<command>|--script=<path>) --interval=<expression> [--app=<app>|--node=<node>] [--timezone=<timezone>] [--json]
+orbit schedule:add [name] (--command=<command>|--script=<path>) --interval=<expression> [--app=<app>|--node=<node>] [--timezone=<timezone>] [--timeout=<seconds>] [--json]
 orbit schedule:add
 ```
 
@@ -18,6 +18,7 @@ orbit schedule:add
 ```bash
 orbit schedule:add laravel-scheduler --app=docs.production --command="php artisan schedule:run" --interval="every minute"
 orbit schedule:add backups --node=app-1 --script=/opt/orbit/schedules/backup.sh --interval="daily at 02:00" --timezone=Europe/Amsterdam
+orbit schedule:add catalogue-sync --app=mealou.production --command="php artisan food-catalog:sync --json" --interval="weekly on monday at 02:30" --timeout=7200
 ```
 
 ## Arguments and options
@@ -30,6 +31,7 @@ orbit schedule:add backups --node=app-1 --script=/opt/orbit/schedules/backup.sh 
 - `--script`: managed script path to run as the scheduled work.
 - `--interval`: portable Orbit interval expression, such as `every 5 minutes`, `daily at 09:00`, `weekdays at 09:00`, or `weekly on monday at 09:00`.
 - `--timezone`: timezone used to interpret the interval. Defaults to the target app instance, node, or gateway timezone.
+- `--timeout`: maximum execution time in seconds. Defaults to `900`; accepts `1` through `86400`.
 - `--json`: Output JSON.
 
 Exactly one target selector is required after defaults are applied: `--app` or `--node`. Exactly one execution source is required: `--command` or `--script`.
@@ -40,7 +42,7 @@ Orbit-owned maintenance schedules may be created by lifecycle commands, but this
 
 Use `schedule:add` when you need to define a new recurring task for one app
 instance or node. `schedule:add` resolves concrete ownership before writing,
-validates the target, execution source, and interval, and writes gateway
+validates the target, execution source, interval, and timeout, and writes gateway
 schedule configuration. Ambiguous bare app selectors fail before the schedule
 row is created. The Orbit Scheduler (gateway-only) reads the gateway database
 every tick and dispatches due schedules to the resolved target through

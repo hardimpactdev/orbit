@@ -96,6 +96,7 @@ final class ScheduleShowCommand extends GatewayCommand
             'Interval' => $schedule['interval'] ?? null,
             'Timezone' => $schedule['timezone'] ?? null,
             'Execution' => $this->executionLabel($execution),
+            'Timeout' => is_int($execution['timeout_seconds'] ?? null) ? $execution['timeout_seconds'].'s' : null,
             'Enabled' => $schedule['enabled'] ?? null,
             'Status' => $schedule['status'] ?? null,
             'Last run' => $this->lastRunLabel($schedule['last_run'] ?? null),

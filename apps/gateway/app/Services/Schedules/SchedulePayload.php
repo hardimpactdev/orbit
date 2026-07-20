@@ -288,6 +288,7 @@ class SchedulePayload
             'execution' => [
                 'type' => $schedule->execution_type,
                 'value' => $schedule->execution_value,
+                'timeout_seconds' => $schedule->timeout_seconds,
             ],
             'enabled' => $schedule->enabled,
             'status' => $schedule->status,

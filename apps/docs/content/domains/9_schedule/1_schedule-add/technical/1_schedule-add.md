@@ -1,4 +1,4 @@
-# Technical Contract: `orbit schedule:add [name] [--app=<app>] [--node=<node>] [--command=<command>] [--script=<path>] [--interval=<expression>] [--timezone=<timezone>] [--json]`
+# Technical Contract: `orbit schedule:add [name] [--app=<app>] [--node=<node>] [--command=<command>] [--script=<path>] [--interval=<expression>] [--timezone=<timezone>] [--timeout=<seconds>] [--json]`
 
 [Back to public `schedule-add` documentation.](../schedule-add.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit schedule:add [name] [--app=<app>] [--node=<node>] [--command=<command>] [--script=<path>] [--interval=<expression>] [--timezone=<timezone>] [--json]
+orbit schedule:add [name] [--app=<app>] [--node=<node>] [--command=<command>] [--script=<path>] [--interval=<expression>] [--timezone=<timezone>] [--timeout=<seconds>] [--json]
 ```
 
 ## Input Contract
@@ -30,6 +30,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `script` | `--script` | `Required when `command` is absent.` | `Forbidden with `command`.` | `None.` | Managed script path readable by the gateway policy and executable by the target node. |
 | `interval` | `--interval` | `Required in non-interactive mode.` | `Never.` | `None.` | Portable Orbit interval expression renderable by the active schedule backend. |
 | `timezone` | `--timezone` | `Optional.` | `Never.` | `target default timezone` | Valid IANA timezone. |
+| `timeout` | `--timeout` | `Optional.` | `Never.` | `900` | Integer from `1` through `86400`; limits the command and its remote transport with a small transport buffer. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
 ## Input Mode Contracts
@@ -49,7 +50,7 @@ These rules describe how `schedule:add` resolves scope and writes the gateway sc
   when exactly one eligible instance is visible for `schedule:add`.
 - Creates one gateway schedule-configuration row in the `schedule` state family.
 - Stores the schedule name, scope, concrete `app_instance_id` when applicable,
-  target, interval, timezone, execution source, enabled state, and initial
+  target, interval, timezone, execution source, execution timeout, enabled state, and initial
   status.
 - Rejects ambiguous app selectors and writes that collide with an existing
   schedule name in the selected concrete target before any side effects.
@@ -61,6 +62,7 @@ These rules describe how `schedule:add` resolves scope and writes the gateway sc
 - Stores managed script paths as execution type `script`.
 - Does not create app-instance process definitions, persistent services, or other runtime units.
 - The Orbit Scheduler executes the schedule each minute it is due.
+- Dispatch enforces the stored per-schedule timeout. Remote transport receives a 15-second completion buffer beyond the command timeout.
 - No per-schedule node-side artifact is applied.
 
 ### Pickup Rules
@@ -87,6 +89,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Name collision | A schedule with the same name already exists in the selected concrete target. | `error.code=schedule.name_collision` |
 | App instance required | No eligible instance exists for a bare logical app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
 | Interval invalid | The interval cannot be parsed against the schedule expression contract. | `error.code=schedule.interval_invalid` |
+| Timeout invalid | The timeout is outside `1..86400` seconds. | `error.code=validation_failed`, `error.meta.field=timeout` |
 | Execution source invalid | The selected command or script is rejected by schedule execution policy. | `error.code=schedule.execution_source_invalid` |
 
 ## Doctor Relationship

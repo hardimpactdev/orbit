@@ -25,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property string $timezone
  * @property string $execution_type
  * @property string $execution_value
+ * @property int $timeout_seconds
  * @property bool $enabled
  * @property string $status
  * @property Carbon|null $created_at
@@ -52,6 +53,7 @@ class Schedule extends Model
         'timezone',
         'execution_type',
         'execution_value',
+        'timeout_seconds',
         'enabled',
         'status',
     ];
@@ -61,6 +63,7 @@ class Schedule extends Model
     {
         return [
             'enabled' => 'boolean',
+            'timeout_seconds' => 'integer',
         ];
     }
 

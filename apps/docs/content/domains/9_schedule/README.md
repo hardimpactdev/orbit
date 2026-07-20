@@ -142,7 +142,8 @@ items.
   "timezone": "Europe/Amsterdam",
   "execution": {
     "type": "command",
-    "value": "php artisan schedule:run"
+    "value": "php artisan schedule:run",
+    "timeout_seconds": 900
   },
   "enabled": true,
   "status": "expected",
@@ -168,6 +169,7 @@ items.
 | `timezone` | string | Timezone used to interpret the interval. |
 | `execution.type` | `command` or `script` | Execution source kind. |
 | `execution.value` | string | Inline command or managed script path. |
+| `execution.timeout_seconds` | integer | Maximum execution time in seconds. |
 | `enabled` | boolean | Whether the recurring schedule should run. |
 | `status` | string | Gateway-configuration status, not live scheduler verification. |
 | `scheduler_heartbeat_at` | string \| null | ISO-8601 of the most recent gateway-scheduler heartbeat. `null` until the first heartbeat is recorded. The Orbit Scheduler is gateway-only; there is no per-target scheduler. |

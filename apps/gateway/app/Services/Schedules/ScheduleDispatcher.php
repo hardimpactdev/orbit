@@ -20,8 +20,6 @@ use Throwable;
 
 final readonly class ScheduleDispatcher
 {
-    private const int DEFAULT_TIMEOUT = 900;
-
     public function __construct(
         private RunsInternalCommands $localExecutor,
         private NodeRoleAssignments $nodeRoleAssignments,
@@ -179,7 +177,7 @@ final readonly class ScheduleDispatcher
                     'ORBIT_OPERATION_ID' => 'schedule.dispatch',
                 ],
                 'strict' => false,
-                'timeout' => self::DEFAULT_TIMEOUT + 15,
+                'timeout' => $this->executionTimeout($schedule) + 15,
             ],
         );
 
@@ -262,8 +260,8 @@ final readonly class ScheduleDispatcher
 
     private function runLocally(Schedule $schedule): RemoteShellResult
     {
-        $pendingProcess = Process::timeout(self::DEFAULT_TIMEOUT);
         $options = $this->executionOptions($schedule);
+        $pendingProcess = Process::timeout($options['timeout']);
 
         if (isset($options['cwd']) && $options['cwd'] !== '') {
             $pendingProcess = $pendingProcess->path($options['cwd']);
@@ -286,7 +284,7 @@ final readonly class ScheduleDispatcher
      */
     private function executionOptions(Schedule $schedule): array
     {
-        $options = ['timeout' => self::DEFAULT_TIMEOUT];
+        $options = ['timeout' => $this->executionTimeout($schedule)];
 
         $path = $schedule->scope === 'app' ? $this->appInstances->executionPath($schedule) : null;
 
@@ -295,6 +293,11 @@ final readonly class ScheduleDispatcher
         }
 
         return $options;
+    }
+
+    private function executionTimeout(Schedule $schedule): int
+    {
+        return max(1, min(86_400, $schedule->timeout_seconds));
     }
 
     private function executionScript(Schedule $schedule): string

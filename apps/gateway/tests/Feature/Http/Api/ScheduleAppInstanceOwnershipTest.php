@@ -53,6 +53,49 @@ it('creates same-named schedules for explicit concrete app instances', function 
         ->toBe(2);
 });
 
+it('stores and returns a bounded schedule execution timeout', function (): void {
+    $caller = scheduleInstanceCaller(gateway: true);
+    scheduleGatewayHeartbeat($caller);
+    scheduleAppWithTwoInstances();
+
+    schedulePost([
+        'name' => 'catalogue-sync',
+        'app' => 'docs.production',
+        'interval' => 'weekly on monday at 02:30',
+        'timezone' => 'Europe/Amsterdam',
+        'timeout' => 7_200,
+        'command' => 'php artisan food-catalog:sync --json',
+    ])
+        ->assertCreated()
+        ->assertJsonPath('success.data.schedule.execution.timeout_seconds', 7_200);
+
+    expect(Schedule::query()->sole()->timeout_seconds)->toBe(7_200);
+});
+
+it('rejects schedule execution timeouts outside the supported range', function (mixed $timeout): void {
+    $caller = scheduleInstanceCaller(gateway: true);
+    scheduleGatewayHeartbeat($caller);
+    scheduleAppWithTwoInstances();
+
+    schedulePost([
+        'name' => 'catalogue-sync',
+        'app' => 'docs.production',
+        'interval' => 'weekly on monday at 02:30',
+        'timezone' => 'Europe/Amsterdam',
+        'timeout' => $timeout,
+        'command' => 'php artisan food-catalog:sync --json',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath('error.meta.field', 'timeout');
+
+    expect(Schedule::query()->count())->toBe(0);
+})->with([
+    'zero' => 0,
+    'above one day' => 86_401,
+    'not numeric' => 'slow',
+]);
+
 it('accepts a bare app selector when exactly one eligible instance is visible', function (): void {
     $caller = scheduleInstanceCaller();
     $gateway = scheduleGatewayNode();

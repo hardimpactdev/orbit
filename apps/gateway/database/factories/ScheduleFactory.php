@@ -64,6 +64,7 @@ class ScheduleFactory extends Factory
             'timezone' => 'UTC',
             'execution_type' => 'command',
             'execution_value' => 'php artisan schedule:run',
+            'timeout_seconds' => 900,
             'enabled' => true,
             'status' => 'expected',
         ];

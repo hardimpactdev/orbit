@@ -19,6 +19,7 @@ describe('schedule write commands', function (): void {
             '--command' => 'php artisan schedule:run',
             '--interval' => 'every minute',
             '--timezone' => 'Europe/Amsterdam',
+            '--timeout' => '7200',
             '--json' => true,
         ]);
 
@@ -33,6 +34,7 @@ describe('schedule write commands', function (): void {
                     'app' => 'docs.production',
                     'interval' => 'every minute',
                     'timezone' => 'Europe/Amsterdam',
+                    'timeout' => 7200,
                     'command' => 'php artisan schedule:run',
                 ]
             ),
@@ -70,6 +72,7 @@ describe('schedule write commands', function (): void {
                     'node' => 'default-app',
                     'interval' => 'daily at 02:00',
                     'timezone' => 'UTC',
+                    'timeout' => 900,
                     'script' => '/opt/orbit/nightly',
                 ]
             ),
@@ -181,6 +184,17 @@ describe('schedule write commands', function (): void {
             ],
             'validation_failed',
             'timezone',
+        ],
+        'timeout' => [
+            [
+                'name' => 'nightly',
+                '--app' => 'docs.production',
+                '--command' => 'date',
+                '--interval' => 'daily at 09:00',
+                '--timeout' => '86401',
+            ],
+            'validation_failed',
+            'timeout',
         ],
     ]);
 

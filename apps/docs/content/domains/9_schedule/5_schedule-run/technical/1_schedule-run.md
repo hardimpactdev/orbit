@@ -45,6 +45,7 @@ authentication is transport security and does not re-check the caller's grant.
 - Resolves one schedule from gateway configuration by name and optional
   concrete app-instance or node disambiguation.
 - Force-runs the schedule's stored command or script once on the target node, regardless of whether the schedule is currently due.
+- Enforces the schedule's stored execution timeout for both one-off and recurring dispatches.
 - Runs app-scoped schedules on the owning app instance's serving node with the
   instance path as the working directory.
 - Runs node-scoped schedules in the selected node context.
@@ -74,6 +75,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
 | App instance required | No eligible instance exists for a bare logical app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
 | Run failed | The scheduled command or script exits non-zero. | `error.code=schedule.run_failed` |
+| Run timed out | The scheduled command or script exceeds its stored execution timeout. | `error.code=schedule.run_failed`; the timeout result is retained in run history. |
 | Run history write failed | The gateway could not persist the run-history record. | `error.code=schedule.history_write_failed` |
 
 The command follows the shared exit status policy. Scheduled process failure is

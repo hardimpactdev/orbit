@@ -62,6 +62,7 @@ final readonly class ScheduleStoreController implements Loggable
                 timezone: $input['timezone'],
                 executionType: $input['execution_type'],
                 executionValue: $input['execution_value'],
+                timeoutSeconds: $input['timeout_seconds'],
             );
             $targetName = data_get(target: $result, key: 'data.schedule.target.name');
             $schedule = Schedule::query()
@@ -86,7 +87,7 @@ final readonly class ScheduleStoreController implements Loggable
     }
 
     /**
-     * @return array{name: string, app: string|null, node: string|null, interval: string, timezone: string, execution_type: string, execution_value: string}|JsonResponse
+     * @return array{name: string, app: string|null, node: string|null, interval: string, timezone: string, execution_type: string, execution_value: string, timeout_seconds: int}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
@@ -97,6 +98,7 @@ final readonly class ScheduleStoreController implements Loggable
         $timezone = $this->optionalString($request, 'timezone') ?? 'UTC';
         $command = $this->optionalString($request, 'command');
         $script = $this->optionalString($request, 'script');
+        $timeout = $request->integer('timeout', 900);
 
         if ($name === null) {
             return $this->error('validation_failed', 'The schedule name is required.', ['field' => 'name'], 422);
@@ -147,6 +149,15 @@ final readonly class ScheduleStoreController implements Loggable
             );
         }
 
+        if ($timeout < 1 || $timeout > 86_400) {
+            return $this->error(
+                'validation_failed',
+                'The schedule timeout must be between 1 and 86400 seconds.',
+                ['field' => 'timeout'],
+                422,
+            );
+        }
+
         return [
             'name' => $name,
             'app' => $app,
@@ -155,6 +166,7 @@ final readonly class ScheduleStoreController implements Loggable
             'timezone' => $timezone,
             'execution_type' => $command === null ? 'script' : 'command',
             'execution_value' => $command ?? (string) $script,
+            'timeout_seconds' => $timeout,
         ];
     }
 
