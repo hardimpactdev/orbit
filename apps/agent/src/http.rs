@@ -35,6 +35,7 @@ const FRAME_TYPE_EXIT: u8 = 4;
 const CHILD_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(5);
 const CHILD_KILL_GRACE: Duration = Duration::from_secs(2);
 const AGENT_HTTP_PORT: u16 = 9477;
+const MAX_BINARY_EXECUTION_TIMEOUT_SECONDS: u64 = 86_415;
 
 pub async fn run_agent_service() {
     let config = AgentConfig::load_default()
@@ -361,7 +362,7 @@ fn command_push_blocking(
 }
 
 fn execute_binary(request: &CommandPushRequest) -> CommandExecution {
-    let timeout_seconds = request.timeout_seconds.clamp(1, 300);
+    let timeout_seconds = bounded_execution_timeout_seconds(request.timeout_seconds);
     let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
 
     execute_binary_once(request, &request.argv, timeout_seconds, deadline)
@@ -529,7 +530,7 @@ fn spawn_stream_waiter(
     started_at: Instant,
 ) {
     thread::spawn(move || {
-        let timeout_seconds = timeout_seconds.min(300);
+        let timeout_seconds = bounded_execution_timeout_seconds(timeout_seconds);
         let deadline =
             (timeout_seconds > 0).then(|| Instant::now() + Duration::from_secs(timeout_seconds));
         let wait_result = wait_for_child(&mut child, deadline, Some(&cancelled));
@@ -592,6 +593,10 @@ fn spawn_stream_waiter(
 
         completed.store(true, Ordering::SeqCst);
     });
+}
+
+fn bounded_execution_timeout_seconds(timeout_seconds: u64) -> u64 {
+    timeout_seconds.clamp(1, MAX_BINARY_EXECUTION_TIMEOUT_SECONDS)
 }
 
 struct StreamDrainHandles {
@@ -1515,6 +1520,14 @@ mod tests {
             elapsed.as_millis()
         );
         assert!(execution.timings.process_wait_ms < 3000);
+    }
+
+    #[test]
+    fn agent_push_timeout_supports_the_schedule_transport_bound() {
+        assert_eq!(bounded_execution_timeout_seconds(0), 1);
+        assert_eq!(bounded_execution_timeout_seconds(7_215), 7_215);
+        assert_eq!(bounded_execution_timeout_seconds(86_415), 86_415);
+        assert_eq!(bounded_execution_timeout_seconds(u64::MAX), 86_415);
     }
 
     #[test]
