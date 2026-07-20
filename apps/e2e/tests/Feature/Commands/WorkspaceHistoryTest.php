@@ -101,7 +101,7 @@ it('reads workspace history from a non-gateway caller through the gateway api', 
             ->toBeArray()
             ->and($runs[0]['workspace'])
             ->toBe('feature-docs')
-            ->and($runs[0]['app'])
+            ->and($runs[0]['project'])
             ->toBe('docs')
             ->and($runs[0]['status'])
             ->toBe('completed');

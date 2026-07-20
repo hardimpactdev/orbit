@@ -115,7 +115,7 @@ it('removes a workspace from a non-gateway caller through the gateway api', func
 
         expect($payload['success']['data']['name'])
             ->toBe($workspaceName)
-            ->and($payload['success']['data']['app'])
+            ->and($payload['success']['data']['project'])
             ->toBe('docs')
             ->and($payload['success']['data']['action'])
             ->toBe('removed')
@@ -132,7 +132,7 @@ it('removes a workspace from a non-gateway caller through the gateway api', func
                 .escapeshellarg("echo json_encode([
                 'workspace' => \\App\\Models\\Workspace::query()->where('name', '{$workspaceName}')->exists(),
                 'route_count' => \\App\\Models\\ProxyRoute::query()->where('domain', '{$workspaceName}.docs.test')->count(),
-                'app' => \\App\\Models\\Project::query()->where('name', 'docs')->exists(),
+                'project' => \\App\\Models\\Project::query()->where('name', 'docs')->exists(),
             ], JSON_THROW_ON_ERROR);"),
             timeoutSeconds: 120,
         );
@@ -141,7 +141,7 @@ it('removes a workspace from a non-gateway caller through the gateway api', func
         expect($state)->toMatchArray([
             'workspace' => false,
             'route_count' => 0,
-            'app' => true,
+            'project' => true,
         ]);
 
         $source = $topology->ssh(

@@ -13,6 +13,7 @@ use App\Http\Authorization\ServingNode;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRuntimeMount;
 use App\Models\Project;
+use App\Services\Apps\AppResponsePayload;
 use App\Services\Apps\AppRuntimeMountService;
 use App\Services\Apps\AppRuntimeMountValidationException;
 use App\Services\Apps\AppSelectorResolver;
@@ -263,20 +264,7 @@ final class AppRuntimeMountController implements Loggable
      */
     private function appPayload(Project $app): array
     {
-        $app->loadMissing('node');
-
-        return [
-            'name' => $app->name,
-            'node' => $app->node?->name,
-            'url' => $app->url(),
-            'path' => $app->path,
-            'root' => $app->document_root,
-            'repository' => $app->repository,
-            'runtime' => $app->runtimeKind()->value,
-            'runtime_config' => $app->runtimeConfig()->toArray(),
-            'php_version' => $app->php_version,
-            'adopted' => $app->adopted,
-        ];
+        return app(AppResponsePayload::class)->forApp($app);
     }
 
     /**

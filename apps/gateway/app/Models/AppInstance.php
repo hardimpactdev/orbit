@@ -23,6 +23,7 @@ use Override;
  * @property string $name
  * @property AppInstanceDriver $driver
  * @property AppInstanceDriverConfigData|null $driver_config
+ * @property bool $adopted
  * @property AppInstanceRuntimeRequirementsData|null $runtime_requirements
  * @property array<string, mixed>|null $agent_ide_config
  * @property list<string>|null $deploy_warmup_paths
@@ -53,6 +54,7 @@ class AppInstance extends Model
         'name',
         'driver',
         'driver_config',
+        'adopted',
         'runtime_requirements',
         'agent_ide_config',
         'deploy_warmup_paths',
@@ -74,6 +76,7 @@ class AppInstance extends Model
         return [
             'driver' => AppInstanceDriver::class,
             'driver_config' => AppInstanceDriverConfigData::class,
+            'adopted' => 'boolean',
             'runtime_requirements' => AppInstanceRuntimeRequirementsData::class,
             'agent_ide_config' => 'array',
             'deploy_warmup_paths' => 'array',

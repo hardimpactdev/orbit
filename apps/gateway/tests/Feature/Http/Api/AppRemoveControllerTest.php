@@ -14,6 +14,7 @@ use App\Models\Process as OrbitProcess;
 use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
+use App\Models\Workspace;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -54,6 +55,122 @@ function appRemoveRemoteShellFallbackHeader(): array
 }
 
 describe('AppRemoveController', function (): void {
+    it('returns frozen canonical project, instance, and cleanup inventories', function (): void {
+        $caller = createAppRemoveCallerNode();
+        $developmentNode = Node::factory()->create([
+            'name' => 'development-node',
+            'status' => 'active',
+        ]);
+        $productionNode = Node::factory()->create([
+            'name' => 'production-node',
+            'status' => 'active',
+        ]);
+        grantAppRemoveAccess($caller, $developmentNode);
+
+        $app = Project::factory()
+            ->static()
+            ->create([
+                'name' => 'docs',
+                'node_id' => $developmentNode->id,
+                'repository' => 'git@github.com:orbit/docs.git',
+                'adopted' => true,
+            ]);
+        $development = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'adopted' => false,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $developmentNode->id,
+                node: $developmentNode->name,
+                path: '/srv/docs-development',
+                document_root: 'public',
+                domain: 'docs-development.test',
+            ),
+        ]);
+        $production = AppInstance::factory()->for($app)->create([
+            'name' => 'production',
+            'adopted' => true,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $productionNode->id,
+                node: $productionNode->name,
+                path: '/srv/docs-production',
+                document_root: 'public',
+                domain: 'docs.test',
+            ),
+        ]);
+
+        foreach ([$development, $production] as $instance) {
+            $config = $instance->driver_config;
+            $node = $instance->is($development) ? $developmentNode : $productionNode;
+
+            ProxyRoute::query()->create([
+                'node_id' => $node->id,
+                'domain' => $config instanceof OrbitAppInstanceDriverConfigData ? (string) $config->domain : '',
+                'app_id' => $app->id,
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'source_hash' => str_repeat('a', 64),
+            ]);
+            Schedule::factory()->forAppInstance($instance)->create();
+            $workspace = Workspace::factory()->for($app)->create([
+                'app_instance_id' => $instance->id,
+            ]);
+            OrbitProcess::factory()
+                ->forOwner($app, $node)
+                ->create([
+                    'app_instance_id' => $instance->id,
+                    'name' => "{$instance->name}-project",
+                ]);
+            OrbitProcess::factory()
+                ->forOwner($workspace, $node)
+                ->create([
+                    'app_instance_id' => $instance->id,
+                    'name' => "{$instance->name}-workspace",
+                ]);
+        }
+
+        $shell = new AppRemoveApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
+
+        $response = $this->call(
+            'DELETE',
+            '/api/projects/docs',
+            ['destructive_consent' => true],
+            [],
+            [],
+            appRemoveRemoteShellFallbackHeader(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.project.name', 'docs')
+            ->assertJsonPath('success.data.project.repository', 'git@github.com:orbit/docs.git')
+            ->assertJsonMissingPath('success.data.project.node')
+            ->assertJsonMissingPath('success.data.project.url')
+            ->assertJsonMissingPath('success.data.project.path')
+            ->assertJsonMissingPath('success.data.project.root')
+            ->assertJsonMissingPath('success.data.project.adopted')
+            ->assertJsonPath('success.data.instances.0.project', 'docs')
+            ->assertJsonPath('success.data.instances.0.name', 'development')
+            ->assertJsonPath('success.data.instances.0.adopted', false)
+            ->assertJsonPath('success.data.instances.1.name', 'production')
+            ->assertJsonPath('success.data.instances.1.adopted', true)
+            ->assertJsonPath('success.data.cleanup.aggregate.instances_removed', 2)
+            ->assertJsonPath('success.data.cleanup.aggregate.proxy_routes_removed', 2)
+            ->assertJsonPath('success.data.cleanup.aggregate.schedules_removed', 2)
+            ->assertJsonPath('success.data.cleanup.aggregate.workspaces_removed', 2)
+            ->assertJsonPath('success.data.cleanup.aggregate.processes_removed', 4)
+            ->assertJsonPath('success.data.cleanup.instances.0.instance', 'docs.development')
+            ->assertJsonPath('success.data.cleanup.instances.0.serving_node', 'development-node')
+            ->assertJsonPath('success.data.cleanup.instances.0.proxy_routes_removed', 1)
+            ->assertJsonPath('success.data.cleanup.instances.0.schedules_removed', 1)
+            ->assertJsonPath('success.data.cleanup.instances.0.workspaces_removed', 1)
+            ->assertJsonPath('success.data.cleanup.instances.0.processes_removed', 2)
+            ->assertJsonPath('success.data.cleanup.instances.0.path_removed', true)
+            ->assertJsonPath('success.data.cleanup.instances.1.instance', 'docs.production')
+            ->assertJsonPath('success.data.cleanup.instances.1.path_removed', false);
+    });
+
     it('removes app intent for authorized callers', function (): void {
         $caller = createAppRemoveCallerNode();
         $targetNode = Node::factory()->create([
@@ -125,7 +242,7 @@ describe('AppRemoveController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.project.name', 'docs')
             ->assertJsonPath('success.data.result.action', 'removed')
-            ->assertJsonPath('success.data.cleanup.proxy_routes_removed', 1);
+            ->assertJsonPath('success.data.cleanup.aggregate.proxy_routes_removed', 1);
 
         expect(Project::query()->where('name', 'docs')->exists())
             ->toBeFalse()
@@ -185,7 +302,7 @@ describe('AppRemoveController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.project.name', 'docs')
             ->assertJsonPath('success.data.result.action', 'removed')
-            ->assertJsonPath('success.data.cleanup.proxy_routes_removed', 1)
+            ->assertJsonPath('success.data.cleanup.aggregate.proxy_routes_removed', 1)
             ->assertJsonMissingPath('success.meta.warnings');
 
         expect(Project::query()->whereKey($app->id)->exists())
@@ -584,7 +701,7 @@ describe('AppRemoveController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.cleanup.schedules_removed', 1)
+            ->assertJsonPath('success.data.cleanup.aggregate.schedules_removed', 1)
             ->assertJsonPath('success.meta.warnings.0.code', 'process.runtime_unit_extra')
             ->assertJsonPath('success.meta.warnings.0.family', 'process')
             ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=process --restore')

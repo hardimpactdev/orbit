@@ -82,7 +82,7 @@ it('profiles an observable registered app target from a operator caller', functi
 
         expect($data)
             ->toBeArray()
-            ->and($data['target']['app'])
+            ->and($data['target']['project'])
             ->toBe('docs')
             ->and($data['target']['node'])
             ->toBe('app-dev-1')

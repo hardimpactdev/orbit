@@ -108,7 +108,7 @@ it('adds workspace setup and teardown steps from a non-gateway caller through th
 
         expect($composerPayload['success']['data']['result'])
             ->toBe(['action' => 'added'])
-            ->and($composerStep['app'])
+            ->and($composerStep['project'])
             ->toBe('docs')
             ->and($composerStep['command'])
             ->toBe('composer install')

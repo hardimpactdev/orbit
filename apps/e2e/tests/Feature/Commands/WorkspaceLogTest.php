@@ -179,7 +179,7 @@ it('reads workspace run logs from a non-gateway caller through the gateway api',
             ->toBe($runIds['failed'])
             ->and($failedRun['workspace'])
             ->toBe('feature-docs')
-            ->and($failedRun['app'])
+            ->and($failedRun['project'])
             ->toBe('docs')
             ->and($failedRun['status'])
             ->toBe('failed')

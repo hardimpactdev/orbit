@@ -24,7 +24,7 @@ it('defaults missing legacy app runtime attributes to php in response payloads',
 
     expect($payload)
         ->not
-        ->toHaveKeys(['node', 'url', 'path', 'root', 'domain', 'environment'])
+        ->toHaveKeys(['node', 'url', 'path', 'root', 'domain', 'environment', 'adopted'])
         ->and($payload['runtime'])
         ->toBe('php')
         ->and($payload['runtime_config'])

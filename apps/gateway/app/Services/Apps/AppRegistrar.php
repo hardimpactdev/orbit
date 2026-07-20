@@ -255,6 +255,10 @@ final class AppRegistrar
         ?Project $existingApp,
         string $environment,
     ): Project {
+        $existingInstance = $existingApp
+            ?->instances()
+            ->where('name', $environment)
+            ->first();
         $attributes = [
             'node_id' => $node->id,
             'environment' => $environment,
@@ -276,17 +280,24 @@ final class AppRegistrar
         );
 
         $app->setRelation('node', $node);
-        $this->ensureDefaultInstance($app, $node);
+        $this->ensureDefaultInstance(
+            $app,
+            $node,
+            $existingInstance instanceof AppInstance
+                ? $existingInstance->adopted
+                : ! $existingApp instanceof Project,
+        );
 
         return $app;
     }
 
-    private function ensureDefaultInstance(Project $app, Node $node): void
+    private function ensureDefaultInstance(Project $app, Node $node, bool $adopted): void
     {
         $app->instances()->updateOrCreate(
             ['name' => $app->environment],
             [
                 'driver' => AppInstanceDriver::Orbit,
+                'adopted' => $adopted,
                 'driver_config' => new OrbitAppInstanceDriverConfigData(
                     node_id: $node->id,
                     node: $node->name,

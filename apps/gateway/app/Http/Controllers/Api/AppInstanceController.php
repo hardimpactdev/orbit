@@ -265,6 +265,7 @@ final class AppInstanceController implements Loggable
             ->create([
                 'name' => $name,
                 'driver' => $driver,
+                'adopted' => false,
                 'driver_config' => $driverConfig,
                 'runtime_requirements' => new AppInstanceRuntimeRequirementsData(php_extensions: $this->phpExtensions(
                     $request,

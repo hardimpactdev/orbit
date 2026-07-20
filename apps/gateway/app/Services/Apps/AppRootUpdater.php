@@ -342,18 +342,7 @@ final class AppRootUpdater
      */
     private function appPayload(Project $app): array
     {
-        return [
-            'name' => $app->name,
-            'node' => $app->node?->name,
-            'url' => $app->url(),
-            'path' => $app->path,
-            'root' => $app->document_root,
-            'repository' => $app->repository,
-            'runtime' => $app->runtimeKind()->value,
-            'runtime_config' => $app->runtimeConfig()->toArray(),
-            'php_version' => $app->php_version,
-            'adopted' => $app->adopted,
-        ];
+        return app(AppResponsePayload::class)->forApp($app);
     }
 
     /**

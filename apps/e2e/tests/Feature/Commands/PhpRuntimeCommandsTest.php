@@ -131,9 +131,13 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
                 'node' => 'app-dev-1',
                 'available_images' => ['8.5', '8.4'],
                 'cli' => '8.4',
-                'app' => [
+                'project' => [
                     'name' => 'docs',
                     'php_version' => '8.4',
+                ],
+                'instance' => [
+                    'name' => 'development',
+                    'project' => 'docs',
                 ],
                 'workspace' => [
                     'name' => 'feature-docs',
@@ -180,8 +184,9 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
             ->toBeTrue()
             ->and($appUsePayload['success']['data']['result'])
             ->toMatchArray([
-                'target' => 'app',
-                'app' => 'docs',
+                'target' => 'instance',
+                'project' => 'docs',
+                'instance' => 'development',
                 'previous' => '8.4',
                 'version' => '8.5',
                 'changed' => true,

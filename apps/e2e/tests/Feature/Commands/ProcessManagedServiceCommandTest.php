@@ -89,7 +89,8 @@ it('creates MySQL and Valkey node managed services through process commands on a
                 ->toMatchArray([
                     'name' => $name,
                     'node' => 'app-dev-1',
-                    'app' => null,
+                    'project' => null,
+                    'instance' => null,
                     'workspace' => null,
                     'runtime' => 'docker-swarm',
                     'tool' => null,
@@ -129,7 +130,8 @@ it('creates MySQL and Valkey node managed services through process commands on a
                 ->and($listed)
                 ->toMatchArray([
                     'node' => 'app-dev-1',
-                    'app' => null,
+                    'project' => null,
+                    'instance' => null,
                     'workspace' => null,
                     'name' => $name,
                     'command' => $service['command'],

@@ -153,7 +153,7 @@ it('enforces grants through real gateway middleware and node access rows', funct
             wireGuardIp: '10.6.0.4',
             payload: [
                 'name' => $workspaceName,
-                'app' => 'grant-docs',
+                'instance' => 'grant-docs',
                 'path' => $workspacePath,
             ],
             timeoutSeconds: 300,
@@ -163,7 +163,8 @@ it('enforces grants through real gateway middleware and node access rows', funct
             ->toBe(200)
             ->and($workspaceSetup['body']['success']['data'])
             ->toMatchArray([
-                'app' => 'grant-docs',
+                'project' => 'grant-docs',
+                'instance' => 'development',
                 'workspace' => $workspaceName,
                 'node' => 'app-dev-1',
                 'action' => 'adopted',

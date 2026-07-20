@@ -57,9 +57,9 @@ it('serves a registered app on a prepared app-dev topology', function (): void {
 
         expect($appRegisterData['result']['action'])
             ->toBe('adopted')
-            ->and($appRegisterData['app']['name'])
+            ->and($appRegisterData['project']['name'])
             ->toBe($appName)
-            ->and($appRegisterData['app']['node'])
+            ->and($appRegisterData['instance']['node'])
             ->toBe('app-dev-1');
 
         $indexPhp = "<?php\nhttp_response_code(200);\necho 'orbit-e2e-serving-ok';\n";

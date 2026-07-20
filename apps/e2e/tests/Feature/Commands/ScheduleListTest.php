@@ -82,7 +82,7 @@ it('lists schedules from the operator node through the gateway api', function ()
             ->toBeArray()
             ->and($payload['success']['data']['schedules'][0]['name'])
             ->toBe($scheduleName)
-            ->and($payload['success']['meta']['app'])
+            ->and($payload['success']['meta']['instance'])
             ->toBe($appName)
             ->and($payload['success']['meta']['count'])
             ->toBe(1);

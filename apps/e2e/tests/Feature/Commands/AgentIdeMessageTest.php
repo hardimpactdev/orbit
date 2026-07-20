@@ -123,7 +123,7 @@ it('sends a workspace message through the managed OpenCode transport', function 
             ->toBe('opencode')
             ->and($payload['success']['data']['agent_ide']['target'])
             ->toMatchArray([
-                'app' => 'docs',
+                'project' => 'docs',
                 'workspace' => 'feature-docs',
                 'node' => 'app-dev-1',
             ])

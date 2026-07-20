@@ -108,17 +108,20 @@ it('serves a production app through a prepared ingress topology', function (): v
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $data = e2eJsonCommandResultData($payload);
-        $app = $data['app'] ?? null;
+        $project = $data['project'] ?? null;
+        $instance = $data['instance'] ?? null;
         $route = preparedIngressProductionRoute($topology, $domain);
         $backendPort = $colocatedIngress ? 8081 : 80;
 
-        expect($app)
+        expect($project)
             ->toBeArray()
-            ->and($app['name'])
+            ->and($project['name'])
             ->toBe($name)
-            ->and($app['node'])
+            ->and($instance)
+            ->toBeArray()
+            ->and($instance['node'])
             ->toBe('app-prod-1')
-            ->and($app['url'])
+            ->and($instance['url'])
             ->toBe("https://{$domain}")
             ->and($route['node'])
             ->toBe($colocatedIngress ? 'app-prod-1' : 'edge-1')

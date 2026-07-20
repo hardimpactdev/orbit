@@ -49,7 +49,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->and($addPayload['success']['data']['process'])
             ->toMatchArray([
                 'name' => $process,
-                'app' => $app,
+                'project' => $app,
                 'restart_policy' => 'never',
                 'crash_notification' => 'none',
                 'runtime' => 'docker',
@@ -93,7 +93,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->and($startPayload['success']['data']['runtimes'][0])
             ->toMatchArray([
                 'process' => $process,
-                'app' => $app,
+                'project' => $app,
                 'runtime_unit' => $runtimeUnit,
                 'state' => 'running',
             ])
@@ -128,7 +128,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->and($restartPayload['success']['data']['runtimes'][0])
             ->toMatchArray([
                 'process' => $process,
-                'app' => $app,
+                'project' => $app,
                 'runtime_unit' => $runtimeUnit,
                 'state' => 'running',
             ])
@@ -147,7 +147,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->and($stopPayload['success']['data']['runtimes'][0])
             ->toMatchArray([
                 'process' => $process,
-                'app' => $app,
+                'project' => $app,
                 'runtime_unit' => $runtimeUnit,
                 'state' => 'stopped',
             ])
@@ -173,7 +173,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->toMatchArray([
                 'name' => $workspaceProcess,
                 'node' => 'app-dev-1',
-                'app' => $app,
+                'project' => $app,
                 'workspace' => $workspace,
                 'runtime' => 'docker',
             ])
@@ -207,7 +207,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->toMatchArray([
                 'process' => $workspaceProcess,
                 'node' => 'app-dev-1',
-                'app' => $app,
+                'project' => $app,
                 'workspace' => $workspace,
                 'runtime_unit' => $workspaceRuntimeUnit,
                 'state' => 'running',
@@ -232,7 +232,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->toMatchArray([
                 'process' => $workspaceProcess,
                 'node' => 'app-dev-1',
-                'app' => $app,
+                'project' => $app,
                 'workspace' => $workspace,
                 'runtime_unit' => $workspaceRuntimeUnit,
             ])
@@ -256,7 +256,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->toMatchArray([
                 'process' => $workspaceProcess,
                 'node' => 'app-dev-1',
-                'app' => $app,
+                'project' => $app,
                 'workspace' => $workspace,
                 'runtime_unit' => $workspaceRuntimeUnit,
                 'state' => 'stopped',
@@ -279,7 +279,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->toMatchArray([
                 'name' => $workspaceProcess,
                 'node' => 'app-dev-1',
-                'app' => $app,
+                'project' => $app,
                 'workspace' => $workspace,
             ])
             ->and($workspaceRemovePayload['success']['data']['removed_runtime_units'])
@@ -297,7 +297,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->and($removePayload['success']['data']['process'])
             ->toMatchArray([
                 'name' => $process,
-                'app' => $app,
+                'project' => $app,
             ])
             ->and($removePayload['success']['data']['removed_runtime_units'])
             ->toContain($runtimeUnit);
@@ -348,7 +348,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
             ->toMatchArray([
                 'name' => $runtimeUnit,
                 'node' => 'app-dev-1',
-                'app' => null,
+                'project' => null,
                 'workspace' => null,
                 'runtime' => 'systemd',
                 'tool' => 'opencode',
@@ -377,13 +377,13 @@ it('manages a node owned systemd process through process commands on an Incus ap
             ->and($listPayload['success']['data']['context'])
             ->toBe([
                 'node' => 'app-dev-1',
-                'app' => null,
+                'project' => null,
                 'workspace' => null,
             ])
             ->and(collect($listPayload['success']['data']['processes'])->firstWhere('name', $runtimeUnit))
             ->toMatchArray([
                 'node' => 'app-dev-1',
-                'app' => null,
+                'project' => null,
                 'workspace' => null,
                 'runtime' => 'systemd',
                 'tool' => 'opencode',
@@ -403,7 +403,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
             ->toMatchArray([
                 'process' => $runtimeUnit,
                 'node' => 'app-dev-1',
-                'app' => null,
+                'project' => null,
                 'workspace' => null,
                 'runtime_unit' => $runtimeUnit,
             ])
@@ -424,7 +424,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
             ->toMatchArray([
                 'process' => $runtimeUnit,
                 'node' => 'app-dev-1',
-                'app' => null,
+                'project' => null,
                 'workspace' => null,
                 'runtime_unit' => $runtimeUnit,
                 'state' => 'running',
@@ -443,7 +443,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
             ->toMatchArray([
                 'process' => $runtimeUnit,
                 'node' => 'app-dev-1',
-                'app' => null,
+                'project' => null,
                 'workspace' => null,
                 'runtime_unit' => $runtimeUnit,
                 'state' => 'stopped',
@@ -518,7 +518,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
             ->toMatchArray([
                 'name' => $runtimeUnit,
                 'node' => 'app-dev-1',
-                'app' => null,
+                'project' => null,
                 'workspace' => null,
             ])
             ->and($removePayload['success']['data']['removed_runtime_units'])

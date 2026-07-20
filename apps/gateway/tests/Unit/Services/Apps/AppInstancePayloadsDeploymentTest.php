@@ -16,6 +16,7 @@ it('publishes deployment state from the concrete app instance', function (): voi
     $instance = AppInstance::factory()->create([
         'app_id' => $app->id,
         'name' => 'production',
+        'adopted' => true,
         'deploy_warmup_paths' => ['/health'],
         'latest_deployment_status' => 'completed',
         'latest_deployment_run_id' => 42,
@@ -29,6 +30,7 @@ it('publishes deployment state from the concrete app instance', function (): voi
         ->toMatchArray([
             'project' => 'docs',
             'name' => 'production',
+            'adopted' => true,
             'deploy_warmup_paths' => ['/health'],
             'latest_deployment_status' => 'completed',
             'latest_deployment_run_id' => 42,

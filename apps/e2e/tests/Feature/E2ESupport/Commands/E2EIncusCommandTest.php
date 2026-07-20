@@ -860,6 +860,7 @@ it('syncs source-mounted retained Incus checkouts into overlay runtime paths', f
     );
     $rsyncIndex = incus_command_index_containing(commands: $commands, needle: 'rsync -az --delete');
     $remountIndexes = incus_command_indexes_containing(commands: $commands, needle: 'mount -t overlay overlay');
+    $gatewayRestartIndex = incus_command_index_containing(commands: $commands, needle: 'docker restart');
     $lockCommand = is_int($lockAcquireIndex) ? $commands[$lockAcquireIndex] : '';
 
     expect($exitCode)
@@ -889,13 +890,16 @@ it('syncs source-mounted retained Incus checkouts into overlay runtime paths', f
         ])
         ->each->toBeInt()->and($detachIndexes)->toHaveCount(3)
         ->each->toBeInt()->and($remountIndexes)->toHaveCount(3)
-        ->each->toBeInt();
+        ->each->toBeInt()->and($gatewayRestartIndex)->toBeInt()->and($commandsOutput)->toContain(
+            'orbit-gateway-e2e-topology-lease-http',
+        )->toContain('orbit-gateway-e2e-topology-lease-tls');
 
     if (
         ! is_int($lockAcquireIndex)
         || ! is_int($rsyncIndex)
         || count($detachIndexes) !== 3
         || count($remountIndexes) !== 3
+        || ! is_int($gatewayRestartIndex)
     ) {
         return;
     }
@@ -905,7 +909,9 @@ it('syncs source-mounted retained Incus checkouts into overlay runtime paths', f
         ->and(max($detachIndexes))
         ->toBeLessThan($rsyncIndex)
         ->and($rsyncIndex)
-        ->toBeLessThan(min($remountIndexes));
+        ->toBeLessThan(min($remountIndexes))
+        ->and(max($remountIndexes))
+        ->toBeLessThan($gatewayRestartIndex);
 });
 
 it('restores earlier runtime overlays when a later checkout is busy', function (): void {

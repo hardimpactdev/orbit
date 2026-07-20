@@ -78,9 +78,10 @@ After consent:
    Agent push to that instance's serving node.
 3. Return aggregate cleanup totals plus one cleanup result per instance.
 
-An app path is removed only when Orbit created or adopted that concrete
-instance path and no retained instance shares it. Workspace worktrees below an
-eligible removed path are removed with it.
+An app path is removed only when Orbit created that concrete instance path,
+the instance was not adopted from pre-existing source, and no retained
+instance shares it. Workspace worktrees below an eligible removed path are
+removed with it.
 
 The atomic gateway transaction is the point of no return. A transaction failure
 returns a command failure with no cascade rows removed and no node cleanup.

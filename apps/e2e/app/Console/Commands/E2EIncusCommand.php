@@ -38,6 +38,12 @@ use Throwable;
 #[Description('Start, expose, or stop retained Incus topologies for manual diagnosis')]
 class E2EIncusCommand extends Command
 {
+    /** @var list<string> */
+    private const array RetainedGatewayApiContainers = [
+        'orbit-gateway-e2e-topology-lease-http',
+        'orbit-gateway-e2e-topology-lease-tls',
+    ];
+
     private const string WireGuardEndpointEnv = 'ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT';
 
     private const string WireGuardEndpointAliasEnv = 'ORBIT_E2E_LIVE_WG_ENDPOINT';
@@ -954,6 +960,7 @@ class E2EIncusCommand extends Command
                 $syncedPath = self::sourcePathResult($syncedPath);
 
                 $runtimeCheckouts = $this->refreshRuntimeCheckouts($manifest, $host);
+                $this->restartRetainedGatewayApi($manifest, $host, $runtimeCheckouts);
 
                 return $syncedPath;
             },
@@ -968,6 +975,39 @@ class E2EIncusCommand extends Command
         }
 
         return $runtimeCheckouts;
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     * @param  array<string, string>  $runtimeCheckouts
+     */
+    private function restartRetainedGatewayApi(array $manifest, string $host, array $runtimeCheckouts): void
+    {
+        if (! isset($runtimeCheckouts['gateway'])) {
+            return;
+        }
+
+        $instances = is_array($manifest['instances'] ?? null) ? $manifest['instances'] : [];
+        $gateway = $instances['gateway'] ?? null;
+
+        if (! is_string($gateway) || trim($gateway) === '') {
+            throw new RuntimeException(
+                'A gateway runtime checkout requires a gateway instance in the retained topology manifest.',
+            );
+        }
+
+        $result = $this->hostFor($host)->run(sprintf(
+            'incus exec %s -- docker restart %s',
+            escapeshellarg($gateway),
+            implode(' ', array_map('escapeshellarg', self::RetainedGatewayApiContainers)),
+        ));
+
+        if (! $result->successful()) {
+            throw new RuntimeException(
+                'Could not restart the retained gateway API after refreshing its runtime checkout: '
+                    .$this->processError($result),
+            );
+        }
     }
 
     private static function sourcePathResult(mixed $result): string

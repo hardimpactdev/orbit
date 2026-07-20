@@ -117,7 +117,7 @@ it('creates and sets up a workspace from a non-gateway caller through the gatewa
             ->toBe(['action' => 'created'])
             ->and($data['workspace']['name'])
             ->toBe($workspaceName)
-            ->and($data['workspace']['app'])
+            ->and($data['workspace']['project'])
             ->toBe('docs')
             ->and($data['workspace']['path'])
             ->toBe($workspacePath)

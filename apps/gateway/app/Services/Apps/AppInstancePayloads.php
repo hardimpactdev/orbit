@@ -70,6 +70,7 @@ final readonly class AppInstancePayloads
             'path' => $config instanceof OrbitAppInstanceDriverConfigData ? $config->path : null,
             'root' => $config instanceof OrbitAppInstanceDriverConfigData ? $config->document_root : null,
             'domain' => $domain,
+            'adopted' => $instance->adopted,
         ];
     }
 

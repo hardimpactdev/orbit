@@ -112,7 +112,7 @@ it('sets up an existing workspace path from a non-gateway caller through the gat
 
         expect($data['workspace'])
             ->toBe($workspaceName)
-            ->and($data['app'])
+            ->and($data['project'])
             ->toBe('docs')
             ->and($data['action'])
             ->toBe('adopted')
@@ -172,7 +172,7 @@ it('resolves an opencode worktree by adapter ownership when a stale registered p
         );
         $payload = json_decode(trim($setup->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($payload['app'])
+        expect($payload['project'])
             ->toBe('docs')
             ->and($payload['workspace'])
             ->toBe($workspaceName)

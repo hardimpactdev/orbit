@@ -112,7 +112,7 @@ it('manages and runs a production app deployment pipeline', function (): void {
 
         expect($addPayload['success']['data']['step'])
             ->toMatchArray([
-                'app' => 'docs',
+                'project' => 'docs',
                 'title' => 'Write marker',
                 'order' => 1,
                 'timeout_seconds' => 120,

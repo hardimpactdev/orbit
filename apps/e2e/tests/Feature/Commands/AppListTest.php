@@ -63,7 +63,7 @@ function appListSeed(E2ETopologyHarness $topology): void
     );
 }
 
-it('lists registered apps from a operator caller through the gateway api', function (): void {
+it('lists registered projects from an operator caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod, withGatewayApi: true);
 
@@ -91,9 +91,9 @@ it('lists registered apps from a operator caller through the gateway api', funct
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $apps = $payload['success']['data']['apps'] ?? null;
+        $projects = $payload['success']['data']['projects'] ?? null;
 
-        expect($apps)->toBeArray()->and(array_column($apps, 'name'))->toBe(['docs', 'site']);
+        expect($projects)->toBeArray()->and(array_column($projects, 'name'))->toBe(['docs', 'site']);
     } finally {
         $topology->cleanup();
     }

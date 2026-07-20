@@ -123,7 +123,7 @@ it('lists workspaces from a non-gateway caller through the gateway api', functio
             ->and($workspaces[0])
             ->toHaveKeys(['name', 'app', 'node', 'url', 'lifecycle_status']);
 
-        // Filter by app
+        // Filter by instance
         $filteredResult = $topology->ssh(
             'operator',
             sprintf(
@@ -137,7 +137,7 @@ it('lists workspaces from a non-gateway caller through the gateway api', functio
 
         expect($filteredPayload['success']['data']['workspaces'])
             ->toHaveCount(2)
-            ->and($filteredPayload['success']['data']['workspaces'][0]['app'])
+            ->and($filteredPayload['success']['data']['workspaces'][0]['project'])
             ->toBe('docs');
 
         // Filter by node

@@ -83,7 +83,7 @@ it('shows a schedule from the operator node through the gateway api', function (
             ->toBe($scheduleName)
             ->and($payload['success']['data']['schedule']['timezone'])
             ->toBe('Europe/Amsterdam')
-            ->and($payload['success']['meta']['app'])
+            ->and($payload['success']['meta']['instance'])
             ->toBe($appName);
     } finally {
         $topology->cleanup();

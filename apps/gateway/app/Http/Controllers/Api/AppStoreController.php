@@ -302,6 +302,7 @@ final class AppStoreController implements Loggable
             ['name' => $app->environment],
             [
                 'driver' => AppInstanceDriver::Orbit,
+                'adopted' => false,
                 'driver_config' => new OrbitAppInstanceDriverConfigData(
                     node_id: $node->id,
                     node: $node->name,

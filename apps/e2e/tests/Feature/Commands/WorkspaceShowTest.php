@@ -114,7 +114,7 @@ it('shows workspace details from a non-gateway caller through the gateway api', 
             ->toBeArray()
             ->and($workspace['name'])
             ->toBe('feature-docs')
-            ->and($workspace['app'])
+            ->and($workspace['project'])
             ->toBe('docs')
             ->and($payload['success']['meta']['registry_only'])
             ->toBeTrue()

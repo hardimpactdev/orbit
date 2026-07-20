@@ -40,6 +40,7 @@ final class AppRemoveController implements Loggable
             'success' => [
                 'data' => [
                     'project' => $result['project'],
+                    'instances' => $result['instances'],
                     'result' => $result['result'],
                     'cleanup' => $result['cleanup'],
                 ],

@@ -83,9 +83,12 @@ it('installs OpenCode Server and creates an accessible OpenCode-backed workspace
             ->toBeTrue()
             ->and($registrationData['result']['action'])
             ->toBe('adopted')
-            ->and($registrationData['app'])
+            ->and($registrationData['project'])
             ->toMatchArray([
                 'name' => $appName,
+            ])
+            ->and($registrationData['instance'])
+            ->toMatchArray([
                 'node' => 'app-dev-1',
                 'path' => $appPath,
             ]);
@@ -133,7 +136,8 @@ it('installs OpenCode Server and creates an accessible OpenCode-backed workspace
             ->and($workspaceData['workspace'])
             ->toMatchArray([
                 'name' => $workspaceName,
-                'app' => $appName,
+                'project' => $appName,
+                'instance' => 'development',
                 'node' => 'app-dev-1',
                 'path' => $workspacePath,
                 'agent_ide' => [

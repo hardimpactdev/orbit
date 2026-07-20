@@ -187,13 +187,19 @@ it('lists app processes from a operator caller through the gateway api', functio
         expect($processes)
             ->toBeArray()
             ->and($context)
-            ->toBe(['node' => 'app-dev-1', 'app' => 'docs', 'workspace' => null])
+            ->toBe([
+                'node' => 'app-dev-1',
+                'project' => 'docs',
+                'instance' => 'development',
+                'workspace' => null,
+            ])
             ->and(array_column($processes, 'name'))
             ->toBe(['vite', 'queue'])
             ->and($processes[0])
             ->toHaveKeys([
                 'node',
-                'app',
+                'project',
+                'instance',
                 'workspace',
                 'name',
                 'command',
@@ -226,7 +232,12 @@ it('lists app processes from a operator caller through the gateway api', functio
         );
 
         expect($workspacePayload['success']['data']['context'])
-            ->toBe(['node' => 'app-dev-1', 'app' => 'docs', 'workspace' => 'feature-docs'])
+            ->toBe([
+                'node' => 'app-dev-1',
+                'project' => 'docs',
+                'instance' => 'development',
+                'workspace' => 'feature-docs',
+            ])
             ->and(array_column($workspacePayload['success']['data']['processes'], 'name'))
             ->toBe(['frankenphp-docs-feature-docs', 'vite', 'queue'])
             ->and($workspacePayload['success']['data']['processes'][0]['runtime_unit'])
@@ -248,11 +259,12 @@ it('lists app processes from a operator caller through the gateway api', functio
         expect($gatewayResult->successful())
             ->toBeTrue($gatewayResult->output().$gatewayResult->errorOutput())
             ->and($gatewayPayload['success']['data']['context'])
-            ->toBe(['node' => 'gateway', 'app' => null, 'workspace' => null])
+            ->toBe(['node' => 'gateway', 'project' => null, 'instance' => null, 'workspace' => null])
             ->and($gatewayPayload['success']['data']['processes'][0])
             ->toMatchArray([
                 'node' => 'gateway',
-                'app' => null,
+                'project' => null,
+                'instance' => null,
                 'workspace' => null,
                 'name' => 'prometheus',
                 'runtime' => 'docker-swarm',
@@ -277,7 +289,7 @@ it('lists app processes from a operator caller through the gateway api', functio
             ->toBeTrue()
             ->and($emptyPayload['success']['data']['processes'])
             ->toBe([])
-            ->and($emptyPayload['success']['data']['context']['app'])
+            ->and($emptyPayload['success']['data']['context']['project'])
             ->toBe('docs');
     } finally {
         $topology->cleanup();
