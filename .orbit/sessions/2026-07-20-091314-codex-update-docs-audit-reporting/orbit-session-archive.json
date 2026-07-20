@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-20T07:13:14+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-update-docs-audit-reporting/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-20-091314-codex-update-docs-audit-reporting",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-20T070500Z-fdde2e5e127d.json"
+    ],
+    "entry_digests": {
+        "feedback.jsonl": "3e2479ca17388a2c8825845cee69be8cd6bf17b6548f02bc8117520416a8c2f7",
+        "loop.md": "a6b351616aa225c434ffbc816aa2906706da07cf710485b8f4f1aba5de70eaba",
+        "quality-gates/quality-check-2026-07-20T070500Z-fdde2e5e127d.json": "93b01703bf77c8d18c57338d6115f5126faa9d98ae71f0965f444400d95716ba"
+    },
+    "branch": "codex/update-docs-audit-reporting",
+    "candidate_commit": "be07535ca9e89dd2c3337fb3ad527a6fbd70350b",
+    "accepted_feature_tip": "be07535ca9e89dd2c3337fb3ad527a6fbd70350b",
+    "accepted_main_tip": "1719bde6188541875d89b9f672393df45fc285a5",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
