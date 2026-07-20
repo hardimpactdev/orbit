@@ -1008,6 +1008,19 @@ class E2EIncusCommand extends Command
                     .$this->processError($result),
             );
         }
+
+        $migration = $this->hostFor($host)->run(sprintf(
+            'incus exec %s -- docker exec %s php artisan migrate --force --no-interaction --no-ansi',
+            escapeshellarg($gateway),
+            escapeshellarg(self::RetainedGatewayApiContainers[0]),
+        ));
+
+        if (! $migration->successful()) {
+            throw new RuntimeException(
+                'Could not migrate the retained gateway after refreshing its runtime checkout: '
+                    .$this->processError($migration),
+            );
+        }
     }
 
     private static function sourcePathResult(mixed $result): string

@@ -861,6 +861,10 @@ it('syncs source-mounted retained Incus checkouts into overlay runtime paths', f
     $rsyncIndex = incus_command_index_containing(commands: $commands, needle: 'rsync -az --delete');
     $remountIndexes = incus_command_indexes_containing(commands: $commands, needle: 'mount -t overlay overlay');
     $gatewayRestartIndex = incus_command_index_containing(commands: $commands, needle: 'docker restart');
+    $gatewayMigrationIndex = incus_command_index_containing(
+        commands: $commands,
+        needle: 'artisan migrate --force --no-interaction --no-ansi',
+    );
     $lockCommand = is_int($lockAcquireIndex) ? $commands[$lockAcquireIndex] : '';
 
     expect($exitCode)
@@ -890,7 +894,9 @@ it('syncs source-mounted retained Incus checkouts into overlay runtime paths', f
         ])
         ->each->toBeInt()->and($detachIndexes)->toHaveCount(3)
         ->each->toBeInt()->and($remountIndexes)->toHaveCount(3)
-        ->each->toBeInt()->and($gatewayRestartIndex)->toBeInt()->and($commandsOutput)->toContain(
+        ->each->toBeInt()->and($gatewayRestartIndex)->toBeInt()->and($gatewayMigrationIndex)->toBeInt()->and(
+            $commandsOutput,
+        )->toContain(
             'orbit-gateway-e2e-topology-lease-http',
         )->toContain('orbit-gateway-e2e-topology-lease-tls');
 
@@ -900,6 +906,7 @@ it('syncs source-mounted retained Incus checkouts into overlay runtime paths', f
         || count($detachIndexes) !== 3
         || count($remountIndexes) !== 3
         || ! is_int($gatewayRestartIndex)
+        || ! is_int($gatewayMigrationIndex)
     ) {
         return;
     }
@@ -911,7 +918,9 @@ it('syncs source-mounted retained Incus checkouts into overlay runtime paths', f
         ->and($rsyncIndex)
         ->toBeLessThan(min($remountIndexes))
         ->and(max($remountIndexes))
-        ->toBeLessThan($gatewayRestartIndex);
+        ->toBeLessThan($gatewayRestartIndex)
+        ->and($gatewayRestartIndex)
+        ->toBeLessThan($gatewayMigrationIndex);
 });
 
 it('restores earlier runtime overlays when a later checkout is busy', function (): void {
