@@ -10,7 +10,7 @@ final readonly class LocalScheduleRunTimeout
 {
     public static function from(mixed $value): int
     {
-        if (is_int($value) && $value >= 1 && $value <= 3600) {
+        if (is_int($value) && $value >= 1 && $value <= 86_400) {
             return $value;
         }
 

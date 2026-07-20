@@ -81,6 +81,28 @@ describe('internal schedule run command', function (): void {
             ->toBe('failed');
     });
 
+    it('accepts the maximum timeout supported by schedule configuration', function (): void {
+        [$exitCode, $output] = run_internal_schedule_run_command(
+            [
+                '--operation-token' => schedule_run_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'execution_type' => 'command',
+                'execution_value' => 'printf accepted',
+                'cwd' => null,
+                'timeout' => 86_400,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['stdout'] ?? null)
+            ->toBe('accepted');
+    });
+
     it('runs script execution values with the existing schedule quoting contract', function (): void {
         $scriptPath = tempnam(directory: sys_get_temp_dir(), prefix: 'orbit-schedule-');
 
