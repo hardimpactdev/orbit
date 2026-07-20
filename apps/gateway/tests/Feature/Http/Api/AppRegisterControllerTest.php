@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\Access\NodePermissionPresets;
@@ -64,7 +64,7 @@ function createAppRegisterCallerNode(array $overrides = [], ?string $role = null
 /**
  * @param  list<string>  $permissions
  */
-function grantAppRegisterAccess(Node $caller, Node $appNode, array $permissions = ['app:register']): void
+function grantAppRegisterAccess(Node $caller, Node $appNode, array $permissions = ['instance:register']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -112,7 +112,7 @@ describe('AppRegisterController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/register',
+            '/api/instances/register',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -126,17 +126,17 @@ describe('AppRegisterController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'adopted')
-            ->assertJsonPath('success.data.app.name', 'docs')
+            ->assertJsonPath('success.data.project.name', 'docs')
             ->assertJsonPath('success.data.instance.node', 'app-1')
             ->assertJsonMissingPath('success.data.app.node')
-            ->assertJsonPath('success.data.app.runtime', 'php')
-            ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'http')
+            ->assertJsonPath('success.data.project.runtime', 'php')
+            ->assertJsonPath('success.data.project.runtime_config.proxy_transport', 'http')
             ->assertJsonMissingPath('success.data.app.worker_enabled')
             ->assertJsonMissingPath('success.data.app.worker_config')
             ->assertJsonPath('success.meta.node', 'app-1')
             ->assertJsonPath('success.meta.warnings', []);
 
-        expect(App::query()->where('name', 'docs')->exists())
+        expect(Project::query()->where('name', 'docs')->exists())
             ->toBeTrue();
 
         expect($remoteShell->scripts)
@@ -175,7 +175,7 @@ describe('AppRegisterController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/register',
+            '/api/instances/register',
             [
                 'name' => 'docs',
                 'node' => 'dev-1',
@@ -193,7 +193,7 @@ describe('AppRegisterController', function (): void {
 
         $denied = $this->call(
             'POST',
-            '/api/apps/register',
+            '/api/instances/register',
             [
                 'name' => 'hidden',
                 'node' => $otherNode->name,
@@ -207,7 +207,7 @@ describe('AppRegisterController', function (): void {
         $denied
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:register')
+            ->assertJsonPath('error.meta.missing_permission', 'instance:register')
             ->assertJsonPath('error.meta.serving_node', 'dev-2');
     });
 
@@ -235,7 +235,7 @@ describe('AppRegisterController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/register',
+            '/api/instances/register',
             [
                 'name' => 'docs',
                 'node' => 'prod-1',
@@ -249,10 +249,10 @@ describe('AppRegisterController', function (): void {
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:register')
+            ->assertJsonPath('error.meta.missing_permission', 'instance:register')
             ->assertJsonPath('error.meta.serving_node', 'prod-1');
 
-        expect(App::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
+        expect(Project::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
     });
 
     it('stores the opt-in HTTPS runtime proxy transport when registering an app', function (): void {
@@ -280,7 +280,7 @@ describe('AppRegisterController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/register',
+            '/api/instances/register',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -295,9 +295,9 @@ describe('AppRegisterController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'adopted')
-            ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'https');
+            ->assertJsonPath('success.data.project.runtime_config.proxy_transport', 'https');
 
-        expect(App::query()->where('name', 'docs')->firstOrFail()->runtime_config)
+        expect(Project::query()->where('name', 'docs')->firstOrFail()->runtime_config)
             ->toBe(['proxy_transport' => 'https']);
     });
 
@@ -317,7 +317,7 @@ describe('AppRegisterController', function (): void {
         grantAppRegisterAccess($caller, $targetNode);
         fake_app_register_source_path_probe('10.6.0.43');
 
-        App::factory()->for($targetNode, 'node')->create([
+        Project::factory()->for($targetNode, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'document_root' => 'public',
@@ -334,7 +334,7 @@ describe('AppRegisterController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/register',
+            '/api/instances/register',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -349,9 +349,9 @@ describe('AppRegisterController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'converged')
-            ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'http');
+            ->assertJsonPath('success.data.project.runtime_config.proxy_transport', 'http');
 
-        expect(App::query()->where('name', 'docs')->firstOrFail()->runtime_config)
+        expect(Project::query()->where('name', 'docs')->firstOrFail()->runtime_config)
             ->toBeNull();
     });
 
@@ -372,7 +372,7 @@ describe('AppRegisterController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/register',
+            '/api/instances/register',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -389,7 +389,7 @@ describe('AppRegisterController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime_proxy_transport');
 
-        expect(App::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
+        expect(Project::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
     });
 
     it('moves an existing app when node and path are explicit', function (): void {
@@ -412,7 +412,7 @@ describe('AppRegisterController', function (): void {
         ]);
         grantAppRegisterAccess($caller, $targetNode);
         fake_app_register_source_path_probe('10.6.0.44', '/srv/docs');
-        App::factory()->create([
+        Project::factory()->create([
             'name' => 'docs',
             'node_id' => $oldNode->id,
             'path' => '/home/orbit/apps/docs',
@@ -429,7 +429,7 @@ describe('AppRegisterController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/register',
+            '/api/instances/register',
             [
                 'name' => 'docs',
                 'node' => 'new-app',
@@ -447,7 +447,7 @@ describe('AppRegisterController', function (): void {
             ->assertJsonPath('success.data.instance.path', '/srv/docs')
             ->assertJsonMissingPath('success.data.app.path');
 
-        $app = App::query()->where('name', 'docs')->firstOrFail();
+        $app = Project::query()->where('name', 'docs')->firstOrFail();
 
         expect($app->node_id)
             ->toBe($targetNode->id)
@@ -475,7 +475,7 @@ describe('AppRegisterController', function (): void {
         ], settings: ['tld' => 'nmbp']);
         grantAppRegisterAccess($caller, $targetNode);
 
-        App::factory()->for($targetNode, 'node')->create([
+        Project::factory()->for($targetNode, 'node')->create([
             'name' => 'happie-nmbp',
             'path' => '/Users/nckrtl/apps/happie',
             'document_root' => 'public',
@@ -508,7 +508,7 @@ describe('AppRegisterController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/register',
+            '/api/instances/register',
             [
                 'name' => 'happie-nmbp',
                 'node' => 'app-1',
@@ -530,7 +530,7 @@ describe('AppRegisterController', function (): void {
             ->assertJsonPath('success.meta.warnings.0.node', 'app-1')
             ->assertJsonPath('success.meta.warnings.0.operation', 'runtime_trust_pool.ensure');
 
-        $app = App::query()->where('name', 'happie-nmbp')->firstOrFail();
+        $app = Project::query()->where('name', 'happie-nmbp')->firstOrFail();
 
         expect($app->environment)
             ->toBe('development')
@@ -540,7 +540,7 @@ describe('AppRegisterController', function (): void {
             ->toContain("internal:app-source-path:probe '/Users/nckrtl/apps/happie'");
     });
 
-    it('rejects registration when the caller lacks app:register on the target app node', function (): void {
+    it('rejects registration when the caller lacks instance:register on the target app node', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',
         ]);
@@ -550,14 +550,14 @@ describe('AppRegisterController', function (): void {
             'name' => 'app-1',
             'status' => 'active',
         ]);
-        grantAppRegisterAccess($caller, $targetNode, ['app:read']);
+        grantAppRegisterAccess($caller, $targetNode, ['instance:read']);
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
         $response = $this->call(
             'POST',
-            '/api/apps/register',
+            '/api/instances/register',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -571,10 +571,10 @@ describe('AppRegisterController', function (): void {
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:register')
+            ->assertJsonPath('error.meta.missing_permission', 'instance:register')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
-        expect(App::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
+        expect(Project::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
     });
 
     it('rejects omitted-node registration when the caller cannot access the inferred target app node', function (): void {
@@ -594,7 +594,7 @@ describe('AppRegisterController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/register',
+            '/api/instances/register',
             [
                 'name' => 'docs',
                 'path' => '/home/orbit/apps/docs',
@@ -607,10 +607,10 @@ describe('AppRegisterController', function (): void {
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:register')
+            ->assertJsonPath('error.meta.missing_permission', 'instance:register')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
-        expect(App::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
+        expect(Project::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
     });
 
     it('rejects production registration when the target node lacks the app-prod role', function (): void {
@@ -631,7 +631,7 @@ describe('AppRegisterController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/register',
+            '/api/instances/register',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -645,13 +645,13 @@ describe('AppRegisterController', function (): void {
 
         $response
             ->assertStatus(422)
-            ->assertJsonPath('error.code', 'app.ineligible_node')
+            ->assertJsonPath('error.code', 'project.ineligible_node')
             ->assertJsonPath('error.meta.required_role', 'app-prod');
 
-        expect(App::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
+        expect(Project::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
     });
 
-    it('allows database-role callers when app:register is granted on the target app node', function (): void {
+    it('allows database-role callers when instance:register is granted on the target app node', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',
         ]);
@@ -680,7 +680,7 @@ describe('AppRegisterController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/register',
+            '/api/instances/register',
             [
                 'name' => 'docs',
                 'node' => 'app-1',
@@ -694,9 +694,9 @@ describe('AppRegisterController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'adopted')
-            ->assertJsonPath('success.data.app.name', 'docs');
+            ->assertJsonPath('success.data.project.name', 'docs');
 
-        expect(App::query()->where('name', 'docs')->exists())
+        expect(Project::query()->where('name', 'docs')->exists())
             ->toBeTrue();
 
         expect($remoteShell->scripts)

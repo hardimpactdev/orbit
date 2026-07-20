@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Workspaces;
 
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use InvalidArgumentException;
@@ -28,12 +28,12 @@ final readonly class WorkspaceRoleGuard
         private WorkspacePlacement $placement,
     ) {}
 
-    public function ensureNodeSupportsWorkspaces(App $app, ?Node $node): void
+    public function ensureNodeSupportsWorkspaces(Project $project, ?Node $node): void
     {
-        $this->ensureNodeIsWorkspaceEligible($node, $app->name);
+        $this->ensureNodeIsWorkspaceEligible($node, $project->name);
     }
 
-    public function ensureNodeIsWorkspaceEligible(?Node $node, ?string $app = null): void
+    public function ensureNodeIsWorkspaceEligible(?Node $node, ?string $project = null): void
     {
         if (! $node instanceof Node) {
             return;
@@ -50,8 +50,8 @@ final readonly class WorkspaceRoleGuard
                 : 'app-dev-required',
         ];
 
-        if ($app !== null) {
-            $meta = ['app' => $app, ...$meta];
+        if ($project !== null) {
+            $meta = ['project' => $project, ...$meta];
         }
 
         throw new WorkspaceUnsupportedForProduction($meta);
@@ -131,12 +131,12 @@ final readonly class WorkspaceRoleGuard
         $instance = $this->placement->instanceForWorkspace($workspace);
         $node = $this->placement->nodeForWorkspace($workspace);
 
-        if (! $app instanceof App || ! $instance instanceof AppInstance || ! $node instanceof Node) {
+        if (! $app instanceof Project || ! $instance instanceof AppInstance || ! $node instanceof Node) {
             throw new WorkspaceUnsupportedForProduction(array_filter(
                 [
                     'workspace' => $workspace->name,
-                    'app' => $app?->name,
-                    'app_instance' => $instance?->name,
+                    'project' => $app?->name,
+                    'instance' => $instance?->name,
                     'role' => 'app-dev-required',
                     'reason' => 'serving_node_unresolved',
                 ],

@@ -7,22 +7,22 @@ This document defines process-family vocabulary and invariants. It supports the 
 These terms define how process definitions are identified, scoped, and ordered.
 
 - **Process definition:** Gateway-owned configuration for one Orbit-managed
-  long-running unit. A process may be scoped to a node, concrete app instance,
-  or workspace. An app-scoped definition is persisted against an `AppInstance`,
-  never only against a logical app. App-instance and workspace processes run
+  long-running unit. A process may be scoped to a node, concrete instance,
+  or workspace. An instance-scoped definition is persisted against an `AppInstance`,
+  never only against a project. Instance and workspace processes run
   on that instance's serving node; node-level processes run directly against
   the owning node.
 - **Process identity slug:** Lowercase identity slug used as the process name.
   Maximum 64 characters.
 - **Process scope:** Optional target that binds a process to a node, concrete
-  app instance, or workspace. The scope selects the serving node, working
+  instance, or workspace. The scope selects the serving node, working
   context, default environment, and lifecycle authorization boundary.
-- **App-instance selector:** Dotted `<app.instance>` identity used by public
-  process commands. A bare logical-app slug is shorthand only when the app has
+- **Instance selector:** Dotted `<project.instance>` identity used by public
+  process commands. A bare project slug is shorthand only when the app has
   exactly one instance. If it has more than one, resolution fails with
-  `validation_failed`, `field=app`, and `reason=app_instance_required`.
-- **Canonical app identity:** App-instance and workspace process identities and
-  JSON include both the logical `app` slug and concrete `app_instance` slug.
+  `validation_failed`, `field=instance`, and `reason=instance_required`.
+- **Canonical project identity:** Instance and workspace process identities and
+  JSON include both the logical `app` slug and concrete `instance` slug.
 - **Process tool dependency:** Optional catalog tool slug used by the process,
   such as `php-cli`, `viteplus`, `opencode-cli`, or `polyscope`. The dependency
   asserts required capability; it does not transfer lifecycle ownership to the
@@ -57,8 +57,8 @@ These terms define how process definitions are identified, scoped, and ordered.
 These terms describe the runtime objects that Orbit derives from process definitions.
 
 - **Runtime unit:** Concrete runnable realization of a process definition in
-  its selected node, app-instance, or workspace context on the resolved node or
-  app instance serving node.
+  its selected node, instance, or workspace context on the resolved node or
+  instance serving node.
 - **Process runtime:** Backend that runs a process. Supported runtime families
   are `systemd`, `launchd`, `docker`, and `docker-swarm`. Systemd is the Linux
   host-command process runtime for node-, app-, and workspace-scoped commands.
@@ -87,12 +87,12 @@ These terms describe the runtime objects that Orbit derives from process definit
   process inventory are outside this runtime slice.
 - **Runtime unit expansion:** One process definition renders one or more
   runtime units as required by its scope. Node-level and workspace-scoped
-  process definitions normally render one unit. App-instance-scoped inherited
+  process definitions normally render one unit. Instance-scoped inherited
   process definitions may render one main-instance unit plus one unit for each
   active workspace belonging to that same instance.
 - **Runtime unit filename:** Backend-safe identity for a rendered runtime unit.
   Systemd units use `orbit_<scope>_<process>` segment names for app/workspace
-  command processes, with logical app and app-instance slugs as separate scope
+  command processes, with project and instance slugs as separate scope
   segments; Docker units use equivalent Orbit-owned container names.
   Launchd labels use `dev.hardimpact.orbit.<runtimeUnit>` and plist files use
   the same label under the configured node user's LaunchAgents directory.
@@ -108,7 +108,7 @@ These terms describe the runtime objects that Orbit derives from process definit
   with stdout/stderr log files at
   `~/Library/Logs/Orbit/processes/<runtimeUnit>.out.log` and
   `~/Library/Logs/Orbit/processes/<runtimeUnit>.err.log`. The artifact starts
-  the process command or image in the resolved node, app-instance, or workspace context.
+  the process command or image in the resolved node, instance, or workspace context.
 
 ## Policy
 
@@ -149,7 +149,7 @@ These terms define the durable lifecycle records that process commands produce a
 These terms define what the process family owns and what remains outside its scope.
 
 - **Process-family boundaries:** Process commands own process definitions,
-  optional node/app-instance/workspace scope, optional tool dependency, runtime backend,
+  optional node/instance/workspace scope, optional tool dependency, runtime backend,
   runtime configuration, command or image configuration, environment, ports,
   volumes, restart policy, lifecycle commands, logs, crash notification policy,
   runtime unit derivation, runtime unit environment, and lifecycle event

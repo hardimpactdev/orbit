@@ -76,7 +76,7 @@ it('lists and filters registered tools from gateway intent', function (): void {
         $appFilterResult = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit tool:list --app=docs --json',
+                'cd %s && orbit tool:list --instance=docs --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -135,7 +135,7 @@ function toolListSeedGatewayIntentWithApp(E2ETopologyHarness $topology): void
     $php = <<<'PHP'
         $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-        \App\Models\App::query()->updateOrCreate(
+        \App\Models\Project::query()->updateOrCreate(
             ['name' => 'docs'],
             [
                 'node_id' => $node->id,

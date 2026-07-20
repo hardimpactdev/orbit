@@ -16,7 +16,7 @@ use Saloon\Http\Faking\MockResponse;
 
 uses(TestCase::class);
 it('serializes PHP runtime read filters', function (): void {
-    $request = new ShowPhpRuntimeRequest(app: 'docs', workspace: 'feature-docs', node: 'app-1', live: true);
+    $request = new ShowPhpRuntimeRequest(instance: 'docs', workspace: 'feature-docs', node: 'app-1', live: true);
 
     expect($request->resolveEndpoint())
         ->toBe('/api/php/runtime')
@@ -24,7 +24,7 @@ it('serializes PHP runtime read filters', function (): void {
         ->toBe(Method::GET)
         ->and($request->query()->all())
         ->toBe([
-            'app' => 'docs',
+            'instance' => 'docs',
             'workspace' => 'feature-docs',
             'node' => 'app-1',
             'live' => true,
@@ -34,7 +34,7 @@ it('serializes PHP runtime read filters', function (): void {
 it('serializes PHP runtime write payload', function (): void {
     $request = new UsePhpRuntimeRequest(
         version: '8.5',
-        app: 'docs',
+        instance: 'docs',
         workspace: null,
         node: null,
         inherit: false,
@@ -48,7 +48,7 @@ it('serializes PHP runtime write payload', function (): void {
         ->and($request->body()->all())
         ->toBe([
             'version' => '8.5',
-            'app' => 'docs',
+            'instance' => 'docs',
             'inherit' => false,
             'cli' => false,
         ]);
@@ -80,6 +80,6 @@ it('returns typed response DTOs from gateway envelopes', function (): void {
 
     expect($connector->send(new ShowPhpRuntimeRequest)->dto())
         ->toBeInstanceOf(PhpRuntimeResponse::class)
-        ->and($connector->send(new UsePhpRuntimeRequest(version: '8.5', app: 'docs'))->dto())
+        ->and($connector->send(new UsePhpRuntimeRequest(version: '8.5', instance: 'docs'))->dto())
         ->toBeInstanceOf(PhpRuntimeUseResponse::class);
 });

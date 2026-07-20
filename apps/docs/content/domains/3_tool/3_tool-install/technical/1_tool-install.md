@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]`
+# Technical Contract: `orbit tool:install <tool> [--instance=<project.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]`
 
 [Back to public `tool-install` documentation.](../tool-install.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
+orbit tool:install <tool> [--instance=<project.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -23,8 +23,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Supported tool name.` |
-| `node` | `--node` | When no `--app`, local `node:default`, or interactive target selection resolves a target. | `Never.` | `node:default` if set; otherwise interactive selection in TTY mode. | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
+| `node` | `--node` | When no `--instance`, local `node:default`, or interactive target selection resolves a target. | `Never.` | `node:default` if set; otherwise interactive selection in TTY mode. | Visible active non-gateway node slug; selected tool must support the node operating system. |
+| `app` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `version` | `--tool-version` | Optional. | When the selected tool definition does not explicitly support install versions. | Tool-defined latest supported version when applicable. | Specific version or installer channel supported by the selected tool definition. |
 | `config.install_users` | `--user` (repeatable) | Optional for user-scoped CLI tools. | For tools that are not user-scoped CLI tools. | `None.` | Additional existing Linux usernames for user-scoped CLI installs. Each value must match a conservative Linux username allow-list; Orbit does not create the account. |
 | `status` | `--status` | `Optional.` | `Never.` | `installed` | Expected capability state: installed or running. This does not start a process. |
@@ -59,7 +59,7 @@ the concrete Claude Code binary version returned by `claude --version`.
   required Docker-compatible container provider, runtime user and isolation,
   route/TLD requirement, gateway-local constraint, and active status. Missing
   platform metadata is not inferred as generic Linux.
-- Requires an explicit target source: `--node`, `--app`, local `node:default`,
+- Requires an explicit target source: `--node`, `--instance`, local `node:default`,
   or interactive target selection. Non-interactive mode without a target source
   fails with `validation_failed`.
 - Writes or updates gateway tool configuration.
@@ -129,7 +129,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
 | Unsatisfied install constraint | A declared operating-system, container-provider, runtime-user, isolation, route/TLD, gateway-local, or active-status requirement is not satisfied. | `error.code=tool.constraint_unsatisfied`; `error.meta.constraint=<constraint>`; `error.meta.required=<value>`; `error.meta.actual=<value>` |
 | Unsupported status value | `--status` is not `installed` or `running`. | `error.code=validation_failed`; `error.meta.field=status`; `error.meta.reason=unsupported_value` |
-| Missing target source | Non-interactive input provides no `--node`, `--app`, or local `node:default`. | `error.code=validation_failed`; `error.meta.fields=["target"]` |
+| Missing target source | Non-interactive input provides no `--node`, `--instance`, or local `node:default`. | `error.code=validation_failed`; `error.meta.fields=["target"]` |
 | Unsupported runtime field | API input includes `runtime`. Tools do not own runtime lifecycle. | `error.code=validation_failed`; `error.meta.field=runtime`; `error.meta.reason=unsupported_field` |
 | Unsupported instance field | API input includes `instance`. Tools do not support runnable service instances. | `error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=unsupported_field` |
 | Unsupported install version | API input includes `version` for a tool definition that does not explicitly support install versions. | `error.code=validation_failed`; `error.meta.field=version`; `error.meta.reason=unsupported_field` |

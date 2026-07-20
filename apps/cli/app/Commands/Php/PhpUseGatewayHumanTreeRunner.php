@@ -31,7 +31,7 @@ final readonly class PhpUseGatewayHumanTreeRunner
             : "Successfully updated PHP runtime to PHP {$version}";
 
         $node = is_string($payload['node'] ?? null) ? $payload['node'] : null;
-        $app = is_string($payload['app'] ?? null) ? $payload['app'] : null;
+        $instance = is_string($payload['instance'] ?? null) ? $payload['instance'] : null;
         $workspace = is_string($payload['workspace'] ?? null) ? $payload['workspace'] : null;
         $response = [];
 
@@ -41,7 +41,7 @@ final readonly class PhpUseGatewayHumanTreeRunner
                 [
                     'label' => 'Resolve target',
                     'doneLabel' => 'Resolved target',
-                    'run' => fn (): string => $this->targetLabel($node, $app, $workspace),
+                    'run' => fn (): string => $this->targetLabel($node, $instance, $workspace),
                 ],
                 [
                     'label' => 'Validate version',
@@ -80,14 +80,14 @@ final readonly class PhpUseGatewayHumanTreeRunner
         return null;
     }
 
-    private function targetLabel(?string $node, ?string $app, ?string $workspace): string
+    private function targetLabel(?string $node, ?string $instance, ?string $workspace): string
     {
         if ($workspace !== null) {
             return $workspace;
         }
 
-        if ($app !== null) {
-            return $app;
+        if ($instance !== null) {
+            return $instance;
         }
 
         return $node ?? 'target';

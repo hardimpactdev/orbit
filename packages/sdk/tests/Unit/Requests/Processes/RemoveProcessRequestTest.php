@@ -14,17 +14,17 @@ use Saloon\Http\Faking\MockResponse;
 
 uses(TestCase::class);
 it('resolves to DELETE /api/processes/{name}', function (): void {
-    $request = new RemoveProcessRequest(app: 'docs', name: 'vite');
+    $request = new RemoveProcessRequest(instance: 'docs', name: 'vite');
 
     expect($request->resolveEndpoint())->toBe('/api/processes/vite');
     expect($request->getMethod())->toBe(Method::DELETE);
 });
 
 it('serializes app and destructive consent body', function (): void {
-    $request = new RemoveProcessRequest(app: 'docs', name: 'vite');
+    $request = new RemoveProcessRequest(instance: 'docs', name: 'vite');
 
     expect($request->body()->all())->toBe([
-        'app' => 'docs',
+        'instance' => 'docs',
         'destructive_consent' => true,
         'destructive_consent_source' => 'force',
     ]);
@@ -35,7 +35,7 @@ it('returns a ProcessRemoveResponse DTO with warnings', function (): void {
         RemoveProcessRequest::class => MockResponse::make([
             'success' => [
                 'data' => [
-                    'process' => ['name' => 'vite', 'app' => 'docs'],
+                    'process' => ['name' => 'vite', 'instance' => 'docs'],
                     'removed_runtime_units' => ['orbit_docs_main_vite'],
                 ],
                 'meta' => [
@@ -50,7 +50,7 @@ it('returns a ProcessRemoveResponse DTO with warnings', function (): void {
     $connector = new GatewayConnector(baseUrl: 'https://10.6.0.2', caPemPath: '/path/to/ca.pem');
     $connector->withMockClient($mock);
 
-    $dto = $connector->send(new RemoveProcessRequest(app: 'docs', name: 'vite'))->dto();
+    $dto = $connector->send(new RemoveProcessRequest(instance: 'docs', name: 'vite'))->dto();
 
     expect($dto)->toBeInstanceOf(ProcessRemoveResponse::class);
     expect($dto->data['removed_runtime_units'])->toBe(['orbit_docs_main_vite']);

@@ -51,7 +51,7 @@ final class ProcessUpdateController implements Loggable
         try {
             $context = $this->contexts->resolve(
                 nodeName: $input['node'],
-                appName: $input['app'],
+                appName: $input['instance'],
                 workspaceName: $input['workspace'],
             );
         } catch (GatewayApiException $e) {
@@ -99,12 +99,12 @@ final class ProcessUpdateController implements Loggable
     }
 
     /**
-     * @return array{node: string|null, app: string|null, workspace: string|null, changes: array{name?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}, restart: bool}|JsonResponse
+     * @return array{node: string|null, instance: string|null, workspace: string|null, changes: array{name?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}, restart: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
         $node = $this->optionalString($request, 'node');
-        $app = $this->optionalString($request, 'app');
+        $app = $this->optionalString($request, 'instance');
         $workspace = $this->optionalString($request, 'workspace');
         $newName = $this->optionalString($request, 'name');
         $command = $this->optionalString($request, 'command');
@@ -115,11 +115,11 @@ final class ProcessUpdateController implements Loggable
         if ($node !== null && ($app !== null || $workspace !== null)) {
             return $this->error(
                 'validation_failed',
-                'A node context cannot be combined with app or workspace context.',
+                'A node context cannot be combined with instance or workspace context.',
                 [
                     'field' => 'context',
                     'node' => $node,
-                    'app' => $app,
+                    'instance' => $app,
                     'workspace' => $workspace,
                 ],
                 422,
@@ -129,8 +129,8 @@ final class ProcessUpdateController implements Loggable
         if ($node === null && $app === null && $workspace === null) {
             return $this->error(
                 'validation_failed',
-                'A node, app, or workspace context is required.',
-                ['field' => 'app'],
+                'A node, instance, or workspace context is required.',
+                ['field' => 'instance'],
                 422,
             );
         }
@@ -260,7 +260,7 @@ final class ProcessUpdateController implements Loggable
 
         return [
             'node' => $node,
-            'app' => $app,
+            'instance' => $app,
             'workspace' => $workspace,
             'changes' => $changes,
             'restart' => $request->boolean('restart'),
@@ -340,7 +340,7 @@ final class ProcessUpdateController implements Loggable
     {
         return [
             'node' => $this->optionalString(request(), 'node'),
-            'app' => $this->optionalString(request(), 'app'),
+            'instance' => $this->optionalString(request(), 'instance'),
             'workspace' => $this->optionalString(request(), 'workspace'),
             'new_name' => $this->optionalString(request(), 'name'),
         ];

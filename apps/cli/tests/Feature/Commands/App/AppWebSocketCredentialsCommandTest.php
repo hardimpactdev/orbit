@@ -9,7 +9,7 @@ describe('AppWebSocketCredentialsCommand', function (): void {
     it('requests app websocket credentials from the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'credentials' => [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'internal_host' => 'websocket.orbit',
                 'public_hosts' => ['ws.docs.test'],
                 'allowed_origins' => ['https://docs.test'],
@@ -19,8 +19,8 @@ describe('AppWebSocketCredentialsCommand', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:websocket credentials', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:websocket credentials', [
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -29,7 +29,7 @@ describe('AppWebSocketCredentialsCommand', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'GET'
-                && $request->url() === 'https://gateway.test/api/apps/docs/websocket/credentials'
+                && $request->url() === 'https://gateway.test/api/instances/docs/websocket/credentials'
                 && $request->data() === []
             ),
         );
@@ -47,7 +47,7 @@ describe('AppWebSocketCredentialsCommand', function (): void {
     it('renders credentials responses in human mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'credentials' => [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'internal_host' => 'websocket.orbit',
                 'public_hosts' => ['ws.docs.test'],
                 'allowed_origins' => ['https://docs.test'],
@@ -57,8 +57,8 @@ describe('AppWebSocketCredentialsCommand', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:websocket credentials', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:websocket credentials', [
+            'instance' => 'docs',
         ]);
 
         expect($exitCode)
@@ -66,7 +66,7 @@ describe('AppWebSocketCredentialsCommand', function (): void {
             ->and($output)
             ->toContain('credentials:')
             ->and($output)
-            ->toContain('  app: docs')
+            ->toContain('  instance: docs')
             ->and($output)
             ->toContain('  internal_host: websocket.orbit')
             ->and($output)
@@ -90,7 +90,7 @@ describe('AppWebSocketCredentialsCommand', function (): void {
     it('requires an app selector before sending gateway requests', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
-        [$exitCode, $output] = runCommand($this, 'app:websocket credentials', [
+        [$exitCode, $output] = runCommand($this, 'instance:websocket credentials', [
             '--json' => true,
         ]);
 
@@ -103,7 +103,7 @@ describe('AppWebSocketCredentialsCommand', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     });
 
     it('maps gateway failures into canonical CLI failures', function (): void {
@@ -113,8 +113,8 @@ describe('AppWebSocketCredentialsCommand', function (): void {
             ['missing_permission' => 'app:credentials', 'serving_node' => 'app-1'],
         ), 403);
 
-        [$exitCode, $output] = runCommand($this, 'app:websocket credentials', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:websocket credentials', [
+            'instance' => 'docs',
             '--json' => true,
         ]);
 

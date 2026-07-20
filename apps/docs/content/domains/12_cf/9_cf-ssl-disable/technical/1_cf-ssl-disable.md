@@ -67,7 +67,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `cf-ssl:disable` may make app or proxy TLS health fail, but it does not create a
 Cloudflare doctor family. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md)
-owns proxy TLS artifact health and [`doctor --family=app`](../../../5_app/app-doctor.md)
+owns proxy TLS artifact health and [`doctor --family=instance`](../../../5_project/instance-doctor.md)
 owns app-domain health.
 
 ## Test Mapping

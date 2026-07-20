@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\DatabaseConnections\EnvFileEditor;
 use App\Services\RemoteShell\RemoteEnvFile;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -23,13 +23,13 @@ final readonly class AppInstanceEnvApplier
         private WorkspacePlacement $placement,
     ) {}
 
-    public function apply(App $app, AppInstance $instance, string $key, string $value): AppInstanceEnvApplyResult
+    public function apply(Project $app, AppInstance $instance, string $key, string $value): AppInstanceEnvApplyResult
     {
         $node = $this->placement->nodeForInstance($instance);
 
         if (! $node instanceof Node) {
             throw new RuntimeException(
-                "App instance '{$app->name}.{$instance->name}' has no Orbit-managed owning node.",
+                "Instance '{$app->name}.{$instance->name}' has no Orbit-managed owning node.",
             );
         }
 
@@ -37,7 +37,7 @@ final readonly class AppInstanceEnvApplier
 
         if ($envPath === null) {
             throw new RuntimeException(
-                "App instance '{$app->name}.{$instance->name}' has no Orbit-managed source path.",
+                "Instance '{$app->name}.{$instance->name}' has no Orbit-managed source path.",
             );
         }
 
@@ -100,7 +100,7 @@ final readonly class AppInstanceEnvApplier
         app(RemoteEnvFile::class)->write($node, $path, $contents);
     }
 
-    private function clearCaches(Node $node, App $app): void
+    private function clearCaches(Node $node, Project $app): void
     {
         $result = $this->cacheClear->clear($node, $app);
 

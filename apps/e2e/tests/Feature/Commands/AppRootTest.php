@@ -68,9 +68,9 @@ it('updates an app root from a operator caller through the gateway api', functio
         $register = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --json',
+                'cd %s && orbit instance:register %s --node=app-dev-1 --path=%s --json',
                 escapeshellarg($topology->checkout('operator')),
-                escapeshellarg($name),
+                escapeshellarg($name.'.development'),
                 escapeshellarg($path),
             ),
             timeoutSeconds: 180,
@@ -83,7 +83,7 @@ it('updates an app root from a operator caller through the gateway api', functio
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:root %s web --json',
+                'cd %s && orbit instance:root %s web --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
@@ -91,9 +91,12 @@ it('updates an app root from a operator caller through the gateway api', functio
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $app = $payload['success']['data']['app'] ?? null;
+        $project = $payload['success']['data']['project'] ?? null;
+        $instance = $payload['success']['data']['instance'] ?? null;
 
-        expect($app)
+        expect($project)
+            ->toBeArray()
+            ->and($instance)
             ->toBeArray()
             ->and($payload['success']['data']['result']['changed'])
             ->toBeTrue()
@@ -101,20 +104,25 @@ it('updates an app root from a operator caller through the gateway api', functio
             ->toBe('app-dev-1')
             ->and($payload['success']['meta']['artifacts_reenacted'])
             ->toBeTrue()
-            ->and($app['name'])
+            ->and($project['name'])
             ->toBe($name)
-            ->and($app['node'])
+            ->and($instance['node'])
             ->toBe('app-dev-1')
-            ->and($app['path'])
+            ->and($instance['path'])
             ->toBe($path)
-            ->and($app['root'])
+            ->and($instance['root'])
             ->toBe('web');
 
         $gatewayRecord = $topology->ssh(
             'gateway',
             'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
                 .escapeshellarg("echo json_encode([
-                'root' => \\App\\Models\\App::query()->where('name', '{$name}')->value('document_root'),
+                'root' => \\App\\Models\\AppInstance::query()
+                    ->whereHas('project', fn (\$query) => \$query->where('name', '{$name}'))
+                    ->where('name', 'development')
+                    ->firstOrFail()
+                    ->driver_config
+                    ->document_root,
             ], JSON_THROW_ON_ERROR);"),
             timeoutSeconds: 120,
         );

@@ -8,7 +8,7 @@ final readonly class ProcessUpdateInput
 {
     public ?string $node;
 
-    public ?string $app;
+    public ?string $instance;
 
     public ?string $workspace;
 
@@ -29,7 +29,7 @@ final readonly class ProcessUpdateInput
     /**
      * @param  array{
      *     node?: ?string,
-     *     app?: ?string,
+     *     instance?: ?string,
      *     workspace?: ?string,
      *     name?: ?string,
      *     new_name?: ?string,
@@ -43,7 +43,7 @@ final readonly class ProcessUpdateInput
     private function __construct(array $values)
     {
         $this->node = $this->stringValue($values, 'node');
-        $this->app = $this->stringValue($values, 'app');
+        $this->instance = $this->stringValue($values, 'instance');
         $this->workspace = $this->stringValue($values, 'workspace');
         $this->name = $this->stringValue($values, 'name');
         $this->newName = $this->stringValue($values, 'new_name');
@@ -57,7 +57,7 @@ final readonly class ProcessUpdateInput
     /**
      * @param  array{
      *     node?: ?string,
-     *     app?: ?string,
+     *     instance?: ?string,
      *     workspace?: ?string,
      *     name?: ?string,
      *     new_name?: ?string,
@@ -100,7 +100,7 @@ final readonly class ProcessUpdateInput
     {
         return [
             'node' => $this->node,
-            'app' => $this->app,
+            'instance' => $this->instance,
             'workspace' => $this->workspace,
             'name' => $this->newName,
             'command' => $this->command,
@@ -113,7 +113,7 @@ final readonly class ProcessUpdateInput
     /**
      * @param  array{
      *     node?: ?string,
-     *     app?: ?string,
+     *     instance?: ?string,
      *     workspace?: ?string,
      *     name?: ?string,
      *     new_name?: ?string,
@@ -128,7 +128,7 @@ final readonly class ProcessUpdateInput
     {
         return match ($key) {
             'node' => $values['node'] ?? null,
-            'app' => $values['app'] ?? null,
+            'instance' => $values['instance'] ?? null,
             'workspace' => $values['workspace'] ?? null,
             'name' => $values['name'] ?? null,
             'new_name' => $values['new_name'] ?? null,

@@ -112,7 +112,7 @@ final readonly class DatabaseConnectionAdopter
                     family: 'database_connection',
                     key: $key,
                     action: $action,
-                    summary: "Adopted database connection for app instance '{$scopedInstance->app->name}.{$scopedInstance->name}'.",
+                    summary: "Adopted database connection for instance '{$scopedInstance->app->name}.{$scopedInstance->name}'.",
                     detail: [
                         'target_type' => 'app_instance',
                         'target_id' => $scopedInstance->id,

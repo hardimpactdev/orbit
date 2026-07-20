@@ -14,7 +14,7 @@ and read-only property list.
 | If the command is... | Use |
 | --- | --- |
 | Read-only display of multiple compact rows (`node:list`) | [`table`](table.md) |
-| Selecting one columnar row that drives a follow-up (`app:list`) | [`data-list`](data-list.md) |
+| Selecting one columnar row that drives a follow-up (`project:list`) | [`data-list`](data-list.md) |
 | Read-only display of grouped items with several properties (`tool:list`) | [`property-list`](property-list.md) |
 
 ## Pages

@@ -15,7 +15,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {name? : Process name}
         {process_command? : Command to run}
         {--node= : Owning node name}
-        {--app= : App or app-instance selector}
+        {--instance= : Instance selector}
         {--workspace= : Workspace name}
         {--tool= : Tool capability this process uses}
         {--service= : Managed service identifier to materialize}
@@ -38,7 +38,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
     public function handle(): int
     {
         $node = $this->nodeContext();
-        $app = $node === null ? $this->appContext() : $this->stringOption('app');
+        $app = $node === null ? $this->appContext() : $this->stringOption('instance');
         $workspace = $this->workspaceContext();
         $name = $this->stringArgument('name');
         $command = $this->stringArgument('process_command');
@@ -58,17 +58,17 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         if ($node !== null && ($app !== null || $workspace !== null)) {
             return $this->failValidation(
                 'context',
-                'A node context cannot be combined with app or workspace context.',
+                'A node context cannot be combined with instance or workspace context.',
                 [
                     'node' => $node,
-                    'app' => $app,
+                    'instance' => $app,
                     'workspace' => $workspace,
                 ],
             );
         }
 
         if ($node === null && $app === null && $workspace === null) {
-            return $this->failValidation('app', 'A node, app, or workspace context is required.');
+            return $this->failValidation('instance', 'A node, instance, or workspace context is required.');
         }
 
         $validation =
@@ -143,7 +143,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
 
         $payload = $this->filledQuery([
             'node' => $node,
-            'app' => $app,
+            'instance' => $app,
             'workspace' => $workspace,
             'name' => $name,
             'command' => $command,

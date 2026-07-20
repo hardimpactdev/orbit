@@ -71,23 +71,23 @@ final readonly class ProcessUpdateContextValidator
 {
     public function validate(ProcessUpdateInput $input): ?ProcessUpdateValidationFailure
     {
-        if ($input->node !== null && ($input->app !== null || $input->workspace !== null)) {
+        if ($input->node !== null && ($input->instance !== null || $input->workspace !== null)) {
             return new ProcessUpdateValidationFailure(
                 'context',
-                'A node context cannot be combined with app or workspace context.',
+                'A node context cannot be combined with instance or workspace context.',
                 [
                     'node' => $input->node,
-                    'app' => $input->app,
+                    'instance' => $input->instance,
                     'workspace' => $input->workspace,
                 ],
             );
         }
 
-        if ($input->node !== null || $input->app !== null || $input->workspace !== null) {
+        if ($input->node !== null || $input->instance !== null || $input->workspace !== null) {
             return null;
         }
 
-        return new ProcessUpdateValidationFailure('app', 'A node, app, or workspace context is required.');
+        return new ProcessUpdateValidationFailure('instance', 'A node, instance, or workspace context is required.');
     }
 }
 

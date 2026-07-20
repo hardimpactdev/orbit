@@ -11,14 +11,14 @@ credential repair, missing config files, or setup reruns.
 ## Usage
 
 ```bash
-orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<password>] [--json|--stream-json]
+orbit tool:reconfigure [tool] [--instance=<project.instance>] [--node=<node>] [--password=<password>] [--json|--stream-json]
 ```
 
 ## Examples
 
 ```bash
 orbit tool:reconfigure opencode-cli --node=agent-1
-orbit tool:reconfigure opencode-cli --app=docs --password=<new-password>
+orbit tool:reconfigure opencode-cli --instance=docs --password=<new-password>
 orbit tool:reconfigure opencode-cli --node=agent-1 --json
 orbit tool:reconfigure opencode-cli --node=agent-1 --stream-json
 ```
@@ -28,14 +28,14 @@ orbit tool:reconfigure opencode-cli --node=agent-1 --stream-json
 - `tool`: Optional tool name. When omitted in interactive mode, Orbit prompts
   from reconfigurable tools visible on the resolved node.
 - `--node`: Target node. Defaults to local `node:default` when configured.
-- `--app`: Resolve the target node from an app.
+- `--instance`: Resolve the target node from an app.
 - `--password`: Optional new authentication password when the tool definition
   supports password reconfiguration.
 - `--json`: Output JSON.
 - `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive
   with `--json`.
 
-Target context is required when neither `--node`, `--app`, nor local
+Target context is required when neither `--node`, `--instance`, nor local
 `node:default` resolves a node.
 
 ## What Happens

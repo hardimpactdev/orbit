@@ -5,12 +5,13 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
+use App\Services\Ca\OrbitCaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -37,7 +38,7 @@ it('stores renders and applies env only to the selected workspace', function ():
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'billing',
         'path' => '/home/orbit/apps/billing',
         'runtime' => 'php',
@@ -114,7 +115,7 @@ it('stores renders and applies env only to the selected workspace', function ():
 
     $shell = new WorkspaceEnvControllerRecordingRemoteShell;
     app()->instance(RemoteShell::class, $shell);
-    app()->instance(\App\Services\Ca\OrbitCaService::class, new readonly class extends \App\Services\Ca\OrbitCaService {
+    app()->instance(OrbitCaService::class, new readonly class extends OrbitCaService {
         public function rootCert(): string
         {
             return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
@@ -123,7 +124,7 @@ it('stores renders and applies env only to the selected workspace', function ():
 
     $response = test()->call(
         'POST',
-        '/api/workspaces/feature-mail/env?app=billing&instance=development',
+        '/api/workspaces/feature-mail/env?instance=billing.development',
         [
             'key' => 'APP_ENV',
             'value' => 'production',
@@ -146,7 +147,7 @@ it('stores renders and applies env only to the selected workspace', function ():
     $response
         ->assertOk()
         ->assertJsonPath('success.data.scope', 'workspace')
-        ->assertJsonPath('success.data.app', 'billing')
+        ->assertJsonPath('success.data.project', 'billing')
         ->assertJsonPath('success.data.instance', 'development')
         ->assertJsonPath('success.data.workspace', 'feature-mail')
         ->assertJsonPath('success.data.path', '/worktrees/feature-mail/.env')
@@ -191,7 +192,7 @@ it('stores renders and applies env only to the selected workspace', function ():
         ->toBe('staging');
 });
 
-it('rejects instance-only workspace disambiguation before an unauthorized cross-node write', function (): void {
+it('rejects incomplete instance selectors before an unauthorized cross-node write', function (): void {
     $caller = Node::factory()->create([
         'host' => '10.6.0.121',
         'wireguard_address' => '10.6.0.121',
@@ -210,8 +211,8 @@ it('rejects instance-only workspace disambiguation before an unauthorized cross-
             'name' => 'other-node',
             'wireguard_address' => '10.44.0.92',
         ]);
-    $targetApp = App::factory()->for($targetNode, 'node')->create(['name' => 'billing']);
-    $otherApp = App::factory()->for($otherNode, 'node')->create(['name' => 'docs']);
+    $targetApp = Project::factory()->for($targetNode, 'node')->create(['name' => 'billing']);
+    $otherApp = Project::factory()->for($otherNode, 'node')->create(['name' => 'docs']);
     $targetInstance = AppInstance::factory()->for($targetApp)->create([
         'name' => 'development',
         'driver_config' => new OrbitAppInstanceDriverConfigData(
@@ -260,9 +261,9 @@ it('rejects instance-only workspace disambiguation before an unauthorized cross-
     );
 
     $response
-        ->assertUnprocessable()
+        ->assertBadRequest()
         ->assertJsonPath('error.code', 'validation_failed')
-        ->assertJsonPath('error.meta.field', 'app');
+        ->assertJsonPath('error.meta.field', 'instance');
 
     expect($targetWorkspace->fresh()->envVariables)->toBeEmpty();
 });

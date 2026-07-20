@@ -1,6 +1,6 @@
 # Database Commands
 
-Database commands manage reusable database connection intent for app instances
+Database commands manage reusable database connection intent for instances
 and workspaces, converge that intent into target `.env` files, inspect schemas, and
 run audited SQL through Orbit's supported drivers.
 
@@ -17,7 +17,7 @@ touch.
 
 - The database command family owns the `database:*` command prefix.
 - `database_connection` is a state family. Gateway database-connection records
-  and target mappings are the expected state for app-instance and workspace
+  and target mappings are the expected state for instance and workspace
   database access.
 - A database connection record stores reusable connection facts such as driver,
   host, port, database name, SQLite path, username, and encrypted credentials.
@@ -31,25 +31,25 @@ touch.
   unsupported. Explicit targets fail with
   `workspace.unsupported_for_production` before registry, `.env`, probe, or
   executor effects; broad connection reads omit the forbidden workspace
-  mappings while retaining supported app-instance targets.
+  mappings while retaining supported instance targets.
 - CLI callers resolve input locally, then the gateway reads or writes durable
   database connection state and performs any target `.env` inspection or update.
 - `doctor --family=database_connection` owns drift between gateway
-  database-connection intent and supported database-related keys in app-instance
+  database-connection intent and supported database-related keys in instance
   and workspace `.env` files.
-- Database restore writes gateway-owned values into selected app-instance and workspace
+- Database restore writes gateway-owned values into selected instance and workspace
   `.env` files while preserving unrelated keys and comments.
 - For node-owned MySQL and PostgreSQL connections, database restore and doctor
   comparisons materialize `*_HOST` as the owning node's WireGuard service
-  address when the consuming app instance or workspace reaches the database over Orbit's
+  address when the consuming instance or workspace reaches the database over Orbit's
   private network.
 - When a stored connection record matches a managed Docker MySQL process on the
-  same node as the target app instance or workspace, doctor restore and comparisons
+  same node as the target instance or workspace, doctor restore and comparisons
   materialize the process Docker service alias and internal target port.
 - Doctor adoption recognizes the managed Docker MySQL alias as the same
   canonical connection instead of replacing the stored gateway endpoint.
 - When the matching managed Docker MySQL process is renamed through
-  `process:update --name=<new-slug>`, same-node app-instance and workspace `.env`
+  `process:update --name=<new-slug>`, same-node instance and workspace `.env`
   materialization uses the new Docker service alias, while gateway
   `database:query` continues to use the stored canonical endpoint.
 - Gateway `database:query` continues to use the stored connection endpoint.
@@ -62,9 +62,9 @@ touch.
 - Database adopt reads observed `.env` values by supported prefixes, creates or
   updates reusable connection records, creates or updates target mappings, and
   stores adopted passwords in encrypted credentials.
-- Existing registered app instances and workspaces enter this family through explicit
+- Existing registered instances and workspaces enter this family through explicit
   `doctor --adopt --family=database_connection` rollout. Database commands do
-  not require re-registering those app instances or workspaces.
+  not require re-registering those instances or workspaces.
 - Query and schema commands use gateway-owned connection state. They do not
   treat ad hoc env parsing as an alternate source of truth.
 - SQLite query execution is local to the node that owns the SQLite file.
@@ -107,10 +107,10 @@ inspection is not the same authority as reading table rows. `database:write`
 intentionally does not imply `database:query:write`: mutating Orbit's
 connection registry is not the same authority as mutating application data.
 
-For target-scoped commands, the serving node is the selected app instance or
+For target-scoped commands, the serving node is the selected instance or
 workspace's owning node. For direct
 connection commands, the serving node is the connection's owning node when it
-has one, otherwise the node reached through an attached app instance or
+has one, otherwise the node reached through an attached instance or
 workspace target. Connections without an owning node or target are gateway-owned
 and require gateway authority.
 
@@ -126,8 +126,8 @@ database command evaluates or enacts workspace state.
 The database command domain owns the `database_connection` state family.
 
 - [`doctor --family=database_connection`](database-doctor.md) owns connection
-  drift, restore, and adopt behavior for app-instance and workspace `.env` mappings.
-- [`doctor --family=app`](../5_app/app-doctor.md) owns app runtime health and
+  drift, restore, and adopt behavior for instance and workspace `.env` mappings.
+- [`doctor --family=instance`](../5_project/instance-doctor.md) owns app runtime health and
   app runtime artifacts that are not part of database env mapping.
 - [`doctor --family=workspace`](../6_workspace/workspace-doctor.md) owns
   workspace runtime artifacts and workspace path drift.
@@ -140,8 +140,8 @@ The database command domain owns the `database_connection` state family.
 Database-family JSON renderers that return one connection entity embed this
 shape under `success.data.connection`, or under
 `success.data.connections[]` for list items. Target-specific renderers may add
-target data beside the connection entity. App-instance targets use
-`type=app_instance` and carry both `app` and `instance`.
+target data beside the connection entity. Instance targets use
+`type=instance` and carry both `app` and `instance`.
 
 ```json
 {
@@ -155,15 +155,15 @@ target data beside the connection entity. App-instance targets use
   "node": "gateway",
   "targets": [
     {
-      "type": "app_instance",
-      "app": "acme",
+      "type": "instance",
+      "project": "acme",
       "instance": "development",
       "env_prefix": "DB"
     },
     {
       "type": "workspace",
       "name": "feature-acme",
-      "app": "acme",
+      "project": "acme",
       "env_prefix": "REPORTING_DB"
     }
   ]
@@ -180,7 +180,7 @@ target data beside the connection entity. App-instance targets use
 | `path` | string \| null | SQLite file path when `driver=sqlite`. |
 | `username` | string \| null | Non-secret username associated with the connection. |
 | `node` | string \| null | Owning node when the connection is node-scoped; `null` when not node-bound. |
-| `targets` | array | App-instance or workspace mappings that expose this connection into `.env` files. |
+| `targets` | array | Instance or workspace mappings that expose this connection into `.env` files. |
 
 ## Concepts
 
@@ -212,7 +212,7 @@ Use these commands to create, update, or remove reusable connection records.
 
 ### Target mapping
 
-Use these commands to bind stored connections into app-instance or
+Use these commands to bind stored connections into instance or
 workspace env space.
 
 7. [`orbit database:attach <connection>`](6_database-attach/database-attach.md)
@@ -236,6 +236,6 @@ These hidden commands support gateway orchestration and are not public workflow 
 ## Related
 
 - [`doctor --family=database_connection`](database-doctor.md)
-- [`orbit app:*`](../5_app/README.md)
+- [`orbit app:*`](../5_project/README.md)
 - [`orbit workspace:*`](../6_workspace/README.md)
 - [`orbit tool:*`](../3_tool/README.md)

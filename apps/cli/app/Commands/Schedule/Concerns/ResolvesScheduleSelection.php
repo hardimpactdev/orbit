@@ -6,7 +6,7 @@ namespace App\Commands\Schedule\Concerns;
 
 trait ResolvesScheduleSelection
 {
-    private ?string $resolvedScheduleApp = null;
+    private ?string $resolvedScheduleInstance = null;
 
     private ?string $resolvedScheduleNode = null;
 
@@ -26,7 +26,7 @@ trait ResolvesScheduleSelection
         }
 
         $selection = $this->promptForVisibleSchedule(
-            app: $this->stringOption('app'),
+            instance: $this->stringOption('instance'),
             node: $this->stringOption('node'),
         );
 
@@ -34,15 +34,17 @@ trait ResolvesScheduleSelection
             return $selection;
         }
 
-        $this->resolvedScheduleApp = $selection['app'];
-        $this->resolvedScheduleNode = $selection['node'];
+        $this->resolvedScheduleInstance = is_string($selection['instance'] ?? null) ? $selection['instance'] : null;
+        $this->resolvedScheduleNode = is_string($selection['node'] ?? null) ? $selection['node'] : null;
 
         return $selection['name'];
     }
 
-    protected function resolvedScheduleApp(): ?string
+    protected function resolvedScheduleInstance(): ?string
     {
-        return $this->resolvedScheduleApp ?? $this->stringOption('app');
+        $instance = $this->resolvedScheduleInstance ?? $this->stringOption('instance');
+
+        return is_string($instance) ? $instance : null;
     }
 
     protected function resolvedScheduleNode(): ?string

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
 use App\Models\GatewayExtension;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -66,7 +66,7 @@ describe('CodexAppController', function (): void {
                 'wireguard_address' => '10.44.0.24',
                 'user' => 'nicky',
             ]);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',
@@ -94,7 +94,7 @@ describe('CodexAppController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.codex_project.app', 'docs')
+            ->assertJsonPath('success.data.codex_project.project', 'docs')
             ->assertJsonPath('success.data.codex_project.node', 'mini')
             ->assertJsonPath('success.data.codex_project.remote_path', '/home/orbit/apps/docs')
             ->assertJsonPath('success.data.codex_project.ssh_alias', 'app-node')
@@ -161,7 +161,7 @@ describe('CodexAppController', function (): void {
                 'name' => 'linux-operator',
                 'platform' => 'ubuntu_24-04',
             ]);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         grantCodexAppAccess($caller, $appNode);
         grantCodexAppAccess($caller, $target);
         Http::preventStrayRequests();
@@ -203,7 +203,7 @@ describe('CodexAppController', function (): void {
                 'wireguard_address' => '10.44.0.24',
                 'user' => 'nicky',
             ]);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',
@@ -254,7 +254,7 @@ describe('CodexAppController', function (): void {
                 'wireguard_address' => '10.44.0.24',
                 'user' => 'nicky',
             ]);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',

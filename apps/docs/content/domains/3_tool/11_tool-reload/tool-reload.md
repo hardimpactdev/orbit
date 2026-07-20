@@ -26,7 +26,7 @@ runtime.
 ## Options
 
 - `--node=<node>` selects the target node.
-- `--app=<app>` resolves the target node from an app selector.
+- `--instance=<project.instance>` resolves the target node from an instance selector.
 - `--json` returns a single JSON envelope.
 - `--stream-json` streams progress frames.
 

@@ -68,7 +68,7 @@ final readonly class WorkspaceShowController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $app = $this->stringQuery($request, 'app');
+        $app = $this->stringQuery($request, 'instance');
         $selection = null;
         $visibleNodeIds = $this->visibleAppNodeIds($caller);
 
@@ -87,7 +87,7 @@ final readonly class WorkspaceShowController implements Loggable
         if (! $this->callerIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed("This caller is not authorized to inspect '{$name}'.", [
                 'name' => $name,
-                'app' => $app,
+                'instance' => $app,
                 'reason' => 'missing_permission',
                 'missing_permission' => 'workspace:read',
             ]);
@@ -140,8 +140,10 @@ final readonly class WorkspaceShowController implements Loggable
                     'message' => "Workspace name '{$name}' is ambiguous.",
                     'meta' => [
                         'name' => $name,
-                        'apps' => $matches
-                            ->map(fn (Workspace $workspace): ?string => $workspace->app?->name)
+                        'instances' => $matches
+                            ->map(fn (Workspace $workspace): ?string => $workspace->app instanceof \App\Models\Project
+                                ? "{$workspace->app->name}.{$workspace->appInstance->name}"
+                                : null)
                             ->filter()
                             ->values()
                             ->all(),
@@ -175,7 +177,7 @@ final readonly class WorkspaceShowController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $app = $this->stringQuery($request, 'app');
+        $app = $this->stringQuery($request, 'instance');
         $selection = null;
         $visibleNodeIds = $this->visibleAppNodeIds($caller);
 
@@ -397,7 +399,7 @@ final readonly class WorkspaceShowController implements Loggable
         array $notFoundMeta,
     ): JsonResponse {
         return match ($exception->meta['reason'] ?? null) {
-            'app_instance_required' => $this->appInstanceRequired($exception),
+            'instance_required' => $this->appInstanceRequired($exception),
             default => response()->json([
                 'error' => [
                     'code' => 'workspace.not_found',

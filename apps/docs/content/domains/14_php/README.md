@@ -13,7 +13,7 @@ The `php` command domain does not own a state family. It writes runtime
 selection configuration that is verified by existing state-family doctors.
 
 [`doctor --family=tool`](../3_tool/tool-doctor.md) owns Docker runtime tool
-availability. [`doctor --family=app`](../5_app/app-doctor.md)
+availability. [`doctor --family=instance`](../5_project/instance-doctor.md)
 owns app PHP runtime health and app runtime containers.
 [`doctor --family=workspace`](../6_workspace/workspace-doctor.md) owns
 workspace PHP runtime health and workspace runtime containers.
@@ -43,12 +43,12 @@ These rules define what PHP runtime commands own and how they operate.
   Docker/Incus development and E2E nodes invoke `<source>/apps/cli/orbit`.
 - App PHP version is gateway-tracked app configuration.
 - Workspace PHP version is gateway-tracked workspace configuration. A workspace
-  inherits the parent app PHP version unless it stores an override.
+  inherits the parent project PHP version unless it stores an override.
 - Workspace PHP reads and writes are available only when the workspace resolves
   to an active `app-dev` serving node and the caller is not an `app-prod` node.
   Explicit workspace targets fail with
   `workspace.unsupported_for_production` before inventory, configuration, or
-  runtime effects when either side crosses that boundary. App-level PHP reads
+  runtime effects when either side crosses that boundary. Instance-level PHP reads
   for production callers and targets omit workspace selection facts.
 - PHP runtime commands must not read `.php-version` files.
 - PHP runtime commands must not mutate `composer.json`, Composer constraints,
@@ -67,7 +67,7 @@ PHP JSON renderers use this shape for runtime selection results:
   "node": "app-1",
   "supported": ["8.5", "8.4", "8.3"],
   "available_images": ["8.5"],
-  "app": {
+  "project": {
     "name": "docs",
     "php_version": "8.5"
   },
@@ -95,10 +95,10 @@ The PHP family provides the following commands.
 Related command families and doctor contracts that intersect with PHP runtime selection.
 
 - [`orbit tool:*`](../3_tool/README.md)
-- [`orbit app:*`](../5_app/README.md)
+- [`orbit app:*`](../5_project/README.md)
 - [`orbit workspace:*`](../6_workspace/README.md)
 - [`doctor --family=tool`](../3_tool/tool-doctor.md)
-- [`doctor --family=app`](../5_app/app-doctor.md)
+- [`doctor --family=instance`](../5_project/instance-doctor.md)
 - [`doctor --family=workspace`](../6_workspace/workspace-doctor.md)
 - [`doctor --family=proxy`](../8_proxy/proxy-doctor.md)
 - [`doctor --family=node`](../1_node/node-doctor.md)

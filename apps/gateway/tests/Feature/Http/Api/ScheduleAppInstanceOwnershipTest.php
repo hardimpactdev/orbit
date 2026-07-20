@@ -5,10 +5,10 @@ declare(strict_types=1);
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Nodes\NodeStatus;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\SchedulerState;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -19,14 +19,14 @@ uses(RefreshDatabase::class);
 
 const SCHEDULE_INSTANCE_CALLER_IP = '10.6.0.91';
 
-it('creates same-named schedules for explicit concrete app instances', function (): void {
+it('creates same-named schedules for explicit concrete instances', function (): void {
     $caller = scheduleInstanceCaller(gateway: true);
     scheduleGatewayHeartbeat($caller);
     [$app, $development, $production] = scheduleAppWithTwoInstances();
 
     schedulePost([
         'name' => 'nightly',
-        'app' => 'docs.production',
+        'instance' => 'docs.production',
         'interval' => 'daily at 02:00',
         'timezone' => 'UTC',
         'command' => 'php artisan reports:send',
@@ -37,7 +37,7 @@ it('creates same-named schedules for explicit concrete app instances', function 
 
     schedulePost([
         'name' => 'nightly',
-        'app' => 'docs.development',
+        'instance' => 'docs.development',
         'interval' => 'daily at 02:00',
         'timezone' => 'UTC',
         'command' => 'php artisan reports:send',
@@ -60,7 +60,7 @@ it('stores and returns a bounded schedule execution timeout', function (): void 
 
     schedulePost([
         'name' => 'catalogue-sync',
-        'app' => 'docs.production',
+        'instance' => 'docs.production',
         'interval' => 'weekly on monday at 02:30',
         'timezone' => 'Europe/Amsterdam',
         'timeout' => 7_200,
@@ -79,7 +79,7 @@ it('rejects schedule execution timeouts outside the supported range', function (
 
     schedulePost([
         'name' => 'catalogue-sync',
-        'app' => 'docs.production',
+        'instance' => 'docs.production',
         'interval' => 'weekly on monday at 02:30',
         'timezone' => 'Europe/Amsterdam',
         'timeout' => $timeout,
@@ -99,7 +99,7 @@ it('rejects schedule execution timeouts outside the supported range', function (
     'mixed numeric string' => '7200oops',
 ]);
 
-it('accepts a bare app selector when exactly one eligible instance is visible', function (): void {
+it('accepts a bare project selector when exactly one eligible instance is visible', function (): void {
     $caller = scheduleInstanceCaller();
     $gateway = scheduleGatewayNode();
     scheduleGatewayHeartbeat($gateway);
@@ -110,7 +110,7 @@ it('accepts a bare app selector when exactly one eligible instance is visible', 
 
     schedulePost([
         'name' => 'nightly',
-        'app' => 'docs',
+        'instance' => 'docs',
         'interval' => 'daily at 02:00',
         'timezone' => 'UTC',
         'command' => 'php artisan reports:send',
@@ -122,7 +122,7 @@ it('accepts a bare app selector when exactly one eligible instance is visible', 
     expect(Schedule::query()->sole()->app_instance_id)->toBe($development->id);
 });
 
-it('does not reveal whether an unauthorized explicit app instance exists', function (): void {
+it('does not reveal whether an unauthorized explicit instance exists', function (): void {
     $caller = scheduleInstanceCaller();
     scheduleGatewayHeartbeat(scheduleGatewayNode());
     scheduleAppWithTwoInstances();
@@ -132,14 +132,14 @@ it('does not reveal whether an unauthorized explicit app instance exists', funct
 
     $hidden = schedulePost([
         'name' => 'nightly',
-        'app' => 'docs.production',
+        'instance' => 'docs.production',
         'interval' => 'daily at 02:00',
         'timezone' => 'UTC',
         'command' => 'php artisan reports:send',
     ]);
     $missing = schedulePost([
         'name' => 'nightly',
-        'app' => 'docs.does-not-exist',
+        'instance' => 'docs.does-not-exist',
         'interval' => 'daily at 02:00',
         'timezone' => 'UTC',
         'command' => 'php artisan reports:send',
@@ -186,22 +186,22 @@ it('preserves explicit unavailable instance diagnostics for privileged callers',
 
     schedulePost([
         'name' => 'nightly',
-        'app' => 'docs.production',
+        'instance' => 'docs.production',
         'interval' => 'daily at 02:00',
         'timezone' => 'UTC',
         'command' => 'php artisan reports:send',
     ])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation_failed')
-        ->assertJsonPath('error.meta.reason', 'app_instance_unavailable')
-        ->assertJsonPath('error.meta.app', 'docs')
+        ->assertJsonPath('error.meta.reason', 'instance_unavailable')
+        ->assertJsonPath('error.meta.project', 'docs')
         ->assertJsonPath('error.meta.instance', 'production');
 })->with([
     'gateway node' => true,
     'gateway-admin grant' => false,
 ]);
 
-it('excludes inactive app instance placements from bare selector eligibility', function (): void {
+it('excludes inactive instance placements from bare selector eligibility', function (): void {
     $caller = scheduleInstanceCaller(gateway: true);
     scheduleGatewayHeartbeat($caller);
     [, $development] = scheduleAppWithTwoInstances();
@@ -211,7 +211,7 @@ it('excludes inactive app instance placements from bare selector eligibility', f
 
     schedulePost([
         'name' => 'nightly',
-        'app' => 'docs',
+        'instance' => 'docs',
         'interval' => 'daily at 02:00',
         'timezone' => 'UTC',
         'command' => 'php artisan reports:send',
@@ -222,36 +222,36 @@ it('excludes inactive app instance placements from bare selector eligibility', f
     expect(Schedule::query()->sole()->app_instance_id)->toBe($development->id);
 });
 
-it('rejects an ambiguous bare app selector before creating schedule intent', function (): void {
+it('rejects an ambiguous bare project selector before creating schedule intent', function (): void {
     $caller = scheduleInstanceCaller(gateway: true);
     scheduleGatewayHeartbeat($caller);
     scheduleAppWithTwoInstances();
 
     schedulePost([
         'name' => 'nightly',
-        'app' => 'docs',
+        'instance' => 'docs',
         'interval' => 'daily at 02:00',
         'timezone' => 'UTC',
         'command' => 'php artisan reports:send',
     ])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation_failed')
-        ->assertJsonPath('error.meta.field', 'app')
-        ->assertJsonPath('error.meta.reason', 'app_instance_required')
+        ->assertJsonPath('error.meta.field', 'instance')
+        ->assertJsonPath('error.meta.reason', 'instance_required')
         ->assertJsonPath('error.meta.instances.0', 'development')
         ->assertJsonPath('error.meta.instances.1', 'production');
 
     expect(Schedule::query()->count())->toBe(0);
 });
 
-it('rejects a bare app selector when no eligible instance is visible to the caller', function (): void {
+it('rejects a bare project selector when no eligible instance is visible to the caller', function (): void {
     $caller = scheduleInstanceCaller();
     scheduleGatewayHeartbeat(scheduleGatewayNode());
     scheduleAppWithTwoInstances();
 
     schedulePost([
         'name' => 'nightly',
-        'app' => 'docs',
+        'instance' => 'docs',
         'interval' => 'daily at 02:00',
         'timezone' => 'UTC',
         'command' => 'php artisan reports:send',
@@ -263,29 +263,29 @@ it('rejects a bare app selector when no eligible instance is visible to the call
     expect(Schedule::query()->count())->toBe(0);
 });
 
-it('reads an explicit app instance and rejects ambiguous bare app filters', function (): void {
+it('reads an explicit instance and rejects ambiguous bare project filters', function (): void {
     $caller = scheduleInstanceCaller(gateway: true);
     [, $development, $production] = scheduleAppWithTwoInstances();
     Schedule::factory()->forAppInstance($development)->create(['name' => 'nightly']);
     Schedule::factory()->forAppInstance($production)->create(['name' => 'nightly']);
 
-    scheduleGet('/api/schedules/nightly?app=docs.production')
+    scheduleGet('/api/schedules/nightly?instance=docs.production')
         ->assertOk()
         ->assertJsonPath('success.data.schedule.target.name', 'docs.production')
-        ->assertJsonPath('success.meta.app', 'docs.production');
+        ->assertJsonPath('success.meta.instance', 'docs.production');
 
-    scheduleGet('/api/schedules/nightly?app=docs')
+    scheduleGet('/api/schedules/nightly?instance=docs')
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation_failed')
-        ->assertJsonPath('error.meta.reason', 'app_instance_required');
+        ->assertJsonPath('error.meta.reason', 'instance_required');
 
-    scheduleGet('/api/schedules?app=docs')
+    scheduleGet('/api/schedules?instance=docs')
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation_failed')
-        ->assertJsonPath('error.meta.reason', 'app_instance_required');
+        ->assertJsonPath('error.meta.reason', 'instance_required');
 });
 
-it('lists schedules only for app instances visible to a non-gateway caller', function (): void {
+it('lists schedules only for instances visible to a non-gateway caller', function (): void {
     $caller = scheduleInstanceCaller();
     [, $development, $production] = scheduleAppWithTwoInstances();
     $developmentNode = Node::query()->where('name', 'app-dev-1')->firstOrFail();
@@ -343,13 +343,13 @@ function scheduleGatewayHeartbeat(Node $gateway): void
 }
 
 /**
- * @return array{App, AppInstance, AppInstance}
+ * @return array{Project, AppInstance, AppInstance}
  */
 function scheduleAppWithTwoInstances(): array
 {
     $developmentNode = scheduleAppNode('app-dev-1', 'app-dev');
     $productionNode = scheduleAppNode('app-prod-1', 'app-prod');
-    $app = App::factory()->for($developmentNode, 'node')->create([
+    $app = Project::factory()->for($developmentNode, 'node')->create([
         'name' => 'docs',
         'path' => '/srv/docs-development',
     ]);
@@ -372,7 +372,7 @@ function scheduleAppNode(string $name, string $role): Node
     return $node;
 }
 
-function scheduleAppInstance(App $app, Node $node, string $name, string $path): AppInstance
+function scheduleAppInstance(Project $app, Node $node, string $name, string $path): AppInstance
 {
     return AppInstance::factory()->for($app)->create([
         'name' => $name,

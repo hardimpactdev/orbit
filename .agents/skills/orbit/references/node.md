@@ -198,7 +198,8 @@ through node doctor.
 
 ## `orbit node:agent-ide [name] [adapter]`
 
-Set the default Agent IDE adapter for a node. Apps inherit this unless overridden by `app:agent-ide`.
+Set the default Agent IDE adapter for a node. Instances inherit this unless
+overridden by `instance:agent-ide`.
 
 ```bash
 orbit node:agent-ide [<name>] [opencode|polyscope|none] [--json]

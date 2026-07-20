@@ -12,9 +12,9 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
 use App\Enums\WorkspaceLifecycleStatus;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Tools\ToolScriptDispatcher;
@@ -569,7 +569,7 @@ describe('app instance eligibility', function (): void {
 
     it('requires the selected app instance to resolve to an active app node', function (callable $createNode): void {
         $node = $createNode();
-        $app = App::factory()->for($node, 'node')->create();
+        $app = Project::factory()->for($node, 'node')->create();
         $workspace = workspaceFor($app);
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
@@ -608,11 +608,11 @@ function convergedRuntimeSnapshot(array $overrides = []): array
     ];
 }
 
-function workspaceableApp(array $overrides = [], string $role = 'app-dev'): App
+function workspaceableApp(array $overrides = [], string $role = 'app-dev'): Project
 {
     $node = createTestAppHostNode(role: $role);
 
-    $app = App::factory()
+    $app = Project::factory()
         ->for($node, 'node')
         ->create($overrides);
 
@@ -628,7 +628,7 @@ function workspaceableApp(array $overrides = [], string $role = 'app-dev'): App
     return $app;
 }
 
-function workspaceFor(App $app, array $overrides = []): Workspace
+function workspaceFor(Project $app, array $overrides = []): Workspace
 {
     $name = (string) ($overrides['name'] ?? 'feature');
 

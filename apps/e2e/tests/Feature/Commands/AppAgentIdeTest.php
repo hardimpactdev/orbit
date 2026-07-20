@@ -68,9 +68,9 @@ it('sets app agent IDE intent from a operator caller through the gateway api', f
         $register = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --json',
+                'cd %s && orbit instance:register %s --node=app-dev-1 --path=%s --json',
                 escapeshellarg($topology->checkout('operator')),
-                escapeshellarg($name),
+                escapeshellarg($name.'.development'),
                 escapeshellarg($path),
             ),
             timeoutSeconds: 180,
@@ -83,7 +83,7 @@ it('sets app agent IDE intent from a operator caller through the gateway api', f
         $set = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:agent-ide %s opencode --json',
+                'cd %s && orbit instance:agent-ide %s opencode --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
@@ -92,12 +92,14 @@ it('sets app agent IDE intent from a operator caller through the gateway api', f
 
         $setPayload = json_decode(trim($set->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($setPayload['success']['data']['app']['name'])
+        expect($setPayload['success']['data']['instance']['project'])
             ->toBe($name)
+            ->and($setPayload['success']['data']['instance']['name'])
+            ->toBe('development')
             ->and($setPayload['success']['data']['agent_ide'])
             ->toBe([
                 'adapter' => 'opencode',
-                'source' => 'app',
+                'source' => 'instance',
                 'effective_adapter' => 'opencode',
             ])
             ->and($setPayload['success']['data']['cleanup']['workspaces_removed'])
@@ -106,9 +108,9 @@ it('sets app agent IDE intent from a operator caller through the gateway api', f
         $clear = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:agent-ide %s inherit --json',
+                'cd %s && orbit instance:agent-ide %s inherit --json',
                 escapeshellarg($topology->checkout('operator')),
-                escapeshellarg($name),
+                escapeshellarg($name.'.development'),
             ),
             timeoutSeconds: 180,
         );
@@ -125,7 +127,10 @@ it('sets app agent IDE intent from a operator caller through the gateway api', f
             'gateway',
             'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
                 .escapeshellarg("echo json_encode([
-                'agent_ide_config' => \\App\\Models\\App::query()->where('name', '{$name}')->value('agent_ide_config'),
+                'agent_ide_config' => \\App\\Models\\AppInstance::query()
+                    ->whereHas('project', fn (\$query) => \$query->where('name', '{$name}'))
+                    ->where('name', 'development')
+                    ->value('agent_ide_config'),
             ], JSON_THROW_ON_ERROR);"),
             timeoutSeconds: 120,
         );

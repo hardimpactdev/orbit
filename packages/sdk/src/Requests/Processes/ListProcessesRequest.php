@@ -16,7 +16,7 @@ final class ListProcessesRequest extends GatewayRequest
 
     public function __construct(
         public readonly ?string $node = null,
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $workspace = null,
     ) {}
 
@@ -33,7 +33,7 @@ final class ListProcessesRequest extends GatewayRequest
         return array_filter(
             [
                 'node' => $this->node,
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'workspace' => $this->workspace,
             ],
             fn (?string $value): bool => $value !== null && $value !== '',
@@ -49,7 +49,7 @@ final class ListProcessesRequest extends GatewayRequest
         return new ProcessListResponse(
             context: [
                 'node' => is_string($context['node'] ?? null) ? $context['node'] : null,
-                'app' => is_string($context['app'] ?? null) ? $context['app'] : null,
+                'instance' => is_string($context['instance'] ?? null) ? $context['instance'] : null,
                 'workspace' => is_string($context['workspace'] ?? null) ? $context['workspace'] : null,
             ],
             processes: $this->listOfStringKeyedArrays($processes),

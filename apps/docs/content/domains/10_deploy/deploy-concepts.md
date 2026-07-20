@@ -1,7 +1,7 @@
 # Deploy Concepts
 
 This document defines deploy-command-domain vocabulary and invariants. It
-supports the deploy command contracts and the [app doctor](../5_app/app-doctor.md);
+supports the deploy command contracts and the [app doctor](../5_project/instance-doctor.md);
 it does not override the [Architecture](../../architecture.md).
 
 ## Domain and ownership
@@ -9,22 +9,22 @@ it does not override the [Architecture](../../architecture.md).
 These terms define the deploy command domain and what it owns.
 
 - **Deploy command domain:** The `deploy:*` command prefix. It manages
-  production app-instance deployment policy, deployment runs, run history, and captured
+  production instance deployment policy, deployment runs, run history, and captured
   deployment output, but it does not create a separate state family.
-- **Production app deployment:** Operator workflow for one concrete instance of
-  a production app that executes configured deployment steps on the instance's owning node through
+- **Production project deployment:** Operator workflow for one concrete instance of
+  a production project that executes configured deployment steps on the instance's owning node through
   gateway-authenticated Agent push.
-- **Deployment policy:** App-instance-owned gateway state that defines the
-  ordered deployment steps for one concrete production app instance.
+- **Deployment policy:** Instance-owned gateway state that defines the
+  ordered deployment steps for one concrete production instance.
 - **Deployment pipeline:** Ordered deployment step list for one concrete
-  production app instance. It is not global deployment configuration.
+  production instance. It is not global deployment configuration.
 
 ## Steps
 
 These terms describe the units of work that make up a deployment pipeline.
 
 - **Deployment step definition:** Record assigned by the gateway and owned by
-  one app instance, containing a title, shell command, order, timeout, and optional
+  one instance, containing a title, shell command, order, timeout, and optional
   retention metadata.
 - **Deployment step command:** Shell script executed during `deploy:run` from
   the instance source path tracked by the gateway, on the instance's owning node. For
@@ -34,7 +34,7 @@ These terms describe the units of work that make up a deployment pipeline.
   argument vector. Step commands may be single-line commands or multiline
   scripts. Deployment has no Orbit-managed SSH fallback.
 - **Deployment step order:** Positive integer ordering within a production
-  app instance's deployment pipeline. Insertions and removals reorder neighboring steps
+  instance's deployment pipeline. Insertions and removals reorder neighboring steps
   to keep the pipeline stable and ascending.
 - **Deployment step timeout:** Maximum runtime in seconds for one deployment
   step before Orbit marks that step failed.
@@ -50,7 +50,7 @@ These terms describe the units of work that make up a deployment pipeline.
 These terms describe the runtime side of deployments — how runs are tracked and how their output is stored.
 
 - **Deployment run:** Durable history record created by the gateway and owned
-  by one app instance, written by `deploy:run` before the first configured step executes.
+  by one instance, written by `deploy:run` before the first configured step executes.
 - **Deployment run context:** Variable map generated once before the first step
   executes. It includes reusable values such as `release`, `app_path`,
   `release_path`, `app_user`, and related app/node metadata. Step commands may
@@ -59,7 +59,7 @@ These terms describe the runtime side of deployments — how runs are tracked an
   `release_path` and `live_path` are path helpers inside the instance-owned release
   boundary. Runtime bind mounts and any live, document-root, storage, or
   database symlink targets must resolve inside the app source or release
-  boundary before the production app runtime container is rendered.
+  boundary before the production project runtime container is rendered.
 - **Deployment run status:** Run lifecycle value: `running`, `completed`,
   `failed`, or `cancelled`.
 - **Deployment step execution:** One step's execution within a deployment run,
@@ -67,28 +67,28 @@ These terms describe the runtime side of deployments — how runs are tracked an
 - **Detached deployment run:** Deployment run started with `--detach`; the
   command returns the durable gateway operation identity after execution has
   been handed off, without opening the operations WebSocket subscription.
-- **Deployment run history:** Durable app-instance-owned gateway history of deployment
+- **Deployment run history:** Durable instance-owned gateway history of deployment
   runs. Read commands use stored history and do not inspect live node state.
 - **Deployment log:** Stored per-step deployment output for a previous run. It
   is captured gateway history, not live streaming output, process manager log
   output, or a node filesystem read.
-- **Latest deployment status:** Gateway state owned by the app instance that records the
-  newest deployment outcome. App doctor uses it when evaluating production app
+- **Latest deployment status:** Gateway state owned by the instance that records the
+  newest deployment outcome. App doctor uses it when evaluating production project
   health.
 
 ## Health and boundaries
 
 These terms define what the deploy family owns and what belongs to other families.
 
-- **Deployment health:** Production app health signal derived from deployment
+- **Deployment health:** Production project health signal derived from deployment
   pipeline validity and latest deployment status. It belongs to
-  `doctor --family=app`, not to a deploy doctor family.
+  `doctor --family=instance`, not to a deploy doctor family.
 - **Deploy-domain boundaries:** Deploy commands own deployment policy writes,
   deployment run execution, deployment history reads, and captured-output reads
-  for concrete production app instances. They do not own a state family, create app records,
+  for concrete production instances. They do not own a state family, create app records,
   manage development apps, create process definitions or schedules, inspect live
   node state during reads, model releases as standalone state, or prove
-  production app health after a deployment run.
+  production project health after a deployment run.
 - **Cross-family invocation:** Deploy steps may invoke documented commands from
   other families as their step command, such as `process:restart [name]`
   after artifact rotation. Lifecycle semantics still belong to the invoked

@@ -163,11 +163,12 @@ describe('NodePermissionsController', function (): void {
             ->first();
 
         expect($grant->permissions)->toBe([
-            'app:read',
             'database:read',
             'doctor:verify',
             'firewall_rule:read',
+            'instance:read',
             'node:read',
+            'project:read',
             'tool:read',
         ]);
     });
@@ -219,7 +220,7 @@ describe('NodePermissionsController', function (): void {
         $response = postNodePermissionsJson([
             'consuming_node' => 'control-1',
             'serving_node' => 'app-prod-1',
-            'permissions' => 'app:read,workspace:read',
+            'permissions' => 'instance:read,workspace:read',
         ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP]);
 
         $response
@@ -260,7 +261,7 @@ describe('NodePermissionsController', function (): void {
         $response = postNodePermissionsJson([
             'consuming_node' => 'app-prod-caller',
             'serving_node' => 'app-dev-1',
-            'permissions' => 'app:read,workspace:read',
+            'permissions' => 'instance:read,workspace:read',
         ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP]);
 
         $response
@@ -333,18 +334,18 @@ describe('NodePermissionsController', function (): void {
         $grant = NodeAccess::query()->create([
             'consumer_node_id' => $productionConsumerId,
             'serving_node_id' => $developmentServingId,
-            'permissions' => ['app:read', 'workspace:read'],
+            'permissions' => ['instance:read', 'workspace:read'],
         ]);
 
         postNodePermissionsJson([
             'consuming_node' => 'app-prod-caller',
             'serving_node' => 'app-dev-1',
-            'remove' => 'app:read',
+            'remove' => 'instance:read',
         ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'workspace.unsupported_for_production');
 
-        expect($grant->fresh()?->permissions)->toBe(['app:read', 'workspace:read']);
+        expect($grant->fresh()?->permissions)->toBe(['instance:read', 'workspace:read']);
     });
 
     it('fails with node.grant_not_found when removing from missing grant', function (): void {

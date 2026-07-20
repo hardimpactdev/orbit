@@ -1,20 +1,20 @@
 # `orbit workspace-teardown-step:add`
 
-Add a workspace teardown step for one concrete app instance.
+Add a workspace teardown step for one concrete instance.
 
 ## Usage
 
 ```bash
-orbit workspace-teardown-step:add --command="dropdb my_app_feature" --app=<app.instance> [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
+orbit workspace-teardown-step:add --command="dropdb my_app_feature" --instance=<project.instance> [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
 ```
 
 ## Description
 
 The `workspace-teardown-step:add` command registers a shell command that
-runs whenever Orbit removes a workspace for the selected app instance
+runs whenever Orbit removes a workspace for the selected instance
 ([`workspace:remove`](../5_workspace-remove/workspace-remove.md)) or prunes
-stale workspaces for the selected app instance
-([`app:prune`](../../5_app/7_app-prune/app-prune.md)). These steps are used
+stale workspaces for the selected instance
+([`instance:prune`](../../5_project/7_instance-prune/instance-prune.md)). These steps are used
 for app-specific cleanup that needs the workspace path intact, such as
 dropping feature-specific databases or notifying external services.
 
@@ -25,14 +25,14 @@ artifact removal.
 ## Arguments
 
 - `--command=<command>`: The shell command to execute. Required.
-- `--app=<app.instance>`: Concrete dotted app-instance selector, such as
+- `--instance=<project.instance>`: Concrete dotted instance selector, such as
   `my-app.development`. A caller context may supply the same concrete instance
   using the same precedence chain as
   [`workspace:new`](../1_workspace-new/workspace-new.md): explicit flag →
   `.orbit/config` marker on the caller filesystem → gateway path-ownership
   lookup keyed on `(caller node identity, absolute cwd)` → interactive
-  prompt or non-interactive failure. Bare logical-app slugs return an
-  app-instance-required validation error. The exact error shape is defined by
+  prompt or non-interactive failure. Bare project slugs return an
+  instance-required validation error. The exact error shape is defined by
   the [JSON renderer contract](technical/6.2_workspace-teardown-step-add_output-render_json.md).
   Project files such as `composer.json`, `package.json`, and `.php-version` are
   never inspected.
@@ -52,7 +52,7 @@ The following rules govern how a step is added and when it runs.
 
 Adding a step does not execute it immediately. Steps run during
 [`workspace:remove`](../5_workspace-remove/workspace-remove.md) and
-[`app:prune`](../../5_app/7_app-prune/app-prune.md).
+[`instance:prune`](../../5_project/7_instance-prune/instance-prune.md).
 
 ### Execution Timing
 
@@ -65,7 +65,7 @@ HTTP surface must target `127.0.0.1` or runtime container directly.
 
 Use `--before` or `--after` to place the step at a specific position in the
 execution order. If both are omitted, the step is appended at the end of the
-list with `order = max(order) + 1` for `(app_instance, phase=teardown)`. Providing
+list with `order = max(order) + 1` for `(instance, phase=teardown)`. Providing
 both `--before` and `--after` is a validation error.
 
 ### Lifecycle Environment
@@ -90,7 +90,7 @@ identified by the numeric `id` used by
 
 ### Failure Handling at Execution
 
-A teardown step that fails during `workspace:remove` or `app:prune` is
+A teardown step that fails during `workspace:remove` or `instance:prune` is
 reported as a non-fatal structured warning on the consumer command.
 Subsequent teardown steps still run, and the workspace removal continues
 with runtime container removal and worktree removal.
@@ -98,7 +98,7 @@ with runtime container removal and worktree removal.
 ### No Runtime Lock
 
 The command never blocks on, or aborts because of, in-flight
-`workspace:remove` / `app:prune` runs. The new step takes effect on the next
+`workspace:remove` / `instance:prune` runs. The new step takes effect on the next
 teardown pipeline run that begins after the gateway commit.
 
 ## Examples
@@ -108,7 +108,7 @@ teardown pipeline run that begins after the gateway commit.
 Run this to append a step to the end of the teardown list.
 
 ```bash
-orbit workspace-teardown-step:add --command="dropdb docs_feature" --app=docs.development
+orbit workspace-teardown-step:add --command="dropdb docs_feature" --instance=docs.development
 ```
 
 ### Insert a step before an existing one
@@ -116,7 +116,7 @@ orbit workspace-teardown-step:add --command="dropdb docs_feature" --app=docs.dev
 Use `--before` to position the step relative to an existing step ID.
 
 ```bash
-orbit workspace-teardown-step:add --command="pkill -f 'my-app-worker'" --app=my-app.development --before=18
+orbit workspace-teardown-step:add --command="pkill -f 'my-instance-worker'" --instance=my-app.development --before=18
 ```
 
 ## Requirements
@@ -126,7 +126,7 @@ These conditions must hold before `workspace-teardown-step:add` will succeed.
 - The CLI caller can reach the Orbit gateway.
 - The caller is authorized to manage workspace policy on the selected app
   instance's serving node.
-- The target app instance exists.
+- The target instance exists.
 
 ## Related
 
@@ -136,7 +136,7 @@ These commands work alongside `workspace-teardown-step:add` to manage and execut
 - [`orbit workspace-teardown-step:remove`](../13_workspace-teardown-step-remove/workspace-teardown-step-remove.md)
 - [`orbit workspace-setup-step:add`](../8_workspace-setup-step-add/workspace-setup-step-add.md)
 - [`orbit workspace:remove`](../5_workspace-remove/workspace-remove.md)
-- [`orbit app:prune`](../../5_app/7_app-prune/app-prune.md)
+- [`orbit instance:prune`](../../5_project/7_instance-prune/instance-prune.md)
 - [`orbit doctor --family=workspace`](../workspace-doctor.md)
 
 [See the technical contract for detailed behavior and failure semantics.](technical/1_workspace-teardown-step-add.md)

@@ -10,12 +10,12 @@ describe('schedule write commands', function (): void {
     it('posts schedule:add payloads to the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'created', 'scheduler_pickup' => 'confirmed'],
-            'schedule' => ['name' => 'laravel-scheduler', 'scope' => 'app'],
+            'schedule' => ['name' => 'laravel-scheduler', 'scope' => 'instance'],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'schedule:add', [
             'name' => 'laravel-scheduler',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--command' => 'php artisan schedule:run',
             '--interval' => 'every minute',
             '--timezone' => 'Europe/Amsterdam',
@@ -31,7 +31,7 @@ describe('schedule write commands', function (): void {
                 && $request->url() === 'https://gateway.test/api/schedules'
                 && $request->data() === [
                     'name' => 'laravel-scheduler',
-                    'app' => 'docs.production',
+                    'instance' => 'docs.production',
                     'interval' => 'every minute',
                     'timezone' => 'Europe/Amsterdam',
                     'timeout' => 7200,
@@ -88,7 +88,7 @@ describe('schedule write commands', function (): void {
 
         [$targetExitCode, $targetOutput] = runCommand($this, 'schedule:add', [
             'name' => 'nightly',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--node' => 'app-1',
             '--command' => 'date',
             '--interval' => 'daily at 09:00',
@@ -99,7 +99,7 @@ describe('schedule write commands', function (): void {
 
         [$sourceExitCode, $sourceOutput] = runCommand($this, 'schedule:add', [
             'name' => 'nightly',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--command' => 'date',
             '--script' => '/opt/orbit/nightly',
             '--interval' => 'daily at 09:00',
@@ -115,7 +115,7 @@ describe('schedule write commands', function (): void {
             ->and($targetDecoded['error']['code'])
             ->toBe('validation_failed')
             ->and($targetDecoded['error']['meta']['fields'])
-            ->toBe(['app', 'node'])
+            ->toBe(['instance', 'node'])
             ->and($sourceExitCode)
             ->toBe(1)
             ->and($sourceDecoded['error']['code'])
@@ -149,7 +149,7 @@ describe('schedule write commands', function (): void {
     })->with([
         'name' => [
             [
-                '--app' => 'docs.production',
+                '--instance' => 'docs.production',
                 '--command' => 'date',
                 '--interval' => 'daily at 09:00',
             ],
@@ -159,7 +159,7 @@ describe('schedule write commands', function (): void {
         'execution source' => [
             [
                 'name' => 'nightly',
-                '--app' => 'docs.production',
+                '--instance' => 'docs.production',
                 '--interval' => 'daily at 09:00',
             ],
             'validation_failed',
@@ -168,7 +168,7 @@ describe('schedule write commands', function (): void {
         'interval' => [
             [
                 'name' => 'nightly',
-                '--app' => 'docs.production',
+                '--instance' => 'docs.production',
                 '--command' => 'date',
             ],
             'schedule.interval_invalid',
@@ -177,7 +177,7 @@ describe('schedule write commands', function (): void {
         'timezone' => [
             [
                 'name' => 'nightly',
-                '--app' => 'docs.production',
+                '--instance' => 'docs.production',
                 '--command' => 'date',
                 '--interval' => 'daily at 09:00',
                 '--timezone' => 'Moon/Base',
@@ -188,7 +188,7 @@ describe('schedule write commands', function (): void {
         'timeout' => [
             [
                 'name' => 'nightly',
-                '--app' => 'docs.production',
+                '--instance' => 'docs.production',
                 '--command' => 'date',
                 '--interval' => 'daily at 09:00',
                 '--timeout' => '86401',
@@ -201,12 +201,12 @@ describe('schedule write commands', function (): void {
     it('preserves gateway error envelopes for schedule:add', function (): void {
         fakeGateway(fakeErrorEnvelope('schedule.name_collision', "Schedule 'nightly' already exists.", [
             'name' => 'nightly',
-            'app' => 'docs.production',
+            'instance' => 'docs.production',
         ]), 409);
 
         [$exitCode, $output] = runCommand($this, 'schedule:add', [
             'name' => 'nightly',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--command' => 'date',
             '--interval' => 'daily at 09:00',
             '--json' => true,
@@ -227,7 +227,7 @@ describe('schedule write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:remove', [
             'name' => 'nightly',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--json' => true,
         ]);
 
@@ -254,7 +254,7 @@ describe('schedule write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:remove', [
             'name' => 'nightly',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--force' => true,
             '--json' => true,
         ]);
@@ -267,7 +267,7 @@ describe('schedule write commands', function (): void {
             return (
                 $request->method() === 'DELETE'
                 && str_starts_with($url, 'https://gateway.test/api/schedules/nightly')
-                && str_contains($url, 'app=docs.production')
+                && str_contains($url, 'instance=docs.production')
                 && $request->data() === [
                     'destructive_consent' => true,
                     'destructive_consent_source' => 'force',
@@ -293,7 +293,7 @@ describe('schedule write commands', function (): void {
         $this
             ->artisan('schedule:remove', [
                 'name' => 'nightly',
-                '--app' => 'docs.production',
+                '--instance' => 'docs.production',
             ])
             ->expectsConfirmation("Remove schedule 'nightly'?", 'yes')
             ->expectsOutputToContain('schedule')
@@ -312,7 +312,7 @@ describe('schedule write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:run', [
             'name' => 'nightly',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--json' => true,
         ]);
 
@@ -324,7 +324,7 @@ describe('schedule write commands', function (): void {
             return (
                 $request->method() === 'POST'
                 && str_starts_with($url, 'https://gateway.test/api/schedules/nightly/run')
-                && str_contains($url, 'app=docs.production')
+                && str_contains($url, 'instance=docs.production')
                 && $request->data() === []
             );
         });
@@ -344,7 +344,7 @@ describe('schedule write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:run', [
             'name' => 'nightly',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--json' => true,
         ]);
 
@@ -363,8 +363,8 @@ describe('schedule write commands', function (): void {
             'result' => ['action' => 'created', 'scheduler_pickup' => 'confirmed'],
             'schedule' => [
                 'name' => 'laravel-scheduler',
-                'scope' => 'app',
-                'target' => ['type' => 'app', 'name' => 'docs.production', 'node' => 'app-1'],
+                'scope' => 'instance',
+                'target' => ['type' => 'instance', 'name' => 'docs.production', 'node' => 'app-1'],
                 'interval' => 'every minute',
                 'timezone' => 'Europe/Amsterdam',
                 'execution' => ['type' => 'command', 'value' => 'php artisan schedule:run'],
@@ -376,7 +376,7 @@ describe('schedule write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:add', [
             'name' => 'laravel-scheduler',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--command' => 'php artisan schedule:run',
             '--interval' => 'every minute',
             '--timezone' => 'Europe/Amsterdam',
@@ -393,9 +393,9 @@ describe('schedule write commands', function (): void {
             ->and($output)
             ->toContain('Name: laravel-scheduler')
             ->and($output)
-            ->toContain('Scope: app')
+            ->toContain('Scope: instance')
             ->and($output)
-            ->toContain('Target: app docs.production on app-1')
+            ->toContain('Target: instance docs.production on app-1')
             ->and($output)
             ->toContain('Interval: every minute')
             ->and($output)
@@ -415,7 +415,7 @@ describe('schedule write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:add', [
             'name' => 'nightly',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--command' => 'date',
             '--interval' => 'daily at 09:00',
         ]);
@@ -432,15 +432,15 @@ describe('schedule write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'schedule' => [
                 'name' => 'nightly',
-                'scope' => 'app',
-                'target' => ['type' => 'app', 'name' => 'docs.production', 'node' => 'app-1'],
+                'scope' => 'instance',
+                'target' => ['type' => 'instance', 'name' => 'docs.production', 'node' => 'app-1'],
                 'status' => 'removed',
             ],
         ], ['history_retained' => true]));
 
         [$exitCode, $output] = runCommand($this, 'schedule:remove', [
             'name' => 'nightly',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--force' => true,
         ]);
 
@@ -455,9 +455,9 @@ describe('schedule write commands', function (): void {
             ->and($output)
             ->toContain('Name: nightly')
             ->and($output)
-            ->toContain('Scope: app')
+            ->toContain('Scope: instance')
             ->and($output)
-            ->toContain('Target: app docs.production on app-1')
+            ->toContain('Target: instance docs.production on app-1')
             ->and($output)
             ->not->toContain('Orbit Scheduler')->and($output)
             ->not->toContain('{');
@@ -474,7 +474,7 @@ describe('schedule write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:remove', [
             'name' => 'nightly',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--force' => true,
         ]);
 
@@ -491,8 +491,8 @@ describe('schedule write commands', function (): void {
             'run' => [
                 'id' => 18,
                 'schedule' => 'nightly',
-                'scope' => 'app',
-                'target' => ['type' => 'app', 'name' => 'docs.production', 'node' => 'app-1'],
+                'scope' => 'instance',
+                'target' => ['type' => 'instance', 'name' => 'docs.production', 'node' => 'app-1'],
                 'status' => 'completed',
                 'exit_code' => 0,
                 'started_at' => '2026-05-02T08:10:00Z',
@@ -505,7 +505,7 @@ describe('schedule write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:run', [
             'name' => 'nightly',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
         ]);
 
         expect($exitCode)
@@ -537,7 +537,7 @@ describe('schedule write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:run', [
             'name' => 'nightly',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
         ]);
 
         expect($exitCode)

@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -37,7 +37,7 @@ describe('DatabaseConnection models', function (): void {
     });
 
     it('relates an app instance target to its connection and owning instance', function (): void {
-        $app = App::factory()->create();
+        $app = Project::factory()->create();
         $instance = AppInstance::factory()->for($app)->create();
         $connection = DatabaseConnection::factory()->create();
 
@@ -72,7 +72,7 @@ describe('DatabaseConnection models', function (): void {
     });
 
     it('maps app instance database connections through its target rows', function (): void {
-        $app = App::factory()->create();
+        $app = Project::factory()->create();
         $instance = AppInstance::factory()->for($app)->create();
         $primary = DatabaseConnection::factory()->create(['slug' => 'app-primary']);
         $analytics = DatabaseConnection::factory()->create(['slug' => 'app-analytics']);

@@ -16,7 +16,7 @@ final class ShowScheduleLogsRequest extends GatewayRequest
 
     public function __construct(
         public readonly string $name,
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $node = null,
         public readonly ?int $run = null,
         public readonly ?int $lines = null,
@@ -34,7 +34,7 @@ final class ShowScheduleLogsRequest extends GatewayRequest
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'node' => $this->node,
                 'run' => $this->run,
                 'lines' => $this->lines,

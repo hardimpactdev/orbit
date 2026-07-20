@@ -7,32 +7,38 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Apps\PruneAppWorkspaces;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Apps\AppAgentIdeDefaults;
+use App\Services\Apps\AppSelectorResolver;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use RuntimeException;
 
-#[RequiresPermission('app:prune', servingNode: ServingNode::AppOwning)]
+#[RequiresPermission('instance:prune', servingNode: ServingNode::AppInstanceOwning)]
 final class AppPruneController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?AppInstance $activitySubject = null;
 
     public function __construct(
         private readonly PruneAppWorkspaces $prune,
         private readonly AppAgentIdeDefaults $defaults,
+        private readonly AppSelectorResolver $appSelectorResolver,
         private readonly WorkspaceRoleGuard $workspaceRoleGuard,
+        private readonly WorkspacePlacement $placement,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
     {
         $validator = validator($request->all(), [
-            'app' => ['required', 'string'],
+            'instance' => ['required', 'string'],
             'dry_run' => ['boolean'],
         ]);
 
@@ -44,16 +50,45 @@ final class AppPruneController implements Loggable
         }
 
         $validated = $validator->validated();
-        $appName = $validated['app'];
+        $appName = $validated['instance'];
         $dryRun = (bool) ($validated['dry_run'] ?? false);
 
-        $app = $this->resolveApp($appName);
-
-        if (! $app instanceof App) {
-            return $this->error('app.not_found', "App '{$appName}' not found.", ['app' => $appName], 404);
+        if (! is_string($appName)) {
+            return $this->error(
+                'validation_failed',
+                'The instance selector must be a string.',
+                ['field' => 'instance'],
+                422,
+            );
         }
 
-        $this->activitySubject = $app;
+        try {
+            $selection = $this->appSelectorResolver->requireInstance(
+                $this->appSelectorResolver->resolveRequired($appName),
+            );
+        } catch (AppSelectionResolutionFailed) {
+            return $this->error(
+                'instance.not_found',
+                "Instance '{$appName}' not found.",
+                ['instance' => $appName],
+                404,
+            );
+        }
+
+        $app = $selection->app;
+        $instance = $selection->instance;
+
+        if (! $instance instanceof AppInstance) {
+            return $this->error(
+                'instance.not_found',
+                "Instance '{$appName}' not found.",
+                ['instance' => $appName],
+                404,
+            );
+        }
+
+        $this->activitySubject = $instance;
+        $node = $this->placement->nodeForInstance($instance);
 
         /** @var mixed $caller */
         $caller = $request->user();
@@ -63,35 +98,36 @@ final class AppPruneController implements Loggable
                 $this->workspaceRoleGuard->ensureNodeMayOperateWorkspaces($caller);
             }
 
-            $this->workspaceRoleGuard->ensureNodeSupportsWorkspaces($app, $app->node);
+            $this->workspaceRoleGuard->ensureNodeSupportsWorkspaces($app, $node);
         } catch (WorkspaceUnsupportedForProduction $exception) {
             return $this->workspaceUnsupportedForProduction($exception);
         }
 
-        $effectiveAdapter = $this->defaults->payloadFor($app)['effective_adapter'];
+        $effectiveAdapter = $this->defaults->payloadFor($instance, $node)['effective_adapter'];
 
         if ($effectiveAdapter === null) {
             return $this->error(
-                'app.no_agent_ide_adapter',
-                'No agent IDE adapter configured for this app.',
-                ['app' => $app->name],
+                'instance.no_agent_ide_adapter',
+                'No agent IDE adapter configured for this instance.',
+                ['instance' => $appName],
                 422,
             );
         }
 
         try {
-            $result = $this->prune->handle($app, $dryRun);
-        } catch (\RuntimeException $e) {
+            $result = $this->prune->handle($app, $instance, $dryRun);
+        } catch (RuntimeException $e) {
             return $this->error(
-                'app.agent_ide_query_failed',
+                'instance.agent_ide_query_failed',
                 $e->getMessage(),
-                ['app' => $app->name],
+                ['instance' => $appName],
                 422,
             );
         }
 
         $data = [
-            'app' => $result['app'],
+            'project' => $result['project'],
+            'instance' => $result['instance'],
             'stale_workspaces' => $result['stale_workspaces'],
             'dry_run' => $result['dry_run'],
         ];
@@ -108,22 +144,6 @@ final class AppPruneController implements Loggable
                 'meta' => $meta,
             ],
         ], 200);
-    }
-
-    private function resolveApp(string $name): ?App
-    {
-        return App::query()
-            ->with('node')
-            ->get()
-            ->filter(
-                fn (App $app): bool => (
-                    $app->name === $name
-                    || $app->domain === $name
-                    || $app->url() === "https://{$name}"
-                ),
-            )
-            ->values()
-            ->first();
     }
 
     private function error(string $code, string $message, array $meta = [], int $status = 422): JsonResponse
@@ -154,7 +174,7 @@ final class AppPruneController implements Loggable
 
     public function type(): string
     {
-        return 'api:POST /apps/prune';
+        return 'api:POST /instances/prune';
     }
 
     public function subject(): ?Model

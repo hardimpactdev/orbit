@@ -11,7 +11,7 @@ describe('workspace:list', function (): void {
             'workspaces' => [
                 [
                     'name' => 'feature-docs',
-                    'app' => 'docs',
+                    'project' => 'docs',
                     'node' => 'app-1',
                     'url' => 'https://feature-docs.docs.test',
                     'lifecycle_status' => 'expected',
@@ -20,7 +20,7 @@ describe('workspace:list', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'workspace:list', [
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--node' => 'app-1',
             '--json' => true,
         ]);
@@ -33,7 +33,7 @@ describe('workspace:list', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/workspaces')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'instance=docs')
                 && str_contains($url, 'node=app-1')
             );
         });
@@ -46,21 +46,21 @@ describe('workspace:list', function (): void {
             'workspaces' => [
                 [
                     'name' => 'feature-docs',
-                    'app' => 'docs',
+                    'project' => 'docs',
                     'node' => 'app-1',
                     'url' => 'https://feature-docs.docs.test',
                     'lifecycle_status' => 'expected',
                 ],
                 [
                     'name' => 'main',
-                    'app' => 'docs',
+                    'project' => 'docs',
                     'node' => 'app-1',
                     'url' => 'https://docs.test',
                     'lifecycle_status' => 'expected',
                 ],
                 [
                     'name' => 'main',
-                    'app' => 'orbit',
+                    'project' => 'orbit',
                     'node' => 'app-2',
                     'url' => 'https://main.orbit.test',
                     'lifecycle_status' => 'setup-pending',
@@ -75,11 +75,11 @@ describe('workspace:list', function (): void {
             ->and($output)
             ->toContain('Node: app-1')
             ->and($output)
-            ->toContain('App: docs')
+            ->toContain('Project: docs')
             ->and($output)
             ->toContain('Node: app-2')
             ->and($output)
-            ->toContain('App: orbit')
+            ->toContain('Project: orbit')
             ->and($output)
             ->toContain('WORKSPACE')
             ->and($output)
@@ -100,7 +100,7 @@ describe('workspace:list', function (): void {
     it('renders missing workspace cells as an em dash', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'workspaces' => [
-                ['name' => 'feature-docs', 'app' => 'docs', 'node' => 'app-1'],
+                ['name' => 'feature-docs', 'project' => 'docs', 'node' => 'app-1'],
             ],
         ]));
 

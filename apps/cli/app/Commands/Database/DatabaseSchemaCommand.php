@@ -16,7 +16,7 @@ final class DatabaseSchemaCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'database:schema
-        {target? : App instance, workspace, or connection slug}
+        {target? : Instance, workspace, or connection slug}
         {--connection= : Connection slug when the target maps to multiple connections}
         {--json}';
 

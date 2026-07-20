@@ -11,9 +11,9 @@ API as every other public CLI caller:
 
 - **API boundary:** The CLI submits the workspace request through the typed
   HTTPS endpoint; caller location does not bypass the public contract.
-- **Identity write:** The gateway writes the canonical app-instance-owned
+- **Identity write:** The gateway writes the canonical instance-owned
   workspace row after authorization succeeds.
-- **Apply:** The gateway dispatches runtime work to the app instance's owning
+- **Apply:** The gateway dispatches runtime work to the instance's owning
   node through Agent push and runs the workspace setup pipeline there.
 - **Identity:** The request carries the gateway node's WireGuard identity for
   gateway implicit-authority policy and audit evaluation.
@@ -23,7 +23,7 @@ API as every other public CLI caller:
 - Caller location does not create a second command path; this file describes
   the gateway-located invocation and its named gateway implicit-authority
   authorization class.
-- The parent app instance's owning node is the apply target; the gateway is
+- The parent instance's owning node is the apply target; the gateway is
   never a workspace host.
 
 ## Test Mapping

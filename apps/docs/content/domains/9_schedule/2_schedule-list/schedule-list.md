@@ -10,30 +10,30 @@ schedules without probing live scheduler state.
 ## Usage
 
 ```bash
-orbit schedule:list [--app=<app>] [--node=<node>] [--json]
+orbit schedule:list [--instance=<project.instance>] [--node=<node>] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit schedule:list
-orbit schedule:list --app=docs.production
+orbit schedule:list --instance=docs.production
 orbit schedule:list --node=app-1
 ```
 
 ## Arguments and options
 
-- `--app`: show schedules for one concrete `app.instance`. A bare app name is
+- `--instance`: show schedules for one concrete `app.instance`. A bare project name is
   shorthand only when exactly one eligible instance is visible.
 - `--node`: show schedules for one node.
 - `--json`: Output JSON.
 
-`--app` and `--node` are mutually exclusive filters.
+`--instance` and `--node` are mutually exclusive filters.
 
 ## What Happens
 
 Run `schedule:list` when you need to audit what recurring work is configured
-for an app instance or node. An app filter resolves one concrete instance;
+for an instance or node. An app filter resolves one concrete instance;
 ambiguous bare app filters fail rather than aggregating instance-owned
 schedules. `schedule:list` reads schedule configuration and latest durable run
 history from the gateway. It does not SSH to nodes, inspect Orbit Scheduler

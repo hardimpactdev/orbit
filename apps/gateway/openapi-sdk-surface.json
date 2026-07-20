@@ -23,56 +23,56 @@
       "reason": "Analytics event ingestion is a runtime/backend ingest endpoint, not operator or dashboard SDK surface."
     },
     {
-      "operation": "POST /apps/{app}/analytics/enable",
+      "operation": "POST /instances/{instance}/analytics/enable",
       "operation_id": "appAnalytics.enable",
       "classification": "deferred_optional",
       "group": "app_analytics",
       "reason": "App analytics binding is optional analytics-role surface and is not part of the first macOS dashboard SDK set."
     },
     {
-      "operation": "POST /apps/{app}/analytics/disable",
+      "operation": "POST /instances/{instance}/analytics/disable",
       "operation_id": "appAnalytics.disable",
       "classification": "deferred_optional",
       "group": "app_analytics",
       "reason": "App analytics binding is optional analytics-role surface and is not part of the first macOS dashboard SDK set."
     },
     {
-      "operation": "GET /apps/{app}/analytics",
+      "operation": "GET /instances/{instance}/analytics",
       "operation_id": "appAnalytics.show",
       "classification": "deferred_optional",
       "group": "app_analytics",
       "reason": "App analytics binding is optional analytics-role surface and is not part of the first macOS dashboard SDK set."
     },
     {
-      "operation": "GET /apps/{app}/analytics/verify",
+      "operation": "GET /instances/{instance}/analytics/verify",
       "operation_id": "appAnalytics.verify",
       "classification": "deferred_optional",
       "group": "app_analytics",
       "reason": "App analytics verification context is optional analytics-role surface and is not part of the first macOS dashboard SDK set."
     },
     {
-      "operation": "GET /codex/projects",
+      "operation": "GET /codex/apps",
       "operation_id": "appCodex.list",
       "classification": "deferred_optional",
       "group": "codex_extension",
       "reason": "Codex integration is extension-gated and should be promoted separately from core dashboard SDK generation."
     },
     {
-      "operation": "POST /codex/apps/{app}",
+      "operation": "POST /codex/apps/{project}",
       "operation_id": "appCodex.add",
       "classification": "deferred_optional",
       "group": "codex_extension",
       "reason": "Codex integration is extension-gated and should be promoted separately from core dashboard SDK generation."
     },
     {
-      "operation": "DELETE /codex/apps/{app}",
+      "operation": "DELETE /codex/apps/{project}",
       "operation_id": "appCodex.remove",
       "classification": "deferred_optional",
       "group": "codex_extension",
       "reason": "Codex integration is extension-gated and should be promoted separately from core dashboard SDK generation."
     },
     {
-      "operation": "GET /apps/{app}/instances",
+      "operation": "GET /projects/{project}/instances",
       "operation_id": "appInstance.index",
       "classification": "public_sdk",
       "group": "app_instances",
@@ -80,7 +80,7 @@
       "follow_up": "Add a dedicated PHP SDK request class for listing app instances."
     },
     {
-      "operation": "POST /apps/{app}/instances",
+      "operation": "POST /projects/{project}/instances",
       "operation_id": "appInstance.store",
       "classification": "public_sdk",
       "group": "app_instances",
@@ -88,7 +88,7 @@
       "follow_up": "Add a dedicated PHP SDK request class for creating app instances."
     },
     {
-      "operation": "GET /apps/{app}/instances/{instance}",
+      "operation": "GET /projects/{project}/instances/{instance}",
       "operation_id": "appInstance.show",
       "classification": "public_sdk",
       "group": "app_instances",
@@ -96,7 +96,7 @@
       "follow_up": "Add a dedicated PHP SDK request class for showing an app instance."
     },
     {
-      "operation": "DELETE /apps/{app}/instances/{instance}",
+      "operation": "DELETE /projects/{project}/instances/{instance}",
       "operation_id": "appInstance.destroy",
       "classification": "public_sdk",
       "group": "app_instances",
@@ -104,28 +104,28 @@
       "follow_up": "Add a dedicated PHP SDK request class for deleting an app instance."
     },
     {
-      "operation": "GET /apps/{app}/instances/{instance}/env",
+      "operation": "GET /projects/{project}/instances/{instance}/env",
       "operation_id": "appInstanceEnv.index",
       "classification": "deferred_optional",
       "group": "app_instance_env",
       "reason": "Instance env inspection is sensitive and should be promoted with explicit secret-handling DTOs."
     },
     {
-      "operation": "POST /apps/{app}/instances/{instance}/env",
+      "operation": "POST /projects/{project}/instances/{instance}/env",
       "operation_id": "appInstanceEnv.store",
       "classification": "deferred_optional",
       "group": "app_instance_env",
       "reason": "Instance env mutation is sensitive and should be promoted with explicit secret-handling DTOs."
     },
     {
-      "operation": "GET /apps/{app}/instances/{instance}/env/render",
+      "operation": "GET /projects/{project}/instances/{instance}/env/render",
       "operation_id": "appInstanceEnv.render",
       "classification": "deferred_optional",
       "group": "app_instance_env",
       "reason": "Rendered env output is sensitive and should be promoted with explicit secret-handling DTOs."
     },
     {
-      "operation": "GET /apps/{app}/mounts",
+      "operation": "GET /instances/{instance}/mounts",
       "operation_id": "appRuntimeMount.index",
       "classification": "public_sdk",
       "group": "app_mounts",
@@ -133,7 +133,7 @@
       "follow_up": "Add a dedicated PHP SDK request class for listing app runtime mounts."
     },
     {
-      "operation": "POST /apps/{app}/mounts",
+      "operation": "POST /instances/{instance}/mounts",
       "operation_id": "appRuntimeMount.store",
       "classification": "public_sdk",
       "group": "app_mounts",
@@ -141,7 +141,7 @@
       "follow_up": "Add a dedicated PHP SDK request class for creating app runtime mounts."
     },
     {
-      "operation": "DELETE /apps/{app}/mounts",
+      "operation": "DELETE /instances/{instance}/mounts",
       "operation_id": "appRuntimeMount.destroy",
       "classification": "public_sdk",
       "group": "app_mounts",
@@ -149,7 +149,7 @@
       "follow_up": "Add a dedicated PHP SDK request class for deleting app runtime mounts."
     },
     {
-      "operation": "POST /apps/{app}/setup",
+      "operation": "POST /instances/{instance}/setup",
       "operation_id": "appSetup",
       "classification": "public_sdk",
       "group": "app_setup",
@@ -157,7 +157,7 @@
       "follow_up": "Add a dedicated PHP SDK request class for running app setup."
     },
     {
-      "operation": "GET /apps/{app}/setup-steps",
+      "operation": "GET /instances/{instance}/setup-steps",
       "operation_id": "appSetupStep.index",
       "classification": "public_sdk",
       "group": "app_setup",
@@ -165,7 +165,7 @@
       "follow_up": "Add a dedicated PHP SDK request class for listing app setup steps."
     },
     {
-      "operation": "POST /apps/{app}/setup-steps",
+      "operation": "POST /instances/{instance}/setup-steps",
       "operation_id": "appSetupStep.store",
       "classification": "public_sdk",
       "group": "app_setup",
@@ -173,7 +173,7 @@
       "follow_up": "Add a dedicated PHP SDK request class for creating app setup steps."
     },
     {
-      "operation": "DELETE /apps/{app}/setup-steps/{step}",
+      "operation": "DELETE /instances/{instance}/setup-steps/{step}",
       "operation_id": "appSetupStep.destroy",
       "classification": "public_sdk",
       "group": "app_setup",
@@ -181,7 +181,7 @@
       "follow_up": "Add a dedicated PHP SDK request class for deleting app setup steps."
     },
     {
-      "operation": "POST /apps/{app}/websocket/enable",
+      "operation": "POST /instances/{instance}/websocket/enable",
       "operation_id": "appWebSocket.enable",
       "classification": "public_sdk",
       "group": "app_websocket",
@@ -189,7 +189,7 @@
       "follow_up": "Add a dedicated PHP SDK request class for enabling app WebSocket binding."
     },
     {
-      "operation": "POST /apps/{app}/websocket/disable",
+      "operation": "POST /instances/{instance}/websocket/disable",
       "operation_id": "appWebSocket.disable",
       "classification": "public_sdk",
       "group": "app_websocket",
@@ -197,7 +197,7 @@
       "follow_up": "Add a dedicated PHP SDK request class for disabling app WebSocket binding."
     },
     {
-      "operation": "GET /apps/{app}/websocket/credentials",
+      "operation": "GET /instances/{instance}/websocket/credentials",
       "operation_id": "appWebSocket.credentials",
       "classification": "public_sdk",
       "group": "app_websocket",
@@ -240,14 +240,14 @@
       "reason": "Cloudflare routes are extension-gated and currently reachable through a generic SDK request; dedicated typed requests are optional follow-up."
     },
     {
-      "operation": "POST /cloudflare/cache-rules/{app}",
+      "operation": "POST /cloudflare/cache-rules/{project}",
       "operation_id": "cloudflare.addCacheRule",
       "classification": "deferred_optional",
       "group": "cloudflare_extension",
       "reason": "Cloudflare routes are extension-gated and currently reachable through a generic SDK request; dedicated typed requests are optional follow-up."
     },
     {
-      "operation": "DELETE /cloudflare/cache-rules/{app}",
+      "operation": "DELETE /cloudflare/cache-rules/{project}",
       "operation_id": "cloudflare.removeCacheRule",
       "classification": "deferred_optional",
       "group": "cloudflare_extension",

@@ -15,15 +15,15 @@ describe('schedule:show', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'schedule' => [
                 'name' => 'laravel-scheduler',
-                'scope' => 'app',
-                'target' => ['type' => 'app', 'name' => 'docs.production', 'node' => 'app-1'],
+                'scope' => 'instance',
+                'target' => ['type' => 'instance', 'name' => 'docs.production', 'node' => 'app-1'],
                 'timezone' => 'Europe/Amsterdam',
             ],
-        ], ['app' => 'docs.production', 'node' => null]));
+        ], ['instance' => 'docs.production', 'node' => null]));
 
         [$exitCode, $output] = runCommand($this, 'schedule:show', [
             'name' => 'laravel-scheduler',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--json' => true,
         ]);
 
@@ -35,7 +35,7 @@ describe('schedule:show', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/schedules/laravel-scheduler')
-                && str_contains($url, 'app=docs.production')
+                && str_contains($url, 'instance=docs.production')
             );
         });
 
@@ -43,7 +43,7 @@ describe('schedule:show', function (): void {
             ->toBe(0)
             ->and($decoded['success']['data']['schedule']['name'])
             ->toBe('laravel-scheduler')
-            ->and($decoded['success']['meta']['app'])
+            ->and($decoded['success']['meta']['instance'])
             ->toBe('docs.production');
     });
 
@@ -51,8 +51,8 @@ describe('schedule:show', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'schedule' => [
                 'name' => 'laravel-scheduler',
-                'scope' => 'app',
-                'target' => ['type' => 'app', 'name' => 'docs.production', 'node' => 'app-1'],
+                'scope' => 'instance',
+                'target' => ['type' => 'instance', 'name' => 'docs.production', 'node' => 'app-1'],
                 'interval' => 'daily',
                 'timezone' => 'Europe/Amsterdam',
                 'execution' => ['type' => 'command', 'value' => 'php artisan schedule:run'],
@@ -95,8 +95,8 @@ describe('schedule:show', function (): void {
                     'schedules' => [
                         [
                             'name' => 'laravel-scheduler',
-                            'scope' => 'app',
-                            'target' => ['type' => 'app', 'name' => 'docs.production', 'node' => 'app-1'],
+                            'scope' => 'instance',
+                            'target' => ['type' => 'instance', 'name' => 'docs.production', 'node' => 'app-1'],
                         ],
                     ],
                 ]));
@@ -105,12 +105,12 @@ describe('schedule:show', function (): void {
             if (
                 $request->method() === 'GET'
                 && $path === '/api/schedules/laravel-scheduler'
-                && ($parameters['app'] ?? null) === 'docs.production'
+                && ($parameters['instance'] ?? null) === 'docs.production'
             ) {
                 return Http::response(fakeSuccessEnvelope([
                     'schedule' => [
                         'name' => 'laravel-scheduler',
-                        'scope' => 'app',
+                        'scope' => 'instance',
                     ],
                 ]));
             }
@@ -152,7 +152,7 @@ describe('schedule:show', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:show', [
             'name' => 'laravel-scheduler',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--node' => 'app-1',
             '--json' => true,
         ]);
@@ -166,19 +166,19 @@ describe('schedule:show', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['fields'])
-            ->toBe(['app', 'node']);
+            ->toBe(['instance', 'node']);
     });
 
     it('passes through gateway schedule not found errors', function (): void {
         fakeGateway(fakeErrorEnvelope('schedule.not_found', 'Schedule not found.', [
             'name' => 'missing',
-            'app' => 'docs.production',
+            'instance' => 'docs.production',
             'node' => null,
         ]), 404);
 
         [$exitCode, $output] = runCommand($this, 'schedule:show', [
             'name' => 'missing',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--json' => true,
         ]);
 

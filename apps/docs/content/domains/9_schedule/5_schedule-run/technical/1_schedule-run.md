@@ -1,4 +1,4 @@
-# Technical Contract: `orbit schedule:run [name] [--app=<app>] [--node=<node>] [--json]`
+# Technical Contract: `orbit schedule:run [name] [--instance=<project.instance>] [--node=<node>] [--json]`
 
 [Back to public `schedule-run` documentation.](../schedule-run.md)
 
@@ -16,7 +16,7 @@
 ## Signature
 
 ```bash
-orbit schedule:run [name] [--app=<app>] [--node=<node>] [--json]
+orbit schedule:run [name] [--instance=<project.instance>] [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -26,7 +26,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` or interactive schedule data table | `Required in non-interactive mode.` | `Never.` | `None.` | Existing visible schedule slug. |
-| `app` | `--app` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare logical app is shorthand only when exactly one eligible instance is visible. |
+| `app` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or node the caller may run schedules for. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -43,10 +43,10 @@ authentication is transport security and does not re-check the caller's grant.
 ### One-Off Execution Rules
 
 - Resolves one schedule from gateway configuration by name and optional
-  concrete app-instance or node disambiguation.
+  concrete instance or node disambiguation.
 - Force-runs the schedule's stored command or script once on the target node, regardless of whether the schedule is currently due.
 - Enforces the schedule's stored execution timeout for both one-off and recurring dispatches.
-- Runs app-scoped schedules on the owning app instance's serving node with the
+- Runs instance-scoped schedules on the owning instance's serving node with the
   instance path as the working directory.
 - Runs node-scoped schedules in the selected node context.
 - Does not change the recurring interval or enabled state.
@@ -73,7 +73,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
-| App instance required | No eligible instance exists for a bare logical app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
+| Instance required | No eligible instance exists for a bare project, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Run failed | The scheduled command or script exits non-zero. | `error.code=schedule.run_failed` |
 | Run timed out | The scheduled command or script exceeds its stored execution timeout. | `error.code=schedule.run_failed`; the timeout result is retained in run history. |
 | Run history write failed | The gateway could not persist the run-history record. | `error.code=schedule.history_write_failed` |
@@ -105,7 +105,7 @@ manual schedule run attempts.
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php` | CLI POST run request with scope filters, success envelope with duration metadata, and `schedule.run_failed` gateway error passthrough. |
 | `apps/cli/tests/Feature/InternalScheduleRunCommandTest.php` | Node-side internal schedule execution command validates operation tokens, runs command/script payloads, and returns exit code plus captured output without treating process failure as transport failure. |
-| `apps/gateway/tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php` | Gateway scheduler dispatches non-gateway schedules to the persisted app instance's serving node and path through `internal:schedule:run`, then records durable gateway run history. |
+| `apps/gateway/tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php` | Gateway scheduler dispatches non-gateway schedules to the persisted instance's serving node and path through `internal:schedule:run`, then records durable gateway run history. |
 | `apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php` | Explicit instance lookup and ambiguous bare-selector rejection. |
 
 No SDK contract test is linked for this command yet. API behavior, activity logging, and authorization assertions remain coverage gaps until focused tests land.

@@ -3,11 +3,11 @@
 declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -24,7 +24,7 @@ function run_restrict_workspaces_to_app_development_nodes_migration(): void
         );
 
     if (! $migration instanceof Migration || ! method_exists($migration, 'up')) {
-        throw new \RuntimeException('Workspace role boundary migration must expose up().');
+        throw new RuntimeException('Workspace role boundary migration must expose up().');
     }
 
     $migration->up();
@@ -51,7 +51,7 @@ it('canonicalizes setup state and removes workspace grants involving production 
         'status' => 'active',
     ]);
 
-    $app = App::factory()->for($developmentNode, 'node')->create();
+    $app = Project::factory()->for($developmentNode, 'node')->create();
     $workspace = Workspace::factory()->for($app, 'app')->create();
     DB::table('workspaces')
         ->where('id', $workspace->id)
@@ -113,7 +113,7 @@ it('canonicalizes setup state and removes workspace grants involving production 
 
 it('fails closed when persisted workspace ownership points at app production', function (): void {
     $productionNode = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
-    $app = App::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
+    $app = Project::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
     $instance = AppInstance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitAppInstanceDriverConfigData(
@@ -135,7 +135,7 @@ it('fails closed when persisted workspace ownership points at app production', f
 
 it('fails closed when name-only workspace ownership points at app production', function (): void {
     $productionNode = Node::factory()->appProd()->create(['name' => 'app-prod-name-only']);
-    $app = App::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
+    $app = Project::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
     $instance = AppInstance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitAppInstanceDriverConfigData(

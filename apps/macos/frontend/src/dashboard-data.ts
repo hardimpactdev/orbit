@@ -1,6 +1,7 @@
 export type DashboardSummary = {
     nodes: NodeSummary[];
-    apps: AppSummary[];
+    projects: ProjectSummary[];
+    instances: InstanceSummary[];
     databases: DatabaseSummary[];
     processes: ProcessSummary[];
     tools: ToolSummary[];
@@ -10,7 +11,7 @@ export type DashboardSummary = {
     loadedAt: Date;
 };
 
-export type ApiEndpointKey = 'runtimeInventory' | 'nodes' | 'apps' | 'processes' | 'tools';
+export type ApiEndpointKey = 'runtimeInventory' | 'nodes' | 'projects' | 'processes' | 'tools';
 
 export type ApiEndpointStatus = {
     endpoint: ApiEndpointKey;
@@ -23,7 +24,8 @@ export type DashboardTotals = {
     nodes: number;
     onlineNodes: number;
     offlineNodes: number;
-    apps: number;
+    projects: number;
+    instances: number;
     databases: number;
     processes: number;
     tools: number;
@@ -31,7 +33,7 @@ export type DashboardTotals = {
 
 export type NodeRuntimeGroup = {
     node: NodeSummary;
-    apps: AppSummary[];
+    instances: InstanceSummary[];
     databases: DatabaseSummary[];
     processes: ProcessSummary[];
     tools: ToolSummary[];
@@ -49,8 +51,15 @@ export type NodeSummary = {
     address: string;
 };
 
-export type AppSummary = {
+export type ProjectSummary = {
     name: string;
+    instances: InstanceSummary[];
+    status: string;
+};
+
+export type InstanceSummary = {
+    name: string;
+    project: string;
     node: string;
     environment: string;
     status: string;
@@ -66,7 +75,7 @@ export type DatabaseSummary = {
 export type ProcessSummary = {
     name: string;
     node: string;
-    app: string;
+    project: string;
     runtime: string;
     status: string;
 };
@@ -80,7 +89,7 @@ export type ToolSummary = {
 
 export type GatewayPayloads = {
     nodes: unknown;
-    apps: unknown;
+    projects: unknown;
     processes: unknown;
     tools: unknown;
     apiStatuses?: ApiEndpointStatus[];
@@ -105,16 +114,18 @@ const databaseToolNames = new Set([
 
 export function createDashboardSummary(payloads: GatewayPayloads, loadedAt = new Date()): DashboardSummary {
     const nodes = normalizeNodes(payloads.nodes);
-    const apps = normalizeApps(payloads.apps);
+    const projects = normalizeProjects(payloads.projects);
+    const instances = projects.flatMap(project => project.instances);
     const databases = normalizeDatabases(nodes, payloads.tools);
     const processes = normalizeProcesses(payloads.processes);
     const tools = normalizeTools(payloads.tools);
-    const nodeGroups = groupRuntimeByNode(nodes, apps, databases, processes, tools);
+    const nodeGroups = groupRuntimeByNode(nodes, instances, databases, processes, tools);
     const apiStatuses = payloads.apiStatuses ?? defaultApiStatuses();
 
     return {
         nodes,
-        apps,
+        projects,
+        instances,
         databases,
         processes,
         tools,
@@ -124,7 +135,8 @@ export function createDashboardSummary(payloads: GatewayPayloads, loadedAt = new
             nodes: nodeGroups.length,
             onlineNodes: nodeGroups.filter(group => group.statusTone === 'healthy' || group.statusTone === 'idle').length,
             offlineNodes: nodeGroups.filter(group => group.statusTone === 'offline' || group.statusTone === 'error').length,
-            apps: apps.length,
+            projects: projects.length,
+            instances: instances.length,
             databases: databases.length,
             processes: processes.length,
             tools: tools.length,
@@ -164,16 +176,27 @@ export function normalizeNodes(payload: unknown): NodeSummary[] {
     });
 }
 
-export function normalizeApps(payload: unknown): AppSummary[] {
-    return extractArray(payload, 'apps').map(item => {
-        const appRecord = objectRecord(item);
-        const nodeRecord = objectRecord(appRecord.node);
+export function normalizeProjects(payload: unknown): ProjectSummary[] {
+    return extractArray(payload, 'projects').map(item => {
+        const project = objectRecord(item);
+        const projectName = stringValue(project.name ?? project.project, 'unknown');
+        const instances = arrayValues(project.instances).map(item => {
+            const instance = objectRecord(item);
+            const node = objectRecord(instance.node);
+
+            return {
+                name: stringValue(instance.name ?? instance.instance, 'unknown'),
+                project: projectName,
+                node: stringValue(node.name ?? instance.node_name ?? instance.node, 'unknown'),
+                environment: stringValue(instance.environment, 'unknown'),
+                status: stringValue(instance.status ?? instance.state, 'registered'),
+            };
+        });
 
         return {
-            name: stringValue(appRecord.name ?? appRecord.app, 'unknown'),
-            node: stringValue(nodeRecord.name ?? appRecord.node_name ?? appRecord.node, 'unknown'),
-            environment: stringValue(appRecord.environment ?? appRecord.runtime_environment, 'unknown'),
-            status: stringValue(appRecord.status ?? appRecord.state, 'registered'),
+            name: projectName,
+            instances,
+            status: stringValue(project.status ?? project.state, 'registered'),
         };
     });
 }
@@ -212,12 +235,12 @@ export function normalizeProcesses(payload: unknown): ProcessSummary[] {
     return extractArray(payload, 'processes').map(item => {
         const process = objectRecord(item);
         const node = objectRecord(process.node);
-        const appRecord = objectRecord(process.app);
+        const project = objectRecord(process.project);
 
         return {
             name: stringValue(process.name, 'unknown'),
             node: stringValue(node.name ?? process.node_name ?? process.node, 'unknown'),
-            app: stringValue(appRecord.name ?? process.app_name ?? process.app ?? process.owner, 'none'),
+            project: stringValue(project.name ?? process.project_name ?? process.project ?? process.owner, 'none'),
             runtime: stringValue(process.runtime ?? process.runtime_backend, 'unknown'),
             status: stringValue(process.status ?? process.state, 'unknown'),
         };
@@ -240,7 +263,7 @@ export function normalizeTools(payload: unknown): ToolSummary[] {
 
 function groupRuntimeByNode(
     nodes: NodeSummary[],
-    apps: AppSummary[],
+    instances: InstanceSummary[],
     databases: DatabaseSummary[],
     processes: ProcessSummary[],
     tools: ToolSummary[],
@@ -250,7 +273,7 @@ function groupRuntimeByNode(
     nodes.forEach(node => {
         groups.set(normalizedNodeName(node.name), {
             node,
-            apps: [],
+            instances: [],
             databases: [],
             processes: [],
             tools: [],
@@ -259,7 +282,7 @@ function groupRuntimeByNode(
         });
     });
 
-    apps.forEach(app => runtimeGroup(groups, app.node).apps.push(app));
+    instances.forEach(instance => runtimeGroup(groups, instance.node).instances.push(instance));
     databases.forEach(database => runtimeGroup(groups, database.node).databases.push(database));
     processes.forEach(process => runtimeGroup(groups, process.node).processes.push(process));
     tools.forEach(tool => runtimeGroup(groups, tool.node).tools.push(tool));
@@ -267,7 +290,7 @@ function groupRuntimeByNode(
     return [...groups.values()]
         .map(group => ({
             ...group,
-            hasRuntimeInventory: group.apps.length + group.databases.length + group.processes.length + group.tools.length > 0,
+            hasRuntimeInventory: group.instances.length + group.databases.length + group.processes.length + group.tools.length > 0,
         }))
         .sort((left, right) => left.node.name.localeCompare(right.node.name));
 }
@@ -287,7 +310,7 @@ function runtimeGroup(groups: Map<string, NodeRuntimeGroup>, nodeName: string): 
 
     const group = {
         node,
-        apps: [],
+        instances: [],
         databases: [],
         processes: [],
         tools: [],
@@ -342,8 +365,8 @@ function endpointLabel(endpoint: ApiEndpointKey): string {
         return 'Nodes';
     }
 
-    if (endpoint === 'apps') {
-        return 'Apps';
+    if (endpoint === 'projects') {
+        return 'Projects';
     }
 
     if (endpoint === 'processes') {

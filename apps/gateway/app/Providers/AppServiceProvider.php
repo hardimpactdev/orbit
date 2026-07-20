@@ -18,6 +18,7 @@ use App\Contracts\WorkspaceSourceDrivers;
 use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Models\LocalGatewaySettings;
+use App\Models\Project;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\AgentIde\CoreAgentIdeMessageAdapter;
@@ -97,11 +98,13 @@ use App\Tools\PolyscopeServerTool;
 use App\Tools\SeaweedfsTool;
 use App\Tools\VitePlusTool;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
 use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Security\OperationTokenVerifier;
 use Orbit\Sdk\Laravel\GatewayConnector;
+use Override;
 use RuntimeException;
 use Spatie\LaravelData\Support\DataConfig;
 
@@ -115,10 +118,14 @@ class AppServiceProvider extends ServiceProvider
      *
      * @mago-expect lint:halstead
      */
-    #[\Override]
+    #[Override]
     public function register(): void
     {
         $_SERVER['PAO_DISABLE'] ??= '1';
+
+        Relation::morphMap([
+            'App\\Models\\App' => Project::class,
+        ]);
 
         $this->app->scoped(ActivityLogCorrelation::class);
         $this->app->scoped(WebSocketRoleBaselineTiming::class);

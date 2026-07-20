@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
@@ -20,7 +20,7 @@ final readonly class ProcessRuntimeUnitResolver
     ) {}
 
     /**
-     * @return array{app: App, app_instance: AppInstance, workspace: Workspace|null, process: Process}|null
+     * @return array{app: Project, app_instance: AppInstance, workspace: Workspace|null, process: Process}|null
      */
     public function resolve(Node $node, string $unitName): ?array
     {
@@ -52,7 +52,7 @@ final readonly class ProcessRuntimeUnitResolver
         $appInstance = $instances->count() === 1 ? $instances->first() : null;
         $app = $appInstance?->app;
 
-        if (! $appInstance instanceof AppInstance || ! $app instanceof App) {
+        if (! $appInstance instanceof AppInstance || ! $app instanceof Project) {
             return null;
         }
 

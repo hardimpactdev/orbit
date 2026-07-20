@@ -6,10 +6,10 @@ use App\Actions\Apps\SetupApp;
 use App\Contracts\RemoteShell;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\AppSetupStep;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -22,7 +22,7 @@ it('passes Laravel Vite URL and dev server certificate environment into app setu
             'user' => 'nckrtl',
         ]);
 
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'craft-starterkit-react',
         'domain' => 'craft-starterkit-react.test',
         'path' => '/home/nckrtl/projects/craft-starterkit-react',

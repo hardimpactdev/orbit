@@ -48,12 +48,12 @@ final readonly class WorkspaceListController implements Loggable
             return $this->workspaceUnsupportedForProduction($exception);
         }
 
-        $app = $this->stringQuery($request, 'app');
+        $app = $this->stringQuery($request, 'instance');
         $node = $this->stringQuery($request, 'node');
         $selection = null;
 
         if ($this->containsComma($app)) {
-            return $this->validationFailed('app', $app, "Unknown app: '{$app}'.");
+            return $this->validationFailed('instance', $app, "Unknown instance: '{$app}'.");
         }
 
         if ($this->containsComma($node)) {
@@ -74,7 +74,7 @@ final readonly class WorkspaceListController implements Loggable
             try {
                 $selection = $this->appSelectorResolver->resolveRequired($app);
             } catch (AppSelectionResolutionFailed) {
-                return $this->validationFailed('app', $app, "Unknown app: '{$app}'.");
+                return $this->validationFailed('instance', $app, "Unknown instance: '{$app}'.");
             }
         }
 
@@ -95,7 +95,7 @@ final readonly class WorkspaceListController implements Loggable
         ) {
             $app ??= $selection->app->name;
 
-            return $this->validationFailed('app', $app, "Unknown app: '{$app}'.");
+            return $this->validationFailed('instance', $app, "Unknown instance: '{$app}'.");
         }
 
         if ($node !== null && ! $this->nodeFilterIsValid($node, $callerIsGateway, $visibleNodeIds)) {
@@ -288,8 +288,8 @@ final readonly class WorkspaceListController implements Loggable
             $workspaces
                 ->map(fn (Workspace $workspace): array => [
                     'name' => $workspace->name,
-                    'app' => $workspace->app?->name,
-                    'app_instance' => $workspace->appInstance->name,
+                    'project' => $workspace->app?->name,
+                    'instance' => $workspace->appInstance->name,
                     'node' => $this->placement->nodeForWorkspace($workspace)?->name,
                     'url' => $workspace->url(),
                     'lifecycle_status' => $workspace->lifecycle_status->value,

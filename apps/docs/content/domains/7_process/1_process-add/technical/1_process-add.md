@@ -8,13 +8,13 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for `process:add` on the resolved node or app instance serving node.
+- The gateway authorizes the authenticated peer for `process:add` on the resolved node or instance serving node.
 - Runtime artifact rendering requires gateway reachability to that serving node.
 
 ## Signature
 
 ```bash
-orbit process:add [name] [process_command] [--app=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--database=<name>] [--username=<name>] [--published-port=<port>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--replace-container=<name>] [--force] [--no-start] [--json]
+orbit process:add [name] [process_command] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--database=<name>] [--username=<name>] [--published-port=<port>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--replace-container=<name>] [--force] [--no-start] [--json]
 ```
 
 ## Input Contract
@@ -26,8 +26,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `name` | `[name]` | Always. | Never. | None. | Process slug: lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the resolved owner scope. |
 | `process_command` | `[process_command]` | When `service` is absent. | Never. | Managed service command when `service` is present. | Non-empty command string. Stored as process configuration without shell rewriting by the input adapter. |
 | `node` | `--node` | Required when adding a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:add`. |
-| `app` | `--app` or app-instance context | Required unless `node` is supplied or `workspace` resolves the app instance. | `node` is present. | Local app instance context when exactly one is resolvable. | Prefer `<app.instance>`. A bare logical-app slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:add`. |
-| `workspace` | `--workspace` or workspace context | Required when adding a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its app instance whose serving node grants `process:add`; pass `--app=<app.instance>` when the workspace name is ambiguous. |
+| `app` | `--instance` or instance context | Required unless `node` is supplied or `workspace` resolves the instance. | `node` is present. | Local instance context when exactly one is resolvable. | Prefer `<project.instance>`. A bare project slug is valid only when it has exactly one instance. The selected instance's serving node must grant `process:add`. |
+| `workspace` | `--workspace` or workspace context | Required when adding a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace and its instance whose serving node grants `process:add`; pass `--instance=<project.instance>` when the workspace name is ambiguous. |
 | `tool` | `--tool` | Optional. | Never. | `null`. | Tool slug for the installed node capability this process uses. Tools do not own lifecycle. |
 | `service` | `--service` | Optional. | When `tool` is present or when owner scope is app/workspace. | `null`. | Supported managed service identifier from the gateway service catalog. The process name does not imply the service. |
 | `version` | `--version` | Optional for one-version services; required when the service has multiple version families. | When `service` is absent. | Service default when unambiguous. | Supported managed service version or version family. CLI implementation normalizes public `--version` to internal `--service-version` because Symfony reserves the global `--version` flag. |
@@ -54,7 +54,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Process Definition Creation Rules
 
-1. Resolve a target node, concrete app instance, or workspace context from supplied input or local context. Reject a bare logical-app selector with `validation_failed`, `field=app`, and `reason=app_instance_required` unless that app has exactly one instance.
+1. Resolve a target node, concrete instance, or workspace context from supplied input or local context. Reject a bare project selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that project has exactly one instance.
 2. Send the request to the gateway, which validates the authenticated peer's authorization and process name uniqueness within the owner scope.
 3. Resolve typed managed-service options, then validate the requested WireGuard
    host and published port plus volume names against every process on the node
@@ -66,8 +66,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    `docker` unless their catalog entry and node platform admit another service
    runtime.
 6. Append gateway-owned process configuration after existing definitions for that owner, recording command, runtime, and policy fields.
-7. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit. App-instance-owned processes derive one main-instance unit plus one unit for each active workspace belonging to that same instance. Canonical identities include both logical app and app-instance slugs.
-8. Render the derived runtime units on the resolved node or app instance serving node through the selected runtime backend.
+7. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit. Instance-owned processes derive one main-instance unit plus one unit for each active workspace belonging to that same instance. Canonical identities include both project and instance slugs.
+8. Render the derived runtime units on the resolved node or instance serving node through the selected runtime backend.
 9. Start rendered runtime units by default unless `--no-start` is present.
 10. Record `started` events for units that start successfully.
 11. Render the selected output.
@@ -94,8 +94,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Duplicate process | The resolved owner scope already has a process definition with the same name. | Failure (`error.code=process.name_collision`). |
-| Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app-instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
-| App instance required | A bare logical-app selector resolves to more than one app instance. | Failure (`error.code=validation_failed`; `error.meta.field=app`; `error.meta.reason=app_instance_required`). |
+| Invalid context | `--node` is combined with `--instance` or `--workspace`, or no node/instance/workspace context resolves. | Failure (`error.code=validation_failed`). |
+| Instance required | A bare project selector resolves to more than one instance. | Failure (`error.code=validation_failed`; `error.meta.field=instance`; `error.meta.reason=instance_required`). |
 | Invalid host-command container runtime | `--runtime=docker` or `--runtime=docker-swarm` is supplied for a public app- or workspace-owned host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=docker_runtime_requires_service_or_managed_process` or `docker_swarm_requires_node_owned_process`). |
 | Invalid host-command platform runtime | `--runtime=systemd` is supplied for a macOS host-command process, or `--runtime=launchd` is supplied for a Linux host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=systemd_runtime_requires_linux` or `launchd_runtime_requires_macos`). |
 | Launchd crash notification deferred | `--runtime=launchd` is combined with `--crash-notification=agent_ide`. | Failure (`error.code=validation_failed`; `error.meta.field=crash_notification`; `error.meta.reason=launchd_crash_notification_deferred`). |
@@ -124,8 +124,8 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | --- | --- |
 | Type | `api:POST /processes` |
 | Effect | `write` |
-| Subject | Resolved `Node` for node-owned processes or `AppInstance` for app-instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
-| Properties | `node`, `app`, `app_instance`, `workspace`, `name`, `tool`, and `service`. No raw command text, service options, env, runtime output, replacement-container names, or secrets. |
+| Subject | Resolved `Node` for node-owned processes or `AppInstance` for instance/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
+| Properties | `node`, `app`, `instance`, `workspace`, `name`, `tool`, and `service`. No raw command text, service options, env, runtime output, replacement-container names, or secrets. |
 | Description | derived |
 
 ## Test Mapping

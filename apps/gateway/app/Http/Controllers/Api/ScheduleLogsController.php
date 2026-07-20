@@ -50,7 +50,7 @@ final readonly class ScheduleLogsController implements Loggable
         try {
             $result = $this->payload->forSchedule(
                 name: $name,
-                app: $this->stringQuery($request, 'app'),
+                instance: $this->stringQuery($request, 'instance'),
                 node: $this->stringQuery($request, 'node'),
                 runId: $run,
                 lines: $lines,

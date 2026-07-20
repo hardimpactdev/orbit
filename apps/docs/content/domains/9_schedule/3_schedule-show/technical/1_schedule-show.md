@@ -1,4 +1,4 @@
-# Technical Contract: `orbit schedule:show [name] [--app=<app>] [--node=<node>] [--json]`
+# Technical Contract: `orbit schedule:show [name] [--instance=<project.instance>] [--node=<node>] [--json]`
 
 [Back to public `schedule-show` documentation.](../schedule-show.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit schedule:show [name] [--app=<app>] [--node=<node>] [--json]
+orbit schedule:show [name] [--instance=<project.instance>] [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` or interactive schedule data table | `Required in non-interactive mode.` | `Never.` | `None.` | Schedule slug visible to the caller. |
-| `app` | `--app` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare logical app is shorthand only when exactly one eligible instance is visible. |
+| `app` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or node the caller may inspect. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -32,8 +32,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Schedule Detail Rules
 
 - Reads one gateway schedule-configuration row visible to the caller.
-- Resolves optional app disambiguation to one concrete app instance at the
-  gateway. Ambiguous bare app selectors fail instead of choosing one row.
+- Resolves optional app disambiguation to one concrete instance at the
+  gateway. Ambiguous bare project selectors fail instead of choosing one row.
 - Includes latest durable run-history summary when available.
 - Distinguishes gateway-configuration status from live scheduler verification.
 - Does not inspect live Orbit Scheduler state.
@@ -53,7 +53,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
-| App instance required | No eligible instance exists for a bare logical app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
+| Instance required | No eligible instance exists for a bare project, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Schedule selector ambiguous | The name without a target filter matches more than one visible concrete target. | `error.code=validation_failed`, `error.meta.reason=schedule_selector_ambiguous` |
 
 ## Doctor Relationship

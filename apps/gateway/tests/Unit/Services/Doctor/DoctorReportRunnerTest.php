@@ -12,7 +12,6 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\RemoteShellFailed;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -22,6 +21,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process as OrbitProcess;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\SchedulerState;
@@ -30,19 +30,25 @@ use App\Models\Workspace;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\Apps\AppRuntimeContainer;
+use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Dns\DnsmasqBaseConfigBuilder;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
+use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
+use App\Services\Processes\ProcessEventNotifierRenderer;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
+use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -69,16 +75,16 @@ beforeEach(function (): void {
         fn (): RunsInternalCommands => app(RemoteLocalExecutor::class),
     );
     app()->bind(
-        \App\Services\Apps\AppRuntimeContainerManager::class,
-        fn (): \App\Services\Apps\AppRuntimeContainerManager => new \App\Services\Apps\AppRuntimeContainerManager(
-            app(\App\Services\Runtime\DockerCommandBuilder::class),
+        AppRuntimeContainerManager::class,
+        fn (): AppRuntimeContainerManager => new AppRuntimeContainerManager(
+            app(DockerCommandBuilder::class),
             doctor_runner_fake_ca(),
         ),
     );
     app()->bind(
-        \App\Services\Workspaces\WorkspaceRuntimeContainerManager::class,
-        fn (): \App\Services\Workspaces\WorkspaceRuntimeContainerManager => new \App\Services\Workspaces\WorkspaceRuntimeContainerManager(
-            app(\App\Services\Runtime\DockerCommandBuilder::class),
+        WorkspaceRuntimeContainerManager::class,
+        fn (): WorkspaceRuntimeContainerManager => new WorkspaceRuntimeContainerManager(
+            app(DockerCommandBuilder::class),
             doctor_runner_fake_ca(),
         ),
     );
@@ -242,7 +248,7 @@ function fakeDoctorRunnerSchedulerSwarmService(string $replicas = '1/1', ?string
 describe('DoctorReportRunner', function (): void {
     it('leaves concrete app runtime-unit drift to the process family', function (): void {
         $node = createDoctorRunnerAppHostNode();
-        App::factory()->create([
+        Project::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'path' => '/home/orbit/apps/docs',
@@ -271,7 +277,7 @@ describe('DoctorReportRunner', function (): void {
 
     it('does not probe or fix workspace PHP-FPM pools for PHP apps because workspaces use Docker containers', function (): void {
         $node = createDoctorRunnerAppHostNode();
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'path' => '/home/orbit/apps/docs',
@@ -540,7 +546,7 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, new DoctorReportRunnerAgentToolProxyRemoteShell);
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
-        app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_agent_tool_proxy_fake_ca());
+        app()->instance(OrbitCaService::class, doctor_runner_agent_tool_proxy_fake_ca());
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['proxy']);
         $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->firstOrFail();
@@ -573,11 +579,11 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = Project::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
         ]);
-        \App\Models\Process::factory()
+        OrbitProcess::factory()
             ->forOwner($app)
             ->create([
                 'name' => 'vite',
@@ -645,15 +651,15 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $docs = App::factory()->for($node, 'node')->create([
+        $docs = Project::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
         ]);
-        $blog = App::factory()->for($node, 'node')->create([
+        $blog = Project::factory()->for($node, 'node')->create([
             'name' => 'blog',
             'path' => '/home/orbit/apps/blog',
         ]);
-        \App\Models\Process::factory()
+        OrbitProcess::factory()
             ->forOwner($docs)
             ->create([
                 'name' => 'vp-dev',
@@ -662,7 +668,7 @@ describe('DoctorReportRunner', function (): void {
                 'crash_notification' => 'none',
                 'sort_order' => 1,
             ]);
-        \App\Models\Process::factory()
+        OrbitProcess::factory()
             ->forOwner($blog)
             ->create([
                 'name' => 'vp-dev',
@@ -734,7 +740,7 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = Project::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
         ]);
@@ -752,7 +758,7 @@ describe('DoctorReportRunner', function (): void {
                 path: '/home/orbit/apps/docs-production',
             ),
         ]);
-        \App\Models\Process::factory()
+        OrbitProcess::factory()
             ->forOwner($app, $node)
             ->create([
                 'app_instance_id' => $development->id,
@@ -762,7 +768,7 @@ describe('DoctorReportRunner', function (): void {
                 'crash_notification' => 'none',
                 'sort_order' => 1,
             ]);
-        \App\Models\Process::factory()
+        OrbitProcess::factory()
             ->forOwner($app, $node)
             ->create([
                 'app_instance_id' => $production->id,
@@ -846,7 +852,7 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = Project::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
@@ -862,7 +868,7 @@ describe('DoctorReportRunner', function (): void {
             ),
         ]);
         $expectedHash = app(AppRuntimeContainerRenderer::class)->renderForInstance($app, $instance)->specHash();
-        $process = \App\Models\Process::factory()
+        $process = OrbitProcess::factory()
             ->forOwner($app)
             ->create([
                 'app_instance_id' => $instance->id,
@@ -905,11 +911,11 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, $shell);
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
-        app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_fake_ca());
+        app()->instance(OrbitCaService::class, doctor_runner_fake_ca());
         app()->instance(
-            \App\Services\Apps\AppRuntimeContainerManager::class,
-            new \App\Services\Apps\AppRuntimeContainerManager(
-                app(\App\Services\Runtime\DockerCommandBuilder::class),
+            AppRuntimeContainerManager::class,
+            new AppRuntimeContainerManager(
+                app(DockerCommandBuilder::class),
                 doctor_runner_fake_ca(),
             ),
         );
@@ -950,7 +956,7 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = Project::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
@@ -966,7 +972,7 @@ describe('DoctorReportRunner', function (): void {
             ),
         ]);
         $expectedHash = app(AppRuntimeContainerRenderer::class)->renderForInstance($app, $instance)->specHash();
-        \App\Models\Process::factory()
+        OrbitProcess::factory()
             ->forOwner($app)
             ->create([
                 'app_instance_id' => $instance->id,
@@ -999,11 +1005,11 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, $shell);
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
-        app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_fake_ca());
+        app()->instance(OrbitCaService::class, doctor_runner_fake_ca());
         app()->instance(
-            \App\Services\Apps\AppRuntimeContainerManager::class,
-            new \App\Services\Apps\AppRuntimeContainerManager(
-                app(\App\Services\Runtime\DockerCommandBuilder::class),
+            AppRuntimeContainerManager::class,
+            new AppRuntimeContainerManager(
+                app(DockerCommandBuilder::class),
                 doctor_runner_fake_ca(),
             ),
         );
@@ -1038,7 +1044,7 @@ describe('DoctorReportRunner', function (): void {
                 ))
             ->toBeTrue()
             ->and(
-                App::query()
+                Project::query()
                     ->where('name', 'docs')
                     ->first()
                     ?->processes()
@@ -1056,7 +1062,7 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'nmbp',
             'platform' => 'macos_14',
         ]);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = Project::factory()->for($node, 'node')->create([
             'name' => 'nckrtl',
             'path' => '/Users/nckrtl/apps/nckrtl',
             'php_version' => '8.5',
@@ -1128,7 +1134,7 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'nmbp',
             'platform' => 'macos_14',
         ]);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = Project::factory()->for($node, 'node')->create([
             'name' => 'nckrtl',
             'path' => '/Users/nckrtl/apps/nckrtl',
             'php_version' => '8.5',
@@ -1177,7 +1183,7 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, $shell);
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
-        app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_fake_ca());
+        app()->instance(OrbitCaService::class, doctor_runner_fake_ca());
         doctor_runner_expect_app_runtime_outcomes('created');
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
@@ -1221,7 +1227,7 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = Project::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
@@ -1234,7 +1240,7 @@ describe('DoctorReportRunner', function (): void {
             'lifecycle_status' => WorkspaceLifecycleStatus::Active,
         ]);
         $expectedHash = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace)->specHash();
-        $process = \App\Models\Process::factory()
+        $process = OrbitProcess::factory()
             ->forOwner($workspace)
             ->create([
                 'name' => 'frankenphp-docs-feature-a',
@@ -1276,11 +1282,11 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, $shell);
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
-        app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_fake_ca());
+        app()->instance(OrbitCaService::class, doctor_runner_fake_ca());
         app()->instance(
-            \App\Services\Workspaces\WorkspaceRuntimeContainerManager::class,
-            new \App\Services\Workspaces\WorkspaceRuntimeContainerManager(
-                app(\App\Services\Runtime\DockerCommandBuilder::class),
+            WorkspaceRuntimeContainerManager::class,
+            new WorkspaceRuntimeContainerManager(
+                app(DockerCommandBuilder::class),
                 doctor_runner_fake_ca(),
             ),
         );
@@ -1321,13 +1327,13 @@ describe('DoctorReportRunner', function (): void {
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = Project::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
             'runtime' => AppRuntimeKind::Php,
         ]);
-        \App\Models\Process::factory()
+        OrbitProcess::factory()
             ->forOwner($app)
             ->create([
                 'name' => 'vite',
@@ -1381,7 +1387,7 @@ describe('DoctorReportRunner', function (): void {
             ->toBe([
                 [
                     'path' => '/usr/local/bin/orbit-notify-exit',
-                    'content' => app(\App\Services\Processes\ProcessEventNotifierRenderer::class)->content(),
+                    'content' => app(ProcessEventNotifierRenderer::class)->content(),
                     'mode' => '0755',
                     'directory_mode' => '0755',
                 ],
@@ -1401,7 +1407,7 @@ describe('DoctorReportRunner', function (): void {
             'name' => 'app-1',
             'platform' => 'ubuntu_24-04',
         ]);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = Project::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
@@ -1445,7 +1451,7 @@ describe('DoctorReportRunner', function (): void {
                 'user' => 'orbit',
                 'managed' => true,
             ]);
-        \App\Models\Process::factory()
+        OrbitProcess::factory()
             ->forOwner($node)
             ->create([
                 'name' => 'node-exporter',
@@ -1568,7 +1574,7 @@ describe('DoctorReportRunner', function (): void {
                 'platform' => 'ubuntu_24-04',
                 'user' => 'orbit',
             ]);
-        \App\Models\Process::factory()
+        OrbitProcess::factory()
             ->forOwner($node)
             ->create([
                 'name' => 'grafana',
@@ -1639,7 +1645,7 @@ describe('DoctorReportRunner', function (): void {
                 'user' => 'orbit',
                 'wireguard_address' => '10.6.0.7',
             ]);
-        $process = \App\Models\Process::factory()
+        $process = OrbitProcess::factory()
             ->forOwner($node)
             ->create([
                 'name' => 'valkey',
@@ -2305,7 +2311,7 @@ describe('DoctorReportRunner', function (): void {
         $path = storage_path('framework/testing/doctor-database-unverifiable');
         File::ensureDirectoryExists($path);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -2346,7 +2352,7 @@ describe('DoctorReportRunner', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=mysql\n");
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -2405,7 +2411,7 @@ describe('DoctorReportRunner', function (): void {
             "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n",
         );
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'node_id' => $logicalAppNode->id,
             'name' => 'docs',
             'path' => $path,
@@ -2481,7 +2487,7 @@ describe('DoctorReportRunner', function (): void {
             "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n",
         );
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -2531,7 +2537,7 @@ describe('DoctorReportRunner', function (): void {
             "DB_CONNECTION=mysql\nDB_HOST=observed-host\nDB_PORT=3306\nDB_DATABASE=docs_v2\nDB_USERNAME=observed-user\nDB_PASSWORD=observed-secret\n",
         );
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'node_id' => $node->id,
             'name' => 'docs',
             'path' => $path,
@@ -2606,7 +2612,7 @@ describe('DoctorReportRunner', function (): void {
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=mysql\n");
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'node_id' => $logicalAppNode->id,
             'name' => 'docs',
             'path' => $path,
@@ -2744,7 +2750,7 @@ describe('DoctorReportRunner', function (): void {
     });
 });
 
-function doctorRunnerDatabaseAppInstance(App $app): AppInstance
+function doctorRunnerDatabaseAppInstance(Project $app): AppInstance
 {
     $instance = $app->instances()->first();
 
@@ -3274,8 +3280,8 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             ]);
         }
 
-        $hauzer = App::factory()->create(['node_id' => $ingress->id, 'name' => 'hauzer-production']);
-        $mealou = App::factory()->create(['node_id' => $ingress->id, 'name' => 'mealou-production']);
+        $hauzer = Project::factory()->create(['node_id' => $ingress->id, 'name' => 'hauzer-production']);
+        $mealou = Project::factory()->create(['node_id' => $ingress->id, 'name' => 'mealou-production']);
 
         foreach ([
             [$hauzer, 'hauzer.app'],
@@ -3389,7 +3395,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
                 'managed' => true,
                 'tld' => 'test',
             ]);
-        $app = App::factory()
+        $app = Project::factory()
             ->static()
             ->for($node, 'node')
             ->create([
@@ -3534,7 +3540,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
                 'status' => 'active',
                 'managed' => true,
             ]);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = Project::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'environment' => 'production',
             'path' => '/srv/docs',
@@ -3625,7 +3631,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
                 'status' => 'active',
                 'managed' => true,
             ]);
-        $app = App::factory()
+        $app = Project::factory()
             ->static()
             ->for($node, 'node')
             ->create([
@@ -4007,7 +4013,7 @@ final class DoctorReportRunnerAgentToolProxyRemoteShell implements RemoteShell
         }
 
         if (str_contains($script, 'path="/etc/caddy/Caddyfile"')) {
-            $content = new \App\Services\Gateway\CaddyGlobalConfig()->fresh();
+            $content = new CaddyGlobalConfig()->fresh();
 
             return $this->success('1'."\t".base64_encode($content)."\n");
         }
@@ -4466,9 +4472,9 @@ function doctorRunnerDecodeInput(string $input): array
     return $decoded;
 }
 
-function doctor_runner_fake_ca(): \App\Services\Ca\OrbitCaService
+function doctor_runner_fake_ca(): OrbitCaService
 {
-    return new readonly class extends \App\Services\Ca\OrbitCaService {
+    return new readonly class extends OrbitCaService {
         public function rootCert(): string
         {
             return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
@@ -4476,9 +4482,9 @@ function doctor_runner_fake_ca(): \App\Services\Ca\OrbitCaService
     };
 }
 
-function doctor_runner_agent_tool_proxy_fake_ca(): \App\Services\Ca\OrbitCaService
+function doctor_runner_agent_tool_proxy_fake_ca(): OrbitCaService
 {
-    return new readonly class extends \App\Services\Ca\OrbitCaService {
+    return new readonly class extends OrbitCaService {
         public function rootCert(): string
         {
             return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";

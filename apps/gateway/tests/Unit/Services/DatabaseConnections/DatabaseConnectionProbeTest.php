@@ -7,12 +7,12 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
@@ -888,9 +888,9 @@ describe('DatabaseConnectionProbe', function (): void {
 /**
  * @param  array<string, mixed>  $attributes
  */
-function databaseConnectionProbeApp(array $attributes): App
+function databaseConnectionProbeApp(array $attributes): Project
 {
-    $app = App::factory()->create($attributes);
+    $app = Project::factory()->create($attributes);
 
     AppInstance::factory()->for($app)->create([
         'driver_config' => new OrbitAppInstanceDriverConfigData(
@@ -904,7 +904,7 @@ function databaseConnectionProbeApp(array $attributes): App
     return $app;
 }
 
-function databaseConnectionProbeAppInstance(App $app): AppInstance
+function databaseConnectionProbeAppInstance(Project $app): AppInstance
 {
     return $app->instances()->firstOrFail();
 }

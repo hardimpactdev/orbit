@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceRunStep;
@@ -47,7 +47,7 @@ function grantWorkspaceLogAccess(Node $caller, Node $appNode): void
 
 function createVisibleWorkspaceLogRun(Node $appNode): WorkspaceRun
 {
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
     $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
     $step = WorkspaceStep::factory()->create(['app_id' => $app->id, 'command' => 'Install dependencies']);
     $run = WorkspaceRun::factory()->create([
@@ -71,7 +71,7 @@ function createVisibleWorkspaceLogRun(Node $appNode): WorkspaceRun
 
 function create_app_instance_workspace_log_run(Node $canonicalNode, Node $localNode): WorkspaceRun
 {
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'happie',
         'node_id' => $canonicalNode->id,
         'domain' => 'happie.test',
@@ -217,6 +217,6 @@ it('authorizes and reports app instance workspace run logs against the selected 
     $response
         ->assertOk()
         ->assertJsonPath('success.data.run.workspace', 'recipes')
-        ->assertJsonPath('success.data.run.app', 'happie')
+        ->assertJsonPath('success.data.run.project', 'happie')
         ->assertJsonPath('success.data.run.node', 'NMBP');
 });

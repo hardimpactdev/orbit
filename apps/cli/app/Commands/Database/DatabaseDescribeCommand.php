@@ -16,7 +16,7 @@ final class DatabaseDescribeCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'database:describe
-        {target? : App instance, workspace, or connection slug}
+        {target? : Instance, workspace, or connection slug}
         {table? : Table name}
         {--connection= : Connection slug when the target maps to multiple connections}
         {--json}';

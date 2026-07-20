@@ -23,14 +23,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `zone` | `--zone` or prompt `cf_cache_flush_zone` | Required in non-interactive input mode. | `Never.` | Prompted in interactive input mode. | Cloudflare zone ID, exact zone domain name, or Orbit app name with a configured Cloudflare zone. |
+| `zone` | `--zone` or prompt `cf_cache_flush_zone` | Required in non-interactive input mode. | `Never.` | Prompted in interactive input mode. | Cloudflare zone ID, exact zone domain name, or Orbit project name with a configured Cloudflare zone. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
 
 1. Resolve `zone` from `--zone`, or from prompt `cf_cache_flush_zone` in
    interactive input mode.
-2. If the value matches an Orbit app name with a configured Cloudflare zone,
+2. If the value matches an Orbit project name with a configured Cloudflare zone,
    use that app's zone.
 3. Otherwise resolve the value as a Cloudflare zone ID or exact zone domain
    name.
@@ -70,7 +70,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 ## Doctor Relationship
 
 `cf-cache:flush` does not create a doctor issue, fix drift, or adopt provider
-state. App deployment health remains owned by [`doctor --family=app`](../../../5_app/app-doctor.md).
+state. App deployment health remains owned by [`doctor --family=instance`](../../../5_project/instance-doctor.md).
 Ingress route health remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
 ## Test Mapping

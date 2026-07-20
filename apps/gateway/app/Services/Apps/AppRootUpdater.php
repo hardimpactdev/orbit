@@ -6,9 +6,13 @@ namespace App\Services\Apps;
 
 use App\Actions\Apps\EnactAppRuntime;
 use App\Concerns\PromptsForRegistryEntities;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\PromptAborted;
-use App\Models\App;
+use App\Models\AppInstance;
+use App\Models\Project;
 use App\Services\Support\GatewayActionResult;
+use App\Services\Workspaces\WorkspacePlacement;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
 use function Laravel\Prompts\text;
@@ -41,7 +45,7 @@ final class AppRootUpdater
 
     private function handle(EnactAppRuntime $enactAppRuntime): int
     {
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('instance');
         $root = $this->stringArgument('root');
 
         if ($selector === null && $this->isInteractiveInput()) {
@@ -57,7 +61,7 @@ final class AppRootUpdater
         }
 
         if ($selector === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         if ($root === null && $this->isInteractiveInput()) {
@@ -68,91 +72,100 @@ final class AppRootUpdater
             return $this->failValidation('root', 'Root is required.');
         }
 
-        $app = $this->resolveApp($selector);
-
-        if (! $app instanceof App) {
+        try {
+            $selection = app(AppSelectorResolver::class)->requireInstance(
+                app(AppSelectorResolver::class)->resolveRequired($selector),
+            );
+        } catch (AppSelectionResolutionFailed $exception) {
             return $this->failCommand(
-                code: 'app.not_found',
-                message: "Application '{$selector}' not found.",
-                meta: ['app' => $selector],
+                code: 'instance.not_found',
+                message: "Instance '{$selector}' not found.",
+                meta: ['instance' => $selector, ...$exception->meta],
             );
         }
 
-        $normalized = $this->normalizeRoot($app, $root);
+        $app = $selection->app;
+        $instance = $selection->instance;
+
+        if (
+            ! $instance instanceof AppInstance
+            || ! $instance->driver_config instanceof OrbitAppInstanceDriverConfigData
+        ) {
+            return $this->failCommand(
+                code: 'instance.unsupported_driver',
+                message: "Instance '{$selector}' does not support an Orbit-managed document root.",
+                meta: ['instance' => $selector],
+            );
+        }
+
+        $normalized = $this->normalizeRoot($app, $instance->driver_config, $root);
 
         if (is_array($normalized)) {
             return $this->failCommand(
-                code: 'app.invalid_root',
-                message: 'The root path resolves outside the application path.',
+                code: 'instance.invalid_root',
+                message: 'The root path resolves outside the instance path.',
                 meta: $normalized,
             );
         }
 
         if (! $this->wantsJson()) {
-            return $this->updateRootForHuman($app, $normalized, $enactAppRuntime);
+            return $this->updateRootForHuman($app, $instance, $normalized, $enactAppRuntime);
         }
 
-        $changed = $this->applyRootChange($app, $normalized);
+        $changed = $this->applyRootChange($instance, $normalized);
         $warnings = $enactAppRuntime->handle($app);
 
-        return $this->successCommand($app->refresh()->load('node'), $changed, $warnings);
+        return $this->successCommand($app, $instance->refresh(), $changed, $warnings);
     }
 
     private function promptAppSelector(): string|GatewayApiException
     {
         try {
-            return $this->promptForVisibleApp(label: 'Select an app');
+            return $this->promptForVisibleApp(label: 'Select an instance');
         } catch (PromptAborted) {
             return new GatewayApiException('Operation cancelled.', 'validation_failed', []);
         }
     }
 
-    private function updateRootForHuman(App $app, string $normalized, EnactAppRuntime $enactAppRuntime): int
-    {
-        $changed = $this->applyRootChange($app, $normalized);
+    private function updateRootForHuman(
+        Project $app,
+        AppInstance $instance,
+        string $normalized,
+        EnactAppRuntime $enactAppRuntime,
+    ): int {
+        $changed = $this->applyRootChange($instance, $normalized);
         $warnings = $enactAppRuntime->handle($app);
 
-        return $this->successCommand($app->refresh()->load('node'), $changed, $warnings);
+        return $this->successCommand($app, $instance->refresh(), $changed, $warnings);
     }
 
-    private function applyRootChange(App $app, string $normalized): bool
+    private function applyRootChange(AppInstance $instance, string $normalized): bool
     {
-        $changed = $app->document_root !== $normalized;
-        $app->document_root = $normalized;
-        $app->save();
-        $app->setRelation('node', $app->node);
+        $config = $instance->driver_config;
+        assert($config instanceof OrbitAppInstanceDriverConfigData);
+        $changed = $config->document_root !== $normalized;
+        $instance->driver_config = new OrbitAppInstanceDriverConfigData(
+            node_id: $config->node_id,
+            node: $config->node,
+            path: $config->path,
+            document_root: $normalized,
+            domain: $config->domain,
+        );
+        $instance->save();
 
         return $changed;
-    }
-
-    private function resolveApp(string $selector): ?App
-    {
-        $apps = App::query()
-            ->with('node')
-            ->get()
-            ->filter(
-                fn (App $app): bool => (
-                    $app->name === $selector
-                    || $app->domain === $selector
-                    || $app->url() === "https://{$selector}"
-                ),
-            )
-            ->values();
-
-        if ($apps->count() !== 1) {
-            return null;
-        }
-
-        return $apps->first();
     }
 
     /**
      * @return string|array{field: string, root: string, resolved_path: string, app_path: string}
      */
-    private function normalizeRoot(App $app, string $root): string|array
-    {
+    private function normalizeRoot(
+        Project $app,
+        OrbitAppInstanceDriverConfigData $config,
+        string $root,
+    ): string|array {
         $root = trim(str_replace('\\', '/', $root));
-        $appPath = rtrim($app->path, '/');
+        $appPath = rtrim($config->path ?? $app->path, '/');
 
         if ($root === '' || str_starts_with($root, '/')) {
             return $this->invalidRootMeta($root, $appPath, $root);
@@ -243,18 +256,28 @@ final class AppRootUpdater
     /**
      * @param  list<array<string, mixed>>  $warnings
      */
-    private function successCommand(App $app, bool $changed, array $warnings): int
-    {
+    private function successCommand(
+        Project $app,
+        AppInstance $instance,
+        bool $changed,
+        array $warnings,
+    ): int {
+        $node = app(WorkspacePlacement::class)->nodeForInstance($instance);
+
         return $this->successPayload(
             [
-                'app' => $this->appPayload($app),
+                'project' => $this->appPayload($app),
+                'instance' => app(AppInstancePayloads::class)->instance($instance),
                 'result' => [
-                    'hostname' => parse_url($app->url(), PHP_URL_HOST) ?: $app->name,
+                    'hostname' => parse_url(
+                        (string) app(AppInstancePayloads::class)->placement($instance)['url'],
+                        PHP_URL_HOST,
+                    ) ?: "{$app->name}.{$instance->name}",
                     'changed' => $changed,
                 ],
             ],
             $warnings,
-            (string) $app->node?->name,
+            (string) $node?->name,
             $changed,
         );
     }
@@ -266,18 +289,22 @@ final class AppRootUpdater
     private function successPayload(array $data, array $warnings, string $nodeName, bool $artifactsReenacted): int
     {
         if (! $this->wantsJson()) {
-            /** @var array{name?: string, root?: string} $app */
-            $app = is_array($data['app'] ?? null) ? $data['app'] : [];
+            /** @var array{name?: string, root?: string} $instance */
+            $instance = is_array($data['instance'] ?? null) ? $data['instance'] : [];
             $result = is_array($data['result'] ?? null) ? $data['result'] : [];
             $changed = (bool) ($result['changed'] ?? false);
 
             $this->line(
                 $changed
-                    ? "SUCCESS: Document root for app '".($app['name'] ?? '')."' updated to '".($app['root'] ?? '')."'."
-                    : "SUCCESS: Document root for app '"
-                    .($app['name'] ?? '')
+                    ? "SUCCESS: Document root for instance '"
+                    .($instance['name'] ?? '')
+                    ."' updated to '"
+                    .($instance['root'] ?? '')
+                    ."'."
+                    : "SUCCESS: Document root for instance '"
+                    .($instance['name'] ?? '')
                     ."' is already '"
-                    .($app['root'] ?? '')
+                    .($instance['root'] ?? '')
                     ."'.",
             );
             $this->line("Artifacts successfully re-enacted on node '{$nodeName}'.");
@@ -313,7 +340,7 @@ final class AppRootUpdater
     /**
      * @return array<string, mixed>
      */
-    private function appPayload(App $app): array
+    private function appPayload(Project $app): array
     {
         return [
             'name' => $app->name,

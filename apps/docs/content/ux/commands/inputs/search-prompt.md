@@ -60,7 +60,7 @@ $repository = search(
 
 No node domain commands use `search` at plan time.
 
-- None in the node domain at plan time. The `app:new` repository field is a
+- None in the node domain at plan time. The `project:new` repository field is a
   planned future user (out of scope for the node-first plan).
 
 ## Cross References

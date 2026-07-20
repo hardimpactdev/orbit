@@ -5,7 +5,7 @@ Single-entity detail display for `*:show` commands.
 ## Use When
 
 Use `show-detail` when a command renders one resolved Orbit entity, such as
-`app:show`, `node:show`, `workspace:show`, `tool:show`, `schedule:show`,
+`project:show`, `node:show`, `workspace:show`, `tool:show`, `schedule:show`,
 `activity:show`, or `database:show`.
 
 ## Avoid When

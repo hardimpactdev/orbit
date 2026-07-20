@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace App\Services\Processes\ProcessRuntimeDrivers;
 
 use App\Enums\ProcessRestartPolicy;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\RemoteDockerSwarmService;
+use InvalidArgumentException;
 use Throwable;
 
 final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDriver
@@ -18,7 +19,7 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
         private RemoteDockerSwarmService $services,
     ) {}
 
-    public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string
+    public function runtimeUnitName(Project $app, Process $process, ?Workspace $workspace = null): string
     {
         $config = $this->runtimeConfig($process);
         $serviceName = $this->optionalString($config, 'service_name') ?? $process->name;
@@ -28,7 +29,7 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
 
     public function apply(
         Node $node,
-        App $app,
+        Project $app,
         Process $process,
         ?Workspace $workspace = null,
     ): bool {
@@ -82,7 +83,7 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
     }
 
     public function logScript(
-        App $app,
+        Project $app,
         Process $process,
         ?Workspace $workspace,
         string $runtimeUnit,
@@ -140,7 +141,7 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
         return match ($this->optionalString($config, 'command_mode') ?? 'shell') {
             'shell' => false,
             'image_entrypoint' => true,
-            default => throw new \InvalidArgumentException(
+            default => throw new InvalidArgumentException(
                 'Docker Swarm command_mode must be shell or image_entrypoint.',
             ),
         };
@@ -213,7 +214,7 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
             return $value;
         }
 
-        throw new \InvalidArgumentException(
+        throw new InvalidArgumentException(
             "Process '{$process->name}' is missing runtime_config.{$key}; cannot render Docker Swarm service.",
         );
     }
@@ -343,7 +344,7 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
     private function assertServiceName(string $value): string
     {
         if (! preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/', $value)) {
-            throw new \InvalidArgumentException("Unsafe Docker Swarm service name: {$value}");
+            throw new InvalidArgumentException("Unsafe Docker Swarm service name: {$value}");
         }
 
         return $value;

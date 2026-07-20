@@ -627,11 +627,12 @@ describe('NodeGrantController', function (): void {
 
         expect($grant)->not->toBeNull();
         expect($grant->permissions)->toBe([
-            'app:read',
             'database:read',
             'doctor:verify',
             'firewall_rule:read',
+            'instance:read',
             'node:read',
+            'project:read',
             'tool:read',
         ]);
     });
@@ -666,7 +667,7 @@ describe('NodeGrantController', function (): void {
                 ->exists(),
         )->toBeFalse();
     })->with([
-        'explicit workspace permission' => [['permissions' => 'app:read,workspace:read']],
+        'explicit workspace permission' => [['permissions' => 'instance:read,workspace:read']],
         'developer preset' => [['preset' => 'developer']],
         'wildcard preset' => [['preset' => 'gateway-admin']],
     ]);
@@ -687,7 +688,7 @@ describe('NodeGrantController', function (): void {
         $response = postNodeGrantJson([
             'consuming_node' => 'app-prod-caller',
             'serving_node' => 'app-dev-1',
-            'permissions' => 'app:read,workspace:read',
+            'permissions' => 'instance:read,workspace:read',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
         $response
@@ -813,7 +814,7 @@ describe('NodeGrantController', function (): void {
         $grant = NodeAccess::query()->create([
             'consumer_node_id' => $consumingId,
             'serving_node_id' => $servingId,
-            'permissions' => ['app:read', 'app:write'],
+            'permissions' => ['instance:read', 'instance:write'],
         ]);
 
         $defaultedGrantId = (int) DB::table('node_access')->insertGetId([
@@ -824,7 +825,7 @@ describe('NodeGrantController', function (): void {
         ]);
 
         expect($grant->fresh()?->permissions)
-            ->toBe(['app:read', 'app:write'])
+            ->toBe(['instance:read', 'instance:write'])
             ->and(NodeAccess::query()->find($defaultedGrantId)?->permissions)
             ->toBe(['*']);
     });

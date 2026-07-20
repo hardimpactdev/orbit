@@ -17,7 +17,7 @@ final class PhpListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'php:list
-        {--app= : App selector}
+        {--instance= : Instance selector (project.instance)}
         {--workspace= : Workspace selector}
         {--node= : Node selector}
         {--live : Inspect available PHP images live}
@@ -29,16 +29,16 @@ final class PhpListCommand extends GatewayCommand
     public function handle(): int
     {
         try {
-            $app = $this->stringOption('app') ?? $this->appFromOrbitMarker();
+            $instance = $this->stringOption('instance') ?? $this->instanceFromOrbitMarker();
             $workspace = $this->stringOption('workspace');
             $node = $this->stringOption('node');
 
-            if ($node === null && $app === null && $workspace === null) {
+            if ($node === null && $instance === null && $workspace === null) {
                 $node = $this->targetNodeOptionOrDefault();
             }
 
             $response = $this->gatewayGet('/api/php/runtime', $this->filledQuery([
-                'app' => $app,
+                'instance' => $instance,
                 'workspace' => $workspace,
                 'node' => $node,
                 'live' => $this->option('live') === true ? '1' : null,
@@ -62,7 +62,7 @@ final class PhpListCommand extends GatewayCommand
                 ['SUPPORTED', $this->versionList($runtime, 'supported')],
                 ['AVAILABLE IMAGES', $this->versionList($runtime, 'available_images')],
                 ['CLI', $this->runtimeString($runtime, 'cli')],
-                ['APP', $this->appLabel($runtime)],
+                ['INSTANCE', $this->instanceLabel($runtime)],
                 ['WORKSPACE', $this->workspaceLabel($runtime)],
             ],
         );
@@ -78,28 +78,35 @@ final class PhpListCommand extends GatewayCommand
     {
         $runtime = $response['success']['data']['php'] ?? null;
 
-        return is_array($runtime) ? $runtime : [];
+        return $this->associativeArray($runtime) ?? [];
     }
 
     /**
      * @param  array<string, mixed>  $runtime
      */
-    private function appLabel(array $runtime): string
+    private function instanceLabel(array $runtime): string
     {
-        $app = $runtime['app'] ?? null;
+        $project = $runtime['project'] ?? null;
+        $instance = $runtime['instance'] ?? null;
 
-        if (! is_array($app)) {
+        $project = $this->associativeArray($project);
+        $instance = $this->associativeArray($instance);
+
+        if ($project === null || $instance === null) {
             return '—';
         }
 
-        $name = $this->runtimeString($app, 'name');
-        $version = $this->runtimeString($app, 'php_version');
+        $projectName = $this->runtimeString($project, 'name');
+        $instanceName = $this->runtimeString($instance, 'name');
+        $version = $this->runtimeString($project, 'php_version');
 
-        if ($name === '—') {
+        if ($projectName === '—' || $instanceName === '—') {
             return '—';
         }
 
-        return $version === '—' ? $name : "{$name} (PHP {$version})";
+        $selector = "{$projectName}.{$instanceName}";
+
+        return $version === '—' ? $selector : "{$selector} (PHP {$version})";
     }
 
     /**
@@ -109,7 +116,9 @@ final class PhpListCommand extends GatewayCommand
     {
         $workspace = $runtime['workspace'] ?? null;
 
-        if (! is_array($workspace)) {
+        $workspace = $this->associativeArray($workspace);
+
+        if ($workspace === null) {
             return '—';
         }
 

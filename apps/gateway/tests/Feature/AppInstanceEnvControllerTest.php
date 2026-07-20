@@ -5,10 +5,11 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
+use App\Models\Project;
+use App\Services\Ca\OrbitCaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -32,7 +33,7 @@ function createAppInstanceEnvApiCaller(): Node
 function grantAppInstanceEnvApiAccess(
     Node $caller,
     Node $serving,
-    array $permissions = ['app:read', 'app:write', 'database:write'],
+    array $permissions = ['instance:read', 'instance:write', 'database:write'],
 ): void {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -71,7 +72,7 @@ it('authorizes app instance env against the selected instance node', function ()
     $caller = createAppInstanceEnvApiCaller();
     $logicalNode = Node::factory()->appDev()->create(['name' => 'logical-app-node']);
     $instanceNode = Node::factory()->appDev()->create(['name' => 'instance-node']);
-    $app = App::factory()->for($logicalNode, 'node')->create(['name' => 'billing']);
+    $app = Project::factory()->for($logicalNode, 'node')->create(['name' => 'billing']);
     AppInstance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitAppInstanceDriverConfigData(
@@ -81,16 +82,16 @@ it('authorizes app instance env against the selected instance node', function ()
             domain: 'billing-development.test',
         ),
     ]);
-    grantAppInstanceEnvApiAccess($caller, $logicalNode, ['app:read']);
+    grantAppInstanceEnvApiAccess($caller, $logicalNode, ['instance:read']);
 
-    appInstanceEnvApiJson('GET', '/api/apps/billing/instances/development/env')
+    appInstanceEnvApiJson('GET', '/api/projects/billing/instances/development/env')
         ->assertForbidden();
 
-    grantAppInstanceEnvApiAccess($caller, $instanceNode, ['app:read']);
+    grantAppInstanceEnvApiAccess($caller, $instanceNode, ['instance:read']);
 
-    appInstanceEnvApiJson('GET', '/api/apps/billing/instances/development/env')
+    appInstanceEnvApiJson('GET', '/api/projects/billing/instances/development/env')
         ->assertOk()
-        ->assertJsonPath('success.data.app', 'billing')
+        ->assertJsonPath('success.data.project', 'billing')
         ->assertJsonPath('success.data.instance', 'development');
 });
 
@@ -98,7 +99,7 @@ it('authorizes hostname app selectors against the selected instance node', funct
     $caller = createAppInstanceEnvApiCaller();
     $logicalNode = Node::factory()->appDev()->create(['name' => 'hostname-logical-node']);
     $instanceNode = Node::factory()->appDev()->create(['name' => 'hostname-instance-node']);
-    $app = App::factory()->for($logicalNode, 'node')->create([
+    $app = Project::factory()->for($logicalNode, 'node')->create([
         'name' => 'billing',
         'domain' => 'billing.test',
     ]);
@@ -111,16 +112,16 @@ it('authorizes hostname app selectors against the selected instance node', funct
             domain: 'billing-development.test',
         ),
     ]);
-    grantAppInstanceEnvApiAccess($caller, $logicalNode, ['app:read']);
+    grantAppInstanceEnvApiAccess($caller, $logicalNode, ['instance:read']);
 
-    appInstanceEnvApiJson('GET', '/api/apps/billing.test/instances/development/env')
+    appInstanceEnvApiJson('GET', '/api/projects/billing.test/instances/development/env')
         ->assertForbidden();
 
-    grantAppInstanceEnvApiAccess($caller, $instanceNode, ['app:read']);
+    grantAppInstanceEnvApiAccess($caller, $instanceNode, ['instance:read']);
 
-    appInstanceEnvApiJson('GET', '/api/apps/billing.test/instances/development/env')
+    appInstanceEnvApiJson('GET', '/api/projects/billing.test/instances/development/env')
         ->assertOk()
-        ->assertJsonPath('success.data.app', 'billing')
+        ->assertJsonPath('success.data.project', 'billing')
         ->assertJsonPath('success.data.instance', 'development');
 });
 
@@ -133,7 +134,7 @@ it('sets lists and renders non-secret app instance env values with database atta
             'user' => 'nckrtl',
         ]);
     grantAppInstanceEnvApiAccess($caller, $node);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'billing',
         'domain' => 'craft-starterkit-react.test',
     ]);
@@ -156,7 +157,7 @@ it('sets lists and renders non-secret app instance env values with database atta
         'credentials' => ['password' => 'secret-password'],
     ]);
 
-    $set = appInstanceEnvApiJson('POST', '/api/apps/billing/instances/development/env', [
+    $set = appInstanceEnvApiJson('POST', '/api/projects/billing/instances/development/env', [
         'key' => 'APP_DEBUG',
         'value' => 'false',
     ]);
@@ -170,8 +171,7 @@ it('sets lists and renders non-secret app instance env values with database atta
         'POST',
         '/api/database-connections/billing-db/targets',
         [
-            'app' => 'billing',
-            'instance' => 'development',
+            'instance' => 'billing.development',
             'env_prefix' => 'DB',
         ],
         [],
@@ -181,18 +181,18 @@ it('sets lists and renders non-secret app instance env values with database atta
 
     $attach
         ->assertOk()
-        ->assertJsonPath('success.data.connection.targets.0.type', 'app_instance')
-        ->assertJsonPath('success.data.connection.targets.0.app', 'billing')
+        ->assertJsonPath('success.data.connection.targets.0.type', 'instance')
+        ->assertJsonPath('success.data.connection.targets.0.project', 'billing')
         ->assertJsonPath('success.data.connection.targets.0.instance', 'development');
 
-    $list = appInstanceEnvApiJson('GET', '/api/apps/billing/instances/development/env');
+    $list = appInstanceEnvApiJson('GET', '/api/projects/billing/instances/development/env');
 
     $list
         ->assertOk()
         ->assertJsonPath('success.data.variables.0.key', 'APP_DEBUG')
         ->assertJsonPath('success.data.variables.0.value', 'false');
 
-    $render = appInstanceEnvApiJson('GET', '/api/apps/billing/instances/development/env/render');
+    $render = appInstanceEnvApiJson('GET', '/api/projects/billing/instances/development/env/render');
 
     $render
         ->assertOk()
@@ -222,7 +222,7 @@ it('applies set env values to the remote app runtime when apply is requested', f
     $caller = createAppInstanceEnvApiCaller();
     $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
     grantAppInstanceEnvApiAccess($caller, $node);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'billing',
         'path' => '/home/orbit/apps/billing',
         'runtime' => 'php',
@@ -239,7 +239,7 @@ it('applies set env values to the remote app runtime when apply is requested', f
     ]);
 
     app()->instance(RemoteShell::class, new AppInstanceEnvControllerRecordingRemoteShell);
-    app()->instance(\App\Services\Ca\OrbitCaService::class, new readonly class extends \App\Services\Ca\OrbitCaService {
+    app()->instance(OrbitCaService::class, new readonly class extends OrbitCaService {
         public function rootCert(): string
         {
             return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
@@ -248,7 +248,7 @@ it('applies set env values to the remote app runtime when apply is requested', f
 
     $response = appInstanceEnvApiJson(
         'POST',
-        '/api/apps/billing/instances/development/env',
+        '/api/projects/billing/instances/development/env',
         [
             'key' => 'MAIL_MAILER',
             'value' => 'smtp',
@@ -261,8 +261,8 @@ it('applies set env values to the remote app runtime when apply is requested', f
         ->assertOk()
         ->assertJsonPath('success.data.variable.key', 'MAIL_MAILER')
         ->assertJsonPath('success.data.variable.value', 'smtp')
-        ->assertJsonPath('success.data.scope', 'app-instance')
-        ->assertJsonPath('success.data.app', 'billing')
+        ->assertJsonPath('success.data.scope', 'instance')
+        ->assertJsonPath('success.data.project', 'billing')
         ->assertJsonPath('success.data.instance', 'development')
         ->assertJsonPath('success.data.workspace', null)
         ->assertJsonPath('success.data.path', '/home/orbit/apps/billing-development/.env')
@@ -278,10 +278,10 @@ it('rejects secret env writes until secret storage is designed', function (): vo
     $caller = createAppInstanceEnvApiCaller();
     $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
     grantAppInstanceEnvApiAccess($caller, $node);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'billing']);
+    $app = Project::factory()->for($node, 'node')->create(['name' => 'billing']);
     AppInstance::factory()->for($app)->create(['name' => 'development']);
 
-    $response = appInstanceEnvApiJson('POST', '/api/apps/billing/instances/development/env', [
+    $response = appInstanceEnvApiJson('POST', '/api/projects/billing/instances/development/env', [
         'key' => 'API_TOKEN',
         'value' => 'secret',
         'secret' => true,

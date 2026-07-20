@@ -1,4 +1,4 @@
-# Technical Contract: `orbit deploy:history [app] [--limit=<count>] [--json]`
+# Technical Contract: `orbit deploy:history [instance] [--limit=<count>] [--json]`
 
 [Back to public `deploy-history` documentation.](../deploy-history.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit deploy:history [app] [--limit=<count>] [--json]
+orbit deploy:history [instance] [--limit=<count>] [--json]
 ```
 
 ## Input Contract
@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `argument` | `Required.` | `Never.` | `None.` | Visible production app-instance selector. A bare app is valid only when it has exactly one instance. |
+| `instance` | `argument` | `Required.` | `Never.` | `None.` | Visible production instance selector. A bare project is valid only when it has exactly one instance. |
 | `limit` | `--limit` | `Optional.` | `Never.` | `50`. | Positive integer. Values greater than `500` are clamped to `500` and reported via `success.meta.pagination.limit_capped`. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -31,10 +31,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Deployment History Visibility Rules
 
-- Reads deployment run history for one concrete production app instance from gateway state.
+- Reads deployment run history for one concrete production instance from gateway state.
 - Sorts runs by `started_at` descending.
 - Applies the effective `--limit` after clamping to the hard cap.
-- Returns an empty list for production app instances with no recorded deployment runs.
+- Returns an empty list for production instances with no recorded deployment runs.
 
 ### History Boundary Rules
 
@@ -61,14 +61,14 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| App not found | No visible app matches the selector. | `error.code=app.not_found` |
-| Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
-| App instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
+| Instance not found | No visible instance matches the selector. | `error.code=instance.not_found` |
+| Production project required | The app exists but is not a production project. | `error.code=deploy.production_project_required` |
+| Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 
 ## Doctor Relationship
 
-`deploy:history` reads deployment history that the app instance owns. It does not own a
-doctor family. [`app-doctor.md`](../../../5_app/app-doctor.md) owns production
+`deploy:history` reads deployment history that the instance owns. It does not own a
+doctor family. [`instance-doctor.md`](../../../5_project/instance-doctor.md) owns production
 app health checks that may incorporate latest deployment status through
 `app.latest_deployment_failed` and `app.deployment_run_stuck`.
 
@@ -76,8 +76,8 @@ app health checks that may incorporate latest deployment status through
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Deploy/DeployReadCommandsTest.php` | CLI `deploy:history` GET forwarding, `--limit` query forwarding, JSON run envelope and metadata, human newest-first table output, empty-history output, missing-app validation before gateway contact, gateway limit validation passthrough, and `authorization_failed`, `deploy.production_app_required`, and WireGuard failure passthrough. |
+| `apps/cli/tests/Feature/Commands/Deploy/DeployReadCommandsTest.php` | CLI `deploy:history` GET forwarding, `--limit` query forwarding, JSON run envelope and metadata, human newest-first table output, empty-history output, missing-instance validation before gateway contact, gateway limit validation passthrough, and `authorization_failed`, `deploy.production_project_required`, and WireGuard failure passthrough. |
 
 There is no gateway-side coverage for this mapped surface; linked CLI tests cover only the mapped assertions above. Remaining behavior stays a coverage gap until focused tests land.
 
-Coverage gaps until focused tests land: default limit and cap behavior, read-only side-effect boundary proof, exhaustive documented `error.code` values, and app-doctor handoff behavior.
+Coverage gaps until focused tests land: default limit and cap behavior, read-only side-effect boundary proof, exhaustive documented `error.code` values, and instance-doctor handoff behavior.

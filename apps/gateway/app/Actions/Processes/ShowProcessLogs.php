@@ -70,8 +70,8 @@ final readonly class ShowProcessLogs
                 'logs' => [
                     'process' => $target['process']->name,
                     'node' => $target['node']->name,
-                    'app' => $context->app?->name,
-                    'app_instance' => $context->appInstance?->name,
+                    'project' => $context->app?->name,
+                    'instance' => $context->appInstance?->name,
                     'workspace' => $target['workspace'],
                     'runtime_unit' => $target['runtime_unit'],
                     'service' => $this->serviceMetadata->forProcess($target['process']),

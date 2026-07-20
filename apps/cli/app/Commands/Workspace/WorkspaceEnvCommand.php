@@ -19,7 +19,7 @@ final class WorkspaceEnvCommand extends WorkspaceGatewayCommand
     protected $signature = 'workspace:env
         {action? : Action to perform (list|set|render)}
         {name? : Workspace name}
-        {--app= : Parent app or app.instance selector}
+        {--instance= : Instance selector (project.instance)}
         {--key= : Env key for set}
         {--value= : Env value for set}
         {--apply : Persist and apply set values to the workspace runtime}
@@ -59,7 +59,7 @@ final class WorkspaceEnvCommand extends WorkspaceGatewayCommand
     }
 
     /**
-     * @return array{workspace: string, app?: string|null, instance?: string|null}|int
+     * @return array{workspace: string, instance?: string|null}|int
      */
     private function resolveTarget(): array|int
     {
@@ -96,36 +96,26 @@ final class WorkspaceEnvCommand extends WorkspaceGatewayCommand
 
         return [
             'workspace' => $data['workspace'],
-            'app' => is_string($data['app'] ?? null) ? $data['app'] : null,
-            'instance' => is_string($data['instance'] ?? null) ? $data['instance'] : null,
+            'instance' => $this->instanceSelector($data),
         ];
     }
 
     /**
-     * @return array{app?: string, instance?: string}
+     * @return array{instance?: string}
      */
     private function appQuery(): array
     {
-        $selector = $this->stringOption('app');
+        $selector = $this->stringOption('instance');
 
         if ($selector === null) {
             return [];
         }
 
-        $position = strrpos(haystack: $selector, needle: '.');
-
-        if ($position === false) {
-            return ['app' => $selector];
-        }
-
-        return [
-            'app' => substr(string: $selector, offset: 0, length: $position),
-            'instance' => substr(string: $selector, offset: $position + 1),
-        ];
+        return ['instance' => $selector];
     }
 
     /**
-     * @param  array{workspace: string, app?: string|null, instance?: string|null}  $target
+     * @param  array{workspace: string, instance?: string|null}  $target
      */
     private function listEnv(array $target): int
     {
@@ -165,7 +155,7 @@ final class WorkspaceEnvCommand extends WorkspaceGatewayCommand
     }
 
     /**
-     * @param  array{workspace: string, app?: string|null, instance?: string|null}  $target
+     * @param  array{workspace: string, instance?: string|null}  $target
      */
     private function setEnv(array $target): int
     {
@@ -205,7 +195,7 @@ final class WorkspaceEnvCommand extends WorkspaceGatewayCommand
     }
 
     /**
-     * @param  array{workspace: string, app?: string|null, instance?: string|null}  $target
+     * @param  array{workspace: string, instance?: string|null}  $target
      */
     private function renderEnv(array $target): int
     {
@@ -242,7 +232,7 @@ final class WorkspaceEnvCommand extends WorkspaceGatewayCommand
     }
 
     /**
-     * @param  array{workspace: string, app?: string|null, instance?: string|null}  $target
+     * @param  array{workspace: string, instance?: string|null}  $target
      */
     private function targetPath(array $target): string
     {
@@ -253,7 +243,7 @@ final class WorkspaceEnvCommand extends WorkspaceGatewayCommand
     }
 
     /**
-     * @param  array{workspace: string, app?: string|null, instance?: string|null}  $target
+     * @param  array{workspace: string, instance?: string|null}  $target
      */
     private function targetBasePath(array $target): string
     {
@@ -261,15 +251,12 @@ final class WorkspaceEnvCommand extends WorkspaceGatewayCommand
     }
 
     /**
-     * @param  array{workspace: string, app?: string|null, instance?: string|null}  $target
-     * @return array{app?: string|null, instance?: string|null}
+     * @param  array{workspace: string, instance?: string|null}  $target
+     * @return array{instance?: string|null}
      */
     private function targetQuery(array $target): array
     {
-        return [
-            'app' => $target['app'] ?? null,
-            'instance' => $target['instance'] ?? null,
-        ];
+        return ['instance' => $target['instance'] ?? null];
     }
 
     /**
@@ -278,13 +265,28 @@ final class WorkspaceEnvCommand extends WorkspaceGatewayCommand
     private function renderTargetOutcome(array $data): void
     {
         $this->line('Scope: workspace');
-        $this->line('App: '.$this->stringValue($data, 'app'));
+        $this->line('Project: '.$this->stringValue($data, 'project'));
         $this->line('Instance: '.$this->stringValue($data, 'instance'));
         $this->line('Workspace: '.$this->stringValue($data, 'workspace'));
         $this->line('Path: '.$this->stringValue($data, 'path'));
         $this->line('Stored: '.$this->yesNo($data['stored'] ?? false));
         $this->line('Applied: '.$this->yesNo($data['applied'] ?? false));
         $this->line('Runtime restarted: '.$this->yesNo($data['runtime_restarted'] ?? false));
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function instanceSelector(array $data): ?string
+    {
+        $project = is_string($data['project'] ?? null) ? $data['project'] : null;
+        $instance = is_string($data['instance'] ?? null) ? $data['instance'] : null;
+
+        if ($project === null || $instance === null) {
+            return null;
+        }
+
+        return "{$project}.{$instance}";
     }
 
     /**

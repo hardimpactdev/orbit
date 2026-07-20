@@ -9,12 +9,12 @@ final class WorkspaceTeardownStepRemoveCommand extends AbstractWorkspaceStepRemo
     #[\Override]
     protected $signature = 'workspace-teardown-step:remove
         {--step= : Step ID to remove}
-        {--app= : App instance selector (app.instance)}
+        {--instance= : Instance selector (project.instance)}
         {--force : Skip interactive confirmation}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Remove a workspace teardown step from an app instance.';
+    protected $description = 'Remove a workspace teardown step from an instance.';
 
     protected function phase(): string
     {

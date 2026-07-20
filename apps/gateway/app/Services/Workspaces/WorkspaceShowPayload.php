@@ -30,8 +30,8 @@ class WorkspaceShowPayload
         /** @var array<string, mixed> $workspacePayload */
         $workspacePayload = [
             'name' => $workspace->name,
-            'app' => $app?->name,
-            'app_instance' => $workspace->appInstance->name,
+            'project' => $app?->name,
+            'instance' => $workspace->appInstance->name,
             'node' => $node?->name,
             'path' => $workspace->path,
             'url' => $workspace->url(),

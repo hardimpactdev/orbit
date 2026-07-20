@@ -42,7 +42,7 @@ final readonly class ScheduleStoreController implements Loggable
             return $input;
         }
 
-        $target = $this->resolveTarget($caller, $input['app'], $input['node']);
+        $target = $this->resolveTarget($caller, $input['instance'], $input['node']);
 
         if ($target instanceof JsonResponse) {
             return $target;
@@ -87,12 +87,12 @@ final readonly class ScheduleStoreController implements Loggable
     }
 
     /**
-     * @return array{name: string, app: string|null, node: string|null, interval: string, timezone: string, execution_type: string, execution_value: string, timeout_seconds: int}|JsonResponse
+     * @return array{name: string, instance: string|null, node: string|null, interval: string, timezone: string, execution_type: string, execution_value: string, timeout_seconds: int}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
         $name = $this->optionalString($request, 'name');
-        $app = $this->optionalString($request, 'app');
+        $instance = $this->optionalString($request, 'instance');
         $node = $this->optionalString($request, 'node');
         $interval = $this->optionalString($request, 'interval');
         $timezone = $this->optionalString($request, 'timezone') ?? 'UTC';
@@ -113,11 +113,11 @@ final readonly class ScheduleStoreController implements Loggable
             );
         }
 
-        if (($app === null) === ($node === null)) {
+        if (($instance === null) === ($node === null)) {
             return $this->error(
                 'validation_failed',
                 'Exactly one schedule target is required.',
-                ['fields' => ['app', 'node']],
+                ['fields' => ['instance', 'node']],
                 422,
             );
         }
@@ -162,7 +162,7 @@ final readonly class ScheduleStoreController implements Loggable
 
         return [
             'name' => $name,
-            'app' => $app,
+            'instance' => $instance,
             'node' => $node,
             'interval' => $interval,
             'timezone' => $timezone,
@@ -172,11 +172,11 @@ final readonly class ScheduleStoreController implements Loggable
         ];
     }
 
-    private function resolveTarget(Node $caller, ?string $app, ?string $node): AppInstance|Node|JsonResponse
+    private function resolveTarget(Node $caller, ?string $instance, ?string $node): AppInstance|Node|JsonResponse
     {
-        if ($app !== null) {
+        if ($instance !== null) {
             try {
-                $selection = $this->appInstances->resolve($app, $caller, 'schedule:add');
+                $selection = $this->appInstances->resolve($instance, $caller, 'schedule:add');
             } catch (GatewayApiException $exception) {
                 return $this->error(
                     $exception->errorCode() ?? 'validation_failed',
@@ -191,8 +191,8 @@ final readonly class ScheduleStoreController implements Loggable
                     ? $selection->instance
                     : $this->error(
                         'validation_failed',
-                        "App '{$app}' requires a concrete app instance selector.",
-                        ['field' => 'app', 'reason' => 'app_instance_required'],
+                        "Project '{$instance}' requires a concrete instance selector.",
+                        ['field' => 'instance', 'reason' => 'instance_required'],
                         422,
                     )
             );

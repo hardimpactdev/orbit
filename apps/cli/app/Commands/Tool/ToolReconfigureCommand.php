@@ -9,7 +9,7 @@ final class ToolReconfigureCommand extends ToolGatewayCommand
     #[\Override]
     protected $signature = 'tool:reconfigure
         {tool? : Tool catalog name to reconfigure}
-        {--app= : Resolve target by app selector}
+        {--instance= : Resolve target by instance selector}
         {--node= : Resolve target by node}
         {--password= : Auth password (OpenCode Server)}
         {--json : Output JSON}

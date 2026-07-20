@@ -36,7 +36,7 @@ final readonly class ToolListController implements Loggable
             includeMetricsExporterNodes: true,
         );
         $node = $request->query('node');
-        $app = $request->query('app');
+        $app = $request->query('instance');
         $self = $request->boolean('self');
         $hasExplicitTarget = $self || is_string($node) && $node !== '' || is_string($app) && $app !== '';
         $authorizationNodeIds = $hasExplicitTarget ? $targetVisibleNodeIds : $defaultVisibleNodeIds;
@@ -74,17 +74,17 @@ final readonly class ToolListController implements Loggable
 
             if (! $appNode instanceof Node) {
                 return $this->validationFailed(
-                    'app',
+                    'instance',
                     $app,
-                    "Invalid value for --app: '{$app}'. Expected a visible app name or domain.",
+                    "Invalid value for --instance: '{$app}'. Expected a visible instance selector.",
                 );
             }
 
             if ($nodeFilter instanceof Node && $nodeFilter->id !== $appNode->id) {
                 return $this->validationFailed(
-                    'app',
+                    'instance',
                     $app,
-                    "Invalid value for --app: '{$app}'. App is not owned by the selected node.",
+                    "Invalid value for --instance: '{$app}'. Instance is not owned by the selected node.",
                 );
             }
 

@@ -8,14 +8,14 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The target workspace exists and belongs to one concrete app instance.
+- The target workspace exists and belongs to one concrete instance.
 - The authenticated peer has `workspace:read` or `workspace:write` on the
   workspace's owning node for the selected action.
 
 ## Signature
 
 ```bash
-orbit workspace:env [action] [name] [--app=<app.instance>] [--key=<KEY>] [--value=<value>] [--apply] [--secret] [--json]
+orbit workspace:env [action] [name] [--instance=<project.instance>] [--key=<KEY>] [--value=<value>] [--apply] [--secret] [--json]
 ```
 
 ## Input Contract
@@ -27,7 +27,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- |
 | `action` | `{action}` | Always. | None. | `list`, `set`, or `render`. |
 | `name` | `[name]` | CWD does not resolve one registered workspace. | Registered workspace containing `ORBIT_HOST_CWD`. | Workspace identity slug. |
-| `app` | `--app` | Matching workspace names are ambiguous. | None. | App or concrete app-instance selector. |
+| `app` | `--instance` | Matching workspace names are ambiguous. | None. | App or concrete instance selector. |
 | `key` | `--key` | `set`. | None. | Uppercase env key pattern. |
 | `value` | `--value` | `set`. | None. | Any non-secret string, including production-like values. |
 | `apply` | `--apply` | Optional for `set`. | `false`. | Rejected outside `set`. |
@@ -82,7 +82,7 @@ instance.
 | --- | --- | --- |
 | Workspace not found | No visible workspace matches. | `error.code=workspace.not_found`. |
 | Workspace ambiguous | Name matches more than one visible target. | `error.code=validation_failed`, `error.meta.field=workspace`. |
-| Instance without app | The raw API supplies `instance` without `app`. | `error.code=validation_failed`, `error.meta.field=app`. |
+| Instance without app | The raw API supplies `instance` without `app`. | `error.code=validation_failed`, `error.meta.field=instance`. |
 | Production app unsupported | The selected workspace belongs to an `app-prod` instance. | `error.code=workspace.unsupported_for_production` before storage, file, cache, or runtime effects. |
 | Runtime apply failed | Gateway state saved but workspace file/cache/runtime application failed. | `error.code=workspace.env_apply_failed`. |
 

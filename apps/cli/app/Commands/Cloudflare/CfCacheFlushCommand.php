@@ -14,7 +14,7 @@ final class CfCacheFlushCommand extends CloudflareGatewayCommand
 
     #[\Override]
     protected $signature = 'cf-cache:flush
-        {--zone= : Cloudflare zone ID, domain, or app name}
+        {--zone= : Cloudflare zone ID, domain, or project name}
         {--json : Output JSON}';
 
     #[\Override]

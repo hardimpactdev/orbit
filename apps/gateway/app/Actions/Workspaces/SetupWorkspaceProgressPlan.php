@@ -7,9 +7,9 @@ namespace App\Actions\Workspaces;
 use App\Contracts\ProgressReporter;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
 use App\Services\Workspaces\WorkspaceStepPolicyService;
@@ -55,7 +55,7 @@ final class SetupWorkspaceProgressPlan
     public function __construct(
         private readonly SetupWorkspace $setupWorkspace,
         private readonly Workspace $workspace,
-        private readonly App $app,
+        private readonly Project $app,
         private readonly Node $node,
         private readonly bool $isAdoption,
         private readonly WorkspaceStepPolicyService $stepPolicy,
@@ -318,8 +318,8 @@ final class SetupWorkspaceProgressPlan
 
     /**
      * @return array{
-     *     app: string,
-     *     app_instance: string,
+     *     project: string,
+     *     instance: string,
      *     workspace: string,
      *     node: string,
      *     path: string,
@@ -336,8 +336,8 @@ final class SetupWorkspaceProgressPlan
         $this->workspace->loadMissing('appInstance');
 
         return [
-            'app' => $this->app->name,
-            'app_instance' => $this->workspace->appInstance->name,
+            'project' => $this->app->name,
+            'instance' => $this->workspace->appInstance->name,
             'workspace' => $this->workspace->name,
             'node' => $this->node->name,
             'path' => $this->workspace->path,

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 
@@ -21,7 +21,7 @@ class ProcessRuntimeUnitPayload
      * @return list<array{name: string, context: string}>
      */
     public function forProcess(
-        App $app,
+        Project $app,
         Process $process,
         ?Workspace $workspaceContext = null,
         ?Node $consumer = null,
@@ -42,7 +42,7 @@ class ProcessRuntimeUnitPayload
      * @return list<Workspace|null>
      */
     private function contexts(
-        App $app,
+        Project $app,
         Process $process,
         ?Workspace $workspaceContext,
         ?Node $consumer,

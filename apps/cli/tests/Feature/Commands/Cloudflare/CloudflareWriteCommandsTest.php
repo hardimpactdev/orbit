@@ -232,7 +232,7 @@ describe('Cloudflare write commands', function (): void {
     })->with([
         'cf-cache-rule:add' => [
             'cf-cache-rule:add',
-            ['app' => 'docs'],
+            ['project' => 'docs'],
             'POST',
             'https://gateway.test/api/cloudflare/cache-rules/docs',
             [],
@@ -240,7 +240,7 @@ describe('Cloudflare write commands', function (): void {
         ],
         'cf-cache-rule:remove' => [
             'cf-cache-rule:remove',
-            ['app' => 'docs', '--force' => true],
+            ['project' => 'docs', '--force' => true],
             'DELETE',
             'https://gateway.test/api/cloudflare/cache-rules/docs',
             ['destructive_consent' => true],
@@ -289,7 +289,7 @@ describe('Cloudflare write commands', function (): void {
                 'reason' => 'destructive_consent_required',
             ]);
     })->with([
-        'cf-cache-rule:remove' => ['cf-cache-rule:remove', ['app' => 'docs']],
+        'cf-cache-rule:remove' => ['cf-cache-rule:remove', ['project' => 'docs']],
         'cf-ssl:disable' => ['cf-ssl:disable', ['zone' => 'lindaretel.nl']],
     ]);
 

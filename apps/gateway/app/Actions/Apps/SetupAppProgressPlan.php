@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Apps;
 
 use App\Contracts\ProgressReporter;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\AppSetupStep;
 use App\Models\Node;
+use App\Models\Project;
 use RuntimeException;
 use Throwable;
 
@@ -28,14 +28,14 @@ final class SetupAppProgressPlan
 
     public function __construct(
         private readonly SetupApp $setupApp,
-        private readonly App $app,
+        private readonly Project $app,
         private readonly AppInstance $instance,
         private readonly Node $node,
     ) {}
 
     public function title(): string
     {
-        return 'Setting Up App';
+        return 'Setting Up Instance';
     }
 
     /**
@@ -67,7 +67,7 @@ final class SetupAppProgressPlan
 
                     if ($this->setupResult['status'] === 'failed') {
                         $this->failure = [
-                            'code' => 'app.setup_step_failed',
+                            'code' => 'instance.setup_step_failed',
                             'message' => $this->setupResult['message'],
                             'meta' => [
                                 'phase' => 'setup_steps',
@@ -105,7 +105,7 @@ final class SetupAppProgressPlan
                 $message = $step['run']();
             } catch (Throwable $exception) {
                 $this->failure ??= [
-                    'code' => 'app.setup_failed',
+                    'code' => 'instance.setup_failed',
                     'message' => $exception->getMessage(),
                     'meta' => [
                         'phase' => 'setup',
@@ -151,12 +151,12 @@ final class SetupAppProgressPlan
 
     public function doneFooter(): string
     {
-        return "App ready and available at: {$this->app->url()}";
+        return "Instance ready and available at: {$this->app->url()}";
     }
 
     public function failFooter(): string
     {
-        return "Failed to set up app '{$this->app->name}'.";
+        return "Failed to set up instance '{$this->app->name}.{$this->instance->name}'.";
     }
 
     /**
@@ -169,8 +169,8 @@ final class SetupAppProgressPlan
 
     /**
      * @return array{
-     *     app: string,
-     *     app_instance: string,
+     *     project: string,
+     *     instance: string,
      *     node: string,
      *     path: string,
      *     url: string,
@@ -181,8 +181,8 @@ final class SetupAppProgressPlan
     public function result(): array
     {
         return [
-            'app' => $this->app->name,
-            'app_instance' => $this->instance->name,
+            'project' => $this->app->name,
+            'instance' => $this->instance->name,
             'node' => $this->node->name,
             'path' => $this->app->path,
             'url' => $this->app->url(),

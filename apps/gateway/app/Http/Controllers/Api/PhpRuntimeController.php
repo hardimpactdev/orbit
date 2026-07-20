@@ -61,7 +61,7 @@ final readonly class PhpRuntimeController implements Loggable
         }
 
         $result = $this->php->view(
-            app: $this->nullableString($request->query('app')),
+            instance: $this->nullableString($request->query('instance')),
             workspace: $this->nullableString($request->query('workspace')),
             node: $this->nullableString($request->query('node')),
             live: filter_var($request->query('live'), FILTER_VALIDATE_BOOL),
@@ -88,7 +88,7 @@ final readonly class PhpRuntimeController implements Loggable
             return $this->servingNodeResolver->resolve($request, ServingNode::WorkspaceOwning);
         }
 
-        if ($this->nullableString($request->query('app')) !== null) {
+        if ($this->nullableString($request->query('instance')) !== null) {
             return $this->servingNodeResolver->resolve($request, ServingNode::AppInstanceOwning);
         }
 

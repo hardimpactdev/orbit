@@ -104,7 +104,7 @@ final class ToolShowController implements Loggable
         string $tool,
     ): Node|JsonResponse {
         $node = $request->query('node');
-        $app = $request->query('app');
+        $app = $request->query('instance');
 
         if (is_string($node) && $node !== '') {
             $nodeFilter = $this->resolveNodeFilter($node, $caller, $visibleNodeIds, allowAnyActiveNode: true);
@@ -140,17 +140,17 @@ final class ToolShowController implements Loggable
 
             if (! $appNode instanceof Node) {
                 return $this->validationFailed(
-                    'app',
+                    'instance',
                     $app,
-                    "Invalid value for --app: '{$app}'. Expected a visible app name or domain.",
+                    "Invalid value for --instance: '{$app}'. Expected a visible instance selector.",
                 );
             }
 
             if (isset($nodeFilter) && $nodeFilter->id !== $appNode->id) {
                 return $this->validationFailed(
-                    'app',
+                    'instance',
                     $app,
-                    "Invalid value for --app: '{$app}'. App is not owned by the selected node.",
+                    "Invalid value for --instance: '{$app}'. Instance is not owned by the selected node.",
                 );
             }
 
@@ -174,7 +174,7 @@ final class ToolShowController implements Loggable
             return $appNode;
         }
 
-        return $nodeFilter ?? $this->validationFailed('target', '', 'A node or app filter is required.');
+        return $nodeFilter ?? $this->validationFailed('target', '', 'A node or instance filter is required.');
     }
 
     /**

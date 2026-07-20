@@ -7,7 +7,7 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to run `workspace:new` on the selected
-  app instance's owning node.
+  instance's owning node.
 - The gateway can reach the effective workspace node through Agent push.
 
 [Back to the public command page.](../workspace-new.md)
@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace:new [name] [--app=<app>] [--base=<ref>] [--php-version=<version>] [--json|--stream-json]
+orbit workspace:new [name] [--instance=<project.instance>] [--base=<ref>] [--php-version=<version>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -25,81 +25,81 @@ This command follows the shared
 
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
-| `name` | `text` | Always (can be prompted). | n/a | Workspace identity slug; `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`; maximum 63 characters. Reserved name `main` is rejected. Must not collide with an existing workspace under the same parent app. |
-| `--app` | `text` | No explicit selector or usable local context. | CWD-inferred concrete app instance. | Dotted selectors choose one instance directly. Bare app or path context must resolve uniquely. |
+| `name` | `text` | Always (can be prompted). | n/a | Workspace identity slug; `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`; maximum 63 characters. Reserved name `main` is rejected. Must not collide with an existing workspace under the same parent project. |
+| `--instance` | `text` | No explicit selector or usable local context. | CWD-inferred concrete instance. | Dotted selectors choose one instance directly. Bare app or path context must resolve uniquely. |
 | `--base` | `text` | Optional. | `main` | Source git ref/branch used by the selected workspace source driver. Generic and OpenCode worktrees create branch `<workspace>` from this ref; PolyScope passes it as `base_branch` to the PolyScope API. |
-| `--php-version` | `text` | Optional. | (parent app PHP version) | Supported PHP version. When omitted, the workspace row stores `null` and inherits the parent app's PHP version. |
+| `--php-version` | `text` | Optional. | (parent project PHP version) | Supported PHP version. When omitted, the workspace row stores `null` and inherits the parent project's PHP version. |
 | `--json` | `flag` | Optional. | `false` | Forces non-interactive mode and JSON output. |
 | `--stream-json` | `flag` | Optional. | `false` | Forces non-interactive mode and emits newline-delimited progress JSON. Mutually exclusive with `--json`. |
 
-A bare parent app slug, marker, or parent path is shorthand only when exactly
-one registered app instance matches. Zero or multiple matches fail with
-`error.meta.reason=app_instance_required`.
+A bare parent project slug, marker, or parent path is shorthand only when exactly
+one registered instance matches. Zero or multiple matches fail with
+`error.meta.reason=instance_required`.
 
 When `--base` is omitted, the default source ref is hard-coded to `main`.
 Operators may supply another explicit ref with `--base=<ref>`. Inheriting an
-app-level default branch is not supported because the apps domain does not yet
+instance-level default branch is not supported because the project domain does not yet
 track a `default_branch` field on app configuration. Adding gateway-tracked
-default-branch support is a future explicit feature on `app:update`/app
+default-branch support is a future explicit feature on `project:update`/project
 configuration; until then `workspace:new` does not consult app configuration
 for this default.
 
 ### Input Resolution
 
-1. **Resolve Concrete App Instance (`--app`):**
+1. **Resolve Concrete App Instance (`--instance`):**
    - An explicit dotted selector such as `happie.nmbp` resolves that concrete
-     app instance directly.
-   - An explicit bare parent app slug is shorthand only when the gateway finds
-     exactly one registered app instance for that app.
-   - **CWD inference (gateway-authoritative):** if `--app` is missing, Orbit
-     resolves a concrete app instance from gateway-tracked metadata, not from
+     instance directly.
+   - An explicit bare parent project slug is shorthand only when the gateway finds
+     exactly one registered instance for that app.
+   - **CWD inference (gateway-authoritative):** if `--instance` is missing, Orbit
+     resolves a concrete instance from gateway-tracked metadata, not from
      project file inspection:
      - **`.orbit/config` marker** installed on the caller filesystem by
-       `app:new`/`app:register` (and any workspace-installed marker),
-       identifying an app or concrete app instance;
+       `project:new`/`instance:register` (and any workspace-installed marker),
+       identifying an app or concrete instance;
      - **gateway path lookup** keyed on (caller node identity, absolute
-       cwd): a path owned by an app instance resolves that instance directly.
+       cwd): a path owned by an instance resolves that instance directly.
        The same applies to a workspace path owned by an instance. An app main
-       path or parent-app-only marker is shorthand and must resolve to exactly
+       path or parent-project-only marker is shorthand and must resolve to exactly
        one registered instance.
-   - If a bare selector or inferred parent app has zero or multiple concrete
+   - If a bare selector or inferred parent project has zero or multiple concrete
      instances, fail before side effects with `error.code=validation_failed`,
-     `error.meta.field=app`, and
-     `error.meta.reason=app_instance_required`. Do not fall back to a canonical
+     `error.meta.field=instance`, and
+     `error.meta.reason=instance_required`. Do not fall back to a canonical
      app node.
    - Orbit must not read `composer.json`, `package.json`, `.php-version`,
      or any other project file content during `workspace:new` to infer the
-     parent app. Project-file inspection is reserved for
+     parent project. Project-file inspection is reserved for
      `doctor --family=workspace --adopt` (`composer.json` only, and only
      for PHP-version hints during workspace adoption).
    - When no selector or usable context exists, interactive mode prompts from
-     concrete app instances; non-interactive mode fails. The selected result is
+     concrete instances; non-interactive mode fails. The selected result is
      always one concrete instance.
 2. **Resolve Workspace Name:** Use the positional `name` argument. If
    missing, prompt in interactive mode; fail in non-interactive mode.
 3. **Validate Workspace Identity (gateway-side, static):**
    - Slug regex: `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`.
-   - Reserved name: `main` is reserved for the primary app instance in
-     runtime unit naming (`orbit_<app>_main_<process>`); a workspace named
+   - Reserved name: `main` is reserved for the primary instance in
+     runtime unit naming (`orbit_<project>_<instance>_main_<process>`); a workspace named
      `main` would collide with that backend layer.
    - Length: `workspace_slug` must not exceed 63 characters. The workspace
      hostname shape uses the workspace slug as its own DNS label
-     (`{workspace}.{app}.{tld}`), so the workspace identity limit is
-     independent of the parent app slug. Backend artifact renderers must
+     (`{workspace}.{project}.{tld}`), so the workspace identity limit is
+     independent of the parent project slug. Backend artifact renderers must
      still validate final generated names such as runtime containers, Docker
      process services, systemd process units on supported Linux nodes, launchd
      process jobs on macOS, and certificate paths before writing them.
    - Per-app uniqueness: the workspace name must not already exist for the
-     resolved parent app. Workspace identity is unique within an app, not
+     resolved parent project. Workspace identity is unique within an app, not
      globally - unlike the `app` slug, which is globally unique. An instance
      selector chooses placement and URL context. It does not create a separate
-     namespace for duplicate workspace names under the same parent app.
+     namespace for duplicate workspace names under the same parent project.
 4. **Resolve PHP Version (`--php-version`):** If supplied, validate against
    Orbit's supported PHP version set with
    `error.code=validation_failed`/`error.meta.field=php_version` before any
    side effects. Node-side runtime availability is verified during
    applying, not during input resolution. If omitted, the workspace row
-   stores `null`, which the gateway interprets as "inherit parent app PHP
+   stores `null`, which the gateway interprets as "inherit parent project PHP
    version."
 
 ## Input Mode Contracts
@@ -116,7 +116,7 @@ support partial-creation flags (e.g. `--keep-files`); operators who want to
 register an existing path use
 `doctor --family=workspace --adopt` instead. The command performs:
 
-1. **Workspace Source Provisioning:** Resolve the parent app's effective
+1. **Workspace Source Provisioning:** Resolve the parent project's effective
    agent IDE adapter from app -> selected node -> default, then create the
    source through the selected source driver.
    - With no effective adapter, create a generic Git worktree on the effective
@@ -135,7 +135,7 @@ register an existing path use
      before side effects with `error.code=workspace.agent_ide_driver_missing`.
 2. **Identity Write (Gateway):** Create the `Workspace` row on the gateway with
    the source-driver-returned `name` and physical `path`, `app_id`, a mandatory
-   non-null `app_instance_id`, derived hostname, `php_version` (or `null` for
+   non-null `instance_id`, derived hostname, `php_version` (or `null` for
    inheritance), adapter metadata, and lifecycle fields. For
    OpenCode, store `agent_ide=opencode` and the
    best-effort session id in `agent_ide_workspace_id` when OpenCode returns
@@ -155,7 +155,7 @@ register an existing path use
      workspace path with the lifecycle environment defined in
      [Workspaces README](../../README.md#lifecycle-step-environment).
    - **Inherited runtime units:** render and (re)install process runtime units
-     derived from the selected app instance's process definitions through the
+     derived from the selected instance's process definitions through the
      serving node's supported backend: systemd on supported Linux and launchd
      on macOS.
    - **HTTP probe:** perform the same HTTP probe that `workspace:setup`
@@ -171,7 +171,7 @@ register an existing path use
    `process.runtime_unit_mismatch`; plus `proxy` handoffs for workspace route
    drift). The operator repairs each warning through its owning family doctor.
    This matches the
-   `app:new`/`app:register` pattern: once configuration is durable, apply drift
+   `project:new`/`instance:register` pattern: once configuration is durable, apply drift
    is convergence work, not a hard failure.
    HTTP probe failures that occur at setup time use the command-owned
    `workspace.http_probe_unhealthy` warning with `family: null`, matching
@@ -188,16 +188,16 @@ register an existing path use
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
-- **Parent app ineligible** — the resolved parent app is missing,
+- **Parent project ineligible** — the resolved parent project is missing,
   unauthorized, or unable to own workspaces
   (`error.code=workspace.parent_app_invalid`).
 - **Production app unsupported** — the selected instance is served by an
   `app-prod` node (`error.code=workspace.unsupported_for_production`). The
   command fails before source-driver, registry, Agent-push, or runtime effects.
-- **Concrete app instance required** — a bare app selector, parent-app marker,
-  or parent app path does not resolve to exactly one concrete instance
-  (`error.code=validation_failed`, `error.meta.field=app`,
-  `error.meta.reason=app_instance_required`). No workspace row or node artifact
+- **Concrete instance required** — a bare project selector, parent-project marker,
+  or parent project path does not resolve to exactly one concrete instance
+  (`error.code=validation_failed`, `error.meta.field=instance`,
+  `error.meta.reason=instance_required`). No workspace row or node artifact
   is created.
 - **Agent-push failure (pre-configuration)** — gateway cannot reach the node
   *before* the gateway workspace row is written
@@ -221,21 +221,21 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 ## Doctor Relationship
 
 - **Family:** `workspace` (see [`workspace-doctor.md`](../../workspace-doctor.md)).
-- **Probe:** `doctor --family=workspace --workspace=<name> --app=<app>`
+- **Probe:** `doctor --family=workspace --workspace=<name> --instance=<project.instance>`
   verifies registry configuration and runtime artifacts.
 - **Convergence:** `doctor --family=workspace --restore` repairs missing or
   divergent runtime container, runtime configuration, and source path drift surfaced by
   `workspace:new` warnings.
 - **Adoption:** `doctor --family=workspace --adopt` is the only path for
-  registering an existing workspace path under a parent app;
+  registering an existing workspace path under a parent project;
   `workspace:new` itself never adopts unmanaged paths.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php` | Gateway workspace creation, mandatory app-instance ownership, validation, authorization, duplicate-name failures, supported PHP-version handling, and documented error.code values. |
-| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Client-side concrete app-instance resolution, `app_instance_required` validation, and gateway stream request payload. |
+| `apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php` | Gateway workspace creation, mandatory instance ownership, validation, authorization, duplicate-name failures, supported PHP-version handling, and documented error.code values. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Client-side concrete instance resolution, `instance_required` validation, and gateway stream request payload. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Workspace stream consumption, terminal JSON frame handling, human progress rendering, and malformed stream failures. |
 
 Execution-location behavior and test mapping live in:

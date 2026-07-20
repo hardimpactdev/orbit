@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Workspaces;
 
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeUser;
 use App\Services\Apps\RemoteAppCacheClear;
@@ -39,7 +39,7 @@ final readonly class WorkspaceEnvApplier
         $app = $workspace->app;
         $node = $this->placement->nodeForWorkspace($workspace);
 
-        if (! $app instanceof App || ! $node instanceof Node) {
+        if (! $app instanceof Project || ! $node instanceof Node) {
             throw new RuntimeException("Workspace '{$workspace->name}' has no Orbit-managed owner.");
         }
 

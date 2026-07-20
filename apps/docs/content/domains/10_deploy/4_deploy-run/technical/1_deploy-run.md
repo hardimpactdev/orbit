@@ -1,4 +1,4 @@
-# Technical Contract: `orbit deploy:run [app] [--detach] [--json|--stream-json]`
+# Technical Contract: `orbit deploy:run [instance] [--detach] [--json|--stream-json]`
 
 [Back to public `deploy-run` documentation.](../deploy-run.md)
 
@@ -8,15 +8,15 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity has `deploy:run` on the selected production app
+- The current node identity has `deploy:run` on the selected production project
   instance's owning node.
-- The selected production app instance's owning node is active and eligible for Agent
+- The selected production instance's owning node is active and eligible for Agent
   push.
 
 ## Signature
 
 ```bash
-orbit deploy:run [app] [--detach] [--json|--stream-json]
+orbit deploy:run [instance] [--detach] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production app-instance selector. A bare app is valid only when it has exactly one instance. |
+| `instance` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production instance selector. A bare project is valid only when it has exactly one instance. |
 | `detach` | `--detach` | `Optional.` | `Never.` | `false` | Boolean flag. Starts the run and returns without streaming output. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 | `stream-json` | `--stream-json` | `Optional.` | `Never.` | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
@@ -39,7 +39,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Deployment Run Lifecycle
 
-- Resolves one concrete production app instance through gateway configuration.
+- Resolves one concrete production instance through gateway configuration.
 - Uses `POST /api/deploy/run` to create a durable gateway operation. The route
   returns `202` with `operation.uuid`, `operation.stream_descriptor_url`, and
   `operation.events_url`; it never negotiates a direct SSE response.
@@ -48,9 +48,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   replays journal gaps by cursor before and after live delivery.
 - Persists every `tree`, `step`, `complete`, or `error` progress frame to the
   operation journal before publishing that frame over WebSocket.
-- Fails before side effects unless the selected instance belongs to a production app.
-- Reads the app instance's deployment steps ordered by `order` ascending.
-- Fails before side effects when the production app instance has no deployment steps.
+- Fails before side effects unless the selected instance belongs to a production project.
+- Reads the instance's deployment steps ordered by `order` ascending.
+- Fails before side effects when the production instance has no deployment steps.
 - Creates a durable deployment run with `status=running` before executing the
   first step.
 - Generates and stores a deployment run context before executing the first
@@ -58,13 +58,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   `releases_path`, `release_path`, `live_path`, `env_path`, `storage_path`,
   `database_path`, `app_user`, `app_name`, `domain`, and `repository`, plus
   nested app and node metadata for placeholder resolution.
-- Executes each configured step on the app instance's owning node through the typed
+- Executes each configured step on the instance's owning node through the typed
   `internal:deploy:run-step` Agent-push command. The operation payload is a
   structured absolute binary plus argument vector (`/bin/sh`, `-lc`, rendered
   command), working directory, bounded timeout, and validated environment. No
   SSH fallback exists for deployment execution.
 - Release-aware steps may create versioned release directories under
-  `releases_path` and switch `live_path` to a release inside that app-instance-owned
+  `releases_path` and switch `live_path` to a release inside that instance-owned
   boundary. They must not point `live_path`, document root, storage,
   database, or any runtime bind mount at paths outside the app source,
   `releases_path`, or explicitly managed shared paths.
@@ -94,10 +94,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   version): `composer install --no-dev --optimize-autoloader --no-interaction`
   and `php artisan optimize`, against the app source or active release the
   FrankenPHP runtime container serves.
-- When the app instance defines `deploy_warmup_paths`, sends HTTP warmup requests to
+- When the instance defines `deploy_warmup_paths`, sends HTTP warmup requests to
   those paths on the app runtime endpoint before the deployment is marked
   complete.
-- Updates the run status and the app instance's latest deployment status to
+- Updates the run status and the instance's latest deployment status to
   `completed`, `failed`, or `cancelled`.
 
 ### Detached Run Rules
@@ -115,8 +115,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 `deploy:run` must not create, update, remove, or reorder deployment steps. It
 must not create process definitions, schedules, proxy routes, workspace setup
 steps, standalone release records, or global retention policy. It does not
-prove application HTTP readiness; production app health belongs to
-[`app-doctor.md`](../../../5_app/app-doctor.md).
+prove application HTTP readiness; production project health belongs to
+[`instance-doctor.md`](../../../5_project/instance-doctor.md).
 
 ## Renderer Contracts
 
@@ -131,11 +131,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| App not found | No visible app matches the selector. | `error.code=app.not_found` |
-| Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
-| App instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
+| Instance not found | No visible instance matches the selector. | `error.code=instance.not_found` |
+| Production project required | The app exists but is not a production project. | `error.code=deploy.production_project_required` |
+| Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Instance driver unsupported | The selected instance does not have an Orbit node and source path for Agent execution. | `error.code=deploy.instance_driver_unsupported` |
-| Pipeline empty | The production app instance has no configured deployment steps. | `error.code=deploy.pipeline_empty` |
+| Pipeline empty | The production instance has no configured deployment steps. | `error.code=deploy.pipeline_empty` |
 | Agent unreachable | The owning node is ineligible or the Agent-push transport cannot be reached. | `error.code=node.agent_unreachable`, `error.meta.reason=agent_push_unavailable` |
 | Execution failed | The gateway cannot execute a step on the owning node. | `error.code=deploy.execution_failed` |
 | Step failed | A deployment step exits non-zero. | `error.code=deploy.step_failed` |
@@ -143,8 +143,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-Deployment run history is app-instance-owned gateway state. `deploy:run` does not own a
-doctor family. [`app-doctor.md`](../../../5_app/app-doctor.md) may use latest
+Deployment run history is instance-owned gateway state. `deploy:run` does not own a
+doctor family. [`instance-doctor.md`](../../../5_project/instance-doctor.md) may use latest
 deployment status when reporting `app.latest_deployment_failed` or
 `app.deployment_run_stuck`.
 
@@ -152,11 +152,11 @@ deployment status when reporting `app.latest_deployment_failed` or
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php` | Detached JSON start request, durable operation identity, missing-app validation before gateway contact, and gateway authorization error passthrough. |
+| `apps/cli/tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php` | Detached JSON start request, durable operation identity, missing-instance validation before gateway contact, and gateway authorization error passthrough. |
 | `apps/cli/tests/Feature/Commands/Deploy/DeployInteractiveInputModeTest.php` | Interactive app prompt before operation start with `detach=false`. |
 | `apps/cli/tests/Feature/Commands/Deploy/DeployRunStreamCommandTest.php` | Operations WebSocket subscription, JSON and stream-JSON frames, and malformed operation-frame handling. |
 | `apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php` | Authorized `202` durable operation creation with caller and target node identity. |
 | `apps/gateway/tests/Feature/Services/Deploy/DeployOperationRunnerTest.php` | Journal-before-WebSocket ordering, terminal operation state, and durable replay events. |
 | `apps/gateway/tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php` | Structured Agent-push routing for PHP/Composer/Artisan commands, host working-directory and environment context, built-in warmup steps, HTTP warmup paths, warmup skip on user-step failure, and failed-run status when warmup fails. |
 
-Coverage gaps until focused tests land: production-app eligibility, grant denial before side effects, empty-pipeline failure, run-history creation semantics, timeout enforcement, progress-tree rendering, foreground success summaries beyond the completion footer, exhaustive documented `error.code` values, step-failure stop behavior, history-write failures, latest-deployment status updates, and app-doctor handoff behavior.
+Coverage gaps until focused tests land: production-app eligibility, grant denial before side effects, empty-pipeline failure, run-history creation semantics, timeout enforcement, progress-tree rendering, foreground success summaries beyond the completion footer, exhaustive documented `error.code` values, step-failure stop behavior, history-write failures, latest-deployment status updates, and instance-doctor handoff behavior.

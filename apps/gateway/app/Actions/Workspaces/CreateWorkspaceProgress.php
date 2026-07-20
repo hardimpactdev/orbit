@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Workspaces;
 
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 
 final readonly class CreateWorkspaceProgress
 {
@@ -16,7 +16,7 @@ final readonly class CreateWorkspaceProgress
     ) {}
 
     public function for(
-        App $app,
+        Project $app,
         Node $node,
         string $name,
         string $base,

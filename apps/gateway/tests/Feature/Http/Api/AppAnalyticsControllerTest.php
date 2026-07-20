@@ -2,10 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
 use App\Models\AppAnalyticsBinding;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Analytics\AppAnalyticsBindingService;
@@ -37,7 +38,7 @@ function createAppAnalyticsCallerNode(array $overrides = [], ?string $role = nul
 /**
  * @param  list<string>  $permissions
  */
-function grantAppAnalyticsAccess(Node $caller, Node $appNode, array $permissions = ['app:write']): void
+function grantAppAnalyticsAccess(Node $caller, Node $appNode, array $permissions = ['instance:write']): void
 {
     NodeAccess::query()->create([
         'consumer_node_id' => $caller->id,
@@ -72,7 +73,7 @@ function createAppAnalyticsRoutePrerequisites(bool $withRouter = true, bool $wit
     }
 }
 
-function createAppAnalyticsApp(?string $domain = 'docs.test', bool $withIngress = true): App
+function createAppAnalyticsApp(?string $domain = 'docs.test', bool $withIngress = true): Project
 {
     $ingress = $withIngress
         ? Node::factory()
@@ -99,11 +100,15 @@ function createAppAnalyticsApp(?string $domain = 'docs.test', bool $withIngress 
             ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
     }
 
-    return App::factory()->create([
+    $project = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'domain' => $domain,
     ]);
+
+    AppInstance::factory()->for($project)->create(['name' => 'production']);
+
+    return $project;
 }
 
 /**
@@ -163,13 +168,13 @@ describe('AppAnalyticsController', function (): void {
         $app = createAppAnalyticsApp();
         grantAppAnalyticsAccess($caller, $app->node);
 
-        $response = postAppAnalyticsEnableJson('/api/apps/docs/analytics/enable', [
+        $response = postAppAnalyticsEnableJson('/api/instances/docs/analytics/enable', [
             'public_hosts' => [],
         ]);
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.binding.app', 'docs')
+            ->assertJsonPath('success.data.binding.project', 'docs')
             ->assertJsonPath('success.data.binding.enabled', true)
             ->assertJsonPath('success.data.binding.site_domain', 'docs.test')
             ->assertJsonPath('success.data.binding.internal_host', 'analytics.orbit')
@@ -225,16 +230,16 @@ describe('AppAnalyticsController', function (): void {
         $caller = createAppAnalyticsCallerNode();
         createAppAnalyticsRoutePrerequisites();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node, ['app:read']);
+        grantAppAnalyticsAccess($caller, $app->node, ['instance:read']);
 
-        $response = postAppAnalyticsEnableJson('/api/apps/docs/analytics/enable', [
+        $response = postAppAnalyticsEnableJson('/api/instances/docs/analytics/enable', [
             'public_hosts' => ['analytics.docs.test'],
         ]);
 
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:write');
+            ->assertJsonPath('error.meta.missing_permission', 'instance:write');
 
         expect(AppAnalyticsBinding::query()->count())->toBe(0);
     });
@@ -244,14 +249,14 @@ describe('AppAnalyticsController', function (): void {
         createAppAnalyticsRoutePrerequisites(withAnalytics: false);
         createAppAnalyticsApp();
 
-        $response = postAppAnalyticsEnableJson('/api/apps/docs/analytics/enable', [
+        $response = postAppAnalyticsEnableJson('/api/instances/docs/analytics/enable', [
             'public_hosts' => [],
         ]);
 
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.prerequisite_failed')
-            ->assertJsonPath('error.meta.app', 'docs');
+            ->assertJsonPath('error.meta.project', 'docs');
 
         expect(AppAnalyticsBinding::query()->count())->toBe(0);
     });
@@ -262,14 +267,14 @@ describe('AppAnalyticsController', function (): void {
         $app = createAppAnalyticsApp(domain: null);
         grantAppAnalyticsAccess($caller, $app->node);
 
-        $response = postAppAnalyticsEnableJson('/api/apps/docs/analytics/enable', [
+        $response = postAppAnalyticsEnableJson('/api/instances/docs/analytics/enable', [
             'public_hosts' => ['analytics.docs.test'],
         ]);
 
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.domain_required')
-            ->assertJsonPath('error.meta.app', 'docs');
+            ->assertJsonPath('error.meta.project', 'docs');
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
             ->toBeFalse()
@@ -289,9 +294,9 @@ describe('AppAnalyticsController', function (): void {
                 return new ProxyRoute(['domain' => self::ServiceDomain]);
             }
 
-            public function assertPublicHostsAvailable(App $app, array $hosts): void {}
+            public function assertPublicHostsAvailable(Project $app, array $hosts): void {}
 
-            public function removeObsoletePublicHosts(App $app, array $desiredHosts): void {}
+            public function removeObsoletePublicHosts(Project $app, array $desiredHosts): void {}
 
             public function syncPublicHosts(AppAnalyticsBinding $binding): void {}
 
@@ -302,14 +307,14 @@ describe('AppAnalyticsController', function (): void {
         };
         app()->instance(AnalyticsRouteRegistrar::class, $registrar);
 
-        $response = postAppAnalyticsEnableJson('/api/apps/docs/analytics/enable', [
+        $response = postAppAnalyticsEnableJson('/api/instances/docs/analytics/enable', [
             'public_hosts' => [],
         ]);
 
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.route_enactment_failed')
-            ->assertJsonPath('error.meta.app', 'docs');
+            ->assertJsonPath('error.meta.project', 'docs');
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->where('enabled', true)->exists())
             ->toBeTrue();
@@ -327,19 +332,19 @@ describe('AppAnalyticsController', function (): void {
         $registrar = new class extends AnalyticsRouteRegistrar {
             public function __construct() {}
 
-            public function removeObsoletePublicHosts(App $app, array $desiredHosts): void
+            public function removeObsoletePublicHosts(Project $app, array $desiredHosts): void
             {
                 throw new RuntimeException('Ingress Caddy cleanup failed.');
             }
         };
         app()->instance(AnalyticsRouteRegistrar::class, $registrar);
 
-        $response = postAppAnalyticsDisableJson('/api/apps/docs/analytics/disable');
+        $response = postAppAnalyticsDisableJson('/api/instances/docs/analytics/disable');
 
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.route_cleanup_failed')
-            ->assertJsonPath('error.meta.app', 'docs');
+            ->assertJsonPath('error.meta.project', 'docs');
 
         expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->where('enabled', true)->exists())
             ->toBeTrue();
@@ -353,11 +358,11 @@ describe('AppAnalyticsController', function (): void {
 
         app(AppAnalyticsBindingService::class)->enable($app, ['analytics.docs.test']);
 
-        $response = postAppAnalyticsDisableJson('/api/apps/docs/analytics/disable');
+        $response = postAppAnalyticsDisableJson('/api/instances/docs/analytics/disable');
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.binding.app', 'docs')
+            ->assertJsonPath('success.data.binding.project', 'docs')
             ->assertJsonPath('success.data.binding.enabled', false)
             ->assertJsonPath('success.data.binding.public_hosts', []);
 
@@ -376,15 +381,15 @@ describe('AppAnalyticsController', function (): void {
         $caller = createAppAnalyticsCallerNode();
         createAppAnalyticsRoutePrerequisites();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node, ['app:read']);
+        grantAppAnalyticsAccess($caller, $app->node, ['instance:read']);
 
         app(AppAnalyticsBindingService::class)->enable($app, ['analytics.docs.test']);
 
-        $response = getAppAnalyticsJson('/api/apps/docs/analytics');
+        $response = getAppAnalyticsJson('/api/instances/docs/analytics');
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.binding.app', 'docs')
+            ->assertJsonPath('success.data.binding.project', 'docs')
             ->assertJsonPath('success.data.binding.enabled', true)
             ->assertJsonPath('success.data.binding.public_hosts', ['analytics.docs.test']);
     });
@@ -392,32 +397,32 @@ describe('AppAnalyticsController', function (): void {
     it('returns binding missing when show is requested before enable', function (): void {
         $caller = createAppAnalyticsCallerNode();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node, ['app:read']);
+        grantAppAnalyticsAccess($caller, $app->node, ['instance:read']);
 
-        $response = getAppAnalyticsJson('/api/apps/docs/analytics');
+        $response = getAppAnalyticsJson('/api/instances/docs/analytics');
 
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.binding_missing')
-            ->assertJsonPath('error.meta.app', 'docs');
+            ->assertJsonPath('error.meta.project', 'docs');
     });
 
     it('returns read-only public verification context for authorized callers', function (): void {
         $caller = createAppAnalyticsCallerNode();
         createAppAnalyticsRoutePrerequisites();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node, ['app:read', 'app:write']);
+        grantAppAnalyticsAccess($caller, $app->node, ['instance:read', 'instance:write']);
 
         app(AppAnalyticsBindingService::class)->enable($app, ['analytics.docs.test']);
 
         $bindingUpdatedAt = AppAnalyticsBinding::query()->where('app_id', $app->id)->value('updated_at');
         $routeUpdatedAt = ProxyRoute::query()->where('domain', 'analytics.docs.test')->value('updated_at');
 
-        $response = getAppAnalyticsJson('/api/apps/docs/analytics/verify');
+        $response = getAppAnalyticsJson('/api/instances/docs/analytics/verify');
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.verification_context.binding.app', 'docs')
+            ->assertJsonPath('success.data.verification_context.binding.project', 'docs')
             ->assertJsonPath('success.data.verification_context.binding.enabled', true)
             ->assertJsonPath('success.data.verification_context.routes.0.host', 'analytics.docs.test')
             ->assertJsonPath('success.data.verification_context.routes.0.status', 'registered')
@@ -437,12 +442,12 @@ describe('AppAnalyticsController', function (): void {
         $caller = createAppAnalyticsCallerNode();
         createAppAnalyticsRoutePrerequisites();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node, ['app:read', 'app:write']);
+        grantAppAnalyticsAccess($caller, $app->node, ['instance:read', 'instance:write']);
 
         app(AppAnalyticsBindingService::class)->enable($app, ['analytics.docs.test']);
         ProxyRoute::query()->where('domain', 'analytics.docs.test')->update(['source_hash' => 'divergent']);
 
-        $response = getAppAnalyticsJson('/api/apps/docs/analytics/verify');
+        $response = getAppAnalyticsJson('/api/instances/docs/analytics/verify');
 
         $response
             ->assertOk()

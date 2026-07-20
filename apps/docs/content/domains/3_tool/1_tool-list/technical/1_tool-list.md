@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:list [--app=<app>] [--node=<node>] [--all] [--json]`
+# Technical Contract: `orbit tool:list [--instance=<project.instance>] [--node=<node>] [--all] [--json]`
 
 [Back to public `tool-list` documentation.](../tool-list.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:list [--app=<app>] [--node=<node>] [--all] [--json]
+orbit tool:list [--instance=<project.instance>] [--node=<node>] [--all] [--json]
 ```
 
 ## Input Contract
@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | `Optional.` | `Never.` | `None.` | Visible active non-gateway node slug. |
-| `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
+| `app` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `all` | `--all` | `Optional.` | `Never.` | `false` | When true, lists all visible tool rows instead of defaulting to a single node. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
@@ -33,9 +33,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Reads gateway tool configuration visible to the caller.
 - Applies node and app filters at the gateway.
-- When `--node`, `--app`, and `--all` are omitted, sends the local default node
+- When `--node`, `--instance`, and `--all` are omitted, sends the local default node
   as the node filter.
-- When no local default node is set and `--node`, `--app`, and `--all` are
+- When no local default node is set and `--node`, `--instance`, and `--all` are
   omitted, requests caller-node scope from the gateway.
 - When `--all` is present, does not send default-node or caller-node scope.
 - Does not inspect nodes or mutate configuration.

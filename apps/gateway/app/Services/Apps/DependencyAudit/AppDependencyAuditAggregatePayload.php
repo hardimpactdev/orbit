@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Apps\DependencyAudit;
 
 use App\Enums\Apps\DependencyAuditStatus;
-use App\Models\App;
 use App\Models\AppDependencyAuditSummary;
+use App\Models\Project;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -20,7 +20,7 @@ final readonly class AppDependencyAuditAggregatePayload
      *     last_dependency_audit_at: string|null,
      * }
      */
-    public function forApp(App $app): array
+    public function forApp(Project $app): array
     {
         $summaries = $this->summariesFor($app);
 
@@ -44,7 +44,7 @@ final readonly class AppDependencyAuditAggregatePayload
     /**
      * @return list<array<string, mixed>>
      */
-    public function managerDetailsFor(App $app): array
+    public function managerDetailsFor(Project $app): array
     {
         $details = $this
             ->summariesFor($app)
@@ -72,7 +72,7 @@ final readonly class AppDependencyAuditAggregatePayload
     /**
      * @return Collection<int, AppDependencyAuditSummary>
      */
-    private function summariesFor(App $app): Collection
+    private function summariesFor(Project $app): Collection
     {
         if ($app->relationLoaded('dependencyAuditSummaries')) {
             return $app->dependencyAuditSummaries->toBase();

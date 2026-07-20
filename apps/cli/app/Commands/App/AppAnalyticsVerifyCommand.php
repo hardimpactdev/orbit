@@ -20,7 +20,7 @@ final class AppAnalyticsVerifyCommand extends AppGatewayCommand
     use WithStepTree;
 
     #[\Override]
-    protected $name = 'app:analytics verify';
+    protected $name = 'instance:analytics verify';
 
     #[\Override]
     protected $description = 'Verify public analytics tracking readiness for an app.';
@@ -30,16 +30,16 @@ final class AppAnalyticsVerifyCommand extends AppGatewayCommand
     {
         parent::configure();
 
-        $this->addArgument('app', InputArgument::OPTIONAL, 'App name or hostname');
+        $this->addArgument('instance', InputArgument::OPTIONAL, 'Instance selector (project.instance or hostname)');
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Output JSON');
     }
 
     public function handle(AnalyticsReadinessVerifier $verifier): int
     {
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('instance');
 
         if ($selector === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         if ($this->wantsJson()) {
@@ -60,8 +60,8 @@ final class AppAnalyticsVerifyCommand extends AppGatewayCommand
         if (($verification['ready'] ?? false) !== true) {
             return $this->renderFailure(
                 'analytics.public_not_ready',
-                'App analytics public readiness is incomplete.',
-                ['app' => $selector],
+                'Instance analytics public readiness is incomplete.',
+                ['instance' => $selector],
                 ['verification' => $verification],
             );
         }
@@ -113,7 +113,7 @@ final class AppAnalyticsVerifyCommand extends AppGatewayCommand
     /** @return array<array-key, mixed> */
     private function verificationContext(string $selector): array
     {
-        $response = $this->gatewayGet($this->apiAppPath($selector, '/analytics/verify'));
+        $response = $this->gatewayGet($this->apiInstancePath($selector, '/analytics/verify'));
         $success = $response['success'] ?? null;
         $data = is_array($success) ? $success['data'] ?? null : null;
         $payload = is_array($data) ? $data : $response;
@@ -126,7 +126,7 @@ final class AppAnalyticsVerifyCommand extends AppGatewayCommand
     private function renderVerification(array $verification): void
     {
         $this->line('verification:');
-        $this->line('  app: '.$this->stringField($verification, 'app'));
+        $this->line('  instance: '.$this->stringField($verification, 'instance'));
         $this->line('  ready: '.(($verification['ready'] ?? false) === true ? 'true' : 'false'));
         $this->line('  hosts:');
 

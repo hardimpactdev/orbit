@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessOwnerContextResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -42,8 +42,8 @@ it('uses selected app instance placement for app-owned runtime apps', function (
         'user' => 'nckrtl',
         'tld' => 'nmbp',
     ]);
-    /** @var App $app */
-    $app = App::factory()->create([
+    /** @var Project $app */
+    $app = Project::factory()->create([
         'name' => 'happie',
         'node_id' => $beast->id,
         'domain' => 'happie.test',
@@ -92,8 +92,8 @@ it('carries dotted app instance selectors into process owner contexts', function
         'user' => 'nckrtl',
         'tld' => 'nmbp',
     ]);
-    /** @var App $app */
-    $app = App::factory()->create([
+    /** @var Project $app */
+    $app = Project::factory()->create([
         'name' => 'happie',
         'node_id' => $beast->id,
         'domain' => 'happie.test',

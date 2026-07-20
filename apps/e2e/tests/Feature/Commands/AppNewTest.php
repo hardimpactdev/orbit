@@ -25,7 +25,7 @@ function appNewGrantAccess(E2ETopologyHarness $topology): void
             'consumer_node_id' => $nodes->get('operator-1'),
             'serving_node_id' => $nodes->get('app-dev-1'),
         ], [
-            'permissions' => json_encode(['app:new'], JSON_THROW_ON_ERROR),
+            'permissions' => json_encode(['project:new'], JSON_THROW_ON_ERROR),
             'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
             'created_at' => now(),
             'updated_at' => now(),
@@ -64,7 +64,7 @@ it('creates a real app source directory from an operator caller through the gate
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:new %s --node=app-dev-1 --repo=octocat/Hello-World --json',
+                'cd %s && orbit project:new %s --node=app-dev-1 --repo=octocat/Hello-World --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
@@ -73,16 +73,19 @@ it('creates a real app source directory from an operator caller through the gate
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $data = e2eJsonCommandResultData($payload);
-        $app = $data['app'] ?? null;
-        expect($app)
+        $project = $data['project'] ?? null;
+        $instance = $data['instance'] ?? null;
+        expect($project)
+            ->toBeArray()
+            ->and($instance)
             ->toBeArray()
             ->and($data['result']['action'])
             ->toBe('created')
-            ->and($app['name'])
+            ->and($project['name'])
             ->toBe($name)
-            ->and($app['node'])
+            ->and($instance['node'])
             ->toBe('app-dev-1')
-            ->and($app['path'])
+            ->and($instance['path'])
             ->toBe($path);
 
         $source = $topology->ssh(
@@ -109,14 +112,14 @@ it('creates a real app source directory from an operator caller through the gate
             'gateway',
             'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
                 .escapeshellarg("echo json_encode([
-                'app' => \\App\\Models\\App::query()->where('name', '{$name}')->exists(),
+                'project' => \\App\\Models\\Project::query()->where('name', '{$name}')->exists(),
             ], JSON_THROW_ON_ERROR);"),
             timeoutSeconds: 120,
         );
         $state = json_decode(trim($gatewayRecord->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($state)->toMatchArray([
-            'app' => true,
+            'project' => true,
         ]);
     } finally {
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);

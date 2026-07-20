@@ -41,7 +41,7 @@ final readonly class DatabaseConnectionSelector
             return DatabaseConnectionRegistryFailure::validation(
                 'connection',
                 $connectionSlug,
-                'The --connection option can only select a connection attached to an app instance or workspace target.',
+                'The --connection option can only select a connection attached to an instance or workspace target.',
                 ['target' => $target],
             );
         }

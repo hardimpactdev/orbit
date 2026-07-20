@@ -3,12 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppInstanceEnvApplier;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
@@ -44,14 +45,14 @@ describe('AppInstanceEnvApplier', function (): void {
             MAIL_MAILER=log
             ENV);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'node_id' => $node->id,
             'path' => $path,
             'runtime' => AppRuntimeKind::Static,
         ]);
         $instance = AppInstance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new \App\Data\Apps\OrbitAppInstanceDriverConfigData(
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
                 node_id: $node->id,
                 path: $path,
                 document_root: null,
@@ -130,7 +131,7 @@ function appAndNodeForEnvApplierTest(): array
             'wireguard_address' => '10.44.0.80',
         ]);
 
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'billing',
         'path' => '/home/orbit/apps/billing',
         'php_version' => '8.5',
@@ -138,7 +139,7 @@ function appAndNodeForEnvApplierTest(): array
     ]);
     $instance = AppInstance::factory()->for($app)->create([
         'name' => 'development',
-        'driver_config' => new \App\Data\Apps\OrbitAppInstanceDriverConfigData(
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
             node_id: $node->id,
             path: '/home/orbit/apps/billing-development',
             document_root: null,

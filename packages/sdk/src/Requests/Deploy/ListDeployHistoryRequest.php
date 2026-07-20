@@ -15,7 +15,7 @@ final class ListDeployHistoryRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
-        public readonly string $app,
+        public readonly string $instance,
         public readonly int $limit = 50,
     ) {}
 
@@ -27,7 +27,7 @@ final class ListDeployHistoryRequest extends GatewayRequest
     protected function defaultQuery(): array
     {
         return [
-            'app' => $this->app,
+            'instance' => $this->instance,
             'limit' => $this->limit,
         ];
     }

@@ -21,9 +21,9 @@ it('resolves to GET /api/workspaces/{name}', function (): void {
 });
 
 it('serializes app filter when provided', function (): void {
-    $request = new ShowWorkspaceRequest(name: 'feature-docs', app: 'docs');
+    $request = new ShowWorkspaceRequest(name: 'feature-docs', instance: 'docs');
 
-    expect($request->query()->all())->toBe(['app' => 'docs']);
+    expect($request->query()->all())->toBe(['instance' => 'docs']);
 });
 
 it('resolves path lookups to the path endpoint', function (): void {
@@ -40,7 +40,7 @@ it('returns a WorkspaceShowResponse DTO with workspace details', function (): vo
                 'data' => [
                     'workspace' => [
                         'name' => 'feature-docs',
-                        'app' => 'docs',
+                        'instance' => 'docs',
                     ],
                 ],
             ],
@@ -55,6 +55,6 @@ it('returns a WorkspaceShowResponse DTO with workspace details', function (): vo
     expect($dto)->toBeInstanceOf(WorkspaceShowResponse::class);
     expect($dto->workspace)->toBe([
         'name' => 'feature-docs',
-        'app' => 'docs',
+        'instance' => 'docs',
     ]);
 });

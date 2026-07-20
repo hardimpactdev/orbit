@@ -13,7 +13,7 @@ These terms define the PHP command domain and how PHP runtime selections are tra
   containers, but it does not install host PHP runtimes or create a `php` state
   family.
 - **PHP runtime selection:** Image version choice tracked by the gateway for
-  one target scope: shared logical-app runtime policy or one workspace runtime
+  one target scope: shared project runtime policy or one workspace runtime
   override/inheritance.
 - **PHP image selection:** PHP image version tracked by the gateway and used to
   create or recreate a FrankenPHP app or workspace runtime container.
@@ -21,8 +21,8 @@ These terms define the PHP command domain and how PHP runtime selections are tra
   runtime catalog. Unsupported versions fail validation before PHP configuration or
   node artifacts are changed.
 - **Available PHP image:** PHP image version available to the Docker runtime on
-  one concrete Orbit app-instance or workspace serving node through the
-  approved FrankenPHP image family. A logical-app write requires the image on
+  one concrete Orbit instance or workspace serving node through the
+  approved FrankenPHP image family. A project write requires the image on
   every affected Orbit instance serving node before policy is changed.
 - **PHP runtime catalog:** Tool catalog knowledge that declares the PHP versions
   Orbit can manage and resolves each supported version to the approved
@@ -49,26 +49,26 @@ These terms define the PHP command domain and how PHP runtime selections are tra
   a failed inspection reports inventory unavailability without treating the
   image as confirmed missing.
 - **PHP runtime view:** Shared PHP JSON entity reporting supported versions,
-  shared app PHP selection, and either one explicitly selected app-instance or
+  shared app PHP selection, and either one explicitly selected instance or
   workspace serving-node inventory. It never presents one arbitrary instance
-  and node as the inventory for a logical app.
+  and node as the inventory for a project.
 
 ## Runtime Scopes
 
 These terms define each target scope that a PHP command can read or write.
 
-- **App PHP runtime selection:** Shared logical-app PHP version stored as
+- **App PHP runtime selection:** Shared project PHP version stored as
   gateway app configuration. A write preauthorizes every affected Orbit
   instance serving node and verifies the approved image on each before changing
   policy, then reconciles every affected Orbit runtime and proxy backend.
   External-driver instances consume the shared policy as metadata but are not
   reconciled or reported as Orbit runtime convergence.
 - **Workspace PHP runtime override:** Workspace-scoped PHP version stored on the
-  workspace row. It overrides the parent app PHP version for that workspace.
+  workspace row. It overrides the parent project PHP version for that workspace.
 - **Workspace PHP inheritance:** Workspace state where no workspace PHP override
-  is stored and the workspace uses the parent app PHP version.
+  is stored and the workspace uses the parent project PHP version.
 - **Effective workspace PHP version:** Version a workspace actually uses after
-  applying workspace override or parent-app inheritance.
+  applying workspace override or parent-project inheritance.
 - **Runtime PHP binary:** The `php` binary inside an app, workspace, or gateway
   runtime container — the web *serving* runtime and, in `orbit-gateway`, the
   gateway's own runtime. App and workspace setup, deploy commands, and ad-hoc
@@ -83,12 +83,12 @@ These terms define what PHP commands apply to nodes and how partial application 
   endpoint, image tag, and service state on the node side, derived from app or
   workspace PHP runtime configuration. App and workspace families own artifact
   convergence.
-- **PHP runtime target:** Resolved logical app, concrete app instance,
+- **PHP runtime target:** Resolved project, concrete instance,
   workspace, or node-CLI scope that a PHP command reads or writes after target
   resolution and authorization.
 - **Partial PHP application warning:** Structured Doctor handoff for a
   workspace or node-CLI result when its owning family permits a warning. A
-  Reconciliation across a logical app never returns partial success. If any affected Orbit
+  Reconciliation across a project never returns partial success. If any affected Orbit
   instance fails reconciliation, the command fails and returns every instance
   status plus the recovery command from the responsible family.
 

@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -105,12 +107,20 @@ describe('ToolListController', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         grantToolListAccess($caller, $node);
 
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
+        $project = Project::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+            'domain' => 'docs.example.com',
+        ]);
+        AppInstance::factory()->for($project)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+        ]);
         NodeTool::factory()->create(['name' => 'composer', 'node_id' => $node->id]);
 
         $response = $this->call(
             'GET',
-            '/api/tools?app=docs.example.com',
+            '/api/tools?instance=docs.example.com',
             [],
             [],
             [],

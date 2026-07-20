@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:logs <tool> [--app=<app>] [--node=<node>] [--lines=<lines>] [--json]`
+# Technical Contract: `orbit tool:logs <tool> [--instance=<project.instance>] [--node=<node>] [--lines=<lines>] [--json]`
 
 [Back to public `tool-logs` documentation.](../tool-logs.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:logs <tool> [--app=<app>] [--node=<node>] [--lines=<lines>] [--json]
+orbit tool:logs <tool> [--instance=<project.instance>] [--node=<node>] [--lines=<lines>] [--json]
 ```
 
 ## Input Contract
@@ -24,8 +24,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | Always. | Never. | None. | Registered tool that declares `logs`. |
-| `node` | `--node` | When no `--app` or local `node:default` is available. | For gateway-local tools, any node other than the active serving gateway. | `node:default` when set. | Visible active node slug; selected tool must satisfy its operating-system, runtime-user, TLD/route, isolation, and gateway-local constraints. |
-| `app` | `--app` | Optional. | For gateway-local tools. | None. | Visible app selector used to resolve the owning node. |
+| `node` | `--node` | When no `--instance` or local `node:default` is available. | For gateway-local tools, any node other than the active serving gateway. | `node:default` when set. | Visible active node slug; selected tool must satisfy its operating-system, runtime-user, TLD/route, isolation, and gateway-local constraints. |
+| `app` | `--instance` | Optional. | For gateway-local tools. | None. | Visible app selector used to resolve the owning node. |
 | `lines` | `--lines` | Optional. | Never. | `100`. | Positive integer. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 

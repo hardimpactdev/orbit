@@ -61,32 +61,18 @@ abstract class DatabaseGatewayCommand extends GatewayCommand
      */
     protected function targetPayload(): array|int
     {
-        $app = $this->stringOption('app');
         $instance = $this->stringOption('instance');
         $workspace = $this->stringOption('workspace');
 
-        if ($instance !== null && $app === null) {
-            return $this->failValidation('app', 'The --app option is required when --instance is used.');
+        if ($instance !== null && $workspace !== null) {
+            return $this->failValidation('scope', 'Invalid scope: --instance and --workspace cannot be combined.');
         }
 
-        if ($app !== null && $instance === null) {
-            return $this->failValidation(
-                'instance',
-                'The --instance option is required for app database targets.',
-                ['reason' => 'app_instance_required'],
-            );
-        }
-
-        if ($app !== null && $workspace !== null) {
-            return $this->failValidation('scope', 'Invalid scope: --app and --workspace cannot be combined.');
-        }
-
-        if ($app === null && $workspace === null) {
-            return $this->failValidation('scope', 'Either --app or --workspace is required.');
+        if ($instance === null && $workspace === null) {
+            return $this->failValidation('scope', 'Either --instance or --workspace is required.');
         }
 
         return $this->filledPayload([
-            'app' => $app,
             'instance' => $instance,
             'workspace' => $workspace,
             'env_prefix' => $this->stringOption('env-prefix') ?? 'DB',

@@ -8,7 +8,7 @@ Cross-family or local commands. Spec:
 Diagnose state-family drift across nodes; optionally repair.
 
 ```bash
-orbit doctor [--node=<name>] [--self] [--all] [--app=<name>] [--workspace=<name>]
+orbit doctor [--node=<name>] [--self] [--all] [--instance=<name>] [--workspace=<name>]
              [--family=<key>]... [--key=<key>]... [--fix] [--restore] [--adopt]
              [--dry-run] [--json|--stream-json]
 ```
@@ -17,10 +17,10 @@ orbit doctor [--node=<name>] [--self] [--all] [--app=<name>] [--workspace=<name>
 |---|---|---|
 | `--node` | local `node:default`, then caller | Target one node by name. `--node=all` is invalid; use `--all`. |
 | `--self` |  -  | Limit to the calling node identity. |
-| `--all` | off | Verify every eligible active role-bearing fleet node. Verify-only and mutually exclusive with node/app/workspace scope. |
-| `--app` |  -  | Scope to one app. |
+| `--all` | off | Verify every eligible active role-bearing fleet node. Verify-only and mutually exclusive with node/instance/workspace scope. |
+| `--instance` |  -  | Scope to one `project.instance` placement. |
 | `--workspace` |  -  | Scope to one workspace. |
-| `--family` | all | State family key (repeatable): `node`, `app`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, `schedule`, `database_connection`. |
+| `--family` | all | State family key (repeatable): `node`, `instance`, `workspace`, `process`, `proxy`, `firewall_rule`, `tool`, `schedule`, `database_connection`. |
 | `--key` |  -  | Exact doctor issue key (repeatable). Filters reported drift before action planning; does not select a family. |
 | `--fix` | off | Enter interactive resolution mode. |
 | `--restore` | off | Re-enact gateway intent on node reality. |
@@ -38,9 +38,9 @@ orbit doctor --all                                  # fleet verification
 orbit doctor --node=beast --family=proxy --family=process
 orbit doctor --node=beast --restore                 # repair drift toward intent
 orbit doctor --node=beast --restore --dry-run       # preview restore actions only
-orbit doctor --node=beast --adopt --family=app      # adopt only apps
-orbit doctor --family=app --key=app.security.runtime_container_isolation
-orbit doctor --app=myapp                            # app-scoped report
+orbit doctor --node=beast --adopt --family=instance # adopt only instances
+orbit doctor --family=instance --key=instance.security.runtime_container_isolation
+orbit doctor --instance=myapp.development           # instance-scoped report
 orbit doctor --node=beast --stream-json             # agent progress stream
 orbit doctor --all --stream-json                    # fleet agent progress stream
 ```
@@ -55,7 +55,9 @@ when that renderer is available.
 The process family is available for every node with at least one active role
 assignment. Role-less client/operator identities remain node-family only.
 
-**Important:** `--adopt` for the `app` family treats filesystem presence as intent. A directory left over from a previous `app:remove` will be re-created. Clean the node first.
+**Important:** `--adopt` for the `instance` family treats filesystem presence
+as intent. A directory left over from a previous `project:remove` will be
+re-created. Clean the node first.
 
 ## `orbit update`
 

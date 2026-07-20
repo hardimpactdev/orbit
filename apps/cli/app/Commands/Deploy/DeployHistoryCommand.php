@@ -16,28 +16,28 @@ final class DeployHistoryCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'deploy:history
-        {app : Production app-instance selector}
+        {instance : Instance selector (project.instance)}
         {--limit= : Number of runs to return (default 50, hard cap 500)}
         {--json}';
 
     #[\Override]
-    protected $description = 'List deployment runs for a production app instance.';
+    protected $description = 'List deployment runs for an instance.';
 
     public function handle(): int
     {
-        $app = $this->stringArgument('app');
+        $instanceSelector = $this->stringArgument('instance');
 
-        if ($app === null) {
+        if ($instanceSelector === null) {
             return $this->renderFailure(
                 'validation_failed',
-                'The app argument is required.',
-                ['field' => 'app'],
+                'The instance argument is required.',
+                ['field' => 'instance'],
             );
         }
 
         try {
             $response = $this->gatewayGet('/api/deploy/history', $this->filledQuery([
-                'app' => $app,
+                'instance' => $instanceSelector,
                 'limit' => $this->stringOption('limit'),
             ]));
         } catch (GatewayApiException $exception) {
@@ -51,12 +51,12 @@ final class DeployHistoryCommand extends GatewayCommand
         $runs = $this->runsFromResponse($response);
 
         if ($runs === []) {
-            $this->line("No deployment history found for {$app}.");
+            $this->line("No deployment history found for {$instanceSelector}.");
 
             return self::SUCCESS;
         }
 
-        $this->line("Deployment History: {$app}");
+        $this->line("Deployment History: {$instanceSelector}");
         $this->newLine();
 
         table(

@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeHostPaths;
 use Illuminate\Database\Eloquent\Collection;
@@ -21,15 +21,15 @@ final readonly class ProcessOwnerContext
 {
     public function __construct(
         public Node $node,
-        public ?App $app,
+        public ?Project $app,
         public ?Workspace $workspace,
         public Model $owner,
         public ?AppInstance $appInstance = null,
     ) {}
 
-    public function runtimeApp(): App
+    public function runtimeApp(): Project
     {
-        if ($this->app instanceof App) {
+        if ($this->app instanceof Project) {
             $app = ProcessRuntimeApp::make($this->app, $this->node, $this->appInstance);
 
             $app->setRelation('node', $this->node);
@@ -39,7 +39,7 @@ final readonly class ProcessOwnerContext
 
         $home = new NodeHostPaths()->homeDirectory($this->node);
 
-        $app = new App([
+        $app = new Project([
             'name' => $this->node->name,
             'path' => $home,
             'node_id' => $this->node->id,
@@ -51,7 +51,7 @@ final readonly class ProcessOwnerContext
 
     public function defaultRuntime(): ProcessRuntime
     {
-        if ($this->app instanceof App) {
+        if ($this->app instanceof Project) {
             return ProcessRuntime::defaultForApp($this->app);
         }
 
@@ -138,23 +138,20 @@ final readonly class ProcessOwnerContext
         };
     }
 
-    /**
-     * @return MorphMany<Process, Node>|MorphMany<Process, App>|MorphMany<Process, Workspace>
-     */
     public function ownerProcesses(): MorphMany
     {
-        if ($this->owner instanceof Node || $this->owner instanceof App || $this->owner instanceof Workspace) {
+        if ($this->owner instanceof Node || $this->owner instanceof Project || $this->owner instanceof Workspace) {
             $processes = $this->owner->processes();
 
-            if ($this->app instanceof App) {
+            if ($this->app instanceof Project) {
                 if (! $this->appInstance instanceof AppInstance) {
                     throw new GatewayApiException(
-                        'A concrete app instance is required for app and workspace process ownership.',
+                        'A concrete instance is required for project and workspace process ownership.',
                         'validation_failed',
                         [
-                            'field' => 'app',
-                            'reason' => 'app_instance_required',
-                            'app' => $this->app->name,
+                            'field' => 'instance',
+                            'reason' => 'instance_required',
+                            'project' => $this->app->name,
                         ],
                     );
                 }
@@ -175,7 +172,7 @@ final readonly class ProcessOwnerContext
      */
     public function lifecycleProcesses(?string $name): Collection
     {
-        if ($this->workspace instanceof Workspace && $this->app instanceof App) {
+        if ($this->workspace instanceof Workspace && $this->app instanceof Project) {
             /** @var Collection<int, Process> $appProcesses */
             $appProcesses = $this->app
                 ->processes()
@@ -225,7 +222,7 @@ final readonly class ProcessOwnerContext
         return $this->workspace;
     }
 
-    public function eventApp(): ?App
+    public function eventApp(): ?Project
     {
         return $this->app;
     }
@@ -236,14 +233,14 @@ final readonly class ProcessOwnerContext
     }
 
     /**
-     * @return array{node: string, app: string|null, app_instance: string|null, workspace: string|null}
+     * @return array{node: string, project: string|null, instance: string|null, workspace: string|null}
      */
     public function payloadContext(): array
     {
         return [
             'node' => $this->node->name,
-            'app' => $this->app?->name,
-            'app_instance' => $this->appInstance?->name,
+            'project' => $this->app?->name,
+            'instance' => $this->appInstance?->name,
             'workspace' => $this->workspace?->name,
         ];
     }
@@ -272,8 +269,8 @@ final readonly class ProcessOwnerContext
         return array_filter(
             [
                 'node' => $this->node->name,
-                'app' => $this->app?->name,
-                'app_instance' => $this->appInstance?->name,
+                'project' => $this->app?->name,
+                'instance' => $this->appInstance?->name,
                 'workspace' => $this->workspace?->name,
                 'name' => $name,
             ],
@@ -283,12 +280,12 @@ final readonly class ProcessOwnerContext
 
     public function label(): string
     {
-        if ($this->workspace instanceof Workspace && $this->app instanceof App) {
-            return "workspace '{$this->workspace->name}' on app instance '{$this->appIdentity()}'";
+        if ($this->workspace instanceof Workspace && $this->app instanceof Project) {
+            return "workspace '{$this->workspace->name}' on instance '{$this->appIdentity()}'";
         }
 
-        if ($this->app instanceof App) {
-            return "app instance '{$this->appIdentity()}'";
+        if ($this->app instanceof Project) {
+            return "instance '{$this->appIdentity()}'";
         }
 
         return "node '{$this->node->name}'";
@@ -296,7 +293,7 @@ final readonly class ProcessOwnerContext
 
     private function appIdentity(): string
     {
-        if (! $this->app instanceof App) {
+        if (! $this->app instanceof Project) {
             return '';
         }
 

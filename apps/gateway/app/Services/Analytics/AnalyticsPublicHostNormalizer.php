@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Analytics;
 
 use App\Exceptions\AnalyticsDomainRequired;
-use App\Models\App;
+use App\Models\Project;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -17,7 +17,7 @@ final readonly class AnalyticsPublicHostNormalizer
      * @param  array<int, mixed>  $publicHosts
      * @return list<string>
      */
-    public function normalize(App $app, array $publicHosts): array
+    public function normalize(Project $app, array $publicHosts): array
     {
         $domain = $this->publicDomain($app);
         $hosts = [];
@@ -55,7 +55,7 @@ final readonly class AnalyticsPublicHostNormalizer
         return $hosts === [] ? ["analytics.{$domain}"] : $hosts;
     }
 
-    private function publicDomain(App $app): string
+    private function publicDomain(Project $app): string
     {
         $domain = is_string($app->domain) ? trim($app->domain) : '';
 

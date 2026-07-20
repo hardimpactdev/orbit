@@ -6,8 +6,8 @@ namespace Database\Factories;
 
 use App\Enums\Apps\DependencyAuditManager;
 use App\Enums\Apps\DependencyAuditStatus;
-use App\Models\App;
 use App\Models\AppDependencyAuditSummary;
+use App\Models\Project;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -18,7 +18,7 @@ class AppDependencyAuditSummaryFactory extends Factory
     public function definition(): array
     {
         return [
-            'app_id' => App::factory(),
+            'app_id' => Project::factory(),
             'manager' => DependencyAuditManager::Composer,
             'status' => DependencyAuditStatus::Clean,
             'danger_count' => 0,

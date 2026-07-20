@@ -1,8 +1,8 @@
-# `orbit deploy:step-add [app] [command]`
+# `orbit deploy:step-add [instance] [command]`
 
 [Back to Deploy commands.](../README.md)
 
-Add a deployment pipeline step to a concrete production app instance.
+Add a deployment pipeline step to a concrete production instance.
 
 Use `deploy:step-add` to define one shell command or multiline script that runs during
 [`deploy:run`](../4_deploy-run/deploy-run.md). The command records deployment
@@ -11,7 +11,7 @@ policy on the gateway; it does not execute the step.
 ## Usage
 
 ```bash
-orbit deploy:step-add [app] [command] [--title=<title>] [--order=<number>] [--timeout=<seconds>] [--retention=<count>] [--json]
+orbit deploy:step-add [instance] [command] [--title=<title>] [--order=<number>] [--timeout=<seconds>] [--retention=<count>] [--json]
 ```
 
 ## Examples
@@ -25,7 +25,7 @@ orbit deploy:step-add docs.production $'cd {{ release_path }}\ncomposer install 
 
 ## Arguments and options
 
-- `app`: dotted production app-instance selector. A bare app name or domain is
+- `instance`: dotted production instance selector. A bare project name or domain is
   valid only when the app has exactly one instance.
 - `command`: shell command or multiline shell script to run during deployment.
 - `--title`: display label. Defaults to a concise command-derived title.
@@ -38,7 +38,7 @@ orbit deploy:step-add docs.production $'cd {{ release_path }}\ncomposer install 
 ## What Happens
 
 Use `deploy:step-add` when you need to add a new shell command to an app
-instance's deployment pipeline. It validates the production app instance,
+instance's deployment pipeline. It validates the production instance,
 command, timeout, and optional metadata, then writes one deployment step
 definition owned by that instance on the gateway.
 It does not execute the step, inspect node state, create app process
@@ -64,7 +64,7 @@ JSON output returns the created deploy step entity.
 
 - [`orbit deploy:step-list`](../2_deploy-step-list/deploy-step-list.md)
 - [`orbit deploy:run`](../4_deploy-run/deploy-run.md)
-- [`doctor --family=app`](../../5_app/app-doctor.md)
+- [`doctor --family=instance`](../../5_project/instance-doctor.md)
 
 ## Technical Contract
 

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Proxy;
 
-use App\Models\App;
 use App\Models\AppInstance;
+use App\Models\Project;
 use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class AppProxyRouteDomainInstanceResolver
@@ -14,7 +14,7 @@ final readonly class AppProxyRouteDomainInstanceResolver
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
-    public function resolve(App $app, string $domain): ?AppInstance
+    public function resolve(Project $app, string $domain): ?AppInstance
     {
         $domain = mb_strtolower(trim($domain));
 
@@ -33,7 +33,7 @@ final readonly class AppProxyRouteDomainInstanceResolver
         return null;
     }
 
-    private function instanceDomainMatchesRoute(App $app, AppInstance $instance, string $domain): bool
+    private function instanceDomainMatchesRoute(Project $app, AppInstance $instance, string $domain): bool
     {
         $instanceDomain = mb_strtolower($this->placement->instanceUrlHost($instance, $app));
 
@@ -47,7 +47,7 @@ final readonly class AppProxyRouteDomainInstanceResolver
         );
     }
 
-    private function isBareAppRouteDomain(App $app, string $domain): bool
+    private function isBareAppRouteDomain(Project $app, string $domain): bool
     {
         if (is_string($app->domain) && mb_strtolower(trim($app->domain)) === $domain) {
             return true;

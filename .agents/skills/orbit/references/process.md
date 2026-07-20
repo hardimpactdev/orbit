@@ -12,7 +12,7 @@ Orbit cert/key files at the in-container paths exposed through those variables.
 Add a process definition for an app, workspace, or node.
 
 ```bash
-orbit process:add [<name>] [<command>] [--app=<name>] [--node=<node>]
+orbit process:add [<name>] [<command>] [--instance=<name>] [--node=<node>]
                   [--service=<mysql|valkey>] [--version=<version>] [--image=<image>]
                   [--restart-policy=never|on_failure|always]
                   [--crash-notification=none|agent_ide]
@@ -25,7 +25,7 @@ orbit process:add [<name>] [<command>] [--app=<name>] [--node=<node>]
 |---|---|---|
 | `name` |  -  | Process slug (<=64 chars). Independent of `--service`. |
 | `command` |  -  | Shell command (run inside the app/workspace path). Omit when `--service` is present. |
-| `--app` |  -  | Parent app slug. |
+| `--instance` |  -  | Parent `project.instance` selector. |
 | `--node` |  -  | Owning node for node-owned processes and managed services. |
 | `--service` |  -  | Managed service identifier (`mysql`, `valkey`, ...). Node-owned only. |
 | `--version` | service default | Service version selector. Public CLI flag; normalized internally because Symfony reserves global `--version`. |
@@ -40,13 +40,13 @@ orbit process:add [<name>] [<command>] [--app=<name>] [--node=<node>]
 Examples:
 
 ```bash
-orbit process:add queue 'php artisan queue:work --tries=3' --app=myapp \
+orbit process:add queue 'php artisan queue:work --tries=3' --instance=myapp.development \
   --restart-policy=always --crash-notification=agent_ide
 
-orbit process:add reverb 'php artisan reverb:start' --app=myapp \
+orbit process:add reverb 'php artisan reverb:start' --instance=myapp.development \
   --restart-policy=on_failure
 
-orbit process:add feedback 'php artisan feedback:work' --app=feedback \
+orbit process:add feedback 'php artisan feedback:work' --instance=feedback.development \
   --runtime=launchd
 
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3
@@ -63,7 +63,7 @@ orbit process:add mailpit --node=beast --service=mailpit --runtime=docker \
 Update a process definition. Only the supplied fields change.
 
 ```bash
-orbit process:update [<name>] [--app=<name>] [--command='<shell>']
+orbit process:update [<name>] [--instance=<name>] [--command='<shell>']
                      [--name=<new-slug>] [--restart-policy=<p>]
                      [--crash-notification=<n>] [--runtime=<backend>]
                      [--restart] [--json]
@@ -78,25 +78,26 @@ orbit process:update [<name>] [--app=<name>] [--command='<shell>']
 Remove a process definition and its runtime units.
 
 ```bash
-orbit process:remove [<name>] [--app=<name>] [--force] [--json]
+orbit process:remove [<name>] [--instance=<name>] [--force] [--json]
 ```
 
 ## `orbit process:list`
 
 ```bash
-orbit process:list [--app=<name>] [--workspace=<name>] [--json]
+orbit process:list [--instance=<name>] [--workspace=<name>] [--json]
 ```
 
-Without `--workspace`, lists app-scoped definitions and the runtime units they render across the app's main path and active workspaces.
+Without `--workspace`, lists instance-scoped definitions and the runtime units
+they render across the instance's main path and active workspaces.
 
 ## `orbit process:start | stop | restart [name]`
 
 Control runtime units.
 
 ```bash
-orbit process:start   [<name>] [--app=<name>] [--workspace=<name>] [--json]
-orbit process:stop    [<name>] [--app=<name>] [--workspace=<name>] [--json]
-orbit process:restart [<name>] [--app=<name>] [--workspace=<name>] [--json]
+orbit process:start   [<name>] [--instance=<name>] [--workspace=<name>] [--json]
+orbit process:stop    [<name>] [--instance=<name>] [--workspace=<name>] [--json]
+orbit process:restart [<name>] [--instance=<name>] [--workspace=<name>] [--json]
 ```
 
 Without `--workspace`, the command targets the main app instance. Use `--workspace=<slug>` to target a specific workspace's rendered unit.
@@ -106,7 +107,7 @@ Without `--workspace`, the command targets the main app instance. Use `--workspa
 Read runtime logs.
 
 ```bash
-orbit process:logs [<name>] [--app=<name>] [--workspace=<name>]
+orbit process:logs [<name>] [--instance=<name>] [--workspace=<name>]
                    [--follow] [--lines=100] [--json]
 ```
 

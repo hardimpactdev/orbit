@@ -5,10 +5,10 @@ declare(strict_types=1);
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\WorkspaceLifecycleStatus;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -69,9 +69,9 @@ describe('WorkspaceListController', function (): void {
         grantWorkspaceListAccess($caller, $zNode);
         grantWorkspaceListAccess($caller, $aNode);
 
-        $zApp = App::factory()->create(['name' => 'zebra', 'node_id' => $zNode->id, 'domain' => 'zebra.test']);
-        $bApp = App::factory()->create(['name' => 'beta', 'node_id' => $aNode->id, 'domain' => 'beta.test']);
-        $aApp = App::factory()->create(['name' => 'alpha', 'node_id' => $aNode->id, 'domain' => 'alpha.test']);
+        $zApp = Project::factory()->create(['name' => 'zebra', 'node_id' => $zNode->id, 'domain' => 'zebra.test']);
+        $bApp = Project::factory()->create(['name' => 'beta', 'node_id' => $aNode->id, 'domain' => 'beta.test']);
+        $aApp = Project::factory()->create(['name' => 'alpha', 'node_id' => $aNode->id, 'domain' => 'alpha.test']);
 
         Workspace::factory()->create(['name' => 'z-workspace', 'app_id' => $zApp->id]);
         Workspace::factory()->create(['name' => 'beta-two', 'app_id' => $bApp->id]);
@@ -93,14 +93,14 @@ describe('WorkspaceListController', function (): void {
         grantWorkspaceListAccess($caller, $devNode);
         grantWorkspaceListAccess($caller, $prodNode);
 
-        $docs = App::factory()->create(['name' => 'docs', 'node_id' => $devNode->id]);
-        $site = App::factory()->create(['name' => 'site', 'node_id' => $prodNode->id]);
+        $docs = Project::factory()->create(['name' => 'docs', 'node_id' => $devNode->id]);
+        $site = Project::factory()->create(['name' => 'site', 'node_id' => $prodNode->id]);
         Workspace::factory()->create(['name' => 'docs-feature', 'app_id' => $docs->id]);
         Workspace::factory()->create(['name' => 'site-feature', 'app_id' => $site->id]);
 
         $response = $this->call(
             'GET',
-            '/api/workspaces?app=docs&node=dev-1',
+            '/api/workspaces?instance=docs&node=dev-1',
             [],
             [],
             [],
@@ -119,7 +119,7 @@ describe('WorkspaceListController', function (): void {
         $localNode = createWorkspaceListAppNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceListAccess($caller, $localNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'happie',
             'node_id' => $canonicalNode->id,
             'domain' => 'happie.test',
@@ -147,7 +147,7 @@ describe('WorkspaceListController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/workspaces?app=happie.nmbp',
+            '/api/workspaces?instance=happie.nmbp',
             [],
             [],
             [],
@@ -158,8 +158,8 @@ describe('WorkspaceListController', function (): void {
             ->assertOk()
             ->assertJsonCount(1, 'success.data.workspaces')
             ->assertJsonPath('success.data.workspaces.0.name', 'recipes')
-            ->assertJsonPath('success.data.workspaces.0.app', 'happie')
-            ->assertJsonPath('success.data.workspaces.0.app_instance', 'nmbp')
+            ->assertJsonPath('success.data.workspaces.0.project', 'happie')
+            ->assertJsonPath('success.data.workspaces.0.instance', 'nmbp')
             ->assertJsonPath('success.data.workspaces.0.node', 'NMBP')
             ->assertJsonPath('success.data.workspaces.0.url', 'https://recipes.happie.nmbp');
     });
@@ -170,8 +170,8 @@ describe('WorkspaceListController', function (): void {
         $hiddenNode = createWorkspaceListAppNode(['name' => 'hidden-node']);
         grantWorkspaceListAccess($caller, $visibleNode);
 
-        $visibleApp = App::factory()->create(['name' => 'visible', 'node_id' => $visibleNode->id]);
-        $hiddenApp = App::factory()->create(['name' => 'hidden', 'node_id' => $hiddenNode->id]);
+        $visibleApp = Project::factory()->create(['name' => 'visible', 'node_id' => $visibleNode->id]);
+        $hiddenApp = Project::factory()->create(['name' => 'hidden', 'node_id' => $hiddenNode->id]);
         Workspace::factory()->create(['name' => 'visible-workspace', 'app_id' => $visibleApp->id]);
         Workspace::factory()->create(['name' => 'hidden-workspace', 'app_id' => $hiddenApp->id]);
 
@@ -188,8 +188,8 @@ describe('WorkspaceListController', function (): void {
         assignWorkspaceListGatewayRole($caller);
         $firstNode = createWorkspaceListAppNode(['name' => 'app-1']);
         $secondNode = createWorkspaceListAppNode(['name' => 'app-2']);
-        $firstApp = App::factory()->create(['name' => 'first', 'node_id' => $firstNode->id]);
-        $secondApp = App::factory()->create(['name' => 'second', 'node_id' => $secondNode->id]);
+        $firstApp = Project::factory()->create(['name' => 'first', 'node_id' => $firstNode->id]);
+        $secondApp = Project::factory()->create(['name' => 'second', 'node_id' => $secondNode->id]);
 
         Workspace::factory()->create(['app_id' => $firstApp->id]);
         Workspace::factory()->create(['app_id' => $secondApp->id]);
@@ -205,8 +205,8 @@ describe('WorkspaceListController', function (): void {
         assignWorkspaceListGatewayRole($caller);
         $developmentNode = createWorkspaceListAppNode(['name' => 'app-dev-1']);
         $productionNode = createWorkspaceListAppNode(['name' => 'app-prod-1'], 'app-prod');
-        $developmentApp = App::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
-        $productionApp = App::factory()->create(['name' => 'site', 'node_id' => $productionNode->id]);
+        $developmentApp = Project::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
+        $productionApp = Project::factory()->create(['name' => 'site', 'node_id' => $productionNode->id]);
 
         Workspace::factory()->create(['name' => 'docs-feature', 'app_id' => $developmentApp->id]);
         Workspace::factory()->create(['name' => 'site-feature', 'app_id' => $productionApp->id]);
@@ -230,12 +230,12 @@ describe('WorkspaceListController', function (): void {
         $caller = createWorkspaceListCallerNode();
         assignWorkspaceListGatewayRole($caller);
         $productionNode = createWorkspaceListAppNode(['name' => 'app-prod-1'], 'app-prod');
-        $productionApp = App::factory()->create(['name' => 'site', 'node_id' => $productionNode->id]);
+        $productionApp = Project::factory()->create(['name' => 'site', 'node_id' => $productionNode->id]);
         Workspace::factory()->create(['name' => 'site-feature', 'app_id' => $productionApp->id]);
 
         $response = $this->call(
             'GET',
-            '/api/workspaces?app=site.development',
+            '/api/workspaces?instance=site.development',
             [],
             [],
             [],
@@ -252,7 +252,7 @@ describe('WorkspaceListController', function (): void {
     it('does not treat an unassigned caller as gateway visibility', function (): void {
         createWorkspaceListCallerNode();
         $node = createWorkspaceListAppNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         $response = $this->call('GET', '/api/workspaces', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
@@ -264,7 +264,7 @@ describe('WorkspaceListController', function (): void {
     it('returns authorization failure when the caller has no workspace registry visibility', function (): void {
         createWorkspaceListCallerNode();
         $node = createWorkspaceListAppNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         $response = $this->call('GET', '/api/workspaces', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
@@ -302,16 +302,16 @@ describe('WorkspaceListController', function (): void {
             ->assertJsonPath('error.meta.field', $field)
             ->assertJsonPath('error.meta.value', $value);
     })->with([
-        'unknown app' => ['app=unknown-app', 'app', 'unknown-app', "Unknown app: 'unknown-app'."],
+        'unknown app' => ['instance=unknown-app', 'instance', 'unknown-app', "Unknown instance: 'unknown-app'."],
         'unknown node' => ['node=unknown-node', 'node', 'unknown-node', "Unknown node: 'unknown-node'."],
-        'multi app' => ['app=docs,site', 'app', 'docs,site', "Unknown app: 'docs,site'."],
+        'multi app' => ['instance=docs,site', 'instance', 'docs,site', "Unknown instance: 'docs,site'."],
     ]);
 
     it('returns the workspace list entity shape', function (): void {
         $caller = createWorkspaceListCallerNode();
         assignWorkspaceListGatewayRole($caller);
         $node = createWorkspaceListAppNode(['name' => 'app-1', 'tld' => 'test']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => null]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => null]);
 
         Workspace::factory()->create([
             'name' => 'feature-docs',
@@ -324,8 +324,8 @@ describe('WorkspaceListController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.workspaces.0', [
                 'name' => 'feature-docs',
-                'app' => 'docs',
-                'app_instance' => 'development',
+                'project' => 'docs',
+                'instance' => 'development',
                 'node' => 'app-1',
                 'url' => 'https://feature-docs.docs.test',
                 'lifecycle_status' => 'setup-pending',

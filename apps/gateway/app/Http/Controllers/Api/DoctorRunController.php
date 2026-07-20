@@ -13,6 +13,7 @@ use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\Node;
 use App\Services\Doctor\DoctorAppInstanceTargetResolver;
 use App\Services\Doctor\DoctorProgressReportFactory;
+use App\Services\Doctor\DoctorPublicVocabulary;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Doctor\DoctorValidationFailure;
@@ -40,6 +41,7 @@ final readonly class DoctorRunController implements Loggable
         DoctorReportRunner $runner,
         DoctorScopeValidator $validator,
         DoctorProgressReportFactory $progressReports,
+        DoctorPublicVocabulary $vocabulary,
         ProgressEventStreamResponseFactory $streams,
     ): JsonResponse|StreamedResponse {
         /** @var mixed $caller */
@@ -55,8 +57,8 @@ final readonly class DoctorRunController implements Loggable
             ], 403);
         }
 
-        $families = $this->families($request);
-        $key = $this->key($request);
+        $families = $vocabulary->internalFamilies($this->families($request));
+        $key = $vocabulary->internalKey($this->key($request));
 
         $scopeFailure = $this->validateScope($request);
 
@@ -105,7 +107,7 @@ final readonly class DoctorRunController implements Loggable
             }
 
             if ($this->wantsEventStream($request)) {
-                return $this->streamFleet($streams, $runner, $families, $key);
+                return $this->streamFleet($streams, $runner, $vocabulary, $families, $key);
             }
 
             $doctor = $runner->probeFleet(families: $families, key: $key);
@@ -113,7 +115,7 @@ final readonly class DoctorRunController implements Loggable
             return response()->json([
                 'success' => [
                     'data' => [
-                        'doctor' => $doctor,
+                        'doctor' => $vocabulary->publicReport($doctor),
                     ],
                 ],
             ]);
@@ -121,7 +123,7 @@ final readonly class DoctorRunController implements Loggable
 
         try {
             $appTarget = $this->appTargets->resolve(
-                $this->scopeValue($request, 'app'),
+                $this->scopeValue($request, 'instance'),
                 $caller,
                 'doctor:verify',
             );
@@ -145,10 +147,10 @@ final readonly class DoctorRunController implements Loggable
             return response()->json([
                 'error' => [
                     'code' => 'validation_failed',
-                    'message' => "App instance '{$appTarget->app->name}.{$appTarget->instance->name}' is not placed on node '{$target->name}'.",
+                    'message' => "Instance '{$appTarget->app->name}.{$appTarget->instance->name}' is not placed on node '{$target->name}'.",
                     'meta' => [
                         'field' => 'node',
-                        'reason' => 'app_instance_node_mismatch',
+                        'reason' => 'instance_node_mismatch',
                         'node' => $target->name,
                         'serving_node' => $appTarget->node->name,
                     ],
@@ -194,6 +196,7 @@ final readonly class DoctorRunController implements Loggable
                 $streams,
                 $runner,
                 $progressReports,
+                $vocabulary,
                 $target,
                 $families,
                 $key,
@@ -211,7 +214,7 @@ final readonly class DoctorRunController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'doctor' => $doctor,
+                    'doctor' => $vocabulary->publicReport($doctor),
                 ],
             ],
         ]);
@@ -224,6 +227,7 @@ final readonly class DoctorRunController implements Loggable
         ProgressEventStreamResponseFactory $streams,
         DoctorReportRunner $runner,
         DoctorProgressReportFactory $progressReports,
+        DoctorPublicVocabulary $vocabulary,
         Node $target,
         array $families,
         ?string $key,
@@ -232,6 +236,7 @@ final readonly class DoctorRunController implements Loggable
         return $streams->make(function (ProgressEventStreamEmitter $events) use (
             $runner,
             $progressReports,
+            $vocabulary,
             $target,
             $families,
             $key,
@@ -245,7 +250,7 @@ final readonly class DoctorRunController implements Loggable
             $issues = [];
 
             $events->stepEvent('__doctor_panel', 'running', 'Doctor queued', [
-                'doctor' => $progressReports->report(
+                'doctor' => $vocabulary->publicReport($progressReports->report(
                     target: $target,
                     mode: 'verify',
                     families: $renderedFamilies,
@@ -257,12 +262,12 @@ final readonly class DoctorRunController implements Loggable
                     app: $scope->app,
                     workspace: $scope->workspace,
                     appInstance: $scope->appInstance,
-                ),
+                )),
             ]);
             $events->tree('Running Doctor', array_map(
                 fn (string $family): array => [
-                    'key' => $family,
-                    'label' => "Check {$family}",
+                    'key' => $vocabulary->publicFamily($family),
+                    'label' => "Check {$vocabulary->publicFamily($family)}",
                 ],
                 $renderedFamilies,
             ));
@@ -277,6 +282,7 @@ final readonly class DoctorRunController implements Loggable
             ) use (
                 $events,
                 $progressReports,
+                $vocabulary,
                 $target,
                 $key,
                 $renderedFamilies,
@@ -306,11 +312,13 @@ final readonly class DoctorRunController implements Loggable
                 }
 
                 $events->stepEvent(
-                    $family,
+                    $vocabulary->publicFamily($family),
                     $phase,
-                    $phase === 'running' ? "Checking {$family}" : "{$family} checked",
+                    $phase === 'running'
+                        ? "Checking {$vocabulary->publicFamily($family)}"
+                        : "{$vocabulary->publicFamily($family)} checked",
                     [
-                        'doctor' => $progressReports->report(
+                        'doctor' => $vocabulary->publicReport($progressReports->report(
                             target: $target,
                             mode: 'verify',
                             families: $renderedFamilies,
@@ -322,7 +330,7 @@ final readonly class DoctorRunController implements Loggable
                             app: $scope->app,
                             workspace: $scope->workspace,
                             appInstance: $scope->appInstance,
-                        ),
+                        )),
                     ],
                 );
             };
@@ -334,6 +342,7 @@ final readonly class DoctorRunController implements Loggable
                 onFamilyProgress: $onFamilyProgress,
                 scope: $scope,
             );
+            $doctor = $vocabulary->publicReport($doctor);
 
             if (($doctor['healthy'] ?? false) === true) {
                 $events->complete(0, [
@@ -360,10 +369,16 @@ final readonly class DoctorRunController implements Loggable
     private function streamFleet(
         ProgressEventStreamResponseFactory $streams,
         DoctorReportRunner $runner,
+        DoctorPublicVocabulary $vocabulary,
         array $families,
         ?string $key,
     ): StreamedResponse {
-        return $streams->make(function (ProgressEventStreamEmitter $events) use ($runner, $families, $key): void {
+        return $streams->make(function (ProgressEventStreamEmitter $events) use (
+            $runner,
+            $vocabulary,
+            $families,
+            $key,
+        ): void {
             $targets = $runner->fleetTargetsForFamilies($families);
             $events->tree(
                 'Running Doctor',
@@ -381,8 +396,12 @@ final readonly class DoctorRunController implements Loggable
                 key: $key,
                 onNodeProgress: function (Node $node, string $phase, ?array $partialFleetReport = null) use (
                     $events,
+                    $vocabulary,
                 ): void {
-                    $extra = $partialFleetReport !== null ? ['doctor' => $partialFleetReport] : [];
+                    /** @var array<string, mixed>|null $partialFleetReport */
+                    $extra = $partialFleetReport !== null
+                        ? ['doctor' => $vocabulary->publicReport($partialFleetReport)]
+                        : [];
 
                     $events->stepEvent(
                         $node->name,
@@ -392,6 +411,7 @@ final readonly class DoctorRunController implements Loggable
                     );
                 },
             );
+            $doctor = $vocabulary->publicReport($doctor);
 
             if (($doctor['healthy'] ?? false) === true) {
                 $events->complete(0, [
@@ -432,7 +452,7 @@ final readonly class DoctorRunController implements Loggable
     private function doctorTargetScope(Request $request): DoctorTargetScope
     {
         return DoctorTargetScope::from(
-            $this->scopeValue($request, 'app'),
+            $this->scopeValue($request, 'instance'),
             $this->scopeValue($request, 'workspace'),
         );
     }
@@ -480,7 +500,7 @@ final readonly class DoctorRunController implements Loggable
                     'meta' => $exception->meta,
                 ],
             ],
-            $exception->errorCode === 'app.not_found' ? 404 : 422,
+            $exception->errorCode === 'instance.not_found' ? 404 : 422,
         );
     }
 
@@ -534,7 +554,7 @@ final readonly class DoctorRunController implements Loggable
         $conflicts = array_values(array_filter([
             $this->scopeValue($request, 'node') !== null ? 'node' : null,
             $request->boolean('self') ? 'self' : null,
-            $this->scopeValue($request, 'app') !== null ? 'app' : null,
+            $this->scopeValue($request, 'instance') !== null ? 'instance' : null,
             $this->scopeValue($request, 'workspace') !== null ? 'workspace' : null,
         ]));
 
@@ -545,7 +565,7 @@ final readonly class DoctorRunController implements Loggable
         return response()->json([
             'error' => [
                 'code' => 'validation_failed',
-                'message' => 'all cannot be combined with node, self, app, or workspace scope.',
+                'message' => 'all cannot be combined with node, self, instance, or workspace scope.',
                 'meta' => ['fields' => ['all', ...$conflicts]],
             ],
         ], 422);

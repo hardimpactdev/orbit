@@ -9,15 +9,15 @@ describe('AppWebSocketEnableCommand', function (): void {
     it('forwards enable payloads to the gateway app websocket endpoint', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'binding' => [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'internal_host' => 'websocket.orbit',
                 'public_hosts' => ['ws.docs.test', 'events.docs.test'],
                 'allowed_origins' => ['https://docs.test'],
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:websocket enable', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:websocket enable', [
+            'instance' => 'docs',
             '--host' => ['ws.docs.test', 'events.docs.test'],
             '--json' => true,
         ]);
@@ -27,7 +27,7 @@ describe('AppWebSocketEnableCommand', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/apps/docs/websocket/enable'
+                && $request->url() === 'https://gateway.test/api/instances/docs/websocket/enable'
                 && $request->data() === [
                     'public_hosts' => ['ws.docs.test', 'events.docs.test'],
                 ]
@@ -45,15 +45,15 @@ describe('AppWebSocketEnableCommand', function (): void {
     it('renders enable responses in human mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'binding' => [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'internal_host' => 'websocket.orbit',
                 'public_hosts' => ['ws.docs.test'],
                 'allowed_origins' => ['https://docs.test'],
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:websocket enable', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:websocket enable', [
+            'instance' => 'docs',
             '--host' => ['ws.docs.test'],
         ]);
 
@@ -62,7 +62,7 @@ describe('AppWebSocketEnableCommand', function (): void {
             ->and($output)
             ->toContain('binding:')
             ->and($output)
-            ->toContain('  app: docs')
+            ->toContain('  instance: docs')
             ->and($output)
             ->toContain('  internal_host: websocket.orbit')
             ->and($output)
@@ -80,7 +80,7 @@ describe('AppWebSocketEnableCommand', function (): void {
     it('requires an app selector before sending gateway requests', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
-        [$exitCode, $output] = runCommand($this, 'app:websocket enable', [
+        [$exitCode, $output] = runCommand($this, 'instance:websocket enable', [
             '--json' => true,
         ]);
 
@@ -93,18 +93,18 @@ describe('AppWebSocketEnableCommand', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     });
 
     it('maps gateway failures into canonical CLI failures', function (): void {
         fakeGateway(fakeErrorEnvelope(
             'authorization_failed',
-            "This node is not authorized for 'app:write' on 'app-1'.",
-            ['missing_permission' => 'app:write', 'serving_node' => 'app-1'],
+            "This node is not authorized for 'instance:write' on 'app-1'.",
+            ['missing_permission' => 'instance:write', 'serving_node' => 'app-1'],
         ), 403);
 
-        [$exitCode, $output] = runCommand($this, 'app:websocket enable', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:websocket enable', [
+            'instance' => 'docs',
             '--host' => ['ws.docs.test'],
             '--json' => true,
         ]);
@@ -116,6 +116,6 @@ describe('AppWebSocketEnableCommand', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('authorization_failed')
             ->and($decoded['error']['meta']['missing_permission'])
-            ->toBe('app:write');
+            ->toBe('instance:write');
     });
 });

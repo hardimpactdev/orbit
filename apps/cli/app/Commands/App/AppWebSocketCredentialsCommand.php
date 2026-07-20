@@ -11,7 +11,7 @@ use Symfony\Component\Console\Input\InputOption;
 final class AppWebSocketCredentialsCommand extends AppGatewayCommand
 {
     #[\Override]
-    protected $name = 'app:websocket credentials';
+    protected $name = 'instance:websocket credentials';
 
     #[\Override]
     protected $description = 'Show WebSocket credentials for an app.';
@@ -21,20 +21,20 @@ final class AppWebSocketCredentialsCommand extends AppGatewayCommand
     {
         parent::configure();
 
-        $this->addArgument('app', InputArgument::OPTIONAL, 'App name or hostname');
+        $this->addArgument('instance', InputArgument::OPTIONAL, 'Instance selector (project.instance or hostname)');
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Output JSON');
     }
 
     public function handle(): int
     {
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('instance');
 
         if ($selector === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         try {
-            $response = $this->gatewayGet($this->apiAppPath($selector, '/websocket/credentials'));
+            $response = $this->gatewayGet($this->apiInstancePath($selector, '/websocket/credentials'));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -46,7 +46,7 @@ final class AppWebSocketCredentialsCommand extends AppGatewayCommand
         $credentials = $this->credentialsData($response);
 
         $this->line('credentials:');
-        $this->line('  app: '.$this->stringField($credentials, 'app'));
+        $this->line('  instance: '.$this->stringField($credentials, 'instance'));
         $this->line('  internal_host: '.$this->stringField($credentials, 'internal_host'));
         $this->renderList('public_hosts', $this->listField($credentials, 'public_hosts'));
         $this->renderList('allowed_origins', $this->listField($credentials, 'allowed_origins'));

@@ -18,7 +18,7 @@ final class WorkspaceRemoveCommand extends WorkspaceGatewayCommand
     #[\Override]
     protected $signature = 'workspace:remove
         {name? : Workspace name}
-        {--app= : Parent app slug or app.instance selector}
+        {--instance= : Instance selector (project.instance)}
         {--keep-files : Preserve workspace files on the app node}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
@@ -93,7 +93,7 @@ final class WorkspaceRemoveCommand extends WorkspaceGatewayCommand
     {
         return $this->gatewayDelete($this->pathWithQuery(
             '/api/workspaces/'.rawurlencode($name),
-            ['app' => $this->stringOption('app') ?? $this->appFromOrbitMarker()],
+            ['instance' => $this->stringOption('instance') ?? $this->instanceFromOrbitMarker()],
         ), [
             'keep_files' => $this->option('keep-files') === true,
             'destructive_consent' => true,

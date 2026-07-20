@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\WorkspaceLifecyclePhase;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\WorkspaceStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -43,7 +43,7 @@ function grantWorkspaceStepStoreAccess(Node $caller, Node $appNode, array $permi
     ]);
 }
 
-function create_workspace_step_store_instance(App $app, Node $node, string $instanceName): AppInstance
+function create_workspace_step_store_instance(Project $app, Node $node, string $instanceName): AppInstance
 {
     return AppInstance::factory()->create([
         'app_id' => $app->id,
@@ -62,7 +62,7 @@ describe('WorkspaceStepStoreController', function (): void {
         $caller = createWorkspaceStepStoreCallerNode();
         $node = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepStoreAccess($caller, $node);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'hauser',
             'node_id' => $node->id,
             'path' => '/home/nckrtl/apps/hauser',
@@ -80,7 +80,7 @@ describe('WorkspaceStepStoreController', function (): void {
                 'CONTENT_TYPE' => 'application/json',
             ],
             json_encode([
-                'app' => 'hauser.nmbp',
+                'instance' => 'hauser.nmbp',
                 'command' => $command,
             ], JSON_THROW_ON_ERROR),
         );
@@ -105,7 +105,7 @@ describe('WorkspaceStepStoreController', function (): void {
         $developmentNode = createTestAppHostNode(['name' => 'dev-host', 'tld' => 'dev']);
         grantWorkspaceStepStoreAccess($caller, $nmbpNode);
         grantWorkspaceStepStoreAccess($caller, $developmentNode, ['workspace:write', 'workspace:read']);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'hauser',
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/hauser',
@@ -132,7 +132,7 @@ describe('WorkspaceStepStoreController', function (): void {
                 'CONTENT_TYPE' => 'application/json',
             ],
             json_encode([
-                'app' => 'hauser.nmbp',
+                'instance' => 'hauser.nmbp',
                 'command' => 'composer install',
                 'timeout' => 600,
             ], JSON_THROW_ON_ERROR),
@@ -141,8 +141,8 @@ describe('WorkspaceStepStoreController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'added')
-            ->assertJsonPath('success.data.step.app', 'hauser')
-            ->assertJsonPath('success.data.step.app_instance', 'nmbp');
+            ->assertJsonPath('success.data.step.project', 'hauser')
+            ->assertJsonPath('success.data.step.instance', 'nmbp');
 
         $stored = WorkspaceStep::query()->sole();
 
@@ -153,7 +153,7 @@ describe('WorkspaceStepStoreController', function (): void {
 
         $developmentList = $this->call(
             'GET',
-            '/api/workspaces/steps/setup?app=hauser.development',
+            '/api/workspaces/steps/setup?instance=hauser.development',
             [],
             [],
             [],
@@ -170,7 +170,7 @@ describe('WorkspaceStepStoreController', function (): void {
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepStoreAccess($caller, $localNode);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'happie',
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/happie',
@@ -192,7 +192,7 @@ describe('WorkspaceStepStoreController', function (): void {
                 'CONTENT_TYPE' => 'application/json',
             ],
             json_encode([
-                'app' => 'happie.nmbp',
+                'instance' => 'happie.nmbp',
                 'command' => 'composer install',
                 'timeout' => 600,
             ], JSON_THROW_ON_ERROR),
@@ -201,7 +201,7 @@ describe('WorkspaceStepStoreController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'added')
-            ->assertJsonPath('success.data.step.app', 'happie');
+            ->assertJsonPath('success.data.step.project', 'happie');
 
         expect(WorkspaceStep::query()->sole()->app_instance_id)->toBe($instance->id);
     });
@@ -210,7 +210,7 @@ describe('WorkspaceStepStoreController', function (): void {
         $caller = createWorkspaceStepStoreCallerNode();
         $node = createTestAppHostNode();
         grantWorkspaceStepStoreAccess($caller, $node);
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $response = $this->call(
             'POST',
@@ -223,7 +223,7 @@ describe('WorkspaceStepStoreController', function (): void {
                 'CONTENT_TYPE' => 'application/json',
             ],
             json_encode([
-                'app' => 'docs',
+                'instance' => 'docs',
                 'command' => 'composer install',
                 'timeout' => 600,
             ], JSON_THROW_ON_ERROR),
@@ -232,8 +232,8 @@ describe('WorkspaceStepStoreController', function (): void {
         $response
             ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.field', 'app')
-            ->assertJsonPath('error.meta.reason', 'app_instance_required');
+            ->assertJsonPath('error.meta.field', 'instance')
+            ->assertJsonPath('error.meta.reason', 'instance_required');
 
         expect(WorkspaceStep::query()->count())->toBe(0);
     });
@@ -241,7 +241,7 @@ describe('WorkspaceStepStoreController', function (): void {
     it('rejects callers without workspace step write permission', function (): void {
         createWorkspaceStepStoreCallerNode(role: 'app-dev');
         $node = createTestAppHostNode();
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         $response = $this->call(
             'POST',
@@ -253,7 +253,7 @@ describe('WorkspaceStepStoreController', function (): void {
                 'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
                 'CONTENT_TYPE' => 'application/json',
             ],
-            json_encode(['app' => 'docs', 'command' => 'composer install'], JSON_THROW_ON_ERROR),
+            json_encode(['instance' => 'docs', 'command' => 'composer install'], JSON_THROW_ON_ERROR),
         );
 
         $response
@@ -268,7 +268,7 @@ describe('WorkspaceStepStoreController', function (): void {
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepStoreAccess($caller, $localNode);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/docs',
@@ -294,7 +294,11 @@ describe('WorkspaceStepStoreController', function (): void {
                 'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
                 'CONTENT_TYPE' => 'application/json',
             ],
-            json_encode(['app' => 'docs.nmbp', 'command' => 'composer install', 'timeout' => 0], JSON_THROW_ON_ERROR),
+            json_encode([
+                'instance' => 'docs.nmbp',
+                'command' => 'composer install',
+                'timeout' => 0,
+            ], JSON_THROW_ON_ERROR),
         );
         $anchor = $this->call(
             'POST',
@@ -306,7 +310,11 @@ describe('WorkspaceStepStoreController', function (): void {
                 'REMOTE_ADDR' => $caller->wireguard_address,
                 'CONTENT_TYPE' => 'application/json',
             ],
-            json_encode(['app' => 'docs.nmbp', 'command' => 'composer install', 'before' => 999], JSON_THROW_ON_ERROR),
+            json_encode([
+                'instance' => 'docs.nmbp',
+                'command' => 'composer install',
+                'before' => 999,
+            ], JSON_THROW_ON_ERROR),
         );
 
         $timeout->assertStatus(400)
@@ -320,7 +328,7 @@ describe('WorkspaceStepStoreController', function (): void {
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepStoreAccess($caller, $localNode);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'hauser',
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/hauser',
@@ -349,7 +357,7 @@ describe('WorkspaceStepStoreController', function (): void {
                 'CONTENT_TYPE' => 'application/json',
             ],
             json_encode([
-                'app' => 'hauser.nmbp',
+                'instance' => 'hauser.nmbp',
                 'command' => 'composer install',
                 'before' => $foreignStep->id,
             ], JSON_THROW_ON_ERROR),

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Models\App;
+use App\Models\Project;
 
 final readonly class FrankenPhpRuntimeConfigRenderer
 {
@@ -13,7 +13,7 @@ final readonly class FrankenPhpRuntimeConfigRenderer
         'max_idle_time 1h',
     ];
 
-    public function classic(App $app): ?string
+    public function classic(Project $app): ?string
     {
         $lines = $this->threadPoolLines($app);
 
@@ -24,7 +24,7 @@ final readonly class FrankenPhpRuntimeConfigRenderer
         return $this->render($lines);
     }
 
-    public function worker(App $app, string $workerFile, string|int $workers): string
+    public function worker(Project $app, string $workerFile, string|int $workers): string
     {
         return $this->render([
             ...$this->threadPoolLines($app),
@@ -35,7 +35,7 @@ final readonly class FrankenPhpRuntimeConfigRenderer
     /**
      * @return list<string>
      */
-    private function threadPoolLines(App $app): array
+    private function threadPoolLines(Project $app): array
     {
         $app->loadMissing('node.roleAssignments');
 

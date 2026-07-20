@@ -19,7 +19,7 @@ final class ScheduleLogsCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'schedule:logs
         {name? : Schedule name}
-        {--app= : Filter by app instance (app.instance; bare app only when unambiguous)}
+        {--instance= : Filter by instance (project.instance; bare project only when unambiguous)}
         {--node= : Filter by node scope}
         {--run= : Run history id}
         {--lines=100 : Number of stdout/stderr lines}
@@ -30,11 +30,11 @@ final class ScheduleLogsCommand extends GatewayCommand
 
     public function handle(): int
     {
-        if ($this->hasMutuallyExclusiveOptions('app', 'node')) {
+        if ($this->hasMutuallyExclusiveOptions('instance', 'node')) {
             return $this->renderFailure(
                 'validation_failed',
                 'The schedule filters are mutually exclusive.',
-                ['fields' => ['app', 'node']],
+                ['fields' => ['instance', 'node']],
             );
         }
 
@@ -62,7 +62,7 @@ final class ScheduleLogsCommand extends GatewayCommand
 
         try {
             $response = $this->gatewayGet('/api/schedules/'.rawurlencode($name).'/logs', $this->filledQuery([
-                'app' => $this->resolvedScheduleApp(),
+                'instance' => $this->resolvedScheduleInstance(),
                 'node' => $this->resolvedScheduleNode(),
                 'run' => $run,
                 'lines' => $lines,

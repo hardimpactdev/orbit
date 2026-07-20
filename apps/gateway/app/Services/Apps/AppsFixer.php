@@ -7,9 +7,9 @@ namespace App\Services\Apps;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Workspaces\WorkspacePlacement;
 use RuntimeException;
@@ -28,7 +28,7 @@ final readonly class AppsFixer
     /**
      * @return array<string, mixed>|null
      */
-    public function fix(App $app, DriftEntry $entry): ?array
+    public function fix(Project $app, DriftEntry $entry): ?array
     {
         $app->loadMissing('node');
         $node = $app->node;
@@ -51,7 +51,7 @@ final readonly class AppsFixer
     /**
      * @return array<string, mixed>|null
      */
-    public function fixInstance(App $app, AppInstance $instance, DriftEntry $entry): ?array
+    public function fixInstance(Project $app, AppInstance $instance, DriftEntry $entry): ?array
     {
         $node = $this->placement->nodeForInstance($instance);
 
@@ -106,7 +106,7 @@ final readonly class AppsFixer
      * @return array<string, mixed>|null
      */
     private function reapplyRuntimeConfig(
-        App $app,
+        Project $app,
         Node $node,
         DriftEntry $entry,
         ?AppInstance $instance = null,
@@ -156,7 +156,7 @@ final readonly class AppsFixer
      *
      * @return array<string, mixed>
      */
-    private function reapplyAppSecurity(App $app, Node $node, DriftEntry $entry): array
+    private function reapplyAppSecurity(Project $app, Node $node, DriftEntry $entry): array
     {
         $user = $this->appRuntimeUser->forApp($app);
         $home = $user === 'root' ? '/root' : "/home/{$user}";

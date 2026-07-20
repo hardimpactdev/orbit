@@ -7,9 +7,9 @@ namespace App\Actions\Apps;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
- * Coordinates destructive cleanup across every concrete instance of one logical app.
+ * Coordinates destructive cleanup across every concrete instance of one project.
  *
  * @mago-expect lint:cyclomatic-complexity
  * @mago-expect lint:kan-defect
@@ -42,7 +42,7 @@ final readonly class RemoveApp
 
     /**
      * @return array{
-     *     app: array<string, mixed>,
+     *     project: array<string, mixed>,
      *     result: array{action: string},
      *     cleanup: array{
      *         proxy_routes_removed: int,
@@ -55,7 +55,7 @@ final readonly class RemoveApp
      *     warnings: list<array<string, string>>
      * }
      */
-    public function handle(App $app): array
+    public function handle(Project $app): array
     {
         $app->loadMissing([
             'node',
@@ -137,17 +137,17 @@ final readonly class RemoveApp
                 $warnings[] = [
                     'code' => 'process.runtime_unit_extra',
                     'family' => 'process',
-                    'message' => "App runtime unit for '{$identity}' could not be removed during cleanup.",
+                    'message' => "Instance runtime unit for '{$identity}' could not be removed during cleanup.",
                     'next_command' => 'doctor --family=process --restore',
                 ];
             }
 
             if ($configOutcome === AppRuntimeArtifactRemovalOutcome::FailedRemaining) {
                 $warnings[] = [
-                    'code' => 'app.runtime_config_extra',
-                    'family' => 'app',
-                    'message' => "Managed app runtime configuration for '{$identity}' could not be removed during cleanup.",
-                    'next_command' => 'doctor --family=app --restore',
+                    'code' => 'instance.runtime_config_extra',
+                    'family' => 'instance',
+                    'message' => "Managed instance runtime configuration for '{$identity}' could not be removed during cleanup.",
+                    'next_command' => 'doctor --family=instance --restore',
                 ];
             }
 
@@ -164,16 +164,16 @@ final readonly class RemoveApp
 
             if (! $cleanup->successful()) {
                 $warnings[] = [
-                    'code' => 'app.cleanup_failed',
-                    'family' => 'app',
-                    'message' => "App non-runtime artifacts for '{$identity}' could not be removed during cleanup.",
-                    'next_command' => 'doctor --family=app --restore',
+                    'code' => 'instance.cleanup_failed',
+                    'family' => 'instance',
+                    'message' => "Instance non-runtime artifacts for '{$identity}' could not be removed during cleanup.",
+                    'next_command' => 'doctor --family=instance --restore',
                 ];
             }
         }
 
         return [
-            'app' => $appPayload,
+            'project' => $appPayload,
             'result' => ['action' => 'removed'],
             'cleanup' => [
                 'proxy_routes_removed' => count($proxyRouteIds),
@@ -200,7 +200,7 @@ final readonly class RemoveApp
     /**
      * @return array<string, mixed>
      */
-    private function appPayload(App $app): array
+    private function appPayload(Project $app): array
     {
         return [
             'name' => $app->name,
@@ -217,9 +217,9 @@ final readonly class RemoveApp
     }
 
     /**
-     * @return list<array{app: App, identity: string, node: Node, process_cleanup_scripts: list<string>, runtime_slug: string}>
+     * @return list<array{app: Project, identity: string, node: Node, process_cleanup_scripts: list<string>, runtime_slug: string}>
      */
-    private function cleanupTargets(App $app): array
+    private function cleanupTargets(Project $app): array
     {
         $targets = [];
         $instances = $app->instances;
@@ -303,7 +303,7 @@ final readonly class RemoveApp
     /**
      * @return list<array{code: string, family: string, message: string, next_command: string}>
      */
-    private function unresolvedOrbitCleanupWarnings(App $app): array
+    private function unresolvedOrbitCleanupWarnings(Project $app): array
     {
         $unresolvedIdentities = [];
 
@@ -327,20 +327,20 @@ final readonly class RemoveApp
         $identities = implode(', ', $unresolvedIdentities);
 
         return [[
-            'code' => 'app.cleanup_failed',
-            'family' => 'app',
-            'message' => "Local cleanup was skipped for Orbit app instances with unresolved node placement: {$identities}.",
-            'next_command' => 'doctor --family=app --restore',
+            'code' => 'instance.cleanup_failed',
+            'family' => 'instance',
+            'message' => "Local cleanup was skipped for Orbit instances with unresolved node placement: {$identities}.",
+            'next_command' => 'doctor --family=instance --restore',
         ]];
     }
 
     /**
      * @return array<string, true>
      */
-    private function occupiedAppPlacements(App $removedApp): array
+    private function occupiedAppPlacements(Project $removedApp): array
     {
         $occupiedPlacements = [];
-        $otherApps = App::query()
+        $otherApps = Project::query()
             ->whereKeyNot($removedApp->id)
             ->with(['node', 'instances'])
             ->get();
@@ -373,8 +373,8 @@ final readonly class RemoveApp
      * @param  array<string, true>  $occupiedAppPlacements
      */
     private function shouldRemoveAppPath(
-        App $removedApp,
-        App $runtimeApp,
+        Project $removedApp,
+        Project $runtimeApp,
         Node $node,
         array $occupiedAppPlacements,
     ): bool {
@@ -395,8 +395,11 @@ final readonly class RemoveApp
     /**
      * @param  list<string>  $processCleanupScripts
      */
-    private function renderNonRuntimeCleanupScript(App $app, array $processCleanupScripts, bool $removeAppPath): string
-    {
+    private function renderNonRuntimeCleanupScript(
+        Project $app,
+        array $processCleanupScripts,
+        bool $removeAppPath,
+    ): string {
         $domain = parse_url($app->url(), PHP_URL_HOST) ?: $app->name;
         $commands = [
             'sudo rm -f '.escapeshellarg("/etc/caddy/sites/{$domain}.caddy"),

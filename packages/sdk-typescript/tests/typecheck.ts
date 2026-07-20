@@ -19,19 +19,12 @@ await client.GET('/nodes', {
     },
 });
 
-await client.GET('/apps', {
-    params: {
-        query: {
-            environment: 'production',
-            node: 'node-a',
-        },
-    },
-});
+await client.GET('/projects', {});
 
 await client.GET('/processes', {
     params: {
         query: {
-            app: 'docs',
+            instance: 'docs.production',
             node: 'node-a',
             workspace: 'orbit',
         },
@@ -41,25 +34,25 @@ await client.GET('/processes', {
 await client.GET('/tools', {
     params: {
         query: {
-            app: 'docs',
+            instance: 'docs.production',
             node: 'node-a',
             self: true,
         },
     },
 });
 
-await client.GET('/apps/{app}/instances', {
+await client.GET('/projects/{project}/instances', {
     params: {
         path: {
-            app: 'docs',
+            project: 'docs',
         },
     },
 });
 
-await client.POST('/apps/{app}/websocket/enable', {
+await client.POST('/instances/{instance}/websocket/enable', {
     params: {
         path: {
-            app: 'docs',
+            instance: 'docs.production',
         },
     },
 });

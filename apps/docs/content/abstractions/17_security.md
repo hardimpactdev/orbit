@@ -16,7 +16,7 @@ owning family, then optionally narrow to one exact key:
 
 ```bash
 orbit doctor --family=node --key=node.security.public_ssh_deny
-orbit doctor --family=app --key=app.security.runtime_container_isolation
+orbit doctor --family=instance --key=app.security.runtime_container_isolation
 orbit doctor --family=workspace --key=workspace.security.fs_permissions
 ```
 

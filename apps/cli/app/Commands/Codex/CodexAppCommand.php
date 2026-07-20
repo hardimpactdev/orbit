@@ -17,12 +17,12 @@ final class CodexAppCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'codex:app
         {action? : Codex action: add, remove, or list}
-        {app? : App name or hostname}
+        {project? : Project name or hostname}
         {--node= : Target node running Codex App}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Register app projects in Codex App on a target node.';
+    protected $description = 'Register Orbit projects in Codex App on a target node.';
 
     public function handle(): int
     {
@@ -31,7 +31,7 @@ final class CodexAppCommand extends GatewayCommand
         }
 
         $action = $this->stringArgument('action');
-        $app = $this->stringArgument('app');
+        $project = $this->stringArgument('project');
         $node = $this->stringOption('node');
 
         if ($action === null || ! in_array($action, ['add', 'remove', 'list'], strict: true)) {
@@ -42,18 +42,18 @@ final class CodexAppCommand extends GatewayCommand
             return $this->failValidation('node', 'Node is required.');
         }
 
-        if (in_array($action, ['add', 'remove'], strict: true) && $app === null) {
-            return $this->failValidation('app', 'App is required.');
+        if (in_array($action, ['add', 'remove'], strict: true) && $project === null) {
+            return $this->failValidation('project', 'Project is required.');
         }
 
-        if ($action === 'list' && $app !== null) {
-            return $this->failValidation('app', 'App must be omitted when listing Codex App projects.');
+        if ($action === 'list' && $project !== null) {
+            return $this->failValidation('project', 'Project must be omitted when listing Codex App projects.');
         }
 
         try {
             $response = match ($action) {
-                'add' => $this->gatewayPost('/api/codex/apps/'.rawurlencode($app), ['node' => $node]),
-                'remove' => $this->gatewayDelete('/api/codex/apps/'.rawurlencode($app), ['node' => $node]),
+                'add' => $this->gatewayPost('/api/codex/apps/'.rawurlencode($project), ['node' => $node]),
+                'remove' => $this->gatewayDelete('/api/codex/apps/'.rawurlencode($project), ['node' => $node]),
                 'list' => $this->gatewayGet('/api/codex/projects', ['node' => $node]),
             };
         } catch (GatewayApiException $exception) {

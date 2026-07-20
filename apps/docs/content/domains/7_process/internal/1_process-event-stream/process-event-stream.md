@@ -16,7 +16,7 @@
 
 **Prerequisites:**
 - The CLI or API caller can reach the Orbit gateway.
-- The current node identity is authorized on the selected node or app instance serving node to inspect the app-instance, workspace, node, or process scope.
+- The current node identity is authorized on the selected node or instance serving node to inspect the instance, workspace, node, or process scope.
 
 ## Behavior
 
@@ -41,7 +41,7 @@ These rules limit what the stream observes and how it interacts with process sta
 
 These flags scope the stream to the selected runtime context.
 
-- `--app=<app.instance>`: filter by concrete app instance. A bare logical-app slug is accepted only when that app has exactly one instance; ambiguity fails with `validation_failed`, `field=app`, and `reason=app_instance_required`.
+- `--instance=<project.instance>`: filter by concrete instance. A bare project slug is accepted only when that project has exactly one instance; ambiguity fails with `validation_failed`, `field=instance`, and `reason=instance_required`.
 - `--workspace=<workspace>`: filter by workspace.
 - `--node=<node>`: filter by node.
 - `--process=<name>`: filter by process slug.

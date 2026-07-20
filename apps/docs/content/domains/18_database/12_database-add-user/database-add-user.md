@@ -12,7 +12,7 @@ orbit database:add-user {connection} --service=<process> --database=<name> --use
 ```
 
 Use this command when you already have a process-owned MySQL service and need a
-database connection record for an app instance or workspace.
+database connection record for an instance or workspace.
 
 ## Arguments and options
 

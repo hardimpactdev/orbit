@@ -10,11 +10,12 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceSetupResolutionFailed;
-use App\Models\App;
 use App\Models\AppInstance;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use RuntimeException;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -69,6 +70,7 @@ describe('explicit path adoption', function (): void {
                     document_root: 'public',
                     domain: 'happie.nmbp',
                 ),
+                'agent_ide_config' => ['adapter' => 'polyscope'],
             ]);
 
         app()->instance(
@@ -109,7 +111,7 @@ describe('explicit path adoption', function (): void {
             ->toBeTrue();
     });
 
-    it('rejects the parent app root as an explicit workspace path', function (): void {
+    it('rejects the parent project root as an explicit workspace path', function (): void {
         workspaceSetupResolverApp([
             'name' => 'dngdmt',
             'path' => '/home/nckrtl/apps/dngdmt',
@@ -120,12 +122,12 @@ describe('explicit path adoption', function (): void {
             appName: 'dngdmt',
             path: '/home/nckrtl/apps/dngdmt',
         ))
-            ->toThrow(WorkspaceSetupResolutionFailed::class, 'app root');
+            ->toThrow(WorkspaceSetupResolutionFailed::class, 'project root');
     });
 
     it('rejects production placement before adapter lookup or workspace registration', function (): void {
         $node = createTestAppHostNode(role: 'app-prod');
-        $app = App::factory()->for($node, 'node')->create([
+        $app = Project::factory()->for($node, 'node')->create([
             'name' => 'site',
             'environment' => 'production',
             'agent_ide_config' => ['adapter' => 'polyscope'],
@@ -141,9 +143,9 @@ describe('explicit path adoption', function (): void {
         app()->instance(
             AgentIdeWorkspacePathResolver::class,
             new class implements AgentIdeWorkspacePathResolver {
-                public function resolve(string $adapter, App $app, string $absolutePath): ?WorkspacePathResolution
+                public function resolve(string $adapter, Project $app, string $absolutePath): ?WorkspacePathResolution
                 {
-                    throw new \RuntimeException('Production workspace adapter lookup must not run.');
+                    throw new RuntimeException('Production workspace adapter lookup must not run.');
                 }
             },
         );
@@ -169,11 +171,11 @@ describe('explicit path adoption', function (): void {
     });
 });
 
-function workspaceSetupResolverApp(array $overrides = []): App
+function workspaceSetupResolverApp(array $overrides = []): Project
 {
     $node = createTestAppHostNode(role: 'app-dev');
 
-    $app = App::factory()
+    $app = Project::factory()
         ->for($node, 'node')
         ->create($overrides);
 
@@ -197,7 +199,7 @@ final readonly class WorkspaceSetupTargetResolverFakePathResolver implements Age
         private WorkspacePathResolution $resolution,
     ) {}
 
-    public function resolve(string $adapter, App $app, string $absolutePath): ?WorkspacePathResolution
+    public function resolve(string $adapter, Project $app, string $absolutePath): ?WorkspacePathResolution
     {
         if ($adapter !== 'polyscope') {
             return null;

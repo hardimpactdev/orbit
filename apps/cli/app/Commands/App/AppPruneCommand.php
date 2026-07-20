@@ -14,21 +14,21 @@ final class AppPruneCommand extends AppGatewayCommand
     use WithStepTree;
 
     #[\Override]
-    protected $signature = 'app:prune
-        {app? : App name or hostname}
+    protected $signature = 'instance:prune
+        {instance? : Instance selector (project.instance or hostname)}
         {--dry-run : Preview stale workspaces without removing}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Remove stale workspaces for an app.';
+    protected $description = 'Remove stale workspaces for an instance.';
 
     public function handle(): int
     {
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('instance');
 
         if ($selector === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         $dryRun = $this->option('dry-run') === true;
@@ -67,7 +67,7 @@ final class AppPruneCommand extends AppGatewayCommand
         }
 
         $outcome = $this->runStepOperation(
-            $dryRun ? 'Previewing App Workspace Prune' : 'Pruning App Workspaces',
+            $dryRun ? 'Previewing Instance Workspace Prune' : 'Pruning Instance Workspaces',
             $this->phases($response, $dryRun),
             work: static fn (): bool => true,
             doneFooter: $dryRun
@@ -135,8 +135,8 @@ final class AppPruneCommand extends AppGatewayCommand
      */
     private function pruneWorkspaces(string $selector, bool $dryRun): array
     {
-        return $this->gatewayPost('/api/apps/prune', [
-            'app' => $selector,
+        return $this->gatewayPost('/api/instances/prune', [
+            'instance' => $selector,
             'dry_run' => $dryRun,
         ]);
     }

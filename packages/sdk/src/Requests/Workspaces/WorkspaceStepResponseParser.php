@@ -22,7 +22,7 @@ final class WorkspaceStepResponseParser
 
     /**
      * @param  array<string, mixed>  $step
-     * @return array{id: int, app: string, app_instance: string, phase: string, order: int, command: string, timeout_seconds: int}
+     * @return array{id: int, project: string, instance: string, phase: string, order: int, command: string, timeout_seconds: int}
      */
     public static function parseStep(array $step): array
     {
@@ -33,8 +33,8 @@ final class WorkspaceStepResponseParser
 
         return [
             'id' => $fields->integer('id'),
-            'app' => $fields->nonEmptyString('app'),
-            'app_instance' => $fields->nonEmptyString('app_instance'),
+            'project' => $fields->nonEmptyString('project'),
+            'instance' => $fields->nonEmptyString('instance'),
             'phase' => $fields->nonEmptyString('phase'),
             'order' => $fields->integer('order'),
             'command' => $fields->nonEmptyString('command'),

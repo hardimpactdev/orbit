@@ -8,10 +8,10 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\WorkspaceLifecyclePhase;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
@@ -68,7 +68,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
 
-        $app = App::factory()->for($targetNode, 'node')->create([
+        $app = Project::factory()->for($targetNode, 'node')->create([
             'name' => 'docs',
             'runtime' => 'static',
         ]);
@@ -100,7 +100,7 @@ describe('WorkspaceRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/workspaces/feature-api?app=docs.development',
+            '/api/workspaces/feature-api?instance=docs.development',
             [
                 'keep_files' => true,
                 'destructive_consent' => true,
@@ -129,7 +129,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
         ]);
@@ -184,7 +184,7 @@ describe('WorkspaceRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/workspaces/feature-api?app=docs',
+            '/api/workspaces/feature-api?instance=docs',
             [
                 'keep_files' => false,
                 'destructive_consent' => true,
@@ -226,7 +226,7 @@ describe('WorkspaceRemoveController', function (): void {
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceRemoveAccess($caller, $localNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'happie',
             'node_id' => $canonicalNode->id,
             'domain' => 'happie.test',
@@ -275,7 +275,7 @@ describe('WorkspaceRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/workspaces/recipes?app=happie.nmbp',
+            '/api/workspaces/recipes?instance=happie.nmbp',
             [
                 'keep_files' => true,
                 'destructive_consent' => true,
@@ -288,8 +288,8 @@ describe('WorkspaceRemoveController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.name', 'recipes')
-            ->assertJsonPath('success.data.app', 'happie')
-            ->assertJsonPath('success.data.app_instance', 'nmbp')
+            ->assertJsonPath('success.data.project', 'happie')
+            ->assertJsonPath('success.data.instance', 'nmbp')
             ->assertJsonPath('success.data.proxy_routes_removed', 1)
             ->assertJsonPath('success.meta.kept_files', true);
 
@@ -312,7 +312,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $sharedNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $sharedNode->id,
             'runtime' => 'static',
@@ -368,7 +368,7 @@ describe('WorkspaceRemoveController', function (): void {
         $this
             ->call(
                 'DELETE',
-                '/api/workspaces/feature-api?app=docs.development',
+                '/api/workspaces/feature-api?instance=docs.development',
                 [
                     'keep_files' => true,
                     'destructive_consent' => true,
@@ -406,7 +406,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $appNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/srv/docs-development',
@@ -469,7 +469,7 @@ describe('WorkspaceRemoveController', function (): void {
         $this
             ->call(
                 'DELETE',
-                '/api/workspaces/feature-api?app=docs.development',
+                '/api/workspaces/feature-api?instance=docs.development',
                 [
                     'keep_files' => true,
                     'destructive_consent' => true,
@@ -509,7 +509,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $appNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
             'runtime' => 'static',
@@ -545,7 +545,7 @@ describe('WorkspaceRemoveController', function (): void {
         $this
             ->call(
                 'DELETE',
-                '/api/workspaces/feature-api?app=docs.development',
+                '/api/workspaces/feature-api?instance=docs.development',
                 [
                     'keep_files' => true,
                     'destructive_consent' => true,
@@ -577,7 +577,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
             'runtime' => 'static',
@@ -602,7 +602,7 @@ describe('WorkspaceRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/workspaces/feature-api?app=docs',
+            '/api/workspaces/feature-api?instance=docs',
             [
                 'keep_files' => false,
                 'destructive_consent' => true,
@@ -636,7 +636,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
             'runtime' => 'php',
@@ -665,7 +665,7 @@ describe('WorkspaceRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/workspaces/feature-api?app=docs',
+            '/api/workspaces/feature-api?instance=docs',
             [
                 'keep_files' => false,
                 'destructive_consent' => true,
@@ -695,7 +695,7 @@ describe('WorkspaceRemoveController', function (): void {
             'status' => 'active',
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
         ]);
@@ -708,7 +708,7 @@ describe('WorkspaceRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/workspaces/feature-api?app=docs',
+            '/api/workspaces/feature-api?instance=docs',
             [],
             [],
             [],
@@ -730,7 +730,7 @@ describe('WorkspaceRemoveController', function (): void {
             'status' => 'active',
         ]);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
         ]);
@@ -743,7 +743,7 @@ describe('WorkspaceRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/workspaces/feature-api?app=docs',
+            '/api/workspaces/feature-api?instance=docs',
             [
                 'destructive_consent' => true,
             ],

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Enums\Processes;
 
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Nodes\NodeHostPaths;
 
 enum ProcessRuntime: string
@@ -15,7 +15,7 @@ enum ProcessRuntime: string
     case Launchd = 'launchd';
     case Systemd = 'systemd';
 
-    public static function defaultForApp(App $app): self
+    public static function defaultForApp(Project $app): self
     {
         if ($app->node instanceof Node && NodeHostPaths::isMacosPlatform($app->node->platform)) {
             return self::Launchd;

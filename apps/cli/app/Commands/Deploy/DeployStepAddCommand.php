@@ -12,7 +12,7 @@ final class DeployStepAddCommand extends DeployGatewayCommand
 
     #[\Override]
     protected $signature = 'deploy:step-add
-        {app? : Production app-instance selector}
+        {instance? : Instance selector (project.instance)}
         {deploy_command? : Shell command to run}
         {--title= : Display title}
         {--order= : Positive insertion order}
@@ -21,17 +21,17 @@ final class DeployStepAddCommand extends DeployGatewayCommand
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Add a deployment pipeline step for a production app instance.';
+    protected $description = 'Add a deployment pipeline step for an instance.';
 
     public function handle(): int
     {
-        $app = $this->requiredArgument('app', 'app', 'App and command are required.');
+        $instanceSelector = $this->requiredArgument('instance', 'instance', 'Instance and command are required.');
 
-        if (is_int($app)) {
-            return $app;
+        if (is_int($instanceSelector)) {
+            return $instanceSelector;
         }
 
-        $command = $this->requiredArgument('deploy_command', 'command', 'App and command are required.');
+        $command = $this->requiredArgument('deploy_command', 'command', 'Instance and command are required.');
 
         if (is_int($command)) {
             return $command;
@@ -44,7 +44,7 @@ final class DeployStepAddCommand extends DeployGatewayCommand
         }
 
         try {
-            $response = $this->gatewayPost('/api/deploy/steps', $this->payload($app, $command));
+            $response = $this->gatewayPost('/api/deploy/steps', $this->payload($instanceSelector, $command));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -53,23 +53,23 @@ final class DeployStepAddCommand extends DeployGatewayCommand
             return $this->renderSuccess($response);
         }
 
-        return $this->renderHumanStep($response, $app);
+        return $this->renderHumanStep($response, $instanceSelector);
     }
 
     /**
      * @param  array<string, mixed>  $response
      */
-    private function renderHumanStep(array $response, string $app): int
+    private function renderHumanStep(array $response, string $instanceSelector): int
     {
         $step = $this->stepData($response);
 
         $id = $this->stepString($step, 'id');
         $title = $this->stepString($step, 'title');
-        $appName = $this->stepString($step, 'app') ?? $app;
-        $appInstance = $this->stepString($step, 'app_instance');
-        $target = $appInstance === null ? $appName : "{$appName}.{$appInstance}";
+        $project = $this->stepString($step, 'project');
+        $instance = $this->stepString($step, 'instance');
+        $target = $project !== null && $instance !== null ? "{$project}.{$instance}" : $instanceSelector;
 
-        $this->line("Added deployment step #{$id} '{$title}' to app instance '{$target}'.");
+        $this->line("Added deployment step #{$id} '{$title}' to instance '{$target}'.");
 
         $command = $this->stepString($step, 'command');
 
@@ -136,10 +136,10 @@ final class DeployStepAddCommand extends DeployGatewayCommand
     /**
      * @return array<string, mixed>
      */
-    private function payload(string $app, string $command): array
+    private function payload(string $instanceSelector, string $command): array
     {
         return $this->filledPayload([
-            'app' => $app,
+            'instance' => $instanceSelector,
             'command' => $command,
             'title' => $this->stringOption('title'),
             'order' => $this->positiveIntOption('order'),

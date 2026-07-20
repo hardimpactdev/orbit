@@ -5,10 +5,10 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\Access\NodePermissionPresets;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -53,7 +53,7 @@ describe('ProcessDestroyController', function (): void {
         $caller = createProcessDestroyCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessDestroyAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -63,7 +63,7 @@ describe('ProcessDestroyController', function (): void {
             'DELETE',
             '/api/processes/vite',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'destructive_consent' => true,
             ],
             [],
@@ -76,8 +76,8 @@ describe('ProcessDestroyController', function (): void {
             ->assertJsonPath('success.data.process', [
                 'name' => 'vite',
                 'node' => $appNode->name,
-                'app' => 'docs',
-                'app_instance' => 'development',
+                'project' => 'docs',
+                'instance' => 'development',
                 'workspace' => null,
             ])
             ->assertJsonPath('success.data.removed_runtime_units', ['orbit_docs_development_main_vite'])
@@ -118,8 +118,8 @@ describe('ProcessDestroyController', function (): void {
             ->assertJsonPath('success.data.process', [
                 'name' => 'opencode-server',
                 'node' => 'app-1',
-                'app' => null,
-                'app_instance' => null,
+                'project' => null,
+                'instance' => null,
                 'workspace' => null,
             ])
             ->assertJsonPath('success.data.removed_runtime_units', ['opencode-server']);
@@ -131,7 +131,7 @@ describe('ProcessDestroyController', function (): void {
         $caller = createProcessDestroyCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessDestroyAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs', 'path' => '/srv/docs-feature']);
         Process::factory()
             ->forOwner($workspace)
@@ -147,7 +147,7 @@ describe('ProcessDestroyController', function (): void {
             'DELETE',
             '/api/processes/worker',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'workspace' => 'feature-docs',
                 'destructive_consent' => true,
             ],
@@ -161,8 +161,8 @@ describe('ProcessDestroyController', function (): void {
             ->assertJsonPath('success.data.process', [
                 'name' => 'worker',
                 'node' => $appNode->name,
-                'app' => 'docs',
-                'app_instance' => 'development',
+                'project' => 'docs',
+                'instance' => 'development',
                 'workspace' => 'feature-docs',
             ])
             ->assertJsonPath('success.data.removed_runtime_units', ['orbit_docs_development_feature-docs_worker']);
@@ -174,7 +174,7 @@ describe('ProcessDestroyController', function (): void {
         $caller = createProcessDestroyCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessDestroyAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $workspace = Workspace::factory()->for($app)->create([
             'name' => 'feature-docs',
             'path' => '/srv/docs-feature',
@@ -194,7 +194,7 @@ describe('ProcessDestroyController', function (): void {
             'DELETE',
             '/api/processes/worker',
             [
-                'app' => 'missing',
+                'instance' => 'missing',
                 'workspace' => 'feature-docs',
                 'destructive_consent' => true,
             ],
@@ -206,8 +206,8 @@ describe('ProcessDestroyController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.message', "App 'missing' not found or not visible.")
-            ->assertJsonPath('error.meta.field', 'app')
+            ->assertJsonPath('error.message', "Instance 'missing' not found or not visible.")
+            ->assertJsonPath('error.meta.field', 'instance')
             ->assertJsonPath('error.meta.value', 'missing');
 
         expect($workspace->processes()->where('name', 'worker')->exists())
@@ -227,7 +227,7 @@ describe('ProcessDestroyController', function (): void {
         if ($grantAccess) {
             grantProcessDestroyAccess($caller, $appNode);
         }
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 
@@ -245,13 +245,13 @@ describe('ProcessDestroyController', function (): void {
 
         expect(Process::query()->where('name', 'vite')->exists())->toBeTrue();
     })->with([
-        'missing consent' => [['app' => 'docs'], true, 422, 'validation_failed'],
-        'unauthorized' => [['app' => 'docs', 'destructive_consent' => true], false, 403, 'authorization_failed'],
+        'missing consent' => [['instance' => 'docs'], true, 422, 'validation_failed'],
+        'unauthorized' => [['instance' => 'docs', 'destructive_consent' => true], false, 403, 'authorization_failed'],
     ]);
 
     it('denies app callers without a process remove grant before deleting intent', function (): void {
         $caller = createProcessDestroyCallerNode(role: 'app-dev');
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 
@@ -259,7 +259,7 @@ describe('ProcessDestroyController', function (): void {
             'DELETE',
             '/api/processes/vite',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'destructive_consent' => true,
             ],
             [],
@@ -277,8 +277,8 @@ describe('ProcessDestroyController', function (): void {
     it('lets app-dev self grants remove app-owned process intent on their own node only', function (): void {
         $caller = createProcessDestroyCallerNode(role: 'app-dev');
         $otherNode = createTestAppHostNode(['name' => 'app-2']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
-        $hiddenApp = App::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        $hiddenApp = Project::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         Process::factory()->forOwner($hiddenApp)->create(['name' => 'queue']);
         grantProcessDestroyAccess(
@@ -294,7 +294,7 @@ describe('ProcessDestroyController', function (): void {
             'DELETE',
             '/api/processes/vite',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'destructive_consent' => true,
             ],
             [],
@@ -310,7 +310,7 @@ describe('ProcessDestroyController', function (): void {
             'DELETE',
             '/api/processes/queue',
             [
-                'app' => 'hidden',
+                'instance' => 'hidden',
                 'destructive_consent' => true,
             ],
             [],
@@ -333,7 +333,7 @@ describe('ProcessDestroyController', function (): void {
     it('returns process not found without cleanup', function (): void {
         createProcessDestroyCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         AppInstance::factory()->for($app)->create([
             'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $appNode->id),
         ]);
@@ -343,7 +343,7 @@ describe('ProcessDestroyController', function (): void {
             'DELETE',
             '/api/processes/vite',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'destructive_consent' => true,
             ],
             [],

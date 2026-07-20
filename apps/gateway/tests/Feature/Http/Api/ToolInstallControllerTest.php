@@ -601,6 +601,7 @@ describe('ToolInstallController', function (): void {
     it('rejects runtime and instance options for tool installs before side effects', function (
         array $payload,
         string $field,
+        ?string $reason,
     ): void {
         $caller = createToolInstallApiCallerNode();
         $node = Node::factory()->create(['name' => 'app-install-api-1', 'status' => 'active']);
@@ -624,13 +625,18 @@ describe('ToolInstallController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.field', $field)
-            ->assertJsonPath('error.meta.reason', 'unsupported_field');
+            ->assertJsonPath('error.meta.field', $field);
+
+        if ($reason === null) {
+            $response->assertJsonMissingPath('error.meta.reason');
+        } else {
+            $response->assertJsonPath('error.meta.reason', $reason);
+        }
 
         expect(NodeTool::query()->count())->toBe(0)->and($shell->scripts)->toBe([]);
     })->with([
-        'runtime' => [['runtime' => 'docker'], 'runtime'],
-        'instance' => [['instance' => 'php-cli:8.5'], 'instance'],
+        'runtime' => [['runtime' => 'docker'], 'runtime', 'unsupported_field'],
+        'instance' => [['instance' => 'php-cli:8.5'], 'instance', null],
     ]);
 
     it('rejects database and cache services as tool installs before side effects', function (string $tool): void {

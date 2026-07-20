@@ -37,17 +37,17 @@ final class ProcessDestroyController implements Loggable
         }
 
         $nodeName = $this->optionalString($request, 'node');
-        $appName = $this->optionalString($request, 'app');
+        $appName = $this->optionalString($request, 'instance');
         $workspaceName = $this->optionalString($request, 'workspace');
 
         if ($nodeName !== null && ($appName !== null || $workspaceName !== null)) {
             return $this->error(
                 'validation_failed',
-                'A node context cannot be combined with app or workspace context.',
+                'A node context cannot be combined with instance or workspace context.',
                 [
                     'field' => 'context',
                     'node' => $nodeName,
-                    'app' => $appName,
+                    'instance' => $appName,
                     'workspace' => $workspaceName,
                 ],
                 422,
@@ -57,8 +57,8 @@ final class ProcessDestroyController implements Loggable
         if ($nodeName === null && $appName === null && $workspaceName === null) {
             return $this->error(
                 'validation_failed',
-                'A node, app, or workspace context is required.',
-                ['field' => 'app'],
+                'A node, instance, or workspace context is required.',
+                ['field' => 'instance'],
                 422,
             );
         }
@@ -183,7 +183,7 @@ final class ProcessDestroyController implements Loggable
     {
         return [
             'node' => $this->optionalString(request(), 'node'),
-            'app' => $this->optionalString(request(), 'app'),
+            'instance' => $this->optionalString(request(), 'instance'),
             'workspace' => $this->optionalString(request(), 'workspace'),
         ];
     }

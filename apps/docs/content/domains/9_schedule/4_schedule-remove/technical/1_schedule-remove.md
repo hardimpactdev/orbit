@@ -1,4 +1,4 @@
-# Technical Contract: `orbit schedule:remove [name] [--app=<app>] [--node=<node>] [--force] [--json]`
+# Technical Contract: `orbit schedule:remove [name] [--instance=<project.instance>] [--node=<node>] [--force] [--json]`
 
 [Back to public `schedule-remove` documentation.](../schedule-remove.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit schedule:remove [name] [--app=<app>] [--node=<node>] [--force] [--json]
+orbit schedule:remove [name] [--instance=<project.instance>] [--node=<node>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` or interactive schedule data table | `Required in non-interactive mode.` | `Never.` | `None.` | Existing visible schedule slug. |
-| `app` | `--app` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare logical app is shorthand only when exactly one eligible instance is visible. |
+| `app` | `--instance` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or node the caller may manage. |
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
@@ -37,9 +37,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Schedule Removal Rules
 
-- Resolves the schedule by name and optional concrete app-instance or node
+- Resolves the schedule by name and optional concrete instance or node
   disambiguation from gateway schedule configuration.
-- Rejects ambiguous bare app selectors before destructive consent is forwarded
+- Rejects ambiguous bare project selectors before destructive consent is forwarded
   and before deletion.
 - Fails before side effects when no visible schedule matches.
 - Deletes the schedule row from the gateway database. Subsequent scheduler
@@ -57,7 +57,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`schedule-remove` must not remove app code, app-instance process definitions, nodes,
+`schedule-remove` must not remove app code, instance process definitions, nodes,
 proxy routes, firewall rules, DNS records, target-node artifacts, or scripts.
 An optional reachability warning may describe node state after the write, but
 must not imply remote cleanup.
@@ -73,7 +73,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
-| App instance required | No eligible instance exists for a bare logical app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
+| Instance required | No eligible instance exists for a bare project, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 
 ## Doctor Relationship

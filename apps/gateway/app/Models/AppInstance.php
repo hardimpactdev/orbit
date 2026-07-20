@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Override;
 
 /**
  * @property int $id
@@ -23,12 +24,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property AppInstanceDriver $driver
  * @property AppInstanceDriverConfigData|null $driver_config
  * @property AppInstanceRuntimeRequirementsData|null $runtime_requirements
+ * @property array<string, mixed>|null $agent_ide_config
  * @property list<string>|null $deploy_warmup_paths
  * @property bool $worker_enabled
  * @property array<string, mixed>|null $worker_config
  * @property string|null $latest_deployment_status
  * @property int|null $latest_deployment_run_id
- * @property-read App $app
+ * @property-read Project $project
+ * @property-read Project $app Private storage compatibility relation.
  * @property-read Collection<int, AppInstanceRuntimeMount> $runtimeMounts
  * @property-read Collection<int, DatabaseConnection> $databaseConnections
  * @property-read Collection<int, DeployStep> $deploySteps
@@ -44,13 +47,14 @@ class AppInstance extends Model
     /** @use HasFactory<AppInstanceFactory> */
     use HasFactory;
 
-    #[\Override]
+    #[Override]
     protected $fillable = [
         'app_id',
         'name',
         'driver',
         'driver_config',
         'runtime_requirements',
+        'agent_ide_config',
         'deploy_warmup_paths',
         'worker_enabled',
         'worker_config',
@@ -58,19 +62,20 @@ class AppInstance extends Model
         'latest_deployment_run_id',
     ];
 
-    #[\Override]
+    #[Override]
     protected $attributes = [
         'driver' => 'orbit',
         'worker_enabled' => false,
     ];
 
-    #[\Override]
+    #[Override]
     protected function casts(): array
     {
         return [
             'driver' => AppInstanceDriver::class,
             'driver_config' => AppInstanceDriverConfigData::class,
             'runtime_requirements' => AppInstanceRuntimeRequirementsData::class,
+            'agent_ide_config' => 'array',
             'deploy_warmup_paths' => 'array',
             'worker_enabled' => 'boolean',
             'worker_config' => 'array',
@@ -78,11 +83,22 @@ class AppInstance extends Model
     }
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return BelongsTo<Project, $this>
+     */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class, 'app_id');
+    }
+
+    /**
+     * Private storage compatibility relation for code paths not yet projected
+     * through the public project vocabulary.
+     *
+     * @return BelongsTo<Project, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->project();
     }
 
     /**

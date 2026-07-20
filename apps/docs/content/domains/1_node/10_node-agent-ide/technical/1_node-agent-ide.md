@@ -109,22 +109,22 @@ is invalid at node scope.
 `node:agent-ide` is a pure configuration write. Apps and current workspaces
 resolve their effective agent IDE per-event at consumption time using the
 current inheritance chain (`app → node → none`); the architecture reserves a
-future workspace-level override slot above app scope. The writer of the node
+future workspace-level override slot above instance scope. The writer of the node
 default
 does not push a notification to consumers. A change to the node default is
 naturally picked up at the next consumer-side resolution event. Workspace
 cleanup is not part of node-default writes: pruning stale workspaces is an
-app-scoped operation owned by `app:prune` and the explicit app-level cleanup
-path in `app:agent-ide`.
+instance-scoped operation owned by `instance:prune` and the explicit instance-level cleanup
+path in `instance:agent-ide`.
 
 `node:agent-ide` must not:
 - Create an agent IDE session.
 - Grant node access or alter node transport.
 - Override the agent IDE settings configured at the app level.
 - SSH into the target node.
-- Trigger downstream session restart or app-level invalidation.
+- Trigger downstream session restart or instance-level invalidation.
 - Notify running agent-IDE sessions, restart processes on the node, invalidate
-  cached app-level or workspace-level overrides, or emit
+  cached instance-level or workspace-level overrides, or emit
   `success.meta.warnings[]` for "downstream apps still using the previous adapter".
 - Remove or prune workspaces for apps that inherit the node default.
 - Partially mutate app or workspace state.

@@ -21,19 +21,19 @@ it('resolves to GET /api/processes', function (): void {
 });
 
 it('serializes node, app, and workspace filters when provided', function (): void {
-    $request = new ListProcessesRequest(node: 'app-1', app: 'docs', workspace: 'feature-docs');
+    $request = new ListProcessesRequest(node: 'app-1', instance: 'docs', workspace: 'feature-docs');
 
     expect($request->query()->all())->toBe([
         'node' => 'app-1',
-        'app' => 'docs',
+        'instance' => 'docs',
         'workspace' => 'feature-docs',
     ]);
 });
 
 it('omits null filters from the query', function (): void {
-    $request = new ListProcessesRequest(app: 'docs');
+    $request = new ListProcessesRequest(instance: 'docs');
 
-    expect($request->query()->all())->toBe(['app' => 'docs']);
+    expect($request->query()->all())->toBe(['instance' => 'docs']);
 });
 
 it('returns a ProcessListResponse DTO with context and processes', function (): void {
@@ -41,7 +41,7 @@ it('returns a ProcessListResponse DTO with context and processes', function (): 
         ListProcessesRequest::class => MockResponse::make([
             'success' => [
                 'data' => [
-                    'context' => ['node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+                    'context' => ['node' => 'app-1', 'instance' => 'docs', 'workspace' => null],
                     'processes' => [
                         ['name' => 'queue', 'command' => 'php artisan queue:work'],
                     ],
@@ -56,7 +56,7 @@ it('returns a ProcessListResponse DTO with context and processes', function (): 
     $dto = $connector->send(new ListProcessesRequest)->dto();
 
     expect($dto)->toBeInstanceOf(ProcessListResponse::class);
-    expect($dto->context)->toBe(['node' => 'app-1', 'app' => 'docs', 'workspace' => null]);
+    expect($dto->context)->toBe(['node' => 'app-1', 'instance' => 'docs', 'workspace' => null]);
     expect($dto->processes)->toBe([
         ['name' => 'queue', 'command' => 'php artisan queue:work'],
     ]);

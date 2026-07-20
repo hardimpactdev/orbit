@@ -11,11 +11,11 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process as OrbitProcess;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
@@ -23,6 +23,7 @@ use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Runtime\DockerCommandBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\ResponseSequence;
 use Illuminate\Support\Facades\Http;
 use Tests\Fakes\SiteCertificateInstallerFake;
 
@@ -32,7 +33,7 @@ beforeEach(function (): void {});
 
 afterEach(function (): void {});
 
-function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
+function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): Project
 {
     $node = Node::factory()->create([
         'status' => 'active',
@@ -45,7 +46,7 @@ function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
         'status' => 'active',
     ]);
 
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -66,7 +67,7 @@ function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
     return $app;
 }
 
-function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
+function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): Project
 {
     $ingress = Node::factory()
         ->ingress()
@@ -93,7 +94,7 @@ function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
         ],
     ]);
 
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'environment' => 'production',
         'path' => '/home/docs/app',
@@ -324,7 +325,7 @@ it('returns process.runtime_unit_missing when installing the container fails', f
         ->toBeTrue();
 });
 
-it('returns app.security.system_user when production runtime user resolution fails before creating the container', function (): void {
+it('returns instance.security.system_user when production runtime user resolution fails before creating the container', function (): void {
     $app = makeAppOnProdNode(AppRuntimeKind::Php);
 
     $shell = new EnactAppRuntimeRecordingShell(
@@ -341,15 +342,15 @@ it('returns app.security.system_user when production runtime user resolution fai
 
     $drift = app(EnactAppRuntime::class)->handle($app);
 
-    $systemUser = collect($drift)->firstWhere('code', 'app.security.system_user');
+    $systemUser = collect($drift)->firstWhere('code', 'instance.security.system_user');
 
     expect($systemUser)
         ->not
         ->toBeNull()
         ->and($systemUser['family'])
-        ->toBe('app')
+        ->toBe('instance')
         ->and($systemUser['next_command'])
-        ->toBe('doctor --family=app --restore')
+        ->toBe('doctor --family=instance --restore')
         ->and($systemUser['message'])
         ->toContain("Production runtime user 'docs'")
         ->and(collect($drift)->firstWhere('code', 'process.runtime_unit_missing'))
@@ -466,19 +467,19 @@ it('returns app.php_version_unavailable when the selected FrankenPHP image is mi
 
     $drift = app(EnactAppRuntime::class)->handle($app);
 
-    $phpUnavailable = collect($drift)->firstWhere('code', 'app.php_version_unavailable');
+    $phpUnavailable = collect($drift)->firstWhere('code', 'instance.php_version_unavailable');
 
     // The image-unavailable warning is preserved, but EnsureAppProxyRoute
-    // still runs so the route row exists and app doctor's
-    // `doctor --family=app --restore` has something to converge
+    // still runs so the route row exists and instance doctor's
+    // `doctor --family=instance --restore` has something to converge
     // against once the image is made available on the node.
     expect($phpUnavailable)
         ->not
         ->toBeNull()
         ->and($phpUnavailable['family'])
-        ->toBe('app')
+        ->toBe('instance')
         ->and($phpUnavailable['next_command'])
-        ->toBe('doctor --family=app --restore')
+        ->toBe('doctor --family=instance --restore')
         ->and($phpUnavailable['message'])
         ->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
         ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())
@@ -584,7 +585,7 @@ it(
 
         $drift = app(EnactAppRuntime::class)->handle($app);
 
-        $phpUnavailable = collect($drift)->firstWhere('code', 'app.php_version_unavailable');
+        $phpUnavailable = collect($drift)->firstWhere('code', 'instance.php_version_unavailable');
 
         expect($phpUnavailable)
             ->not
@@ -635,7 +636,7 @@ it('returns process.runtime_unit_mismatch when recreating a drifted container fa
 });
 
 it('throws when the app has no owning node', function (): void {
-    $app = App::factory()->make([
+    $app = Project::factory()->make([
         'name' => 'orphan',
         'path' => '/home/orbit/apps/orphan',
         'php_version' => '8.5',
@@ -647,7 +648,7 @@ it('throws when the app has no owning node', function (): void {
     expect(fn () => app(EnactAppRuntime::class)->handle($app))->toThrow(RuntimeException::class);
 });
 
-function expectAppFrankenPhpRuntimeProcess(App $app): void
+function expectAppFrankenPhpRuntimeProcess(Project $app): void
 {
     $instance = $app->instances()->sole();
     $process = OrbitProcess::query()
@@ -681,7 +682,7 @@ function expectAppFrankenPhpRuntimeProcess(App $app): void
         ]);
 }
 
-function enact_app_runtime_caddy_sequence(string $domain): \Illuminate\Http\Client\ResponseSequence
+function enact_app_runtime_caddy_sequence(string $domain): ResponseSequence
 {
     $sequence = Http::sequence()
         ->push(enact_app_runtime_agent_response('caddy-config.read-global', [

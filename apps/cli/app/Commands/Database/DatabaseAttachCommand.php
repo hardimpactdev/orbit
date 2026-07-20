@@ -11,14 +11,13 @@ final class DatabaseAttachCommand extends DatabaseGatewayCommand
     #[\Override]
     protected $signature = 'database:attach
         {connection? : Database connection slug}
-        {--app= : App selector}
-        {--instance= : App instance selector}
+        {--instance= : Instance selector (project.instance)}
         {--workspace= : Workspace selector}
         {--env-prefix=DB : Environment variable prefix}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Attach a database connection to an app instance or workspace target.';
+    protected $description = 'Attach a database connection to an instance or workspace target.';
 
     public function handle(): int
     {
@@ -79,12 +78,11 @@ final class DatabaseAttachCommand extends DatabaseGatewayCommand
      */
     private function humanTarget(): array
     {
-        $app = $this->stringOption('app');
         $instance = $this->stringOption('instance');
         $workspace = $this->stringOption('workspace');
 
-        if ($app !== null && $instance !== null) {
-            return ['app_instance', "{$app}.{$instance}"];
+        if ($instance !== null) {
+            return ['instance', $instance];
         }
 
         return ['workspace', (string) $workspace];

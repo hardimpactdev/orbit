@@ -132,7 +132,7 @@
                             "filters": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "project": {
                                   "type": [
                                     "string",
                                     "null"
@@ -161,7 +161,7 @@
                                 }
                               },
                               "required": [
-                                "app",
+                                "project",
                                 "node",
                                 "effect",
                                 "correlation",
@@ -770,7 +770,7 @@
                                 },
                                 {
                                   "type": "string",
-                                  "const": "app"
+                                  "const": "instance"
                                 }
                               ],
                               "minItems": 2,
@@ -834,7 +834,7 @@
         }
       }
     },
-    "/apps/{app}/agent-ide": {
+    "/instances/{instance}/agent-ide": {
       "post": {
         "operationId": "appAgentIde",
         "tags": [
@@ -842,7 +842,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -874,7 +874,7 @@
                         "data": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "instance": {
                               "type": "object",
                               "additionalProperties": {}
                             },
@@ -928,7 +928,7 @@
                             }
                           },
                           "required": [
-                            "app",
+                            "instance",
                             "agent_ide",
                             "cleanup",
                             "action",
@@ -960,7 +960,7 @@
                       "properties": {
                         "code": {
                           "type": "string",
-                          "const": "app.not_found"
+                          "const": "instance.not_found"
                         },
                         "message": {
                           "type": "string"
@@ -968,12 +968,12 @@
                         "meta": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "instance": {
                               "type": "string"
                             }
                           },
                           "required": [
-                            "app"
+                            "instance"
                           ]
                         }
                       },
@@ -997,7 +997,27 @@
         }
       }
     },
-    "/apps/{app}/instances": {
+    "/instances": {
+      "get": {
+        "operationId": "appInstance.all",
+        "tags": [
+          "AppInstance"
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{project}/instances": {
       "get": {
         "operationId": "appInstance.index",
         "tags": [
@@ -1005,7 +1025,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -1019,101 +1039,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "app": {
-                              "type": "string"
-                            },
-                            "instances": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            }
-                          },
-                          "required": [
-                            "app",
-                            "instances"
-                          ]
-                        },
-                        "meta": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "object",
-                              "properties": {
-                                "count": {
-                                  "type": "integer",
-                                  "minimum": 0
-                                }
-                              },
-                              "required": [
-                                "count"
-                              ]
-                            }
-                          ]
-                        }
-                      },
-                      "required": [
-                        "data",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "app.not_found"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "app": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "app"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "type": "object"
                 }
               }
             }
@@ -1127,7 +1053,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -1149,7 +1075,7 @@
         }
       }
     },
-    "/apps/{app}/instances/{instance}": {
+    "/projects/{project}/instances/{instance}": {
       "get": {
         "operationId": "appInstance.show",
         "tags": [
@@ -1157,7 +1083,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -1193,7 +1119,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -1223,7 +1149,7 @@
         }
       }
     },
-    "/apps": {
+    "/projects": {
       "get": {
         "operationId": "appList",
         "tags": [
@@ -1240,7 +1166,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The compact logical app inventory.",
+            "description": "The compact project inventory.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1252,7 +1178,7 @@
                         "data": {
                           "type": "object",
                           "properties": {
-                            "apps": {
+                            "projects": {
                               "type": "array",
                               "items": {
                                 "type": "object",
@@ -1302,7 +1228,7 @@
                             }
                           },
                           "required": [
-                            "apps"
+                            "projects"
                           ]
                         },
                         "meta": {
@@ -1417,7 +1343,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "This node is not authorized to read the app registry."
+                              "const": "This node is not authorized to read the project registry."
                             },
                             "meta": {
                               "type": "object",
@@ -1428,7 +1354,7 @@
                                 },
                                 "missing_permission": {
                                   "type": "string",
-                                  "const": "app:read"
+                                  "const": "project:read"
                                 }
                               },
                               "required": [
@@ -1503,7 +1429,7 @@
         }
       }
     },
-    "/apps/prune": {
+    "/instances/prune": {
       "post": {
         "operationId": "appPrune",
         "tags": [
@@ -1523,7 +1449,10 @@
                         "data": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "project": {
+                              "type": "string"
+                            },
+                            "instance": {
                               "type": "string"
                             },
                             "stale_workspaces": {
@@ -1534,7 +1463,8 @@
                             }
                           },
                           "required": [
-                            "app",
+                            "project",
+                            "instance",
                             "stale_workspaces",
                             "dry_run"
                           ]
@@ -1576,7 +1506,7 @@
                       "properties": {
                         "code": {
                           "type": "string",
-                          "const": "app.not_found"
+                          "const": "instance.not_found"
                         },
                         "message": {
                           "type": "string"
@@ -1584,12 +1514,12 @@
                         "meta": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "instance": {
                               "type": "string"
                             }
                           },
                           "required": [
-                            "app"
+                            "instance"
                           ]
                         }
                       },
@@ -1621,7 +1551,7 @@
                           "properties": {
                             "code": {
                               "type": "string",
-                              "const": "app.agent_ide_query_failed"
+                              "const": "instance.agent_ide_query_failed"
                             },
                             "message": {
                               "type": "string"
@@ -1629,12 +1559,12 @@
                             "meta": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "instance": {
                                   "type": "string"
                                 }
                               },
                               "required": [
-                                "app"
+                                "instance"
                               ]
                             }
                           },
@@ -1657,21 +1587,21 @@
                           "properties": {
                             "code": {
                               "type": "string",
-                              "const": "app.no_agent_ide_adapter"
+                              "const": "instance.no_agent_ide_adapter"
                             },
                             "message": {
                               "type": "string",
-                              "const": "No agent IDE adapter configured for this app."
+                              "const": "No agent IDE adapter configured for this instance."
                             },
                             "meta": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "instance": {
                                   "type": "string"
                                 }
                               },
                               "required": [
-                                "app"
+                                "instance"
                               ]
                             }
                           },
@@ -1769,7 +1699,7 @@
         }
       }
     },
-    "/apps/register": {
+    "/instances/register": {
       "post": {
         "operationId": "appRegister",
         "tags": [
@@ -1885,7 +1815,7 @@
         }
       }
     },
-    "/apps/{app}": {
+    "/projects/{project}": {
       "delete": {
         "operationId": "appRemove",
         "tags": [
@@ -1893,7 +1823,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -1915,7 +1845,7 @@
                         "data": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "project": {
                               "type": "object",
                               "properties": {
                                 "name": {
@@ -2021,7 +1951,7 @@
                             }
                           },
                           "required": [
-                            "app",
+                            "project",
                             "result",
                             "cleanup"
                           ]
@@ -2063,7 +1993,7 @@
                       "properties": {
                         "code": {
                           "type": "string",
-                          "const": "app.not_found"
+                          "const": "project.not_found"
                         },
                         "message": {
                           "type": "string"
@@ -2071,12 +2001,12 @@
                         "meta": {
                           "type": "object",
                           "properties": {
-                            "name": {
+                            "project": {
                               "type": "string"
                             }
                           },
                           "required": [
-                            "name"
+                            "project"
                           ]
                         }
                       },
@@ -2110,7 +2040,7 @@
                         },
                         "message": {
                           "type": "string",
-                          "const": "Use --force to remove this app."
+                          "const": "Use --force to remove this project."
                         },
                         "meta": {
                           "type": "object",
@@ -2148,7 +2078,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -2170,112 +2100,18 @@
                         "data": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "project": {
                               "type": "object",
                               "additionalProperties": {}
                             },
                             "details": {
                               "type": "object",
                               "properties": {
-                                "domain": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ]
-                                },
-                                "document_root": {
-                                  "type": "string"
-                                },
-                                "node": {
-                                  "type": "object",
-                                  "properties": {
-                                    "name": {
-                                      "type": "string"
-                                    },
-                                    "host": {
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "name",
-                                    "host"
-                                  ]
-                                },
-                                "agent_ide": {
-                                  "type": "object",
-                                  "properties": {
-                                    "adapter": {
-                                      "type": "string"
-                                    },
-                                    "inherited_from": {
-                                      "type": "string"
-                                    },
-                                    "workspace_discovery": {
-                                      "type": [
-                                        "string",
-                                        "null"
-                                      ],
-                                      "enum": [
-                                        "available",
-                                        "unsupported",
-                                        null
-                                      ]
-                                    }
-                                  },
-                                  "required": [
-                                    "adapter",
-                                    "inherited_from",
-                                    "workspace_discovery"
-                                  ]
-                                },
                                 "dependency_audits": {
                                   "type": "string"
                                 },
                                 "instances": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "object",
-                                    "properties": {
-                                      "name": {
-                                        "type": "string"
-                                      },
-                                      "driver": {
-                                        "type": "string"
-                                      },
-                                      "node": {
-                                        "type": [
-                                          "string",
-                                          "null"
-                                        ]
-                                      },
-                                      "url": {
-                                        "type": [
-                                          "string",
-                                          "null"
-                                        ]
-                                      },
-                                      "workspaces": {
-                                        "type": "array",
-                                        "items": {}
-                                      }
-                                    },
-                                    "required": [
-                                      "name",
-                                      "driver",
-                                      "node",
-                                      "url",
-                                      "workspaces"
-                                    ]
-                                  }
-                                },
-                                "workspaces": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string"
-                                  },
-                                  "minItems": 0,
-                                  "maxItems": 0,
-                                  "additionalItems": false
+                                  "type": "string"
                                 },
                                 "processes": {
                                   "type": "array",
@@ -2285,7 +2121,7 @@
                                       "name": {
                                         "type": "string"
                                       },
-                                      "app_instance": {
+                                      "instance": {
                                         "type": [
                                           "string",
                                           "null"
@@ -2297,59 +2133,26 @@
                                     },
                                     "required": [
                                       "name",
-                                      "app_instance",
+                                      "instance",
                                       "runtime"
                                     ]
                                   }
                                 },
                                 "routes": {
                                   "type": "array",
-                                  "prefixItems": [
-                                    {
-                                      "type": "object",
-                                      "properties": {
-                                        "host": {
-                                          "type": [
-                                            "string",
-                                            "null"
-                                          ]
-                                        },
-                                        "kind": {
-                                          "type": "string",
-                                          "const": "app"
-                                        },
-                                        "owner": {
-                                          "type": "string",
-                                          "const": "app"
-                                        }
-                                      },
-                                      "required": [
-                                        "host",
-                                        "kind",
-                                        "owner"
-                                      ]
-                                    }
-                                  ],
-                                  "minItems": 1,
-                                  "maxItems": 1,
-                                  "additionalItems": false
+                                  "items": {}
                                 }
                               },
                               "required": [
-                                "domain",
-                                "document_root",
-                                "node",
-                                "agent_ide",
                                 "dependency_audits",
                                 "instances",
-                                "workspaces",
                                 "processes",
                                 "routes"
                               ]
                             }
                           },
                           "required": [
-                            "app",
+                            "project",
                             "details"
                           ]
                         }
@@ -2383,21 +2186,25 @@
                               "const": "authorization_failed"
                             },
                             "message": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "string",
-                                  "enum": [
-                                    "This node is not authorized to read this app."
-                                  ]
-                                }
-                              ]
+                              "type": "string",
+                              "const": "This node is not authorized to read this project."
                             },
                             "meta": {
-                              "type": "array",
-                              "items": {}
+                              "type": "object",
+                              "properties": {
+                                "reason": {
+                                  "type": "string",
+                                  "const": "missing_permission"
+                                },
+                                "missing_permission": {
+                                  "type": "string",
+                                  "const": "project:read"
+                                }
+                              },
+                              "required": [
+                                "reason",
+                                "missing_permission"
+                              ]
                             }
                           },
                           "required": [
@@ -2457,7 +2264,7 @@
                       "properties": {
                         "code": {
                           "type": "string",
-                          "const": "app.not_found"
+                          "const": "project.not_found"
                         },
                         "message": {
                           "type": "string"
@@ -2465,12 +2272,12 @@
                         "meta": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "project": {
                               "type": "string"
                             }
                           },
                           "required": [
-                            "app"
+                            "project"
                           ]
                         }
                       },
@@ -2491,7 +2298,7 @@
         }
       }
     },
-    "/apps/{app}/root": {
+    "/instances/{instance}/root": {
       "post": {
         "operationId": "appRoot",
         "tags": [
@@ -2499,7 +2306,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -2530,7 +2337,7 @@
                       "properties": {
                         "code": {
                           "type": "string",
-                          "const": "app.not_found"
+                          "const": "instance.not_found"
                         },
                         "message": {
                           "type": "string"
@@ -2538,12 +2345,12 @@
                         "meta": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "instance": {
                               "type": "string"
                             }
                           },
                           "required": [
-                            "app"
+                            "instance"
                           ]
                         }
                       },
@@ -2609,7 +2416,7 @@
         }
       }
     },
-    "/apps/{app}/mounts": {
+    "/instances/{instance}/mounts": {
       "get": {
         "operationId": "appRuntimeMount.index",
         "tags": [
@@ -2617,7 +2424,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -2645,7 +2452,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -2673,7 +2480,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -2695,7 +2502,7 @@
         }
       }
     },
-    "/apps/{app}/setup": {
+    "/instances/{instance}/setup": {
       "post": {
         "operationId": "appSetup",
         "tags": [
@@ -2703,7 +2510,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -2713,7 +2520,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The app instance setup result.",
+            "description": "The instance setup result.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2725,10 +2532,10 @@
                         "data": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "project": {
                               "type": "string"
                             },
-                            "app_instance": {
+                            "instance": {
                               "type": "string"
                             },
                             "node": {
@@ -2768,8 +2575,8 @@
                             }
                           },
                           "required": [
-                            "app",
-                            "app_instance",
+                            "project",
+                            "instance",
                             "node",
                             "path",
                             "url",
@@ -2796,7 +2603,7 @@
             }
           },
           "403": {
-            "description": "The caller is not authorized to set up the app instance.",
+            "description": "The caller is not authorized to set up the instance.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2831,7 +2638,7 @@
             }
           },
           "404": {
-            "description": "The selected app was not found.",
+            "description": "The selected instance was not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2866,7 +2673,7 @@
             }
           },
           "422": {
-            "description": "The app instance selector or setup operation is invalid.",
+            "description": "The instance selector or setup operation is invalid.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2903,7 +2710,7 @@
         }
       }
     },
-    "/apps/{app}/setup-steps": {
+    "/instances/{instance}/setup-steps": {
       "get": {
         "operationId": "appSetupStep.index",
         "tags": [
@@ -2911,7 +2718,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -2939,7 +2746,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -2961,7 +2768,7 @@
         }
       }
     },
-    "/apps/{app}/setup-steps/{step}": {
+    "/instances/{instance}/setup-steps/{step}": {
       "delete": {
         "operationId": "appSetupStep.destroy",
         "tags": [
@@ -2969,7 +2776,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -2999,7 +2806,7 @@
         }
       }
     },
-    "/apps/{app}/websocket/enable": {
+    "/instances/{instance}/websocket/enable": {
       "post": {
         "operationId": "appWebSocket.enable",
         "tags": [
@@ -3007,7 +2814,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -3030,97 +2837,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "binding": {
-                              "type": "object",
-                              "properties": {
-                                "app": {
-                                  "type": "string"
-                                },
-                                "internal_host": {
-                                  "type": "string",
-                                  "const": "websocket.orbit"
-                                },
-                                "public_hosts": {
-                                  "type": "array",
-                                  "items": {}
-                                },
-                                "allowed_origins": {
-                                  "type": "array",
-                                  "items": {}
-                                }
-                              },
-                              "required": [
-                                "app",
-                                "internal_host",
-                                "public_hosts",
-                                "allowed_origins"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "binding"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "data"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "app.not_found"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "app": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "app"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "type": "object"
                 }
               }
             }
@@ -3131,7 +2848,7 @@
         }
       }
     },
-    "/apps/{app}/websocket/disable": {
+    "/instances/{instance}/websocket/disable": {
       "post": {
         "operationId": "appWebSocket.disable",
         "tags": [
@@ -3139,7 +2856,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -3153,140 +2870,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "binding": {
-                              "type": "object",
-                              "properties": {
-                                "app": {
-                                  "type": "string"
-                                },
-                                "internal_host": {
-                                  "type": "string",
-                                  "const": "websocket.orbit"
-                                },
-                                "public_hosts": {
-                                  "type": "array",
-                                  "items": {}
-                                },
-                                "allowed_origins": {
-                                  "type": "array",
-                                  "items": {}
-                                }
-                              },
-                              "required": [
-                                "app",
-                                "internal_host",
-                                "public_hosts",
-                                "allowed_origins"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "binding"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "data"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "app.not_found"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "app": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "app"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "websocket.binding_missing"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "app": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "app"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "type": "object"
                 }
               }
             }
@@ -3294,7 +2878,7 @@
         }
       }
     },
-    "/apps/{app}/websocket/credentials": {
+    "/instances/{instance}/websocket/credentials": {
       "get": {
         "operationId": "appWebSocket.credentials",
         "tags": [
@@ -3302,7 +2886,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -3316,152 +2900,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "credentials": {
-                              "type": "object",
-                              "properties": {
-                                "app": {
-                                  "type": "string"
-                                },
-                                "internal_host": {
-                                  "type": "string",
-                                  "const": "websocket.orbit"
-                                },
-                                "public_hosts": {
-                                  "type": "array",
-                                  "items": {}
-                                },
-                                "allowed_origins": {
-                                  "type": "array",
-                                  "items": {}
-                                },
-                                "reverb_app_id": {
-                                  "type": "string"
-                                },
-                                "reverb_app_key": {
-                                  "type": "string"
-                                },
-                                "reverb_app_secret": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "app",
-                                "internal_host",
-                                "public_hosts",
-                                "allowed_origins",
-                                "reverb_app_id",
-                                "reverb_app_key",
-                                "reverb_app_secret"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "credentials"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "data"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "app.not_found"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "app": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "app"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "websocket.binding_missing"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "app": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "app"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "type": "object"
                 }
               }
             }
@@ -3469,7 +2908,7 @@
         }
       }
     },
-    "/apps/{app}/worker": {
+    "/instances/{instance}/worker": {
       "get": {
         "operationId": "appWorker.show",
         "tags": [
@@ -3477,7 +2916,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -3501,10 +2940,10 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "worker_enabled": {
@@ -3522,8 +2961,8 @@
                                 }
                               },
                               "required": [
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "worker_enabled",
                                 "worker_config",
                                 "changed"
@@ -3548,10 +2987,10 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "worker_enabled": {
@@ -3569,8 +3008,8 @@
                                 }
                               },
                               "required": [
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "worker_enabled",
                                 "worker_config",
                                 "changed"
@@ -3595,10 +3034,10 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "worker_enabled": {
@@ -3613,8 +3052,8 @@
                                 }
                               },
                               "required": [
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "worker_enabled",
                                 "worker_config"
                               ]
@@ -3736,7 +3175,7 @@
                       "properties": {
                         "code": {
                           "type": "string",
-                          "const": "app.not_found"
+                          "const": "instance.not_found"
                         },
                         "message": {
                           "type": "string"
@@ -3744,12 +3183,12 @@
                         "meta": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "instance": {
                               "type": "string"
                             }
                           },
                           "required": [
-                            "app"
+                            "instance"
                           ]
                         }
                       },
@@ -3787,7 +3226,7 @@
                                 {
                                   "type": "string",
                                   "enum": [
-                                    "app.worker_readiness_failed"
+                                    "instance.worker_readiness_failed"
                                   ]
                                 }
                               ]
@@ -3829,24 +3268,24 @@
                               "properties": {
                                 "field": {
                                   "type": "string",
-                                  "const": "app"
+                                  "const": "instance"
                                 },
                                 "reason": {
                                   "type": "string",
-                                  "const": "app_instance_unavailable"
+                                  "const": "instance_unavailable"
                                 },
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 }
                               },
                               "required": [
                                 "field",
                                 "reason",
-                                "app",
-                                "app_instance"
+                                "project",
+                                "instance"
                               ]
                             }
                           },
@@ -3896,7 +3335,7 @@
         }
       }
     },
-    "/apps/{app}/worker/enable": {
+    "/instances/{instance}/worker/enable": {
       "post": {
         "operationId": "appWorker.enable",
         "tags": [
@@ -3904,7 +3343,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -3928,10 +3367,10 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "worker_enabled": {
@@ -3949,8 +3388,8 @@
                                 }
                               },
                               "required": [
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "worker_enabled",
                                 "worker_config",
                                 "changed"
@@ -3975,10 +3414,10 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "worker_enabled": {
@@ -3996,8 +3435,8 @@
                                 }
                               },
                               "required": [
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "worker_enabled",
                                 "worker_config",
                                 "changed"
@@ -4022,10 +3461,10 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "worker_enabled": {
@@ -4040,8 +3479,8 @@
                                 }
                               },
                               "required": [
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "worker_enabled",
                                 "worker_config"
                               ]
@@ -4163,7 +3602,7 @@
                       "properties": {
                         "code": {
                           "type": "string",
-                          "const": "app.not_found"
+                          "const": "instance.not_found"
                         },
                         "message": {
                           "type": "string"
@@ -4171,12 +3610,12 @@
                         "meta": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "instance": {
                               "type": "string"
                             }
                           },
                           "required": [
-                            "app"
+                            "instance"
                           ]
                         }
                       },
@@ -4214,7 +3653,7 @@
                                 {
                                   "type": "string",
                                   "enum": [
-                                    "app.worker_readiness_failed"
+                                    "instance.worker_readiness_failed"
                                   ]
                                 }
                               ]
@@ -4256,24 +3695,24 @@
                               "properties": {
                                 "field": {
                                   "type": "string",
-                                  "const": "app"
+                                  "const": "instance"
                                 },
                                 "reason": {
                                   "type": "string",
-                                  "const": "app_instance_unavailable"
+                                  "const": "instance_unavailable"
                                 },
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 }
                               },
                               "required": [
                                 "field",
                                 "reason",
-                                "app",
-                                "app_instance"
+                                "project",
+                                "instance"
                               ]
                             }
                           },
@@ -4323,7 +3762,7 @@
         }
       }
     },
-    "/apps/{app}/worker/disable": {
+    "/instances/{instance}/worker/disable": {
       "post": {
         "operationId": "appWorker.disable",
         "tags": [
@@ -4331,7 +3770,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "path",
             "required": true,
             "schema": {
@@ -4355,10 +3794,10 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "worker_enabled": {
@@ -4376,8 +3815,8 @@
                                 }
                               },
                               "required": [
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "worker_enabled",
                                 "worker_config",
                                 "changed"
@@ -4402,10 +3841,10 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "worker_enabled": {
@@ -4423,8 +3862,8 @@
                                 }
                               },
                               "required": [
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "worker_enabled",
                                 "worker_config",
                                 "changed"
@@ -4449,10 +3888,10 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "worker_enabled": {
@@ -4467,8 +3906,8 @@
                                 }
                               },
                               "required": [
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "worker_enabled",
                                 "worker_config"
                               ]
@@ -4590,7 +4029,7 @@
                       "properties": {
                         "code": {
                           "type": "string",
-                          "const": "app.not_found"
+                          "const": "instance.not_found"
                         },
                         "message": {
                           "type": "string"
@@ -4598,12 +4037,12 @@
                         "meta": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "instance": {
                               "type": "string"
                             }
                           },
                           "required": [
-                            "app"
+                            "instance"
                           ]
                         }
                       },
@@ -4641,7 +4080,7 @@
                                 {
                                   "type": "string",
                                   "enum": [
-                                    "app.worker_readiness_failed"
+                                    "instance.worker_readiness_failed"
                                   ]
                                 }
                               ]
@@ -4683,24 +4122,24 @@
                               "properties": {
                                 "field": {
                                   "type": "string",
-                                  "const": "app"
+                                  "const": "instance"
                                 },
                                 "reason": {
                                   "type": "string",
-                                  "const": "app_instance_unavailable"
+                                  "const": "instance_unavailable"
                                 },
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 }
                               },
                               "required": [
                                 "field",
                                 "reason",
-                                "app",
-                                "app_instance"
+                                "project",
+                                "instance"
                               ]
                             }
                           },
@@ -4863,7 +4302,7 @@
                               "type": "array",
                               "items": {}
                             },
-                            "apps": {
+                            "projects": {
                               "type": "array",
                               "items": {}
                             },
@@ -4878,7 +4317,7 @@
                           },
                           "required": [
                             "nodes",
-                            "apps",
+                            "projects",
                             "processes",
                             "tools"
                           ]
@@ -5170,7 +4609,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "query",
             "schema": {
               "type": "string"
@@ -5379,17 +4818,17 @@
                                         "limit_capped"
                                       ]
                                     },
-                                    "app": {
+                                    "project": {
                                       "type": "string"
                                     },
-                                    "app_instance": {
+                                    "instance": {
                                       "type": "string"
                                     }
                                   },
                                   "required": [
                                     "pagination",
-                                    "app",
-                                    "app_instance"
+                                    "project",
+                                    "instance"
                                   ]
                                 }
                               ]
@@ -5477,7 +4916,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "App is required."
+                              "const": "Instance is required."
                             },
                             "meta": {
                               "anyOf": [
@@ -5489,7 +4928,7 @@
                                   "properties": {
                                     "field": {
                                       "type": "string",
-                                      "const": "app"
+                                      "const": "instance"
                                     }
                                   },
                                   "required": [
@@ -5563,10 +5002,10 @@
                                     "id": {
                                       "type": "integer"
                                     },
-                                    "app": {
+                                    "project": {
                                       "type": "string"
                                     },
-                                    "app_instance": {
+                                    "instance": {
                                       "type": "string"
                                     },
                                     "status": {
@@ -5603,8 +5042,8 @@
                                   },
                                   "required": [
                                     "id",
-                                    "app",
-                                    "app_instance",
+                                    "project",
+                                    "instance",
                                     "status",
                                     "exit_code",
                                     "started_at",
@@ -5788,7 +5227,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "App and positive run id are required."
+                              "const": "Instance and positive run id are required."
                             },
                             "meta": {
                               "anyOf": [
@@ -5801,7 +5240,7 @@
                                     "field": {
                                       "type": "string",
                                       "enum": [
-                                        "app",
+                                        "instance",
                                         "run"
                                       ]
                                     }
@@ -5953,7 +5392,7 @@
                         },
                         "message": {
                           "type": "string",
-                          "const": "App is required."
+                          "const": "Instance is required."
                         },
                         "meta": {
                           "anyOf": [
@@ -5965,7 +5404,7 @@
                               "properties": {
                                 "field": {
                                   "type": "string",
-                                  "const": "app"
+                                  "const": "instance"
                                 }
                               },
                               "required": [
@@ -6091,10 +5530,10 @@
                                 {
                                   "type": "object",
                                   "properties": {
-                                    "app": {
+                                    "project": {
                                       "type": "string"
                                     },
-                                    "app_instance": {
+                                    "instance": {
                                       "type": "string"
                                     },
                                     "count": {
@@ -6102,8 +5541,8 @@
                                     }
                                   },
                                   "required": [
-                                    "app",
-                                    "app_instance",
+                                    "project",
+                                    "instance",
                                     "count"
                                   ]
                                 }
@@ -6141,7 +5580,7 @@
                         },
                         "message": {
                           "type": "string",
-                          "const": "App is required."
+                          "const": "Instance is required."
                         },
                         "meta": {
                           "anyOf": [
@@ -6153,7 +5592,7 @@
                               "properties": {
                                 "field": {
                                   "type": "string",
-                                  "const": "app"
+                                  "const": "instance"
                                 }
                               },
                               "required": [
@@ -6213,10 +5652,10 @@
                                     "id": {
                                       "type": "integer"
                                     },
-                                    "app": {
+                                    "project": {
                                       "type": "string"
                                     },
-                                    "app_instance": {
+                                    "instance": {
                                       "type": "string"
                                     },
                                     "title": {
@@ -6240,8 +5679,8 @@
                                   },
                                   "required": [
                                     "id",
-                                    "app",
-                                    "app_instance",
+                                    "project",
+                                    "instance",
                                     "title",
                                     "command",
                                     "order",
@@ -6354,7 +5793,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "App and command are required."
+                              "const": "Instance and command are required."
                             },
                             "meta": {
                               "anyOf": [
@@ -6367,7 +5806,7 @@
                                     "field": {
                                       "type": "string",
                                       "enum": [
-                                        "app",
+                                        "instance",
                                         "command"
                                       ]
                                     }
@@ -6443,10 +5882,10 @@
                                     "id": {
                                       "type": "integer"
                                     },
-                                    "app": {
+                                    "project": {
                                       "type": "string"
                                     },
-                                    "app_instance": {
+                                    "instance": {
                                       "type": "string"
                                     },
                                     "title": {
@@ -6470,8 +5909,8 @@
                                   },
                                   "required": [
                                     "id",
-                                    "app",
-                                    "app_instance",
+                                    "project",
+                                    "instance",
                                     "title",
                                     "command",
                                     "order",
@@ -6541,7 +5980,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "App is required."
+                              "const": "Instance is required."
                             },
                             "meta": {
                               "anyOf": [
@@ -6553,7 +5992,7 @@
                                   "properties": {
                                     "field": {
                                       "type": "string",
-                                      "const": "app"
+                                      "const": "instance"
                                     }
                                   },
                                   "required": [
@@ -7764,10 +7203,8 @@
                           "type": "object",
                           "properties": {
                             "nodes": {
-                              "type": "object",
-                              "additionalProperties": {
-                                "type": "string"
-                              }
+                              "type": "array",
+                              "items": {}
                             }
                           },
                           "required": [
@@ -8529,31 +7966,11 @@
                             "warnings": {
                               "type": "array",
                               "items": {
-                                "type": "object",
-                                "properties": {
-                                  "code": {
-                                    "type": "string",
-                                    "const": "node.role_baseline_mismatch"
-                                  },
-                                  "message": {
-                                    "type": "string"
-                                  },
-                                  "family": {
-                                    "type": "string",
-                                    "const": "node"
-                                  },
-                                  "next_command": {
-                                    "type": "string",
-                                    "const": "doctor --family=node --restore"
-                                  }
-                                },
-                                "required": [
-                                  "code",
-                                  "message",
-                                  "family",
-                                  "next_command"
-                                ]
-                              }
+                                "type": "string"
+                              },
+                              "minItems": 0,
+                              "maxItems": 0,
+                              "additionalItems": false
                             }
                           },
                           "required": [
@@ -8692,6 +8109,12 @@
                               "properties": {
                                 "name": {
                                   "type": "string"
+                                },
+                                "tld": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
                                 },
                                 "status": {
                                   "type": "string"
@@ -8840,6 +8263,7 @@
                               },
                               "required": [
                                 "name",
+                                "tld",
                                 "status",
                                 "platform",
                                 "roles",
@@ -8971,52 +8395,108 @@
                           "type": "object",
                           "properties": {
                             "warnings": {
-                              "anyOf": [
+                              "type": "array",
+                              "prefixItems": [
                                 {
-                                  "type": "array",
-                                  "prefixItems": [
+                                  "anyOf": [
                                     {
-                                      "type": "object",
-                                      "properties": {
-                                        "code": {
-                                          "type": "string",
-                                          "const": "node.artifact_enactment_failed"
-                                        },
-                                        "message": {
-                                          "type": "string",
-                                          "const": "Node artifact re-enactment failed after intent update."
-                                        },
-                                        "family": {
-                                          "type": "string",
-                                          "const": "node"
-                                        },
-                                        "next_command": {
-                                          "type": "string",
-                                          "const": "doctor --family=node --restore"
+                                      "type": "array",
+                                      "prefixItems": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "code": {
+                                              "type": "string",
+                                              "const": "node.artifact_enactment_failed"
+                                            },
+                                            "message": {
+                                              "type": "string",
+                                              "const": "Node DNS projection application failed after intent update."
+                                            },
+                                            "family": {
+                                              "type": "string",
+                                              "const": "node"
+                                            },
+                                            "next_command": {
+                                              "type": "string",
+                                              "const": "doctor --family=node --restore"
+                                            }
+                                          },
+                                          "required": [
+                                            "code",
+                                            "message",
+                                            "family",
+                                            "next_command"
+                                          ]
                                         }
+                                      ],
+                                      "minItems": 1,
+                                      "maxItems": 1,
+                                      "additionalItems": false
+                                    },
+                                    {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
                                       },
-                                      "required": [
-                                        "code",
-                                        "message",
-                                        "family",
-                                        "next_command"
-                                      ]
+                                      "minItems": 0,
+                                      "maxItems": 0,
+                                      "additionalItems": false
                                     }
-                                  ],
-                                  "minItems": 1,
-                                  "maxItems": 1,
-                                  "additionalItems": false
+                                  ]
                                 },
                                 {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string"
-                                  },
-                                  "minItems": 0,
-                                  "maxItems": 0,
-                                  "additionalItems": false
+                                  "anyOf": [
+                                    {
+                                      "type": "array",
+                                      "prefixItems": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "code": {
+                                              "type": "string",
+                                              "const": "node.artifact_enactment_failed"
+                                            },
+                                            "message": {
+                                              "type": "string",
+                                              "const": "Node artifact re-enactment failed after intent update."
+                                            },
+                                            "family": {
+                                              "type": "string",
+                                              "const": "node"
+                                            },
+                                            "next_command": {
+                                              "type": "string",
+                                              "const": "doctor --family=node --restore"
+                                            }
+                                          },
+                                          "required": [
+                                            "code",
+                                            "message",
+                                            "family",
+                                            "next_command"
+                                          ]
+                                        }
+                                      ],
+                                      "minItems": 1,
+                                      "maxItems": 1,
+                                      "additionalItems": false
+                                    },
+                                    {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "minItems": 0,
+                                      "maxItems": 0,
+                                      "additionalItems": false
+                                    }
+                                  ]
                                 }
-                              ]
+                              ],
+                              "minItems": 2,
+                              "maxItems": 2,
+                              "additionalItems": false
                             }
                           },
                           "required": [
@@ -9529,7 +9009,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "instance",
             "in": "query",
             "schema": {
               "type": "string"
@@ -9614,7 +9094,7 @@
                                             "null"
                                           ]
                                         },
-                                        "app": {
+                                        "project": {
                                           "type": [
                                             "object",
                                             "null"
@@ -9630,6 +9110,24 @@
                                           "required": [
                                             "name",
                                             "php_version"
+                                          ]
+                                        },
+                                        "instance": {
+                                          "type": [
+                                            "object",
+                                            "null"
+                                          ],
+                                          "properties": {
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "project": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "name",
+                                            "project"
                                           ]
                                         },
                                         "workspace": {
@@ -9664,7 +9162,8 @@
                                         "available_images",
                                         "image_inventory_status",
                                         "cli",
-                                        "app",
+                                        "project",
+                                        "instance",
                                         "workspace"
                                       ]
                                     },
@@ -9742,7 +9241,7 @@
                   "version": {
                     "type": "string"
                   },
-                  "app": {
+                  "instance": {
                     "type": "string"
                   },
                   "workspace": {
@@ -9819,7 +9318,7 @@
                                             "null"
                                           ]
                                         },
-                                        "app": {
+                                        "project": {
                                           "type": [
                                             "object",
                                             "null"
@@ -9835,6 +9334,24 @@
                                           "required": [
                                             "name",
                                             "php_version"
+                                          ]
+                                        },
+                                        "instance": {
+                                          "type": [
+                                            "object",
+                                            "null"
+                                          ],
+                                          "properties": {
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "project": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "name",
+                                            "project"
                                           ]
                                         },
                                         "workspace": {
@@ -9869,7 +9386,8 @@
                                         "available_images",
                                         "image_inventory_status",
                                         "cli",
-                                        "app",
+                                        "project",
+                                        "instance",
                                         "workspace"
                                       ]
                                     },
@@ -9883,7 +9401,10 @@
                                         "node": {
                                           "type": "string"
                                         },
-                                        "app": {
+                                        "project": {
+                                          "type": "null"
+                                        },
+                                        "instance": {
                                           "type": "null"
                                         },
                                         "workspace": {
@@ -9908,7 +9429,8 @@
                                       "required": [
                                         "target",
                                         "node",
-                                        "app",
+                                        "project",
+                                        "instance",
                                         "workspace",
                                         "previous",
                                         "version",
@@ -9967,7 +9489,7 @@
                                             "null"
                                           ]
                                         },
-                                        "app": {
+                                        "project": {
                                           "type": [
                                             "object",
                                             "null"
@@ -9983,6 +9505,24 @@
                                           "required": [
                                             "name",
                                             "php_version"
+                                          ]
+                                        },
+                                        "instance": {
+                                          "type": [
+                                            "object",
+                                            "null"
+                                          ],
+                                          "properties": {
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "project": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "name",
+                                            "project"
                                           ]
                                         },
                                         "workspace": {
@@ -10017,7 +9557,8 @@
                                         "available_images",
                                         "image_inventory_status",
                                         "cli",
-                                        "app",
+                                        "project",
+                                        "instance",
                                         "workspace"
                                       ]
                                     },
@@ -10031,14 +9572,27 @@
                                         "node": {
                                           "type": "string"
                                         },
-                                        "app": {
+                                        "project": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "instance": {
                                           "type": "string"
                                         },
                                         "workspace": {
                                           "type": "string"
                                         },
                                         "previous": {
-                                          "type": "string"
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
                                         },
                                         "version": {
                                           "type": [
@@ -10065,7 +9619,8 @@
                                       "required": [
                                         "target",
                                         "node",
-                                        "app",
+                                        "project",
+                                        "instance",
                                         "workspace",
                                         "previous",
                                         "version",
@@ -10122,7 +9677,7 @@
                                             "null"
                                           ]
                                         },
-                                        "app": {
+                                        "project": {
                                           "type": [
                                             "object",
                                             "null"
@@ -10138,6 +9693,24 @@
                                           "required": [
                                             "name",
                                             "php_version"
+                                          ]
+                                        },
+                                        "instance": {
+                                          "type": [
+                                            "object",
+                                            "null"
+                                          ],
+                                          "properties": {
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "project": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "name",
+                                            "project"
                                           ]
                                         },
                                         "workspace": {
@@ -10172,7 +9745,8 @@
                                         "available_images",
                                         "image_inventory_status",
                                         "cli",
-                                        "app",
+                                        "project",
+                                        "instance",
                                         "workspace"
                                       ]
                                     },
@@ -10181,12 +9755,15 @@
                                       "properties": {
                                         "target": {
                                           "type": "string",
-                                          "const": "app"
+                                          "const": "instance"
                                         },
                                         "node": {
                                           "type": "string"
                                         },
-                                        "app": {
+                                        "project": {
+                                          "type": "string"
+                                        },
+                                        "instance": {
                                           "type": "string"
                                         },
                                         "workspace": {
@@ -10211,7 +9788,8 @@
                                       "required": [
                                         "target",
                                         "node",
-                                        "app",
+                                        "project",
+                                        "instance",
                                         "workspace",
                                         "previous",
                                         "version",
@@ -10390,9 +9968,9 @@
             }
           },
           {
-            "name": "app",
+            "name": "instance",
             "in": "query",
-            "description": "Filter processes by app name.",
+            "description": "Filter processes by project.instance selector.",
             "schema": {
               "type": "string"
             }
@@ -10428,10 +10006,10 @@
                                     "node": {
                                       "type": "string"
                                     },
-                                    "app": {
+                                    "project": {
                                       "type": "string"
                                     },
-                                    "app_instance": {
+                                    "instance": {
                                       "type": "string"
                                     },
                                     "workspace": {
@@ -10440,8 +10018,8 @@
                                   },
                                   "required": [
                                     "node",
-                                    "app",
-                                    "app_instance",
+                                    "project",
+                                    "instance",
                                     "workspace"
                                   ]
                                 },
@@ -10892,8 +10470,8 @@
                                         "type": {
                                           "type": "string",
                                           "enum": [
-                                            "app_instance",
-                                            "app",
+                                            "instance",
+                                            "project",
                                             "analytics",
                                             "websocket",
                                             "workspace",
@@ -11440,11 +11018,15 @@
                                         },
                                         "value": {
                                           "type": "string"
+                                        },
+                                        "timeout_seconds": {
+                                          "type": "integer"
                                         }
                                       },
                                       "required": [
                                         "type",
-                                        "value"
+                                        "value",
+                                        "timeout_seconds"
                                       ]
                                     },
                                     "enabled": {
@@ -11763,11 +11345,15 @@
                                         },
                                         "value": {
                                           "type": "string"
+                                        },
+                                        "timeout_seconds": {
+                                          "type": "integer"
                                         }
                                       },
                                       "required": [
                                         "type",
-                                        "value"
+                                        "value",
+                                        "timeout_seconds"
                                       ]
                                     },
                                     "enabled": {
@@ -11862,7 +11448,7 @@
                             "meta": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "instance": {
                                   "type": [
                                     "string",
                                     "null"
@@ -11876,7 +11462,7 @@
                                 }
                               },
                               "required": [
-                                "app",
+                                "instance",
                                 "node"
                               ]
                             }
@@ -12118,7 +11704,7 @@
                         "meta": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "instance": {
                               "type": [
                                 "string",
                                 "null"
@@ -12135,7 +11721,7 @@
                             }
                           },
                           "required": [
-                            "app",
+                            "instance",
                             "node",
                             "count"
                           ]
@@ -12948,7 +12534,7 @@
             }
           },
           {
-            "name": "app",
+            "name": "instance",
             "in": "query",
             "schema": {
               "type": "string"
@@ -13025,7 +12611,7 @@
                               "properties": {
                                 "field": {
                                   "type": "string",
-                                  "const": "app"
+                                  "const": "instance"
                                 },
                                 "value": {
                                   "anyOf": [
@@ -14976,7 +14562,7 @@
                               "properties": {
                                 "field": {
                                   "type": "string",
-                                  "const": "app"
+                                  "const": "instance"
                                 },
                                 "value": {
                                   "type": [
@@ -15193,8 +14779,11 @@
                                 "workspace": {
                                   "type": "string"
                                 },
-                                "app": {
-                                  "type": "string"
+                                "project": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
                                 },
                                 "node": {
                                   "type": [
@@ -15236,7 +14825,7 @@
                               "required": [
                                 "id",
                                 "workspace",
-                                "app",
+                                "project",
                                 "node",
                                 "type",
                                 "status",
@@ -15589,10 +15178,10 @@
                             "name": {
                               "type": "string"
                             },
-                            "app": {
+                            "project": {
                               "type": "string"
                             },
-                            "app_instance": {
+                            "instance": {
                               "type": "string"
                             },
                             "action": {
@@ -15614,8 +15203,8 @@
                           },
                           "required": [
                             "name",
-                            "app",
-                            "app_instance",
+                            "project",
+                            "instance",
                             "action",
                             "proxy_routes_removed",
                             "processes_removed",
@@ -15963,13 +15552,20 @@
                                     "name": {
                                       "type": "string"
                                     },
-                                    "app": {
+                                    "project": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "instance": {
                                       "type": "string"
                                     }
                                   },
                                   "required": [
                                     "name",
-                                    "app"
+                                    "project",
+                                    "instance"
                                   ]
                                 }
                               ]
@@ -16099,7 +15695,7 @@
                                     "name": {
                                       "type": "string"
                                     },
-                                    "app": {
+                                    "instance": {
                                       "type": [
                                         "string",
                                         "null"
@@ -16108,7 +15704,7 @@
                                   },
                                   "required": [
                                     "name",
-                                    "app"
+                                    "instance"
                                   ]
                                 }
                               ]
@@ -16219,10 +15815,13 @@
                                 "name": {
                                   "type": "string"
                                 },
-                                "app": {
-                                  "type": "string"
+                                "project": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "node": {
@@ -16276,8 +15875,8 @@
                               },
                               "required": [
                                 "name",
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "node",
                                 "path",
                                 "url",
@@ -16370,7 +15969,7 @@
                                 "name": {
                                   "type": "string"
                                 },
-                                "apps": {
+                                "instances": {
                                   "type": "array",
                                   "items": {
                                     "type": "string"
@@ -16379,7 +15978,7 @@
                               },
                               "required": [
                                 "name",
-                                "apps"
+                                "instances"
                               ]
                             }
                           },
@@ -16541,7 +16140,7 @@
                                     "name": {
                                       "type": "string"
                                     },
-                                    "app": {
+                                    "instance": {
                                       "type": [
                                         "string",
                                         "null"
@@ -16558,7 +16157,7 @@
                                   },
                                   "required": [
                                     "name",
-                                    "app",
+                                    "instance",
                                     "reason",
                                     "missing_permission"
                                   ]
@@ -16679,10 +16278,10 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "workspace": {
@@ -16754,8 +16353,8 @@
                                 }
                               },
                               "required": [
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "workspace",
                                 "node",
                                 "url",
@@ -16963,7 +16562,7 @@
                                   "enum": [
                                     "workspace",
                                     "path",
-                                    "app"
+                                    "instance"
                                   ]
                                 }
                               },
@@ -17090,10 +16689,13 @@
                                 "name": {
                                   "type": "string"
                                 },
-                                "app": {
-                                  "type": "string"
+                                "project": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "node": {
@@ -17147,8 +16749,8 @@
                               },
                               "required": [
                                 "name",
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "node",
                                 "path",
                                 "url",
@@ -17578,10 +17180,10 @@
                                 "id": {
                                   "type": "integer"
                                 },
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "phase": {
@@ -17599,8 +17201,8 @@
                               },
                               "required": [
                                 "id",
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "phase",
                                 "order",
                                 "command",
@@ -17660,7 +17262,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "Workspace steps can only be changed on app instances. Use a dotted selector such as hauser.nmbp."
+                              "const": "Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp."
                             },
                             "meta": {
                               "type": "array",
@@ -17718,7 +17320,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "Could not resolve parent app."
+                              "const": "Could not resolve an instance."
                             },
                             "meta": {
                               "type": "array",
@@ -17885,12 +17487,12 @@
                                 {
                                   "type": "object",
                                   "properties": {
-                                    "app": {
+                                    "project": {
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "app"
+                                    "project"
                                   ]
                                 }
                               ]
@@ -17966,7 +17568,7 @@
                                 "step_id": {
                                   "type": "integer"
                                 },
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
                                 "phase": {
@@ -17975,7 +17577,7 @@
                               },
                               "required": [
                                 "step_id",
-                                "app",
+                                "project",
                                 "phase"
                               ]
                             }
@@ -17999,7 +17601,7 @@
                           "properties": {
                             "code": {
                               "type": "string",
-                              "const": "workspace.app_not_found"
+                              "const": "workspace.instance_not_found"
                             },
                             "message": {
                               "type": "string"
@@ -18007,12 +17609,12 @@
                             "meta": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "instance": {
                                   "type": "string"
                                 }
                               },
                               "required": [
-                                "app"
+                                "instance"
                               ]
                             }
                           },
@@ -18143,7 +17745,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "Workspace steps require a concrete app instance. Use a dotted selector such as hauser.nmbp."
+                              "const": "Workspace steps require a concrete instance. Use a dotted selector such as hauser.nmbp."
                             },
                             "meta": {
                               "type": "array",
@@ -18201,7 +17803,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "Could not resolve parent app."
+                              "const": "Could not resolve an instance."
                             },
                             "meta": {
                               "type": "array",
@@ -18338,12 +17940,12 @@
                                 {
                                   "type": "object",
                                   "properties": {
-                                    "app": {
+                                    "project": {
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "app"
+                                    "project"
                                   ]
                                 }
                               ]
@@ -18406,7 +18008,7 @@
                       "properties": {
                         "code": {
                           "type": "string",
-                          "const": "workspace.app_not_found"
+                          "const": "workspace.instance_not_found"
                         },
                         "message": {
                           "type": "string"
@@ -18414,12 +18016,12 @@
                         "meta": {
                           "type": "object",
                           "properties": {
-                            "app": {
+                            "instance": {
                               "type": "string"
                             }
                           },
                           "required": [
-                            "app"
+                            "instance"
                           ]
                         }
                       },
@@ -18522,10 +18124,10 @@
                                 "id": {
                                   "type": "integer"
                                 },
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
-                                "app_instance": {
+                                "instance": {
                                   "type": "string"
                                 },
                                 "phase": {
@@ -18543,8 +18145,8 @@
                               },
                               "required": [
                                 "id",
-                                "app",
-                                "app_instance",
+                                "project",
+                                "instance",
                                 "phase",
                                 "order",
                                 "command",
@@ -18592,7 +18194,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "Workspace steps can only be changed on app instances. Use a dotted selector such as hauser.nmbp."
+                              "const": "Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp."
                             },
                             "meta": {
                               "type": "array",
@@ -18650,7 +18252,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "Could not resolve parent app."
+                              "const": "Could not resolve an instance."
                             },
                             "meta": {
                               "type": "array",
@@ -18831,7 +18433,7 @@
                             },
                             "message": {
                               "type": "string",
-                              "const": "Workspace lifecycle steps cannot read or copy the parent app .env file."
+                              "const": "Workspace lifecycle steps cannot read or copy the parent project .env file."
                             },
                             "meta": {
                               "type": "array",
@@ -18998,12 +18600,12 @@
                                 {
                                   "type": "object",
                                   "properties": {
-                                    "app": {
+                                    "project": {
                                       "type": "string"
                                     }
                                   },
                                   "required": [
-                                    "app"
+                                    "project"
                                   ]
                                 }
                               ]
@@ -19079,7 +18681,7 @@
                                 "id": {
                                   "type": "integer"
                                 },
-                                "app": {
+                                "project": {
                                   "type": "string"
                                 },
                                 "phase": {
@@ -19088,7 +18690,7 @@
                               },
                               "required": [
                                 "id",
-                                "app",
+                                "project",
                                 "phase"
                               ]
                             }
@@ -19112,7 +18714,7 @@
                           "properties": {
                             "code": {
                               "type": "string",
-                              "const": "workspace.app_not_found"
+                              "const": "workspace.instance_not_found"
                             },
                             "message": {
                               "type": "string"
@@ -19120,12 +18722,12 @@
                             "meta": {
                               "type": "object",
                               "properties": {
-                                "app": {
+                                "instance": {
                                   "type": "string"
                                 }
                               },
                               "required": [
-                                "app"
+                                "instance"
                               ]
                             }
                           },
@@ -19218,6 +18820,12 @@
             ]
           },
           "postgres_node": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "postgres_process": {
             "type": [
               "string",
               "null"
@@ -19429,7 +19037,7 @@
           "message": {
             "type": "string"
           },
-          "app": {
+          "instance": {
             "type": "string"
           },
           "workspace": {
@@ -19553,8 +19161,7 @@
             "maxLength": 255
           },
           "tld": {
-            "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+            "type": "string"
           },
           "gateway_endpoint": {
             "type": "string",

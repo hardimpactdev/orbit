@@ -15,19 +15,19 @@ not be restored manually.
 
 On `app-dev` nodes, classic PHP app and workspace containers include native
 FrankenPHP thread-pool tuning (`max_threads auto`, `max_idle_time 1h`).
-Laravel Octane worker mode remains opt-in through `app:worker`.
+Laravel Octane worker mode remains opt-in through `instance:worker`.
 
 ## `orbit php:list`
 
 List PHP support, installed facts, and selected runtime intent.
 
 ```bash
-orbit php:list [--app=<name>] [--workspace=<name>] [--node=<name>] [--live] [--json]
+orbit php:list [--instance=<name>] [--workspace=<name>] [--node=<name>] [--live] [--json]
 ```
 
 | Option | Notes |
 |---|---|
-| `--app` | Show selected runtime for one app. |
+| `--instance` | Show selected runtime for one `project.instance`. |
 | `--workspace` | Show effective runtime for one workspace (own override or inherited). |
 | `--node` | Show CLI default for the node. |
 | `--live` | Probe the node for actually-installed PHP versions instead of relying on gateway-tracked facts. |
@@ -39,14 +39,14 @@ Without scope flags, returns the global support matrix and currently-selected no
 Select PHP runtime intent at one of three scopes: app, workspace, or node CLI default.
 
 ```bash
-orbit php:use [<version>] [--app=<name>] [--workspace=<name>] [--node=<name>]
+orbit php:use [<version>] [--instance=<name>] [--workspace=<name>] [--node=<name>]
               [--inherit] [--cli] [--json]
 ```
 
 | Option | Notes |
 |---|---|
 | `version` | `8.3` / `8.4` / `8.5`. Required unless `--inherit`. |
-| `--app` | Scope: app PHP image selection for the app runtime. |
+| `--instance` | Scope: PHP image selection for one instance runtime. |
 | `--workspace` | Scope: workspace PHP override (otherwise inherits the app). |
 | `--node` | Scope target node. Combine with `--cli` for the node CLI default. |
 | `--inherit` | Workspace only  -  clear the override and re-inherit the app's PHP. |
@@ -55,8 +55,8 @@ orbit php:use [<version>] [--app=<name>] [--workspace=<name>] [--node=<name>]
 Examples:
 
 ```bash
-orbit php:use 8.4 --app=myapp                  # change app FrankenPHP image selection
-orbit php:use --inherit --workspace=feature-x --app=myapp
+orbit php:use 8.4 --instance=myapp.development      # change instance FrankenPHP image selection
+orbit php:use --inherit --workspace=feature-x --instance=myapp.development
 orbit php:use 8.5 --cli --node=beast           # default CLI PHP on the node
 ```
 

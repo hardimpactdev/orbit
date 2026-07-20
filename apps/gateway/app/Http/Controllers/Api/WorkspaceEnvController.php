@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Data\Apps\AppSelection;
 use App\Enums\ActivityLogType;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Workspace;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Workspaces\WorkspaceEnvApplier;
 use App\Services\Workspaces\WorkspaceEnvRenderer;
 use Illuminate\Database\Eloquent\Builder;
@@ -30,6 +33,7 @@ final class WorkspaceEnvController implements Loggable
     public function __construct(
         private readonly WorkspaceEnvRenderer $env,
         private readonly WorkspaceEnvApplier $applier,
+        private readonly AppSelectorResolver $appSelectorResolver,
     ) {}
 
     #[RequiresPermission('workspace:read', servingNode: ServingNode::WorkspaceOwning)]
@@ -126,10 +130,10 @@ final class WorkspaceEnvController implements Loggable
     #[RequiresPermission('workspace:read', servingNode: ServingNode::WorkspaceOwning)]
     public function resolveByPath(Request $request): JsonResponse
     {
-        $selectionFailure = $this->selectionFailure($request);
+        $selection = $this->selection($request);
 
-        if ($selectionFailure instanceof JsonResponse) {
-            return $selectionFailure;
+        if ($selection instanceof JsonResponse) {
+            return $selection;
         }
 
         $path = $this->stringInput($request, 'path');
@@ -140,7 +144,7 @@ final class WorkspaceEnvController implements Loggable
 
         $normalized = rtrim(string: $path, characters: '/');
         $matches = $this
-            ->queryForRequest($request)
+            ->queryForSelection($selection)
             ->get()
             ->filter(static function (Workspace $workspace) use ($normalized): bool {
                 $workspacePath = rtrim(string: $workspace->path, characters: '/');
@@ -161,7 +165,7 @@ final class WorkspaceEnvController implements Loggable
         $workspace->loadMissing(['app', 'appInstance']);
 
         return $this->success([
-            'app' => $workspace->app?->name,
+            'project' => $workspace->app?->name,
             'instance' => $workspace->appInstance->name,
             'workspace' => $workspace->name,
         ]);
@@ -169,14 +173,14 @@ final class WorkspaceEnvController implements Loggable
 
     private function resolve(string $name, Request $request): Workspace|JsonResponse
     {
-        $selectionFailure = $this->selectionFailure($request);
+        $selection = $this->selection($request);
 
-        if ($selectionFailure instanceof JsonResponse) {
-            return $selectionFailure;
+        if ($selection instanceof JsonResponse) {
+            return $selection;
         }
 
         $matches = $this
-            ->queryForRequest($request)
+            ->queryForSelection($selection)
             ->where('name', $name)
             ->get();
 
@@ -188,7 +192,7 @@ final class WorkspaceEnvController implements Loggable
             return response()->json([
                 'error' => [
                     'code' => 'validation_failed',
-                    'message' => "Workspace '{$name}' is ambiguous. Supply --app with a concrete app instance.",
+                    'message' => "Workspace '{$name}' is ambiguous. Supply --instance with a concrete instance.",
                     'meta' => [
                         'field' => 'workspace',
                         'reason' => 'ambiguous',
@@ -201,41 +205,43 @@ final class WorkspaceEnvController implements Loggable
         return $matches->firstOrFail();
     }
 
-    private function selectionFailure(Request $request): ?JsonResponse
+    private function selection(Request $request): AppSelection|JsonResponse|null
     {
-        if ($this->stringInput($request, 'instance') === null || $this->stringInput($request, 'app') !== null) {
+        $selector = $this->stringInput($request, 'instance');
+
+        if ($selector === null) {
             return null;
         }
 
-        return $this->validationFailed(
-            'app',
-            'An app selector is required when an instance selector is supplied.',
-        );
+        try {
+            return $this->appSelectorResolver->requireInstance(
+                $this->appSelectorResolver->resolveRequired($selector),
+            );
+        } catch (AppSelectionResolutionFailed $exception) {
+            return response()->json([
+                'error' => [
+                    'code' => $exception->errorCode,
+                    'message' => $exception->getMessage(),
+                    'meta' => $exception->meta,
+                ],
+            ], 400);
+        }
     }
 
     /**
      * @return Builder<Workspace>
      */
-    private function queryForRequest(Request $request): Builder
+    private function queryForSelection(?AppSelection $selection): Builder
     {
-        $app = $this->stringInput($request, 'app');
-        $instance = $this->stringInput($request, 'instance');
-
         /** @var Builder<Workspace> $query */
         $query = Workspace::query()->with(['app', 'appInstance']);
 
-        if ($app !== null) {
-            $query->whereHas(
-                'app',
-                static fn (Builder $query): Builder => $query->where('name', $app),
-            );
-        }
+        if ($selection instanceof AppSelection) {
+            $query->where('app_id', $selection->app->id);
 
-        if ($instance !== null) {
-            $query->whereHas(
-                'appInstance',
-                static fn (Builder $query): Builder => $query->where('name', $instance),
-            );
+            if ($selection->instance !== null) {
+                $query->where('app_instance_id', $selection->instance->id);
+            }
         }
 
         return $query;
@@ -244,7 +250,7 @@ final class WorkspaceEnvController implements Loggable
     /**
      * @return array{
      *     scope: string,
-     *     app: string|null,
+     *     project: string|null,
      *     instance: string,
      *     workspace: string,
      *     path: string,
@@ -259,7 +265,7 @@ final class WorkspaceEnvController implements Loggable
 
         return [
             'scope' => 'workspace',
-            'app' => $workspace->app?->name,
+            'project' => $workspace->app?->name,
             'instance' => $workspace->appInstance->name,
             'workspace' => $workspace->name,
             'path' => $this->applier->envPath($workspace),

@@ -15,13 +15,13 @@ final class DeployRunCommand extends DeployGatewayCommand
 {
     #[\Override]
     protected $signature = 'deploy:run
-        {app? : Production app-instance selector}
+        {instance? : Instance selector (project.instance)}
         {--detach : Start and return after the run is durable}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
-    protected $description = 'Run the deployment pipeline for a production app instance.';
+    protected $description = 'Run the deployment pipeline for an instance.';
 
     public function handle(): int
     {
@@ -31,15 +31,15 @@ final class DeployRunCommand extends DeployGatewayCommand
             return $outputModeValidation;
         }
 
-        $app = $this->requiredArgument('app', 'app', 'App is required.');
+        $instanceSelector = $this->requiredArgument('instance', 'instance', 'Instance is required.');
 
-        if (is_int($app)) {
-            return $app;
+        if (is_int($instanceSelector)) {
+            return $instanceSelector;
         }
 
         try {
             $response = $this->gatewayPost('/api/deploy/run', [
-                'app' => $app,
+                'instance' => $instanceSelector,
                 'detach' => $this->option('detach') === true,
             ]);
             $operation = $this->operationDescriptor($response);

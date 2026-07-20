@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Actions\Processes\ShowProcessLogs;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process as ProcessModel;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessOwnerContextResolver;
@@ -136,7 +136,7 @@ final readonly class ToolLogReader
             return $this->processContexts->resolve($process->owner->name, null, null);
         }
 
-        if ($process->owner instanceof App) {
+        if ($process->owner instanceof Project) {
             return $this->processContexts->resolve(null, $process->owner->name, null);
         }
 

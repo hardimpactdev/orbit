@@ -35,7 +35,7 @@ final readonly class CurlHttpsProbe implements HttpsProbe
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
             CURLOPT_RESOLVE => [$resolve],
-            CURLOPT_USERAGENT => 'Orbit app:analytics verify',
+            CURLOPT_USERAGENT => 'Orbit instance:analytics verify',
         ]);
 
         $response = curl_exec($handle);

@@ -31,7 +31,7 @@ describe('deploy:run operation stream', function (): void {
                 'payload' => [
                     'exit_code' => 0,
                     'data' => [
-                        'run' => ['id' => 43, 'app' => 'docs', 'status' => 'completed'],
+                        'run' => ['id' => 43, 'instance' => 'docs', 'status' => 'completed'],
                         'footer' => 'Deployment completed',
                     ],
                 ],
@@ -39,7 +39,7 @@ describe('deploy:run operation stream', function (): void {
         ]);
 
         [$exitCode, $output] = runCommand($this, 'deploy:run', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -49,7 +49,7 @@ describe('deploy:run operation stream', function (): void {
             fn (Request $request): bool => (
                 $request->method() === 'POST'
                 && $request->url() === 'https://gateway.test/api/deploy/run'
-                && $request->data() === ['app' => 'docs', 'detach' => false]
+                && $request->data() === ['instance' => 'docs', 'detach' => false]
                 && ! $request->hasHeader('Accept', 'text/event-stream')
             ),
         );
@@ -62,7 +62,7 @@ describe('deploy:run operation stream', function (): void {
                 'data' => [
                     'exit_code' => 0,
                     'data' => [
-                        'run' => ['id' => 43, 'app' => 'docs', 'status' => 'completed'],
+                        'run' => ['id' => 43, 'instance' => 'docs', 'status' => 'completed'],
                         'footer' => 'Deployment completed',
                     ],
                 ],
@@ -73,7 +73,7 @@ describe('deploy:run operation stream', function (): void {
         fakeDeployOperationStart();
         fakeDeployOperationFrames([
             ['type' => 'tree', 'payload' => ['title' => 'Running Deployment', 'steps' => []]],
-            ['type' => 'step', 'payload' => ['key' => 'resolve-app', 'status' => 'done']],
+            ['type' => 'step', 'payload' => ['key' => 'resolve-instance', 'status' => 'done']],
             [
                 'type' => 'complete',
                 'payload' => [
@@ -84,7 +84,7 @@ describe('deploy:run operation stream', function (): void {
         ]);
 
         [$exitCode, $output] = runCommand($this, 'deploy:run', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--stream-json' => true,
         ]);
 
@@ -116,7 +116,7 @@ describe('deploy:run operation stream', function (): void {
         fakeDeployOperationFrames([['type' => 'not-a-progress-frame', 'payload' => []]]);
 
         [$exitCode, $output] = runCommand($this, 'deploy:run', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--json' => true,
         ]);
 

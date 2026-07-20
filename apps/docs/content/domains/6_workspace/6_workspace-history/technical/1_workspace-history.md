@@ -16,7 +16,7 @@
 ## Signature
 
 ```bash
-orbit workspace:history [name] [--app=<app>] [--limit=<int>] [--since=<date>] [--until=<date>] [--json]
+orbit workspace:history [name] [--instance=<project.instance>] [--limit=<int>] [--since=<date>] [--until=<date>] [--json]
 ```
 
 ## Input Contract
@@ -28,17 +28,17 @@ through the current working directory when omitted.
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Never; resolvable through CWD or fails. | Never. | Current workspace if the CWD is inside a known workspace path. | Must match an existing workspace record visible to the caller. |
-| `app` | `--app` | When the resolved `name` matches more than one workspace record. | Never. | Parent app of the uniquely resolved workspace. | Must match an existing app record or app-instance selector visible to the caller. Dot notation such as `happie.nmbp` selects one concrete app instance. Single value only. |
+| `app` | `--instance` | When the resolved `name` matches more than one workspace record. | Never. | Parent project of the uniquely resolved workspace. | Must match an existing app record or instance selector visible to the caller. Dot notation such as `happie.nmbp` selects one concrete instance. Single value only. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 | `limit` | `--limit` | Optional. | Never. | `50`. | Positive integer. Values greater than `500` are clamped to `500` and reported via `success.meta.pagination.limit_capped`. |
 | `since` | `--since` | Optional. | Never. | None. | ISO 8601 datetime. Returns runs with `started_at >= since`. |
 | `until` | `--until` | Optional. | Never. | None. | ISO 8601 datetime. Returns runs with `started_at < until`. Used as the exclusive range cursor for pagination beyond the cap. |
 
 Workspace slugs are unique within an app but not globally unique. Two apps may
-each own a workspace with the same `name`, so `--app` is the disambiguating
+each own a workspace with the same `name`, so `--instance` is the disambiguating
 coordinate of the `(app, workspace)` identity rather than a redundant flag.
-When `--app` includes an app-instance selector, the resolved workspace must
-belong to that concrete app instance.
+When `--instance` includes an instance selector, the resolved workspace must
+belong to that concrete instance.
 
 `--limit`, `--since`, and `--until` are scalar filters. Multi-value semantics
 are not part of the initial contract.
@@ -47,7 +47,7 @@ are not part of the initial contract.
 
 1. **Resolve `name`** from `[name]` or current working directory.
 2. **Handle ambiguity.** If `name` matches multiple workspaces across apps and
-   `--app` is missing, fail with `error.code=workspace.ambiguous_name`.
+   `--instance` is missing, fail with `error.code=workspace.ambiguous_name`.
 3. **Authorize.** Verify the caller is authorized to read history for the
    resolved workspace. If not authorized, fail before side effects.
 4. **Validate filters.** Validate `--limit` (positive integer; clamped to
@@ -116,9 +116,9 @@ are not part of the initial contract.
 - There is no automatic time-based pruning and no global retention setting.
 - History rows are removed atomically with the workspace via
   [`workspace:remove`](../../5_workspace-remove/workspace-remove.md), and via
-  [`app:remove`](../../../5_app/6_app-remove/app-remove.md) or
-  the [`app:prune`](../../../5_app/7_app-prune/app-prune.md) cascade when an
-  app-level command removes a workspace.
+  [`project:remove`](../../../5_project/6_project-remove/project-remove.md) or
+  the [`instance:prune`](../../../5_project/7_instance-prune/instance-prune.md) cascade when an
+  instance-level command removes a workspace.
 
 ## Renderer Contracts
 
@@ -135,7 +135,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Workspace not found | No visible workspace matches the resolved criteria. | Failure |
-| Ambiguous workspace | Multiple workspaces match the name and `--app` is missing. | Failure |
+| Ambiguous workspace | Multiple workspaces match the name and `--instance` is missing. | Failure |
 | Production app unsupported | The selected workspace belongs to an `app-prod` instance. | Failure (`error.code=workspace.unsupported_for_production`) before history is returned. |
 
 `workspace:history` exits zero whenever the gateway history read succeeds,
@@ -172,7 +172,7 @@ Primary test owners:
 | `apps/gateway/tests/Feature/Http/Api/WorkspaceHistoryControllerTest.php` | Gateway workspace history lookup, pagination, limit-capping metadata, and authorization failures. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceHistoryCommandTest.php` | CLI history filter forwarding, path resolution, human table rendering, empty state, and gateway error passthrough. |
 
-`WorkspaceHistoryCommandTest.php` covers input resolution (CWD, name, `--app`
+`WorkspaceHistoryCommandTest.php` covers input resolution (CWD, name, `--instance`
 disambiguation), authorization check, filter validation, status and action
 taxonomy mapping, default `--limit=50` and `500` cap with `limit_capped`
 reporting, range pagination via `--until`, retention contract (no gateway-side

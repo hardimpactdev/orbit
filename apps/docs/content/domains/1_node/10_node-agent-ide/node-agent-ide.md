@@ -5,7 +5,7 @@
 Set the default agent IDE adapter for a node.
 
 Stores the default agent IDE for the node, used by apps and workspaces on that node
-when they do not define an app-level override. Used to make agent IDE messaging
+when they do not define an instance-level override. Used to make agent IDE messaging
 and crash-notification workflows work by default on a development node.
 
 ## Usage
@@ -51,11 +51,11 @@ The command:
 `node:agent-ide` is a pure configuration write. Apps and current workspaces
 resolve their effective agent IDE per-event using the current inheritance chain
 (`app → node → none`); the architecture reserves a future workspace-level
-override slot above app scope. A change to the node default is naturally picked
+override slot above instance scope. A change to the node default is naturally picked
 up at the next consumer-side resolution event without a push from this command.
-Workspace cleanup remains app-scoped: changing a node default does not prune
+Workspace cleanup remains instance-scoped: changing a node default does not prune
 workspaces for inheriting apps. Run
-[`app:prune`](../../5_app/7_app-prune/app-prune.md) for each affected app when
+[`instance:prune`](../../5_project/7_instance-prune/instance-prune.md) for each affected app when
 stale workspace cleanup is wanted after a node-default change.
 
 `node:agent-ide` does not:
@@ -64,8 +64,8 @@ stale workspace cleanup is wanted after a node-default change.
 - Grant node access or alter node transport.
 - Override the agent IDE settings configured at the app level.
 - SSH into the target node.
-- Trigger downstream session restart or app-level invalidation.
-- Notify running agent-IDE sessions or invalidate app-level or workspace-level
+- Trigger downstream session restart or instance-level invalidation.
+- Notify running agent-IDE sessions or invalidate instance-level or workspace-level
   overrides.
 - Remove or prune workspaces for apps that inherit the node default.
 
@@ -110,7 +110,7 @@ Use these commands alongside `node:agent-ide` to manage node configuration and v
 - [`node:show`](../4_node-show/node-show.md) — show node details
 - [`node:update`](../7_node-update/node-update.md) — update node metadata
 - [`node:default`](../9_node-default/node-default.md) — set the local default node
-- [`app:prune`](../../5_app/7_app-prune/app-prune.md) — prune stale workspaces for an app
+- [`instance:prune`](../../5_project/7_instance-prune/instance-prune.md) — prune stale workspaces for an app
 - [`doctor --family=node`](../node-doctor.md) — verify and repair node drift
 
 ## Technical Contract

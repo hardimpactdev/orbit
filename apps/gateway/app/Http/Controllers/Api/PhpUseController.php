@@ -62,7 +62,7 @@ final readonly class PhpUseController implements Loggable
 
         $result = $this->php->handle(
             version: $this->nullableString($request->input('version')),
-            app: $this->nullableString($request->input('app')),
+            instance: $this->nullableString($request->input('instance')),
             workspace: $this->nullableString($request->input('workspace')),
             node: $this->nullableString($request->input('node')),
             inherit: filter_var($request->input('inherit'), FILTER_VALIDATE_BOOL),
@@ -88,7 +88,7 @@ final readonly class PhpUseController implements Loggable
             return $this->servingNodeResolver->resolve($request, ServingNode::WorkspaceOwning);
         }
 
-        if ($this->nullableString($request->input('app')) !== null) {
+        if ($this->nullableString($request->input('instance')) !== null) {
             return $this->servingNodeResolver->resolve($request, ServingNode::AppInstanceOwning);
         }
 

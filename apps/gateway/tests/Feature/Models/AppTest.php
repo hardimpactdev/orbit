@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 
@@ -15,7 +15,7 @@ describe('App model', function (): void {
             'name' => 'app-1',
         ]);
 
-        $app = App::query()->create([
+        $app = Project::query()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'domain' => 'docs.example.com',
@@ -54,7 +54,7 @@ describe('App model', function (): void {
             'tld' => 'test',
         ]);
 
-        $app = App::query()->create([
+        $app = Project::query()->create([
             'name' => 'api',
             'node_id' => $node->id,
             'path' => '/srv/api',

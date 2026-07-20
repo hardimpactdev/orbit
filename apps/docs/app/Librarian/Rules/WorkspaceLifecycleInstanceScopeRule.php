@@ -78,7 +78,7 @@ final readonly class WorkspaceLifecycleInstanceScopeRule implements GroupedRule
 
         if (
             preg_match(
-                '/--app=(?:<app>|\[app\]|[a-z][a-z0-9-]*)(?![a-z0-9.-])/i',
+                '/--instance=(?:<project>|\[project\]|[a-z][a-z0-9-]*)(?![a-z0-9.-])/i',
                 $contents,
                 $matches,
                 PREG_OFFSET_CAPTURE,
@@ -87,17 +87,17 @@ final readonly class WorkspaceLifecycleInstanceScopeRule implements GroupedRule
             $findings[] = $this->finding(
                 file: $file,
                 line: $this->lineForOffset($contents, (int) $matches[0][1]),
-                message: 'Instance-required workspace lifecycle contracts must not advertise a bare logical-app selector; use an app-instance selector such as `--app=<app.instance>`.',
+                message: 'Instance-required workspace lifecycle contracts must not advertise a bare project selector; use a concrete selector such as `--instance=<project.instance>`.',
             );
         }
 
         $matches = [];
 
-        if (preg_match('/\bparent[ -]app\b/i', $contents, $matches, PREG_OFFSET_CAPTURE) === 1) {
+        if (preg_match('/\bparent[ -]project\b/i', $contents, $matches, PREG_OFFSET_CAPTURE) === 1) {
             $findings[] = $this->finding(
                 file: $file,
                 line: $this->lineForOffset($contents, (int) $matches[0][1]),
-                message: 'Instance-required workspace lifecycle contracts must describe concrete app-instance ownership, not parent-app ownership.',
+                message: 'Instance-required workspace lifecycle contracts must describe concrete instance ownership, not parent-project ownership.',
             );
         }
 

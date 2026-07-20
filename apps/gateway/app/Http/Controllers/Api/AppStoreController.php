@@ -15,10 +15,10 @@ use App\Enums\ActivityLogType;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\OperationRun;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppInstancePayloads;
 use App\Services\Apps\AppResponsePayload;
@@ -32,13 +32,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
-#[RequiresPermission('app:new', servingNode: ServingNode::Target)]
+#[RequiresPermission('project:new', servingNode: ServingNode::Target)]
 final class AppStoreController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?Project $activitySubject = null;
 
     public function __construct(
         private readonly NodeRoleAssignments $nodeRoleAssignments,
@@ -65,12 +66,12 @@ final class AppStoreController implements Loggable
             return $node;
         }
 
-        $existingApp = App::query()->with('node')->where('name', $input['name'])->first();
+        $existingApp = Project::query()->with('node')->where('name', $input['name'])->first();
 
-        if ($existingApp instanceof App) {
+        if ($existingApp instanceof Project) {
             return $this->error(
-                'app.collision',
-                "App name '{$input['name']}' is already registered in the gateway app registry on node '{$existingApp->node?->name}'.",
+                'project.collision',
+                "Project name '{$input['name']}' is already registered in the gateway project registry on node '{$existingApp->node?->name}'.",
                 [
                     'name' => $input['name'],
                     'node' => $existingApp->node?->name,
@@ -118,8 +119,8 @@ final class AppStoreController implements Loggable
 
         if (! $source['result']->successful()) {
             return $this->error(
-                'app.source_creation_failed',
-                "Source creation for app '{$input['name']}' failed on node '{$node->name}'.",
+                'project.source_creation_failed',
+                "Source creation for project '{$input['name']}' failed on node '{$node->name}'.",
                 [
                     'reason' => trim($source['result']->output()) ?: 'source creation failed',
                     'transport' => GitRepositoryReference::transport($input['source']->repository),
@@ -128,7 +129,7 @@ final class AppStoreController implements Loggable
             );
         }
 
-        $app = App::query()->create([
+        $app = Project::query()->create([
             'name' => $input['name'],
             'node_id' => $node->id,
             'environment' => $input['domain'] !== null ? 'production' : 'development',
@@ -150,7 +151,7 @@ final class AppStoreController implements Loggable
             'success' => [
                 'data' => [
                     'result' => ['action' => 'created'],
-                    'app' => $this->appPayload($app),
+                    'project' => $this->appPayload($app),
                     'instance' => $this->instancePayloads->placement($instance),
                 ],
                 'meta' => ['warnings' => $warnings],
@@ -176,8 +177,8 @@ final class AppStoreController implements Loggable
         $operationRun = $operationRuns->queued(
             operationId: (string) Str::uuid(),
             lane: 'gateway',
-            internalCommand: 'app:new',
-            operationType: 'app:new',
+            internalCommand: 'project:new',
+            operationType: 'project:new',
             callerNodeId: $callerNodeId,
             targetNodeId: $node->id,
         );
@@ -190,11 +191,11 @@ final class AppStoreController implements Loggable
             $input,
             $node,
         ): void {
-            $events->tree('Creating App', [
-                ['key' => 'operation', 'label' => 'Prepare app creation'],
-                ['key' => 'source', 'label' => 'Create app source'],
-                ['key' => 'registry', 'label' => 'Register app'],
-                ['key' => 'runtime', 'label' => 'Apply app runtime'],
+            $events->tree('Creating Project', [
+                ['key' => 'operation', 'label' => 'Prepare project creation'],
+                ['key' => 'source', 'label' => 'Create project source'],
+                ['key' => 'registry', 'label' => 'Register project'],
+                ['key' => 'runtime', 'label' => 'Apply instance runtime'],
             ]);
 
             $operationRun = $operationRuns->running($operationRun->id);
@@ -211,8 +212,8 @@ final class AppStoreController implements Loggable
 
                 if (! $source['result']->successful()) {
                     $error = [
-                        'code' => 'app.source_creation_failed',
-                        'message' => "Source creation for app '{$input['name']}' failed on node '{$node->name}'.",
+                        'code' => 'project.source_creation_failed',
+                        'message' => "Source creation for project '{$input['name']}' failed on node '{$node->name}'.",
                         'meta' => [
                             'reason' => trim($source['result']->output()) ?: 'source creation failed',
                             'transport' => GitRepositoryReference::transport($input['source']->repository),
@@ -229,10 +230,10 @@ final class AppStoreController implements Loggable
                     return;
                 }
 
-                $events->stepEvent('source', 'done', 'App source ready');
+                $events->stepEvent('source', 'done', 'Project source ready');
                 $events->stepEvent('registry', 'running', "Registering {$input['name']}");
 
-                $app = App::query()->create([
+                $app = Project::query()->create([
                     'name' => $input['name'],
                     'node_id' => $node->id,
                     'environment' => $input['domain'] !== null ? 'production' : 'development',
@@ -248,22 +249,22 @@ final class AppStoreController implements Loggable
                 $app->setRelation('node', $node);
                 $instance = $this->ensureDefaultInstance($app, $node);
                 $this->activitySubject = $app;
-                $events->stepEvent('registry', 'done', 'App registered');
+                $events->stepEvent('registry', 'done', 'Project registered');
                 $events->stepEvent('runtime', 'running', "Applying runtime for {$app->name}");
 
                 $warnings = $enactAppRuntime->handle($app);
-                $events->stepEvent('runtime', 'done', 'App runtime applied');
+                $events->stepEvent('runtime', 'done', 'Instance runtime applied');
 
                 $data = [
-                    'footer' => "App '{$app->name}' created.",
+                    'footer' => "Project '{$app->name}' created.",
                     'operation_run' => $this->operationRunPayload($operationRuns->succeeded($operationRun->id, 0, [
                         'result' => ['action' => 'created'],
-                        'app' => $this->appPayload($app),
+                        'project' => $this->appPayload($app),
                         'instance' => $this->instancePayloads->placement($instance),
                         'warnings' => $warnings,
                     ])),
                     'result' => ['action' => 'created'],
-                    'app' => $this->appPayload($app),
+                    'project' => $this->appPayload($app),
                     'instance' => $this->instancePayloads->placement($instance),
                     'warnings' => $warnings,
                 ];
@@ -271,10 +272,12 @@ final class AppStoreController implements Loggable
                 $events->complete(0, $data);
             } catch (Throwable $exception) {
                 $error = [
-                    'code' => 'app.creation_failed',
-                    'message' => $exception->getMessage() !== '' ? $exception->getMessage() : 'App creation failed.',
+                    'code' => 'project.creation_failed',
+                    'message' => $exception->getMessage() !== ''
+                        ? $exception->getMessage()
+                        : 'Project creation failed.',
                     'meta' => [
-                        'app' => $input['name'],
+                        'project' => $input['name'],
                         'node' => $node->name,
                     ],
                 ];
@@ -293,7 +296,7 @@ final class AppStoreController implements Loggable
         return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
     }
 
-    private function ensureDefaultInstance(App $app, Node $node): AppInstance
+    private function ensureDefaultInstance(Project $app, Node $node): AppInstance
     {
         return $app->instances()->updateOrCreate(
             ['name' => $app->environment],
@@ -327,11 +330,11 @@ final class AppStoreController implements Loggable
         $runtimeProxyTransport = $this->stringInput($request, 'runtime_proxy_transport');
 
         if ($name === null) {
-            return $this->validationFailed('name', 'App name is required.');
+            return $this->validationFailed('name', 'Project name is required.');
         }
 
         if (! preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $name) || mb_strlen($name) > 40) {
-            return $this->validationFailed('name', 'App name must be a slug of 40 characters or fewer.');
+            return $this->validationFailed('name', 'Project name must be a slug of 40 characters or fewer.');
         }
 
         if ($node === null) {
@@ -363,7 +366,7 @@ final class AppStoreController implements Loggable
         if ($runtimeProxyTransport !== null) {
             try {
                 AppRuntimeConfig::fromProxyTransportOption($runtimeProxyTransport);
-            } catch (\InvalidArgumentException) {
+            } catch (InvalidArgumentException) {
                 return $this->validationFailed(
                     'runtime_proxy_transport',
                     "Runtime proxy transport must be 'http' or 'https'.",
@@ -477,7 +480,7 @@ final class AppStoreController implements Loggable
 
         if (! $node->isActive() || ! $this->nodeRoleAssignments->nodeHasActiveRole($node, $requiredRole)) {
             return $this->error(
-                'app.ineligible_node',
+                'project.ineligible_node',
                 "Node '{$node->name}' is not an active app node.",
                 [
                     'node' => $node->name,
@@ -523,7 +526,7 @@ final class AppStoreController implements Loggable
     /**
      * @return array<string, mixed>
      */
-    private function appPayload(App $app): array
+    private function appPayload(Project $app): array
     {
         return app(AppResponsePayload::class)->forApp($app);
     }
@@ -583,7 +586,7 @@ final class AppStoreController implements Loggable
 
     public function type(): string
     {
-        return 'api:POST /apps';
+        return 'api:POST /projects';
     }
 
     public function activityLogAction(): string

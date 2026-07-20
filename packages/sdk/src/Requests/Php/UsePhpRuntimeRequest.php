@@ -20,7 +20,7 @@ final class UsePhpRuntimeRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         public readonly ?string $version = null,
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $workspace = null,
         public readonly ?string $node = null,
         public readonly bool $inherit = false,
@@ -40,7 +40,7 @@ final class UsePhpRuntimeRequest extends GatewayRequest implements HasBody
         return array_filter(
             [
                 'version' => $this->version,
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'workspace' => $this->workspace,
                 'node' => $this->node,
                 'inherit' => $this->inherit,

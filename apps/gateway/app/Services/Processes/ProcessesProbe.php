@@ -12,10 +12,10 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\NodeRuntimeContainersProbe;
 use App\Services\Apps\RemoteAppRuntimeContainersProbe;
@@ -778,7 +778,7 @@ final readonly class ProcessesProbe
         $process->loadMissing('owner');
         $restartPolicy = $process->getRawOriginal('restart_policy');
         $crashNotification = $process->getRawOriginal('crash_notification');
-        $requiresAppInstance = $process->owner instanceof App || $process->owner instanceof Workspace;
+        $requiresAppInstance = $process->owner instanceof Project || $process->owner instanceof Workspace;
 
         if (
             ! is_int($process->node_id)
@@ -836,7 +836,7 @@ final readonly class ProcessesProbe
         $this->loadProcessApp($process);
         $app = $process->app;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -862,7 +862,7 @@ final readonly class ProcessesProbe
                     family: $this->key(),
                     key: 'process.owner_app_invalid',
                     kind: DriftKind::Divergent,
-                    summary: "Process {$process->name} owner app instance is not on an active app node.",
+                    summary: "Process {$process->name} owner instance is not on an active app node.",
                     detail: $this->processOwnershipDetail($process),
                 ),
             ];
@@ -981,7 +981,7 @@ final readonly class ProcessesProbe
         $app = $process->ownerApp();
         $node = $this->processNode($process);
 
-        if (! $app instanceof App || ! $node instanceof Node) {
+        if (! $app instanceof Project || ! $node instanceof Node) {
             return [];
         }
 
@@ -999,7 +999,7 @@ final readonly class ProcessesProbe
         $query->each(function (Process $candidate) use ($app, &$runtimeUnits): void {
             $candidateApp = $candidate->ownerApp();
 
-            if (! $candidateApp instanceof App || ! $candidateApp->is($app)) {
+            if (! $candidateApp instanceof Project || ! $candidateApp->is($app)) {
                 return;
             }
 
@@ -1020,7 +1020,7 @@ final readonly class ProcessesProbe
     {
         $app = $process->ownerApp();
 
-        if (! $app instanceof App || $app->name === '') {
+        if (! $app instanceof Project || $app->name === '') {
             return null;
         }
 
@@ -1333,7 +1333,7 @@ final readonly class ProcessesProbe
 
         $this->loadProcessApp($process, withWorkspaces: true);
 
-        if (! $process->app instanceof App) {
+        if (! $process->app instanceof Project) {
             return [];
         }
 
@@ -1465,7 +1465,7 @@ final readonly class ProcessesProbe
 
         $app = $process->app;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return [];
         }
 
@@ -1521,7 +1521,7 @@ final readonly class ProcessesProbe
 
         $this->loadProcessApp($process, withWorkspaces: true);
 
-        if (! $process->app instanceof App) {
+        if (! $process->app instanceof Project) {
             return [];
         }
 
@@ -1568,13 +1568,15 @@ final readonly class ProcessesProbe
 
         $this->loadProcessApp($process, withWorkspaces: true);
 
-        if (! $process->app instanceof App) {
+        $project = $process->app;
+
+        if (! $project instanceof Project) {
             return [];
         }
 
         return collect($this->runtimeContexts($process))
-            ->map(function (?Workspace $workspace) use ($process): array {
-                $container = $this->dockerContainerRenderer()->render($process->app, $process, $workspace);
+            ->map(function (?Workspace $workspace) use ($process, $project): array {
+                $container = $this->dockerContainerRenderer()->render($project, $process, $workspace);
                 $config = is_array($process->runtime_config) ? $process->runtime_config : [];
                 $configuredHash = $config['container_spec_hash'] ?? null;
                 $configuredHashLabel = $config['container_spec_hash_label'] ?? null;
@@ -1645,7 +1647,7 @@ final readonly class ProcessesProbe
 
         $app = $process->app;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return [];
         }
 
@@ -1702,7 +1704,7 @@ final readonly class ProcessesProbe
 
         $app = $process->app;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return [];
         }
 
@@ -1788,7 +1790,7 @@ final readonly class ProcessesProbe
 
         $app = $process->app;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return [];
         }
 
@@ -1815,7 +1817,7 @@ final readonly class ProcessesProbe
             '--filter label=orbit.managed=true',
         ];
 
-        if ($process->app instanceof App) {
+        if ($process->app instanceof Project) {
             $parts[] = '--filter label=orbit.app='.escapeshellarg($process->app->name);
         }
 
@@ -1920,9 +1922,9 @@ final readonly class ProcessesProbe
         ];
     }
 
-    private function surrogateAppForNode(Node $node): App
+    private function surrogateAppForNode(Node $node): Project
     {
-        $app = new App([
+        $app = new Project([
             'name' => $node->name,
             'path' => ($node->user ?: 'orbit') === 'root'
                 ? '/root'
@@ -1974,7 +1976,7 @@ final readonly class ProcessesProbe
         $node = $process->node;
 
         if (
-            ! $logicalApp instanceof App
+            ! $logicalApp instanceof Project
             || ! $instance instanceof AppInstance
             || ! $node instanceof Node
             || $instance->app_id !== $logicalApp->id
@@ -1994,7 +1996,7 @@ final readonly class ProcessesProbe
             );
         }
 
-        if ($process->owner instanceof App) {
+        if ($process->owner instanceof Project) {
             $process->setRelation('owner', $runtimeApp);
 
             return;

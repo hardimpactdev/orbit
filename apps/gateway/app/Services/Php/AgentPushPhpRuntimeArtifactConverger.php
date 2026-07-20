@@ -7,8 +7,8 @@ namespace App\Services\Php;
 use App\Actions\Apps\EnactAppRuntime;
 use App\Actions\Workspaces\SetupWorkspace;
 use App\Contracts\PhpRuntimeArtifactConverger;
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 
 final readonly class AgentPushPhpRuntimeArtifactConverger implements PhpRuntimeArtifactConverger
@@ -18,7 +18,7 @@ final readonly class AgentPushPhpRuntimeArtifactConverger implements PhpRuntimeA
         private SetupWorkspace $setupWorkspace,
     ) {}
 
-    public function forApp(App $app): array
+    public function forApp(Project $app): array
     {
         return $this->enactAppRuntime->handle($app);
     }

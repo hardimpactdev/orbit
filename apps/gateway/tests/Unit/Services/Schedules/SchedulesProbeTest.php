@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
@@ -17,12 +17,10 @@ use App\Services\ActivityLogger;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Schedules\SchedulesProbe;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
@@ -334,7 +332,7 @@ describe('SchedulesProbe', function (): void {
             'managed' => true,
             'wireguard_address' => '10.44.0.82',
         ]);
-        $app = App::factory()->create(['node_id' => $node->id]);
+        $app = Project::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell(
             exitCode: 255,
@@ -370,7 +368,7 @@ describe('SchedulesProbe', function (): void {
             'managed' => true,
             'wireguard_address' => '10.44.0.82',
         ]);
-        $app = App::factory()->create(['node_id' => $node->id]);
+        $app = Project::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         ScheduleRun::factory()->create([
             'node_id' => $node->id,

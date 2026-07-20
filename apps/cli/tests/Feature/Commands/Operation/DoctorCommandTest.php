@@ -46,7 +46,8 @@ function doctorVerifyReport(
             'node' => 'beast',
             'role' => 'app-dev',
             'self' => false,
-            'app' => null,
+            'project' => null,
+            'instance' => null,
             'workspace' => null,
             'key' => null,
         ], $scopeOverrides),
@@ -77,7 +78,8 @@ function doctorFleetReport(): array
             'node' => null,
             'role' => 'fleet',
             'self' => false,
-            'app' => null,
+            'project' => null,
+            'instance' => null,
             'workspace' => null,
             'key' => null,
             'targets' => ['app-1', 'gateway-1'],
@@ -257,7 +259,8 @@ function doctorPartialFleetProgressReport(
             'node' => null,
             'role' => 'fleet',
             'self' => false,
-            'app' => null,
+            'project' => null,
+            'instance' => null,
             'workspace' => null,
             'key' => null,
             'targets' => $targets,
@@ -304,15 +307,15 @@ function doctorFleetDriftReport(array $issues): array
 
 describe('doctor human panel', function (): void {
     it('keeps non-decorated human output to one final doctor panel instead of full-frame progress spam', function (): void {
-        $families = ['node', 'app'];
+        $families = ['node', 'instance'];
         $appIssue = [
-            'family' => 'app',
+            'family' => 'instance',
             'node' => 'beast',
-            'key' => 'app.runtime_container_missing',
-            'code' => 'app.runtime_container_missing',
+            'key' => 'instance.runtime_container_missing',
+            'code' => 'instance.runtime_container_missing',
             'kind' => 'missing',
             'summary' => 'Runtime container for nckrtl is missing.',
-            'detail' => ['app' => 'nckrtl'],
+            'detail' => ['project' => 'nckrtl'],
             'restorable' => true,
             'adoptable' => false,
         ];
@@ -321,7 +324,7 @@ describe('doctor human panel', function (): void {
             'state' => 'running',
             'families' => [
                 ['family' => 'node', 'status' => 'checking'],
-                ['family' => 'app', 'status' => 'queued'],
+                ['family' => 'instance', 'status' => 'queued'],
             ],
         ];
         $partialProgress = doctorVerifyReport([$appIssue], ['families' => $families]);
@@ -329,13 +332,13 @@ describe('doctor human panel', function (): void {
             'state' => 'running',
             'families' => [
                 ['family' => 'node', 'status' => 'ok'],
-                ['family' => 'app', 'status' => 'done'],
+                ['family' => 'instance', 'status' => 'done'],
             ],
         ];
         $finalReport = doctorVerifyReport([$appIssue], ['families' => $families]);
 
         fakeDoctorRunStream(
-            doctorRunProgressFrame($initialProgress).doctorRunProgressFrame($partialProgress, 'app', 'done')
+            doctorRunProgressFrame($initialProgress).doctorRunProgressFrame($partialProgress, 'instance', 'done')
                 .doctorRunDriftStream($finalReport, $families),
         );
 
@@ -401,13 +404,13 @@ describe('doctor human panel', function (): void {
     });
 
     it('does not render Checking - 100% on active family rows before terminal status', function (): void {
-        $families = ['node', 'app', 'proxy', 'tool', 'database_connection'];
+        $families = ['node', 'instance', 'proxy', 'tool', 'database_connection'];
         $progress = doctorVerifyReport([], ['families' => $families]);
         $progress['progress'] = [
             'state' => 'running',
             'families' => [
                 ['family' => 'node', 'status' => 'checking', 'completed' => 1, 'total' => 1],
-                ['family' => 'app', 'status' => 'checking', 'completed' => 3, 'total' => 3],
+                ['family' => 'instance', 'status' => 'checking', 'completed' => 3, 'total' => 3],
                 ['family' => 'proxy', 'status' => 'checking', 'completed' => 2, 'total' => 2],
                 ['family' => 'tool', 'status' => 'checking', 'completed' => 4, 'total' => 4],
                 ['family' => 'database_connection', 'status' => 'checking', 'completed' => 1, 'total' => 1],
@@ -711,13 +714,15 @@ describe('doctor human panel', function (): void {
     });
 
     it('truncates single-node verify issue bullets to ten per family with overflow line', function (): void {
-        $report = doctorVerifyReport(issues: doctorIssuesForFamily('app', 11), scopeOverrides: ['families' => ['app']]);
+        $report = doctorVerifyReport(issues: doctorIssuesForFamily('instance', 11), scopeOverrides: ['families' => [
+            'instance',
+        ]]);
 
-        fakeDoctorRunStream(doctorRunDriftStream($report, ['app']));
+        fakeDoctorRunStream(doctorRunDriftStream($report, ['instance']));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
-            '--family' => ['app'],
+            '--family' => ['instance'],
         ]);
 
         $plain = stripAnsi($output);
@@ -1208,13 +1213,13 @@ describe('doctor human panel', function (): void {
     });
 
     it('truncates fleet verify issue bullets to ten per node with overflow line', function (): void {
-        $issues = doctorIssuesForFamily('app', 11, 'app-1');
+        $issues = doctorIssuesForFamily('instance', 11, 'app-1');
 
         fakeDoctorRunStream(doctorRunDriftStream(doctorFleetDriftReport($issues)));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--all' => true,
-            '--family' => ['app'],
+            '--family' => ['instance'],
         ]);
 
         $plain = stripAnsi($output);
@@ -1230,13 +1235,15 @@ describe('doctor human panel', function (): void {
     });
 
     it('keeps complete issue payloads in --json when human bullets are truncated', function (): void {
-        $report = doctorVerifyReport(issues: doctorIssuesForFamily('app', 11), scopeOverrides: ['families' => ['app']]);
+        $report = doctorVerifyReport(issues: doctorIssuesForFamily('instance', 11), scopeOverrides: ['families' => [
+            'instance',
+        ]]);
 
-        fakeDoctorRunStream(doctorRunDriftStream($report, ['app']));
+        fakeDoctorRunStream(doctorRunDriftStream($report, ['instance']));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
-            '--family' => ['app'],
+            '--family' => ['instance'],
             '--json' => true,
         ]);
 
@@ -1307,13 +1314,15 @@ describe('doctor human panel', function (): void {
     });
 
     it('keeps complete issue payloads in --stream-json when human bullets are truncated', function (): void {
-        $report = doctorVerifyReport(issues: doctorIssuesForFamily('app', 11), scopeOverrides: ['families' => ['app']]);
+        $report = doctorVerifyReport(issues: doctorIssuesForFamily('instance', 11), scopeOverrides: ['families' => [
+            'instance',
+        ]]);
 
-        fakeDoctorRunStream(doctorRunDriftStream($report, ['app']));
+        fakeDoctorRunStream(doctorRunDriftStream($report, ['instance']));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
-            '--family' => ['app'],
+            '--family' => ['instance'],
             '--stream-json' => true,
         ]);
 
@@ -1382,13 +1391,13 @@ describe('doctor human panel', function (): void {
     it('renders verify-mode family issues as readable bullet details in active-role order', function (): void {
         $report = doctorVerifyReport(issues: [
             [
-                'family' => 'app',
+                'family' => 'instance',
                 'node' => 'beast',
-                'key' => 'app.http_error',
-                'code' => 'app.http_error',
+                'key' => 'instance.http_error',
+                'code' => 'instance.http_error',
                 'kind' => 'divergent',
                 'summary' => 'https://nckrtl.test returned a 500 error response',
-                'detail' => ['app' => 'nckrtl'],
+                'detail' => ['project' => 'nckrtl'],
                 'restorable' => false,
                 'adoptable' => false,
             ],
@@ -1399,7 +1408,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'workspace.missing',
                 'kind' => 'missing',
                 'summary' => 'Workspace should exist on node but is missing',
-                'detail' => ['workspace' => 'abc123.nckrtl.test', 'app' => 'nckrtl'],
+                'detail' => ['workspace' => 'abc123.nckrtl.test', 'project' => 'nckrtl'],
                 'restorable' => true,
                 'adoptable' => false,
             ],
@@ -1410,7 +1419,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'workspace.extra',
                 'kind' => 'extra',
                 'summary' => 'Workspace exists on node but is not expected',
-                'detail' => ['workspace' => 'ui-redesign.hauser.test', 'app' => 'hauser'],
+                'detail' => ['workspace' => 'ui-redesign.hauser.test', 'project' => 'hauser'],
                 'restorable' => false,
                 'adoptable' => true,
             ],
@@ -1421,7 +1430,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'process.runtime_unit_missing',
                 'kind' => 'missing',
                 'summary' => 'process.runtime_unit_missing',
-                'detail' => ['app' => 'nckrtl', 'process' => 'queue-worker'],
+                'detail' => ['project' => 'nckrtl', 'process' => 'queue-worker'],
                 'restorable' => true,
                 'adoptable' => false,
             ],
@@ -1443,7 +1452,7 @@ describe('doctor human panel', function (): void {
                 'code' => 'database_connection.env_mismatch',
                 'kind' => 'divergent',
                 'summary' => 'database_connection.env_mismatch',
-                'detail' => ['target_type' => 'app', 'app' => 'nckrtl', 'env_prefix' => 'REPORTING'],
+                'detail' => ['target_type' => 'project', 'project' => 'nckrtl', 'env_prefix' => 'REPORTING'],
                 'restorable' => true,
                 'adoptable' => true,
             ],
@@ -1454,13 +1463,13 @@ describe('doctor human panel', function (): void {
                 'code' => 'schedule.lock_stuck',
                 'kind' => 'divergent',
                 'summary' => 'schedule.lock_stuck',
-                'detail' => ['schedule_key' => 'app:docs.production:laravel-scheduler'],
+                'detail' => ['schedule_key' => 'instance:docs.production:laravel-scheduler'],
                 'restorable' => true,
                 'adoptable' => false,
             ],
         ], scopeOverrides: ['families' => [
             'node',
-            'app',
+            'instance',
             'workspace',
             'process',
             'proxy',
@@ -1472,7 +1481,7 @@ describe('doctor human panel', function (): void {
 
         fakeDoctorRunStream(doctorRunDriftStream($report, [
             'node',
-            'app',
+            'instance',
             'workspace',
             'process',
             'proxy',
@@ -1492,7 +1501,7 @@ describe('doctor human panel', function (): void {
             ->toBe(1)
             // Category labels from the catalog, role-derived order.
             ->and($plain)
-            ->toContain('Apps')
+            ->toContain('Instances')
             ->and($plain)
             ->toContain('Workspaces')
             ->and($plain)
@@ -1501,9 +1510,9 @@ describe('doctor human panel', function (): void {
             ->toContain('Firewall')
             // Verify mode renders issue details as readable bullets, not nested tables.
             ->and($plain)
-            ->toContain("\n●  Apps          1 issue detected:")
+            ->toContain("\n●  Instances     1 issue detected:")
             ->and($plain)
-            ->toContain('- App nckrtl: https://nckrtl.test returned a 500 error')
+            ->toContain('- Instance nckrtl: https://nckrtl.test returned a 500 error')
             ->and($plain)
             ->toContain("\n●  Workspaces    2 issues found:")
             ->and($plain)
@@ -1513,17 +1522,17 @@ describe('doctor human panel', function (): void {
             ->and($plain)
             ->toContain("\n●  Processes     1 issue detected:")
             ->and($plain)
-            ->toContain('- Process queue-worker for app nckrtl: Runtime unit missing.')
+            ->toContain('- Process queue-worker for project nckrtl: Runtime unit missing.')
             ->and($plain)
             ->toContain("\n●  Scheduling    1 issue detected:")
             ->and($plain)
-            ->toContain('- Schedule app:docs.production:laravel-scheduler: Lock stuck.')
+            ->toContain('- Schedule instance:docs.production:laravel-scheduler: Lock stuck.')
             ->and($plain)
             ->toContain("\n●  Databases     2 issues found:")
             ->and($plain)
             ->toContain('- Database connection ditis_hr: Environment mismatch.')
             ->and($plain)
-            ->toContain('- Database connection REPORTING for app nckrtl: Environment')
+            ->toContain('- Database connection REPORTING for project nckrtl: Environment')
             // Categories with no issues render OK.
             ->and($plain)
             ->toContain('OK')

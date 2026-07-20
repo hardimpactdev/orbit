@@ -15,7 +15,7 @@ final class WorkspaceSetupCommand extends WorkspaceGatewayCommand
     #[\Override]
     protected $signature = 'workspace:setup
         {name? : Workspace name}
-        {--app= : Parent app name or app.instance selector}
+        {--instance= : Instance selector (project.instance)}
         {--path= : Explicit workspace path to adopt}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';
@@ -41,7 +41,7 @@ final class WorkspaceSetupCommand extends WorkspaceGatewayCommand
             '/api/workspaces/setup',
             [
                 'name' => $name,
-                'app' => $this->stringOption('app') ?? $this->appFromOrbitMarker(),
+                'instance' => $this->stringOption('instance') ?? $this->instanceFromOrbitMarker(),
                 'path' => $path,
                 'caller_cwd' => $this->hostCwd(),
             ],

@@ -5,24 +5,24 @@ Change the PHP image version used by an app or workspace runtime container.
 ## Usage
 
 ```bash
-orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
+orbit php:use [version] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
 ```
 
 ## Examples
 
 ```bash
-orbit php:use 8.5 --app=docs
-orbit php:use 8.4 --app=docs --workspace=feature-docs
-orbit php:use --app=docs --workspace=feature-docs --inherit
+orbit php:use 8.5 --instance=docs
+orbit php:use 8.4 --instance=docs --workspace=feature-docs
+orbit php:use --instance=docs --workspace=feature-docs --inherit
 orbit php:use 8.5 --node=app-1 --cli
-orbit php:use 8.5 --app=docs --json
+orbit php:use 8.5 --instance=docs --json
 ```
 
 ## Arguments and options
 
 - `version`: PHP version to select. Required unless `--inherit` is supplied.
-- `--app=<app>`: Target the logical app's shared PHP runtime policy. This is
-  not an app-instance selector and affects every Orbit instance of the app.
+- `--instance=<project.instance>`: Target the project's shared PHP runtime policy. This is
+  not an instance selector and affects every Orbit instance of the app.
 - `--workspace=<workspace>`: Target workspace override.
 - `--inherit`: Clear a workspace override so the workspace inherits the parent
   app PHP version.
@@ -31,7 +31,7 @@ orbit php:use 8.5 --app=docs --json
   version. Source-mounted Docker/Incus development and E2E nodes invoke
   `<source>/apps/cli/orbit`.
 - `--node=<node>`: Target node for `--cli`, or an optional serving-node
-  assertion for a workspace. It is invalid for a logical-app policy write,
+  assertion for a workspace. It is invalid for a project policy write,
   which resolves and preflights all affected Orbit instance serving nodes. A
   mismatched workspace node fails with the stable `target_mismatch` reason
   before any gateway configuration is written. See the
@@ -44,7 +44,7 @@ orbit php:use 8.5 --app=docs --json
 
 Run this command to select the PHP image version for an app or workspace.
 
-`php:use` resolves exactly one target scope: logical-app runtime policy, workspace runtime
+`php:use` resolves exactly one target scope: project runtime policy, workspace runtime
 override, workspace inheritance, or node CLI default. It validates that app and
 workspace versions are supported by Orbit. Before an app-policy write it
 preauthorizes every affected Orbit instance serving node and verifies the image
@@ -53,7 +53,7 @@ selection only accepts PHP 8.5.
 
 For an app target, the command writes the shared policy only after that complete
 preflight, then fans out runtime-container and proxy-backend reconciliation to
-all Orbit instances. It returns one `{app_instance, node, status, ...}` result
+all Orbit instances. It returns one `{instance, node, status, ...}` result
 per instance and does not report partial success. External-driver instances are
 reported explicitly but are not reconciled by Orbit. Workspace targets update
 and reconcile only the selected workspace placement. Proxy drift remains a
@@ -88,7 +88,7 @@ machine-readable output.
 Use these commands to list versions or verify runtime health across families.
 
 - [`orbit php:list`](../1_php-list/php-list.md)
-- [`doctor --family=app`](../../5_app/app-doctor.md)
+- [`doctor --family=instance`](../../5_project/instance-doctor.md)
 - [`doctor --family=workspace`](../../6_workspace/workspace-doctor.md)
 - [`doctor --family=proxy`](../../8_proxy/proxy-doctor.md)
 - [Technical contract](technical/1_php-use.md)

@@ -16,7 +16,7 @@ final class ShowWorkspaceRequest extends GatewayRequest
 
     public function __construct(
         public readonly ?string $name = null,
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $path = null,
     ) {}
 
@@ -36,7 +36,7 @@ final class ShowWorkspaceRequest extends GatewayRequest
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'path' => $this->path,
             ],
             fn (?string $value): bool => $value !== null && $value !== '',

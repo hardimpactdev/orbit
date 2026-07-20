@@ -6,8 +6,8 @@ namespace App\Services\Apps;
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Nodes\NodeRoleName;
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -28,7 +28,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
-    public function appliesToApp(App $app): bool
+    public function appliesToApp(Project $app): bool
     {
         $app->loadMissing('node.roleAssignments');
         $node = $app->node;
@@ -36,7 +36,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
         return $node instanceof Node && $this->appliesToAppOnNode($app, $node);
     }
 
-    public function appliesToAppOnNode(App $app, Node $node): bool
+    public function appliesToAppOnNode(Project $app, Node $node): bool
     {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return false;
@@ -61,7 +61,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
         $app = $workspace->app;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return false;
         }
 
@@ -82,7 +82,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
         return $node?->hasActiveRole(NodeRoleName::AppDevelopment->value) === true;
     }
 
-    public function appRouteDomain(App $app): string
+    public function appRouteDomain(Project $app): string
     {
         if (is_string($app->domain) && $app->domain !== '') {
             return $app->domain;
@@ -103,8 +103,8 @@ final readonly class AppDevelopmentInnerTlsPolicy
         $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
         $app = $workspace->app;
 
-        if (! $app instanceof App) {
-            throw new RuntimeException('Workspace has no parent app.');
+        if (! $app instanceof Project) {
+            throw new RuntimeException('Workspace has no parent project.');
         }
 
         return $this->placement->workspaceDomain($workspace);

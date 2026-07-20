@@ -1,4 +1,4 @@
-# Technical Contract: `orbit cf-cache-rule:add <app> [--json]`
+# Technical Contract: `orbit cf-cache-rule:add <project> [--json]`
 
 [Back to public `cf-cache-rule:add` documentation.](../cf-cache-rule-add.md)
 
@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit cf-cache-rule:add <app> [--json]
+orbit cf-cache-rule:add <project> [--json]
 ```
 
 ## Input Contract
@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | Argument `app` | `Always.` | `Never.` | `None.` | Existing Orbit app name with a Cloudflare-backed real domain. |
+| `app` | Argument `app` | `Always.` | `Never.` | `None.` | Existing Orbit project name with a Cloudflare-backed real domain. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract
@@ -65,14 +65,14 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `cf-cache-rule:add` may support app performance policy, but it does not create a
 Cloudflare doctor family. App-domain and deployment health remain owned by
-[`doctor --family=app`](../../../5_app/app-doctor.md). Ingress route health
+[`doctor --family=instance`](../../../5_project/instance-doctor.md). Ingress route health
 remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | CLI POST forwarding to `/api/cloudflare/cache-rules/{app}` and JSON success envelope passthrough. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | CLI POST forwarding to `/api/cloudflare/cache-rules/{project}` and JSON success envelope passthrough. |
 
 There is no gateway-side coverage for this command contract: authorization denial, app lookup, zone resolution, cache rule convergence, provider authorization, provider failures, and app/proxy mutation guards remain coverage gaps. CLI forwarding and envelope passthrough are covered by the linked CLI test above.
 

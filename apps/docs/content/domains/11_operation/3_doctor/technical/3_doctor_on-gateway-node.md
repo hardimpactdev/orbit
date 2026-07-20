@@ -30,7 +30,7 @@ different node with `--node=<other>`. Fleet verification is explicit `--all`
 only.
 
 - The gateway resolves `--self` to its own node identity.
-- The gateway resolves `--node`, `--app`, and `--workspace` against its configuration.
+- The gateway resolves `--node`, `--instance`, and `--workspace` against its configuration.
 - The gateway rejects `node=all`; fleet verification uses `all=true`.
 - Reject `--self` combined with `--node`.
 - Apply authorization before probing the selected target node.
@@ -60,9 +60,9 @@ reality checks scoped to its current target:
 | Family | Gateway-owned probing behavior |
 | --- | --- |
 | `node` | Check the target node's gateway record, identity, WireGuard peer configuration, reachability, bootstrap reality, and node-owned `10-node-records.conf` projection. |
-| `app` | Check app configuration and app-role runtime facts on the target node, including paths, document roots, runtime configuration, and app health probes declared by the app family. |
+| `app` | Check app configuration and app-role runtime facts on the target node, including paths, document roots, runtime configuration, and app health probes declared by the instance family. |
 | `workspace` | Check workspace configuration and the target node's workspace reality, using app-suffixed workspace identifiers in human output. |
-| `database_connection` | Check gateway connection records and target mappings, then inspect selected app-instance and workspace environment facts through the database family's documented gateway-local or Agent-push path. |
+| `database_connection` | Check gateway connection records and target mappings, then inspect selected instance and workspace environment facts through the database family's documented gateway-local or Agent-push path. |
 | `process` | Check process configuration and process runtime reality on the target node. |
 | `proxy` | Check proxy route configuration, `orbit-caddy` backend reality, and the proxy-owned `20-proxy-records.conf` projection on the active router. |
 | `firewall_rule` | Check firewall rule configuration and backend firewall reality on the target node. |

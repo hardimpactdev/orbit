@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 const ORBIT_NATIVE_MULTI_TOKEN_COMMANDS = [
-    'app:analytics disable',
-    'app:analytics enable',
-    'app:analytics show',
+    'instance:analytics disable',
+    'instance:analytics enable',
+    'instance:analytics show',
     'node role:add',
     'node role:list',
     'node role:remove',

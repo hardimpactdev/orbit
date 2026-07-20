@@ -13,7 +13,7 @@ proxy routes, or deploy artifacts on the target server.
 
 Before removing a node with an app role that still owns apps, remove or migrate those apps
 through app-family commands such as
-[`app:remove`](../../5_app/6_app-remove/app-remove.md). `node:remove` does not
+[`project:remove`](../../5_project/6_project-remove/project-remove.md). `node:remove` does not
 block on downstream family state and does not cascade into app cleanup.
 
 ## Usage
@@ -140,7 +140,7 @@ Use these commands to clean up downstream state before or after removing a node.
 - [`node:new`](../1_node-new/node-new.md) — add a node to the fleet
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes
 - [`node:show`](../4_node-show/node-show.md) — show node details
-- [`app:remove`](../../5_app/6_app-remove/app-remove.md) — remove apps before
+- [`project:remove`](../../5_project/6_project-remove/project-remove.md) — remove apps before
   decommissioning their owning node
 - [`doctor --family=node`](../node-doctor.md) — verify and repair node drift
 

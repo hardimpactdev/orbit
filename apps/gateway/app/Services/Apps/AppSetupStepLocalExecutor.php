@@ -29,7 +29,7 @@ final readonly class AppSetupStepLocalExecutor
             && ! $this->nodeRoleAssignments->nodeIsGateway($node)
         ) {
             return $this->failure(
-                'app:setup-step requires an Orbit Agent capable node.',
+                'instance:setup-step requires an Orbit Agent capable node.',
             );
         }
 

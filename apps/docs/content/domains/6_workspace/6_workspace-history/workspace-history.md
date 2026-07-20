@@ -4,14 +4,14 @@ Show workspace setup and lifecycle history.
 
 ## Usage
 
-`orbit workspace:history [name] [--app=<app>] [--limit=<int>] [--since=<date>] [--until=<date>] [--json]`
+`orbit workspace:history [name] [--instance=<project.instance>] [--limit=<int>] [--since=<date>] [--until=<date>] [--json]`
 
 ## Arguments and options
 
 - `name`: Workspace slug. Optional when the current working directory resolves
   to a known workspace path.
-- `--app=<app>`: Parent app slug or app-instance selector. Use dot notation
-  such as `happie.nmbp` to target one concrete app instance. Required only
+- `--instance=<project.instance>`: Parent project slug or instance selector. Use dot notation
+  such as `happie.nmbp` to target one concrete instance. Required only
   when `name` matches multiple visible workspaces.
 - `--json`: Output structured JSON.
 - `--limit=<int>`: Maximum number of runs to return. Default `50`; hard cap
@@ -25,10 +25,10 @@ Show workspace setup and lifecycle history.
 `orbit workspace:history feature-docs`
 
 ### View history for a workspace in a specific app
-`orbit workspace:history feature-docs --app=ohdear`
+`orbit workspace:history feature-docs --instance=ohdear`
 
-### View history for an app-instance workspace
-`orbit workspace:history recipes --app=happie.nmbp`
+### View history for an instance workspace
+`orbit workspace:history recipes --instance=happie.nmbp`
 
 ### Get history as JSON
 `orbit workspace:history feature-docs --json`
@@ -44,7 +44,7 @@ Developers use this to:
 
 History is retained for the lifetime of the workspace row on the gateway and is
 removed atomically when the workspace is removed (via `workspace:remove` or the
-`app:remove`/`app:prune` cascades). There is no automatic time-based pruning. Each call
+`project:remove`/`instance:prune` cascades). There is no automatic time-based pruning. Each call
 returns at most 500 runs; the default limit is 50, and walking further back
 through the timeline is done by re-querying with
 `--until=<oldest started_at returned>`.

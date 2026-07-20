@@ -14,11 +14,11 @@ use App\Enums\ProcessRestartPolicy;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process as OrbitProcess;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
@@ -30,12 +30,14 @@ use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
 use App\Services\Workspaces\WorkspaceSetupTargetResolver;
+use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\ResponseSequence;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Process as ProcessFacade;
+use Pest\Expectation;
 
 uses(RefreshDatabase::class);
 
@@ -123,7 +125,7 @@ it('sets up a workspace and marks it active', function (): void {
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
 
     $setup = app(SetupWorkspace::class);
@@ -131,7 +133,7 @@ it('sets up a workspace and marks it active', function (): void {
 
     expect($result['action'])->toBe('set_up');
     expect($result['workspace'])->toBe('feature-a');
-    expect($result['app'])->toBe('demo');
+    expect($result['project'])->toBe('demo');
 
     $workspace->refresh();
     expect($workspace->lifecycle_status)->toBe(WorkspaceLifecycleStatus::Active);
@@ -146,7 +148,7 @@ it('does not render PHP-FPM pool config for PHP workspaces in the steady-state p
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
@@ -177,7 +179,7 @@ it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', fun
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
@@ -241,7 +243,7 @@ it('reconciles an existing FrankenPHP workspace runtime process row', function (
             ],
         ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
 
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
@@ -270,7 +272,7 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
@@ -351,7 +353,7 @@ it('sets up a Codex worktree against the selected app instance node', function (
             'status' => 'active',
         ]);
 
-    $app = App::query()->firstOrFail();
+    $app = Project::query()->firstOrFail();
     $app->update([
         'name' => 'happie',
         'domain' => 'happie.test',
@@ -410,7 +412,7 @@ it('sets up a Codex worktree against the selected app instance node', function (
         ->and($workspace->proxyRoutes()->where('domain', 'recipes.happie.nmbp')->exists())
         ->toBeTrue()
         ->and($shell->runs)
-        ->each(fn (Pest\Expectation $run) => $run->node->toBe($localNode->id))
+        ->each(fn (Expectation $run) => $run->node->toBe($localNode->id))
         ->and($certificates->hosts)
         ->toContain('recipes.happie.nmbp');
 
@@ -441,7 +443,7 @@ it('infers the caller app instance for a Codex worktree path when app selector i
             'status' => 'active',
         ]);
 
-    $app = App::query()->firstOrFail();
+    $app = Project::query()->firstOrFail();
     $app->update([
         'name' => 'happie',
         'domain' => 'happie.test',
@@ -496,7 +498,7 @@ it('installs workspace app-dev runtime trust pool through the managed file agent
         ->update([
             'wireguard_address' => '10.47.0.42',
         ]);
-    App::query()
+    Project::query()
         ->findOrFail(1)
         ->update([
             'runtime_config' => ['proxy_transport' => 'https'],
@@ -573,7 +575,7 @@ it('rejects production workspace routes before recording or enacting artifacts',
         ->where('role', 'app-dev')
         ->update(['role' => 'app-prod']);
 
-    App::query()
+    Project::query()
         ->whereKey(1)
         ->update([
             'domain' => 'demo.example.com',
@@ -628,7 +630,7 @@ it('starts configured app processes for the workspace after rendering runtime un
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->firstOrFail();
+    $app = Project::query()->with('node')->firstOrFail();
 
     OrbitProcess::factory()
         ->forOwner($app)
@@ -709,7 +711,7 @@ it('reports converged for already-active workspace', function (): void {
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
 
     $setup = app(SetupWorkspace::class);
@@ -727,7 +729,7 @@ it('reports adopted for new workspace with adoption flag', function (): void {
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
 
     $setup = app(SetupWorkspace::class);
@@ -745,7 +747,7 @@ it('skips setup steps when none are configured', function (): void {
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
 
     $setup = app(SetupWorkspace::class);
@@ -783,10 +785,10 @@ it('continues with workspace-owned env initialization after migration removes an
                 'migrations/2026_07_16_191349_remove_parent_env_workspace_steps.php',
             );
 
-        expect($migration)->toBeInstanceOf(Illuminate\Database\Migrations\Migration::class);
+        expect($migration)->toBeInstanceOf(Migration::class);
         $migration->up();
 
-        $app = App::query()->with('node')->firstOrFail();
+        $app = Project::query()->with('node')->firstOrFail();
         $result = app(SetupWorkspace::class)->handle($app, $workspace, $app->node);
 
         expect(WorkspaceStep::query()->whereKey($unsafeStep->id)->exists())
@@ -818,7 +820,7 @@ it('runs setup steps when configured', function (): void {
         'timeout_seconds' => 60,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
 
     $setup = app(SetupWorkspace::class);
@@ -836,7 +838,7 @@ it('runs setup steps when configured', function (): void {
 });
 
 it('runs instance-specific setup steps for workspaces bound to an app instance', function (): void {
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $instance = AppInstance::factory()->create([
         'app_id' => $app->id,
         'name' => 'nmbp',
@@ -904,7 +906,7 @@ it('reports progress while setup steps are running', function (): void {
         'timeout_seconds' => 900,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
     $events = [];
 
@@ -952,7 +954,7 @@ it('routes php and composer setup steps through the selected workspace host php 
         'timeout_seconds' => 300,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
     app()->instance(RemoteShell::class, $shell);
@@ -1003,7 +1005,7 @@ it('keeps non-php setup steps on the host', function (): void {
         'timeout_seconds' => 900,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
     app()->instance(RemoteShell::class, $shell);
@@ -1039,7 +1041,7 @@ it('passes lifecycle environment into host-routed setup steps', function (): voi
         'timeout_seconds' => 1200,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
     app()->instance(RemoteShell::class, $shell);
@@ -1102,7 +1104,7 @@ it('skips setup steps when hash matches previous successful run', function (): v
         ])),
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
 
     $setup = app(SetupWorkspace::class);
@@ -1130,7 +1132,7 @@ it('throws when setup step fails', function (): void {
         'timeout_seconds' => 60,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $node = $app->node;
 
     app()->instance(RemoteShell::class, new SetupWorkspaceActionFailingShell);
@@ -1259,7 +1261,7 @@ function expectWorkspaceFrankenPhpRuntimeProcess(Workspace $workspace, ?int $exp
         ]);
 }
 
-function setup_workspace_caddy_sequence(string $sitePath): \Illuminate\Http\Client\ResponseSequence
+function setup_workspace_caddy_sequence(string $sitePath): ResponseSequence
 {
     return Http::sequence()
         ->push(setup_workspace_agent_response('caddy-config.read-global', [

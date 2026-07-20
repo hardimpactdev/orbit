@@ -20,7 +20,7 @@ and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
   target node: `doctor:restore` or `doctor:adopt`.
 - Reject mutually exclusive option combinations before probes.
 - Mutually exclusive pairs: `--fix`/`--restore`, `--fix`/`--adopt`, `--restore`/`--adopt`, and `--self`/`--node`.
-- `--all` is mutually exclusive with `--node`, `--self`, `--app`,
+- `--all` is mutually exclusive with `--node`, `--self`, `--instance`,
   `--workspace`, `--fix`, `--restore`, and `--adopt`.
 - Reject `--node=all` with `validation_failed` and `field=node` metadata before
   probes.

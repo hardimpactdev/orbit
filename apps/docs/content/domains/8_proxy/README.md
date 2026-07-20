@@ -39,10 +39,10 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   either side crosses that boundary.
 - App, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
-- Every app-owned primary route targets one concrete app instance. The route
-  keeps `owner.type=app` and the logical app slug in `owner.name`, while
-  `target.type=app_instance`, `target.value=<app.instance>`, and `node` identify
-  the concrete instance and its serving node. A logical app is never a valid
+- Every app-owned primary route targets one concrete instance. The route
+  keeps `owner.type=app` and the project slug in `owner.name`, while
+  `target.type=instance`, `target.value=<project.instance>`, and `node` identify
+  the concrete instance and its serving node. A project is never a valid
   primary-route target.
 - App WebSocket routes are visible through proxy commands but edited through
   app WebSocket binding commands. Public WebSocket hosts are `ingress` routes
@@ -130,7 +130,7 @@ App and workspace proxy routes are not generic reverse proxies. They provide the
 - route dynamic requests to the resolved app/workspace FrankenPHP runtime
   container;
 - serve static files from the configured document root;
-- for workspace routes, apply the parent app document root relative to the
+- for workspace routes, apply the parent project document root relative to the
   workspace path;
 - apply baseline browser security headers;
 - block direct requests for sensitive project files and framework internals;
@@ -225,7 +225,7 @@ The remaining fields describe placement, backend target, TLS, and status.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `node` | string | Serving node where proxy artifacts are expected. |
-| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `app_instance`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, or `tool`. App primary routes always use `app_instance`. |
+| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `instance`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, or `tool`. App primary routes always use `instance`. |
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |
 | `redirect_code` | integer \| null | HTTP redirect status code for redirect routes. |
 | `tls` | object | Orbit-managed TLS state expected for the route. |
@@ -241,7 +241,7 @@ Each command links to its public documentation and technical contract:
 ## Related
 
 - [`doctor --family=proxy`](proxy-doctor.md)
-- [`orbit app:*`](../5_app/README.md)
+- [`orbit app:*`](../5_project/README.md)
 - [`orbit workspace:*`](../6_workspace/README.md)
 - [`orbit tool:*`](../3_tool/README.md)
 - [`orbit s3:*`](../19_s3/README.md)

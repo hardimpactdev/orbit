@@ -19,7 +19,7 @@ final class WorkspaceShowCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'workspace:show
         {name? : Workspace name}
-        {--app= : Parent app slug or app.instance selector}
+        {--instance= : Instance selector (project.instance)}
         {--json}';
 
     #[\Override]
@@ -37,7 +37,7 @@ final class WorkspaceShowCommand extends GatewayCommand
 
         try {
             $response = $this->gatewayGet($path, $this->filledQuery([
-                'app' => $this->stringOption('app'),
+                'instance' => $this->stringOption('instance'),
             ]));
         } catch (GatewayApiException $exception) {
             if (
@@ -67,7 +67,7 @@ final class WorkspaceShowCommand extends GatewayCommand
 
         try {
             $response = $this->gatewayGet('/api/workspaces/resolve-by-path', $this->filledQuery([
-                'app' => $this->stringOption('app'),
+                'instance' => $this->stringOption('instance'),
                 'path' => $hostCwd,
             ]));
         } catch (GatewayApiException $exception) {
@@ -84,7 +84,7 @@ final class WorkspaceShowCommand extends GatewayCommand
     private function showPromptedWorkspace(?string $name = null): int
     {
         $workspace = $this->promptForVisibleWorkspace(
-            app: $this->stringOption('app'),
+            instance: $this->stringOption('instance'),
             name: $name,
         );
 
@@ -94,7 +94,7 @@ final class WorkspaceShowCommand extends GatewayCommand
 
         try {
             $response = $this->gatewayGet('/api/workspaces/'.rawurlencode($workspace['name']), $this->filledQuery([
-                'app' => $workspace['app'] ?? $this->stringOption('app'),
+                'instance' => $workspace['instance'] ?? $this->stringOption('instance'),
             ]));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
@@ -149,7 +149,7 @@ final class WorkspaceShowCommand extends GatewayCommand
         $title = sprintf(
             'Workspace: %s.%s',
             (string) ($workspace['name'] ?? ''),
-            (string) ($workspace['app'] ?? ''),
+            (string) ($workspace['project'] ?? ''),
         );
 
         $this->renderShowDetails($title, [

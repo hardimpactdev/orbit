@@ -52,7 +52,7 @@ orbit analytics:update --version=3.2.2 --json
 
 ## Related
 
-- [`orbit app:analytics enable`](../../5_app/16_app-analytics-enable/app-analytics-enable.md)
+- [`orbit instance:analytics enable`](../../5_project/16_instance-analytics-enable/instance-analytics-enable.md)
 - [`orbit process:list`](../../7_process/4_process-list/process-list.md)
 - [`orbit process:restart`](../../7_process/7_process-restart/process-restart.md)
 - [Technical contract](technical/1_analytics-update.md)

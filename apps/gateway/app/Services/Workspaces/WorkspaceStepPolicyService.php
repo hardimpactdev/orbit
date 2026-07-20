@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Workspaces;
 
 use App\Enums\WorkspaceLifecyclePhase;
-use App\Models\App;
 use App\Models\AppInstance;
+use App\Models\Project;
 use App\Models\WorkspaceStep;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -18,20 +18,20 @@ final readonly class WorkspaceStepPolicyService
      * @return EloquentCollection<int, WorkspaceStep>
      */
     public function stepsFor(
-        App $app,
+        Project $app,
         WorkspaceLifecyclePhase $phase,
         AppInstance $instance,
     ): EloquentCollection {
         return $this->orderedSteps($app, $phase, $instance->id);
     }
 
-    public function hasStepsFor(App $app, WorkspaceLifecyclePhase $phase, AppInstance $instance): bool
+    public function hasStepsFor(Project $app, WorkspaceLifecyclePhase $phase, AppInstance $instance): bool
     {
         return $this->hasScopedStep($app, $phase, $instance->id);
     }
 
     public function findInstanceStep(
-        App $app,
+        Project $app,
         WorkspaceLifecyclePhase $phase,
         int $stepId,
         AppInstance $instance,
@@ -58,7 +58,7 @@ final readonly class WorkspaceStepPolicyService
     }
 
     public function remainingInstanceCount(
-        App $app,
+        Project $app,
         WorkspaceLifecyclePhase $phase,
         AppInstance $instance,
     ): int {
@@ -69,7 +69,7 @@ final readonly class WorkspaceStepPolicyService
      * @return EloquentCollection<int, WorkspaceStep>
      */
     private function orderedSteps(
-        App $app,
+        Project $app,
         WorkspaceLifecyclePhase $phase,
         int $appInstanceId,
     ): EloquentCollection {
@@ -104,12 +104,12 @@ final readonly class WorkspaceStepPolicyService
         return $collection;
     }
 
-    private function hasScopedStep(App $app, WorkspaceLifecyclePhase $phase, int $appInstanceId): bool
+    private function hasScopedStep(Project $app, WorkspaceLifecyclePhase $phase, int $appInstanceId): bool
     {
         return $this->scopedTableQuery($app, $phase, $appInstanceId)->exists();
     }
 
-    private function scopedTableQuery(App $app, WorkspaceLifecyclePhase $phase, int $appInstanceId): QueryBuilder
+    private function scopedTableQuery(Project $app, WorkspaceLifecyclePhase $phase, int $appInstanceId): QueryBuilder
     {
         return DB::table('workspace_steps')
             ->where('app_id', $app->id)

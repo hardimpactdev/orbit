@@ -32,7 +32,7 @@ it('renders app-dev FrankenPHP thread pool config for a registered app runtime',
         $register = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --json',
+                'cd %s && orbit instance:register %s --node=app-dev-1 --path=%s --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
                 escapeshellarg($path),
@@ -132,7 +132,7 @@ function appRuntimeConfigRenderedRuntime(E2ETopologyHarness $topology, string $a
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $appNameValue = var_export($appName, true);
     $script = <<<PHP
-        \$app = \\App\\Models\\App::query()
+        \$app = \\App\\Models\\Project::query()
             ->with('node.roleAssignments')
             ->where('name', {$appNameValue})
             ->firstOrFail();

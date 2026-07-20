@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * @property int $id
@@ -29,7 +30,7 @@ class ProcessEvent extends Model
 {
     use HasFactory;
 
-    #[\Override]
+    #[Override]
     protected $fillable = [
         'event',
         'event_id',
@@ -45,7 +46,7 @@ class ProcessEvent extends Model
         'recorded_at',
     ];
 
-    #[\Override]
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -57,11 +58,19 @@ class ProcessEvent extends Model
     }
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return BelongsTo<Project, $this>
+     */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class, 'app_id');
+    }
+
+    /**
+     * @return BelongsTo<Project, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->project();
     }
 
     /**

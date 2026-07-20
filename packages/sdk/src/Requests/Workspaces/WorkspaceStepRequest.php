@@ -20,7 +20,7 @@ abstract class WorkspaceStepRequest extends GatewayRequest
     }
 
     /**
-     * @return array{id: int, app: string, app_instance: string, phase: string, order: int, command: string, timeout_seconds: int}
+     * @return array{id: int, project: string, instance: string, phase: string, order: int, command: string, timeout_seconds: int}
      */
     protected function workspaceStep(mixed $value): array
     {
@@ -30,7 +30,7 @@ abstract class WorkspaceStepRequest extends GatewayRequest
     }
 
     /**
-     * @return list<array{id: int, app: string, app_instance: string, phase: string, order: int, command: string, timeout_seconds: int}>
+     * @return list<array{id: int, project: string, instance: string, phase: string, order: int, command: string, timeout_seconds: int}>
      */
     protected function workspaceSteps(mixed $value): array
     {

@@ -19,7 +19,7 @@ final class UpdateToolsBulkRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::POST;
 
     public function __construct(
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $node = null,
     ) {}
 
@@ -35,7 +35,7 @@ final class UpdateToolsBulkRequest extends GatewayRequest implements HasBody
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'node' => $this->node,
             ],
             static fn (mixed $value): bool => $value !== null,

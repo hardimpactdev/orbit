@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceEnvApplier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -24,7 +24,7 @@ it('applies values only to the selected workspace path', function (): void {
         'role' => 'app-dev',
         'status' => 'active',
     ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'runtime' => AppRuntimeKind::Static,
     ]);
     $instance = AppInstance::factory()->for($app)->create([

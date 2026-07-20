@@ -19,7 +19,7 @@ final class RunDeployRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::POST;
 
     public function __construct(
-        public readonly string $app,
+        public readonly string $instance,
         public readonly bool $detach = false,
     ) {}
 
@@ -31,7 +31,7 @@ final class RunDeployRequest extends GatewayRequest implements HasBody
     protected function defaultBody(): array
     {
         return [
-            'app' => $this->app,
+            'instance' => $this->instance,
             'detach' => $this->detach,
         ];
     }

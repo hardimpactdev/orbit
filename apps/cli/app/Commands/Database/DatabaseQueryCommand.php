@@ -10,7 +10,7 @@ final class DatabaseQueryCommand extends DatabaseGatewayCommand
 {
     #[\Override]
     protected $signature = 'database:query
-        {target? : App instance, workspace, or connection slug}
+        {target? : Instance, workspace, or connection slug}
         {--sql= : SQL query to execute}
         {--connection= : Connection slug when the target maps to multiple connections}
         {--write : Allow write SQL}

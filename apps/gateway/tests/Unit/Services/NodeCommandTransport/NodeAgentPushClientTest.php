@@ -48,7 +48,7 @@ it('pushes an allowlisted binary argv envelope to the target node agent listener
         envelope: NodeCommandEnvelope::agentPushBinary(
             operationId: 'op_gateway_test_123',
             binary: 'orbit',
-            argv: ['app:list', '--json'],
+            argv: ['project:list', '--json'],
         ),
         operationToken: $operationToken,
     );
@@ -67,7 +67,7 @@ it('pushes an allowlisted binary argv envelope to the target node agent listener
             && $request->hasHeader('Authorization')
             && $request['operation_id'] === 'op_gateway_test_123'
             && $request['binary'] === 'orbit'
-            && $request['argv'] === ['app:list', '--json']
+            && $request['argv'] === ['project:list', '--json']
             && $request['operation_token'] !== null
             && $request['timeout_seconds'] === 30
             && $request['stream'] === true
@@ -107,7 +107,7 @@ it('accepts nullable exit codes from the target node agent listener', function (
         envelope: NodeCommandEnvelope::agentPushBinary(
             operationId: 'op_gateway_test_456',
             binary: 'orbit',
-            argv: ['app:list', '--json'],
+            argv: ['project:list', '--json'],
         ),
         operationToken: agent_push_client_test_operation_token(),
     );
@@ -219,7 +219,7 @@ it('uses the envelope command timeout with a small HTTP buffer', function (): vo
     $shortEnvelope = NodeCommandEnvelope::agentPushBinary(
         operationId: 'op_gateway_test_short_timeout',
         binary: 'orbit',
-        argv: ['app:list', '--json'],
+        argv: ['project:list', '--json'],
         timeoutSeconds: 3,
     );
     $longEnvelope = NodeCommandEnvelope::agentPushBinary(

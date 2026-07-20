@@ -48,7 +48,7 @@ final class ProcessStoreController implements Loggable
         try {
             $context = $this->contexts->resolve(
                 nodeName: $input['node'],
-                appName: $input['app'],
+                appName: $input['instance'],
                 workspaceName: $input['workspace'],
             );
         } catch (GatewayApiException $e) {
@@ -100,12 +100,12 @@ final class ProcessStoreController implements Loggable
     }
 
     /**
-     * @return array{node: string|null, app: string|null, workspace: string|null, name: string, command: string|null, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, service: string|null, version: string|null, image: string|null, service_options: array<string, mixed>, replace_containers: list<string>, start: bool}|JsonResponse
+     * @return array{node: string|null, instance: string|null, workspace: string|null, name: string, command: string|null, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, service: string|null, version: string|null, image: string|null, service_options: array<string, mixed>, replace_containers: list<string>, start: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
         $node = $this->optionalString($request, 'node');
-        $app = $this->optionalString($request, 'app');
+        $app = $this->optionalString($request, 'instance');
         $workspace = $this->optionalString($request, 'workspace');
         $name = $this->optionalString($request, 'name');
         $command = $this->optionalString($request, 'command');
@@ -175,11 +175,11 @@ final class ProcessStoreController implements Loggable
         if ($node !== null && ($app !== null || $workspace !== null)) {
             return $this->error(
                 'validation_failed',
-                'A node context cannot be combined with app or workspace context.',
+                'A node context cannot be combined with instance or workspace context.',
                 [
                     'field' => 'context',
                     'node' => $node,
-                    'app' => $app,
+                    'instance' => $app,
                     'workspace' => $workspace,
                 ],
                 422,
@@ -189,8 +189,8 @@ final class ProcessStoreController implements Loggable
         if ($node === null && $app === null && $workspace === null) {
             return $this->error(
                 'validation_failed',
-                'A node, app, or workspace context is required.',
-                ['field' => 'app'],
+                'A node, instance, or workspace context is required.',
+                ['field' => 'instance'],
                 422,
             );
         }
@@ -399,7 +399,7 @@ final class ProcessStoreController implements Loggable
 
         return [
             'node' => $node,
-            'app' => $app,
+            'instance' => $app,
             'workspace' => $workspace,
             'name' => $name,
             'command' => $command,
@@ -529,7 +529,7 @@ final class ProcessStoreController implements Loggable
     {
         return [
             'node' => $this->optionalString(request(), 'node'),
-            'app' => $this->optionalString(request(), 'app'),
+            'instance' => $this->optionalString(request(), 'instance'),
             'workspace' => $this->optionalString(request(), 'workspace'),
             'name' => $this->optionalString(request(), 'name'),
             'tool' => $this->optionalString(request(), 'tool'),

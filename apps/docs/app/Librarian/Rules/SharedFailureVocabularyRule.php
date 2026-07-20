@@ -39,7 +39,7 @@ final readonly class SharedFailureVocabularyRule implements GroupedRule
         'run_not_found' => 'Use workspace.run_not_found for workspace run lookup failures.',
         'ssh_unreachable' => 'Use node.bootstrap_ssh_failed with error.meta.step=client_ssh_preflight|client_ssh_bootstrap.',
         'unauthorized_role' => 'Use authorization_failed with error.meta.missing_permission.',
-        'unsupported_adapter' => 'Use the owning product code, such as node.unsupported_adapter or app.unsupported_adapter.',
+        'unsupported_adapter' => 'Use the owning product code, such as node.unsupported_adapter or instance.unsupported_adapter.',
         'unsupported_platform' => 'Use node.unsupported_platform for unsupported node platform failures.',
         'validation.missing_argument' => 'Use validation_failed with error.meta.field for missing input.',
         'validation.missing_input' => 'Use validation_failed with error.meta.field for missing input.',

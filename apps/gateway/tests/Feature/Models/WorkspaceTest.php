@@ -6,9 +6,9 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
@@ -25,7 +25,7 @@ it('stores workspace registry intent and derives canonical fields', function ():
         'tld' => 'test',
     ]);
 
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'php_version' => '8.5',
@@ -57,7 +57,7 @@ it('derives workspace url from a matching orbit app instance placement', functio
     $beast = Node::factory()->appDev(['tld' => 'beast'])->create(['name' => 'Beast']);
     $nmbp = Node::factory()->appDev(['tld' => 'nmbp'])->create(['name' => 'NMBP']);
 
-    $app = App::factory()->for($beast, 'node')->create([
+    $app = Project::factory()->for($beast, 'node')->create([
         'name' => 'happie',
         'path' => '/Users/nckrtl/apps/happie-beast',
         'domain' => null,
@@ -100,7 +100,7 @@ it('derives workspace url from explicit workspace proxy route before path placem
     $beast = Node::factory()->appDev(['tld' => 'test'])->create(['name' => 'beast']);
     $nmbp = Node::factory()->appDev(['tld' => 'nmbp'])->create(['name' => 'NMBP']);
 
-    $app = App::factory()->for($beast, 'node')->create([
+    $app = Project::factory()->for($beast, 'node')->create([
         'name' => 'happie',
         'path' => '/home/nckrtl/apps/happie',
         'domain' => null,
@@ -149,7 +149,7 @@ it('derives workspace url from explicit workspace proxy route before path placem
 });
 
 it('prefers an explicit workspace php version over the parent app version', function (): void {
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'php_version' => '8.5',
     ]);
 
@@ -162,8 +162,8 @@ it('prefers an explicit workspace php version over the parent app version', func
 });
 
 it('keeps workspace names unique within a parent app only', function (): void {
-    $firstApp = App::factory()->create();
-    $secondApp = App::factory()->create();
+    $firstApp = Project::factory()->create();
+    $secondApp = Project::factory()->create();
 
     Workspace::factory()->create([
         'app_id' => $firstApp->id,

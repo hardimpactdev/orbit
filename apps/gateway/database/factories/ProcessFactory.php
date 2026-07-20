@@ -8,15 +8,16 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Database\Eloquent\Model;
+use Override;
 
 /**
  * @extends Factory<Process>
@@ -25,15 +26,15 @@ use Illuminate\Database\Eloquent\Model;
  */
 class ProcessFactory extends Factory
 {
-    #[\Override]
+    #[Override]
     protected $model = Process::class;
 
     public function definition(): array
     {
         return [
             'node_id' => Node::factory(),
-            'owner_type' => App::class,
-            'owner_id' => App::factory(),
+            'owner_type' => Project::class,
+            'owner_id' => Project::factory(),
             'name' => fake()->unique()->slug(1),
             'command' => 'php artisan queue:work',
             'restart_policy' => ProcessRestartPolicy::Never,
@@ -61,7 +62,7 @@ class ProcessFactory extends Factory
 
     private function runtimeForOwner(Model $owner): ProcessRuntime
     {
-        if ($owner instanceof App || $owner instanceof Workspace) {
+        if ($owner instanceof Project || $owner instanceof Workspace) {
             return ProcessRuntime::Systemd;
         }
 
@@ -78,7 +79,7 @@ class ProcessFactory extends Factory
             return $owner->node_id;
         }
 
-        if ($owner instanceof App) {
+        if ($owner instanceof Project) {
             $node = $appInstance instanceof AppInstance
                 ? app(WorkspacePlacement::class)->nodeForInstance($appInstance)
                 : null;
@@ -97,7 +98,7 @@ class ProcessFactory extends Factory
 
             $owner->loadMissing('app');
 
-            if ($owner->app instanceof App) {
+            if ($owner->app instanceof Project) {
                 return $owner->app->node_id;
             }
         }
@@ -113,7 +114,7 @@ class ProcessFactory extends Factory
             return $owner->appInstance;
         }
 
-        if (! $owner instanceof App) {
+        if (! $owner instanceof Project) {
             return null;
         }
 

@@ -6,10 +6,10 @@ namespace App\Services\Apps;
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Nodes\NodeRoleName;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRuntimeMount;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Collection;
@@ -26,7 +26,7 @@ final readonly class AppRuntimeMountService
     /**
      * @return list<array{source: string, target: string, read_only: bool}>
      */
-    public function mountsForRuntime(App $app, ?AppInstance $instance = null): array
+    public function mountsForRuntime(Project $app, ?AppInstance $instance = null): array
     {
         if (! $this->isSupportedAppDevPhpApp($app)) {
             return [];
@@ -147,9 +147,9 @@ final readonly class AppRuntimeMountService
     /**
      * @return array{0: string, 1: string}
      */
-    private function validateIntent(App $app, string $source, string $target, ?AppInstance $instance = null): array
+    private function validateIntent(Project $app, string $source, string $target, ?AppInstance $instance = null): array
     {
-        $this->assertSupportedApp($app);
+        $this->assertSupportedApp($app, $instance);
 
         $source = $this->normalizePath($source, 'source');
         $target = $this->normalizePath($target, 'target');
@@ -183,7 +183,7 @@ final readonly class AppRuntimeMountService
         return [$source, $target];
     }
 
-    private function homeForValidation(App $app, ?AppInstance $instance = null): string
+    private function homeForValidation(Project $app, ?AppInstance $instance = null): string
     {
         if ($instance instanceof AppInstance) {
             $node = $this->placement->nodeForInstance($instance);
@@ -202,40 +202,41 @@ final readonly class AppRuntimeMountService
         return NodeHostPaths::homeDirectoryFor(null, $this->nodeUser($app));
     }
 
-    private function assertSupportedApp(App $app): void
+    private function assertSupportedApp(Project $app, ?AppInstance $instance): void
     {
+        $selector = $instance instanceof AppInstance ? "{$app->name}.{$instance->name}" : $app->name;
         $runtime = $app->runtimeKind();
 
         if ($runtime !== AppRuntimeKind::Php) {
             throw $this->validationFailure(
-                'app_runtime_not_php',
-                "App '{$app->name}' does not use the PHP runtime.",
-                ['app' => $app->name, 'runtime' => $runtime->value],
+                'instance_runtime_not_php',
+                "Instance '{$selector}' does not use the PHP runtime.",
+                ['project' => $app->name, 'instance' => $instance?->name, 'runtime' => $runtime->value],
             );
         }
 
         if (! $this->isAppDevApp($app)) {
             throw $this->validationFailure(
-                'app_mounts_app_dev_only',
-                'Configurable app runtime mounts are currently supported for app-dev apps only.',
-                ['app' => $app->name],
+                'instance_mounts_app_dev_only',
+                'Configurable instance runtime mounts are currently supported on app-dev nodes only.',
+                ['project' => $app->name, 'instance' => $instance?->name],
             );
         }
     }
 
-    private function isSupportedAppDevPhpApp(App $app): bool
+    private function isSupportedAppDevPhpApp(Project $app): bool
     {
         return $app->runtimeKind() === AppRuntimeKind::Php && $this->isAppDevApp($app);
     }
 
-    private function isAppDevApp(App $app): bool
+    private function isAppDevApp(Project $app): bool
     {
         $app->loadMissing('node.roleAssignments');
 
         return $app->node instanceof Node && $app->node->hasActiveRole(NodeRoleName::AppDevelopment->value);
     }
 
-    private function nodeUser(App $app): string
+    private function nodeUser(Project $app): string
     {
         $app->loadMissing('node');
 
@@ -244,8 +245,8 @@ final readonly class AppRuntimeMountService
         if ($nodeUser === '' || preg_match('/^[A-Za-z0-9._-]+$/', $nodeUser) !== 1) {
             throw $this->validationFailure(
                 'node_user_invalid',
-                "App '{$app->name}' has an invalid runtime user.",
-                ['app' => $app->name],
+                "Project '{$app->name}' has an invalid runtime user.",
+                ['project' => $app->name],
             );
         }
 
@@ -315,7 +316,7 @@ final readonly class AppRuntimeMountService
         );
     }
 
-    private function isReservedTarget(App $app, string $target): bool
+    private function isReservedTarget(Project $app, string $target): bool
     {
         $reservedTargets = [
             AppRuntimeContainer::SourceTarget,

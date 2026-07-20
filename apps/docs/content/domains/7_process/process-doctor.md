@@ -8,16 +8,16 @@ The process family doctor implements the
 
 `doctor --family=process` verifies whether gateway process definitions still
 match the runtime-unit artifacts and the service endpoint assumptions
-that make those definitions executable on their resolved nodes or app instance serving nodes.
+that make those definitions executable on their resolved nodes or instance serving nodes.
 
 The process family owns these facts:
 
-- gateway-owned process definitions: node/app-instance/workspace owner, name, command,
+- gateway-owned process definitions: node/instance/workspace owner, name, command,
   restart policy, crash-notification policy, optional tool dependency, runtime,
   runtime configuration, and service endpoint metadata;
-- derived runtime-unit identity for one concrete app instance and, on
+- derived runtime-unit identity for one concrete instance and, on
   `app-dev` only, its workspaces:
-  `orbit_<app>_<app-instance>_<workspace|main>_<process>`;
+  `orbit_<project>_<instance>_<workspace|main>_<process>`;
 - systemd process runtime units rendered from process, app, workspace, and node
   configuration, including command, working directory, restart policy, and
   runtime environment;
@@ -44,7 +44,7 @@ The process family owns these facts:
   back at the owning node's own WireGuard service address.
 
 Node reachability and WireGuard route mutation belong to `node` provisioning
-and topology work. Logical-app source policy, PHP runtime, and app-instance runtime configuration
+and topology work. Project source policy, PHP runtime, and instance runtime configuration
 belong to `app`. Workspace source directories and setup state belong to
 `workspace`. Proxy routes, schedules, tools, and firewall rules remain outside
 the process family.
@@ -56,31 +56,31 @@ The processes probe reads gateway process definitions and checks the layers belo
 On an `app-prod` target, the probe never loads a workspace-owned process row or
 expands an app process into workspace runtime contexts. Unsupported workspace
 owner types, runtime units, and event identities are excluded before comparison.
-Main app-instance and node-owned process drift remains visible.
+Main instance and node-owned process drift remains visible.
 
 ### Registry configuration
 
-Every selected app/workspace process definition has valid logical-app and
-concrete app-instance references, plus a process name, command, restart policy,
+Every selected app/workspace process definition has valid project and
+concrete instance references, plus a process name, command, restart policy,
 and crash-notification policy. Node-owned service process definitions have a
-valid active node owner instead of an app-instance owner.
+valid active node owner instead of an instance owner.
 
 For a PHP app that already owns managed FrankenPHP runtime intent, every active
-app instance must have its canonical FrankenPHP process row. A missing
+instance must have its canonical FrankenPHP process row. A missing
 secondary-instance row is reported before artifact inspection so restore can
 recreate both the derived definition and its container.
 
-### Owning app instance and workspace expansion
+### Owning instance and workspace expansion
 
 The owner resolves to one active `AppInstance`. On `app-dev`, expected runtime
 contexts are that instance's main context plus every active workspace belonging
 to the same instance. On `app-prod`, only the main context is eligible. All
 expected units are placed on the instance's serving node; other instances of
-the same logical app are outside this definition's expansion.
+the same project are outside this definition's expansion.
 
 ### Process manager availability
 
-The resolved node or app instance serving node has the selected runtime backend available and responsive.
+The resolved node or instance serving node has the selected runtime backend available and responsive.
 Systemd-backed process units require `systemctl` and journald access.
 Launchd-backed process units require `launchctl` access in the owning user's
 GUI domain and readable plist/log paths for LaunchAgents that Orbit owns.
@@ -115,7 +115,7 @@ actions only for launchd labels that Orbit owns.
 ### Runtime-unit identity
 
 Each app/workspace runtime context maps to exactly one runtime unit name that
-Orbit owns, using `orbit_<app>_<app-instance>_<workspace|main>_<process>`. Node-owned services
+Orbit owns, using `orbit_<project>_<instance>_<workspace|main>_<process>`. Node-owned services
 may declare a stable configured unit name, such as `orbit-seaweedfs` for the
 `seaweedfs` process row.
 
@@ -155,7 +155,7 @@ under `dev.hardimpact.orbit.*` and matching plist paths in
 `~/Library/LaunchAgents`; third-party LaunchAgents are outside process-family
 scope. For Docker app runtimes, the node-wide inventory compares
 `orbit.container.kind=app-runtime` and `orbit.app` labels with active logical
-app and concrete app-instance runtime slugs. Inventory failure reports
+app and concrete instance runtime slugs. Inventory failure reports
 `process.runtime_backend_unavailable` instead of silently hiding orphan drift.
 
 ### Lifecycle events as history
@@ -168,10 +168,10 @@ Each code below identifies a specific process-family drift condition that the pr
 
 | Code | Detected when |
 | --- | --- |
-| `process.record_incomplete` | A selected app/workspace process definition lacks logical app, concrete app instance, name, command, restart policy, or crash-notification policy. |
-| `process.owner_app_invalid` | The process definition points at a missing logical app, missing app instance, or app instance whose serving node is not active. |
+| `process.record_incomplete` | A selected app/workspace process definition lacks project, concrete instance, name, command, restart policy, or crash-notification policy. |
+| `process.owner_app_invalid` | The process definition points at a missing project, missing instance, or instance whose serving node is not active. |
 | `process.owner_node_invalid` | The process definition points at a node owner that is not active. |
-| `process.runtime_context_unresolved` | The expected main app-instance or same-instance workspace runtime context cannot be derived from gateway configuration. |
+| `process.runtime_context_unresolved` | The expected main instance or same-instance workspace runtime context cannot be derived from gateway configuration. |
 | `process.wireguard_self_route_unavailable` | A node-owned service endpoint points at the owning node's own WireGuard service address, but Linux self-route diagnostics are missing/unhealthy or the platform does not support this diagnostic. |
 | `process.runtime_backend_unavailable` | The selected process runtime backend is unavailable. Downstream runtime-unit checks are skipped while this code is active. |
 | `process.runtime_unit_unrenderable` | Gateway process intent is incomplete or invalid, so the expected runtime unit cannot be rendered. |
@@ -193,9 +193,9 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `process.runtime_backend_unavailable` | No `doctor --restore` action. Process manager installation and recovery belong to node operations. Process doctor reports the dependency and does not attempt to install Docker, systemd, or launchd. |
 | `process.wireguard_self_route_unavailable` | No `doctor --restore` action. WireGuard self-route mutation belongs to node provisioning/topology repair, not the process family. |
 | `process.runtime_unit_unrenderable` | No `doctor --restore` action. Fix the process definition or run the role baseline that owns the incomplete service process intent. |
-| `process.runtime_unit_missing` | Re-render and reload the missing backend artifact from gateway app-instance, workspace, and process configuration. For a managed PHP app instance missing its canonical FrankenPHP process row, recreate that derived row first and then restore its container. |
-| `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in active gateway app-instance, workspace, and process configuration. |
-| `process.runtime_unit_mismatch` | Rewrite the backend artifact from gateway app-instance, workspace, and process configuration. |
+| `process.runtime_unit_missing` | Re-render and reload the missing backend artifact from gateway instance, workspace, and process configuration. For a managed PHP instance missing its canonical FrankenPHP process row, recreate that derived row first and then restore its container. |
+| `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in active gateway instance, workspace, and process configuration. |
+| `process.runtime_unit_mismatch` | Rewrite the backend artifact from gateway instance, workspace, and process configuration. |
 | `process.runtime_unit_unloaded` | Re-run launchd lifecycle actions for the Orbit-owned label when the process should be running. |
 | `process.restart_policy_mismatch` | Rewrite the backend restart policy from the process definition. |
 | `process.runtime_environment_mismatch` | Rewrite the runtime environment from the runtime unit environment contract. |
@@ -209,9 +209,9 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 `process.runtime_backend_unavailable`, or
 `process.runtime_unit_unrenderable`.
 
-Invalid user-managed process definitions and app-instance ownership problems
+Invalid user-managed process definitions and instance ownership problems
 remain explicit process, app, or workspace command work. Process doctor does
-not create arbitrary definitions, change process names, edit app-instance or
+not create arbitrary definitions, change process names, edit instance or
 workspace records, or adopt arbitrary runtime-unit files as gateway
 configuration. Its only definition-recreation exception is the canonical,
 derived FrankenPHP process row for an active instance of an app that already
@@ -257,7 +257,7 @@ No current E2E test is mapped for process-family doctor coverage.
 `DoctorRunControllerTest` covers process-family API scope, process drift
 reporting, and the `process.runtime_backend_unavailable` short-circuit.
 
-`ProcessesProbeTest` covers registry configuration, node/app-instance/workspace
+`ProcessesProbeTest` covers registry configuration, node/instance/workspace
 owner validation, same-instance workspace expansion, and process manager availability.
 It also covers runtime-unit identity, canonical FrankenPHP and SeaweedFS
 process rows, and Docker/Docker Swarm managed service metadata.

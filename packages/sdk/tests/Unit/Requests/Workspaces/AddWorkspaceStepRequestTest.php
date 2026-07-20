@@ -18,14 +18,14 @@ it('resolves to POST /api/workspaces/steps/{phase}', function (): void {
         phase: 'setup',
         command: 'composer install',
         timeout: 600,
-        app: 'docs.development',
+        instance: 'docs.development',
         before: 12,
     );
 
     expect($request->resolveEndpoint())->toBe('/api/workspaces/steps/setup');
     expect($request->getMethod())->toBe(Method::POST);
     expect($request->body()->all())->toBe([
-        'app' => 'docs.development',
+        'instance' => 'docs.development',
         'command' => 'composer install',
         'timeout' => 600,
         'before' => 12,
@@ -40,8 +40,8 @@ it('returns a WorkspaceStepMutationResponse DTO', function (): void {
                     'result' => ['action' => 'added'],
                     'step' => [
                         'id' => 12,
-                        'app' => 'docs',
-                        'app_instance' => 'development',
+                        'project' => 'docs',
+                        'instance' => 'development',
                         'phase' => 'setup',
                         'order' => 1,
                         'command' => 'composer install',
@@ -60,15 +60,15 @@ it('returns a WorkspaceStepMutationResponse DTO', function (): void {
         phase: 'setup',
         command: 'composer install',
         timeout: 600,
-        app: 'docs.development',
+        instance: 'docs.development',
     ))->dto();
 
     expect($dto)->toBeInstanceOf(WorkspaceStepMutationResponse::class);
     expect($dto->result)->toBe(['action' => 'added']);
     expect($dto->step)->toBe([
         'id' => 12,
-        'app' => 'docs',
-        'app_instance' => 'development',
+        'project' => 'docs',
+        'instance' => 'development',
         'phase' => 'setup',
         'order' => 1,
         'command' => 'composer install',

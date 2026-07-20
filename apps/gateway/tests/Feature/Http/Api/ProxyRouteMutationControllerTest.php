@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -61,7 +61,7 @@ describe('ProxyRoute mutation API', function (): void {
     it('denies domain conflicts for non-custom routes', function (): void {
         createProxyRouteMutationCallerNode(role: 'gateway');
         $servingNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $servingNode->id,

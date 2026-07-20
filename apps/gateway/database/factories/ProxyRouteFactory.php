@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -32,9 +32,9 @@ class ProxyRouteFactory extends Factory
         ];
     }
 
-    public function forApp(?App $app = null): self
+    public function forApp(?Project $app = null): self
     {
-        $appId = $app instanceof App ? $app->id : App::factory();
+        $appId = $app instanceof Project ? $app->id : Project::factory();
 
         return $this->state(fn (): array => [
             'app_id' => $appId,

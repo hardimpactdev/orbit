@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace-setup-step:add --command=<command> [--app=<app.instance>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
+orbit workspace-setup-step:add --command=<command> [--instance=<project.instance>] [--before=<id> | --after=<id>] [--timeout=<seconds>] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `--command` | `text` | Always. | n/a | Non-empty shell command. |
-| `--app` | `text` | Unless the shared workspace selector chain resolves to a concrete app instance. | Resolved through the shared workspace selector chain when omitted. | Dotted app-instance selectors such as `happie.nmbp` are the explicit safe write path. Bare logical-app slugs are rejected with `error.meta.reason=app_instance_required`. |
+| `--instance` | `text` | Unless the shared workspace selector chain resolves to a concrete instance. | Resolved through the shared workspace selector chain when omitted. | Dotted instance selectors such as `happie.nmbp` are the explicit safe write path. Bare project slugs are rejected with `error.meta.reason=instance_required`. |
 | `--before` | `integer` | Optional. Mutually exclusive with `--after`. | n/a | Positive integer. Must reference an existing setup step belonging to the same app and `phase=setup`. |
 | `--after` | `integer` | Optional. Mutually exclusive with `--before`. | n/a | Positive integer. Must reference an existing setup step belonging to the same app and `phase=setup`. |
 | `--timeout` | `integer` | Optional. | `600` | Strict positive integer (`>= 1`). `0` is rejected before side effects with `error.code=validation_failed`, `error.meta.field=timeout`. |
@@ -34,26 +34,26 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ## State Model
 
 The gateway owns workspace step policy. It stores only rows owned by an app
-instance in `workspace_steps`, keyed by `(app_instance_id, phase, sort_order)`.
+instance in `workspace_steps`, keyed by `(instance_id, phase, sort_order)`.
 
 ## Input Resolution
 
 1. **Resolve Command**: Resolve `--command` from flag or interactive prompt.
 2. **Resolve App Instance**: Mirror the `workspace:new` precedence chain:
-   - Explicit `--app=<app.instance>`, which must be a dotted app-instance
-     selector such as `happie.nmbp` for gateway writes. Bare logical-app
-     slugs are rejected with `error.meta.reason=app_instance_required`.
-   - `.orbit/config` marker on the caller filesystem (installed by `app:new` /
-     `app:register` and any workspace-installed marker) that names the owning
-     app slug.
+   - Explicit `--instance=<project.instance>`, which must be a dotted instance
+     selector such as `happie.nmbp` for gateway writes. Bare project
+     slugs are rejected with `error.meta.reason=instance_required`.
+   - `.orbit/config` marker on the caller filesystem (installed by `project:new` /
+     `instance:register` and any workspace-installed marker) that names the owning
+     project slug.
    - Gateway path-ownership lookup keyed on `(caller node identity, absolute
-     cwd)` that returns the app slug whose registered app path or any
+     cwd)` that returns the project slug whose registered app path or any
      registered workspace path contains the caller's cwd.
    - Interactive prompt in interactive mode; non-interactive failure with
-     `error.code=validation_failed`, `error.meta.field=app`.
+     `error.code=validation_failed`, `error.meta.field=instance`.
    - **Forbidden**: `workspace-setup-step:add` must not read `composer.json`,
      `package.json`, `.php-version`, or any other project file content during
-     app-instance inference. This matches the `workspace:new` contract and
+     instance inference. This matches the `workspace:new` contract and
      `architecture.md` "Workspaces" project-file inspection prohibition.
 3. **Validate Position**:
    - `--before` and `--after` are mutually exclusive. Supplying both fails
@@ -74,20 +74,20 @@ instance in `workspace_steps`, keyed by `(app_instance_id, phase, sort_order)`.
 ### Setup Step Addition Rules
 
 `workspace-setup-step:add` writes a single setup step record owned by the gateway
-for one app instance's workspace lifecycle. The step is *not* executed during
+for one instance's workspace lifecycle. The step is *not* executed during
 this command; it is applied by `workspace:new` and `workspace:setup` at
 `phase=setup_steps`.
 
 1. **Registry Write**: Creates one new instance-scoped record in the gateway
    workspace setup step policy with the resolved
-   `(app_instance, phase=setup, command, timeout_seconds)` tuple. The new
+   `(instance, phase=setup, command, timeout_seconds)` tuple. The new
    record receives a freshly assigned numeric `id`.
 2. **Phase Assignment**: Phase is automatically `setup`. There is no
    per-record override; teardown steps are owned by
    [`workspace-teardown-step:add`](../../11_workspace-teardown-step-add/workspace-teardown-step-add.md).
 3. **Order Calculation**:
    - `--before=<id>`: New step receives the referenced step's `order`. The
-     referenced step and all subsequent steps in `(app_instance, phase=setup)` are
+     referenced step and all subsequent steps in `(instance, phase=setup)` are
      incremented by one.
    - `--after=<id>`: New step receives `order + 1` of the referenced step.
      All subsequent steps are incremented by one.
@@ -95,7 +95,7 @@ this command; it is applied by `workspace:new` and `workspace:setup` at
      `order = max(existing_order_for_instance_and_phase) + 1` (or `1` if no steps
      exist yet).
 4. **Step-Record Shape**: The persisted record exposes
-   `{ id, app, app_instance, phase, order, command, timeout_seconds }`. Steps have no
+   `{ id, project, instance, phase, order, command, timeout_seconds }`. Steps have no
    `name`, no per-step `working_directory`, no `env_overrides`, and no
    per-step `on_failure` knob. Working directory is pinned to the workspace
    path on the owning node and exposed through `ORBIT_WORKSPACE_PATH`
@@ -123,11 +123,11 @@ this command; it is applied by `workspace:new` and `workspace:setup` at
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
-- **App Instance Required**: Bare app slug or path-only resolution without a
-  concrete app instance (`error.code=validation_failed`,
-  `error.meta.field=app`, `error.meta.reason=app_instance_required`).
-- **App Not Found**: Resolved app slug does not exist in gateway configuration
-  (`error.code=workspace.app_not_found`, `error.meta.app`).
+- **App Instance Required**: Bare project slug or path-only resolution without a
+  concrete instance (`error.code=validation_failed`,
+  `error.meta.field=instance`, `error.meta.reason=instance_required`).
+- **App Not Found**: Resolved project slug does not exist in gateway configuration
+  (`error.code=workspace.app_not_found`, `error.meta.project`).
 - **Production app unsupported**: The selected instance is served by an
   `app-prod` node (`error.code=workspace.unsupported_for_production`). No
   workspace lifecycle policy is stored.
@@ -135,7 +135,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   (`error.code=workspace.invalid_position`,
   `error.meta.{before, after}`).
 - **Step Not Found**: Referenced `--before` / `--after` ID does not exist
-  for the resolved app instance and `phase=setup`
+  for the resolved instance and `phase=setup`
   (`error.code=workspace.step_not_found`,
   `error.meta.{id, app, phase=setup}`).
 

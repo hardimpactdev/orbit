@@ -11,14 +11,14 @@ supported removal path.
 ## Usage
 
 ```bash
-orbit tool:remove <tool> [--app=<app>] [--node=<node>] [--force] [--json]
+orbit tool:remove <tool> [--instance=<project.instance>] [--node=<node>] [--force] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit tool:remove composer --node=app-1
-orbit tool:remove opencode-cli --app=docs.development --force
+orbit tool:remove opencode-cli --instance=docs.development --force
 orbit tool:remove composer --node=app-1 --json --force
 ```
 
@@ -26,14 +26,14 @@ orbit tool:remove composer --node=app-1 --json --force
 
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node. Defaults to local `node:default` when configured.
-- `--app`: Resolve the target node from a concrete app instance. Bare logical
+- `--instance`: Resolve the target node from a concrete instance. Bare logical
   shorthand is valid only when exactly one instance is visible.
 - `--force`: Confirm destructive removal or skip the interactive confirmation
   prompt.
 - `--json`: Output JSON and select non-interactive input mode. It does not
   provide destructive consent.
 
-Target context is required when neither `--node`, `--app`, nor local
+Target context is required when neither `--node`, `--instance`, nor local
 `node:default` resolves a node. The command never guesses the only visible app
 instance as the target. Every non-interactive removal requires `--force`, including
 JSON use. Interactive TTY use prompts for confirmation when `--force` is absent.
@@ -76,7 +76,7 @@ warnings.
 - The CLI caller can reach the Orbit gateway, or the command is running on the
   gateway.
 - The current node identity is authorized to manage tools for the selected node
-  or app instance's serving node.
+  or instance's serving node.
 - The tool is registered for the resolved node.
 - The tool definition supports managed removal.
 - The gateway can reach the target node through Orbit's node execution

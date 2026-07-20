@@ -5,10 +5,10 @@ declare(strict_types=1);
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -37,7 +37,7 @@ function create_app_instance_caller(array $overrides = []): Node
 /**
  * @param  list<string>  $permissions
  */
-function grant_app_instance_access(Node $caller, Node $appNode, array $permissions = ['app:read']): void
+function grant_app_instance_access(Node $caller, Node $appNode, array $permissions = ['instance:read']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -73,8 +73,8 @@ describe('AppInstanceController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
         grant_app_instance_access($caller, $appNode);
 
-        /** @var App $app */
-        $app = App::factory()->for($appNode, 'node')->create([
+        /** @var Project $app */
+        $app = Project::factory()->for($appNode, 'node')->create([
             'name' => 'hauser',
             'path' => '/Users/nckrtl/apps/hauser',
             'document_root' => 'public',
@@ -109,7 +109,7 @@ describe('AppInstanceController', function (): void {
             'read_only' => true,
         ]);
 
-        $list = get_app_instance_json('/api/apps/hauser/instances');
+        $list = get_app_instance_json('/api/projects/hauser/instances');
 
         $list->assertOk();
 
@@ -127,7 +127,7 @@ describe('AppInstanceController', function (): void {
             ->and(data_get($instances, 'development.runtime.configured_mounts'))
             ->toBe([]);
 
-        get_app_instance_json('/api/apps/hauser/instances/nmbp')
+        get_app_instance_json('/api/projects/hauser/instances/nmbp')
             ->assertOk()
             ->assertJsonPath('success.data.instance.runtime.configured_mounts.0.source', '/Users/nckrtl/projects')
             ->assertJsonPath('success.data.instance.runtime.configured_mounts.0.target', '/projects');
@@ -141,7 +141,7 @@ describe('AppInstanceController', function (): void {
         $visibleNode = createTestAppHostNode(['name' => 'visible']);
         $hiddenNode = createTestAppHostNode(['name' => 'hidden']);
         grant_app_instance_access($caller, $visibleNode);
-        $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+        $app = Project::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
 
         foreach (['visible' => $visibleNode, 'hidden' => $hiddenNode] as $name => $node) {
             AppInstance::factory()->for($app)->create([
@@ -155,7 +155,7 @@ describe('AppInstanceController', function (): void {
             ]);
         }
 
-        get_app_instance_json('/api/apps/docs/instances')
+        get_app_instance_json('/api/projects/docs/instances')
             ->assertOk()
             ->assertJsonCount(1, 'success.data.instances')
             ->assertJsonPath('success.data.instances.0.name', 'visible')
@@ -167,7 +167,7 @@ describe('AppInstanceController', function (): void {
         $legacyNode = createTestAppHostNode(['name' => 'legacy']);
         $servingNode = createTestAppHostNode(['name' => 'serving']);
         grant_app_instance_access($caller, $servingNode);
-        $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+        $app = Project::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
 
         AppInstance::factory()->for($app)->create([
             'name' => 'production',
@@ -179,7 +179,7 @@ describe('AppInstanceController', function (): void {
             ),
         ]);
 
-        get_app_instance_json('/api/apps/docs/instances/production')
+        get_app_instance_json('/api/projects/docs/instances/production')
             ->assertOk()
             ->assertJsonPath('success.data.instance.name', 'production');
     });
@@ -188,13 +188,13 @@ describe('AppInstanceController', function (): void {
         $caller = create_app_instance_caller();
         $legacyNode = createTestAppHostNode(['name' => 'legacy']);
         $targetNode = createTestAppHostNode(['name' => 'target']);
-        grant_app_instance_access($caller, $targetNode, ['app:write']);
-        App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+        grant_app_instance_access($caller, $targetNode, ['instance:write']);
+        Project::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
 
         $this
             ->call(
                 'POST',
-                '/api/apps/docs/instances',
+                '/api/projects/docs/instances',
                 [
                     'name' => 'production',
                     'driver' => 'orbit',
@@ -216,14 +216,14 @@ describe('AppInstanceController', function (): void {
     it('keeps external instances gateway-only', function (): void {
         $caller = create_app_instance_caller();
         $legacyNode = createTestAppHostNode(['name' => 'legacy']);
-        grant_app_instance_access($caller, $legacyNode, ['app:read', 'app:write']);
-        $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+        grant_app_instance_access($caller, $legacyNode, ['instance:read', 'instance:write']);
+        $app = Project::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
         AppInstance::factory()->for($app)->create([
             'name' => 'cloud',
             'driver' => AppInstanceDriver::LaravelCloud,
         ]);
 
-        get_app_instance_json('/api/apps/docs/instances/cloud')
+        get_app_instance_json('/api/projects/docs/instances/cloud')
             ->assertForbidden()
             ->assertJsonPath('error.meta.reason', 'gateway_only_external_instance');
 
@@ -233,7 +233,7 @@ describe('AppInstanceController', function (): void {
             'status' => 'active',
         ]);
 
-        get_app_instance_json('/api/apps/docs/instances/cloud')
+        get_app_instance_json('/api/projects/docs/instances/cloud')
             ->assertOk()
             ->assertJsonPath('success.data.instance.name', 'cloud');
     });
@@ -242,11 +242,11 @@ describe('AppInstanceController', function (): void {
         $caller = create_app_instance_caller();
         $firstNode = createTestAppHostNode(['name' => 'first']);
         $secondNode = createTestAppHostNode(['name' => 'second']);
-        grant_app_instance_access($caller, $firstNode, ['app:read', 'app:write']);
-        grant_app_instance_access($caller, $secondNode, ['app:read', 'app:write']);
+        grant_app_instance_access($caller, $firstNode, ['instance:read', 'instance:write']);
+        grant_app_instance_access($caller, $secondNode, ['instance:read', 'instance:write']);
 
         foreach (['first-app' => $firstNode, 'second-app' => $secondNode] as $appName => $node) {
-            $app = App::factory()->for($node, 'node')->create(['name' => $appName]);
+            $app = Project::factory()->for($node, 'node')->create(['name' => $appName]);
             AppInstance::factory()->for($app)->create([
                 'name' => 'production',
                 'driver_config' => new OrbitAppInstanceDriverConfigData(
@@ -259,14 +259,14 @@ describe('AppInstanceController', function (): void {
             ]);
         }
 
-        get_app_instance_json('/api/apps/shared.test/instances/production')
+        get_app_instance_json('/api/projects/shared.test/instances/production')
             ->assertUnprocessable()
-            ->assertJsonPath('error.meta.reason', 'ambiguous_app_selector');
+            ->assertJsonPath('error.meta.reason', 'ambiguous_project_selector');
 
         $this
             ->call(
                 'POST',
-                '/api/apps/shared.test/instances',
+                '/api/projects/shared.test/instances',
                 ['name' => 'staging'],
                 [],
                 [],
@@ -276,12 +276,12 @@ describe('AppInstanceController', function (): void {
                 ],
             )
             ->assertUnprocessable()
-            ->assertJsonPath('error.meta.reason', 'ambiguous_app_selector');
+            ->assertJsonPath('error.meta.reason', 'ambiguous_project_selector');
 
         $this
             ->call(
                 'DELETE',
-                '/api/apps/shared.test/instances/production',
+                '/api/projects/shared.test/instances/production',
                 ['force' => true],
                 [],
                 [],
@@ -291,7 +291,7 @@ describe('AppInstanceController', function (): void {
                 ],
             )
             ->assertUnprocessable()
-            ->assertJsonPath('error.meta.reason', 'ambiguous_app_selector');
+            ->assertJsonPath('error.meta.reason', 'ambiguous_project_selector');
 
         expect(AppInstance::query()->count())->toBe(2);
     });

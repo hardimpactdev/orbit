@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Contracts\AgentIdeMessageAdapter;
-use App\Models\App;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -80,6 +82,20 @@ function grantAgentIdeMessageAccess(Node $caller, Node $appNode): void
     ]);
 }
 
+function createAgentIdeMessageInstance(Project $project, Node $node, string $name = 'development'): AppInstance
+{
+    return AppInstance::factory()->for($project)->create([
+        'name' => $name,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            path: $project->path,
+            document_root: $project->document_root,
+            domain: $project->domain,
+        ),
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+}
+
 /**
  * @param  array<string, mixed>  $data
  * @param  array<string, string>  $server
@@ -100,7 +116,7 @@ function postAgentIdeMessageJson(array $data, array $server = []): TestResponse
     );
 }
 
-it('sends an app-target message for an authorized control caller', function (): void {
+it('sends an instance-target message for an authorized control caller', function (): void {
     $caller = createAgentIdeMessageCallerNode();
     $appNode = Node::factory()
         ->appDev()
@@ -110,25 +126,27 @@ it('sends an app-target message for an authorized control caller', function (): 
         ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
-    App::factory()->create([
+    $project = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'agent_ide_config' => ['adapter' => 'opencode'],
     ]);
+    createAgentIdeMessageInstance($project, $appNode);
 
     $adapter = new FakeApiAgentIdeMessageAdapter;
     app()->instance(AgentIdeMessageAdapter::class, $adapter);
 
     $response = postAgentIdeMessageJson([
         'message' => 'Ship the docs',
-        'app' => 'docs',
+        'instance' => 'docs.development',
     ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP]);
 
     $response
         ->assertOk()
         ->assertJsonPath('success.data.agent_ide.adapter', 'opencode')
-        ->assertJsonPath('success.data.agent_ide.source', 'app')
-        ->assertJsonPath('success.data.agent_ide.target.app', 'docs')
+        ->assertJsonPath('success.data.agent_ide.source', 'instance')
+        ->assertJsonPath('success.data.agent_ide.target.project', 'docs')
+        ->assertJsonPath('success.data.agent_ide.target.instance', 'development')
         ->assertJsonPath('success.data.agent_ide.target.workspace', null)
         ->assertJsonPath('success.data.agent_ide.target.node', 'app-1')
         ->assertJsonPath('success.data.agent_ide.session.id', 'sess_456')
@@ -147,28 +165,30 @@ it('logs message delivery activity without storing message bodies', function ():
         ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'agent_ide_config' => ['adapter' => 'opencode'],
     ]);
+    createAgentIdeMessageInstance($app, $appNode);
 
     app()->instance(AgentIdeMessageAdapter::class, new FakeApiAgentIdeMessageAdapter);
 
     postAgentIdeMessageJson([
         'message' => 'Ship the docs with sensitive context',
-        'app' => 'docs',
+        'instance' => 'docs.development',
     ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP])->assertOk();
 
     $entry = Activity::query()->first();
 
     expect($entry)->not->toBeNull();
     expect($entry->event)->toBe('api:POST /agent-ide/message');
-    expect($entry->subject_type)->toBe(App::class);
+    expect($entry->subject_type)->toBe('App\\Models\\App');
     expect($entry->subject_id)->toBe($app->id);
-    expect($entry->description)->toBe('Agent IDE message sent to docs through opencode');
+    expect($entry->description)->toBe('Agent IDE message sent to docs.development through opencode');
     expect($entry->properties->get('type'))->toBe('write');
-    expect($entry->properties->get('target_app'))->toBe('docs');
+    expect($entry->properties->get('target_project'))->toBe('docs');
+    expect($entry->properties->get('target_instance'))->toBe('development');
     expect($entry->properties->get('target_workspace'))->toBeNull();
     expect($entry->properties->get('adapter'))->toBe('opencode');
     expect($entry->properties->get('delivery_status'))->toBe('sent');
@@ -176,7 +196,7 @@ it('logs message delivery activity without storing message bodies', function ():
     expect(json_encode($entry->properties->toArray(), JSON_THROW_ON_ERROR))->not->toContain('sensitive context');
 });
 
-it('sends an app-target message for an authorized app caller', function (): void {
+it('sends an instance-target message for an authorized app caller', function (): void {
     $caller = createAgentIdeMessageCallerNode(role: 'app-dev');
     $appNode = Node::factory()
         ->appDev()
@@ -186,24 +206,26 @@ it('sends an app-target message for an authorized app caller', function (): void
         ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
-    App::factory()->create([
+    $project = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'agent_ide_config' => ['adapter' => 'opencode'],
     ]);
+    createAgentIdeMessageInstance($project, $appNode);
 
     $adapter = new FakeApiAgentIdeMessageAdapter;
     app()->instance(AgentIdeMessageAdapter::class, $adapter);
 
     $response = postAgentIdeMessageJson([
         'message' => 'Ship the docs',
-        'app' => 'docs',
+        'instance' => 'docs.development',
     ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP]);
 
     $response
         ->assertOk()
         ->assertJsonPath('success.data.agent_ide.adapter', 'opencode')
-        ->assertJsonPath('success.data.agent_ide.target.app', 'docs')
+        ->assertJsonPath('success.data.agent_ide.target.project', 'docs')
+        ->assertJsonPath('success.data.agent_ide.target.instance', 'development')
         ->assertJsonPath('success.data.agent_ide.target.node', 'app-2')
         ->assertJsonPath('success.data.agent_ide.session.id', 'sess_456');
 
@@ -220,7 +242,7 @@ it('sends a workspace-target message for an authorized caller', function (): voi
         ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'agent_ide_config' => ['adapter' => 'opencode'],
@@ -244,7 +266,8 @@ it('sends a workspace-target message for an authorized caller', function (): voi
         ->assertOk()
         ->assertJsonPath('success.data.agent_ide.adapter', 'polyscope')
         ->assertJsonPath('success.data.agent_ide.source', 'workspace')
-        ->assertJsonPath('success.data.agent_ide.target.app', 'docs')
+        ->assertJsonPath('success.data.agent_ide.target.project', 'docs')
+        ->assertJsonPath('success.data.agent_ide.target.instance', 'development')
         ->assertJsonPath('success.data.agent_ide.target.workspace', 'feature-docs')
         ->assertJsonPath('success.data.agent_ide.target.node', 'app-1');
 
@@ -263,7 +286,7 @@ it('resolves a workspace-target message from a forwarded path', function (): voi
         ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'agent_ide_config' => ['adapter' => 'opencode'],
@@ -287,7 +310,8 @@ it('resolves a workspace-target message from a forwarded path', function (): voi
     $response
         ->assertOk()
         ->assertJsonPath('success.data.agent_ide.source', 'workspace')
-        ->assertJsonPath('success.data.agent_ide.target.app', 'docs')
+        ->assertJsonPath('success.data.agent_ide.target.project', 'docs')
+        ->assertJsonPath('success.data.agent_ide.target.instance', 'development')
         ->assertJsonPath('success.data.agent_ide.target.workspace', 'feature-docs');
 
     expect($adapter->deliveries)
@@ -300,7 +324,7 @@ it('rejects app production callers and production workspace targets before agent
     $caller = createAgentIdeMessageCallerNode(role: 'app-prod');
     $developmentNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
     grantAgentIdeMessageAccess($caller, $developmentNode);
-    $developmentApp = App::factory()->for($developmentNode, 'node')->create([
+    $developmentApp = Project::factory()->for($developmentNode, 'node')->create([
         'name' => 'docs',
         'agent_ide_config' => ['adapter' => 'opencode'],
     ]);
@@ -331,7 +355,7 @@ it('rejects app production callers and production workspace targets before agent
         'status' => 'active',
     ]);
     $productionNode = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
-    $productionApp = App::factory()->for($productionNode, 'node')->create([
+    $productionApp = Project::factory()->for($productionNode, 'node')->create([
         'name' => 'shop',
         'agent_ide_config' => ['adapter' => 'opencode'],
     ]);
@@ -359,11 +383,12 @@ it('returns adapter delivery diagnostics under error data', function (): void {
         ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
-    App::factory()->create([
+    $project = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'agent_ide_config' => ['adapter' => 'opencode'],
     ]);
+    createAgentIdeMessageInstance($project, $appNode);
 
     $adapter = new FakeApiAgentIdeMessageAdapter;
     $adapter->deliveryException = new GatewayApiException(
@@ -384,13 +409,15 @@ it('returns adapter delivery diagnostics under error data', function (): void {
 
     $response = postAgentIdeMessageJson([
         'message' => 'Ship the docs',
-        'app' => 'docs',
+        'instance' => 'docs.development',
     ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP]);
 
     $response
         ->assertStatus(500)
         ->assertJsonPath('error.code', 'adapter_delivery_failed')
         ->assertJsonPath('error.data.adapter_error.message', 'Request timed out')
+        ->assertJsonPath('error.meta.project', 'docs')
+        ->assertJsonPath('error.meta.instance', 'development')
         ->assertJsonPath('error.meta.adapter', 'opencode');
 });
 
@@ -402,24 +429,26 @@ it('rejects unauthorized callers without delivering', function (): void {
             'name' => 'app-1',
         ]);
 
-    App::factory()->create([
+    $project = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'agent_ide_config' => ['adapter' => 'opencode'],
     ]);
+    createAgentIdeMessageInstance($project, $appNode);
 
     $adapter = new FakeApiAgentIdeMessageAdapter;
     app()->instance(AgentIdeMessageAdapter::class, $adapter);
 
     $response = postAgentIdeMessageJson([
         'message' => 'Ship the docs',
-        'app' => 'docs',
+        'instance' => 'docs.development',
     ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP]);
 
     $response
         ->assertForbidden()
         ->assertJsonPath('error.code', 'authorization_failed')
-        ->assertJsonPath('error.meta.app', 'docs')
+        ->assertJsonPath('error.meta.project', 'docs')
+        ->assertJsonPath('error.meta.instance', 'development')
         ->assertJsonPath('error.meta.reason', 'missing_permission')
         ->assertJsonPath('error.meta.missing_permission', 'agent-ide:message');
 

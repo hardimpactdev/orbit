@@ -2,7 +2,7 @@
 
 [Back to Database commands.](../README.md)
 
-Show schema metadata for a stored database connection resolved from a dotted app-instance or workspace target.
+Show schema metadata for a stored database connection resolved from a dotted instance or workspace target.
 
 ## Usage
 

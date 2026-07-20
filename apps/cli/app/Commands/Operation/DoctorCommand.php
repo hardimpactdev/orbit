@@ -28,7 +28,7 @@ final class DoctorCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'doctor
-        {--app= : Limit to one app}
+        {--instance= : Limit to one instance}
         {--workspace= : Limit to one workspace}
         {--node= : Target node name}
         {--self : Limit to the calling node identity}
@@ -491,7 +491,8 @@ final class DoctorCommand extends GatewayCommand
                 'node' => null,
                 'role' => 'fleet',
                 'self' => false,
-                'app' => null,
+                'project' => null,
+                'instance' => null,
                 'workspace' => null,
                 'key' => $this->option('key'),
                 'targets' => $this->fleetNodeOrder,
@@ -945,7 +946,7 @@ final class DoctorCommand extends GatewayCommand
             'node' => $node,
             'self' => $self ? true : null,
             'all' => (bool) $this->option('all') ? true : null,
-            'app' => $this->stringOption('app'),
+            'instance' => $this->stringOption('instance'),
             'workspace' => $this->stringOption('workspace'),
             'dry_run' => (bool) $this->option('dry-run') ? true : null,
         ]);
@@ -959,7 +960,7 @@ final class DoctorCommand extends GatewayCommand
 
         if (
             $this->stringOption('node') === null
-            && ($this->stringOption('app') !== null
+            && ($this->stringOption('instance') !== null
             || $this->stringOption('workspace') !== null)
         ) {
             return null;
@@ -978,7 +979,7 @@ final class DoctorCommand extends GatewayCommand
             return false;
         }
 
-        if ($this->stringOption('app') !== null || $this->stringOption('workspace') !== null) {
+        if ($this->stringOption('instance') !== null || $this->stringOption('workspace') !== null) {
             return false;
         }
 
@@ -1012,7 +1013,7 @@ final class DoctorCommand extends GatewayCommand
         $conflicts = array_values(array_filter([
             $node !== null ? 'node' : null,
             (bool) $this->option('self') ? 'self' : null,
-            $this->stringOption('app') !== null ? 'app' : null,
+            $this->stringOption('instance') !== null ? 'instance' : null,
             $this->stringOption('workspace') !== null ? 'workspace' : null,
         ]));
 
@@ -1022,7 +1023,7 @@ final class DoctorCommand extends GatewayCommand
 
         return $this->renderFailure(
             'validation_failed',
-            '--all cannot be combined with node, self, app, or workspace scope.',
+            '--all cannot be combined with node, self, instance, or workspace scope.',
             ['fields' => ['all', ...$conflicts]],
         );
     }

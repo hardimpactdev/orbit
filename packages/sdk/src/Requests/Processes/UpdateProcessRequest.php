@@ -19,7 +19,7 @@ final class UpdateProcessRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::PATCH;
 
     public function __construct(
-        public readonly string $app,
+        public readonly string $instance,
         public readonly string $name,
         public readonly ?string $command = null,
         public readonly ?string $restartPolicy = null,
@@ -40,7 +40,7 @@ final class UpdateProcessRequest extends GatewayRequest implements HasBody
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'command' => $this->command,
                 'restart_policy' => $this->restartPolicy,
                 'crash_notification' => $this->crashNotification,

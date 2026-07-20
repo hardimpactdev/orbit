@@ -13,17 +13,17 @@ current app or workspace.
 ## Usage
 
 ```bash
-orbit agent-ide:message [message] [--app=<app>] [--workspace=<workspace>] [--stdin] [--json]
+orbit agent-ide:message [message] [--instance=<project.instance>] [--workspace=<workspace>] [--stdin] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit agent-ide:message "Run the focused test for the current change"
-orbit agent-ide:message "Inspect the queue worker logs" --app=docs
+orbit agent-ide:message "Inspect the queue worker logs" --instance=docs
 orbit agent-ide:message "Review the open diff" --workspace=feature-docs
 git diff | orbit agent-ide:message --stdin --workspace=feature-docs
-orbit agent-ide:message "Summarize the failing request" --app=docs --json
+orbit agent-ide:message "Summarize the failing request" --instance=docs --json
 ```
 
 ## Behavior Summary
@@ -36,7 +36,7 @@ Accepts the message from `[message]` or from standard input when `--stdin` is pr
 
 ### Target resolution
 
-Resolves the target context from explicit options or the current directory. `--workspace=<workspace>` targets a workspace and `--app=<app>` targets the app's main context. With no explicit target, Orbit resolves the current workspace or app from the current directory when possible.
+Resolves the target context from explicit options or the current directory. `--workspace=<workspace>` targets a workspace and `--instance=<project.instance>` targets the app's main context. With no explicit target, Orbit resolves the current workspace or app from the current directory when possible.
 
 Workspace and path-derived targets are `app-dev` only. An `app-prod` caller or
 target is rejected before adapter lookup or delivery. Messages to the app's
@@ -75,8 +75,8 @@ The output format depends on whether `--json` is passed.
 ## Related
 
 - [`orbit node:agent-ide [name] [agent_ide]`](../../1_node/10_node-agent-ide/node-agent-ide.md)
-- [`orbit app:agent-ide [app] [agent_ide]`](../../5_app/9_app-agent-ide/app-agent-ide.md)
-- [`doctor --family=app`](../../5_app/app-doctor.md)
+- [`orbit instance:agent-ide [app] [agent_ide]`](../../5_project/9_instance-agent-ide/instance-agent-ide.md)
+- [`doctor --family=instance`](../../5_project/instance-doctor.md)
 - [`doctor --family=node`](../../1_node/node-doctor.md)
 - [`doctor --family=tool`](../../3_tool/tool-doctor.md)
 

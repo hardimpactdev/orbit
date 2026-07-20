@@ -1,15 +1,15 @@
 # Database Commands
 
-Database commands manage reusable database connection intent, app,
-app-instance, and workspace target mappings, `.env` convergence, schema
+Database commands manage reusable database connection intent, instance and
+workspace target mappings, `.env` convergence, schema
 inspection, and audited SQL execution. Spec:
 [`apps/docs/content/domains/18_database/`](../../../apps/docs/content/domains/18_database/).
 
 `database_connection` is a state family. Use
 `doctor --family=database_connection --restore` to write gateway-owned
-connection values into app/workspace `.env` files, or `--adopt` to materialize
-existing supported env prefixes into gateway state. App-instance mappings render
-through `app:env render` in this slice.
+connection values into instance/workspace `.env` files, or `--adopt` to materialize
+existing supported env prefixes into gateway state. Instance mappings render
+through `instance:env render` in this slice.
 
 Database commands do not install database services. Managed service lifecycle,
 when present, belongs to process-owned runtime units; database commands own
@@ -18,7 +18,7 @@ connection intent and data-plane operations.
 ## Registry
 
 ```bash
-orbit database:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--json]
+orbit database:list [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--json]
 orbit database:show [<connection>] [--json]
 ```
 
@@ -57,23 +57,23 @@ updates the MySQL database/user through that process and then persists the
 database connection record. It currently supports Docker runtime managed MySQL
 processes; service lifecycle remains process-owned.
 
-## App / Workspace Targets
+## Instance / Workspace Targets
 
 ```bash
-orbit database:attach [<connection>] [--app=<app>|--workspace=<workspace>]
-                       [--instance=<name>] [--env-prefix=DB] [--json]
+orbit database:attach [<connection>] [--instance=<project.instance>|--workspace=<workspace>]
+                       [--env-prefix=DB] [--json]
 
-orbit database:detach [<connection>] [--app=<app>|--workspace=<workspace>]
-                       [--instance=<name>] [--env-prefix=DB] [--json]
+orbit database:detach [<connection>] [--instance=<project.instance>|--workspace=<workspace>]
+                       [--env-prefix=DB] [--json]
 ```
 
 `DB` expands to `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`,
 `DB_USERNAME`, and `DB_PASSWORD`. Custom prefixes such as `ANALYTICS_DB` are
 uppercase underscore tokens.
 
-Use `--instance=<name>` with `--app=<app>` to attach the connection to a
-specific app instance. Instance env rendering then injects the database keys for
-that instance.
+Use `--instance=<project.instance>` to attach the connection to one concrete
+instance. Instance env rendering then injects the database keys for that
+instance.
 
 ## Query And Schema
 

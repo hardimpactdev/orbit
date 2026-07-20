@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Http;
 use Laravel\Prompts\Key;
 use Laravel\Prompts\Prompt;
 
-describe('app:new interactive input mode', function (): void {
+describe('project:new interactive input mode', function (): void {
     beforeEach(function (): void {
         $this->tempPath = tempnam(sys_get_temp_dir(), 'orbit-app-new-interactive-').'.json';
         $this->store = new OrbitConfigStore(overridePath: $this->tempPath);
@@ -44,10 +44,10 @@ describe('app:new interactive input mode', function (): void {
         Prompt::fake([Key::ENTER]);
 
         $this
-            ->artisan('app:new')
-            ->expectsQuestion('App name (slug):', 'docs')
+            ->artisan('project:new')
+            ->expectsQuestion('Project name (slug):', 'docs')
             ->expectsChoice(
-                'How should the app source be created?',
+                'How should the project source be created?',
                 'new',
                 ['New repository from template', 'Clone existing repository', 'new', 'clone'],
             )
@@ -62,7 +62,7 @@ describe('app:new interactive input mode', function (): void {
         assertGatewayStreamSent(
             fn (FakeGatewayStreamRequest $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/apps'
+                && $request->url() === 'https://gateway.test/api/projects'
                 && $request->data() === [
                     'name' => 'docs',
                     'node' => 'app-1',
@@ -84,12 +84,12 @@ describe('app:new interactive input mode', function (): void {
         );
 
         $this
-            ->artisan('app:new', [
+            ->artisan('project:new', [
                 'name' => 'docs',
                 '--node' => 'app-1',
             ])
             ->expectsChoice(
-                'How should the app source be created?',
+                'How should the project source be created?',
                 'new',
                 ['New repository from template', 'Clone existing repository', 'new', 'clone'],
             )
@@ -118,12 +118,12 @@ describe('app:new interactive input mode', function (): void {
         );
 
         $this
-            ->artisan('app:new', [
+            ->artisan('project:new', [
                 'name' => 'docs',
                 '--node' => 'app-1',
             ])
             ->expectsChoice(
-                'How should the app source be created?',
+                'How should the project source be created?',
                 'clone',
                 ['New repository from template', 'Clone existing repository', 'new', 'clone'],
             )
@@ -149,7 +149,7 @@ describe('app:new interactive input mode', function (): void {
         Http::fake();
 
         $this
-            ->artisan('app:new', [
+            ->artisan('project:new', [
                 'name' => 'docs',
                 '--node' => 'app-1',
                 '--template-repo' => 'not-a-template',
@@ -159,10 +159,10 @@ describe('app:new interactive input mode', function (): void {
         Http::assertNothingSent();
     });
 
-    it('fails slug validation for an explicit app name before contacting the gateway', function (): void {
+    it('fails slug validation for an explicit project name before contacting the gateway', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'app:new', [
+        [$exitCode, $output] = runCommand($this, 'project:new', [
             'name' => 'Bad_Name',
             '--node' => 'app-1',
             '--json' => true,
@@ -180,7 +180,7 @@ describe('app:new interactive input mode', function (): void {
             ->toBe('name');
     });
 
-    it('rejects an invalid app name slug at the interactive prompt before contacting the gateway', function (): void {
+    it('rejects an invalid project name slug at the interactive prompt before contacting the gateway', function (): void {
         Http::fake([
             'https://gateway.test/api/nodes*' => Http::response(
                 fakeAppNewNodeListEnvelope(['app-1']),
@@ -196,8 +196,8 @@ describe('app:new interactive input mode', function (): void {
         Prompt::fake([Key::ENTER]);
 
         $this
-            ->artisan('app:new')
-            ->expectsQuestion('App name (slug):', 'Bad_Name')
+            ->artisan('project:new')
+            ->expectsQuestion('Project name (slug):', 'Bad_Name')
             ->assertFailed();
 
         Http::assertSentCount(1);
@@ -225,8 +225,8 @@ describe('app:new interactive input mode', function (): void {
         Prompt::fake([Key::ENTER]);
 
         $this
-            ->artisan('app:new', ['--repo' => 'hardimpact/docs'])
-            ->expectsQuestion('App name (slug):', 'docs')
+            ->artisan('project:new', ['--repo' => 'hardimpact/docs'])
+            ->expectsQuestion('Project name (slug):', 'docs')
             ->assertSuccessful();
 
         assertGatewayStreamSent(
@@ -256,8 +256,8 @@ describe('app:new interactive input mode', function (): void {
         Prompt::fake([Key::DOWN, Key::ENTER]);
 
         $this
-            ->artisan('app:new', ['--repo' => 'hardimpact/docs'])
-            ->expectsQuestion('App name (slug):', 'docs')
+            ->artisan('project:new', ['--repo' => 'hardimpact/docs'])
+            ->expectsQuestion('Project name (slug):', 'docs')
             ->assertSuccessful();
 
         assertGatewayStreamSent(
@@ -268,7 +268,7 @@ describe('app:new interactive input mode', function (): void {
     it('fails fast in json mode when name is missing', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'app:new', [
+        [$exitCode, $output] = runCommand($this, 'project:new', [
             '--node' => 'app-1',
             '--json' => true,
         ]);
@@ -284,7 +284,7 @@ describe('app:new interactive input mode', function (): void {
             ->and($decoded['error']['meta']['field'])
             ->toBe('name')
             ->and($decoded['error']['message'])
-            ->toBe('App name is required.');
+            ->toBe('Project name is required.');
     });
 });
 
@@ -315,8 +315,8 @@ function appNewInteractiveCompleteFrame(string $name, string $node): array
     return [
         'exit_code' => 0,
         'data' => [
-            'footer' => "App '{$name}' created.",
-            'app' => ['name' => $name, 'node' => $node],
+            'footer' => "Project '{$name}' created.",
+            'project' => ['name' => $name, 'node' => $node],
         ],
     ];
 }

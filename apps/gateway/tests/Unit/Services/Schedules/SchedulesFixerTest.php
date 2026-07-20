@@ -6,9 +6,9 @@ use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\ScheduleRun;
@@ -182,7 +182,7 @@ describe('SchedulesFixer', function (): void {
     it('releases stale gateway schedule locks and marks running history failed', function (): void {
         $gateway = createSchedulesFixerGatewayNode();
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['node_id' => $node->id]);
+        $app = Project::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         ScheduleLock::factory()->create([
             'node_id' => $gateway->id,

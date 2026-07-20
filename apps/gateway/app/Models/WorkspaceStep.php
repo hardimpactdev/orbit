@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * @property int $id
@@ -20,7 +21,7 @@ use Illuminate\Support\Carbon;
  * @property int $timeout_seconds
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read App|null $app
+ * @property-read Project|null $app
  * @property-read AppInstance $appInstance
  *
  * @method static WorkspaceStep|null find(int $id)
@@ -31,7 +32,7 @@ class WorkspaceStep extends Model
 
     public const int DEFAULT_TIMEOUT_SECONDS = 600;
 
-    #[\Override]
+    #[Override]
     protected $fillable = [
         'app_id',
         'app_instance_id',
@@ -41,7 +42,7 @@ class WorkspaceStep extends Model
         'timeout_seconds',
     ];
 
-    #[\Override]
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -51,11 +52,19 @@ class WorkspaceStep extends Model
     }
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return BelongsTo<Project, $this>
+     */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class, 'app_id');
+    }
+
+    /**
+     * @return BelongsTo<Project, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->project();
     }
 
     /**

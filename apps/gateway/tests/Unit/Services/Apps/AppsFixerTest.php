@@ -10,10 +10,10 @@ use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
+use App\Models\Project;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
@@ -24,6 +24,8 @@ use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Tools\ToolScriptDispatcher;
@@ -100,8 +102,8 @@ function appsFixerNode(): Node
 function fake_apps_fixer_security_repair(): void
 {
     app()->instance(
-        \App\Services\RemoteShell\RunsInternalCommands::class,
-        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+        RunsInternalCommands::class,
+        app(RemoteLocalExecutor::class),
     );
 
     Http::preventStrayRequests();
@@ -150,7 +152,7 @@ function apps_fixer_security_repair_was_sent(string $user, string $home, string 
 
 it('hands a missing FrankenPHP runtime unit to the process fixer', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -182,7 +184,7 @@ it('hands a missing FrankenPHP runtime unit to the process fixer', function (): 
 it('hands a missing app instance FrankenPHP runtime unit to the process fixer', function (): void {
     $beast = appsFixerNode();
     $nmbp = createTestAppHostNode(['name' => 'nmbp', 'platform' => 'darwin', 'user' => 'nckrtl', 'tld' => 'nmbp']);
-    $app = App::factory()->for($beast, 'node')->create([
+    $app = Project::factory()->for($beast, 'node')->create([
         'name' => 'hauser',
         'path' => '/home/nckrtl/apps/hauser',
         'document_root' => 'public',
@@ -221,7 +223,7 @@ it('hands a missing app instance FrankenPHP runtime unit to the process fixer', 
 
 it('does not mutate managed process intent through an app runtime issue', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -272,7 +274,7 @@ it('does not mutate managed process intent through an app runtime issue', functi
 
 it('hands a mismatched FrankenPHP runtime unit to the process fixer', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -309,7 +311,7 @@ it('hands a mismatched FrankenPHP runtime unit to the process fixer', function (
 
 it('returns null for non-app-runtime drift keys', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
 
     $result = buildAppsFixer(new AppsFixerRecordingRemoteShell)->fix($app, new DriftEntry(
         family: 'app',
@@ -323,7 +325,7 @@ it('returns null for non-app-runtime drift keys', function (): void {
 
 it('returns null for static apps even on runtime container drift keys', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
+    $app = Project::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
 
     $shell = new AppsFixerRecordingRemoteShell;
 
@@ -402,7 +404,7 @@ it('throws from removeRuntimeConfigExtra when the sudo probe fails for an unknow
 
 it('rewrites the selected instance runtime config when handed app.runtime_config_missing', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -449,7 +451,7 @@ it('rewrites the selected instance runtime config when handed app.runtime_config
 
 it('rewrites the selected instance runtime config when handed app.runtime_config_mismatch', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -492,7 +494,7 @@ it('repairs the production runtime user when handed app.security.system_user', f
         'wireguard_address' => '10.6.0.64',
         'managed' => true,
     ], 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -529,7 +531,7 @@ it('reapplies filesystem ownership when handed app.security.fs_permissions', fun
         'wireguard_address' => '10.6.0.64',
         'managed' => true,
     ], 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -562,7 +564,7 @@ it('reapplies filesystem ownership when handed app.security.fs_permissions', fun
 
 it('leaves production runtime container isolation repair to the process family', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',

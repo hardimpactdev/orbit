@@ -9,9 +9,9 @@ use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerApplyException;
@@ -39,7 +39,7 @@ afterEach(function (): void {});
 function appAndNodeForManagerTest(): array
 {
     $node = Node::factory()->create(['user' => 'orbit']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
@@ -52,7 +52,7 @@ function appAndNodeForManagerTest(): array
 function productionAppAndNodeForManagerTest(): array
 {
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'environment' => 'production',
         'path' => '/home/docs/app',
@@ -63,7 +63,7 @@ function productionAppAndNodeForManagerTest(): array
     return [$app, $node];
 }
 
-function renderTestAppContainer(App $app): AppRuntimeContainer
+function renderTestAppContainer(Project $app): AppRuntimeContainer
 {
     return new AppRuntimeContainerRenderer(
         new PhpRuntimePolicy(new PhpRuntimeCatalog),
@@ -215,7 +215,7 @@ it('creates the orbit network, writes php.ini, and runs the app runtime containe
 
 it('creates the app-dev packages bind mount source before running the app runtime container', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',
@@ -244,13 +244,13 @@ it('creates the app-dev packages bind mount source before running the app runtim
 
 it('creates configured runtime mount sources before running the app runtime container', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    assert($app instanceof App);
+    assert($app instanceof Project);
     $instance = AppInstance::factory()->for($app)->create([
         'name' => 'development',
         'driver' => AppInstanceDriver::Orbit,
@@ -293,7 +293,7 @@ it('creates configured runtime mount sources before running the app runtime cont
 
 it('installs the Orbit runtime trust pool on the node and mounts it into app-dev runtime containers', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'craft-starterkit-react',
         'path' => '/home/nckrtl/apps/craft-starterkit-react',
         'php_version' => '8.5',
@@ -332,7 +332,7 @@ it('installs the Orbit runtime trust pool on the node and mounts it into app-dev
 
 it('treats app-dev runtime TLS certificate mounts as Orbit-managed built-ins', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',

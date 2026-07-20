@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit database:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--json]
+orbit database:list [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -22,12 +22,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
-| `app` | `--app` | Optional. | None. | Visible app selector. |
+| `app` | `--instance` | Optional. | None. | Visible app selector. |
 | `workspace` | `--workspace` | Optional. | None. | Visible workspace selector. |
 | `node` | `--node` | Optional. | None. | Visible node slug. |
 | `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |
 
-`--app` and `--workspace` are mutually exclusive. `--node` is an additional
+`--instance` and `--workspace` are mutually exclusive. `--node` is an additional
 filter over connection ownership; it does not trigger live node inspection.
 
 ## Behavior Contract
@@ -36,7 +36,7 @@ filter over connection ownership; it does not trigger live node inspection.
 
 - Reads gateway-owned `database_connection` records and their target mappings.
 - Returns every visible connection when no scope filter is supplied.
-- `--app` returns connections attached to any instance of the selected logical app.
+- `--instance` returns connections attached to any instance of the selected project.
 - `--workspace` returns connections attached to the selected workspace.
 - `--node` returns connections whose `node` matches the selected node and
   connections attached to targets owned by that node.
@@ -57,7 +57,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Invalid scope combination | `--app` and `--workspace` are supplied together. | `error.code=validation_failed`, `error.meta.field=scope` |
+| Invalid scope combination | `--instance` and `--workspace` are supplied together. | `error.code=validation_failed`, `error.meta.field=scope` |
 
 ## Doctor Relationship
 
@@ -83,5 +83,5 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Database/DatabaseReadCommandsTest.php` | CLI GET forwarding with app-instance/workspace filters, scope validation before gateway contact, authorization pass-through, JSON sensitive-field omission, and human table/empty-state output. |
+| `apps/cli/tests/Feature/Commands/Database/DatabaseReadCommandsTest.php` | CLI GET forwarding with instance/workspace filters, scope validation before gateway contact, authorization pass-through, JSON sensitive-field omission, and human table/empty-state output. |
 | `apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php` | Gateway list authorization, entity shape, password omission, and inactive-caller rejection. |

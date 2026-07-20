@@ -9,9 +9,9 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The target workspace exists in the gateway workspaces registry.
-- The current node identity is authorized to manage the resolved workspace or its parent app.
+- The current node identity is authorized to manage the resolved workspace or its parent project.
 - Runtime, process, teardown-step, and worktree cleanup use Agent push to the
-  concrete app-instance node. Cleanup reachability is not a
+  concrete instance node. Cleanup reachability is not a
   pre-configuration prerequisite; failures become structured warnings.
 
 This is the canonical technical contract for the `workspace:remove` command. It
@@ -22,7 +22,7 @@ gateway-owned workspace configuration and its derived node artifacts.
 ## Signature
 
 ```bash
-orbit workspace:remove [name] [--app=<app>] [--keep-files] [--force] [--json]
+orbit workspace:remove [name] [--instance=<project.instance>] [--keep-files] [--force] [--json]
 ```
 
 ## Input Contract
@@ -32,8 +32,8 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | When CWD is not inside a registered workspace path. | Never. | None. | Workspace name or slug. Must resolve to exactly one gateway workspace record (with `--app` for cross-app disambiguation). |
-| `app` | `--app=<app>` | When `name` resolves to more than one workspace across apps. | Never. | None. | Parent app slug or app-instance selector. Dot notation such as `happie.nmbp` selects one concrete app instance. Used to disambiguate the workspace lookup. |
+| `name` | `[name]` | When CWD is not inside a registered workspace path. | Never. | None. | Workspace name or slug. Must resolve to exactly one gateway workspace record (with `--instance` for cross-app disambiguation). |
+| `app` | `--instance=<project.instance>` | When `name` resolves to more than one workspace across apps. | Never. | None. | Parent project slug or instance selector. Dot notation such as `happie.nmbp` selects one concrete instance. Used to disambiguate the workspace lookup. |
 | `keep_files` | `--keep-files` | Optional. | Never. | `false`. | Boolean flag. When `true`, the worktree directory is left on the node after configuration removal. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
@@ -42,8 +42,8 @@ This command follows the shared
 
 1. **Target Resolution:**
    - If `name` is provided, resolve it against the gateway workspace registry,
-     using `--app` to disambiguate when necessary. App-instance selectors must
-     match the resolved workspace's selected app instance.
+     using `--instance` to disambiguate when necessary. Instance selectors must
+     match the resolved workspace's selected instance.
    - If `name` is omitted, inspect the current working directory (CWD). If CWD
      is inside a registered workspace path, use that workspace's name and app.
      If CWD is not inside any registered workspace, fail before side effects
@@ -67,7 +67,7 @@ This command follows the shared
 
 `workspace:remove` is a destructive-write command with cross-family cleanup
 across `proxy`, `process`, and the workspace's own node-side
-artifacts. The contract follows the resolved `app:remove` atomicity boundary:
+artifacts. The contract follows the resolved `project:remove` atomicity boundary:
 gateway configuration removal is the point of no return, and any node-side
 residue afterwards is non-fatal drift.
 
@@ -75,7 +75,7 @@ residue afterwards is non-fatal drift.
 
 - Resolve target workspace per [Input Resolution](#input-resolution).
 - Check authorization for the resolved workspace on its effective workspace
-  node (or its parent app).
+  node (or its parent project).
 - If self-targeting (caller is inside the resolved workspace's worktree), warn
   the operator that their shell's working directory will be invalidated unless
   `--keep-files` is also set.
@@ -92,7 +92,7 @@ residue afterwards is non-fatal drift.
 ### 3. Execution Sequence
 
 The execution sequence has two phases. Every workspace executes Phase B on its
-selected app instance node. Phase A is the atomic gateway-configuration removal
+selected instance node. Phase A is the atomic gateway-configuration removal
 (the point of no return). Phase B is node-side application through Agent push and its sub-order
 is dictated by traffic, dependency, and lifecycle safety.
 
@@ -114,7 +114,7 @@ worktree deletion use Agent push.
 - **Step 3: Stop traffic.** Re-render the proxy backend so the workspace
   hostname stops serving requests.
 - **Step 4: Stop processes.** Stop and remove inherited runtime units for this
-  workspace. The selected app instance's process definitions are not modified.
+  workspace. The selected instance's process definitions are not modified.
 - **Step 5: Run teardown steps.** Execute configured workspace teardown steps
   on the node. The worktree is still present and processes are stopped at
   this point so teardown scripts see a stable workspace lifecycle environment.
@@ -151,7 +151,7 @@ runs.
    any Phase B node-side cleanup begins.
 2. **Parent App Integrity:** Removing a workspace must not remove or modify
    process definitions, runtime container configuration, or proxy routes owned by the
-   parent app.
+   parent project.
 3. **Worktree Cleanup:**
    - If `--keep-files` is `false`, Step 7 deletes the workspace directory on
      the node.
@@ -161,7 +161,7 @@ runs.
    removal so they observe a stable workspace lifecycle environment.
 5. **Authorization:**
    - Control and gateway peers must be authorized by the gateway to manage
-     the target workspace or its parent app.
+     the target workspace or its parent project.
    - App-role peers are denied by the gateway before any side effects.
 6. **Idempotence Boundary:**
    - If the workspace record exists, the command proceeds.
@@ -188,8 +188,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Workspace not found | Resolved `name`/`--app` does not match an existing workspace record. Already-absent removal is not idempotent. | Failure (`error.code=workspace.not_found`). |
-| Ambiguous workspace name | `name` matches multiple workspaces and `--app` was not supplied. | Failure (`error.code=workspace.ambiguous_name`). |
+| Workspace not found | Resolved `name`/`--instance` does not match an existing workspace record. Already-absent removal is not idempotent. | Failure (`error.code=workspace.not_found`). |
+| Ambiguous workspace name | `name` matches multiple workspaces and `--instance` was not supplied. | Failure (`error.code=workspace.ambiguous_name`). |
 | `name` omitted and CWD not a workspace | CWD-based resolution found no registered workspace. | Failure (`error.code=workspace.unresolved_cwd`). |
 | Production app unsupported | The selected workspace belongs to an `app-prod` instance. | Failure (`error.code=workspace.unsupported_for_production`) before teardown, registry deletion, or node cleanup. |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |
@@ -205,7 +205,7 @@ and `next_command` (typically `doctor --family=<family> --restore`). The exit co
 remains `0`; the warnings are the machine-readable signal.
 
 This atomicity boundary matches the resolved
-[`app:remove`](../../../5_app/6_app-remove/technical/1_app-remove.md) and
+[`project:remove`](../../../5_project/6_project-remove/technical/1_project-remove.md) and
 [`node:remove`](../../../1_node/8_node-remove/technical/1_node-remove.md)
 exemplars: gateway-owned configuration removal is the point of no return, and
 leftover node-side artifacts are convergence drift owned by the affected

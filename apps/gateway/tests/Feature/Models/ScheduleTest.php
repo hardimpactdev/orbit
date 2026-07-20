@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\Schedules\RemoveSchedule;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
 use Illuminate\Database\QueryException;
@@ -14,7 +14,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 it('stores app scoped schedule intent and relates latest run history', function (): void {
-    $app = App::factory()->create(['name' => 'docs']);
+    $app = Project::factory()->create(['name' => 'docs']);
     $instance = AppInstance::factory()->for($app)->create(['name' => 'development']);
 
     $schedule = Schedule::factory()

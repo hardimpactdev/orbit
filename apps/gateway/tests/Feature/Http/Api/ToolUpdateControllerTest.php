@@ -165,7 +165,7 @@ it('does not update database and cache services through tool updates', function 
     'valkey',
 ]);
 
-it('treats service-style instance selectors as missing tool rows', function (): void {
+it('rejects service-style values as invalid instance selectors', function (): void {
     $caller = createToolUpdateApiCallerNode();
     $node = Node::factory()->create(['name' => 'app-update-api-1', 'status' => 'active']);
     assignToolUpdateApiRole($node, 'app-dev');
@@ -189,8 +189,10 @@ it('treats service-style instance selectors as missing tool rows', function (): 
         ['REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP],
     );
 
-    $response->assertNotFound()
-        ->assertJsonPath('error.code', 'tool.not_found');
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath('error.meta.field', 'instance');
 
     expect($shell->scripts)->toBe([]);
 });

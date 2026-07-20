@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Proxy\ProxyRouteQuery;
@@ -32,7 +32,7 @@ describe('ProxyRouteQuery', function (): void {
     it('normalizes proxy route entities and sorts them by node then domain', function (): void {
         $zNode = Node::factory()->create(['name' => 'z-node']);
         $aNode = Node::factory()->create(['name' => 'a-node']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $aNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $aNode->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $zNode->id,
@@ -72,10 +72,10 @@ describe('ProxyRouteQuery', function (): void {
             ->and($result['routes'][0])
             ->toMatchArray([
                 'domain' => 'docs.test',
-                'kind' => 'app',
-                'owner' => ['type' => 'app', 'name' => 'docs'],
+                'kind' => 'project',
+                'owner' => ['type' => 'project', 'name' => 'docs'],
                 'node' => 'a-node',
-                'target' => ['type' => 'app', 'value' => 'docs'],
+                'target' => ['type' => 'project', 'value' => 'docs'],
                 'redirect_code' => null,
                 'tls' => ['managed_by' => 'orbit', 'trusted_by_gateway_ca' => true],
                 'status' => 'unknown',
@@ -129,7 +129,7 @@ describe('ProxyRouteQuery', function (): void {
                 'name' => 'nmbp',
                 'tld' => 'nmbp',
             ]);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = Project::factory()->for($node, 'node')->create([
             'name' => 'happie',
             'domain' => 'happie.test',
         ]);
@@ -162,13 +162,14 @@ describe('ProxyRouteQuery', function (): void {
             ],
         ]);
 
-        $route = app(ProxyRouteQuery::class)->list(filter: 'app')['routes'][0];
+        $route = app(ProxyRouteQuery::class)->list(filter: 'instance')['routes'][0];
 
         expect($route)
             ->toMatchArray([
                 'domain' => 'happie.nmbp',
-                'owner' => ['type' => 'app', 'name' => 'happie.nmbp'],
-                'target' => ['type' => 'app_instance', 'value' => 'happie.nmbp'],
+                'kind' => 'instance',
+                'owner' => ['type' => 'instance', 'name' => 'happie.nmbp'],
+                'target' => ['type' => 'instance', 'value' => 'happie.nmbp'],
             ]);
     });
 
@@ -176,7 +177,7 @@ describe('ProxyRouteQuery', function (): void {
         $edge = Node::factory()->create(['name' => 'edge-1']);
         $router = Node::factory()->create(['name' => 'gateway-1']);
         $backend = Node::factory()->create(['name' => 'web-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $backend->id, 'environment' => 'production']);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $backend->id, 'environment' => 'production']);
 
         ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -288,7 +289,7 @@ describe('ProxyRouteQuery', function (): void {
         $edge = Node::factory()->ingress()->create(['name' => 'edge-1']);
         $router = Node::factory()->router()->create(['name' => 'router-1']);
         $appNode = Node::factory()->appProd()->create(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -313,11 +314,11 @@ describe('ProxyRouteQuery', function (): void {
             ],
         ]);
 
-        $result = app(ProxyRouteQuery::class)->list(filter: 'app-websocket');
+        $result = app(ProxyRouteQuery::class)->list(filter: 'websocket');
 
         expect($result['meta'])
             ->toBe([
-                'filter' => 'app-websocket',
+                'filter' => 'websocket',
                 'node' => null,
                 'count' => 1,
             ])
@@ -325,7 +326,7 @@ describe('ProxyRouteQuery', function (): void {
             ->toMatchArray([
                 'domain' => 'ws.docs.test',
                 'kind' => 'proxy',
-                'owner' => ['type' => 'app-websocket', 'name' => 'docs'],
+                'owner' => ['type' => 'websocket', 'name' => 'docs'],
                 'node' => 'edge-1',
                 'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
                 'placement' => 'ingress',
@@ -341,7 +342,7 @@ describe('ProxyRouteQuery', function (): void {
 
     it('applies route filters after visibility is resolved', function (): void {
         $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature', 'app_id' => $app->id]);
 
         ProxyRoute::factory()->create([
@@ -375,7 +376,7 @@ describe('ProxyRouteQuery', function (): void {
 
         $query = app(ProxyRouteQuery::class);
 
-        expect(array_column($query->list(filter: 'app')['routes'], 'domain'))
+        expect(array_column($query->list(filter: 'project')['routes'], 'domain'))
             ->toBe(['docs.test'])
             ->and(array_column($query->list(filter: 'workspace')['routes'], 'domain'))
             ->toBe(['feature.docs.test'])

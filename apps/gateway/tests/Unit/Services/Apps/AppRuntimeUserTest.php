@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppRuntimeUser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -11,9 +11,9 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-function appRuntimeUserTestApp(Node $node, array $overrides = []): App
+function appRuntimeUserTestApp(Node $node, array $overrides = []): Project
 {
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'environment' => 'production',
         'path' => '/home/docs/app',

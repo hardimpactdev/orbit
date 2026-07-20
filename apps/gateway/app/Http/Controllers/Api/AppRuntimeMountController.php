@@ -10,9 +10,9 @@ use App\Enums\ActivityLogType;
 use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRuntimeMount;
+use App\Models\Project;
 use App\Services\Apps\AppRuntimeMountService;
 use App\Services\Apps\AppRuntimeMountValidationException;
 use App\Services\Apps\AppSelectorResolver;
@@ -26,7 +26,7 @@ use Illuminate\Support\Collection;
  */
 final class AppRuntimeMountController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?Project $activitySubject = null;
 
     private string $currentAction = 'list';
 
@@ -36,9 +36,10 @@ final class AppRuntimeMountController implements Loggable
         private readonly AppSelectorResolver $selectorResolver,
     ) {}
 
-    #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
-    public function index(string $app, AppRuntimeMountService $mounts): JsonResponse
+    #[RequiresPermission('instance:read', servingNode: ServingNode::AppOwning)]
+    public function index(string $instance, AppRuntimeMountService $mounts): JsonResponse
     {
+        $app = $instance;
         $this->currentAction = 'list';
 
         $resolved = $this->resolveMountTarget($app);
@@ -68,9 +69,10 @@ final class AppRuntimeMountController implements Loggable
         ));
     }
 
-    #[RequiresPermission('app:mount', servingNode: ServingNode::AppOwning)]
-    public function store(string $app, Request $request, AppRuntimeMountService $mounts): JsonResponse
+    #[RequiresPermission('instance:mount', servingNode: ServingNode::AppOwning)]
+    public function store(string $instance, Request $request, AppRuntimeMountService $mounts): JsonResponse
     {
+        $app = $instance;
         $this->currentAction = 'add';
 
         $resolved = $this->resolveMountTarget($app);
@@ -122,9 +124,10 @@ final class AppRuntimeMountController implements Loggable
         ]);
     }
 
-    #[RequiresPermission('app:mount', servingNode: ServingNode::AppOwning)]
-    public function destroy(string $app, Request $request, AppRuntimeMountService $mounts): JsonResponse
+    #[RequiresPermission('instance:mount', servingNode: ServingNode::AppOwning)]
+    public function destroy(string $instance, Request $request, AppRuntimeMountService $mounts): JsonResponse
     {
+        $app = $instance;
         $this->currentAction = 'remove';
 
         $resolved = $this->resolveMountTarget($app);
@@ -174,8 +177,8 @@ final class AppRuntimeMountController implements Loggable
     private function appInstanceRequired(): JsonResponse
     {
         return $this->validationFailed(
-            'Runtime mounts can only be changed on app instances. Use a dotted selector such as hauser.nmbp.',
-            ['field' => 'app', 'reason' => 'app_instance_required'],
+            'Runtime mounts can only be changed on instances. Use a dotted selector such as hauser.nmbp.',
+            ['field' => 'instance', 'reason' => 'instance_required'],
         );
     }
 
@@ -202,7 +205,7 @@ final class AppRuntimeMountController implements Loggable
     }
 
     /**
-     * @return array{app: App, instance: AppInstance|null}|JsonResponse|null
+     * @return array{app: Project, instance: AppInstance|null}|JsonResponse|null
      */
     private function resolveMountTarget(string $selector): array|JsonResponse|null
     {
@@ -225,14 +228,14 @@ final class AppRuntimeMountController implements Loggable
     /**
      * @param  Collection<int, AppInstanceRuntimeMount>  $mounts
      * @return array{
-     *     app: array<string, mixed>,
-     *     target: array{type: string, app: string, instance: string},
+     *     project: array<string, mixed>,
+     *     target: array{type: string, project: string, instance: string},
      *     mounts: list<array{source: string, target: string, read_only: bool}>,
      *     inherited_by_workspaces: bool
      * }
      */
     private function instanceMountsPayload(
-        App $app,
+        Project $app,
         AppInstance $instance,
         Collection $mounts,
         AppRuntimeMountService $service,
@@ -244,10 +247,10 @@ final class AppRuntimeMountController implements Loggable
 
         /** @var list<array{source: string, target: string, read_only: bool}> $mountPayloads */
         return [
-            'app' => $this->appPayload($app),
+            'project' => $this->appPayload($app),
             'target' => [
-                'type' => 'app_instance',
-                'app' => $app->name,
+                'type' => 'instance',
+                'project' => $app->name,
                 'instance' => $instance->name,
             ],
             'mounts' => $mountPayloads,
@@ -258,7 +261,7 @@ final class AppRuntimeMountController implements Loggable
     /**
      * @return array<string, mixed>
      */
-    private function appPayload(App $app): array
+    private function appPayload(Project $app): array
     {
         $app->loadMissing('node');
 
@@ -288,13 +291,13 @@ final class AppRuntimeMountController implements Loggable
         ]);
     }
 
-    private function notFound(string $app): JsonResponse
+    private function notFound(string $instance): JsonResponse
     {
         return response()->json([
             'error' => [
-                'code' => 'app.not_found',
-                'message' => "App '{$app}' not found.",
-                'meta' => ['app' => $app],
+                'code' => 'instance.not_found',
+                'message' => "Instance '{$instance}' not found.",
+                'meta' => ['instance' => $instance],
             ],
         ], 404);
     }
@@ -326,9 +329,9 @@ final class AppRuntimeMountController implements Loggable
     public function type(): string
     {
         return match ($this->currentAction) {
-            'add' => 'api:POST /apps/{app}/mounts',
-            'remove' => 'api:DELETE /apps/{app}/mounts',
-            default => 'api:GET /apps/{app}/mounts',
+            'add' => 'api:POST /instances/{instance}/mounts',
+            'remove' => 'api:DELETE /instances/{instance}/mounts',
+            default => 'api:GET /instances/{instance}/mounts',
         };
     }
 

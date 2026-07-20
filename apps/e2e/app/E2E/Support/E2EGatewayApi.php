@@ -1190,13 +1190,13 @@ final readonly class E2EGatewayApi
 
                 function run_app_show(string $name): array
                 {
-                    return run_orbit_command('orbit app:show '.escapeshellarg($name).' --json');
+                    return run_orbit_command('orbit project:show '.escapeshellarg($name).' --json');
                 }
 
                 function run_app_new(array $input): array
                 {
                     $parts = [
-                        'orbit app:new',
+                        'orbit project:new',
                         escapeshellarg((string) ($input['name'] ?? '')),
                         '--node='.escapeshellarg((string) ($input['node'] ?? '')),
                         '--root='.escapeshellarg((string) ($input['root'] ?? 'public')),
@@ -1223,7 +1223,7 @@ final readonly class E2EGatewayApi
                 function run_app_register(array $input): array
                 {
                     $parts = [
-                        'orbit app:register',
+                        'orbit instance:register',
                         escapeshellarg((string) ($input['name'] ?? '')),
                         '--root='.escapeshellarg((string) ($input['root'] ?? 'public')),
                         '--php-version='.escapeshellarg((string) ($input['php_version'] ?? '8.5')),
@@ -1244,7 +1244,7 @@ final readonly class E2EGatewayApi
                 function run_app_root(string $name, array $input): array
                 {
                     return run_orbit_command(
-                        'orbit app:root '
+                        'orbit instance:root '
                             .escapeshellarg($name).' '
                             .escapeshellarg((string) ($input['root'] ?? '')).' --json'
                     );
@@ -1253,7 +1253,7 @@ final readonly class E2EGatewayApi
                 function run_app_agent_ide(string $name, array $input): array
                 {
                     return run_orbit_command(
-                        'orbit app:agent-ide '
+                        'orbit instance:agent-ide '
                             .escapeshellarg($name).' '
                             .escapeshellarg((string) ($input['agent_ide'] ?? '')).' --json'
                     );
@@ -1261,14 +1261,14 @@ final readonly class E2EGatewayApi
 
                 function run_app_remove(string $name): array
                 {
-                    return run_orbit_command('orbit app:remove '.escapeshellarg($name).' --force --json');
+                    return run_orbit_command('orbit project:remove '.escapeshellarg($name).' --force --json');
                 }
 
                 function run_activity_list(array $query): array
                 {
                     $parts = ['orbit activity:list --json'];
 
-                    foreach (['app', 'node', 'effect', 'correlation', 'limit'] as $option) {
+                    foreach (['project', 'node', 'effect', 'correlation', 'limit'] as $option) {
                         $value = $query[$option] ?? null;
 
                         if (is_scalar($value) && (string) $value !== '') {
@@ -1287,7 +1287,7 @@ final readonly class E2EGatewayApi
                         $parts[] = escapeshellarg($name);
                     }
 
-                    foreach (['app', 'limit', 'since', 'until'] as $option) {
+                    foreach (['instance', 'limit', 'since', 'until'] as $option) {
                         $value = $query[$option] ?? null;
 
                         if (is_scalar($value) && (string) $value !== '') {
@@ -1313,7 +1313,7 @@ final readonly class E2EGatewayApi
                     ];
 
                     foreach ([
-                        'app' => 'app',
+                        'instance' => 'instance',
                         'base' => 'base',
                         'php_version' => 'php-version',
                     ] as $field => $option) {
@@ -1338,7 +1338,7 @@ final readonly class E2EGatewayApi
                         $parts[] = escapeshellarg((string) $name);
                     }
 
-                    foreach (['app' => 'app', 'path' => 'path'] as $field => $option) {
+                    foreach (['instance' => 'instance', 'path' => 'path'] as $field => $option) {
                         $value = $input[$field] ?? null;
 
                         if (is_scalar($value) && (string) $value !== '') {
@@ -1354,11 +1354,11 @@ final readonly class E2EGatewayApi
                 function run_workspace_steps(string $phase, array $query): array
                 {
                     $parts = ["orbit workspace-{$phase}-step:list"];
-                    $app = $query['app'] ?? null;
+                    $instance = $query['instance'] ?? null;
                     $path = $query['path'] ?? null;
 
-                    if (is_scalar($app) && (string) $app !== '') {
-                        $parts[] = '--app='.escapeshellarg((string) $app);
+                    if (is_scalar($instance) && (string) $instance !== '') {
+                        $parts[] = '--instance='.escapeshellarg((string) $instance);
                     } elseif (is_scalar($path) && (string) $path !== '') {
                         chdir((string) $path);
                     }
@@ -1373,7 +1373,7 @@ final readonly class E2EGatewayApi
                     $parts = ["orbit workspace-{$phase}-step:add"];
 
                     foreach ([
-                        'app' => 'app',
+                        'instance' => 'instance',
                         'command' => 'command',
                         'timeout' => 'timeout',
                         'before' => 'before',
@@ -1399,7 +1399,7 @@ final readonly class E2EGatewayApi
                         '--force',
                     ];
 
-                    foreach (['app' => 'app'] as $field => $option) {
+                    foreach (['instance' => 'instance'] as $field => $option) {
                         $value = $query[$field] ?? null;
 
                         if (is_scalar($value) && (string) $value !== '') {
@@ -1420,10 +1420,10 @@ final readonly class E2EGatewayApi
                         '--force',
                     ];
 
-                    $app = $query['app'] ?? null;
+                    $instance = $query['instance'] ?? null;
 
-                    if (is_scalar($app) && (string) $app !== '') {
-                        $parts[] = '--app='.escapeshellarg((string) $app);
+                    if (is_scalar($instance) && (string) $instance !== '') {
+                        $parts[] = '--instance='.escapeshellarg((string) $instance);
                     }
 
                     if (($input['keep_files'] ?? false) === true) {
@@ -1702,8 +1702,8 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (str_starts_with($requestLine, 'GET /api/apps ') || str_starts_with($requestLine, 'GET /api/apps?')) {
-                        $path = explode(' ', $requestLine)[1] ?? '/api/apps';
+                    if (str_starts_with($requestLine, 'GET /api/projects ') || str_starts_with($requestLine, 'GET /api/projects?')) {
+                        $path = explode(' ', $requestLine)[1] ?? '/api/projects';
                         $queryString = parse_url($path, PHP_URL_QUERY);
                         $query = [];
 
@@ -1711,7 +1711,7 @@ final readonly class E2EGatewayApi
                             parse_str($queryString, $query);
                         }
 
-                        $parts = ['orbit app:list --json'];
+                        $parts = ['orbit project:list --json'];
 
                         foreach (['node', 'environment'] as $option) {
                             $value = $query[$option] ?? null;
@@ -1728,7 +1728,7 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (preg_match('#^GET /api/apps/([^ ?]+)#', $requestLine, $matches) === 1) {
+                    if (preg_match('#^GET /api/projects/([^ ?]+)#', $requestLine, $matches) === 1) {
                         [$exitCode, $output] = run_app_show(urldecode($matches[1]));
                         respond($connection, $exitCode === 0 ? 200 : 422, $output);
                         fclose($connection);
@@ -1936,7 +1936,7 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (preg_match('#^POST /api/apps/([^ ?]+)/agent-ide#', $requestLine, $matches) === 1) {
+                    if (preg_match('#^POST /api/instances/([^ ?]+)/agent-ide#', $requestLine, $matches) === 1) {
                         $input = json_decode(read_request_body($connection, $headers), true);
 
                         if (! is_array($input)) {
@@ -1959,7 +1959,7 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (preg_match('#^POST /api/apps/([^ ?]+)/root#', $requestLine, $matches) === 1) {
+                    if (preg_match('#^POST /api/instances/([^ ?]+)/root#', $requestLine, $matches) === 1) {
                         $input = json_decode(read_request_body($connection, $headers), true);
 
                         if (! is_array($input)) {
@@ -1982,7 +1982,7 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (preg_match('#^DELETE /api/apps/([^ ?]+)#', $requestLine, $matches) === 1) {
+                    if (preg_match('#^DELETE /api/projects/([^ ?]+)#', $requestLine, $matches) === 1) {
                         read_request_body($connection, $headers);
 
                         [$exitCode, $output] = run_app_remove(urldecode($matches[1]));
@@ -1992,7 +1992,7 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (str_starts_with($requestLine, 'POST /api/apps/register ')) {
+                    if (str_starts_with($requestLine, 'POST /api/instances/register ')) {
                         $input = json_decode(read_request_body($connection, $headers), true);
 
                         if (! is_array($input)) {
@@ -2015,7 +2015,7 @@ final readonly class E2EGatewayApi
                         continue;
                     }
 
-                    if (str_starts_with($requestLine, 'POST /api/apps ')) {
+                    if (str_starts_with($requestLine, 'POST /api/projects ')) {
                         $input = json_decode(read_request_body($connection, $headers), true);
 
                         if (! is_array($input)) {

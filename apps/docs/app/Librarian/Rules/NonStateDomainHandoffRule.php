@@ -15,7 +15,7 @@ final readonly class NonStateDomainHandoffRule implements GroupedRule
      * @var array<string, true>
      */
     private const array STATE_FAMILY_DIRECTORIES = [
-        'app' => true,
+        'project' => true,
         'database' => true,
         'firewall' => true,
         'node' => true,
@@ -30,17 +30,17 @@ final readonly class NonStateDomainHandoffRule implements GroupedRule
      * @var array<string, list<string>>
      */
     private const array REQUIRED_DOCTOR_HANDOFFS = [
-        'activity' => ['node', 'app', 'workspace', 'process', 'proxy', 'schedule', 'tool', 'firewall_rule'],
-        'agent-ide' => ['node', 'app', 'workspace', 'process', 'tool'],
-        'analytics' => ['node', 'app', 'process', 'proxy'],
-        'cf' => ['proxy', 'app'],
-        'deploy' => ['app'],
+        'activity' => ['node', 'instance', 'workspace', 'process', 'proxy', 'schedule', 'tool', 'firewall_rule'],
+        'agent-ide' => ['node', 'instance', 'workspace', 'process', 'tool'],
+        'analytics' => ['node', 'instance', 'process', 'proxy'],
+        'cf' => ['proxy', 'instance'],
+        'deploy' => ['instance'],
         'dns' => ['node'],
         'extension' => ['node'],
-        'codex' => ['app', 'tool'],
+        'codex' => ['instance', 'tool'],
         'gateway' => ['node'],
-        'php' => ['tool', 'app', 'workspace', 'proxy', 'node'],
-        'operation' => ['node', 'app', 'workspace', 'process', 'proxy', 'schedule', 'tool', 'firewall_rule'],
+        'php' => ['tool', 'instance', 'workspace', 'proxy', 'node'],
+        'operation' => ['node', 'instance', 'workspace', 'process', 'proxy', 'schedule', 'tool', 'firewall_rule'],
         'vpn' => ['node'],
         's3' => ['node', 'tool', 'proxy'],
         'metrics' => ['node', 'tool', 'process', 'proxy'],

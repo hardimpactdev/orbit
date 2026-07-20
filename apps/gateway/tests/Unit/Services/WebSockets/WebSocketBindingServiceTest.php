@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Contracts\SiteCertificateInstaller;
-use App\Models\App;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\WebSockets\WebSocketBindingService;
 use App\Services\WebSockets\WebSocketCredentials;
@@ -18,7 +18,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-function websocketBindingServiceApp(?string $domain = 'docs.test', bool $withIngress = true): App
+function websocketBindingServiceApp(?string $domain = 'docs.test', bool $withIngress = true): Project
 {
     $slug = str_replace('.', '-', $domain ?? 'private-app');
     $addressOffset = $domain === 'docs.test' ? 0 : 1;
@@ -46,7 +46,7 @@ function websocketBindingServiceApp(?string $domain = 'docs.test', bool $withIng
             ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
     }
 
-    return App::factory()->create([
+    return Project::factory()->create([
         'name' => $slug,
         'node_id' => $appNode->id,
         'domain' => $domain,
@@ -124,7 +124,7 @@ it('returns websocket credentials for an enabled binding', function (): void {
         ->toBeInstanceOf(WebSocketCredentials::class)
         ->and($credentials->toArray())
         ->toBe([
-            'app' => 'docs-test',
+            'project' => 'docs-test',
             'internal_host' => 'websocket.orbit',
             'public_hosts' => ['ws.docs.test'],
             'allowed_origins' => ['https://docs.test'],

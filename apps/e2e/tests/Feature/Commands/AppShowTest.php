@@ -21,7 +21,7 @@ function appShowSeed(E2ETopologyHarness $topology): void
             }
         }
 
-        \App\Models\App::query()->delete();
+        \App\Models\Project::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             'consumer_node_id' => $nodes->get('operator-1'),
@@ -30,11 +30,16 @@ function appShowSeed(E2ETopologyHarness $topology): void
             'updated_at' => now(),
         ]);
 
-        \App\Models\App::query()->create([
+        $project = \App\Models\Project::query()->create([
             'name' => 'docs',
-            'node_id' => $nodes->get('app-dev-1'),
-            'path' => '/srv/docs',
-            'document_root' => 'public',
+        ]);
+
+        \App\Models\AppInstance::factory()->for($project, 'app')->create([
+            'driver_config' => [
+                'node' => 'app-dev-1',
+                'path' => '/srv/docs',
+                'document_root' => 'public',
+            ],
         ]);
 
         echo 'seeded';
@@ -68,20 +73,23 @@ it('shows a registered app from a operator caller through the gateway api', func
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:show docs --json',
+                'cd %s && orbit project:show docs --json',
                 escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $app = $payload['success']['data']['app'] ?? null;
+        $project = $payload['success']['data']['project'] ?? null;
+        $instance = $payload['success']['data']['details']['instances'][0] ?? null;
 
-        expect($app)
+        expect($project)
             ->toBeArray()
-            ->and($app['name'])
+            ->and($instance)
+            ->toBeArray()
+            ->and($project['name'])
             ->toBe('docs')
-            ->and($app['node'])
+            ->and($instance['node'])
             ->toBe('app-dev-1');
     } finally {
         $topology->cleanup();

@@ -20,7 +20,7 @@ final class ReconfigureToolRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         public readonly string $tool,
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $node = null,
         public readonly array $toolConfig = [],
         public readonly ?string $password = null,
@@ -38,7 +38,7 @@ final class ReconfigureToolRequest extends GatewayRequest implements HasBody
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'node' => $this->node,
                 'config' => $this->toolConfig === [] ? null : $this->toolConfig,
                 'password' => $this->password,

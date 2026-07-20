@@ -10,8 +10,8 @@ describe('deploy write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'step' => [
                 'id' => 12,
-                'app' => 'docs',
-                'app_instance' => 'production',
+                'project' => 'docs',
+                'instance' => 'production',
                 'title' => 'Run migrations',
                 'command' => 'php artisan migrate --force',
                 'order' => 20,
@@ -21,7 +21,7 @@ describe('deploy write commands', function (): void {
         ], ['action' => 'created']));
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-add', [
-            'app' => 'docs.production',
+            'instance' => 'docs.production',
             'deploy_command' => 'php artisan migrate --force',
             '--title' => 'Run migrations',
             '--order' => '20',
@@ -37,7 +37,7 @@ describe('deploy write commands', function (): void {
                 $request->method() === 'POST'
                 && str_contains($request->url(), '/api/deploy/steps')
                 && $request->data() === [
-                    'app' => 'docs.production',
+                    'instance' => 'docs.production',
                     'command' => 'php artisan migrate --force',
                     'title' => 'Run migrations',
                     'order' => 20,
@@ -59,7 +59,7 @@ describe('deploy write commands', function (): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-add', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -79,7 +79,7 @@ describe('deploy write commands', function (): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-add', [
-            'app' => 'docs',
+            'instance' => 'docs',
             'deploy_command' => 'php artisan migrate --force',
             '--timeout' => '0',
             '--json' => true,
@@ -101,7 +101,7 @@ describe('deploy write commands', function (): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-remove', [
-            'app' => 'docs',
+            'instance' => 'docs',
             'step' => 'Run migrations',
             '--json' => true,
         ]);
@@ -124,8 +124,8 @@ describe('deploy write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'step' => [
                 'id' => 12,
-                'app' => 'docs',
-                'app_instance' => 'production',
+                'project' => 'docs',
+                'instance' => 'production',
                 'title' => 'Run migrations',
                 'command' => 'php artisan migrate --force',
                 'order' => 20,
@@ -136,7 +136,7 @@ describe('deploy write commands', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-remove', [
-            'app' => 'docs',
+            'instance' => 'docs',
             'step' => 'Run migrations',
             '--force' => true,
             '--json' => true,
@@ -149,7 +149,7 @@ describe('deploy write commands', function (): void {
                 $request->method() === 'DELETE'
                 && str_contains($request->url(), '/api/deploy/steps/Run%20migrations')
                 && $request->data() === [
-                    'app' => 'docs',
+                    'instance' => 'docs',
                     'destructive_consent' => true,
                 ]
             );
@@ -176,7 +176,7 @@ describe('deploy write commands', function (): void {
         );
 
         [$exitCode, $output] = runCommand($this, 'deploy:run', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--detach' => true,
             '--json' => true,
         ]);
@@ -189,7 +189,7 @@ describe('deploy write commands', function (): void {
                 && str_contains($request->url(), '/api/deploy/run')
                 && ! $request->hasHeader('Accept', 'text/event-stream')
                 && $request->data() === [
-                    'app' => 'docs',
+                    'instance' => 'docs',
                     'detach' => true,
                 ]
             );
@@ -219,7 +219,7 @@ describe('deploy write commands', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     });
 
     it('passes through gateway errors from deploy writes', function (): void {
@@ -228,7 +228,7 @@ describe('deploy write commands', function (): void {
         ]), 403);
 
         [$exitCode, $output] = runCommand($this, 'deploy:run', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -246,8 +246,8 @@ describe('deploy write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'step' => [
                 'id' => 12,
-                'app' => 'docs',
-                'app_instance' => 'production',
+                'project' => 'docs',
+                'instance' => 'production',
                 'title' => 'Run migrations',
                 'command' => 'php artisan migrate --force',
                 'order' => 20,
@@ -257,7 +257,7 @@ describe('deploy write commands', function (): void {
         ], ['action' => 'created']));
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-add', [
-            'app' => 'docs.production',
+            'instance' => 'docs.production',
             'deploy_command' => 'php artisan migrate --force',
             '--title' => 'Run migrations',
             '--order' => '20',
@@ -267,7 +267,7 @@ describe('deploy write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Added deployment step #12 'Run migrations' to app instance 'docs.production'.")
+            ->toContain("Added deployment step #12 'Run migrations' to instance 'docs.production'.")
             ->and($output)
             ->toContain('php artisan migrate --force')
             ->and($output)
@@ -284,8 +284,8 @@ describe('deploy write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'step' => [
                 'id' => 13,
-                'app' => 'docs',
-                'app_instance' => 'production',
+                'project' => 'docs',
+                'instance' => 'production',
                 'title' => 'Clear cache',
                 'command' => 'php artisan cache:clear',
                 'order' => 30,
@@ -295,7 +295,7 @@ describe('deploy write commands', function (): void {
         ], ['action' => 'created']));
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-add', [
-            'app' => 'docs.production',
+            'instance' => 'docs.production',
             'deploy_command' => 'php artisan cache:clear',
             '--title' => 'Clear cache',
         ]);
@@ -303,7 +303,7 @@ describe('deploy write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Added deployment step #13 'Clear cache' to app instance 'docs.production'.")
+            ->toContain("Added deployment step #13 'Clear cache' to instance 'docs.production'.")
             ->and($output)
             ->toContain('retention unlimited')
             ->and($output)
@@ -314,8 +314,8 @@ describe('deploy write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'step' => [
                 'id' => 12,
-                'app' => 'docs',
-                'app_instance' => 'production',
+                'project' => 'docs',
+                'instance' => 'production',
                 'title' => 'Run migrations',
                 'command' => 'php artisan migrate --force',
                 'order' => 20,
@@ -326,7 +326,7 @@ describe('deploy write commands', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-remove', [
-            'app' => 'docs.production',
+            'instance' => 'docs.production',
             'step' => 'Run migrations',
             '--force' => true,
         ]);
@@ -334,7 +334,7 @@ describe('deploy write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Removed deployment step #12 'Run migrations' from app instance 'docs.production'.")
+            ->toContain("Removed deployment step #12 'Run migrations' from instance 'docs.production'.")
             ->and($output)
             ->toContain('order 20')
             ->and($output)

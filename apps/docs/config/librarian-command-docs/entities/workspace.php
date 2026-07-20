@@ -5,8 +5,8 @@ declare(strict_types=1);
 return [
     'required' => [
         'name' => 'string',
-        'app' => 'string',
-        'app_instance' => 'string',
+        'project' => 'string',
+        'instance' => 'string',
         'node' => 'string|object',
         'url' => 'string',
     ],

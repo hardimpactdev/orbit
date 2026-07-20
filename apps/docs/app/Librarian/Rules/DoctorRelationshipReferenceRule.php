@@ -15,7 +15,7 @@ final readonly class DoctorRelationshipReferenceRule implements GroupedRule
      * @var array<string, string>
      */
     private const array STATE_FAMILY_DOCTORS = [
-        'app' => 'app-doctor.md',
+        'project' => 'instance-doctor.md',
         'database' => 'database-doctor.md',
         'firewall' => 'firewall-doctor.md',
         'node' => 'node-doctor.md',

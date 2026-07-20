@@ -17,12 +17,12 @@ describe('deploy:history', function (): void {
                 ],
             ],
         ], [
-            'app' => 'docs',
+            'instance' => 'docs',
             'count' => 1,
         ]));
 
         [$exitCode, $output] = runCommand($this, 'deploy:history', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -34,7 +34,7 @@ describe('deploy:history', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/deploy/history')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'instance=docs')
             );
         });
 
@@ -44,16 +44,16 @@ describe('deploy:history', function (): void {
             ->toBe(12)
             ->and($decoded['success']['meta'])
             ->toMatchArray([
-                'app' => 'docs',
+                'instance' => 'docs',
                 'count' => 1,
             ]);
     });
 
     it('forwards the limit option to the gateway', function (): void {
-        fakeGateway(fakeSuccessEnvelope(['runs' => []], ['app' => 'docs', 'count' => 0]));
+        fakeGateway(fakeSuccessEnvelope(['runs' => []], ['instance' => 'docs', 'count' => 0]));
 
         [$exitCode, $output] = runCommand($this, 'deploy:history', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--limit' => '10',
             '--json' => true,
         ]);
@@ -63,7 +63,7 @@ describe('deploy:history', function (): void {
 
             return (
                 str_contains($url, '/api/deploy/history')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'instance=docs')
                 && str_contains($url, 'limit=10')
             );
         });
@@ -87,9 +87,9 @@ describe('deploy:history', function (): void {
                     'started_at' => '2026-05-07T09:00:00Z',
                 ],
             ],
-        ], ['app' => 'docs', 'count' => 2]));
+        ], ['instance' => 'docs', 'count' => 2]));
 
-        [$exitCode, $output] = runCommand($this, 'deploy:history', ['app' => 'docs']);
+        [$exitCode, $output] = runCommand($this, 'deploy:history', ['instance' => 'docs']);
 
         expect($exitCode)
             ->toBe(0)
@@ -116,19 +116,19 @@ describe('deploy:history', function (): void {
             ->not->toContain('"exit_code"');
     });
 
-    it('renders empty human output naming the app when no deploy history exists', function (): void {
-        fakeGateway(fakeSuccessEnvelope(['runs' => []], ['app' => 'docs', 'count' => 0]));
+    it('renders empty human output naming the instance when no deploy history exists', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['runs' => []], ['instance' => 'docs', 'count' => 0]));
 
-        [$exitCode, $output] = runCommand($this, 'deploy:history', ['app' => 'docs']);
+        [$exitCode, $output] = runCommand($this, 'deploy:history', ['instance' => 'docs']);
 
         expect($exitCode)->toBe(0)->and($output)->toBe('No deployment history found for docs.');
     });
 
-    it('rejects a missing app argument before calling the gateway', function (): void {
+    it('rejects a missing instance argument before calling the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope(['runs' => []]));
 
         [$exitCode, $output] = runCommand($this, 'deploy:history', [
-            'app' => ' ',
+            'instance' => ' ',
             '--json' => true,
         ]);
 
@@ -141,7 +141,7 @@ describe('deploy:history', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     });
 
     it('passes through gateway validation failures for invalid limits', function (): void {
@@ -150,7 +150,7 @@ describe('deploy:history', function (): void {
         ]), 400);
 
         [$exitCode, $output] = runCommand($this, 'deploy:history', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--limit' => '0',
             '--json' => true,
         ]);
@@ -171,7 +171,7 @@ describe('deploy:history', function (): void {
         ]), 403);
 
         [$exitCode, $output] = runCommand($this, 'deploy:history', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -185,26 +185,26 @@ describe('deploy:history', function (): void {
             ->toBe('deploy:read');
     });
 
-    it('passes through production-app-required failures from the gateway', function (): void {
-        fakeGateway(fakeErrorEnvelope('deploy.production_app_required', 'A production app is required.', [
-            'app' => 'docs',
+    it('passes through production-project-required failures from the gateway', function (): void {
+        fakeGateway(fakeErrorEnvelope('deploy.production_project_required', 'A production project is required.', [
+            'instance' => 'docs',
         ]), 400);
 
         [$exitCode, $output] = runCommand($this, 'deploy:history', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('deploy.production_app_required');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('deploy.production_project_required');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
         fakeGatewayDown('Network is unreachable');
 
         [$exitCode, $output] = runCommand($this, 'deploy:history', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -227,12 +227,12 @@ describe('deploy:step-list', function (): void {
                 ],
             ],
         ], [
-            'app' => 'docs',
+            'instance' => 'docs',
             'count' => 1,
         ]));
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-list', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -244,7 +244,7 @@ describe('deploy:step-list', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/deploy/steps')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'instance=docs')
             );
         });
 
@@ -254,7 +254,7 @@ describe('deploy:step-list', function (): void {
             ->toBe('Build')
             ->and($decoded['success']['meta'])
             ->toMatchArray([
-                'app' => 'docs',
+                'instance' => 'docs',
                 'count' => 1,
             ]);
     });
@@ -279,9 +279,9 @@ describe('deploy:step-list', function (): void {
                     'retention' => null,
                 ],
             ],
-        ], ['app' => 'docs', 'count' => 2]));
+        ], ['instance' => 'docs', 'count' => 2]));
 
-        [$exitCode, $output] = runCommand($this, 'deploy:step-list', ['app' => 'docs']);
+        [$exitCode, $output] = runCommand($this, 'deploy:step-list', ['instance' => 'docs']);
 
         expect($exitCode)
             ->toBe(0)
@@ -312,19 +312,19 @@ describe('deploy:step-list', function (): void {
             ->not->toContain('"timeout_seconds"');
     });
 
-    it('renders empty human output naming the app when no deploy steps exist', function (): void {
-        fakeGateway(fakeSuccessEnvelope(['steps' => []], ['app' => 'docs', 'count' => 0]));
+    it('renders empty human output naming the instance when no deploy steps exist', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['steps' => []], ['instance' => 'docs', 'count' => 0]));
 
-        [$exitCode, $output] = runCommand($this, 'deploy:step-list', ['app' => 'docs']);
+        [$exitCode, $output] = runCommand($this, 'deploy:step-list', ['instance' => 'docs']);
 
         expect($exitCode)->toBe(0)->and($output)->toBe('No deployment steps found for docs.');
     });
 
-    it('rejects a missing app argument before calling the gateway', function (): void {
+    it('rejects a missing instance argument before calling the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope(['steps' => []]));
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-list', [
-            'app' => ' ',
+            'instance' => ' ',
             '--json' => true,
         ]);
 
@@ -337,7 +337,7 @@ describe('deploy:step-list', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     });
 
     it('passes through authorization failures from the gateway', function (): void {
@@ -346,7 +346,7 @@ describe('deploy:step-list', function (): void {
         ]), 403);
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-list', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -360,26 +360,26 @@ describe('deploy:step-list', function (): void {
             ->toBe('deploy:read');
     });
 
-    it('passes through app-not-found failures from the gateway', function (): void {
-        fakeGateway(fakeErrorEnvelope('app.not_found', 'App not found.', [
-            'app' => 'missing',
+    it('passes through instance-not-found failures from the gateway', function (): void {
+        fakeGateway(fakeErrorEnvelope('instance.not_found', 'Instance not found.', [
+            'instance' => 'missing',
         ]), 404);
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-list', [
-            'app' => 'missing',
+            'instance' => 'missing',
             '--json' => true,
         ]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('app.not_found');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('instance.not_found');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
         fakeGatewayDown('Network is unreachable');
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-list', [
-            'app' => 'docs',
+            'instance' => 'docs',
             '--json' => true,
         ]);
 

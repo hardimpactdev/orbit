@@ -10,9 +10,9 @@ use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Workspaces\WorkspaceNodeReachability;
@@ -40,7 +40,7 @@ final readonly class CreateWorkspace
      * }
      */
     public function handle(
-        App $app,
+        Project $app,
         string $name,
         AppInstance $instance,
         string $base = 'main',
@@ -78,7 +78,7 @@ final readonly class CreateWorkspace
         return $this->result($workspace, $app, $node, $base, $httpProbe, $warnings);
     }
 
-    public function resolveAppNode(App $app, AppInstance $instance): Node
+    public function resolveAppNode(Project $app, AppInstance $instance): Node
     {
         $app->loadMissing('node');
 
@@ -86,9 +86,13 @@ final readonly class CreateWorkspace
 
         if (! $node instanceof Node) {
             throw new WorkspaceCreateFailed(
-                'workspace.parent_app_invalid',
-                "App '{$app->name}' does not have an owning app node.",
-                ['field' => 'app', 'app' => $app->name],
+                'workspace.parent_instance_invalid',
+                "Instance '{$app->name}.{$instance->name}' does not have an owning app node.",
+                [
+                    'field' => 'instance',
+                    'project' => $app->name,
+                    'instance' => $instance->name,
+                ],
             );
         }
 
@@ -124,7 +128,7 @@ final readonly class CreateWorkspace
     }
 
     public function createIntent(
-        App $app,
+        Project $app,
         AppInstance $instance,
         ?string $phpVersion,
         WorkspaceProvisionResult $provisionResult,
@@ -147,13 +151,13 @@ final readonly class CreateWorkspace
         return $workspace;
     }
 
-    public function effectiveAgentIde(App $app): ?string
+    public function effectiveAgentIde(AppInstance $instance): ?string
     {
-        return $this->sourceDrivers->effectiveAdapter($app);
+        return $this->sourceDrivers->effectiveAdapter($instance);
     }
 
     public function provisionWorkspaceSource(
-        App $app,
+        Project $app,
         Node $node,
         string $name,
         string $base,
@@ -168,7 +172,7 @@ final readonly class CreateWorkspace
                 $app->path = $instancePath;
             }
 
-            $driver = $this->sourceDrivers->resolve($app);
+            $driver = $this->sourceDrivers->resolve($app, $instance);
 
             return $driver->create($app, $node, $name, $base);
         } finally {
@@ -179,9 +183,9 @@ final readonly class CreateWorkspace
     /**
      * @return array{label: string, done_label: string}
      */
-    public function sourceProgressLabels(App $app, Node $node): array
+    public function sourceProgressLabels(AppInstance $instance, Node $node): array
     {
-        return $this->sourceDrivers->progressLabels($app, $node);
+        return $this->sourceDrivers->progressLabels($instance, $node);
     }
 
     /**
@@ -195,7 +199,7 @@ final readonly class CreateWorkspace
      */
     public function result(
         Workspace $workspace,
-        App $app,
+        Project $app,
         Node $node,
         string $base,
         array $httpProbe,
@@ -220,12 +224,12 @@ final readonly class CreateWorkspace
     /**
      * @return array<string, mixed>
      */
-    private function workspacePayload(Workspace $workspace, App $app, Node $node): array
+    private function workspacePayload(Workspace $workspace, Project $app, Node $node): array
     {
         return [
             'name' => $workspace->name,
-            'app' => $app->name,
-            'app_instance' => $workspace->appInstance->name,
+            'project' => $app->name,
+            'instance' => $workspace->appInstance->name,
             'node' => $node->name,
             'path' => $workspace->path,
             'url' => $workspace->url(),

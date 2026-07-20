@@ -11,24 +11,23 @@ use function Laravel\Prompts\table;
 final class AppSetupStepListCommand extends AppGatewayCommand
 {
     #[\Override]
-    protected $signature = 'app-setup-step:list
-        {app? : App name or hostname}
-        {--app= : App name or hostname}
+    protected $signature = 'instance-setup-step:list
+        {instance? : Instance selector (project.instance or hostname)}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'List app setup steps.';
+    protected $description = 'List instance setup steps.';
 
     public function handle(): int
     {
-        $app = $this->resolveAppSelector();
+        $app = $this->resolveInstanceSelector();
 
         if ($app === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         try {
-            $response = $this->gatewayGet($this->apiAppPath($app, '/setup-steps'));
+            $response = $this->gatewayGet($this->apiInstancePath($app, '/setup-steps'));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -60,16 +59,9 @@ final class AppSetupStepListCommand extends AppGatewayCommand
         return self::SUCCESS;
     }
 
-    private function resolveAppSelector(): ?string
+    private function resolveInstanceSelector(): ?string
     {
-        $argument = $this->stringArgument('app');
-        $option = $this->stringOption('app');
-
-        if ($argument !== null && $option !== null && $argument !== $option) {
-            return null;
-        }
-
-        return $argument ?? $option ?? $this->appFromOrbitMarker();
+        return $this->stringArgument('instance') ?? $this->instanceFromOrbitMarker();
     }
 
     /**

@@ -20,15 +20,15 @@ final class DatabaseConnectionIndexController extends DatabaseConnectionApiContr
             return $auth;
         }
 
-        $app = $this->stringValue($request->query('app'));
+        $instance = $this->stringValue($request->query('instance'));
         $workspace = $this->stringValue($request->query('workspace'));
         $node = $this->stringValue($request->query('node'));
         $this->setActivityProperties($request, array_filter(
-            compact('app', 'workspace', 'node'),
+            compact('instance', 'workspace', 'node'),
             static fn (mixed $value): bool => $value !== null,
         ));
 
-        $appModel = $app !== null ? $this->resolver->resolveApp($app) : null;
+        $instanceModel = $instance !== null ? $this->resolver->resolveAppInstanceSelector($instance) : null;
 
         try {
             $workspaceModel = $workspace !== null
@@ -38,18 +38,18 @@ final class DatabaseConnectionIndexController extends DatabaseConnectionApiContr
             return $this->workspaceUnsupportedForProduction($exception);
         }
 
-        if ($app !== null && $workspace !== null) {
-            return $this->validationFailed('scope', 'Invalid scope: --app and --workspace cannot be combined.', [
+        if ($instance !== null && $workspace !== null) {
+            return $this->validationFailed('scope', 'Invalid scope: --instance and --workspace cannot be combined.', [
                 'field' => 'scope',
             ]);
         }
 
         $nodeModel = $node !== null ? $this->resolver->resolveNode($node) : null;
 
-        if ($app !== null && $appModel === null) {
-            return $this->validationFailed('app', "Invalid value for --app: '{$app}'.", [
-                'field' => 'app',
-                'value' => $app,
+        if ($instance !== null && $instanceModel === null) {
+            return $this->validationFailed('instance', "Invalid value for --instance: '{$instance}'.", [
+                'field' => 'instance',
+                'value' => $instance,
             ]);
         }
 
@@ -67,17 +67,17 @@ final class DatabaseConnectionIndexController extends DatabaseConnectionApiContr
             ]);
         }
 
-        $authorization = $this->authorizeListScope($auth, $appModel, $workspaceModel, $nodeModel);
+        $authorization = $this->authorizeListScope($auth, $instanceModel, $workspaceModel, $nodeModel);
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
         }
 
-        $connections = $this->registry->list(app: $appModel, workspace: $workspaceModel, node: $nodeModel);
+        $connections = $this->registry->list(instance: $instanceModel, workspace: $workspaceModel, node: $nodeModel);
 
         if (
             ! $this->roles->nodeIsGateway($auth)
-            && $appModel === null
+            && $instanceModel === null
             && $workspaceModel === null
             && $nodeModel === null
         ) {

@@ -24,7 +24,7 @@ function workspaceHistorySeed(E2ETopologyHarness $topology): void
         \Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
         \Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
         \Illuminate\Support\Facades\DB::table('workspaces')->delete();
-        \App\Models\App::query()->delete();
+        \App\Models\Project::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             'consumer_node_id' => $nodes->get('operator-1'),
@@ -35,7 +35,7 @@ function workspaceHistorySeed(E2ETopologyHarness $topology): void
             'updated_at' => now(),
         ]);
 
-        $app = \App\Models\App::query()->create([
+        $app = \App\Models\Project::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'path' => '/srv/docs',
@@ -88,7 +88,7 @@ it('reads workspace history from a non-gateway caller through the gateway api', 
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit workspace:history feature-docs --app=docs --json',
+                'cd %s && orbit workspace:history feature-docs --instance=docs --json',
                 escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,

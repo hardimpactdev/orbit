@@ -2,20 +2,20 @@
 
 [Back to Process commands.](../README.md)
 
-Add a node-, app-instance-, or workspace-owned process definition.
+Add a node-, instance-, or workspace-owned process definition.
 
 `process:add` defines a managed process, including its command or service
 definition, owner scope, runtime backend, optional tool dependency, restart
 policy, and crash-notification policy. Use it for node-level services,
-long-running app-instance or workspace workers, and development servers.
+long-running instance or workspace workers, and development servers.
 
 ## Usage
 
 ```bash
-orbit process:add vite "npm run dev" --app=docs.production --crash-notification=agent_ide
-orbit process:add queue "php artisan queue:work" --app=docs.production --restart-policy=always
-orbit process:add horizon "php artisan horizon" --app=docs.development --workspace=feature-docs --runtime=systemd
-orbit process:add feedback "php artisan feedback:work" --app=feedback.development --runtime=launchd
+orbit process:add vite "npm run dev" --instance=docs.production --crash-notification=agent_ide
+orbit process:add queue "php artisan queue:work" --instance=docs.production --restart-policy=always
+orbit process:add horizon "php artisan horizon" --instance=docs.development --workspace=feature-docs --runtime=systemd
+orbit process:add feedback "php artisan feedback:work" --instance=feedback.development --runtime=launchd
 orbit process:add opencode-server "opencode serve -a" --node=app-dev-1 --runtime=systemd --tool=opencode-cli
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3 --image=docker.io/library/mysql:8.3
@@ -23,17 +23,17 @@ orbit process:add valkey --node=database-1 --service=valkey --runtime=docker --v
 orbit process:add postgres-food --node=database-1 --service=postgres --version=18 --database=mealou_food_catalog --username=mealou_food_catalog --published-port=5433 --restart-policy=always
 orbit process:add mailpit --node=beast --service=mailpit --runtime=docker
 orbit process:add mailpit --node=beast --service=mailpit --runtime=docker --replace-container=dngdmt-mailpit-1 --force
-orbit process:add file-watcher "watch.sh" --app=static-site.production --runtime=systemd
-orbit process:add vite "npm run dev" --app=docs.production --json
+orbit process:add file-watcher "watch.sh" --instance=static-site.production --runtime=systemd
+orbit process:add vite "npm run dev" --instance=docs.production --json
 ```
 
 ## Behavior Summary
 
-Use this command to define a managed process for a node, app instance, or workspace.
+Use this command to define a managed process for a node, instance, or workspace.
 
 - **Gateway Configuration**: Creates process configuration on the gateway for the resolved owner scope.
-- **Scope Resolution**: `--node` creates a node-owned process and cannot be combined with `--app` or `--workspace`; `--workspace` creates a workspace-owned process for that workspace's app instance; otherwise `--app` creates a process owned by the selected app instance. Prefer `<app.instance>`; a bare app slug is accepted only when that logical app has exactly one instance.
-- **Runtime Unit Rendering**: Node-owned and workspace-owned definitions normally render one runtime unit. App-instance-owned definitions render one main-instance unit and one unit for each active workspace belonging to that same instance, all on the instance's serving node.
+- **Scope Resolution**: `--node` creates a node-owned process and cannot be combined with `--instance` or `--workspace`; `--workspace` creates a workspace-owned process for that workspace's instance; otherwise `--instance` creates a process owned by the selected instance. Prefer `<project.instance>`; a bare project slug is accepted only when that project has exactly one instance.
+- **Runtime Unit Rendering**: Node-owned and workspace-owned definitions normally render one runtime unit. Instance-owned definitions render one main-instance unit and one unit for each active workspace belonging to that same instance, all on the instance's serving node.
 - **Runtime Boundary**: Host-command processes default to `systemd` on Linux
   nodes and `launchd` on macOS nodes.
 - **Managed Runtime Boundary**: Managed services default to `docker` unless

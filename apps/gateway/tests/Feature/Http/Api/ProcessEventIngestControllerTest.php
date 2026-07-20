@@ -3,11 +3,11 @@
 declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -35,7 +35,7 @@ describe('ProcessEventIngestController', function (): void {
     it('links process events to the concrete app instance on the reporting node', function (): void {
         $productionNode = createProcessEventIngestNode(['name' => 'app-production']);
         $developmentNode = createTestAppHostNode(['name' => 'app-development']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
 
         AppInstance::factory()->create([
             'app_id' => $app->id,
@@ -84,7 +84,7 @@ describe('ProcessEventIngestController', function (): void {
 
     it('records a crashed process event from an active app node and links runtime intent', function (): void {
         $node = createProcessEventIngestNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $process = Process::factory()->forOwner($app)->create(['name' => 'vite']);
 
         $response = $this->call(
@@ -121,7 +121,7 @@ describe('ProcessEventIngestController', function (): void {
 
     it('links workspace runtime units when the unit name matches active intent', function (): void {
         $node = createProcessEventIngestNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'feature-docs']);
         $process = Process::factory()->forOwner($app)->create(['name' => 'vite']);
 
@@ -158,7 +158,7 @@ describe('ProcessEventIngestController', function (): void {
                 'host' => PROCESS_EVENT_INGEST_APP_WG_IP,
                 'wireguard_address' => PROCESS_EVENT_INGEST_APP_WG_IP,
             ]);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $instance = AppInstance::factory()->for($app)->create([
             'name' => 'production',
             'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
@@ -205,7 +205,7 @@ describe('ProcessEventIngestController', function (): void {
 
     it('resolves co-located app instances through instance-qualified runtime identities', function (): void {
         $node = createProcessEventIngestNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $development = AppInstance::factory()->for($app)->create([
             'name' => 'development',
             'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),

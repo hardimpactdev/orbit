@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:remove <tool> [--app=<app>] [--node=<node>] [--force] [--json]`
+# Technical Contract: `orbit tool:remove <tool> [--instance=<project.instance>] [--node=<node>] [--force] [--json]`
 
 [Back to public `tool-remove` documentation.](../tool-remove.md)
 
@@ -9,12 +9,12 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity is authorized to manage tools for the resolved node
-  or selected app instance's serving node.
+  or selected instance's serving node.
 
 ## Signature
 
 ```bash
-orbit tool:remove <tool> [--app=<app>] [--node=<node>] [--force] [--json]
+orbit tool:remove <tool> [--instance=<project.instance>] [--node=<node>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -25,11 +25,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Registered tool name.` |
 | `node` | `--node` or local `node:default` | Required when `app` is absent. | `Never.` | `node:default` if set. | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app-instance selector used to resolve its serving node. Bare logical-app shorthand is valid only when exactly one instance is visible.` |
+| `app` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve its serving node. Bare project shorthand is valid only when exactly one instance is visible.` |
 | `force` | `--force` | Required for every non-interactive removal, including JSON mode. | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode; never grants consent. |
 
-At least one target source is required: explicit `--node`, explicit `--app`,
+At least one target source is required: explicit `--node`, explicit `--instance`,
 local `node:default`, or interactive target selection. `tool:remove` must not
 fall back to the only visible non-gateway node in non-interactive mode.
 
@@ -78,7 +78,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
 | Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |
-| Missing target | No `--node`, selected app instance, local `node:default`, or interactive target selection resolved a node. | `error.code=validation_failed`, `error.meta.fields=["target"]` |
+| Missing target | No `--node`, selected instance, local `node:default`, or interactive target selection resolved a node. | `error.code=validation_failed`, `error.meta.fields=["target"]` |
 | Missing destructive consent | Non-interactive input omitted `--force`, including JSON mode. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 
 ## Doctor Relationship

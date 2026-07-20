@@ -4,23 +4,16 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupStep;
 use App\Models\Node;
-use App\Services\ActivityLogCorrelation;
-use App\Services\ActivityLogger;
+use App\Models\Project;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Apps\AppSetupStepRunner;
-use App\Services\Operations\OperationRunRecorder;
-use App\Services\Operations\OperationTokenFactory;
-use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Http\JsonEnvelope;
-use Orbit\Core\Security\OperationTokenSigner;
 use Tests\Fakes\WorkspaceSetupStepRunnerExecutorTransport;
 use Tests\TestCase;
 
@@ -83,7 +76,7 @@ final class AppSetupStepRunnerTestShell implements RemoteShell, RunsInternalComm
     }
 }
 
-function createAppSetupRunnerTestApp(array $overrides = []): App
+function createAppSetupRunnerTestApp(array $overrides = []): Project
 {
     $node = Node::factory()
         ->appDev()
@@ -92,7 +85,7 @@ function createAppSetupRunnerTestApp(array $overrides = []): App
             'user' => 'orbit',
         ]);
 
-    return App::factory()->create(array_merge([
+    return Project::factory()->create(array_merge([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/home/orbit/apps/docs',
@@ -100,7 +93,7 @@ function createAppSetupRunnerTestApp(array $overrides = []): App
     ], $overrides));
 }
 
-function appSetupRunnerInstance(App $app): AppInstance
+function appSetupRunnerInstance(Project $app): AppInstance
 {
     $instance = AppInstance::query()->where('app_id', $app->id)->first();
 

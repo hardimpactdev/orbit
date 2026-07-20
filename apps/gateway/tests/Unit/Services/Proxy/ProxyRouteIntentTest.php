@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\ProxyRouteIntent;
 use App\Services\Proxy\ProxyRouteRenderer;
@@ -115,7 +115,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('rejects domains owned by another route family', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -181,7 +181,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('rejects custom proxy:add on php app-owned domains so frankenphp routes are not overwritten', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,

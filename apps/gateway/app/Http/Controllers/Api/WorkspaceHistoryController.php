@@ -74,7 +74,7 @@ final readonly class WorkspaceHistoryController implements Loggable
             return $filters;
         }
 
-        $app = $this->stringQuery($request, 'app');
+        $app = $this->stringQuery($request, 'instance');
         $selection = null;
         $visibleNodeIds = $this->visibleAppNodeIds($caller);
 
@@ -99,7 +99,7 @@ final readonly class WorkspaceHistoryController implements Loggable
         if (! $this->callerIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to read workspace history.', [
                 'workspace' => $name,
-                'app' => $app,
+                'instance' => $app,
                 'reason' => 'missing_permission',
                 'missing_permission' => 'workspace:history',
             ]);
@@ -285,11 +285,13 @@ final readonly class WorkspaceHistoryController implements Loggable
             return response()->json([
                 'error' => [
                     'code' => 'workspace.ambiguous_name',
-                    'message' => "Ambiguous workspace: {$name}. Specify --app.",
+                    'message' => "Ambiguous workspace: {$name}. Specify --instance.",
                     'meta' => [
                         'name' => $name,
-                        'apps' => array_values(array_filter(array_map(
-                            fn (Workspace $workspace): ?string => $workspace->app?->name,
+                        'instances' => array_values(array_filter(array_map(
+                            fn (Workspace $workspace): ?string => $workspace->app instanceof \App\Models\Project
+                                ? "{$workspace->app->name}.{$workspace->appInstance->name}"
+                                : null,
                             $matches->all(),
                         ))),
                     ],

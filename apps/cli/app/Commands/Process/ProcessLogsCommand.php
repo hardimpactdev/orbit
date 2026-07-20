@@ -18,7 +18,7 @@ final class ProcessLogsCommand extends GatewayCommand
     protected $signature = 'process:logs
         {name? : Process name}
         {--node= : Owning node name}
-        {--app= : App or app-instance selector}
+        {--instance= : Instance selector}
         {--workspace= : Workspace name}
         {--follow : Follow log output}
         {--lines=100 : Number of historical lines}
@@ -31,7 +31,9 @@ final class ProcessLogsCommand extends GatewayCommand
     {
         $name = $this->stringArgument('name');
         $node = $this->stringOption('node');
-        $app = $node === null ? $this->stringOption('app') ?? $this->appFromOrbitMarker() : $this->stringOption('app');
+        $app = $node === null
+            ? $this->stringOption('instance') ?? $this->instanceFromOrbitMarker()
+            : $this->stringOption('instance');
         $workspace = $this->stringOption('workspace');
 
         if ($name === null) {
@@ -41,11 +43,11 @@ final class ProcessLogsCommand extends GatewayCommand
         if ($node !== null && ($app !== null || $workspace !== null)) {
             return $this->renderFailure(
                 'validation_failed',
-                'A node context cannot be combined with app or workspace context.',
+                'A node context cannot be combined with instance or workspace context.',
                 [
                     'field' => 'context',
                     'node' => $node,
-                    'app' => $app,
+                    'instance' => $app,
                     'workspace' => $workspace,
                 ],
             );
@@ -74,7 +76,7 @@ final class ProcessLogsCommand extends GatewayCommand
         try {
             $response = $this->gatewayGet('/api/processes/'.rawurlencode($name).'/log', $this->filledQuery([
                 'node' => $node,
-                'app' => $app,
+                'instance' => $app,
                 'workspace' => $workspace,
                 'lines' => $lines,
             ]));
@@ -94,13 +96,15 @@ final class ProcessLogsCommand extends GatewayCommand
     private function followLogs(string $name, int $lines): int
     {
         $node = $this->stringOption('node');
-        $app = $node === null ? $this->stringOption('app') ?? $this->appFromOrbitMarker() : $this->stringOption('app');
+        $app = $node === null
+            ? $this->stringOption('instance') ?? $this->instanceFromOrbitMarker()
+            : $this->stringOption('instance');
         $workspace = $this->stringOption('workspace');
 
         try {
             $query = $this->filledQuery([
                 'node' => $node,
-                'app' => $app,
+                'instance' => $app,
                 'workspace' => $workspace,
                 'lines' => $lines,
             ]);

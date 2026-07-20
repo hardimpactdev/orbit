@@ -5,11 +5,11 @@ declare(strict_types=1);
 use App\Actions\Workspaces\RemoveWorkspace;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
@@ -21,7 +21,7 @@ uses(RefreshDatabase::class);
 const WORKSPACE_PRODUCTION_BOUNDARY_CALLER_IP = '10.6.0.141';
 
 /**
- * @return array{caller: Node, node: Node, app: App, workspace: Workspace}
+ * @return array{caller: Node, node: Node, app: Project, workspace: Workspace}
  */
 function createProductionWorkspaceBoundaryCrossNodeFixture(): array
 {
@@ -52,7 +52,7 @@ function createProductionWorkspaceBoundaryCrossNodeFixture(): array
         'permissions' => ['workspace:read'],
     ]);
 
-    $app = App::factory()->for($developmentNode, 'node')->create([
+    $app = Project::factory()->for($developmentNode, 'node')->create([
         'name' => 'dev-site',
         'environment' => 'development',
     ]);
@@ -91,7 +91,7 @@ beforeEach(function (): void {
         'status' => 'active',
     ]);
 
-    $app = App::factory()->for($productionNode, 'node')->create([
+    $app = Project::factory()->for($productionNode, 'node')->create([
         'name' => 'site',
         'environment' => 'production',
     ]);
@@ -250,7 +250,7 @@ it('blocks app production role activation while the node still owns a workspace'
         'platform' => 'ubuntu_24-04',
         'status' => 'active',
     ]);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
     $instance = AppInstance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitAppInstanceDriverConfigData(
@@ -288,7 +288,7 @@ it('blocks every app production reactivation path while the node still owns a wo
         'settings' => ['ingress_node_id' => $node->id],
         'last_error' => 'baseline failed',
     ]);
-    $app = App::factory()->for($node, 'node')->create(['name' => "docs-{$operation}"]);
+    $app = Project::factory()->for($node, 'node')->create(['name' => "docs-{$operation}"]);
     $instance = AppInstance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitAppInstanceDriverConfigData(
@@ -325,7 +325,7 @@ it('blocks every app production reactivation path while the node still owns a wo
 
 it('rejects unresolved workspace placement before removal mutates registry state', function (): void {
     $developmentNode = Node::factory()->appDev()->create(['name' => 'app-dev-unresolved']);
-    $app = App::factory()->for($developmentNode, 'node')->create(['name' => 'unresolved-docs']);
+    $app = Project::factory()->for($developmentNode, 'node')->create(['name' => 'unresolved-docs']);
     $instance = AppInstance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitAppInstanceDriverConfigData(

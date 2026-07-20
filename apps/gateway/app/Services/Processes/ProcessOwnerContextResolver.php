@@ -6,9 +6,9 @@ namespace App\Services\Processes;
 
 use App\Data\Apps\AppSelection;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -92,12 +92,12 @@ final readonly class ProcessOwnerContextResolver
         if ($nodeName !== null) {
             if ($appName !== null || $workspaceName !== null) {
                 throw new GatewayApiException(
-                    'A node context cannot be combined with app or workspace context.',
+                    'A node context cannot be combined with instance or workspace context.',
                     'validation_failed',
                     [
                         'field' => 'context',
                         'node' => $nodeName,
-                        'app' => $appName,
+                        'instance' => $appName,
                         'workspace' => $workspaceName,
                     ],
                 );
@@ -126,8 +126,8 @@ final readonly class ProcessOwnerContextResolver
             }
         }
 
-        throw new GatewayApiException('A node, app, or workspace context is required.', 'validation_failed', [
-            'field' => 'app',
+        throw new GatewayApiException('A node, instance, or workspace context is required.', 'validation_failed', [
+            'field' => 'instance',
         ]);
     }
 
@@ -174,8 +174,8 @@ final readonly class ProcessOwnerContextResolver
             : $app->node;
 
         if ($visibleNodeIds !== null && (! $node instanceof Node || ! in_array($node->id, $visibleNodeIds, true))) {
-            throw new GatewayApiException("App '{$appName}' not found or not visible.", 'validation_failed', [
-                'field' => 'app',
+            throw new GatewayApiException("Instance '{$appName}' not found or not visible.", 'validation_failed', [
+                'field' => 'instance',
                 'value' => $appName,
             ]);
         }
@@ -236,7 +236,7 @@ final readonly class ProcessOwnerContextResolver
             throw new GatewayApiException("Workspace name '{$workspaceName}' is ambiguous.", 'validation_failed', [
                 'field' => 'workspace',
                 'value' => $workspaceName,
-                'apps' => array_values(array_filter(array_map(
+                'projects' => array_values(array_filter(array_map(
                     fn (Workspace $workspace): ?string => $workspace->app?->name,
                     $matches->all(),
                 ))),
@@ -247,9 +247,9 @@ final readonly class ProcessOwnerContextResolver
         $app = $workspace->app;
         $appInstance = $workspace->appInstance;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             throw new GatewayApiException(
-                "Workspace '{$workspaceName}' is not attached to an app.",
+                "Workspace '{$workspaceName}' is not attached to a project.",
                 'validation_failed',
                 [
                     'field' => 'workspace',
@@ -260,12 +260,12 @@ final readonly class ProcessOwnerContextResolver
 
         if (! $appInstance instanceof AppInstance) {
             throw new GatewayApiException(
-                "Workspace '{$workspaceName}' is not attached to an app instance.",
+                "Workspace '{$workspaceName}' is not attached to an instance.",
                 'validation_failed',
                 [
-                    'field' => 'app',
-                    'reason' => 'app_instance_required',
-                    'app' => $app->name,
+                    'field' => 'instance',
+                    'reason' => 'instance_required',
+                    'project' => $app->name,
                 ],
             );
         }
@@ -273,7 +273,7 @@ final readonly class ProcessOwnerContextResolver
         $node = $this->placement->nodeForWorkspace($workspace);
 
         if (! $node instanceof Node) {
-            throw new GatewayApiException("Workspace '{$workspaceName}' app has no node.", 'validation_failed', [
+            throw new GatewayApiException("Workspace '{$workspaceName}' instance has no node.", 'validation_failed', [
                 'field' => 'workspace',
                 'value' => $workspaceName,
             ]);
@@ -288,7 +288,7 @@ final readonly class ProcessOwnerContextResolver
         );
     }
 
-    private function contextForApp(App $app, ?AppSelection $selection = null): ProcessOwnerContext
+    private function contextForApp(Project $app, ?AppSelection $selection = null): ProcessOwnerContext
     {
         $app->loadMissing('node');
         $selection ??= $this->requireAppInstance(new AppSelection(app: $app));
@@ -298,8 +298,8 @@ final readonly class ProcessOwnerContextResolver
             : $app->node;
 
         if (! $node instanceof Node) {
-            throw new GatewayApiException("App '{$app->name}' has no node.", 'validation_failed', [
-                'field' => 'app',
+            throw new GatewayApiException("Instance '{$app->name}' has no node.", 'validation_failed', [
+                'field' => 'instance',
                 'value' => $app->name,
             ]);
         }
@@ -319,8 +319,8 @@ final readonly class ProcessOwnerContextResolver
             $selection = $this->appSelectorResolver->resolve($appName);
 
             if (! $selection instanceof AppSelection) {
-                throw new GatewayApiException("App '{$appName}' not found or not visible.", 'validation_failed', [
-                    'field' => 'app',
+                throw new GatewayApiException("Instance '{$appName}' not found or not visible.", 'validation_failed', [
+                    'field' => 'instance',
                     'value' => $appName,
                 ]);
             }

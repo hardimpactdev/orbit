@@ -37,7 +37,7 @@ These rules govern every command contract in this directory.
 - In non-operation command families, public command names must start with that
   family's command prefix. For example, `1_node` contains `node:*` commands,
   `2_gateway` contains `gateway:*` commands, `16_dns` contains `dns:*`
-  commands, and `5_app` contains `app:*` commands. `11_operation` is the
+  commands, and `5_project` contains `app:*` commands. `11_operation` is the
   exception for miscellaneous operational commands such as `doctor`, `update`,
   and `activity:*`.
 - When a domain has compound command prefixes, use the longest compound prefix
@@ -694,7 +694,7 @@ They also define the core app/workspace foundation.
 2. [Gateway](2_gateway/README.md)
 3. [Tools](3_tool/README.md)
 4. [Firewall](4_firewall/README.md)
-5. [Apps](5_app/README.md)
+5. [Apps](5_project/README.md)
 6. [Workspaces](6_workspace/README.md)
 
 Processes, proxy, and database support those foundation domains:

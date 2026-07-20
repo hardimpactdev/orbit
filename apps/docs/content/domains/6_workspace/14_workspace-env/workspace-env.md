@@ -10,14 +10,14 @@ Choose one action and identify the workspace by name or run the command from
 inside its registered path.
 
 ```bash
-orbit workspace:env list [name] [--app=<app.instance>] [--json]
-orbit workspace:env set [name] [--app=<app.instance>] --key=<KEY> --value=<value> [--apply] [--json]
-orbit workspace:env render [name] [--app=<app.instance>] [--json]
+orbit workspace:env list [name] [--instance=<project.instance>] [--json]
+orbit workspace:env set [name] [--instance=<project.instance>] --key=<KEY> --value=<value> [--apply] [--json]
+orbit workspace:env render [name] [--instance=<project.instance>] [--json]
 ```
 
 When `[name]` is omitted, Orbit resolves a registered workspace from the
-caller's absolute current directory. `--app` disambiguates workspace names that
-exist under more than one logical app or instance.
+caller's absolute current directory. `--instance` disambiguates workspace names that
+exist under more than one project or instance.
 
 ## What Happens
 
@@ -30,7 +30,7 @@ on their content.
 `set` stores gateway intent only. `set --apply` writes the effective map only to
 the selected workspace's `.env`, clears Laravel caches at the workspace path,
 and reapplies that workspace runtime when it uses PHP. It never writes the
-parent app instance or a sibling workspace.
+parent instance or a sibling workspace.
 
 Every response identifies `scope=workspace`, `app`, `instance`, `workspace`,
 the concrete `.env` `path`, and `stored`, `applied`, and

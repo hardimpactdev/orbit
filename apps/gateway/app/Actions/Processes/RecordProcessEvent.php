@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Enums\ProcessEventType;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Support\Str;
 
@@ -16,7 +16,7 @@ final readonly class RecordProcessEvent
 {
     public function handle(
         ProcessEventType $type,
-        ?App $app,
+        ?Project $app,
         ?Workspace $workspace,
         Process $process,
         Node $node,

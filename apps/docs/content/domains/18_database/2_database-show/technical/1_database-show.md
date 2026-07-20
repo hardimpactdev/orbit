@@ -30,7 +30,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Connection Detail Rules
 
 - Resolves one gateway-owned database connection by slug.
-- Returns the canonical database entity plus all attached app-instance and workspace targets.
+- Returns the canonical database entity plus all attached instance and workspace targets.
 - Never returns decrypted password material.
 
 ### Scope Boundaries

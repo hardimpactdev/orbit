@@ -16,7 +16,7 @@ final class ShowWorkspaceHistoryRequest extends GatewayRequest
 
     public function __construct(
         public readonly ?string $name = null,
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $path = null,
         public readonly ?int $limit = null,
         public readonly ?string $since = null,
@@ -39,7 +39,7 @@ final class ShowWorkspaceHistoryRequest extends GatewayRequest
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'path' => $this->path,
                 'limit' => $this->limit,
                 'since' => $this->since,

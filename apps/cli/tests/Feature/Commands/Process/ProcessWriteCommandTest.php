@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Http;
 describe('process write commands', function (): void {
     it('posts process:add payloads to the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'app' => 'docs'],
+            'process' => ['name' => 'vite', 'project' => 'docs'],
             'runtime_units' => [],
         ], [
             'warnings' => [],
@@ -17,7 +17,7 @@ describe('process write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'vite',
             'process_command' => 'npm run dev',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--restart-policy' => 'always',
             '--crash-notification' => 'agent_ide',
             '--runtime' => 'systemd',
@@ -31,7 +31,7 @@ describe('process write commands', function (): void {
                 $request->method() === 'POST'
                 && $request->url() === 'https://gateway.test/api/processes'
                 && $request->data() === [
-                    'app' => 'docs',
+                    'instance' => 'docs',
                     'name' => 'vite',
                     'command' => 'npm run dev',
                     'restart_policy' => 'always',
@@ -49,8 +49,8 @@ describe('process write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => [
                 'name' => 'vite',
-                'app' => 'docs',
-                'app_instance' => 'production',
+                'project' => 'docs',
+                'instance' => 'production',
             ],
             'runtime_units' => [],
         ], [
@@ -60,7 +60,7 @@ describe('process write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'vite',
             'process_command' => 'npm run dev',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--runtime' => 'systemd',
             '--json' => true,
         ]);
@@ -71,15 +71,15 @@ describe('process write commands', function (): void {
             fn (Request $request): bool => (
                 $request->method() === 'POST'
                 && $request->url() === 'https://gateway.test/api/processes'
-                && $request->data()['app'] === 'docs.production'
+                && $request->data()['instance'] === 'docs.production'
             ),
         );
 
         expect($exitCode)
             ->toBe(0)
-            ->and($decoded['success']['data']['process']['app'])
+            ->and($decoded['success']['data']['process']['project'])
             ->toBe('docs')
-            ->and($decoded['success']['data']['process']['app_instance'])
+            ->and($decoded['success']['data']['process']['instance'])
             ->toBe('production');
     });
 
@@ -89,7 +89,7 @@ describe('process write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'queue',
             'process_command' => 'php artisan queue:work',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--runtime' => 'docker',
             '--json' => true,
         ]);
@@ -258,7 +258,7 @@ describe('process write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'Vite',
             'process_command' => 'npm run dev',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -283,7 +283,7 @@ describe('process write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'vite',
             'process_command' => 'npm run dev',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             ...$params,
             '--json' => true,
         ]);
@@ -306,7 +306,7 @@ describe('process write commands', function (): void {
 
     it('patches process:update payloads to the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'app' => 'docs', 'restart_policy' => 'on_failure'],
+            'process' => ['name' => 'vite', 'project' => 'docs', 'restart_policy' => 'on_failure'],
             'runtime_units' => [],
         ], [
             'warnings' => [],
@@ -314,7 +314,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--command' => 'npm run dev -- --host 0.0.0.0',
             '--restart-policy' => 'on_failure',
             '--crash-notification' => 'none',
@@ -330,7 +330,7 @@ describe('process write commands', function (): void {
                 $request->method() === 'PATCH'
                 && $request->url() === 'https://gateway.test/api/processes/vite'
                 && $request->data() === [
-                    'app' => 'docs',
+                    'instance' => 'docs',
                     'command' => 'npm run dev -- --host 0.0.0.0',
                     'restart_policy' => 'on_failure',
                     'crash_notification' => 'none',
@@ -387,7 +387,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'queue',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--runtime' => 'docker',
             '--json' => true,
         ]);
@@ -445,7 +445,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -464,12 +464,12 @@ describe('process write commands', function (): void {
     it('preserves gateway error envelopes for process:update', function (): void {
         fakeGateway(fakeErrorEnvelope('process.not_found', "Process 'vite' not found.", [
             'name' => 'vite',
-            'app' => 'docs',
+            'project' => 'docs',
         ]), 404);
 
         [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--command' => 'npm run dev',
             '--json' => true,
         ]);
@@ -489,7 +489,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:remove', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -507,7 +507,7 @@ describe('process write commands', function (): void {
 
     it('deletes process:remove targets with destructive consent when forced', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'app' => 'docs'],
+            'process' => ['name' => 'vite', 'project' => 'docs'],
             'runtime_units_removed' => [],
         ], [
             'warnings' => [],
@@ -515,7 +515,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:remove', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--force' => true,
             '--json' => true,
         ]);
@@ -527,7 +527,7 @@ describe('process write commands', function (): void {
                 $request->method() === 'DELETE'
                 && $request->url() === 'https://gateway.test/api/processes/vite'
                 && $request->data() === [
-                    'app' => 'docs',
+                    'instance' => 'docs',
                     'destructive_consent' => true,
                     'destructive_consent_source' => 'force',
                 ]
@@ -539,7 +539,7 @@ describe('process write commands', function (): void {
 
     it('deletes workspace owned process:remove payloads with destructive consent when forced', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'worker', 'app' => 'docs', 'workspace' => 'feature-docs'],
+            'process' => ['name' => 'worker', 'project' => 'docs', 'workspace' => 'feature-docs'],
             'runtime_units_removed' => [],
         ], [
             'warnings' => [],
@@ -547,7 +547,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:remove', [
             'name' => 'worker',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--workspace' => 'feature-docs',
             '--force' => true,
             '--json' => true,
@@ -560,7 +560,7 @@ describe('process write commands', function (): void {
                 $request->method() === 'DELETE'
                 && $request->url() === 'https://gateway.test/api/processes/worker'
                 && $request->data() === [
-                    'app' => 'docs',
+                    'instance' => 'docs',
                     'workspace' => 'feature-docs',
                     'destructive_consent' => true,
                     'destructive_consent_source' => 'force',
@@ -573,7 +573,7 @@ describe('process write commands', function (): void {
 
     it('prompts before removing a process without force in interactive mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'app' => 'docs'],
+            'process' => ['name' => 'vite', 'project' => 'docs'],
             'runtime_units_removed' => [],
         ], [
             'warnings' => [],
@@ -582,7 +582,7 @@ describe('process write commands', function (): void {
         $this
             ->artisan('process:remove', [
                 'name' => 'vite',
-                '--app' => 'docs',
+                '--instance' => 'docs',
             ])
             ->expectsConfirmation("Remove process 'vite'?", 'yes')
             ->expectsOutputToContain('process')
@@ -601,7 +601,7 @@ describe('process write commands', function (): void {
             'runtimes' => [
                 [
                     'process' => 'vite',
-                    'app' => 'docs',
+                    'project' => 'docs',
                     'workspace' => 'feature-docs',
                     'status' => 'ok',
                 ],
@@ -610,7 +610,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, $command, [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--workspace' => 'feature-docs',
             '--json' => true,
         ]);
@@ -622,7 +622,7 @@ describe('process write commands', function (): void {
                 $request->method() === 'POST'
                 && $request->url() === "https://gateway.test/api/processes/{$endpoint}"
                 && $request->data() === [
-                    'app' => 'docs',
+                    'instance' => 'docs',
                     'workspace' => 'feature-docs',
                     'name' => 'vite',
                 ]
@@ -703,7 +703,7 @@ describe('process write commands', function (): void {
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['runtimes'][0]['node'])->toBe('app-1');
     });
 
-    it('requires an app, workspace, or node context before process runtime actions contact the gateway', function (string $command): void {
+    it('requires an instance, workspace, or node context before process runtime actions contact the gateway', function (string $command): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, $command, [
@@ -720,7 +720,7 @@ describe('process write commands', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     })->with([
         'start' => 'process:start',
         'stop' => 'process:stop',
@@ -732,8 +732,8 @@ describe('process write commands', function (): void {
             'process' => [
                 'name' => 'vite',
                 'node' => 'app-1',
-                'app' => 'docs',
-                'app_instance' => 'production',
+                'project' => 'docs',
+                'instance' => 'production',
                 'workspace' => null,
             ],
             'runtime_units' => [],
@@ -744,7 +744,7 @@ describe('process write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'vite',
             'process_command' => 'npm run dev',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
         ]);
 
         expect($exitCode)
@@ -756,7 +756,7 @@ describe('process write commands', function (): void {
             ->and($output)
             ->toContain('Start runtime units')
             ->and($output)
-            ->toContain("Process 'vite' added for app instance 'docs.production'")
+            ->toContain("Process 'vite' added for instance 'docs.production'")
             ->and($output)
             ->not->toContain('process:')->and($output)
             ->not->toContain('{');
@@ -764,7 +764,7 @@ describe('process write commands', function (): void {
 
     it('omits the process:add start step when --no-start is present', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'project' => 'docs', 'workspace' => null],
             'runtime_units' => [],
         ], [
             'warnings' => [],
@@ -773,7 +773,7 @@ describe('process write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'vite',
             'process_command' => 'npm run dev',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--runtime' => 'systemd',
             '--no-start' => true,
         ]);
@@ -786,12 +786,12 @@ describe('process write commands', function (): void {
             ->not
             ->toContain('Start runtime units')
             ->and($output)
-            ->toContain("Process 'vite' added for app 'docs'");
+            ->toContain("Process 'vite' added for instance 'docs'");
     });
 
     it('shows the process:add start step by default', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'project' => 'docs', 'workspace' => null],
             'runtime_units' => [],
         ], [
             'warnings' => [],
@@ -800,7 +800,7 @@ describe('process write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'vite',
             'process_command' => 'npm run dev',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--runtime' => 'systemd',
         ]);
 
@@ -811,7 +811,7 @@ describe('process write commands', function (): void {
             ->and($output)
             ->toContain('Start runtime units')
             ->and($output)
-            ->toContain("Process 'vite' added for app 'docs'");
+            ->toContain("Process 'vite' added for instance 'docs'");
     });
 
     it('does not expose the removed redundant process:add start option', function (): void {
@@ -822,7 +822,7 @@ describe('process write commands', function (): void {
 
     it('renders process:add runtime drift as a success footer with a drift note', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'project' => 'docs', 'workspace' => null],
             'runtime_units' => [],
         ], [
             'warnings' => [
@@ -833,13 +833,13 @@ describe('process write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'vite',
             'process_command' => 'npm run dev',
-            '--app' => 'docs',
+            '--instance' => 'docs',
         ]);
 
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Process 'vite' added for app 'docs'")
+            ->toContain("Process 'vite' added for instance 'docs'")
             ->and($output)
             ->toContain('Drift detected: process.runtime_unit_missing');
     });
@@ -853,7 +853,7 @@ describe('process write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'vite',
             'process_command' => 'npm run dev',
-            '--app' => 'docs',
+            '--instance' => 'docs',
         ]);
 
         expect($exitCode)
@@ -870,7 +870,7 @@ describe('process write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'Vite',
             'process_command' => 'npm run dev',
-            '--app' => 'docs',
+            '--instance' => 'docs',
         ]);
 
         Http::assertNothingSent();
@@ -886,7 +886,7 @@ describe('process write commands', function (): void {
 
     it('renders process:update human output as a progress tree with a success footer', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'project' => 'docs', 'workspace' => null],
             'changed' => ['command'],
             'runtime_units' => [],
         ], [
@@ -895,7 +895,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--command' => 'npm run dev -- --host 0.0.0.0',
         ]);
 
@@ -907,7 +907,7 @@ describe('process write commands', function (): void {
             ->toContain('Apply and verify process change')
             ->and($output)
             ->not->toContain('Restart runtime units')->and($output)->toContain(
-                "Process 'vite' updated for app 'docs'",
+                "Process 'vite' updated for instance 'docs'",
             )->and($output)
             ->not->toContain('process:')->and($output)
             ->not->toContain('{');
@@ -915,7 +915,7 @@ describe('process write commands', function (): void {
 
     it('shows the process:update restart step only when --restart is present', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'project' => 'docs', 'workspace' => null],
             'changed' => ['command'],
             'runtime_units' => [],
         ], [
@@ -924,7 +924,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--command' => 'npm run dev',
             '--restart' => true,
         ]);
@@ -934,15 +934,15 @@ describe('process write commands', function (): void {
             ->and($output)
             ->toContain('Restart runtime units')
             ->and($output)
-            ->toContain("Process 'vite' updated for app 'docs'");
+            ->toContain("Process 'vite' updated for instance 'docs'");
     });
 
     it('renders process:update gateway failures as prose in human mode', function (): void {
-        fakeGateway(fakeErrorEnvelope('process.not_found', "Process 'vite' not found for app 'docs'."), 404);
+        fakeGateway(fakeErrorEnvelope('process.not_found', "Process 'vite' not found for instance 'docs'."), 404);
 
         [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--command' => 'npm run dev',
         ]);
 
@@ -956,7 +956,7 @@ describe('process write commands', function (): void {
 
     it('renders process:remove human output as a progress tree with a success footer', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'project' => 'docs', 'workspace' => null],
             'removed_runtime_units' => [],
         ], [
             'warnings' => [],
@@ -964,7 +964,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:remove', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--force' => true,
         ]);
 
@@ -975,7 +975,7 @@ describe('process write commands', function (): void {
             ->and($output)
             ->toContain('Apply and verify process removal')
             ->and($output)
-            ->toContain("Process 'vite' removed from app 'docs'")
+            ->toContain("Process 'vite' removed from instance 'docs'")
             ->and($output)
             ->not->toContain('process:')->and($output)
             ->not->toContain('{');
@@ -987,7 +987,7 @@ describe('process write commands', function (): void {
         $this
             ->artisan('process:remove', [
                 'name' => 'vite',
-                '--app' => 'docs',
+                '--instance' => 'docs',
             ])
             ->expectsConfirmation("Remove process 'vite'?", 'no')
             ->doesntExpectOutputToContain('Removing Process')
@@ -998,11 +998,11 @@ describe('process write commands', function (): void {
     });
 
     it('renders process:remove gateway failures as prose in human mode', function (): void {
-        fakeGateway(fakeErrorEnvelope('process.not_found', "Process 'vite' not found for app 'docs'."), 404);
+        fakeGateway(fakeErrorEnvelope('process.not_found', "Process 'vite' not found for instance 'docs'."), 404);
 
         [$exitCode, $output] = runCommand($this, 'process:remove', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--force' => true,
         ]);
 
@@ -1021,13 +1021,19 @@ describe('process write commands', function (): void {
     ): void {
         fakeGateway(fakeSuccessEnvelope([
             'runtimes' => [
-                ['process' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null, 'state' => 'running'],
+                [
+                    'process' => 'vite',
+                    'node' => 'app-1',
+                    'project' => 'docs',
+                    'workspace' => null,
+                    'state' => 'running',
+                ],
             ],
         ]));
 
         [$exitCode, $output] = runCommand($this, $command, [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
         ]);
 
         expect($exitCode)
@@ -1037,7 +1043,7 @@ describe('process write commands', function (): void {
             ->and($output)
             ->toContain('Resolve runtime units')
             ->and($output)
-            ->toContain("Process 'vite' {$pastTense} for app 'docs'")
+            ->toContain("Process 'vite' {$pastTense} for instance 'docs'")
             ->and($output)
             ->not->toContain('runtimes:')->and($output)
             ->not->toContain('{');
@@ -1056,14 +1062,14 @@ describe('process write commands', function (): void {
                 [
                     'process' => 'vite',
                     'node' => 'app-1',
-                    'app' => null,
+                    'project' => null,
                     'workspace' => 'feature-docs',
                     'state' => 'running',
                 ],
                 [
                     'process' => 'worker',
                     'node' => 'app-1',
-                    'app' => null,
+                    'project' => null,
                     'workspace' => 'feature-docs',
                     'state' => 'running',
                 ],
@@ -1094,7 +1100,7 @@ describe('process write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, $command, [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
         ]);
 
         expect($exitCode)

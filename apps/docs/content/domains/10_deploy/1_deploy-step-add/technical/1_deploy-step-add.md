@@ -1,4 +1,4 @@
-# Technical Contract: `orbit deploy:step-add [app] [deploy_command] [--title=<title>] [--order=<number>] [--timeout=<seconds>] [--retention=<count>] [--json]`
+# Technical Contract: `orbit deploy:step-add [instance] [deploy_command] [--title=<title>] [--order=<number>] [--timeout=<seconds>] [--retention=<count>] [--json]`
 
 [Back to public `deploy-step-add` documentation.](../deploy-step-add.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit deploy:step-add [app] [deploy_command] [--title=<title>] [--order=<number>] [--timeout=<seconds>] [--retention=<count>] [--json]
+orbit deploy:step-add [instance] [deploy_command] [--title=<title>] [--order=<number>] [--timeout=<seconds>] [--retention=<count>] [--json]
 ```
 
 ## Input Contract
@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production app-instance selector. A bare app is valid only when it has exactly one instance. |
+| `instance` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production instance selector. A bare project is valid only when it has exactly one instance. |
 | `deploy_command` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Non-empty shell command or multiline shell script string. |
 | `title` | `--title` | `Optional.` | `Never.` | Command-derived title. | Non-empty display label. |
 | `order` | `--order` | `Optional.` | `Never.` | Next pipeline position. | Positive integer insertion order. |
@@ -40,9 +40,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Deployment Policy Rules
 
-- Resolves one concrete production app instance through gateway configuration.
-- Fails before side effects unless the selected instance belongs to a production app.
-- Writes one deploy-step definition owned by the selected app instance.
+- Resolves one concrete production instance through gateway configuration.
+- Fails before side effects unless the selected instance belongs to a production project.
+- Writes one deploy-step definition owned by the selected instance.
 - Stores the step command exactly as provided. Context placeholders are not
   resolved during policy writes.
 - Inserts the step at the selected order. When another step already has that
@@ -72,14 +72,14 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| App not found | No visible app matches the selector. | `error.code=app.not_found` |
-| Production app required | The app exists but is not a production app. | `error.code=deploy.production_app_required` |
-| App instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
+| Instance not found | No visible instance matches the selector. | `error.code=instance.not_found` |
+| Production project required | The app exists but is not a production project. | `error.code=deploy.production_project_required` |
+| Instance required | A bare project has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 
 ## Doctor Relationship
 
-Deployment policy is app-instance-owned gateway state. `deploy:step-add` does not own a
-doctor family. [`app-doctor.md`](../../../5_app/app-doctor.md) may use deployment
+Deployment policy is instance-owned gateway state. `deploy:step-add` does not own a
+doctor family. [`instance-doctor.md`](../../../5_project/instance-doctor.md) may use deployment
 policy when reporting `app.deployment_pipeline_invalid`.
 
 ## Test Mapping
@@ -90,4 +90,4 @@ policy when reporting `app.deployment_pipeline_invalid`.
 | `apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php` | Gateway deployment-step listing, `deploy:step` grant denial before side effects, and authorized step creation for app-dev callers. |
 | `apps/gateway/tests/Feature/Actions/Deploy/DeployStepActionsTest.php` | Gateway order insertion, retention persistence, and order compaction after step removal. |
 
-Coverage gaps until focused tests land: production-app eligibility, `app.not_found`, exhaustive documented `error.code` values, order insertion through the CLI surface, timeout and retention gateway validation beyond local CLI checks, and app-doctor handoff behavior.
+Coverage gaps until focused tests land: production-app eligibility, `instance.not_found`, exhaustive documented `error.code` values, order insertion through the CLI surface, timeout and retention gateway validation beyond local CLI checks, and instance-doctor handoff behavior.

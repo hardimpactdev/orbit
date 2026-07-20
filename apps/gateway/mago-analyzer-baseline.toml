@@ -19,6 +19,18 @@ message = 'Could not infer a precise return type for function `App\Actions\Apps\
 count = 1
 
 [[issues]]
+file = "app/Actions/Apps/EnactAppRuntime.php"
+code = "redundant-logical-operation"
+message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "app/Actions/Apps/EnactAppRuntime.php"
+code = "redundant-type-comparison"
+message = 'Redundant condition: variable `$instance` (type `App\Models\AppInstance`) is already known to be `App\Models\AppInstance`.'
+count = 1
+
+[[issues]]
 file = "app/Actions/Apps/EnsureAppProcessRuntimeUnits.php"
 code = "impossible-condition"
 message = "This condition (type `false`) will always evaluate to false."
@@ -74,15 +86,9 @@ count = 1
 
 [[issues]]
 file = "app/Actions/Apps/EnsureAppProxyRoute.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #2 of `App\Services\Proxy\ProxyRouteRenderer::renderPrivateBackend`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/EnsureAppProxyRoute.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 5
+count = 8
 
 [[issues]]
 file = "app/Actions/Apps/EnsureAppProxyRoute.php"
@@ -91,21 +97,15 @@ message = '''Possible argument type mismatch for argument #3 of `App\Actions\App
 count = 1
 
 [[issues]]
-file = "app/Actions/Apps/PruneAppWorkspaces.php"
-code = "less-specific-nested-return-statement"
-message = '''Returned type `array{'app': string, 'dry_run': false, 'stale_workspaces': array{}|list<array{'name': mixed, 'removed': bool}>, 'warnings': array{}|list<array<string, string>|array{'code': string, 'family': string, 'message': string, 'next_command': string}>}` is less specific than the declared return type `array{'app': string, 'dry_run': bool, 'stale_workspaces': list<array{'name': string, 'removed': bool}>, 'warnings': list<array<string, string>>}` for function `App\Actions\Apps\PruneAppWorkspaces::handle` due to nested 'mixed'.'''
+file = "app/Actions/Apps/EnsureAppProxyRoute.php"
+code = "redundant-condition"
+message = "Redundant ternary operator: condition is always truthy."
 count = 1
 
 [[issues]]
-file = "app/Actions/Apps/PruneAppWorkspaces.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/RemoveApp.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Actions\Apps\RemoveApp::processCleanupScripts`: expected `list<string>`, but found `array<int, string>`.'
+file = "app/Actions/Apps/EnsureAppProxyRoute.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$owningNode->tld` is already `string`."
 count = 1
 
 [[issues]]
@@ -199,16 +199,10 @@ message = "Left operand in `>` comparison has `mixed` type."
 count = 1
 
 [[issues]]
-file = "app/Actions/Nodes/RemoveNode.php"
-code = "redundant-null-coalesce"
-message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
-count = 1
-
-[[issues]]
-file = "app/Actions/Processes/AddProcess.php"
-code = "impossible-condition"
-message = "This condition (type `false`) will always evaluate to false."
-count = 1
+file = "app/Actions/Php/UsePhpRuntime.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
 
 [[issues]]
 file = "app/Actions/Processes/AddProcess.php"
@@ -244,7 +238,7 @@ count = 1
 file = "app/Actions/Processes/AddProcess.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 4
+count = 5
 
 [[issues]]
 file = "app/Actions/Processes/AddProcess.php"
@@ -256,7 +250,7 @@ count = 1
 file = "app/Actions/Processes/AddProcess.php"
 code = "mixed-operand"
 message = "Left operand in binary operation has type `mixed`."
-count = 3
+count = 1
 
 [[issues]]
 file = "app/Actions/Processes/AddProcess.php"
@@ -337,18 +331,6 @@ message = "Redundant `||` operation: left operand is always false and right oper
 count = 1
 
 [[issues]]
-file = "app/Actions/Profile/ShowProfile.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>|null` is less specific than the declared return type `array<string, mixed>|null` for function `App\Actions\Profile\ShowProfile::extractToolbarSummary`.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Profile/ShowProfile.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
 file = "app/Actions/Workspaces/AddWorkspaceStep.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
@@ -368,56 +350,8 @@ count = 1
 
 [[issues]]
 file = "app/Actions/Workspaces/CreateWorkspace.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Actions/Workspaces/CreateWorkspace.php"
-code = "mixed-method-access"
-message = "Attempting to access a method on a non-object type (`mixed`)."
-count = 1
-
-[[issues]]
-file = "app/Actions/Workspaces/CreateWorkspace.php"
-code = "mixed-return-statement"
-message = 'Could not infer a precise return type for function `App\Actions\Workspaces\CreateWorkspace::createIntent`. Saw type `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Workspaces/CreateWorkspace.php"
 code = "non-documented-method"
 message = 'Ambiguous method call to `create` on class `App\Models\Workspace`.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Workspaces/RemoveWorkspace.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Actions\Workspaces\RemoveWorkspace::processCleanupScripts`: expected `list<string>`, but found `array<int, string>`.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Workspaces/RemoveWorkspace.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #2 of `App\Contracts\RemoteShell::run`: expected `string`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Workspaces/RemoveWorkspace.php"
-code = "non-existent-method"
-message = "Method `timeoutseconds` does not exist on type `stdClass`."
-count = 1
-
-[[issues]]
-file = "app/Actions/Workspaces/SetupWorkspace.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `App\Actions\Workspaces\SetupWorkspace::computeStepSetHash`: expected `list<App\Models\WorkspaceStep>`, but found `array<int, stdClass>`.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Workspaces/SetupWorkspace.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `App\Actions\Workspaces\SetupWorkspace::renderSteps`: expected `list<App\Models\WorkspaceStep>`, but found `array<int, stdClass>`.'
 count = 1
 
 [[issues]]
@@ -579,12 +513,6 @@ count = 1
 [[issues]]
 file = "app/Concerns/PromptsForRegistryEntities.php"
 code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `Illuminate\Support\Collection::map`: expected `(callable(stdClass, int): array<string, mixed>)`, but found `(closure(App\Models\App): array<string, mixed>)`.'
-count = 1
-
-[[issues]]
-file = "app/Concerns/PromptsForRegistryEntities.php"
-code = "invalid-argument"
 message = 'Invalid argument type for argument #1 of `Illuminate\Support\Collection::map`: expected `(callable(stdClass, int): array<string, mixed>)`, but found `(closure(App\Models\Schedule): array<string, mixed>)`.'
 count = 1
 
@@ -657,18 +585,6 @@ count = 1
 [[issues]]
 file = "app/Console/Commands/Internal/BakeAppNodeCommand.php"
 code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Console\Commands\Internal\BakeAppNodeCommand::upsertRoleAssignment`: expected `int`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Console/Commands/Internal/BakeAppNodeCommand.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #2 of `App\Console\Commands\Internal\BakeAppNodeCommand::setupDevelopmentNode`: expected `App\Models\Node`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Console/Commands/Internal/BakeAppNodeCommand.php"
-code = "mixed-argument"
 message = 'Invalid argument type for argument #9 of `App\Services\Nodes\NodeRegistryWriter::writeAppNode`: expected `App\Data\Security\PinnedHostKey|null`, but found `mixed`.'
 count = 1
 
@@ -691,45 +607,15 @@ message = "Attempting to access a method on a non-object type (`mixed`)."
 count = 4
 
 [[issues]]
-file = "app/Console/Commands/Internal/BakeAppNodeCommand.php"
-code = "mixed-property-access"
-message = "Attempting to access a property on a non-object type (`mixed`)."
-count = 1
-
-[[issues]]
-file = "app/Console/Commands/Internal/BakeWebSocketNodeCommand.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #2 of `App\Console\Commands\Internal\BakeWebSocketNodeCommand::convergeRuntime`: expected `App\Models\Node`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Console/Commands/Internal/BakeWebSocketNodeCommand.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #3 of `App\Console\Commands\Internal\BakeWebSocketNodeCommand::convergeRuntime`: expected `App\Models\NodeRoleAssignment`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Console/Commands/Internal/BakeWebSocketNodeCommand.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #7 of `App\Console\Commands\Internal\BakeWebSocketNodeCommand::writeWebSocketRoleNode`: expected `App\Data\Security\PinnedHostKey`, but found `mixed`.'
-count = 1
-
-[[issues]]
 file = "app/Console/Commands/Internal/BakeWebSocketNodeCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 5
+count = 1
 
 [[issues]]
 file = "app/Console/Commands/Internal/BakeWebSocketNodeCommand.php"
 code = "mixed-method-access"
 message = "Attempting to access a method on a non-object type (`mixed`)."
-count = 2
-
-[[issues]]
-file = "app/Console/Commands/Internal/BakeWebSocketNodeCommand.php"
-code = "mixed-property-access"
-message = "Attempting to access a property on a non-object type (`mixed`)."
 count = 2
 
 [[issues]]
@@ -781,12 +667,6 @@ message = 'Argument #4 of method `App\Console\Commands\Internal\BootstrapGateway
 count = 1
 
 [[issues]]
-file = "app/Console/Commands/Internal/BootstrapGatewayLocalCommand.php"
-code = "reference-to-undefined-variable"
-message = "Reference created from a previously undefined variable `$matches`."
-count = 1
-
-[[issues]]
 file = "app/Console/Commands/Internal/PinNodeHostKeysCommand.php"
 code = "mixed-method-access"
 message = "Attempting to access a method on a non-object type (`mixed`)."
@@ -808,7 +688,7 @@ count = 1
 file = "app/Console/Commands/NodeRegisterCommand.php"
 code = "array-to-string-conversion"
 message = "Potentially casting `array` to `string`."
-count = 5
+count = 2
 
 [[issues]]
 file = "app/Console/Commands/OrbitSchedulerCommand.php"
@@ -874,24 +754,6 @@ count = 1
 file = "app/Data/Nodes/InstalledGatewayImage.php"
 code = "less-specific-return-statement"
 message = 'Returned type `Carbon\CarbonInterface|Illuminate\Support\Carbon&static` is less specific than the declared return type `Illuminate\Support\Carbon` for function `App\Data\Nodes\InstalledGatewayImage::carbon`.'
-count = 1
-
-[[issues]]
-file = "app/Data/Nodes/RoleSettings/AgentRoleSettings.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Data/Nodes/RoleSettings/AnalyticsRoleSettings.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
-
-[[issues]]
-file = "app/Data/Nodes/RoleSettings/AppDevelopmentRoleSettings.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]
@@ -1216,7 +1078,7 @@ count = 1
 file = "app/Http/Controllers/Api/AgentIdeMessageController.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 3
+count = 4
 
 [[issues]]
 file = "app/Http/Controllers/Api/AgentIdeMessageController.php"
@@ -1229,6 +1091,18 @@ file = "app/Http/Controllers/Api/AgentIdeMessageController.php"
 code = "redundant-comparison"
 message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
 count = 2
+
+[[issues]]
+file = "app/Http/Controllers/Api/AgentIdeMessageController.php"
+code = "redundant-logical-operation"
+message = "Redundant `||` operation: left operand is evaluated and right operand is always falsy."
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/AgentIdeMessageController.php"
+code = "redundant-type-comparison"
+message = 'Redundant condition: variable `$instance` (type `App\Models\AppInstance`) is already known to be `App\Models\AppInstance`.'
+count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/AnalyticsUpdateController.php"
@@ -1268,39 +1142,9 @@ count = 2
 
 [[issues]]
 file = "app/Http/Controllers/Api/AppAgentIdeController.php"
-code = "impossible-condition"
-message = "This condition (type `false`) will always evaluate to false."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppAgentIdeController.php"
-code = "impossible-nonnull-entry-check"
-message = "Impossible `isset` check on key `'error'` accessed on `array{'action': string, 'agent_ide': array{'adapter': null|string, 'effective_adapter': null|string, 'source': string}, 'app': array<string, mixed>, 'cleanup': array{'workspaces_removed': list<string>}, 'previous_adapter': null|string}`."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppAgentIdeController.php"
 code = "invalid-type-cast"
 message = "Cannot reliably cast generic `object` to `string`."
 count = 2
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppAgentIdeController.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Database\Eloquent\Model|null` is less specific than the declared return type `App\Models\App|null` for function `App\Http\Controllers\Api\AppAgentIdeController::resolveApp`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppAgentIdeController.php"
-code = "mixed-return-statement"
-message = 'Could not infer a precise return type for function `App\Http\Controllers\Api\AppAgentIdeController::maybeCleanupWorkspaces`. Saw type `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppAgentIdeController.php"
-code = "no-value"
-message = 'Argument #1 passed to method `Illuminate\Contracts\Routing\ResponseFactory::json` has type `never`, meaning it cannot produce a value.'
-count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/AppAnalyticsController.php"
@@ -1312,12 +1156,6 @@ count = 2
 file = "app/Http/Controllers/Api/AppAnalyticsController.php"
 code = "less-specific-argument"
 message = 'Argument type mismatch for argument #2 of `App\Services\Analytics\AppAnalyticsBindingService::enable`: expected `array<int, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppAnalyticsController.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Database\Eloquent\Model|null` is less specific than the declared return type `App\Models\App|null` for function `App\Http\Controllers\Api\AppAnalyticsController::resolveApp`.'
 count = 1
 
 [[issues]]
@@ -1334,8 +1172,8 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/AppInstanceController.php"
-code = "invalid-argument"
-message = '''Invalid argument type for argument #1 of `Illuminate\Database\Eloquent\Collection::map`: expected `(callable(('TRelatedModel.illuminate\database\eloquent\relations\relation extends Illuminate\Database\Eloquent\Model), int): array<string, mixed>)`, but found `(closure(App\Models\AppInstance): array<string, mixed>)`.'''
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
 count = 1
 
 [[issues]]
@@ -1354,18 +1192,6 @@ count = 6
 file = "app/Http/Controllers/Api/AppInstanceEnvController.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppPruneController.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Database\Eloquent\Model|null` is less specific than the declared return type `App\Models\App|null` for function `App\Http\Controllers\Api\AppPruneController::resolveApp`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppPruneController.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Http\Controllers\Api\AppPruneController::resolveApp`: expected `string`, but found `mixed`.'
 count = 1
 
 [[issues]]
@@ -1393,27 +1219,9 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/AppRemoveController.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Database\Eloquent\Model|null` is less specific than the declared return type `App\Models\App|null` for function `App\Http\Controllers\Api\AppRemoveController::resolveApp`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppRootController.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Database\Eloquent\Model|null` is less specific than the declared return type `App\Models\App|null` for function `App\Http\Controllers\Api\AppRootController::resolveApp`.'
-count = 1
-
-[[issues]]
 file = "app/Http/Controllers/Api/AppRootController.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppRuntimeMountController.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Http\Controllers\Api\AppRuntimeMountController::mountsPayload`: expected `array{'app': array<string, mixed>, 'inherited_by_workspaces': bool, 'mounts': list<array{'read_only': bool, 'source': string, 'target': string}>}`, but found `array{'app': array<string, mixed>, 'inherited_by_workspaces': true, 'mounts': array<int, array{'read_only': bool, 'source': string, 'target': string}>}`.'''
 count = 1
 
 [[issues]]
@@ -1426,18 +1234,6 @@ count = 1
 file = "app/Http/Controllers/Api/AppRuntimeMountController.php"
 code = "redundant-comparison"
 message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppSetupController.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Http\Controllers\Api\AppSetupController::forbidden` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppSetupController.php"
-code = "possibly-null-argument"
-message = 'Argument #4 of method `App\Http\Controllers\Api\AppSetupController::stream` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
 count = 1
 
 [[issues]]
@@ -1454,12 +1250,6 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/AppSetupStepController.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Http\Controllers\Api\AppSetupStepController::forbidden` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppSetupStepController.php"
 code = "redundant-condition"
 message = "Redundant ternary operator: condition is always truthy."
 count = 1
@@ -1472,14 +1262,26 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/AppShowController.php"
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/AppShowController.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/AppShowController.php"
 code = "redundant-comparison"
-message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+message = "Redundant `===` comparison: left-hand side is never identical to right-hand side."
 count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/AppShowController.php"
 code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
+message = "Redundant `||` operation: left operand is evaluated and right operand is always falsy."
 count = 1
 
 [[issues]]
@@ -1489,16 +1291,22 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 1
 
 [[issues]]
+file = "app/Http/Controllers/Api/AppStoreController.php"
+code = "redundant-condition"
+message = "Redundant ternary operator: condition is always truthy."
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/AppStoreController.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$node->tld` is already `string`."
+count = 1
+
+[[issues]]
 file = "app/Http/Controllers/Api/AppWebSocketController.php"
 code = "invalid-type-cast"
 message = "Cannot reliably cast generic `object` to `string`."
 count = 2
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppWebSocketController.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Database\Eloquent\Model|null` is less specific than the declared return type `App\Models\App|null` for function `App\Http\Controllers\Api\AppWebSocketController::resolveApp`.'
-count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/CloudflareController.php"
@@ -1579,12 +1387,6 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 2
 
 [[issues]]
-file = "app/Http/Controllers/Api/Concerns/ResolvesVisibleToolNodes.php"
-code = "non-documented-method"
-message = 'Ambiguous method call to `wherehas` on class `Illuminate\Database\Query\Builder`.'
-count = 1
-
-[[issues]]
 file = "app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionAddUserController.php"
 code = "redundant-comparison"
 message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
@@ -1610,74 +1412,14 @@ count = 2
 
 [[issues]]
 file = "app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionAttachController.php"
-code = "mixed-operand"
-message = "Invalid left operand: type `mixed` cannot be reliably used in string concatenation."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionAttachController.php"
-code = "mixed-property-access"
-message = "Attempting to access a property on a non-object type (`mixed`)."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionAttachController.php"
-code = "non-documented-property"
-message = 'Ambiguous property access: $app on class `App\Models\App`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionAttachController.php"
-code = "possibly-invalid-argument"
-message = 'Possible argument type mismatch for argument #2 of `App\Services\DatabaseConnections\DatabaseConnectionRegistry::attachToAppInstance`: expected `App\Models\AppInstance`, but possibly received `App\Models\App|App\Models\AppInstance|App\Models\Workspace`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionAttachController.php"
-code = "possibly-invalid-argument"
-message = 'Possible argument type mismatch for argument #2 of `App\Services\DatabaseConnections\DatabaseConnectionRegistry::attachToApp`: expected `App\Models\App`, but possibly received `App\Models\App|App\Models\AppInstance|App\Models\Workspace`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionAttachController.php"
-code = "possibly-invalid-argument"
-message = 'Possible argument type mismatch for argument #2 of `App\Services\DatabaseConnections\DatabaseConnectionRegistry::attachToWorkspace`: expected `App\Models\Workspace`, but possibly received `App\Models\App|App\Models\AppInstance|App\Models\Workspace`.'
+code = "redundant-condition"
+message = "This condition (type `true`) will always evaluate to true."
 count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionDetachController.php"
-code = "mixed-operand"
-message = "Invalid left operand: type `mixed` cannot be reliably used in string concatenation."
-count = 2
-
-[[issues]]
-file = "app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionDetachController.php"
-code = "mixed-property-access"
-message = "Attempting to access a property on a non-object type (`mixed`)."
-count = 2
-
-[[issues]]
-file = "app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionDetachController.php"
-code = "non-documented-property"
-message = 'Ambiguous property access: $app on class `App\Models\App`.'
-count = 2
-
-[[issues]]
-file = "app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionDetachController.php"
-code = "possibly-invalid-argument"
-message = 'Possible argument type mismatch for argument #2 of `App\Services\DatabaseConnections\DatabaseConnectionRegistry::detachFromAppInstance`: expected `App\Models\AppInstance`, but possibly received `App\Models\App|App\Models\AppInstance|App\Models\Workspace`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionDetachController.php"
-code = "possibly-invalid-argument"
-message = 'Possible argument type mismatch for argument #2 of `App\Services\DatabaseConnections\DatabaseConnectionRegistry::detachFromApp`: expected `App\Models\App`, but possibly received `App\Models\App|App\Models\AppInstance|App\Models\Workspace`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionDetachController.php"
-code = "possibly-invalid-argument"
-message = 'Possible argument type mismatch for argument #2 of `App\Services\DatabaseConnections\DatabaseConnectionRegistry::detachFromWorkspace`: expected `App\Models\Workspace`, but possibly received `App\Models\App|App\Models\AppInstance|App\Models\Workspace`.'
+code = "redundant-condition"
+message = "This condition (type `true`) will always evaluate to true."
 count = 1
 
 [[issues]]
@@ -1727,6 +1469,12 @@ file = "app/Http/Controllers/Api/DeployController.php"
 code = "mixed-argument"
 message = 'Invalid argument type for argument #2 of `Illuminate\Http\Concerns\InteractsWithInput::query`: expected `array<array-key, mixed>|null|string`, but found `mixed`.'
 count = 3
+
+[[issues]]
+file = "app/Http/Controllers/Api/DeployController.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/DeployController.php"
@@ -1915,6 +1663,12 @@ message = "Cannot reliably cast generic `object` to `string`."
 count = 2
 
 [[issues]]
+file = "app/Http/Controllers/Api/NodeBootstrapCompleteController.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
 file = "app/Http/Controllers/Api/NodeGrantController.php"
 code = "possibly-null-argument"
 message = 'Argument #1 of method `App\Services\Nodes\Access\NodePermissionPresets::permissions` is possibly `null`, but parameter type `string` does not accept it.'
@@ -1948,12 +1702,6 @@ count = 1
 file = "app/Http/Controllers/Api/NodeListController.php"
 code = "false-argument"
 message = 'Argument #2 of method `Illuminate\Http\Concerns\InteractsWithInput::query` is `false`, but parameter type `array<array-key, mixed>|null|string` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeListController.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Http\Controllers\Api\NodeListController::nodePayloads`: expected `list<array<string, mixed>>`, but found `array<int, array{'addresses': array{'wireguard': null|string}, 'host': string, 'name': string, 'platform': string, 'roles': array<int, array<string, mixed>>, 'status': string('active')|string('decommissioned')|string('inactive')|string('provisioning')|string('removing')}>`.'''
 count = 1
 
 [[issues]]
@@ -2018,32 +1766,8 @@ count = 4
 
 [[issues]]
 file = "app/Http/Controllers/Api/NodeShowController.php"
-code = "invalid-property-access"
-message = "Attempting to access a property on a non-object type (`never`)."
-count = 7
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeShowController.php"
-code = "method-access-on-null"
-message = "Attempting to call a method on `null`."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeShowController.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeShowController.php"
-code = "mixed-method-access"
-message = "Attempting to access a method on a non-object type (`mixed`)."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeShowController.php"
-code = "no-value"
-message = 'Argument #1 passed to method `App\Services\Nodes\NodeAgentIdeDefaults::payloadFor` has type `never`, meaning it cannot produce a value.'
 count = 1
 
 [[issues]]
@@ -2054,26 +1778,8 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/NodeShowController.php"
-code = "null-argument"
-message = 'Argument #1 of method `App\Http\Controllers\Api\NodeShowController::grantNodes` is `null`, but parameter type `iterable<int, App\Models\Node>` does not accept it.'
-count = 2
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeShowController.php"
-code = "null-property-access"
-message = "Attempting to access a property on an expression that is always `null`."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeShowController.php"
 code = "redundant-condition"
 message = "This condition (type `true`) will always evaluate to true."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeShowController.php"
-code = "redundant-null-coalesce"
-message = "Redundant null coalesce: left-hand side is always `null`."
 count = 1
 
 [[issues]]
@@ -2107,10 +1813,28 @@ message = "Redundant `!==` comparison: left-hand side is always not identical to
 count = 1
 
 [[issues]]
+file = "app/Http/Controllers/Api/NodeStoreController.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/NodeStoreController.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$subject->tld` is already `string`."
+count = 1
+
+[[issues]]
 file = "app/Http/Controllers/Api/NodeUpdateController.php"
 code = "invalid-type-cast"
 message = "Cannot reliably cast generic `object` to `string`."
 count = 2
+
+[[issues]]
+file = "app/Http/Controllers/Api/OperationStreamControlPlaneController.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/ProcessDestroyController.php"
@@ -2146,7 +1870,7 @@ count = 1
 file = "app/Http/Controllers/Api/ProcessStoreController.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 3
+count = 4
 
 [[issues]]
 file = "app/Http/Controllers/Api/ProcessStoreController.php"
@@ -2164,66 +1888,6 @@ count = 1
 file = "app/Http/Controllers/Api/ProcessUpdateController.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/ProfileController.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `Illuminate\Support\Collection::first`: expected `(callable(App\Models\App&static|Illuminate\Database\Eloquent\Model|stdClass, int): bool)|null`, but found `(closure(App\Models\App): bool)`.'
-count = 2
-
-[[issues]]
-file = "app/Http/Controllers/Api/ProfileController.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `Illuminate\Support\Collection::first`: expected `(callable(stdClass, int): bool)|null`, but found `(closure(App\Models\App): bool)`.'
-count = 2
-
-[[issues]]
-file = "app/Http/Controllers/Api/ProfileController.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #2 of `Illuminate\Support\Traits\Conditionable::when`: expected `(callable($this(Illuminate\Database\Query\Builder), bool): $this(Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>))|null`, but found `(closure(Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>): $this(Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>))`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/ProfileController.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Http\Controllers\Api\ProfileController::visibleAppNodeIds`: expected `list<int>`, but found `array<array-key, mixed>`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/ProfileController.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Http/Controllers/Api/ProfileController.php:177:17}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/ProfileController.php"
-code = "less-specific-return-statement"
-message = 'Returned type `App\Models\App&static|Illuminate\Database\Eloquent\Model|null|stdClass` is less specific than the declared return type `App\Models\App|null` for function `App\Http\Controllers\Api\ProfileController::resolveVisibleApp`.'
-count = 2
-
-[[issues]]
-file = "app/Http/Controllers/Api/ProfileController.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/ProfileController.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/ProfileController.php"
-code = "redundant-comparison"
-message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/ProfileController.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
 count = 1
 
 [[issues]]
@@ -2293,6 +1957,18 @@ message = "Redundant null coalesce: left-hand side can never be `null` or undefi
 count = 3
 
 [[issues]]
+file = "app/Http/Controllers/Api/ScheduleLogsController.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/ScheduleShowController.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
 file = "app/Http/Controllers/Api/ScheduleStoreController.php"
 code = "impossible-condition"
 message = "Redundant ternary operator: condition is always falsy."
@@ -2302,13 +1978,13 @@ count = 1
 file = "app/Http/Controllers/Api/ScheduleStoreController.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
+count = 2
 
 [[issues]]
 file = "app/Http/Controllers/Api/SoloProxyController.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
+count = 2
 
 [[issues]]
 file = "app/Http/Controllers/Api/ToolInstallController.php"
@@ -2344,6 +2020,12 @@ count = 1
 file = "app/Http/Controllers/Api/ToolListController.php"
 code = "less-specific-nested-return-statement"
 message = '''Returned type `Illuminate\Database\Eloquent\Collection<int, mixed>&static|Illuminate\Support\Collection<int, mixed>&static` is less specific than the declared return type `Illuminate\Database\Eloquent\Collection<int, App\Models\NodeTool>` for function `App\Http\Controllers\Api\ToolListController::fetchTools` due to nested 'mixed'.'''
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/ToolLogsController.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]
@@ -2395,48 +2077,6 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/UpdateAllController.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Http\Controllers\Api\UpdateAllController::startRemoteUpdateProcessWorker`: expected `array{'node': App\Models\Node, 'process': Illuminate\Contracts\Process\InvokedProcess, 'stage_index': int, 'started_at': int}|null`, but found `array{'node': App\Models\Node, 'process': Illuminate\Contracts\Process\InvokedProcess, 'stage_index': int, 'started_at': false|float|int}`.'''
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/UpdateAllController.php"
-code = "mixed-argument"
-message = "Invalid argument type for argument #1 of `fwrite`: expected `resource`, but found `mixed`."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/UpdateAllController.php"
-code = "mixed-argument"
-message = "Invalid argument type for argument #1 of `stream_get_contents`: expected `resource`, but found `mixed`."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/UpdateAllController.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/UpdateAllController.php"
-code = "possibly-false-argument"
-message = "Argument #1 of function `posix_kill` is possibly `false`, but parameter type `int` does not accept it."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/UpdateAllController.php"
-code = "possibly-undefined-variable"
-message = "Variable `$status` might not have been defined on all execution paths leading to this point."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/UpdateAllController.php"
-code = "redundant-docblock-type"
-message = "Redundant docblock type for variable `$worker`."
-count = 1
-
-[[issues]]
 file = "app/Http/Controllers/Api/UpdateAllStartController.php"
 code = "redundant-comparison"
 message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
@@ -2452,12 +2092,6 @@ count = 1
 file = "app/Http/Controllers/Api/VpnControllerSupport.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceHistoryController.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `Illuminate\Database\Eloquent\Collection::map`: expected `(callable(App\Models\Workspace&static|Illuminate\Database\Eloquent\Model, int): null|string)`, but found `(closure(App\Models\Workspace): null|string)`.'
 count = 1
 
 [[issues]]
@@ -2480,24 +2114,6 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceHistoryController.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Http/Controllers/Api/WorkspaceHistoryController.php:235:73}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceHistoryController.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Http/Controllers/Api/WorkspaceHistoryController.php:278:73}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceHistoryController.php"
-code = "less-specific-return-statement"
-message = 'Returned type `App\Models\Workspace&static|Illuminate\Database\Eloquent\Model|null` is less specific than the declared return type `App\Models\Workspace|Illuminate\Http\JsonResponse|null` for function `App\Http\Controllers\Api\WorkspaceHistoryController::matchingWorkspaceByName`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceHistoryController.php"
 code = "less-specific-return-statement"
 message = 'Returned type `App\Models\Workspace&static|Illuminate\Database\Eloquent\Model|null` is less specific than the declared return type `App\Models\Workspace|null` for function `App\Http\Controllers\Api\WorkspaceHistoryController::matchingWorkspacePath`.'
 count = 1
@@ -2510,44 +2126,8 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceListController.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `Illuminate\Support\Collection::sort`: expected `(callable(App\Models\Workspace&static|Illuminate\Database\Eloquent\Model, App\Models\Workspace&static|Illuminate\Database\Eloquent\Model): int)|int|null`, but found `(closure(App\Models\Workspace, App\Models\Workspace): int(-1)|int(0)|int(1))`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceListController.php"
 code = "invalid-return-statement"
 message = 'Invalid return type for function `App\Http\Controllers\Api\WorkspaceListController::visibleAppNodeIds`: expected `list<int>`, but found `array<int, int>`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceListController.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Http\Controllers\Api\WorkspaceListController::workspacePayloads`: expected `list<array<string, mixed>>`, but found `array<int, array{'app': null|string, 'lifecycle_status': string('active')|string('expected')|string('setup-pending'), 'name': string, 'node': null|string, 'url': string}>`.'''
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceListController.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Http/Controllers/Api/WorkspaceListController.php:108:40}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceListController.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Http/Controllers/Api/WorkspaceListController.php:119:40}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceListController.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Http/Controllers/Api/WorkspaceListController.php:144:96}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceListController.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Database\Eloquent\Collection<int, Illuminate\Database\Eloquent\Model>&static` is less specific than the declared return type `Illuminate\Database\Eloquent\Collection<int, App\Models\Workspace>` for function `App\Http\Controllers\Api\WorkspaceListController::fetchWorkspaces`.'
 count = 1
 
 [[issues]]
@@ -2555,12 +2135,6 @@ file = "app/Http/Controllers/Api/WorkspaceListController.php"
 code = "possibly-null-argument"
 message = 'Argument #2 of method `App\Http\Controllers\Api\WorkspaceListController::validationFailed` is possibly `null`, but parameter type `string` does not accept it.'
 count = 2
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceRemoveController.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Database\Eloquent\Collection<int, App\Models\Workspace&static|Illuminate\Database\Eloquent\Model>` is less specific than the declared return type `Illuminate\Database\Eloquent\Collection<int, App\Models\Workspace>` for function `App\Http\Controllers\Api\WorkspaceRemoveController::matchingWorkspaces`.'
-count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceSetupController.php"
@@ -2612,44 +2186,14 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceShowController.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Http/Controllers/Api/WorkspaceShowController.php:208:73}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceShowController.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Http/Controllers/Api/WorkspaceShowController.php:232:73}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceShowController.php"
 code = "less-specific-return-statement"
 message = 'Returned type `App\Models\Workspace&static|Illuminate\Database\Eloquent\Model|null` is less specific than the declared return type `App\Models\Workspace|null` for function `App\Http\Controllers\Api\WorkspaceShowController::matchingWorkspacePath`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceShowController.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Database\Eloquent\Collection<int, App\Models\Workspace&static|Illuminate\Database\Eloquent\Model>` is less specific than the declared return type `Illuminate\Database\Eloquent\Collection<int, App\Models\Workspace>` for function `App\Http\Controllers\Api\WorkspaceShowController::matchingWorkspaces`.'
 count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceStepDeleteController.php"
 code = "mixed-argument"
 message = 'Invalid argument type for argument #2 of `Illuminate\Http\Concerns\InteractsWithInput::query`: expected `array<array-key, mixed>|null|string`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStepDeleteController.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Http\Controllers\Api\WorkspaceStepDeleteController::forbidden` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStepListController.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Http\Controllers\Api\WorkspaceStepListController::forbidden` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
 count = 1
 
 [[issues]]
@@ -2672,12 +2216,6 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceStepStoreController.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Http\Controllers\Api\WorkspaceStepStoreController::forbidden` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStepStoreController.php"
 code = "redundant-condition"
 message = "Redundant ternary operator: condition is always truthy."
 count = 1
@@ -2687,42 +2225,6 @@ file = "app/Http/Controllers/Api/WorkspaceStepStoreController.php"
 code = "redundant-type-comparison"
 message = "Redundant type assertion: `$input` is already `array<string, mixed>`."
 count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStoreController.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #2 of `App\Actions\Workspaces\CreateWorkspace::handle`: expected `string`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStoreController.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #3 of `App\Actions\Workspaces\CreateWorkspace::handle`: expected `string`, but found `nonnull`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStoreController.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #3 of `App\Actions\Workspaces\CreateWorkspaceProgress::for`: expected `string`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStoreController.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #4 of `App\Actions\Workspaces\CreateWorkspaceProgress::for`: expected `string`, but found `nonnull`.'
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStoreController.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 6
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStoreController.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 2
 
 [[issues]]
 file = "app/Http/Middleware/CorrelationHeader.php"
@@ -2818,7 +2320,7 @@ count = 1
 file = "app/Http/Requests/Api/AddNodeRoleApiRequest.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 4
+count = 5
 
 [[issues]]
 file = "app/Http/Requests/Api/Concerns/HandlesOrbitApiValidationFailure.php"
@@ -2875,81 +2377,9 @@ message = "Attempting to access a method on a non-object type (`mixed`)."
 count = 1
 
 [[issues]]
-file = "app/Models/App.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Models\App::deploySteps`: expected `Illuminate\Database\Eloquent\Relations\HasMany<App\Models\DeployStep, app\models\app&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Models/App.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Models\App::deploymentRuns`: expected `Illuminate\Database\Eloquent\Relations\HasMany<App\Models\DeploymentRun, app\models\app&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Models/App.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Models\App::instances`: expected `Illuminate\Database\Eloquent\Relations\HasMany<App\Models\AppInstance, app\models\app&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Models/App.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Models\App::processes`: expected `Illuminate\Database\Eloquent\Relations\MorphMany<App\Models\Process, app\models\app&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Models/App.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Models\App::runtimeMounts`: expected `Illuminate\Database\Eloquent\Relations\HasMany<App\Models\AppRuntimeMount, app\models\app&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Models/App.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Models\App::schedules`: expected `Illuminate\Database\Eloquent\Relations\HasMany<App\Models\Schedule, app\models\app&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Models/App.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Models\App::setupRuns`: expected `Illuminate\Database\Eloquent\Relations\HasMany<App\Models\AppSetupRun, app\models\app&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Models/App.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Models\App::setupSteps`: expected `Illuminate\Database\Eloquent\Relations\HasMany<App\Models\AppSetupStep, app\models\app&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Models/App.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Models\App::workspaces`: expected `Illuminate\Database\Eloquent\Relations\HasMany<App\Models\Workspace, app\models\app&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Models/App.php"
-code = "missing-template-parameter"
-message = 'Too few template arguments for `Illuminate\Database\Eloquent\Factories\HasFactory`: expected at least 1, but found 0.'
-count = 1
-
-[[issues]]
-file = "app/Models/App.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
 file = "app/Models/AppInstance.php"
 code = "invalid-return-statement"
 message = 'Invalid return type for function `App\Models\AppInstance::envVariables`: expected `Illuminate\Database\Eloquent\Relations\HasMany<App\Models\AppInstanceEnvVariable, app\models\appinstance&static>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Models/AppRuntimeMount.php"
-code = "missing-template-parameter"
-message = 'Too few template arguments for `Illuminate\Database\Eloquent\Factories\HasFactory`: expected at least 1, but found 0.'
 count = 1
 
 [[issues]]
@@ -3104,8 +2534,8 @@ count = 1
 
 [[issues]]
 file = "app/Models/Process.php"
-code = "redundant-condition"
-message = "This condition (type `true`) will always evaluate to true."
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
 count = 1
 
 [[issues]]
@@ -3118,6 +2548,12 @@ count = 1
 file = "app/Models/ProcessEvent.php"
 code = "missing-template-parameter"
 message = 'Too few template arguments for `Illuminate\Database\Eloquent\Factories\HasFactory`: expected at least 1, but found 0.'
+count = 1
+
+[[issues]]
+file = "app/Models/Project.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]
@@ -3206,134 +2642,14 @@ count = 1
 
 [[issues]]
 file = "app/Providers/AppServiceProvider.php"
-code = "less-specific-nested-argument-type"
-message = 'Argument type mismatch for argument #1 of `App\Services\Updates\UpdateDriverRegistry::__construct`: expected `list<App\Services\Updates\UpdateDriver>`, but provided type `list{mixed}` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Services\AgentIde\CoreAgentIdeWorkspacePathResolver::__construct`: expected `App\Services\RemoteShell\RemoteLocalExecutor`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Services\Operations\OperationTokenFactory::__construct`: expected `Orbit\Core\Security\OperationTokenSigner`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Services\Operations\OperationTokenIntrospector::__construct`: expected `Orbit\Core\Security\OperationTokenVerifier`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Services\RemoteShell\RemoteLocalExecutor::__construct`: expected `App\Services\RemoteShell\RemoteExecutor`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Services\Workspaces\PolyscopeWorkspaceDriver::__construct`: expected `App\Services\Workspaces\PolyscopeWorkspaceBranchAligner`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #2 of `App\Services\RemoteShell\RemoteLocalExecutor::__construct`: expected `App\Services\RemoteShell\LocalExecutorCommandComposer`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #2 of `App\Services\Workspaces\PolyscopeWorkspaceDriver::__construct`: expected `App\Services\RemoteShell\RemoteLocalExecutor`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #3 of `App\Services\RemoteShell\RemoteLocalExecutor::__construct`: expected `App\Services\Operations\OperationTokenFactory`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #3 of `App\Services\Vpn\VpnDnsSwarmInstaller::__construct`: expected `App\Services\RemoteShell\RemoteLocalExecutor|null`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #3 of `App\Services\Vpn\WgEasyServiceInstaller::__construct`: expected `App\Services\RemoteShell\RemoteLocalExecutor|null`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #3 of `App\Services\Vpn\WgEasyVpnBackend::__construct`: expected `App\Services\RemoteShell\RemoteLocalExecutor|null`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #4 of `App\Services\RemoteShell\RemoteLocalExecutor::__construct`: expected `App\Services\ActivityLogger`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #4 of `App\Services\Vpn\VpnDnsSwarmInstaller::__construct`: expected `App\Services\Vpn\VpnNodeResolver|null`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #4 of `App\Services\Vpn\WgEasyServiceInstaller::__construct`: expected `App\Services\Vpn\VpnNodeResolver|null`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #4 of `App\Services\Vpn\WgEasyVpnBackend::__construct`: expected `App\Services\Vpn\VpnNodeResolver|null`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #5 of `App\Services\RemoteShell\RemoteLocalExecutor::__construct`: expected `App\Services\Operations\OperationRunRecorder`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Providers/AppServiceProvider.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 4
 
 [[issues]]
-file = "app/Providers/AppServiceProvider.php"
-code = "mixed-method-access"
-message = "Attempting to access a method on a non-object type (`mixed`)."
-count = 21
-
-[[issues]]
-file = "app/Services/Activity/ActivityHistory.php"
-code = "invalid-argument"
-message = '''Invalid argument type for argument #1 of `Illuminate\Support\Collection::map`: expected `(callable(stdClass, int): array{'effect': mixed, 'id': int, 'occurred_at': null|string, 'type': null|string})`, but found `(closure(Spatie\Activitylog\Models\Activity): array{'effect': mixed, 'id': int, 'occurred_at': null|string, 'type': null|string})`.'''
-count = 1
-
-[[issues]]
 file = "app/Services/Activity/ActivityHistory.php"
 code = "invalid-return-statement"
 message = 'Invalid return type for function `App\Services\Activity\ActivityHistory::activityPayloads`: expected `list<array<string, mixed>>`, but found `array<int, array<string, mixed>>`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Activity/ActivityHistory.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Services\Activity\ActivityHistory::relatedActivities`: expected `list<array<string, mixed>>`, but found `array<int, array{'effect': mixed, 'id': int, 'occurred_at': null|string, 'type': null|string}>`.'''
 count = 1
 
 [[issues]]
@@ -3352,7 +2668,7 @@ count = 1
 file = "app/Services/Activity/ActivityHistory.php"
 code = "possible-method-access-on-null"
 message = "Attempting to call a method on `null`."
-count = 4
+count = 2
 
 [[issues]]
 file = "app/Services/Activity/ActivityHistory.php"
@@ -3367,9 +2683,33 @@ message = 'Possible argument type mismatch for argument #1 of `App\Services\Acti
 count = 1
 
 [[issues]]
+file = "app/Services/Activity/ActivityPayloadCompatibility.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
 file = "app/Services/ActivityLogTargets.php"
 code = "redundant-null-coalesce"
 message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
+count = 1
+
+[[issues]]
+file = "app/Services/AgentIde/AgentIdeMessageDelivery.php"
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
+count = 1
+
+[[issues]]
+file = "app/Services/AgentIde/AgentIdeMessageDelivery.php"
+code = "redundant-logical-operation"
+message = "Redundant `||` operation: left operand is evaluated and right operand is always falsy."
+count = 1
+
+[[issues]]
+file = "app/Services/AgentIde/AgentIdeMessageDelivery.php"
+code = "redundant-type-comparison"
+message = 'Redundant condition: variable `$instance` (type `App\Models\AppInstance`) is already known to be `App\Models\AppInstance`.'
 count = 1
 
 [[issues]]
@@ -3469,6 +2809,18 @@ message = 'Ambiguous method call to `ownedby` on class `Illuminate\Database\Eloq
 count = 1
 
 [[issues]]
+file = "app/Services/Analytics/AnalyticsProcessEndpointResolver.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 4
+
+[[issues]]
+file = "app/Services/Analytics/AnalyticsPublicHostNormalizer.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
 file = "app/Services/Analytics/AnalyticsRouteRegistrar.php"
 code = "docblock-type-mismatch"
 message = "Docblock type mismatch for variable `$nodes`."
@@ -3476,8 +2828,20 @@ count = 1
 
 [[issues]]
 file = "app/Services/Analytics/AnalyticsRouteRegistrar.php"
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
+count = 2
+
+[[issues]]
+file = "app/Services/Analytics/AnalyticsRouteRegistrar.php"
 code = "less-specific-nested-return-statement"
 message = '''Returned type `list<array{'node': mixed, 'node_id': mixed, 'url': mixed}>` is less specific than the declared return type `list<array{'node': string, 'node_id': int, 'url': string}>` for function `App\Services\Analytics\AnalyticsRouteRegistrar::backendPool` due to nested 'mixed'.'''
+count = 1
+
+[[issues]]
+file = "app/Services/Analytics/AnalyticsRouteRegistrar.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]
@@ -3513,25 +2877,13 @@ count = 2
 [[issues]]
 file = "app/Services/Analytics/AnalyticsRouteRegistrar.php"
 code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$binding->app` (type `App\Models\App`) is already known to be `App\Models\App`.'
+message = 'Redundant condition: variable `$binding->app` (type `App\Models\Project`) is already known to be `App\Models\Project`.'
 count = 3
 
 [[issues]]
-file = "app/Services/Analytics/AppAnalyticsBindingService.php"
+file = "app/Services/Analytics/PlausibleRuntimeConfig.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Services/Analytics/AppAnalyticsBindingService.php"
-code = "mixed-return-statement"
-message = 'Could not infer a precise return type for function `App\Services\Analytics\AppAnalyticsBindingService::disable`. Saw type `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Analytics/AppAnalyticsBindingService.php"
-code = "mixed-return-statement"
-message = 'Could not infer a precise return type for function `App\Services\Analytics\AppAnalyticsBindingService::enable`. Saw type `mixed`.'
 count = 1
 
 [[issues]]
@@ -3649,6 +3001,18 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 2
 
 [[issues]]
+file = "app/Services/Apps/AppRegistrar.php"
+code = "redundant-condition"
+message = "Redundant ternary operator: condition is always truthy."
+count = 2
+
+[[issues]]
+file = "app/Services/Apps/AppRegistrar.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$node->tld` is already `string`."
+count = 2
+
+[[issues]]
 file = "app/Services/Apps/AppRootUpdater.php"
 code = "less-specific-nested-argument-type"
 message = "Argument type mismatch for argument #2 of `implode`: expected `array<array-key, Stringable|null|scalar>|null`, but provided type `list<mixed>` is less specific."
@@ -3658,12 +3022,6 @@ count = 1
 file = "app/Services/Apps/AppRootUpdater.php"
 code = "less-specific-nested-argument-type"
 message = "Argument type mismatch for argument #2 of `implode`: expected `array<array-key, Stringable|null|scalar>|null`, but provided type `non-empty-list<mixed>` is less specific."
-count = 1
-
-[[issues]]
-file = "app/Services/Apps/AppRootUpdater.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Database\Eloquent\Model|null` is less specific than the declared return type `App\Models\App|null` for function `App\Services\Apps\AppRootUpdater::resolveApp`.'
 count = 1
 
 [[issues]]
@@ -3704,14 +3062,8 @@ count = 1
 
 [[issues]]
 file = "app/Services/Apps/AppRuntimeMountService.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Services\Apps\AppRuntimeMountService::mountsForRuntime`: expected `list<array{'read_only': bool, 'source': string, 'target': string}>`, but found `array<int, array{'read_only': bool, 'source': string, 'target': string}>`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/Apps/AppRuntimeMountService.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Support\Collection<int, stdClass>` is less specific than the declared return type `Illuminate\Database\Eloquent\Collection<int, App\Models\AppRuntimeMount>` for function `App\Services\Apps\AppRuntimeMountService::list`.'
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
 count = 1
 
 [[issues]]
@@ -3724,12 +3076,6 @@ count = 1
 file = "app/Services/Apps/AppSetupStepListPayload.php"
 code = "docblock-type-mismatch"
 message = "Docblock type mismatch for variable `$steps`."
-count = 1
-
-[[issues]]
-file = "app/Services/Apps/AppSetupStepListPayload.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\Apps\AppSetupStepListPayload::forApp`: expected `list<array<string, mixed>>`, but found `array<int, array<string, mixed>>`.'
 count = 1
 
 [[issues]]
@@ -3853,6 +3199,12 @@ message = "Redundant type assertion: `$config` is already `array<string, mixed>`
 count = 1
 
 [[issues]]
+file = "app/Services/Apps/AppsProbe.php"
+code = "unused-method"
+message = "Method `containernamefortarget()` is never used."
+count = 1
+
+[[issues]]
 file = "app/Services/Apps/DependencyAudit/ComposerDependencyAuditParser.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
@@ -3874,7 +3226,7 @@ count = 1
 file = "app/Services/Authorization/ServingNodeResolver.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
+count = 2
 
 [[issues]]
 file = "app/Services/Authorization/ServingNodeResolver.php"
@@ -4117,42 +3469,6 @@ message = '''Possible argument type mismatch for argument #2 of `App\Services\Co
 count = 1
 
 [[issues]]
-file = "app/Services/CurlRequestProfiler.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #1 of `App\Services\CurlRequestProfiler::effectiveUrl`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/CurlRequestProfiler.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #1 of `App\Services\CurlRequestProfiler::httpStatus`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/CurlRequestProfiler.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #1 of `App\Services\CurlRequestProfiler::timingsFromCurlInfo`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/CurlRequestProfiler.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 3
-
-[[issues]]
-file = "app/Services/CurlRequestProfiler.php"
-code = "redundant-comparison"
-message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
-count = 1
-
-[[issues]]
-file = "app/Services/CurlRequestProfiler.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
-count = 1
-
-[[issues]]
 file = "app/Services/DatabaseConnections/DatabaseAuditPayload.php"
 code = "mixed-operand"
 message = "Casting `mixed` to `bool`."
@@ -4160,26 +3476,14 @@ count = 1
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseAuditPayload.php"
-code = "mixed-property-access"
-message = "Attempting to access a property on a non-object type (`mixed`)."
-count = 2
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseAuditPayload.php"
-code = "non-documented-property"
-message = 'Ambiguous property access: $app on class `Illuminate\Database\Eloquent\Model`.'
+code = "possibly-null-operand"
+message = "Possibly null left operand used in string concatenation (type `null|string`)."
 count = 1
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseAuditPayload.php"
-code = "non-documented-property"
-message = 'Ambiguous property access: $env_prefix on class `Illuminate\Database\Eloquent\Model`.'
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseAuditPayload.php"
-code = "non-documented-property"
-message = 'Ambiguous property access: $workspace on class `Illuminate\Database\Eloquent\Model`.'
+code = "possibly-null-operand"
+message = "Possibly null right operand used in string concatenation (type `null|string`)."
 count = 1
 
 [[issues]]
@@ -4196,14 +3500,8 @@ count = 1
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionAdopter.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\DatabaseConnections\DatabaseConnectionAdopter::appsForNode`: expected `list<App\Models\App>`, but found `array<int, App\Models\App&static>`.'
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionAdopter.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\DatabaseConnections\DatabaseConnectionAdopter::workspacesForNode`: expected `list<App\Models\Workspace>`, but found `array<int, App\Models\Workspace&static>`.'
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
 count = 1
 
 [[issues]]
@@ -4262,6 +3560,12 @@ count = 2
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
+count = 1
+
+[[issues]]
+file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
 code = "impossible-type-comparison"
 message = 'Impossible condition: variable `$connection->node` (type `null`) can never be `App\Models\Node`.'
 count = 1
@@ -4277,18 +3581,6 @@ file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
 code = "invalid-property-read"
 message = 'Cannot read protected property `$connection` from class `Illuminate\Database\Eloquent\Model`.'
 count = 2
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\DatabaseConnections\DatabaseConnectionProbe::appsForNode`: expected `list<App\Models\App>`, but found `array<int, App\Models\App&static>`.'
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\DatabaseConnections\DatabaseConnectionProbe::workspacesForNode`: expected `list<App\Models\Workspace>`, but found `array<int, App\Models\Workspace&static>`.'
-count = 1
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
@@ -4342,12 +3634,6 @@ count = 1
 file = "app/Services/DatabaseConnections/DatabaseConnectionRegistry.php"
 code = "less-specific-argument"
 message = 'Argument type mismatch for argument #1 of `App\Services\DatabaseConnections\DatabaseConnectionPayload::fromArray`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionRegistry.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Support\Collection<int, stdClass>` is less specific than the declared return type `Illuminate\Database\Eloquent\Collection<int, App\Models\DatabaseConnection>` for function `App\Services\DatabaseConnections\DatabaseConnectionRegistry::list`.'
 count = 1
 
 [[issues]]
@@ -4424,12 +3710,6 @@ count = 5
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionSelector.php"
-code = "invalid-return-statement"
-message = "Invalid return type for function `{closure:app/Services/DatabaseConnections/DatabaseConnectionSelector.php:101:23}`: expected `string`, but found `null`."
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionSelector.php"
 code = "less-specific-nested-argument-type"
 message = 'Argument type mismatch for argument #2 of `App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure::ambiguousTarget`: expected `array<int, string>`, but provided type `array<int, mixed>` is less specific.'
 count = 1
@@ -4448,14 +3728,14 @@ count = 1
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionSelector.php"
-code = "redundant-condition"
-message = "Redundant ternary operator: condition is always truthy."
-count = 1
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
+count = 2
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionSelector.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
+code = "redundant-nullsafe-operator"
+message = "Redundant nullsafe operator (`?->`) used on an expression that is never `null`."
 count = 1
 
 [[issues]]
@@ -4544,56 +3824,8 @@ count = 1
 
 [[issues]]
 file = "app/Services/Deploy/DeployManager.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Services\Deploy\DeployManager::history`: expected `array{'meta': array<string, mixed>, 'runs': list<array<string, mixed>>}`, but found `array{'meta': array{'pagination': array{'limit': int<min, 500>, 'limit_capped': bool, 'total': non-negative-int}}, 'runs': array<int, array<array-key, mixed>>}`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/Deploy/DeployManager.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Services\Deploy\DeployManager::listSteps`: expected `array{'meta': array<string, mixed>, 'steps': list<array<string, mixed>>}`, but found `array{'meta': array{'app': string, 'count': non-negative-int}, 'steps': array<int, array<array-key, mixed>>}`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/Deploy/DeployManager.php"
 code = "less-specific-argument"
 message = 'Argument type mismatch for argument #1 of `App\Services\Deploy\DeployManager::progressSteps`: expected `Illuminate\Database\Eloquent\Collection<int, App\Models\DeployStep>`, but provided type `Illuminate\Support\Collection<int, stdClass>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/Deploy/DeployManager.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #3 of `App\Services\Deploy\DeployManager::runContext`: expected `Illuminate\Support\Carbon`, but provided type `Carbon\CarbonInterface` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/Deploy/DeployManager.php"
-code = "less-specific-return-statement"
-message = '''Returned type `array{'meta': array{'action': string('completed')|string('failed'), 'duration_ms': int|null}, 'output': array{'stderr': string, 'stdout': string}, 'run': array<array-key, mixed>}` is less specific than the declared return type `array{'meta': array<string, mixed>, 'output'?: array{'stderr': string, 'stdout': string}, 'run': array<string, mixed>}` for function `App\Services\Deploy\DeployManager::run`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/Deploy/DeployManager.php"
-code = "less-specific-return-statement"
-message = '''Returned type `array{'meta': array{'action': string('created')}, 'step': array<array-key, mixed>}` is less specific than the declared return type `array{'meta': array<string, mixed>, 'step': array<string, mixed>}` for function `App\Services\Deploy\DeployManager::addStep`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/Deploy/DeployManager.php"
-code = "less-specific-return-statement"
-message = '''Returned type `array{'meta': array{'action': string('removed'), 'history_preserved': true}, 'step': array<array-key, mixed>}` is less specific than the declared return type `array{'meta': array<string, mixed>, 'step': array<string, mixed>}` for function `App\Services\Deploy\DeployManager::removeStep`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/Deploy/DeployManager.php"
-code = "less-specific-return-statement"
-message = '''Returned type `array{'meta': array{'action': string('started'), 'detached': true}, 'run': array<array-key, mixed>}` is less specific than the declared return type `array{'meta': array<string, mixed>, 'output'?: array{'stderr': string, 'stdout': string}, 'run': array<string, mixed>}` for function `App\Services\Deploy\DeployManager::run`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/Deploy/DeployManager.php"
-code = "less-specific-return-statement"
-message = '''Returned type `array{'meta': array{'lines': int, 'truncated_by_filter': bool}, 'run': array<array-key, mixed>, 'steps': mixed}` is less specific than the declared return type `array{'meta': array<string, mixed>, 'run': array<string, mixed>, 'steps': list<array<string, mixed>>}` for function `App\Services\Deploy\DeployManager::log`.'''
 count = 1
 
 [[issues]]
@@ -4606,37 +3838,7 @@ count = 1
 file = "app/Services/Deploy/DeployManager.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 6
-
-[[issues]]
-file = "app/Services/Deploy/DeployManager.php"
-code = "mixed-method-access"
-message = "Attempting to access a method on a non-object type (`mixed`)."
-count = 10
-
-[[issues]]
-file = "app/Services/Deploy/DeployManager.php"
-code = "mixed-property-access"
-message = "Attempting to access a property on a non-object type (`mixed`)."
-count = 1
-
-[[issues]]
-file = "app/Services/Deploy/DeployManager.php"
-code = "non-documented-property"
-message = 'Ambiguous property access: $steps on class `App\Models\DeploymentRun`.'
-count = 3
-
-[[issues]]
-file = "app/Services/Deploy/DeployManager.php"
-code = "redundant-condition"
-message = "Redundant condition: variable `$truncated` (type `false`) will always evaluate to true."
 count = 2
-
-[[issues]]
-file = "app/Services/Deploy/DeployManager.php"
-code = "redundant-logical-operation"
-message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
-count = 1
 
 [[issues]]
 file = "app/Services/Deploy/DeployManager.php"
@@ -4685,6 +3887,24 @@ file = "app/Services/Doctor/DnsRuntimeProbe.php"
 code = "redundant-null-coalesce"
 message = "Redundant null coalesce: left-hand side is always `null`."
 count = 1
+
+[[issues]]
+file = "app/Services/Doctor/DoctorAppInstanceTargetResolver.php"
+code = "redundant-null-coalesce"
+message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
+count = 1
+
+[[issues]]
+file = "app/Services/Doctor/DoctorAppInstanceTargetResolver.php"
+code = "unused-property"
+message = "Property `$authorizer` is never used."
+count = 1
+
+[[issues]]
+file = "app/Services/Doctor/DoctorPublicVocabulary.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
 
 [[issues]]
 file = "app/Services/Doctor/DoctorReportRunner.php"
@@ -4810,7 +4030,7 @@ count = 1
 file = "app/Services/Doctor/DoctorReportRunner.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 8
+count = 10
 
 [[issues]]
 file = "app/Services/Doctor/DoctorReportRunner.php"
@@ -4826,9 +4046,15 @@ count = 1
 
 [[issues]]
 file = "app/Services/Doctor/DoctorReportRunner.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$process->runtime_config` is already `array<string, mixed>`."
+code = "redundant-logical-operation"
+message = "Redundant `||` operation: left operand is evaluated and right operand is always falsy."
 count = 1
+
+[[issues]]
+file = "app/Services/Doctor/DoctorReportRunner.php"
+code = "redundant-type-comparison"
+message = 'Redundant condition: variable `$process->owner->appInstance` (type `App\Models\AppInstance`) is already known to be `App\Models\AppInstance`.'
+count = 2
 
 [[issues]]
 file = "app/Services/Firewall/FirewallRuleIntent.php"
@@ -4999,6 +4225,12 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 1
 
 [[issues]]
+file = "app/Services/Gateway/GatewayTlsKeyModeRepairer.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
 file = "app/Services/Metrics/MetricsCredentialsAction.php"
 code = "invalid-return-statement"
 message = 'Invalid return type for function `App\Services\Metrics\MetricsCredentialsAction::resolveMetricsNode`: expected `App\Models\Node|null`, but found `null|stdClass`.'
@@ -5107,6 +4339,24 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 2
 
 [[issues]]
+file = "app/Services/Nodes/Access/ProjectInstancePermissionMigrator.php"
+code = "redundant-logical-operation"
+message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "app/Services/Nodes/Access/ProjectInstancePermissionMigrator.php"
+code = "redundant-type-comparison"
+message = "Redundant condition: variable `$permission` (type `string`) is already known to be `string`."
+count = 1
+
+[[issues]]
+file = "app/Services/Nodes/Access/ProjectInstancePermissionMigrator.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$permission` is already `string`."
+count = 1
+
+[[issues]]
 file = "app/Services/Nodes/GatewayNodeCreator.php"
 code = "impossible-condition"
 message = "This condition (type `false`) will always evaluate to false."
@@ -5116,12 +4366,6 @@ count = 1
 file = "app/Services/Nodes/GatewayNodeCreator.php"
 code = "impossible-type-comparison"
 message = 'Impossible type assertion: `$requestedRoles` of type `App\Services\Nodes\NodeCreationRoleSelection` can never be `int`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/GatewayNodeCreator.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\Nodes\GatewayNodeCreator::orderHostedRoles`: expected `list<string>`, but found `array<int, mixed>`.'
 count = 1
 
 [[issues]]
@@ -5146,7 +4390,7 @@ count = 1
 file = "app/Services/Nodes/GatewayNodeCreator.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 5
+count = 6
 
 [[issues]]
 file = "app/Services/Nodes/GatewayNodeCreator.php"
@@ -5158,12 +4402,6 @@ count = 2
 file = "app/Services/Nodes/GatewayNodeCreator.php"
 code = "never-return"
 message = "Cannot return value with type 'never' from this function."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/GatewayNodeCreator.php"
-code = "no-value"
-message = 'Argument #1 passed to method `App\Contracts\RemoteShell::run` has type `never`, meaning it cannot produce a value.'
 count = 1
 
 [[issues]]
@@ -5186,12 +4424,6 @@ count = 1
 
 [[issues]]
 file = "app/Services/Nodes/GatewayNodeCreator.php"
-code = "redundant-condition"
-message = "This condition (type `true`) will always evaluate to true."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/GatewayNodeCreator.php"
 code = "redundant-logical-operation"
 message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
 count = 1
@@ -5201,12 +4433,6 @@ file = "app/Services/Nodes/GatewayNodeCreator.php"
 code = "redundant-logical-operation"
 message = "Redundant `||` operation: left operand is evaluated and right operand is always falsy."
 count = 1
-
-[[issues]]
-file = "app/Services/Nodes/GatewayNodeCreator.php"
-code = "redundant-null-coalesce"
-message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
-count = 2
 
 [[issues]]
 file = "app/Services/Nodes/GatewayNodeCreator.php"
@@ -5221,13 +4447,13 @@ message = "Redundant type assertion: `$option` is already `string`."
 count = 1
 
 [[issues]]
-file = "app/Services/Nodes/GatewayNodeCreator.php"
-code = "reference-to-undefined-variable"
-message = "Reference created from a previously undefined variable `$matches`."
+file = "app/Services/Nodes/NodeAgentIdeDefaults.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]
-file = "app/Services/Nodes/NodeAgentIdeDefaults.php"
+file = "app/Services/Nodes/NodeBootstrapArguments.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
@@ -5326,7 +4552,7 @@ count = 1
 file = "app/Services/Nodes/NodesProbe.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 10
+count = 8
 
 [[issues]]
 file = "app/Services/Nodes/NodesProbe.php"
@@ -5360,12 +4586,6 @@ count = 1
 
 [[issues]]
 file = "app/Services/Nodes/NodesProbe.php"
-code = "redundant-condition"
-message = "Redundant ternary operator: condition is always truthy."
-count = 2
-
-[[issues]]
-file = "app/Services/Nodes/NodesProbe.php"
 code = "redundant-docblock-type"
 message = "Redundant docblock type for variable `$permissions`."
 count = 1
@@ -5386,7 +4606,7 @@ count = 2
 file = "app/Services/Nodes/NodesProbe.php"
 code = "redundant-null-coalesce"
 message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
-count = 10
+count = 1
 
 [[issues]]
 file = "app/Services/Nodes/NodesProbe.php"
@@ -5419,18 +4639,6 @@ message = "Redundant type assertion: `$peer->public_key` is already `string`."
 count = 1
 
 [[issues]]
-file = "app/Services/Nodes/NodesProbe.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$settings` is already `array<string, mixed>`."
-count = 2
-
-[[issues]]
-file = "app/Services/Nodes/OperatorNodeManager.php"
-code = "impossible-condition"
-message = "This condition (type `false`) will always evaluate to false."
-count = 1
-
-[[issues]]
 file = "app/Services/Nodes/Roles/NodeRoleAssignmentPayload.php"
 code = "less-specific-return-statement"
 message = 'Returned type `non-empty-array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>|stdClass` for function `App\Services\Nodes\Roles\NodeRoleAssignmentPayload::settings`.'
@@ -5438,87 +4646,27 @@ count = 1
 
 [[issues]]
 file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
-code = "impossible-condition"
-message = "Redundant ternary operator: condition is always falsy."
-count = 2
-
-[[issues]]
-file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
-code = "impossible-condition"
-message = "This condition (type `false`) will always evaluate to false."
-count = 3
-
-[[issues]]
-file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
-code = "impossible-type-comparison"
-message = "Impossible type assertion: `$agentTld` of type `null` can never be `string`."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
-code = "impossible-type-comparison"
-message = "Impossible type assertion: `$developmentTld` of type `null` can never be `string`."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `Illuminate\Support\Collection::push`: expected `stdClass`, but found `App\Models\NodeRoleAssignment`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
 code = "invalid-property-access"
 message = "Attempting to access a property on a non-object type (`never`)."
-count = 2
-
-[[issues]]
-file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #2 of `App\Services\Nodes\Roles\NodeRoleBaselineConverger::remove`: expected `App\Models\NodeRoleAssignment`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #2 of `App\Services\Nodes\Roles\NodeRoleDependencyInspector::dependentSummaries`: expected `App\Models\NodeRoleAssignment`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #2 of `App\Services\Nodes\Roles\NodeRoleDependencyInspector::removeOrbitOwnedDependents`: expected `App\Models\NodeRoleAssignment`, but found `mixed`.'
 count = 1
 
 [[issues]]
 file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 9
-
-[[issues]]
-file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
-code = "mixed-method-access"
-message = "Attempting to access a method on a non-object type (`mixed`)."
-count = 4
+count = 5
 
 [[issues]]
 file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
 code = "non-documented-method"
 message = 'Ambiguous method call to `findorfail` on class `Illuminate\Database\Query\Builder`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
-code = "non-documented-method"
-message = 'Ambiguous method call to `whererelation` on class `Illuminate\Database\Query\Builder`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
-code = "redundant-null-coalesce"
-message = "Redundant null coalesce: left-hand side is always `null`."
 count = 2
+
+[[issues]]
+file = "app/Services/Nodes/Roles/NodeRoleAssignmentService.php"
+code = "redundant-condition"
+message = "This condition (type `true`) will always evaluate to true."
+count = 1
 
 [[issues]]
 file = "app/Services/Nodes/Roles/NodeRoleAssignments.php"
@@ -5581,6 +4729,12 @@ message = 'Returned type `Illuminate\Support\Collection<int, stdClass>` is less 
 count = 1
 
 [[issues]]
+file = "app/Services/Nodes/Roles/NodeRoleAssignments.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
 file = "app/Services/Nodes/Roles/NodeRoleDefinition.php"
 code = "possibly-static-access-on-interface"
 message = 'Potential static method call on interface `App\Data\Nodes\RoleSettings\NodeRoleSettings` via `class-string`.'
@@ -5605,27 +4759,9 @@ message = 'Ambiguous method call to `ownedby` on class `Illuminate\Database\Eloq
 count = 2
 
 [[issues]]
-file = "app/Services/Nodes/Roles/RoleBaselines/AgentRoleBaseline.php"
+file = "app/Services/Nodes/Roles/NodeRoleSettingsResolver.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
-
-[[issues]]
-file = "app/Services/Nodes/Roles/RoleBaselines/AgentRoleBaseline.php"
-code = "redundant-condition"
-message = "Redundant ternary operator: condition is always truthy."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/Roles/RoleBaselines/AgentRoleBaseline.php"
-code = "redundant-null-coalesce"
-message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
-count = 2
-
-[[issues]]
-file = "app/Services/Nodes/Roles/RoleBaselines/AgentRoleBaseline.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$reason` is already `string`."
 count = 1
 
 [[issues]]
@@ -5638,30 +4774,6 @@ count = 3
 file = "app/Services/Nodes/Roles/RoleBaselines/AnalyticsRoleBaseline.php"
 code = "non-documented-method"
 message = 'Ambiguous method call to `ownedby` on class `Illuminate\Database\Eloquent\Builder`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/Roles/RoleBaselines/AppDevelopmentRoleBaseline.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
-
-[[issues]]
-file = "app/Services/Nodes/Roles/RoleBaselines/AppDevelopmentRoleBaseline.php"
-code = "redundant-condition"
-message = "Redundant ternary operator: condition is always truthy."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/Roles/RoleBaselines/AppDevelopmentRoleBaseline.php"
-code = "redundant-null-coalesce"
-message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
-count = 2
-
-[[issues]]
-file = "app/Services/Nodes/Roles/RoleBaselines/AppDevelopmentRoleBaseline.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$reason` is already `string`."
 count = 1
 
 [[issues]]
@@ -5767,6 +4879,12 @@ message = "Redundant type assertion: `$process->runtime_config` is already `arra
 count = 2
 
 [[issues]]
+file = "app/Services/Nodes/Roles/RoleBaselines/RoleRuntimeConverger.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
 file = "app/Services/Nodes/Roles/RoleBaselines/RouterRoleBaseline.php"
 code = "redundant-logical-operation"
 message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
@@ -5812,7 +4930,7 @@ count = 1
 file = "app/Services/Nodes/Roles/RoleBaselines/WebSocketRoleBaseline.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 3
+count = 7
 
 [[issues]]
 file = "app/Services/Nodes/Roles/RoleBaselines/WebSocketRoleBaseline.php"
@@ -5848,7 +4966,7 @@ count = 1
 file = "app/Services/Nodes/Roles/RoleSelfGrantMaterializer.php"
 code = "redundant-null-coalesce"
 message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
-count = 1
+count = 3
 
 [[issues]]
 file = "app/Services/Operations/FleetAgentArtifactProbe.php"
@@ -5873,12 +4991,6 @@ file = "app/Services/Operations/FleetUpdateTargetSelector.php"
 code = "mixed-method-access"
 message = "Attempting to access a method on a non-object type (`mixed`)."
 count = 4
-
-[[issues]]
-file = "app/Services/Operations/FleetUpdateTargetSelector.php"
-code = "mixed-return-statement"
-message = 'Could not infer a precise return type for function `App\Services\Operations\FleetUpdateTargetSelector::workloadNodes`. Saw type `mixed`.'
-count = 1
 
 [[issues]]
 file = "app/Services/Operations/FleetUpdateTargetSelector.php"
@@ -5944,7 +5056,7 @@ count = 1
 file = "app/Services/Operations/GatewayServiceUpdater.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 3
+count = 9
 
 [[issues]]
 file = "app/Services/Operations/InternalExecutorTokenIdentityResolver.php"
@@ -6005,6 +5117,24 @@ file = "app/Services/Operations/OperationRunRecorder.php"
 code = "redundant-comparison"
 message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
 count = 1
+
+[[issues]]
+file = "app/Services/Operations/OperationStreamFrameBroadcaster.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Services/Operations/OperationStreamSubscriberLeases.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Services/Operations/OperationStreamTokens.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 4
 
 [[issues]]
 file = "app/Services/Operations/OperationTokenFactory.php"
@@ -6136,7 +5266,7 @@ count = 1
 file = "app/Services/Operations/WorkloadNodeUpdater.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 5
+count = 6
 
 [[issues]]
 file = "app/Services/Operations/WorkloadNodeUpdater.php"
@@ -6154,6 +5284,18 @@ count = 1
 file = "app/Services/OrbitHostInstaller.php"
 code = "possibly-invalid-argument"
 message = '''Possible argument type mismatch for argument #5 of `App\Services\RemoteShell\SshCommandBuilder::scpToNode`: expected `array{'batch_mode'?: bool, 'connect_timeout'?: int, 'global_known_hosts_file'?: string, 'strict_host_key_checking'?: string, 'update_host_keys'?: bool, 'user_known_hosts_file'?: string}`, but possibly received `array{'batch_mode': true, 'prefer_public_host': true, 'strict_host_key_checking': string('yes')}`.'''
+count = 1
+
+[[issues]]
+file = "app/Services/Php/PhpRuntimeCatalog.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Services/Php/PhpRuntimeImageInventoryMapper.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]
@@ -6178,13 +5320,19 @@ count = 1
 file = "app/Services/Php/PhpRuntimeManager.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 4
+count = 2
+
+[[issues]]
+file = "app/Services/Php/PhpRuntimeManager.php"
+code = "redundant-nullsafe-operator"
+message = "Redundant nullsafe operator (`?->`) used on an expression that is never `null`."
+count = 1
 
 [[issues]]
 file = "app/Services/Processes/ProcessDockerContainerRenderer.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 8
+count = 9
 
 [[issues]]
 file = "app/Services/Processes/ProcessDockerContainerRenderer.php"
@@ -6223,27 +5371,9 @@ message = "Redundant type assertion: `$version` is already `string`."
 count = 1
 
 [[issues]]
-file = "app/Services/Processes/ProcessListPayload.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Services\Processes\ProcessListPayload::forContext`: expected `array{'context': array{'app': null|string, 'node': string, 'workspace': null|string}, 'processes': list<array<string, mixed>>}`, but found `array{'context': array{'app': null|string, 'node': string, 'workspace': null|string}, 'processes': array<int, array{'app': null|string, 'command': string, 'crash_notification': string('agent_ide')|string('none'), 'last_event': array{'id': int, 'type': string}|null, 'name': string, 'node': string, 'restart_policy': string('always')|string('never')|string('on_failure'), 'runtime': string('docker')|string('docker-swarm')|string('launchd')|string('systemd'), 'runtime_unit': string, 'service': array<string, mixed>|null, 'tool': null|string, 'workspace': null|string}>}`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/Processes/ProcessListPayload.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Services/Processes/ProcessListPayload.php:74:17}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
 file = "app/Services/Processes/ProcessOwnerContext.php"
 code = "docblock-type-mismatch"
 message = "Docblock type mismatch for variable `$processes`."
-count = 1
-
-[[issues]]
-file = "app/Services/Processes/ProcessOwnerContext.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Database\Eloquent\Relations\MorphMany<App\Models\Process, App\Models\App&static>|Illuminate\Database\Eloquent\Relations\MorphMany<App\Models\Process, App\Models\Node&static>|Illuminate\Database\Eloquent\Relations\MorphMany<App\Models\Process, App\Models\Workspace&static>` is less specific than the declared return type `Illuminate\Database\Eloquent\Relations\MorphMany<App\Models\Process, App\Models\App>|Illuminate\Database\Eloquent\Relations\MorphMany<App\Models\Process, App\Models\Node>|Illuminate\Database\Eloquent\Relations\MorphMany<App\Models\Process, App\Models\Workspace>` for function `App\Services\Processes\ProcessOwnerContext::ownerProcesses`.'
 count = 1
 
 [[issues]]
@@ -6254,8 +5384,8 @@ count = 1
 
 [[issues]]
 file = "app/Services/Processes/ProcessOwnerContextResolver.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `Illuminate\Database\Eloquent\Collection::map`: expected `(callable(App\Models\Workspace&static|Illuminate\Database\Eloquent\Model, int): null|string)`, but found `(closure(App\Models\Workspace): null|string)`.'
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
 count = 1
 
 [[issues]]
@@ -6271,52 +5401,28 @@ message = 'Invalid return type for function `App\Services\Processes\ProcessOwner
 count = 1
 
 [[issues]]
-file = "app/Services/Processes/ProcessOwnerContextResolver.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Services/Processes/ProcessOwnerContextResolver.php:131:46}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
+file = "app/Services/Processes/ProcessRuntimeDriverRegistry.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\Services\Processes\ProcessRuntimeDriverRegistry::resolveRuntime`: expected `enum(App\Enums\Processes\ProcessRuntime)|null|string`, but found `mixed`.'
 count = 1
 
 [[issues]]
-file = "app/Services/Processes/ProcessOwnerContextResolver.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Services/Processes/ProcessOwnerContextResolver.php:186:79}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 2
-
-[[issues]]
-file = "app/Services/Processes/ProcessOwnerContextResolver.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Services/Processes/ProcessOwnerContextResolver.php:273:46}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Processes/ProcessOwnerContextResolver.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #3 of `App\Services\Processes\ProcessOwnerContext::__construct`: expected `App\Models\Workspace|null`, but provided type `App\Models\Workspace&static|Illuminate\Database\Eloquent\Model` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/Processes/ProcessOwnerContextResolver.php"
-code = "less-specific-return-statement"
-message = 'Returned type `$this(Illuminate\Database\Query\Builder)|Illuminate\Database\Eloquent\Builder<App\Models\App&static>&static` is less specific than the declared return type `Illuminate\Database\Eloquent\Builder<App\Models\App>` for function `App\Services\Processes\ProcessOwnerContextResolver::visibleApps`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Processes/ProcessOwnerContextResolver.php"
+file = "app/Services/Processes/ProcessRuntimeDrivers/DockerProcessRuntimeDriver.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]
-file = "app/Services/Processes/ProcessOwnerContextResolver.php"
-code = "non-documented-property"
-message = 'Ambiguous property access: $app on class `Illuminate\Database\Eloquent\Model`.'
-count = 1
+file = "app/Services/Processes/ProcessRuntimeDrivers/DockerProcessRuntimeDriver.php"
+code = "redundant-condition"
+message = "Redundant ternary operator: condition is always truthy."
+count = 2
 
 [[issues]]
-file = "app/Services/Processes/ProcessRuntimeDriverRegistry.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Services\Processes\ProcessRuntimeDriverRegistry::resolveRuntime`: expected `enum(App\Enums\Processes\ProcessRuntime)|null|string`, but found `mixed`.'
-count = 1
+file = "app/Services/Processes/ProcessRuntimeDrivers/DockerProcessRuntimeDriver.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$process->runtime_config` is already `array<string, mixed>`."
+count = 2
 
 [[issues]]
 file = "app/Services/Processes/ProcessRuntimeDrivers/DockerSwarmProcessRuntimeDriver.php"
@@ -6328,7 +5434,7 @@ count = 1
 file = "app/Services/Processes/ProcessRuntimeDrivers/DockerSwarmProcessRuntimeDriver.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
+count = 3
 
 [[issues]]
 file = "app/Services/Processes/ProcessRuntimeDrivers/DockerSwarmProcessRuntimeDriver.php"
@@ -6379,9 +5485,15 @@ message = "Redundant type assertion: `$process->runtime_config` is already `arra
 count = 1
 
 [[issues]]
-file = "app/Services/Processes/ProcessServiceCatalog.php"
-code = "mixed-argument"
-message = '''Invalid argument type for argument #2 of `App\Services\Processes\ProcessServiceCatalog::resolveVersion`: expected `array<array-key, array{'default': string, 'port': int, 'versions': list<string>}>`, but found `mixed`.'''
+file = "app/Services/Processes/ProcessRuntimeUnitResolver.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Services/Processes/ProcessRuntimeUnitResolver.php"
+code = "non-documented-property"
+message = 'Ambiguous property access: $app on class `Illuminate\Database\Eloquent\Model`.'
 count = 1
 
 [[issues]]
@@ -6394,12 +5506,18 @@ count = 1
 file = "app/Services/Processes/ProcessServiceCatalog.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 3
+count = 5
 
 [[issues]]
 file = "app/Services/Processes/ProcessServiceCatalog.php"
 code = "possibly-null-array-index"
 message = "Possibly using `null` as an array index to access elementof variable $versions."
+count = 1
+
+[[issues]]
+file = "app/Services/Processes/ProcessServiceCatalog.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
 count = 1
 
 [[issues]]
@@ -6453,12 +5571,6 @@ count = 2
 [[issues]]
 file = "app/Services/Processes/ProcessesProbe.php"
 code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Services\Processes\ProcessDockerContainerRenderer::render` is possibly `null`, but parameter type `App\Models\App` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Services/Processes/ProcessesProbe.php"
-code = "possibly-null-argument"
 message = 'Argument #1 of method `App\Services\Processes\SystemdUnitRenderer::render` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
 count = 1
 
@@ -6496,37 +5608,37 @@ count = 3
 file = "app/Services/Processes/ProcessesProbe.php"
 code = "redundant-type-comparison"
 message = "Redundant condition: variable `$process->command` (type `string`) is already known to be `string`."
-count = 7
+count = 1
 
 [[issues]]
 file = "app/Services/Processes/ProcessesProbe.php"
 code = "redundant-type-comparison"
 message = "Redundant condition: variable `$process->name` (type `string`) is already known to be `string`."
-count = 9
+count = 1
 
 [[issues]]
 file = "app/Services/Processes/ProcessesProbe.php"
 code = "redundant-type-comparison"
 message = "Redundant condition: variable `$process->node_id` (type `int`) is already known to be `int`."
-count = 12
+count = 4
 
 [[issues]]
 file = "app/Services/Processes/ProcessesProbe.php"
 code = "redundant-type-comparison"
 message = "Redundant condition: variable `$process->owner_id` (type `int`) is already known to be `int`."
-count = 10
+count = 2
 
 [[issues]]
 file = "app/Services/Processes/ProcessesProbe.php"
 code = "redundant-type-comparison"
 message = "Redundant condition: variable `$process->owner_type` (type `string`) is already known to be `string`."
-count = 12
+count = 4
 
 [[issues]]
 file = "app/Services/Processes/ProcessesProbe.php"
 code = "redundant-type-comparison"
 message = "Redundant condition: variable `$process->sort_order` (type `int`) is already known to be `int`."
-count = 5
+count = 1
 
 [[issues]]
 file = "app/Services/Processes/ProcessesProbe.php"
@@ -6602,9 +5714,21 @@ count = 1
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteAdopter.php"
+code = "redundant-null-coalesce"
+message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
+count = 1
+
+[[issues]]
+file = "app/Services/Proxy/ProxyRouteAdopter.php"
 code = "reference-to-undefined-variable"
 message = "Reference created from a previously undefined variable `$m`."
 count = 2
+
+[[issues]]
+file = "app/Services/Proxy/ProxyRouteEnactment.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 4
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteFixer.php"
@@ -6656,12 +5780,6 @@ count = 1
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteProbe.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #1 of `App\Services\Proxy\ProxyRouteProbe::diff`: expected `App\Models\ProxyRoute`, but provided type `Illuminate\Database\Eloquent\Model` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/Proxy/ProxyRouteProbe.php"
 code = "less-specific-return-statement"
 message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Services\Proxy\ProxyRouteProbe::publicObservation`.'
 count = 1
@@ -6688,7 +5806,7 @@ count = 1
 file = "app/Services/Proxy/ProxyRouteProbe.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 19
+count = 23
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteProbe.php"
@@ -6698,27 +5816,21 @@ count = 1
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteProbe.php"
-code = "non-documented-property"
-message = 'Ambiguous property access: $domain on class `Illuminate\Database\Eloquent\Model`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Proxy/ProxyRouteProbe.php"
-code = "possibly-invalid-argument"
-message = 'Possible argument type mismatch for argument #1 of `App\Services\Proxy\ProxyRouteProbe::expectedRouteDomainsForNode`: expected `list<App\Models\ProxyRoute>`, but possibly received `array<int, App\Models\ProxyRoute&static>`.'
-count = 2
-
-[[issues]]
-file = "app/Services/Proxy/ProxyRouteProbe.php"
 code = "redundant-condition"
 message = "Redundant ternary operator: condition is always truthy."
-count = 2
+count = 3
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteProbe.php"
 code = "redundant-logical-operation"
 message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
-count = 2
+count = 3
+
+[[issues]]
+file = "app/Services/Proxy/ProxyRouteProbe.php"
+code = "redundant-logical-operation"
+message = "Redundant `||` operation: left operand is always falsy and right operand is always falsy."
+count = 1
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteProbe.php"
@@ -6730,6 +5842,12 @@ count = 2
 file = "app/Services/Proxy/ProxyRouteProbe.php"
 code = "redundant-null-coalesce"
 message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
+count = 4
+
+[[issues]]
+file = "app/Services/Proxy/ProxyRouteProbe.php"
+code = "redundant-type-comparison"
+message = "Redundant condition: variable `$expiresAt` (type `int`) is already known to be `int`."
 count = 2
 
 [[issues]]
@@ -6759,6 +5877,24 @@ count = 3
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteProbe.php"
 code = "redundant-type-comparison"
+message = "Redundant condition: variable `$startsAt` (type `int`) is already known to be `int`."
+count = 2
+
+[[issues]]
+file = "app/Services/Proxy/ProxyRouteProbe.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$expiresAt` is already `int`."
+count = 1
+
+[[issues]]
+file = "app/Services/Proxy/ProxyRouteProbe.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$node->tld` is already `string`."
+count = 1
+
+[[issues]]
+file = "app/Services/Proxy/ProxyRouteProbe.php"
+code = "redundant-type-comparison"
 message = "Redundant type assertion: `$route->domain` is already `string`."
 count = 1
 
@@ -6775,27 +5911,9 @@ message = "Redundant type assertion: `$route->source_hash` is already `string`."
 count = 3
 
 [[issues]]
-file = "app/Services/Proxy/ProxyRouteQuery.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `Illuminate\Database\Eloquent\Collection::map`: expected `(callable(Illuminate\Database\Eloquent\Model, int): array<string, mixed>)`, but found `(closure(App\Models\ProxyRoute): array<string, mixed>)`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Proxy/ProxyRouteQuery.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #2 of `Illuminate\Support\Traits\Conditionable::when`: expected `(callable($this(Illuminate\Database\Query\Builder), bool): $this(Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>))|null`, but found `(closure(Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>): $this(Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>))`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Proxy/ProxyRouteQuery.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #2 of `Illuminate\Support\Traits\Conditionable::when`: expected `(callable($this(Illuminate\Database\Query\Builder), bool): Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>)|null`, but found `(closure(Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>): Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>)`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Proxy/ProxyRouteQuery.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Services\Proxy\ProxyRouteQuery::list`: expected `array{'meta': array{'count': int, 'filter': string, 'node': null|string}, 'routes': list<array<string, mixed>>}`, but found `array{'meta': array{'count': non-negative-int, 'filter': string, 'node': null|string}, 'routes': array<int, array<string, mixed>>}`.'''
+file = "app/Services/Proxy/ProxyRouteProbe.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$startsAt` is already `int`."
 count = 1
 
 [[issues]]
@@ -6808,12 +5926,6 @@ count = 1
 file = "app/Services/Proxy/ProxyRouteQuery.php"
 code = "invalid-return-statement"
 message = 'Invalid return type for function `App\Services\Proxy\ProxyRouteQuery::visibleNodeIds`: expected `list<int>`, but found `array<array-key, mixed>`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Proxy/ProxyRouteQuery.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Services/Proxy/ProxyRouteQuery.php:65:67}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
 count = 1
 
 [[issues]]
@@ -6838,7 +5950,7 @@ count = 1
 file = "app/Services/Proxy/ProxyRouteRenderer.php"
 code = "impossible-condition"
 message = "This condition (type `false`) will always evaluate to false."
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteRenderer.php"
@@ -6878,15 +5990,9 @@ count = 1
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteRenderer.php"
-code = "redundant-null-coalesce"
-message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
-count = 1
-
-[[issues]]
-file = "app/Services/Proxy/ProxyRouteRenderer.php"
 code = "redundant-nullsafe-operator"
 message = "Redundant nullsafe operator (`?->`) used on an expression that is never `null`."
-count = 5
+count = 4
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteRenderer.php"
@@ -6964,7 +6070,7 @@ count = 1
 file = "app/Services/RemoteShell/RemoteLocalExecutor.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 5
+count = 4
 
 [[issues]]
 file = "app/Services/RemoteShell/RemoteLocalExecutor.php"
@@ -7073,18 +6179,6 @@ file = "app/Services/RemoteShell/SshCommandBuilder.php"
 code = "redundant-null-coalesce"
 message = "Redundant null coalesce: left-hand side is always `null`."
 count = 2
-
-[[issues]]
-file = "app/Services/RemoteShell/SshRemoteShellStream.php"
-code = "possibly-invalid-argument"
-message = '''Possible argument type mismatch for argument #2 of `App\Services\RemoteShell\SshRemoteShellStream::composeScript`: expected `array{'cwd'?: string, 'metadata'?: array<string, string>}`, but possibly received `array{'cwd'?: string, 'metadata'?: array<string, string>, 'timeout'?: int|null}`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/RemoteShell/SshRemoteShellStream.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
-count = 1
 
 [[issues]]
 file = "app/Services/Runtime/DockerCommandBuilder.php"
@@ -7199,36 +6293,6 @@ file = "app/Services/Runtime/OrbitGatewayContainerRenderer.php"
 code = "redundant-type-comparison"
 message = "Redundant type assertion: `$key` is already `string`."
 count = 1
-
-[[issues]]
-file = "app/Services/Runtime/OrbitHostCwdResolver.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #3 of `App\Services\Runtime\OrbitHostCwdResolver::longestPathMatch`: expected `(callable(stdClass): string)`, but found `(closure(App\Models\App): string)`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Runtime/OrbitHostCwdResolver.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #3 of `App\Services\Runtime\OrbitHostCwdResolver::longestPathMatch`: expected `(callable(stdClass): string)`, but found `(closure(App\Models\Workspace): string)`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Runtime/OrbitHostCwdResolver.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\Runtime\OrbitHostCwdResolver::bestMatchingApp`: expected `App\Models\App|null`, but found `null|stdClass`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Runtime/OrbitHostCwdResolver.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\Runtime\OrbitHostCwdResolver::bestMatchingWorkspace`: expected `App\Models\Workspace|null`, but found `null|stdClass`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Runtime/OrbitHostCwdResolver.php"
-code = "template-constraint-violation"
-message = "Argument type mismatch for template `TValue`."
-count = 2
 
 [[issues]]
 file = "app/Services/S3/S3CredentialsAction.php"
@@ -7424,18 +6488,6 @@ count = 1
 
 [[issues]]
 file = "app/Services/Schedules/SchedulePayload.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Services\Schedules\SchedulePayload::list`: expected `array{'meta': array{'app': null|string, 'count': int, 'node': null|string}, 'schedules': list<array<string, mixed>>}`, but found `array{'meta': array{'app': null|string, 'count': non-negative-int, 'node': null|string}, 'schedules': array<int, array<string, mixed>>}`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/Schedules/SchedulePayload.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `{closure:app/Services/Schedules/SchedulePayload.php:169:45}`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Schedules/SchedulePayload.php"
 code = "less-specific-return-statement"
 message = 'Returned type `Illuminate\Database\Eloquent\Builder<App\Models\Schedule&static>&static|Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>&static` is less specific than the declared return type `Illuminate\Database\Eloquent\Builder<App\Models\Schedule>` for function `App\Services\Schedules\SchedulePayload::visibleSchedules`.'
 count = 1
@@ -7444,12 +6496,6 @@ count = 1
 file = "app/Services/Schedules/SchedulePayload.php"
 code = "never-return"
 message = "Cannot return value with type 'never' from this function."
-count = 1
-
-[[issues]]
-file = "app/Services/Schedules/SchedulePayload.php"
-code = "non-documented-method"
-message = 'Ambiguous method call to `orwherehas` on class `Illuminate\Database\Query\Builder`.'
 count = 1
 
 [[issues]]
@@ -7519,12 +6565,6 @@ message = "Redundant cast to `(string)`: the expression already has this type."
 count = 1
 
 [[issues]]
-file = "app/Services/Solo/SoloUpstreamTargetResolver.php"
-code = "redundant-docblock-type"
-message = "Redundant docblock type for variable `$node`."
-count = 1
-
-[[issues]]
 file = "app/Services/Support/GatewayActionResult.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
@@ -7534,6 +6574,30 @@ count = 1
 file = "app/Services/Tools/AgentToolAuthorizer.php"
 code = "invalid-return-statement"
 message = 'Invalid return type for function `App\Services\Tools\AgentToolAuthorizer::runningAgentToolsOnNode`: expected `list<string>`, but found `array<array-key, mixed>`.'
+count = 1
+
+[[issues]]
+file = "app/Services/Tools/ProcessToolLifecycleRunner.php"
+code = "redundant-condition"
+message = "Redundant ternary operator: condition is always truthy."
+count = 1
+
+[[issues]]
+file = "app/Services/Tools/ProcessToolLifecycleRunner.php"
+code = "redundant-null-coalesce"
+message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
+count = 2
+
+[[issues]]
+file = "app/Services/Tools/ToolCatalog.php"
+code = "redundant-cast"
+message = "Redundant cast to `(string)`: the expression already has this type."
+count = 1
+
+[[issues]]
+file = "app/Services/Tools/ToolInstallPreflight.php"
+code = "redundant-cast"
+message = "Redundant cast to `(string)`: the expression already has this type."
 count = 1
 
 [[issues]]
@@ -7558,7 +6622,7 @@ count = 5
 file = "app/Services/Tools/ToolInstaller.php"
 code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Services/Tools/ToolInstaller.php"
@@ -7568,9 +6632,21 @@ count = 1
 
 [[issues]]
 file = "app/Services/Tools/ToolInstaller.php"
+code = "redundant-condition"
+message = "Redundant ternary operator: condition is always truthy."
+count = 2
+
+[[issues]]
+file = "app/Services/Tools/ToolInstaller.php"
 code = "redundant-docblock-type"
 message = "Redundant docblock type for variable `$config`."
 count = 1
+
+[[issues]]
+file = "app/Services/Tools/ToolInstaller.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$node->tld` is already `string`."
+count = 2
 
 [[issues]]
 file = "app/Services/Tools/ToolPayloadMapper.php"
@@ -7598,39 +6674,21 @@ count = 1
 
 [[issues]]
 file = "app/Services/Tools/ToolRegistry.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `Illuminate\Support\Collection::sort`: expected `(callable(App\Models\NodeTool&static|Illuminate\Database\Eloquent\Model, App\Models\NodeTool&static|Illuminate\Database\Eloquent\Model): int)|int|null`, but found `(closure(App\Models\NodeTool, App\Models\NodeTool): int(-1)|int(0)|int(1))`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Tools/ToolRegistry.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\Tools\ToolRegistry::gatewayNodeIds`: expected `list<int>`, but found `array<array-key, int>`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Tools/ToolRegistry.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\Tools\ToolRegistry::resolveNode`: expected `App\Models\Node|null`, but found `null|stdClass`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Tools/ToolRegistry.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\Tools\ToolRegistry::visibleManagedToolNodeQuery`: expected `Illuminate\Database\Eloquent\Builder<Illuminate\Database\Eloquent\Model>`, but found `$this(Illuminate\Database\Query\Builder)`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Tools/ToolRegistry.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Database\Eloquent\Collection<int, Illuminate\Database\Eloquent\Model>&static` is less specific than the declared return type `Illuminate\Database\Eloquent\Collection<int, App\Models\NodeTool>` for function `App\Services\Tools\ToolRegistry::list`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Tools/ToolRegistry.php"
 code = "mixed-return-statement"
 message = 'Could not infer a precise return type for function `App\Services\Tools\ToolRegistry::show`. Saw type `mixed`.'
 count = 1
+
+[[issues]]
+file = "app/Services/Tools/ToolRuntimeResolver.php"
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
+count = 1
+
+[[issues]]
+file = "app/Services/Tools/ToolScriptDispatcher.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 4
 
 [[issues]]
 file = "app/Services/Tools/ToolShowLiveInspector.php"
@@ -7672,36 +6730,18 @@ count = 2
 file = "app/Services/Tools/ToolsFixer.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 5
+count = 3
 
 [[issues]]
 file = "app/Services/Tools/ToolsFixer.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Contracts\RemoteShell::run` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 2
-
-[[issues]]
-file = "app/Services/Tools/ToolsFixer.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Services\Tools\ToolsFixer::agentProxyRouteSourceHash` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Services/Tools/ToolsFixer.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Services\Tools\ToolsFixer::agentTldForNode` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 2
-
-[[issues]]
-file = "app/Services/Tools/ToolsFixer.php"
-code = "redundant-condition"
-message = "Redundant ternary operator: condition is always truthy."
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
 count = 1
 
 [[issues]]
 file = "app/Services/Tools/ToolsFixer.php"
 code = "redundant-type-comparison"
-message = "Redundant type assertion: `$settings` is already `array<string, mixed>`."
+message = "Redundant type assertion: `$node->tld` is already `string`."
 count = 1
 
 [[issues]]
@@ -7750,13 +6790,7 @@ count = 1
 file = "app/Services/Tools/ToolsProbe.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 13
-
-[[issues]]
-file = "app/Services/Tools/ToolsProbe.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Contracts\RemoteShell::run` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 2
+count = 11
 
 [[issues]]
 file = "app/Services/Tools/ToolsProbe.php"
@@ -7790,12 +6824,6 @@ count = 1
 
 [[issues]]
 file = "app/Services/Tools/ToolsProbe.php"
-code = "redundant-condition"
-message = "Redundant ternary operator: condition is always truthy."
-count = 1
-
-[[issues]]
-file = "app/Services/Tools/ToolsProbe.php"
 code = "redundant-logical-operation"
 message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
 count = 1
@@ -7804,25 +6832,13 @@ count = 1
 file = "app/Services/Tools/ToolsProbe.php"
 code = "redundant-null-coalesce"
 message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
-count = 5
-
-[[issues]]
-file = "app/Services/Tools/ToolsProbe.php"
-code = "redundant-nullsafe-operator"
-message = "Redundant nullsafe operator (`?->`) used on an expression that is never `null`."
-count = 5
+count = 2
 
 [[issues]]
 file = "app/Services/Tools/ToolsProbe.php"
 code = "redundant-type-comparison"
 message = "Redundant condition: variable `$tool->node_id` (type `int`) is already known to be `int`."
 count = 2
-
-[[issues]]
-file = "app/Services/Tools/ToolsProbe.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$settings` is already `array<string, mixed>`."
-count = 1
 
 [[issues]]
 file = "app/Services/Tools/ToolsProbe.php"
@@ -7912,7 +6928,7 @@ count = 1
 file = "app/Services/Vpn/WgEasyVpnBackend.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
+count = 2
 
 [[issues]]
 file = "app/Services/Vpn/WgEasyVpnBackend.php"
@@ -7969,24 +6985,6 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 1
 
 [[issues]]
-file = "app/Services/WebSockets/WebSocketValkeyResolver.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Services/WebSockets/WebSocketValkeyResolver.php"
-code = "mixed-method-access"
-message = "Attempting to access a method on a non-object type (`mixed`)."
-count = 2
-
-[[issues]]
-file = "app/Services/WebSockets/WebSocketValkeyResolver.php"
-code = "non-documented-method"
-message = 'Ambiguous method call to `ownedby` on class `Illuminate\Database\Eloquent\Builder`.'
-count = 1
-
-[[issues]]
 file = "app/Services/WebSockets/WebSocketRouteRegistrar.php"
 code = "docblock-type-mismatch"
 message = "Docblock type mismatch for variable `$nodes`."
@@ -8031,7 +7029,7 @@ count = 2
 [[issues]]
 file = "app/Services/WebSockets/WebSocketRouteRegistrar.php"
 code = "redundant-type-comparison"
-message = 'Redundant condition: variable `$binding->app` (type `App\Models\App`) is already known to be `App\Models\App`.'
+message = 'Redundant condition: variable `$binding->app` (type `App\Models\Project`) is already known to be `App\Models\Project`.'
 count = 2
 
 [[issues]]
@@ -8101,6 +7099,24 @@ message = "Reference created from a previously undefined variable `$matches`."
 count = 1
 
 [[issues]]
+file = "app/Services/WebSockets/WebSocketValkeyResolver.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/WebSocketValkeyResolver.php"
+code = "mixed-method-access"
+message = "Attempting to access a method on a non-object type (`mixed`)."
+count = 2
+
+[[issues]]
+file = "app/Services/WebSockets/WebSocketValkeyResolver.php"
+code = "non-documented-method"
+message = 'Ambiguous method call to `ownedby` on class `Illuminate\Database\Eloquent\Builder`.'
+count = 1
+
+[[issues]]
 file = "app/Services/WireGuard/WireGuardPeerRealityProbe.php"
 code = "redundant-logical-operation"
 message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
@@ -8126,15 +7142,9 @@ count = 1
 
 [[issues]]
 file = "app/Services/Workspaces/EnsureWorkspaceProxyRoute.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #2 of `App\Services\Proxy\ProxyRouteRenderer::renderPrivateBackend`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/EnsureWorkspaceProxyRoute.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 5
+count = 2
 
 [[issues]]
 file = "app/Services/Workspaces/EnsureWorkspaceProxyRoute.php"
@@ -8197,9 +7207,33 @@ message = '''Invalid return type for function `App\Services\Workspaces\Workspace
 count = 1
 
 [[issues]]
+file = "app/Services/Workspaces/WorkspacePlacement.php"
+code = "redundant-condition"
+message = "Redundant ternary operator: condition is always truthy."
+count = 2
+
+[[issues]]
+file = "app/Services/Workspaces/WorkspacePlacement.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
+count = 1
+
+[[issues]]
+file = "app/Services/Workspaces/WorkspacePlacement.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$node->tld` is already `string`."
+count = 2
+
+[[issues]]
 file = "app/Services/Workspaces/WorkspaceReadinessProbe.php"
 code = "reference-to-undefined-variable"
 message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Services/Workspaces/WorkspaceRoleGuard.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
 count = 1
 
 [[issues]]
@@ -8228,50 +7262,8 @@ count = 1
 
 [[issues]]
 file = "app/Services/Workspaces/WorkspaceSetupStepRunner.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspaceSetupStepRunner.php"
-code = "mixed-method-access"
-message = "Attempting to access a method on a non-object type (`mixed`)."
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspaceSetupStepRunner.php"
 code = "non-documented-method"
 message = 'Ambiguous method call to `create` on class `App\Models\WorkspaceRunStep`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
-code = "invalid-argument"
-message = 'Invalid argument type for argument #1 of `Illuminate\Support\Collection::first`: expected `(callable(Illuminate\Database\Eloquent\Model, array-key): bool)|null`, but found `(closure(App\Models\App): bool)`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\Workspaces\WorkspaceSetupTargetResolver::appsForCaller`: expected `list<App\Models\App>`, but found `array<int, App\Models\App&static>`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #1 of `App\Services\Workspaces\WorkspaceSetupTargetResolver::adapterConfirmsRegisteredWorkspace`: expected `App\Models\Workspace`, but provided type `Illuminate\Database\Eloquent\Model` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
-code = "less-specific-return-statement"
-message = '''Returned type `array{'type': string('workspace'), 'workspace': Illuminate\Database\Eloquent\Model}` is less specific than the declared return type `array{'app': App\Models\App, 'type': string('app_root')|string('inside_app')}|array{'type': string('unregistered')}|array{'type': string('workspace'), 'workspace': App\Models\Workspace}` for function `App\Services\Workspaces\WorkspaceSetupTargetResolver::pathOwnership`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Services\Workspaces\WorkspaceSetupTargetResolver::normalizePath`: expected `string`, but found `mixed`.'
 count = 1
 
 [[issues]]
@@ -8300,50 +7292,20 @@ count = 2
 
 [[issues]]
 file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
-code = "non-documented-property"
-message = 'Ambiguous property access: $path on class `Illuminate\Database\Eloquent\Model`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
 code = "possibly-null-argument"
 message = 'Argument #1 of method `App\Services\Workspaces\WorkspaceSetupTargetResolver::unwrap` is possibly `null`, but parameter type `App\Models\Workspace` does not accept it.'
-count = 2
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
-code = "possibly-undefined-string-array-index"
-message = '''Possibly undefined array key accessed on `array{'app': App\Models\App, 'type': string('app_root')|string('inside_app')}|array{'type': string('unregistered')}`.'''
 count = 1
 
 [[issues]]
 file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
-code = "possibly-undefined-string-array-index"
-message = '''Possibly undefined array key accessed on `array{'app': App\Models\App, 'type': string('app_root')|string('inside_app')}|array{'type': string('unregistered')}|array{'type': string('workspace'), 'workspace': App\Models\Workspace}`.'''
+code = "redundant-logical-operation"
+message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
 count = 1
 
 [[issues]]
 file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
-code = "possibly-undefined-string-array-index"
-message = '''Possibly undefined array key accessed on `array{'app': App\Models\App, 'type': string('inside_app')}|array{'type': string('unregistered')}`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspaceShowPayload.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Services\Workspaces\WorkspaceShowPayload::forWorkspace`: expected `array{'inherited_processes': list<array{'name': string}>, 'node': array{'host': null|string, 'name': null|string}, 'workspace': array<string, mixed>}`, but found `array{'inherited_processes': array<int, array{'name': string}>, 'node': array{'host': null|string, 'name': null|string}, 'workspace': array{'adopted': false, 'agent_ide': array{'adapter': null|string, 'workspace_id': null|string}, 'app': null|string, 'lifecycle_status': string('active')|string('expected')|string('setup-pending'), 'name': string, 'node': null|string, 'path': string, 'php_inherited': bool, 'php_version': null|string, 'url': string}}`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspaceStepListPayload.php"
-code = "docblock-type-mismatch"
-message = "Docblock type mismatch for variable `$steps`."
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspaceStepListPayload.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Services\Workspaces\WorkspaceStepListPayload::forApp`: expected `list<array<string, mixed>>`, but found `array<int, array{'app': string, 'command': string, 'id': int, 'order': int, 'phase': string('setup')|string('teardown'), 'timeout_seconds': int}>`.'''
+code = "redundant-type-comparison"
+message = 'Redundant condition: variable `$instance` (type `App\Models\AppInstance`) is already known to be `App\Models\AppInstance`.'
 count = 1
 
 [[issues]]
@@ -8372,6 +7334,12 @@ count = 1
 
 [[issues]]
 file = "app/Services/Workspaces/WorkspacesProbe.php"
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
+count = 1
+
+[[issues]]
+file = "app/Services/Workspaces/WorkspacesProbe.php"
 code = "less-specific-nested-argument-type"
 message = "Argument type mismatch for argument #2 of `implode`: expected `array<array-key, Stringable|null|scalar>|null`, but provided type `list<mixed>` is less specific."
 count = 1
@@ -8379,14 +7347,8 @@ count = 1
 [[issues]]
 file = "app/Services/Workspaces/WorkspacesProbe.php"
 code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Contracts\RemoteShell::run` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspacesProbe.php"
-code = "possibly-null-argument"
 message = 'Argument #1 of method `App\Services\Php\PhpRuntimeCatalog::supports` is possibly `null`, but parameter type `string` does not accept it.'
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Services/Workspaces/WorkspacesProbe.php"
@@ -8398,25 +7360,25 @@ count = 1
 file = "app/Services/Workspaces/WorkspacesProbe.php"
 code = "redundant-logical-operation"
 message = "Redundant `||` operation: left operand is evaluated and right operand is always falsy."
-count = 2
-
-[[issues]]
-file = "app/Services/Workspaces/WorkspacesProbe.php"
-code = "redundant-nullsafe-operator"
-message = "Redundant nullsafe operator (`?->`) used on an expression that is never `null`."
-count = 5
+count = 3
 
 [[issues]]
 file = "app/Services/Workspaces/WorkspacesProbe.php"
 code = "redundant-type-comparison"
 message = "Redundant condition: variable `$workspace->app_id` (type `int`) is already known to be `int`."
+count = 8
+
+[[issues]]
+file = "app/Services/Workspaces/WorkspacesProbe.php"
+code = "redundant-type-comparison"
+message = "Redundant condition: variable `$workspace->app_instance_id` (type `int`) is already known to be `int`."
 count = 7
 
 [[issues]]
 file = "app/Services/Workspaces/WorkspacesProbe.php"
 code = "redundant-type-comparison"
 message = "Redundant condition: variable `$workspace->name` (type `string`) is already known to be `string`."
-count = 8
+count = 9
 
 [[issues]]
 file = "app/Services/Workspaces/WorkspacesProbe.php"
@@ -8428,6 +7390,12 @@ count = 6
 file = "app/Services/Workspaces/WorkspacesProbe.php"
 code = "redundant-type-comparison"
 message = "Redundant type assertion: `$workspace->app_id` is already `int`."
+count = 1
+
+[[issues]]
+file = "app/Services/Workspaces/WorkspacesProbe.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$workspace->app_instance_id` is already `int`."
 count = 1
 
 [[issues]]
@@ -8575,6 +7543,24 @@ message = 'Ambiguous method call to `appdev` on class `Illuminate\Database\Eloqu
 count = 1
 
 [[issues]]
+file = "database/factories/NodeFactory.php"
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
+count = 1
+
+[[issues]]
+file = "database/factories/NodeFactory.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "database/factories/NodeFactory.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$address` is already `string`."
+count = 1
+
+[[issues]]
 file = "database/factories/ProcessFactory.php"
 code = "mixed-return-statement"
 message = 'Could not infer a precise return type for function `Database\Factories\ProcessFactory::nodeIdForOwner`. Saw type `mixed`.'
@@ -8596,25 +7582,19 @@ count = 1
 file = "database/factories/ScheduleFactory.php"
 code = "non-documented-property"
 message = 'Ambiguous property access: $id on class `Illuminate\Database\Eloquent\Collection`.'
-count = 2
+count = 1
 
 [[issues]]
-file = "database/factories/ScheduleFactory.php"
+file = "database/factories/WorkspaceFactory.php"
 code = "non-documented-property"
-message = 'Ambiguous property access: $id on class `Illuminate\Database\Eloquent\Model`.'
-count = 2
+message = 'Ambiguous property access: $id on class `Illuminate\Database\Eloquent\Collection`.'
+count = 1
 
 [[issues]]
-file = "database/factories/ScheduleFactory.php"
+file = "database/factories/WorkspaceStepFactory.php"
 code = "non-documented-property"
-message = 'Ambiguous property access: $name on class `Illuminate\Database\Eloquent\Collection`.'
-count = 2
-
-[[issues]]
-file = "database/factories/ScheduleFactory.php"
-code = "non-documented-property"
-message = 'Ambiguous property access: $name on class `Illuminate\Database\Eloquent\Model`.'
-count = 2
+message = 'Ambiguous property access: $id on class `Illuminate\Database\Eloquent\Collection`.'
+count = 1
 
 [[issues]]
 file = "database/migrations/2026_05_05_180000_create_activity_log_table.php"
@@ -8686,6 +7666,78 @@ count = 7
 file = "database/migrations/2026_07_08_110624_migrate_process_definition_runtime_config_to_service.php"
 code = "less-specific-return-statement"
 message = "Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `{anonymous-class:database/migrations/2026_07_08_110624_migrate_process_definition_runtime_config_to_service.php:8:8}::runtimeConfig`."
+count = 1
+
+[[issues]]
+file = "database/migrations/2026_07_15_000000_canonicalize_process_app_instance_ownership.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 4
+
+[[issues]]
+file = "database/migrations/2026_07_17_000000_canonicalize_websocket_valkey_settings.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 4
+
+[[issues]]
+file = "database/migrations/2026_07_19_000000_restrict_workspaces_to_app_development_nodes.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 4
+
+[[issues]]
+file = "database/migrations/2026_07_19_000000_restrict_workspaces_to_app_development_nodes.php"
+code = "redundant-logical-operation"
+message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
+count = 2
+
+[[issues]]
+file = "database/migrations/2026_07_19_000000_restrict_workspaces_to_app_development_nodes.php"
+code = "redundant-type-comparison"
+message = "Redundant condition: variable `$node` (type `stdClass`) is already known to be `object`."
+count = 2
+
+[[issues]]
+file = "database/migrations/2026_07_19_000000_restrict_workspaces_to_app_development_nodes.php"
+code = "redundant-type-comparison"
+message = "Redundant condition: variable `$ownership` (type `stdClass`) is already known to be `object`."
+count = 1
+
+[[issues]]
+file = "database/migrations/2026_07_19_000000_restrict_workspaces_to_app_development_nodes.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$node` is already `stdClass`."
+count = 1
+
+[[issues]]
+file = "database/migrations/2026_07_19_000000_restrict_workspaces_to_app_development_nodes.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$ownership` is already `stdClass`."
+count = 1
+
+[[issues]]
+file = "database/migrations/2026_07_19_010000_canonicalize_schedule_app_instance_ownership.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "database/migrations/2026_07_19_020000_canonicalize_app_runtime_instance_ownership.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 5
+
+[[issues]]
+file = "database/migrations/2026_07_19_030000_backfill_analytics_postgres_process_identity.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
+file = "database/migrations/2026_07_20_080355_add_project_instance_permissions_to_node_access_grants.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]

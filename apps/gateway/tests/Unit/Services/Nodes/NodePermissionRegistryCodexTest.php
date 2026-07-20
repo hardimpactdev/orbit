@@ -17,9 +17,9 @@ describe(NodePermissionRegistry::class, function (): void {
             ->toBeTrue()
             ->and($registry->allows(['codex:*'], 'codex:app'))
             ->toBeTrue()
-            ->and($registry->allows(['app:write'], 'codex:app'))
+            ->and($registry->allows(['instance:write'], 'codex:app'))
             ->toBeFalse()
-            ->and($registry->allows(['app:read'], 'codex:app'))
+            ->and($registry->allows(['instance:read'], 'codex:app'))
             ->toBeFalse();
     });
 });

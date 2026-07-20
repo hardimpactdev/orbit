@@ -8,7 +8,7 @@ The operation domain does not own a state family. Operation commands may read, w
 
 The operation command domain does not own a state family. Operation commands are cross-family workflows.
 
-`doctor` routes concrete probes and issue codes to the family that owns the state: `doctor --family=node`, `doctor --family=app`, `doctor --family=workspace`, `doctor --family=process`, `doctor --family=proxy`, `doctor --family=schedule`, `doctor --family=tool`, `doctor --family=firewall_rule`, and `doctor --family=database_connection`. Update commands may reference those families, but they must not invent operation-family drift.
+`doctor` routes concrete probes and issue codes to the family that owns the state: `doctor --family=node`, `doctor --family=instance`, `doctor --family=workspace`, `doctor --family=process`, `doctor --family=proxy`, `doctor --family=schedule`, `doctor --family=tool`, `doctor --family=firewall_rule`, and `doctor --family=database_connection`. Update commands may reference those families, but they must not invent operation-family drift.
 
 ## Domain Rules
 

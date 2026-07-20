@@ -494,7 +494,7 @@ This grant model lets you scope access naturally:
 
 - A developer's client might have a `developer` preset to nodes with the `app-dev` role and no grant at all to nodes with the `app-prod` role.
 - A CI runner's client might have an `operator` preset only to the apps it deploys.
-- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own app registry rows through `app:read`. An `app-dev` node can also register apps on itself, manage process definitions for concrete app instances served by itself, and operate app-dev workspaces. `app-prod` self-grants remain read-only and never include wildcard or `workspace:*` permissions. These self-grants do not grant app writes, credentials, deploy, runtime lifecycle process start/stop/restart, or cross-node app/process visibility.
+- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own project and instance registry rows through `project:read` and `instance:read`. An `app-dev` node can also register instances on itself, manage process definitions for concrete instances served by itself, and operate app-dev workspaces. `app-prod` self-grants remain read-only and never include wildcard or `workspace:*` permissions. These self-grants do not grant project or instance writes, credentials, deploy, runtime lifecycle process start/stop/restart, or cross-node project, instance, or process visibility.
 
 Workspace permission policy applies to both endpoints of every grant. A
 permission set containing `*` or `workspace:*` is rejected when its consuming
@@ -524,11 +524,11 @@ only authority, even when the gateway dispatches token-gated local executor
 work back to the same node.
 
 This is why `workspace:setup` works for app-dev workspaces placed on the
-self-granted app-dev node, why `app:list` includes logical apps with at least
-one instance on that node, and why `app:show` can inspect apps served there.
+self-granted app-dev node, why `project:list` includes projects with at least
+one instance on that node, and why `project:show` can inspect apps served there.
 Production app nodes never create, own, set up, remove, diagnose, or execute
 workspaces. It is also why
-`app:register`, `process:add`, `process:update`, and `process:remove` work from
+`instance:register`, `process:add`, `process:update`, and `process:remove` work from
 inside an `app-dev` node for instance-owned state on that same node. The node's
 self-grant includes the necessary scoped permissions; this is the self-grant
 model, not an exception.
@@ -598,7 +598,7 @@ Orbit has nine state families:
 | Family | Owns | Concept doc |
 |---|---|---|
 | `node` | Which nodes exist, their role assignments, VPN identity, SSH access | [Node Concepts](domains/1_node/node-concepts.md) |
-| `app` | App config, runtime policy, deploy steps, app health | [App Concepts](domains/5_app/app-concepts.md) |
+| `app` | App config, runtime policy, deploy steps, app health | [App Concepts](domains/5_project/project-concepts.md) |
 | `workspace` | Workspace config, URL, runtime policy, setup/teardown policy | [Workspace Concepts](domains/6_workspace/workspace-concepts.md) |
 | `process` | Lifecycle-managed long-running units scoped to nodes, apps, or workspaces | [Process Concepts](domains/7_process/process-concepts.md) |
 | `proxy` | Every HTTP/HTTPS route Orbit serves | [Proxy Concepts](domains/8_proxy/proxy-concepts.md) |
@@ -663,17 +663,17 @@ A slug must match:
 
 Length limits:
 
-- app slug: up to 40 characters
+- project slug: up to 40 characters
 - node slug: up to 63 characters
-- workspace slug: up to 63 characters (independent of the parent app slug)
+- workspace slug: up to 63 characters (independent of the parent project slug)
 - process slug: up to 64 characters
 
-**Workspace hostnames** prepend the workspace slug to the parent app's hostname. For a development app, that's `{workspace}.{app}.{tld}`.
+**Workspace hostnames** prepend the workspace slug to the parent project's hostname. For a development project, that's `{workspace}.{project}.{tld}`.
 
 **Process names** combine the app, workspace, and process slugs into a single identifier:
 
 ```text
-orbit_<app>_<workspace|main>_<process>
+orbit_<project>_<instance>_<workspace|main>_<process>
 ```
 
 Examples:

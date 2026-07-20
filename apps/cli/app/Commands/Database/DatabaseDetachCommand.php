@@ -11,14 +11,13 @@ final class DatabaseDetachCommand extends DatabaseGatewayCommand
     #[\Override]
     protected $signature = 'database:detach
         {connection? : Database connection slug}
-        {--app= : App selector}
-        {--instance= : App instance selector}
+        {--instance= : Instance selector (project.instance)}
         {--workspace= : Workspace selector}
         {--env-prefix=DB : Environment variable prefix}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Detach a database connection from an app instance or workspace target.';
+    protected $description = 'Detach a database connection from an instance or workspace target.';
 
     public function handle(): int
     {
@@ -86,8 +85,8 @@ final class DatabaseDetachCommand extends DatabaseGatewayCommand
 
     private function humanTargetType(): string
     {
-        if ($this->stringOption('app') !== null && $this->stringOption('instance') !== null) {
-            return 'app_instance';
+        if ($this->stringOption('instance') !== null) {
+            return 'instance';
         }
 
         return 'workspace';
@@ -95,11 +94,10 @@ final class DatabaseDetachCommand extends DatabaseGatewayCommand
 
     private function humanTarget(): string
     {
-        $app = $this->stringOption('app');
         $instance = $this->stringOption('instance');
 
-        if ($app !== null && $instance !== null) {
-            return "{$app}.{$instance}";
+        if ($instance !== null) {
+            return $instance;
         }
 
         return (string) $this->stringOption('workspace');

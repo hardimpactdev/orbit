@@ -5,10 +5,12 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -57,8 +59,8 @@ function grantProcessLogAccess(Node $caller, Node $appNode): void
 function fake_process_log_agent(string $output, int $exitCode = 0, string $stderr = ''): void
 {
     app()->instance(
-        \App\Services\RemoteShell\RunsInternalCommands::class,
-        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+        RunsInternalCommands::class,
+        app(RemoteLocalExecutor::class),
     );
     Http::preventStrayRequests();
     Http::fake([
@@ -107,7 +109,7 @@ describe('ProcessLogController', function (): void {
         $caller = createProcessLogCallerNode();
         $appNode = create_process_log_agent_node();
         grantProcessLogAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         fake_process_log_agent("Vite ready\n");
 
@@ -115,7 +117,7 @@ describe('ProcessLogController', function (): void {
             'GET',
             '/api/processes/vite/log',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'lines' => 5,
             ],
             [],
@@ -146,7 +148,7 @@ describe('ProcessLogController', function (): void {
         $caller = createProcessLogCallerNode();
         $appNode = create_process_log_agent_node();
         grantProcessLogAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         fake_process_log_agent("Vite ready\n");
 
@@ -154,7 +156,7 @@ describe('ProcessLogController', function (): void {
             'GET',
             '/api/processes/vite/log',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'lines' => 5,
                 'follow' => true,
             ],
@@ -178,7 +180,7 @@ describe('ProcessLogController', function (): void {
     it('returns bounded logs for a workspace owned process', function (): void {
         $appNode = createProcessLogCallerNode(role: 'app-dev');
         grantProcessLogAccess($appNode, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         Process::factory()
             ->forOwner($workspace)
@@ -204,7 +206,7 @@ describe('ProcessLogController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.logs.node', $appNode->name)
-            ->assertJsonPath('success.data.logs.app', 'docs')
+            ->assertJsonPath('success.data.logs.project', 'docs')
             ->assertJsonPath('success.data.logs.workspace', 'feature-docs')
             ->assertJsonPath('success.data.logs.runtime_unit', 'orbit-ws-docs-feature-docs')
             ->assertJsonPath('success.data.logs.lines.0.message', 'FrankenPHP ready');
@@ -237,7 +239,7 @@ describe('ProcessLogController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.logs.node', 'app-1')
-            ->assertJsonPath('success.data.logs.app', null)
+            ->assertJsonPath('success.data.logs.project', null)
             ->assertJsonPath('success.data.logs.workspace', null)
             ->assertJsonPath('success.data.logs.runtime_unit', 'opencode-server')
             ->assertJsonPath('success.data.logs.lines.0.message', 'OpenCode ready');
@@ -292,7 +294,7 @@ describe('ProcessLogController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.logs.node', 'database-1')
-            ->assertJsonPath('success.data.logs.app', null)
+            ->assertJsonPath('success.data.logs.project', null)
             ->assertJsonPath('success.data.logs.workspace', null)
             ->assertJsonPath('success.data.logs.runtime_unit', 'orbit-mysql8')
             ->assertJsonPath('success.data.logs.service.service', 'mysql')
@@ -322,7 +324,7 @@ describe('ProcessLogController', function (): void {
     it('rejects unsupported persisted runtimes before log side effects', function (): void {
         createProcessLogCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $process = Process::factory()->forOwner($app)->create(['name' => 'vite']);
         DB::table('processes')->where('id', $process->id)->update(['runtime' => 'docker-swarm']);
         $remoteShell = new ProcessLogApiRemoteShell([]);
@@ -332,7 +334,7 @@ describe('ProcessLogController', function (): void {
             'GET',
             '/api/processes/vite/log',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'lines' => 5,
             ],
             [],
@@ -353,7 +355,7 @@ describe('ProcessLogController', function (): void {
     it('requires authorization before log reads', function (): void {
         createProcessLogCallerNode();
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         $remoteShell = new ProcessLogApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
@@ -362,7 +364,7 @@ describe('ProcessLogController', function (): void {
             'GET',
             '/api/processes/vite/log',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
             ],
             [],
             [],
@@ -381,7 +383,7 @@ describe('ProcessLogController', function (): void {
     it('returns log read failures as gateway errors', function (): void {
         createProcessLogCallerNode(role: 'gateway');
         $appNode = create_process_log_agent_node();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         fake_process_log_agent('', exitCode: 1, stderr: 'missing');
 
@@ -389,7 +391,7 @@ describe('ProcessLogController', function (): void {
             'GET',
             '/api/processes/vite/log',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
             ],
             [],
             [],
@@ -407,7 +409,7 @@ describe('ProcessLogController', function (): void {
             'user' => 'nckrtl',
         ]);
         grantProcessLogAccess($caller, $appNode);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/Users/nckrtl/apps/docs',
@@ -424,7 +426,7 @@ describe('ProcessLogController', function (): void {
             'GET',
             '/api/processes/feedback/log',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'lines' => 5,
             ],
             [],

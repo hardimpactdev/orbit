@@ -19,7 +19,7 @@ final class AddDeployStepRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::POST;
 
     public function __construct(
-        public readonly string $app,
+        public readonly string $instance,
         public readonly string $command,
         public readonly ?string $title = null,
         public readonly ?int $order = null,
@@ -36,7 +36,7 @@ final class AddDeployStepRequest extends GatewayRequest implements HasBody
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'command' => $this->command,
                 'title' => $this->title,
                 'order' => $this->order,

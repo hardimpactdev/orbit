@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 
 final class ProcessRuntimeApp
 {
-    public static function make(App $app, Node $node, ?AppInstance $instance = null): App
+    public static function make(Project $app, Node $node, ?AppInstance $instance = null): Project
     {
         if (! $instance instanceof AppInstance) {
             $app->node_id = $node->id;

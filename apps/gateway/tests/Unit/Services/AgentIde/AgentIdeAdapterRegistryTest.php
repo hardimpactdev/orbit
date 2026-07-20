@@ -40,11 +40,11 @@ it('returns command scoped choices with reserved tokens first', function (): voi
         ])
         ->and($registry->supportedInputsForScope('node'))
         ->toBe(['none', 'opencode', 'polyscope'])
-        ->and($registry->choicesForScope('app'))
+        ->and($registry->choicesForScope('instance'))
         ->toBe([
             'reserved_tokens' => ['inherit', 'none'],
             'adapters' => $registry->adapters(),
         ])
-        ->and($registry->supportedInputsForScope('app'))
+        ->and($registry->supportedInputsForScope('instance'))
         ->toBe(['inherit', 'none', 'opencode', 'polyscope']);
 });

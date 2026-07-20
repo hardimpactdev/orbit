@@ -9,13 +9,13 @@ Use `schedule:remove` when a recurring task should be removed from Orbit managem
 ## Usage
 
 ```bash
-orbit schedule:remove [name] [--app=<app>] [--node=<node>] [--force] [--json]
+orbit schedule:remove [name] [--instance=<project.instance>] [--node=<node>] [--force] [--json]
 ```
 
 ## Examples
 
 ```bash
-orbit schedule:remove laravel-scheduler --app=docs.production
+orbit schedule:remove laravel-scheduler --instance=docs.production
 orbit schedule:remove backups --node=app-1 --force
 ```
 
@@ -23,13 +23,13 @@ orbit schedule:remove backups --node=app-1 --force
 
 - `name`: schedule slug. When omitted in interactive mode, Orbit shows a
   schedule data table.
-- `--app`: select the owning `app.instance`. A bare app name is shorthand only
+- `--instance`: select the owning `app.instance`. A bare project name is shorthand only
   when exactly one eligible instance is visible.
 - `--node`: disambiguate a node-scoped schedule.
 - `--force`: Skip destructive confirmation.
 - `--json`: Output JSON.
 
-`--app` and `--node` are mutually exclusive filters.
+`--instance` and `--node` are mutually exclusive filters.
 
 ## What Happens
 
@@ -39,7 +39,7 @@ asking for or applying destructive consent, then removes the gateway schedule
 row. Ambiguous app selectors fail without deletion. Subsequent
 gateway-scheduler ticks skip the removed schedule.
 
-It does not remove app code, app-instance process definitions, nodes, scripts outside the managed schedule policy, or past run-history records.
+It does not remove app code, instance process definitions, nodes, scripts outside the managed schedule policy, or past run-history records.
 
 ## Output
 

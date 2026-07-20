@@ -23,6 +23,20 @@ final class ActivityPayloadCompatibility
      */
     public static function normalize(Activity $activity, array $properties): array
     {
+        if (array_key_exists('app', $properties) && ! array_key_exists('project', $properties)) {
+            $properties['project'] = $properties['app'];
+        }
+
+        if (array_key_exists('app_name', $properties) && ! array_key_exists('project_name', $properties)) {
+            $properties['project_name'] = $properties['app_name'];
+        }
+
+        if (array_key_exists('app_instance', $properties) && ! array_key_exists('instance', $properties)) {
+            $properties['instance'] = $properties['app_instance'];
+        }
+
+        unset($properties['app'], $properties['app_name'], $properties['app_instance']);
+
         $storedEffect = $activity->properties?->get('type');
         $isLegacyHostKeyActivity =
             $activity->log_name === 'security'

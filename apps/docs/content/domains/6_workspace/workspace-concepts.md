@@ -10,21 +10,21 @@ the workspace command contracts and the
 The terms below define the core identity vocabulary for the workspace family.
 
 - **Workspace:** A development working copy of an app whose durable record
-  belongs to the gateway. It is bound to exactly one app instance on an active
+  belongs to the gateway. It is bound to exactly one instance on an active
   `app-dev` node, with a canonical workspace name, workspace path, and one
   workspace route lifecycle.
-- **Concrete app-instance ownership:** Every workspace row stores a non-null
-  `app_instance_id`. A bare parent-app selector or parent-app path is only a
-  shorthand resolver: it succeeds when exactly one registered app instance
-  matches and otherwise fails with `app_instance_required`. It never creates a
-  parent-app-only workspace.
+- **Concrete instance ownership:** Every workspace row stores a non-null
+  `instance_id`. A bare parent-project selector or parent-project path is only a
+  shorthand resolver: it succeeds when exactly one registered instance
+  matches and otherwise fails with `instance_required`. It never creates a
+  parent-project-only workspace.
 - **Workspace identity slug:** Lowercase identity slug used as the workspace
-  name. Unique within the parent app, maximum 63 characters, independent of the
-  parent app slug.
+  name. Unique within the parent project, maximum 63 characters, independent of the
+  parent project slug.
 - **Workspace hostname:** Hostname formed by prepending the workspace slug as
-  its own DNS label to the parent app's primary hostname. For development apps
-  this yields `{workspace}.{app}.{tld}`.
-- **Workspace path:** Absolute path on the owning app-instance node where
+  its own DNS label to the parent project's primary hostname. For development apps
+  this yields `{workspace}.{project}.{tld}`.
+- **Workspace path:** Absolute path on the owning instance node where
   workspace files live. Derived from gateway configuration and applied through
   Agent push.
 - **Workspace env:** Non-secret gateway-owned key/value intent scoped to one
@@ -35,16 +35,16 @@ The terms below define the core identity vocabulary for the workspace family.
   currently `expected` or `setup-pending`. It is not setup-run status and not a
   live readiness result.
 - **Workspace runtime container:** Docker container derived from workspace
-  configuration, parent app configuration, and the selected PHP image. It
+  configuration, parent project configuration, and the selected PHP image. It
   serves the workspace's web route through FrankenPHP. Workspace setup and
   teardown run through the selected app user's host tool path, not inside the
   container; PHP/Composer/Artisan commands include the node's versioned host PHP
-  toolchain. Workspaces whose parent app is on an `app-dev` node receive the
+  toolchain. Workspaces whose parent project is on an `app-dev` node receive the
   same dev-only packages mount as app runtimes:
   `/home/<node-user>/packages` on the owning node appears at `/packages` in the
   container.
 
-  Production app instances do not have workspace runtime containers; selecting
+  Production instances do not have workspace runtime containers; selecting
   one fails with `workspace.unsupported_for_production` before runtime work.
 
   The workspace source is mounted both at `/app` and at its original absolute
@@ -52,7 +52,7 @@ The terms below define the core identity vocabulary for the workspace family.
   SQLite database files, available inside the runtime container.
 
   Workspaces inherit configurable runtime mounts from their selected app
-  instance through `app:mount`; the workspace family does not own separate
+  instance through `instance:mount`; the workspace family does not own separate
   runtime mount intent.
   Workspace FrankenPHP XDG state is ephemeral inside the container under
   `/tmp/orbit-frankenphp`, matching app runtimes, and is not stored in the
@@ -69,12 +69,12 @@ The terms below define the core identity vocabulary for the workspace family.
 These terms describe how PHP version is resolved for workspaces.
 
 - **Workspace PHP override:** Optional gateway-tracked PHP version stored on the
-  workspace row. When absent, the workspace inherits the parent app PHP version
+  workspace row. When absent, the workspace inherits the parent project PHP version
   and JSON renderers report `php_inherited=true`. The selected version chooses
   the workspace runtime container image; it does not install host PHP or render
   host FPM pools.
 - **Workspace PHP inheritance flag:** Boolean entity field that records whether
-  a workspace's effective PHP version comes from the parent app (`true`) or
+  a workspace's effective PHP version comes from the parent project (`true`) or
   from its own override (`false`). Exposed in JSON as `php_inherited`.
 - **Workspace agent IDE adapter:** Effective agent IDE adapter for a workspace,
   resolved per session through the chain `app override → owning node default →
@@ -135,4 +135,4 @@ These boundaries define what the workspace family owns and what belongs to other
   Workspace commands do not install host PHP, Composer, or Caddy.
   Workspace setup initializes a missing workspace `.env` from that workspace's
   own `.env.example`, then overlays the effective workspace env. It preserves
-  an existing workspace `.env` and never seeds from the parent app `.env`.
+  an existing workspace `.env` and never seeds from the parent project `.env`.

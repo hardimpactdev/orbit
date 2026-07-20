@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
-use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Models\WorkspaceEnvVariable;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
@@ -62,7 +62,7 @@ final readonly class WorkspaceEnvRenderer
         $app = $workspace->app;
         $node = $this->placement->nodeForWorkspace($workspace);
 
-        if ($app instanceof App && $node instanceof Node) {
+        if ($app instanceof Project && $node instanceof Node) {
             foreach ($this->vite->shellVariables($app, $node, $workspace) as $key => $value) {
                 $env[$key] = [
                     'value' => $value,

@@ -19,8 +19,8 @@ final class AppNewCommand extends AppGatewayCommand
     use PromptsForGatewayRegistryEntities;
 
     #[\Override]
-    protected $signature = 'app:new
-        {name? : App name}
+    protected $signature = 'project:new
+        {name? : Project name}
         {--node= : Target app node}
         {--repo= : Repository to clone}
         {--template-repo= : GitHub template repository (owner/repo)}
@@ -33,7 +33,7 @@ final class AppNewCommand extends AppGatewayCommand
         {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
-    protected $description = 'Create a new app on an app node.';
+    protected $description = 'Create a new project and its first instance on an app node.';
 
     public function handle(): int
     {
@@ -52,7 +52,7 @@ final class AppNewCommand extends AppGatewayCommand
         $name = $this->resolveName();
 
         if ($name === null) {
-            return $this->failValidation('name', 'App name is required.');
+            return $this->failValidation('name', 'Project name is required.');
         }
 
         $nameValidation = app(AppNameInputValidator::class)->validate($name);
@@ -74,7 +74,7 @@ final class AppNewCommand extends AppGatewayCommand
         }
 
         return $this->streamProgress(
-            '/api/apps',
+            '/api/projects',
             [
                 'name' => $name,
                 'node' => $node,
@@ -131,7 +131,7 @@ final class AppNewCommand extends AppGatewayCommand
             $names = app(AppNameInputValidator::class);
 
             return trim(text(
-                label: 'App name (slug):',
+                label: 'Project name (slug):',
                 required: true,
                 validate: static fn (string $value): ?string => $names->validate(trim($value)),
             ));

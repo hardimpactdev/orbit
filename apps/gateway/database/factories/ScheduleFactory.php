@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -25,12 +25,12 @@ class ScheduleFactory extends Factory
         return [
             'name' => $name,
             'scope' => 'app',
-            'app_id' => App::factory(),
+            'app_id' => Project::factory(),
             'app_instance_id' => static function (array $attributes): ?int {
                 $appId = is_numeric($attributes['app_id'] ?? null) ? (int) $attributes['app_id'] : null;
-                $app = $appId === null ? null : App::query()->find($appId);
+                $app = $appId === null ? null : Project::query()->find($appId);
 
-                if (! $app instanceof App) {
+                if (! $app instanceof Project) {
                     return null;
                 }
 
@@ -49,10 +49,10 @@ class ScheduleFactory extends Factory
             },
             'node_id' => null,
             'target_name' => static function (array $attributes): string {
-                $app = App::query()->find((int) ($attributes['app_id'] ?? 0));
+                $app = Project::query()->find((int) ($attributes['app_id'] ?? 0));
                 $instance = AppInstance::query()->find((int) ($attributes['app_instance_id'] ?? 0));
 
-                if (! $app instanceof App || ! $instance instanceof AppInstance) {
+                if (! $app instanceof Project || ! $instance instanceof AppInstance) {
                     return 'missing-app.missing-instance';
                 }
 
@@ -70,11 +70,11 @@ class ScheduleFactory extends Factory
         ];
     }
 
-    public function forApp(?App $app = null): static
+    public function forApp(?Project $app = null): static
     {
         return $this->state(function (array $attributes) use ($app): array {
-            /** @var App $target */
-            $target = $app ?? App::factory()->create();
+            /** @var Project $target */
+            $target = $app ?? Project::factory()->create();
             /** @var AppInstance $instance */
             $instance = $target->instances()->first() ?? AppInstance::factory()->create([
                 'app_id' => $target->id,

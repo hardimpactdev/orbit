@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
-use App\Models\App;
 use App\Models\AppWebSocketBinding;
+use App\Models\Project;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -21,7 +21,7 @@ class AppWebSocketBindingFactory extends Factory
         $slug = Str::slug(fake()->unique()->domainWord());
 
         return [
-            'app_id' => App::factory(),
+            'app_id' => Project::factory(),
             'enabled' => true,
             'reverb_app_id' => $slug,
             'reverb_app_key' => Str::random(32),

@@ -8,6 +8,7 @@ use Database\Factories\AppWebSocketBindingFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Override;
 
 /**
  * @property int $id
@@ -18,17 +19,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $reverb_app_secret
  * @property list<string> $allowed_origins
  * @property list<string> $public_hosts
- * @property-read App $app
+ * @property-read Project $project
+ * @property-read Project $app
  */
 class AppWebSocketBinding extends Model
 {
     /** @use HasFactory<AppWebSocketBindingFactory> */
     use HasFactory;
 
-    #[\Override]
+    #[Override]
     protected $table = 'app_websocket_bindings';
 
-    #[\Override]
+    #[Override]
     protected $fillable = [
         'app_id',
         'enabled',
@@ -39,7 +41,7 @@ class AppWebSocketBinding extends Model
         'public_hosts',
     ];
 
-    #[\Override]
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -51,10 +53,18 @@ class AppWebSocketBinding extends Model
     }
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return BelongsTo<Project, $this>
+     */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class, 'app_id');
+    }
+
+    /**
+     * @return BelongsTo<Project, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->project();
     }
 }

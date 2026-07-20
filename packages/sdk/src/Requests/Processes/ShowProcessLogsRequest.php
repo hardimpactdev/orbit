@@ -16,7 +16,7 @@ final class ShowProcessLogsRequest extends GatewayRequest
 
     public function __construct(
         public readonly string $name,
-        public readonly ?string $app,
+        public readonly ?string $instance,
         public readonly ?string $workspace,
         public readonly int $lines = 100,
     ) {}
@@ -33,7 +33,7 @@ final class ShowProcessLogsRequest extends GatewayRequest
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'workspace' => $this->workspace,
                 'lines' => $this->lines,
             ],

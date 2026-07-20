@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
@@ -27,7 +27,7 @@ final readonly class AppShowVisibility
     /**
      * @return list<AppInstance>
      */
-    public function visibleInstances(App $app, Node $caller): array
+    public function visibleInstances(Project $app, Node $caller): array
     {
         $callerIsGateway = $this->callerIsGateway($caller);
         $visibleNodeIds = $callerIsGateway ? [] : $this->visibleAppNodeIds($caller);
@@ -68,7 +68,7 @@ final readonly class AppShowVisibility
         $authorizedNodeIds = [];
 
         foreach ($query->get() as $node) {
-            if (! $this->authorizer->allows($caller, $node, 'app:read')) {
+            if (! $this->authorizer->allows($caller, $node, 'project:read')) {
                 continue;
             }
 

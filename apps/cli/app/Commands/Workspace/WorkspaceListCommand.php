@@ -16,7 +16,7 @@ final class WorkspaceListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'workspace:list
-        {--app= : Filter by parent app or app.instance selector}
+        {--instance= : Filter by instance (project.instance)}
         {--node= : Filter by owning node}
         {--json}';
 
@@ -27,7 +27,7 @@ final class WorkspaceListCommand extends GatewayCommand
     {
         try {
             $response = $this->gatewayGet('/api/workspaces', $this->filledQuery([
-                'app' => $this->stringOption('app'),
+                'instance' => $this->stringOption('instance'),
                 'node' => $this->stringOption('node'),
             ]));
         } catch (GatewayApiException $exception) {
@@ -67,8 +67,8 @@ final class WorkspaceListCommand extends GatewayCommand
     }
 
     /**
-     * Render one table per parent app, grouped under the owning node. The
-     * gateway already sorts workspaces by node, then app, then workspace name,
+     * Render one table per project, grouped under the owning node. The
+     * gateway already sorts workspaces by node, then project, then workspace name,
      * so the incoming order is preserved.
      *
      * @param  list<array<string, mixed>>  $workspaces
@@ -80,7 +80,7 @@ final class WorkspaceListCommand extends GatewayCommand
 
         foreach ($workspaces as $workspace) {
             $node = $this->workspaceString($workspace, 'node');
-            $app = $this->workspaceString($workspace, 'app');
+            $app = $this->workspaceString($workspace, 'project');
             $groups[$node][$app][] = $workspace;
         }
 
@@ -95,7 +95,7 @@ final class WorkspaceListCommand extends GatewayCommand
                 $first = false;
 
                 $this->line("Node: {$node}");
-                $this->line("App: {$app}");
+                $this->line("Project: {$app}");
 
                 table(
                     headers: ['WORKSPACE', 'URL', 'LIFECYCLE STATUS'],

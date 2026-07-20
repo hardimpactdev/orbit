@@ -568,7 +568,7 @@ it('keeps first-party boost skill descriptions routed by app and package boundar
 it('keeps the project-owned orbit skill aligned with current CLI stream-json guidance and signatures', function (): void {
     $skill = (string) file_get_contents(repo_path('.agents/skills/orbit/SKILL.md'));
     $concepts = (string) file_get_contents(repo_path('.agents/skills/orbit/references/concepts.md'));
-    $app = (string) file_get_contents(repo_path('.agents/skills/orbit/references/app.md'));
+    $project = (string) file_get_contents(repo_path('.agents/skills/orbit/references/app.md'));
     $node = (string) file_get_contents(repo_path('.agents/skills/orbit/references/node.md'));
     $skillRef = (string) file_get_contents(repo_path('.agents/skills/orbit/references/skill.md'));
     $tool = (string) file_get_contents(repo_path('.agents/skills/orbit/references/tool.md'));
@@ -587,9 +587,9 @@ it('keeps the project-owned orbit skill aligned with current CLI stream-json gui
     );
 
     expect($streamJsonCommands[1] ?? '')
-        ->toContain('`app:setup`')
+        ->toContain('`instance:setup`')
         ->toContain('`doctor`')
-        ->toContain('`app:new`')
+        ->toContain('`project:new`')
         ->toContain('`workspace:setup`')
         ->toContain('gateway-streamed `node:new`')
         ->toContain('`deploy:run`')
@@ -598,10 +598,12 @@ it('keeps the project-owned orbit skill aligned with current CLI stream-json gui
         ->toContain('`update:all`')
         ->not->toContain('`update`');
 
-    expect($app)
+    expect($project)
         ->toContain('--runtime-proxy-transport')
-        ->toContain('orbit app:setup [<app>] [--json|--stream-json]')
-        ->not->toContain('orbit app:setup [<app>] [--force]')->toContain('--command=<command>')->toContain(
+        ->toContain('orbit instance:setup <project.instance> [--json|--stream-json]')
+        ->not->toContain('orbit instance:setup <project.instance> [--force]')->toContain(
+            '--command=<command>',
+        )->toContain(
             '--before=',
         )->toContain('--after=')
         ->not->toContain('--title=<title>')
@@ -634,13 +636,12 @@ it('keeps the project-owned orbit skill aligned with current CLI stream-json gui
         ->toContain('~/.grok/skills/orbit')
         ->toContain('does not call the gateway');
 
-    preg_match('/### Apps[\s\S]*?### Workspaces/', $skill, $appCommandIndex);
+    preg_match('/### Projects and instances[\s\S]*?### Workspaces/', $skill, $projectCommandIndex);
 
-    expect($appCommandIndex[0] ?? '')
-        ->toContain('`orbit app:setup [app]`')
-        ->toContain('`orbit app-setup-step:add`')
-        ->toContain('`orbit app-setup-step:list`')
-        ->toContain('`orbit app-setup-step:remove`');
+    expect($projectCommandIndex[0] ?? '')
+        ->toContain('`orbit project:new [project]`')
+        ->toContain('`orbit instance:setup [project.instance]`')
+        ->toContain('`orbit instance-setup-step:add\|list\|remove`');
 
     expect($operation)
         ->toContain('--key=<key>')

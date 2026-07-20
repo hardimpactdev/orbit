@@ -80,7 +80,7 @@ These terms describe the `doctor` command and its components.
 These terms cover what a doctor run resolves, authorizes, and dispatches.
 
 - **Doctor orchestration:** Global `doctor` command responsibility for scope resolution, authorization, mode selection, family dispatch, output envelopes, generic issue kinds, and generic failure behavior.
-- **Doctor scope:** Resolved and authorized filter set for a doctor run, including selected families, node or self scope, app scope, and workspace scope.
+- **Doctor scope:** Resolved and authorized filter set for a doctor run, including selected families, node or self scope, instance scope, and workspace scope.
 
 ### Modes
 

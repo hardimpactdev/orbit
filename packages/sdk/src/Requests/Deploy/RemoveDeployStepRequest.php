@@ -15,7 +15,7 @@ final class RemoveDeployStepRequest extends GatewayRequest
     protected Method $method = Method::DELETE;
 
     public function __construct(
-        public readonly string $app,
+        public readonly string $instance,
         public readonly string $step,
     ) {}
 
@@ -27,7 +27,7 @@ final class RemoveDeployStepRequest extends GatewayRequest
     protected function defaultQuery(): array
     {
         return [
-            'app' => $this->app,
+            'instance' => $this->instance,
             'destructive_consent' => true,
         ];
     }

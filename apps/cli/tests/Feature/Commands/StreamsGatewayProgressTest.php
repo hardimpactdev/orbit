@@ -180,7 +180,7 @@ describe('StreamsGatewayProgress', function (): void {
     it('rejects --json and --stream-json together before opening the stream', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'app:new', [
+        [$exitCode, $output] = runCommand($this, 'project:new', [
             'name' => 'docs',
             '--node' => 'app-1',
             '--json' => true,
@@ -205,7 +205,7 @@ describe('StreamsGatewayProgress', function (): void {
     it('keeps pre-stream validation failures as plain JSON envelopes in --stream-json mode', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'app:new', [
+        [$exitCode, $output] = runCommand($this, 'project:new', [
             '--node' => 'app-1',
             '--stream-json' => true,
         ]);
@@ -336,16 +336,21 @@ describe('StreamsGatewayProgress', function (): void {
                 ],
             ]);
     })->with([
-        'app:new' => [
-            'app:new',
+        'project:new' => [
+            'project:new',
             ['name' => 'docs', '--node' => 'app-1', '--repo' => 'hardimpact/docs'],
             'POST',
-            '/api/apps',
+            '/api/projects',
         ],
-        'workspace:new' => ['workspace:new', ['name' => 'feature-docs', '--app' => 'docs'], 'POST', '/api/workspaces'],
+        'workspace:new' => [
+            'workspace:new',
+            ['name' => 'feature-docs', '--instance' => 'docs'],
+            'POST',
+            '/api/workspaces',
+        ],
         'workspace:setup' => [
             'workspace:setup',
-            ['name' => 'feature-docs', '--app' => 'docs'],
+            ['name' => 'feature-docs', '--instance' => 'docs'],
             'POST',
             '/api/workspaces/setup',
         ],
@@ -407,14 +412,14 @@ describe('StreamsGatewayProgress', function (): void {
 
         Http::assertNothingSent();
     })->with([
-        'app:new' => ['app:new', ['name' => 'docs', '--node' => 'app-1']],
-        'workspace:new' => ['workspace:new', ['name' => 'feature-docs', '--app' => 'docs']],
-        'workspace:setup' => ['workspace:setup', ['name' => 'feature-docs', '--app' => 'docs']],
+        'project:new' => ['project:new', ['name' => 'docs', '--node' => 'app-1']],
+        'workspace:new' => ['workspace:new', ['name' => 'feature-docs', '--instance' => 'docs']],
+        'workspace:setup' => ['workspace:setup', ['name' => 'feature-docs', '--instance' => 'docs']],
         'node:new' => [
             'node:new',
             ['name' => 'app-1', '--roles' => 'app-dev', '--host' => '192.0.2.20', '--tld' => 'test'],
         ],
-        'deploy:run' => ['deploy:run', ['app' => 'docs']],
+        'deploy:run' => ['deploy:run', ['instance' => 'docs']],
         'tool:install' => ['tool:install', ['tool' => 'composer', '--node' => 'app-1']],
         'tool:update' => ['tool:update', ['tool' => 'composer', '--node' => 'app-1']],
         'tool:reconfigure' => ['tool:reconfigure', ['tool' => 'opencode-cli', '--node' => 'app-1']],

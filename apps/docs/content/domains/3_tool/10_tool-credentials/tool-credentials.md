@@ -12,7 +12,7 @@ PostgreSQL, and Valkey are not tool credentials.
 ## Usage
 
 ```bash
-orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--json]
+orbit tool:credentials [tool] [--instance=<project.instance>] [--node=<node>] [--json]
 ```
 
 ## Examples
@@ -20,7 +20,7 @@ orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--json]
 ```bash
 orbit tool:credentials mailpit --node=app-1
 orbit tool:credentials openclaw --node=agent-1
-orbit tool:credentials opencode-cli --app=docs
+orbit tool:credentials opencode-cli --instance=docs
 orbit tool:credentials --node=app-1
 orbit tool:credentials opencode-cli --node=agent-1 --json
 ```
@@ -30,10 +30,10 @@ orbit tool:credentials opencode-cli --node=agent-1 --json
 - `tool`: Optional tool name. When omitted in interactive mode, Orbit prompts
   from credential-bearing tools visible on the resolved node.
 - `--node`: Target node. Defaults to local `node:default` when configured.
-- `--app`: Resolve the target node from an app.
+- `--instance`: Resolve the target node from an app.
 - `--json`: Output JSON.
 
-Target context is required when neither `--node`, `--app`, nor local
+Target context is required when neither `--node`, `--instance`, nor local
 `node:default` resolves a node.
 
 ## What Happens

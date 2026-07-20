@@ -21,9 +21,10 @@ function agentIdeMessageSuccess(
     return fakeSuccessEnvelope([
         'agent_ide' => [
             'adapter' => $adapter,
-            'source' => $workspace === null ? 'app' : 'workspace',
+            'source' => $workspace === null ? 'instance' : 'workspace',
             'target' => [
-                'app' => 'docs',
+                'project' => 'docs',
+                'instance' => 'development',
                 'workspace' => $workspace,
                 'node' => 'app-1',
             ],
@@ -63,12 +64,12 @@ function runAgentIdeMessageWithStdin(string $stdin, array $arguments): array
 }
 
 describe('agent-ide:message', function (): void {
-    it('posts app-target messages to the gateway agent ide endpoint', function (): void {
+    it('posts instance-target messages to the gateway agent ide endpoint', function (): void {
         fakeGateway(agentIdeMessageSuccess());
 
         [$exitCode, $output] = runCommand($this, 'agent-ide:message', [
             'message' => 'Ship the docs',
-            '--app' => 'docs',
+            '--instance' => 'docs.development',
             '--json' => true,
         ]);
 
@@ -80,14 +81,14 @@ describe('agent-ide:message', function (): void {
                 && $request->url() === 'https://gateway.test/api/agent-ide/message'
                 && $request->data() === [
                     'message' => 'Ship the docs',
-                    'app' => 'docs',
+                    'instance' => 'docs.development',
                 ]
             ),
         );
 
         expect($exitCode)
             ->toBe(0)
-            ->and($decoded['success']['data']['agent_ide']['target']['app'])
+            ->and($decoded['success']['data']['agent_ide']['target']['project'])
             ->toBe('docs')
             ->and($decoded['success']['data']['agent_ide']['delivery']['input'])
             ->toBe('argument');
@@ -159,7 +160,7 @@ describe('agent-ide:message', function (): void {
 
         [$exitCode, $output] = runAgentIdeMessageWithStdin("Ship the docs\nwith context\n", [
             '--stdin' => true,
-            '--app' => 'docs',
+            '--instance' => 'docs.development',
             '--json' => true,
         ]);
 
@@ -170,7 +171,7 @@ describe('agent-ide:message', function (): void {
                 $request->method() === 'POST'
                 && $request->data() === [
                     'message' => "Ship the docs\nwith context",
-                    'app' => 'docs',
+                    'instance' => 'docs.development',
                 ]
             ),
         );
@@ -184,7 +185,7 @@ describe('agent-ide:message', function (): void {
         [$exitCode, $output] = runAgentIdeMessageWithStdin('from stdin', [
             'message' => 'from argument',
             '--stdin' => true,
-            '--app' => 'docs',
+            '--instance' => 'docs.development',
             '--json' => true,
         ]);
 
@@ -208,7 +209,7 @@ describe('agent-ide:message', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'agent-ide:message', [
             'message' => 'Ship the docs',
-            '--app' => 'docs',
+            '--instance' => 'docs.development',
             '--workspace' => 'feature-docs',
             '--json' => true,
         ]);
@@ -232,7 +233,7 @@ describe('agent-ide:message', function (): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, 'agent-ide:message', [
-            '--app' => 'docs',
+            '--instance' => 'docs.development',
             '--json' => true,
         ]);
 
@@ -257,7 +258,8 @@ describe('agent-ide:message', function (): void {
                 'code' => 'adapter_delivery_failed',
                 'message' => 'Agent IDE adapter opencode could not deliver the message.',
                 'meta' => [
-                    'app' => 'docs',
+                    'project' => 'docs',
+                    'instance' => 'development',
                     'workspace' => null,
                     'adapter' => 'opencode',
                 ],
@@ -271,7 +273,7 @@ describe('agent-ide:message', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'agent-ide:message', [
             'message' => 'Ship the docs',
-            '--app' => 'docs',
+            '--instance' => 'docs.development',
             '--json' => true,
         ]);
 
@@ -290,13 +292,13 @@ describe('agent-ide:message', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'agent-ide:message', [
             'message' => 'Ship the docs',
-            '--app' => 'docs',
+            '--instance' => 'docs.development',
         ]);
 
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('┌ Sending Agent IDE message to docs')
+            ->toContain('┌ Sending Agent IDE message to docs.development')
             ->and($output)
             ->toContain('● Resolved target')
             ->and($output)
@@ -306,9 +308,9 @@ describe('agent-ide:message', function (): void {
             ->and($output)
             ->toContain('● Delivered message')
             ->and($output)
-            ->toContain('└ Sent Agent IDE message to docs through opencode')
+            ->toContain('└ Sent Agent IDE message to docs.development through opencode')
             ->and($output)
-            ->toContain('Sent message to docs through opencode.')
+            ->toContain('Sent message to docs.development through opencode.')
             ->and($output)
             ->not->toContain('"success"');
     });
@@ -324,7 +326,7 @@ describe('agent-ide:message', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('┌ Sending Agent IDE message to docs/feature-docs')
+            ->toContain('┌ Sending Agent IDE message to docs.development/feature-docs')
             ->and($output)
             ->toContain('● Resolved target')
             ->and($output)
@@ -334,9 +336,9 @@ describe('agent-ide:message', function (): void {
             ->and($output)
             ->toContain('● Delivered message')
             ->and($output)
-            ->toContain('└ Sent Agent IDE message to docs/feature-docs through polyscope')
+            ->toContain('└ Sent Agent IDE message to docs.development/feature-docs through polyscope')
             ->and($output)
-            ->toContain('Sent message to docs/feature-docs through polyscope.')
+            ->toContain('Sent message to docs.development/feature-docs through polyscope.')
             ->and($output)
             ->not->toContain('"success"');
     });
@@ -345,15 +347,15 @@ describe('agent-ide:message', function (): void {
         fakeGateway(agentIdeMessageSuccess());
 
         $this
-            ->artisan('agent-ide:message', ['--app' => 'docs'])
+            ->artisan('agent-ide:message', ['--instance' => 'docs.development'])
             ->expectsQuestion('Message', 'Ship the docs')
-            ->expectsOutputToContain('Sent message to docs through opencode.')
+            ->expectsOutputToContain('Sent message to docs.development through opencode.')
             ->assertSuccessful();
 
         Http::assertSent(
             fn (Request $request): bool => $request->data() === [
                 'message' => 'Ship the docs',
-                'app' => 'docs',
+                'instance' => 'docs.development',
             ],
         );
     });

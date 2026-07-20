@@ -5,15 +5,15 @@ declare(strict_types=1);
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
-describe('app:show', function (): void {
-    it('returns a canonical success envelope in JSON mode and forwards the app path', function (): void {
+describe('project:show', function (): void {
+    it('returns a canonical success envelope in JSON mode and forwards the project path', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'app' => ['name' => 'orbit-docs', 'node' => 'app-1'],
+            'project' => ['name' => 'orbit-docs', 'node' => 'app-1'],
             'details' => ['domain' => 'orbit-docs.test'],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:show', [
-            'app' => 'orbit-docs',
+        [$exitCode, $output] = runCommand($this, 'project:show', [
+            'project' => 'orbit-docs',
             '--json' => true,
         ]);
 
@@ -21,14 +21,14 @@ describe('app:show', function (): void {
 
         Http::assertSent(
             fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains($request->url(), '/api/apps/orbit-docs'),
+            && str_contains($request->url(), '/api/projects/orbit-docs'),
         );
 
-        expect($exitCode)->toBe(0)->and($decoded['success']['data']['app']['name'])->toBe('orbit-docs');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['project']['name'])->toBe('orbit-docs');
     });
 
-    it('fails validation when no app can be resolved', function (): void {
-        [$exitCode, $output] = runCommand($this, 'app:show', ['--json' => true]);
+    it('fails validation when no project can be resolved', function (): void {
+        [$exitCode, $output] = runCommand($this, 'project:show', ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -37,12 +37,12 @@ describe('app:show', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('project');
     });
 
     it('renders human output with instance and workspace placement rows', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'app' => [
+            'project' => [
                 'name' => 'orbit-docs',
                 'repository' => 'orbit/docs',
                 'php_version' => '8.5',
@@ -82,12 +82,12 @@ describe('app:show', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:show', ['app' => 'orbit-docs']);
+        [$exitCode, $output] = runCommand($this, 'project:show', ['project' => 'orbit-docs']);
 
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('App: orbit-docs')
+            ->toContain('Project: orbit-docs')
             ->and($output)
             ->toContain('Repository')
             ->and($output)
@@ -99,7 +99,7 @@ describe('app:show', function (): void {
             ->and($output)
             ->toContain('URL')
             ->and($output)
-            ->toContain('APP DEPS')
+            ->toContain('PROJECT DEPS')
             ->and($output)
             ->toContain('development')
             ->and($output)
@@ -124,16 +124,16 @@ describe('app:show', function (): void {
             ->not->toContain('Domain')->and($output)
             ->not->toContain('Path')->and($output)
             ->not->toContain('Root')->and($output)
-            ->not->toContain('app: {');
+            ->not->toContain('project: {');
     });
 
     it('preserves structured gateway errors', function (): void {
-        fakeGateway(fakeErrorEnvelope('app.not_found', 'App not found.', [
-            'app' => 'missing-app',
+        fakeGateway(fakeErrorEnvelope('project.not_found', 'Project not found.', [
+            'project' => 'missing-app',
         ]), 404);
 
-        [$exitCode, $output] = runCommand($this, 'app:show', [
-            'app' => 'missing-app',
+        [$exitCode, $output] = runCommand($this, 'project:show', [
+            'project' => 'missing-app',
             '--json' => true,
         ]);
 
@@ -142,16 +142,16 @@ describe('app:show', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and($decoded['error']['code'])
-            ->toBe('app.not_found')
-            ->and($decoded['error']['meta']['app'])
+            ->toBe('project.not_found')
+            ->and($decoded['error']['meta']['project'])
             ->toBe('missing-app');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
         fakeGatewayDown('No route to host');
 
-        [$exitCode, $output] = runCommand($this, 'app:show', [
-            'app' => 'orbit-docs',
+        [$exitCode, $output] = runCommand($this, 'project:show', [
+            'project' => 'orbit-docs',
             '--json' => true,
         ]);
 

@@ -23,7 +23,7 @@ interface AgentIdeMessageAdapter
      * Return the list of workspace names currently active for the app
      * according to the adapter's source of truth.
      *
-     * @param  array{app: string, node: string}  $target
+     * @param  array{app: string, instance?: string, node: string}  $target
      * @return list<string>
      */
     public function workspaces(array $target, string $adapter): array;

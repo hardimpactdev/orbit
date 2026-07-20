@@ -8,13 +8,13 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is authorized to manage the selected app instance
+- The current node identity is authorized to manage the selected instance
   or workspace.
 
 ## Signature
 
 ```bash
-orbit database:detach [connection] [--app=<app>] [--workspace=<workspace>] [--instance=<name>] [--env-prefix=DB] [--json]
+orbit database:detach [connection] [--instance=<project.instance>] [--workspace=<workspace>] [--env-prefix=DB] [--json]
 ```
 
 ## Input Contract
@@ -24,14 +24,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `connection` | `argument` | Always. | n/a | Visible database connection slug. |
-| `app` | `--app` | Required when `workspace` is absent. | None. | Visible active app the caller may manage. |
-| `instance` | `--instance` | Required with `app`. | None. | App instance belonging to the selected app. |
+| `app` | `--instance` | Required when `workspace` is absent. | None. | Visible active app the caller may manage. |
+| `instance` | `--instance` | Required with `app`. | None. | Instance belonging to the selected app. |
 | `workspace` | `--workspace` | Required when `app` is absent. | None. | Visible workspace the caller may manage. |
 | `env_prefix` | `--env-prefix` | Optional. | `DB`. | Selects the mapping row to remove. |
 | `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |
 
-Exactly one of `--app` or `--workspace` is required. `--instance` is required
-with `--app`; a bare app is never a database target.
+Exactly one of `--instance` or `--workspace` is required. `--instance` is required
+with `--instance`; a bare app is never a database target.
 `--env-prefix` defaults to `DB` and selects the mapping row to remove.
 
 ## Behavior Contract

@@ -68,7 +68,7 @@ it('registers an existing app path from a operator caller through the gateway ap
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --json',
+                'cd %s && orbit instance:register %s --node=app-dev-1 --path=%s --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
                 escapeshellarg($path),
@@ -77,32 +77,40 @@ it('registers an existing app path from a operator caller through the gateway ap
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $app = $payload['success']['data']['app'] ?? null;
-        expect($app)
+        $project = $payload['success']['data']['project'] ?? null;
+        $instance = $payload['success']['data']['instance'] ?? null;
+        expect($project)
+            ->toBeArray()
+            ->and($instance)
             ->toBeArray()
             ->and($payload['success']['data']['result']['action'])
             ->toBe('adopted')
-            ->and($app['name'])
+            ->and($project['name'])
             ->toBe($name)
-            ->and($app['node'])
+            ->and($instance['node'])
             ->toBe('app-dev-1')
-            ->and($app['path'])
+            ->and($instance['path'])
             ->toBe($path)
-            ->and($app['adopted'])
+            ->and($instance['adopted'])
             ->toBeTrue();
 
         $gatewayRecord = $topology->ssh(
             'gateway',
             'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
                 .escapeshellarg("echo json_encode([
-                'app' => \\App\\Models\\App::query()->where('name', '{$name}')->where('adopted', true)->exists(),
+                'project' => \\App\\Models\\Project::query()->where('name', '{$name}')->exists(),
+                'instance' => \\App\\Models\\AppInstance::query()
+                    ->whereHas('project', fn (\$query) => \$query->where('name', '{$name}'))
+                    ->where('adopted', true)
+                    ->exists(),
             ], JSON_THROW_ON_ERROR);"),
             timeoutSeconds: 120,
         );
         $state = json_decode(trim($gatewayRecord->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($state)->toMatchArray([
-            'app' => true,
+            'project' => true,
+            'instance' => true,
         ]);
     } finally {
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);

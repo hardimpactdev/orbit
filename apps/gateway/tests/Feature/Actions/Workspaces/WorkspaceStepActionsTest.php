@@ -5,15 +5,15 @@ declare(strict_types=1);
 use App\Actions\Workspaces\AddWorkspaceStep;
 use App\Actions\Workspaces\RemoveWorkspaceStep;
 use App\Enums\WorkspaceLifecyclePhase;
-use App\Models\App;
 use App\Models\AppInstance;
+use App\Models\Project;
 use App\Models\WorkspaceStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
 it('orders workspace setup and teardown steps independently', function (): void {
-    $app = App::factory()->create();
+    $app = Project::factory()->create();
     $instance = AppInstance::factory()->create(['app_id' => $app->id]);
     $addStep = app(AddWorkspaceStep::class);
     $removeStep = app(RemoveWorkspaceStep::class);
@@ -78,7 +78,7 @@ it('orders workspace setup and teardown steps independently', function (): void 
 });
 
 it('orders workspace steps independently per app instance', function (): void {
-    $app = App::factory()->create();
+    $app = Project::factory()->create();
     $nmbp = AppInstance::factory()->create(['app_id' => $app->id, 'name' => 'nmbp']);
     $development = AppInstance::factory()->create(['app_id' => $app->id, 'name' => 'development']);
     $addStep = app(AddWorkspaceStep::class);

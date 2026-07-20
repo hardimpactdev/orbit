@@ -21,10 +21,10 @@ it('resolves to GET /api/tools', function (): void {
 });
 
 it('serializes app, node, and self filters when provided', function (): void {
-    $request = new ListToolsRequest(app: 'docs', node: 'app-1', self: true);
+    $request = new ListToolsRequest(instance: 'docs', node: 'app-1', self: true);
 
     expect($request->query()->all())->toBe([
-        'app' => 'docs',
+        'instance' => 'docs',
         'node' => 'app-1',
         'self' => true,
     ]);

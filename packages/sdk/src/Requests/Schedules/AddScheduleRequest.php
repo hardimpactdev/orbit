@@ -20,7 +20,7 @@ final class AddScheduleRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         public readonly string $name,
-        public readonly ?string $app,
+        public readonly ?string $instance,
         public readonly ?string $node,
         public readonly string $interval,
         public readonly string $timezone,
@@ -41,7 +41,7 @@ final class AddScheduleRequest extends GatewayRequest implements HasBody
         return array_filter(
             [
                 'name' => $this->name,
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'node' => $this->node,
                 'interval' => $this->interval,
                 'timezone' => $this->timezone,

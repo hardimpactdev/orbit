@@ -9,8 +9,8 @@ use App\Enums\ActivityLogType;
 use App\Enums\Nodes\NodeStatus;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppRegistrar;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -19,10 +19,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-#[RequiresPermission('app:register', servingNode: ServingNode::Target)]
+#[RequiresPermission('instance:register', servingNode: ServingNode::Target)]
 final class AppRegisterController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?Project $activitySubject = null;
 
     public function __construct(
         private readonly NodeRoleAssignments $nodeRoleAssignments,
@@ -41,10 +41,10 @@ final class AppRegisterController implements Loggable
                 return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
             }
 
-            $authorization = $this->authorizer->authorize($caller, $targetNode, 'app:register');
+            $authorization = $this->authorizer->authorize($caller, $targetNode, 'instance:register');
 
             if (! $authorization->allowed) {
-                return $this->forbidden($targetNode, $authorization, 'app:register');
+                return $this->forbidden($targetNode, $authorization, 'instance:register');
             }
         }
 
@@ -65,7 +65,7 @@ final class AppRegisterController implements Loggable
         $name = $this->optionalString($request, 'name');
         $this->activitySubject = $name === null
             ? null
-            : App::query()->where('name', $name)->first();
+            : Project::query()->where('name', $name)->first();
 
         return response()->json($result->payload, $result->successful() ? 200 : 422);
     }
@@ -84,7 +84,7 @@ final class AppRegisterController implements Loggable
             return null;
         }
 
-        $existingNode = App::query()
+        $existingNode = Project::query()
             ->with('node')
             ->where('name', $name)
             ->first()
@@ -174,7 +174,7 @@ final class AppRegisterController implements Loggable
 
     public function type(): string
     {
-        return 'api:POST /apps/register';
+        return 'api:POST /instances/register';
     }
 
     public function activityLogAction(): string

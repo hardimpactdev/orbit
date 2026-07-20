@@ -112,8 +112,9 @@ describe('node permission presets', function (): void {
 
             expect($presets->permissions('app-dev-self'))
                 ->toBe([
-                    'app:read',
-                    'app:register',
+                    'project:read',
+                    'instance:read',
+                    'instance:register',
                     'process:add',
                     'process:read',
                     'process:remove',
@@ -121,7 +122,7 @@ describe('node permission presets', function (): void {
                     'workspace:setup',
                 ])
                 ->and($presets->permissions('app-prod-self'))
-                ->toBe(['app:read']);
+                ->toBe(['project:read', 'instance:read']);
         });
     });
 
@@ -130,7 +131,9 @@ describe('node permission presets', function (): void {
             $permissions = new NodePermissionPresets()->permissions('operator');
 
             expect($permissions)
-                ->toContain('app:read')
+                ->toContain('project:read')
+                ->and($permissions)
+                ->toContain('instance:read')
                 ->and($permissions)
                 ->toContain('database:read')
                 ->and($permissions)
@@ -147,7 +150,7 @@ describe('node permission presets', function (): void {
             $permissions = new NodePermissionPresets()->permissions('operator');
 
             expect($permissions)
-                ->not->toContain('app:credentials')->and($permissions)
+                ->not->toContain('instance:credentials')->and($permissions)
                 ->not->toContain('tool:credentials');
         });
 
@@ -196,7 +199,9 @@ describe('node permission presets', function (): void {
             $permissions = new NodePermissionPresets()->permissions('read-only');
 
             expect($permissions)
-                ->toContain('app:read')
+                ->toContain('project:read')
+                ->and($permissions)
+                ->toContain('instance:read')
                 ->and($permissions)
                 ->toContain('database:read')
                 ->and($permissions)
@@ -213,7 +218,7 @@ describe('node permission presets', function (): void {
             $permissions = new NodePermissionPresets()->permissions('read-only');
 
             expect($permissions)
-                ->not->toContain('app:credentials')->and($permissions)
+                ->not->toContain('instance:credentials')->and($permissions)
                 ->not->toContain('tool:credentials');
         });
     });
@@ -223,12 +228,16 @@ describe('node permission presets', function (): void {
             $permissions = new NodePermissionPresets()->permissions('developer');
 
             expect($permissions)
-                ->toContain('app:read')
+                ->toContain('project:read')
                 ->and($permissions)
-                ->toContain('app:write')
+                ->toContain('project:write')
+                ->and($permissions)
+                ->toContain('instance:read')
+                ->and($permissions)
+                ->toContain('instance:write')
                 ->and($permissions)
                 ->not
-                ->toContain('app:credentials')
+                ->toContain('instance:credentials')
                 ->and($permissions)
                 ->toContain('workspace:read')
                 ->and($permissions)
@@ -306,7 +315,7 @@ describe('node permission presets', function (): void {
         it('includes explicit app credential authority', function (): void {
             $permissions = new NodePermissionPresets()->permissions('admin');
 
-            expect($permissions)->toContain('app:credentials');
+            expect($permissions)->toContain('instance:credentials');
         });
 
         it('includes full tool authority', function (): void {

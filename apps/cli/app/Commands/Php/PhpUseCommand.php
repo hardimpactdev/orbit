@@ -21,7 +21,7 @@ final class PhpUseCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'php:use
         {version? : PHP version to select}
-        {--app= : App selector}
+        {--instance= : Instance selector (project.instance)}
         {--workspace= : Workspace selector}
         {--node= : Node selector}
         {--inherit : Restore workspace PHP inheritance}
@@ -29,7 +29,7 @@ final class PhpUseCommand extends GatewayCommand
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Select PHP runtime intent for an app, workspace, or node CLI default.';
+    protected $description = 'Select PHP runtime intent for an instance, workspace, or node CLI default.';
 
     public function handle(): int
     {
@@ -91,7 +91,7 @@ final class PhpUseCommand extends GatewayCommand
         }
 
         if (
-            $this->stringOption('app') === null
+            $this->stringOption('instance') === null
             && $this->stringOption('workspace') === null
             && $this->option('inherit') !== true
         ) {
@@ -100,8 +100,8 @@ final class PhpUseCommand extends GatewayCommand
 
         return $this->renderFailure(
             'validation_failed',
-            'CLI PHP selection cannot be combined with app, workspace, or inheritance targets.',
-            ['fields' => ['cli', 'app', 'workspace', 'inherit'], 'reason' => 'mutually_exclusive_input'],
+            'CLI PHP selection cannot be combined with instance, workspace, or inheritance targets.',
+            ['fields' => ['cli', 'instance', 'workspace', 'inherit'], 'reason' => 'mutually_exclusive_input'],
         );
     }
 
@@ -151,7 +151,7 @@ final class PhpUseCommand extends GatewayCommand
         return array_filter(
             [
                 'version' => $version,
-                'app' => $cli ? null : $this->stringOption('app') ?? $this->appFromOrbitMarker(),
+                'instance' => $cli ? null : $this->stringOption('instance') ?? $this->instanceFromOrbitMarker(),
                 'workspace' => $cli ? null : $this->stringOption('workspace'),
                 'node' => $node,
                 'inherit' => $this->option('inherit') === true,

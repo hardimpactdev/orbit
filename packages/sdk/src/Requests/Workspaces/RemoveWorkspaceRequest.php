@@ -20,7 +20,7 @@ final class RemoveWorkspaceRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         public readonly string $name,
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly bool $keepFiles = false,
     ) {}
 
@@ -36,7 +36,7 @@ final class RemoveWorkspaceRequest extends GatewayRequest implements HasBody
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
             ],
             fn (?string $value): bool => $value !== null && $value !== '',
         );

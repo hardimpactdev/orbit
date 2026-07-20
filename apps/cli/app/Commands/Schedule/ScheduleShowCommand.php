@@ -21,7 +21,7 @@ final class ScheduleShowCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'schedule:show
         {name? : Schedule name}
-        {--app= : Filter by app instance (app.instance; bare app only when unambiguous)}
+        {--instance= : Filter by instance (project.instance; bare project only when unambiguous)}
         {--node= : Filter by node scope}
         {--json}';
 
@@ -30,11 +30,11 @@ final class ScheduleShowCommand extends GatewayCommand
 
     public function handle(): int
     {
-        if ($this->hasMutuallyExclusiveOptions('app', 'node')) {
+        if ($this->hasMutuallyExclusiveOptions('instance', 'node')) {
             return $this->renderFailure(
                 'validation_failed',
                 'The schedule filters are mutually exclusive.',
-                ['fields' => ['app', 'node']],
+                ['fields' => ['instance', 'node']],
             );
         }
 
@@ -46,7 +46,7 @@ final class ScheduleShowCommand extends GatewayCommand
 
         try {
             $response = $this->gatewayGet('/api/schedules/'.rawurlencode($name), $this->filledQuery([
-                'app' => $this->resolvedScheduleApp(),
+                'instance' => $this->resolvedScheduleInstance(),
                 'node' => $this->resolvedScheduleNode(),
             ]));
         } catch (GatewayApiException $exception) {

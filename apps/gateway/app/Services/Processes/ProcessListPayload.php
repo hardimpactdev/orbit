@@ -19,7 +19,7 @@ class ProcessListPayload
     ) {}
 
     /**
-     * @return array{context: array{node: string, app: string|null, app_instance: string|null, workspace: string|null}, processes: list<array<string, mixed>>}
+     * @return array{context: array{node: string, project: string|null, instance: string|null, workspace: string|null}, processes: list<array<string, mixed>>}
      */
     public function forContext(?string $nodeName, ?string $appName, ?string $workspaceName, ?Node $caller = null): array
     {
@@ -43,8 +43,8 @@ class ProcessListPayload
 
                     return [
                         'node' => $context->node->name,
-                        'app' => $context->app?->name,
-                        'app_instance' => $context->appInstance?->name,
+                        'project' => $context->app?->name,
+                        'instance' => $context->appInstance?->name,
                         'workspace' => $workspace?->name,
                         'name' => $process->name,
                         'command' => $process->command,

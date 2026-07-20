@@ -18,7 +18,7 @@ describe('php:list', function (): void {
         ], ['live' => true]));
 
         [$exitCode, $output] = runCommand($this, 'php:list', [
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--workspace' => 'feature-docs',
             '--node' => 'app-1',
             '--live' => true,
@@ -33,7 +33,7 @@ describe('php:list', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/php/runtime')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'instance=docs')
                 && str_contains($url, 'workspace=feature-docs')
                 && str_contains($url, 'node=app-1')
                 && str_contains($url, 'live=1')
@@ -52,7 +52,7 @@ describe('php:list', function (): void {
         $previousHostCwd = getenv('ORBIT_HOST_CWD');
         $markerDir = sys_get_temp_dir().'/orbit-php-list-'.uniqid('', true);
         mkdir($markerDir.'/.orbit', 0777, true);
-        file_put_contents($markerDir.'/.orbit/config', json_encode(['app' => 'docs'], JSON_THROW_ON_ERROR));
+        file_put_contents($markerDir.'/.orbit/config', json_encode(['instance' => 'docs'], JSON_THROW_ON_ERROR));
         putenv("ORBIT_HOST_CWD={$markerDir}");
 
         fakeGateway(fakeSuccessEnvelope([
@@ -65,7 +65,7 @@ describe('php:list', function (): void {
             Http::assertSent(function (Request $request): bool {
                 $url = urldecode($request->url());
 
-                return str_contains($url, 'app=docs');
+                return str_contains($url, 'instance=docs');
             });
 
             expect($exitCode)->toBe(0);
@@ -92,7 +92,7 @@ describe('php:list', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return str_contains($url, 'node=default-app') && ! str_contains($url, 'app=');
+            return str_contains($url, 'node=default-app') && ! str_contains($url, 'instance=');
         });
 
         expect($exitCode)->toBe(0);
@@ -107,7 +107,8 @@ describe('php:list', function (): void {
                 'supported' => ['8.3', '8.4', '8.5'],
                 'available_images' => ['8.4', '8.5'],
                 'cli' => '8.5',
-                'app' => ['name' => 'docs', 'php_version' => '8.4'],
+                'project' => ['name' => 'docs', 'php_version' => '8.4'],
+                'instance' => ['name' => 'development', 'project' => 'docs'],
                 'workspace' => ['name' => 'feature-docs', 'php_version' => '8.4', 'inherits' => true],
             ],
         ]));
@@ -129,7 +130,7 @@ describe('php:list', function (): void {
             ->and($output)
             ->toContain('CLI')
             ->and($output)
-            ->toContain('APP')
+            ->toContain('INSTANCE')
             ->and($output)
             ->toContain('WORKSPACE')
             ->and($output)
@@ -155,7 +156,8 @@ describe('php:list', function (): void {
                 'supported' => ['8.5'],
                 'available_images' => [],
                 'cli' => null,
-                'app' => null,
+                'project' => null,
+                'instance' => null,
                 'workspace' => null,
             ],
         ]));

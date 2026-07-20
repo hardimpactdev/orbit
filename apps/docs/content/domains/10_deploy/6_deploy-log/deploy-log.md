@@ -1,4 +1,4 @@
-# `orbit deploy:log [app] [run]`
+# `orbit deploy:log [instance] [run]`
 
 [Back to Deploy commands.](../README.md)
 
@@ -11,7 +11,7 @@ not stream a live deployment.
 ## Usage
 
 ```bash
-orbit deploy:log [app] [run] [--step=<id>] [--lines=<count>] [--json]
+orbit deploy:log [instance] [run] [--step=<id>] [--lines=<count>] [--json]
 ```
 
 ## Examples
@@ -24,7 +24,7 @@ orbit deploy:log docs.production 42 --lines=200 --json
 
 ## Arguments and options
 
-- `app`: dotted production app-instance selector. A bare app name or domain is
+- `instance`: dotted production instance selector. A bare project name or domain is
   valid only when the app has exactly one instance.
 - `run`: deployment run id from [`deploy:history`](../5_deploy-history/deploy-history.md).
 - `--step`: limit output to one step id.
@@ -35,7 +35,7 @@ orbit deploy:log docs.production 42 --lines=200 --json
 ## What Happens
 
 Run `deploy:log` when you need to inspect the captured output from a specific
-deployment run. It resolves the production app instance and run id, verifies
+deployment run. It resolves the production instance and run id, verifies
 the run belongs to that instance, reads captured per-step output from gateway
 history, applies optional step and line filters, and renders the selected output.
 
@@ -55,7 +55,7 @@ JSON output returns the run entity and per-step captured output.
 
 - [`orbit deploy:history`](../5_deploy-history/deploy-history.md)
 - [`orbit deploy:run`](../4_deploy-run/deploy-run.md)
-- [`doctor --family=app`](../../5_app/app-doctor.md)
+- [`doctor --family=instance`](../../5_project/instance-doctor.md)
 
 ## Technical Contract
 

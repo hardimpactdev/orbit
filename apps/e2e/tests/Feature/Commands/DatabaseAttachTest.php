@@ -30,7 +30,7 @@ it('attaches a database connection to an app from the operator node through the 
         $appNameValue = var_export($appName, true);
         $seedPhp = <<<PHP
             \$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-            \\App\\Models\\App::query()->updateOrCreate(
+            \\App\\Models\\Project::query()->updateOrCreate(
                 ['name' => {$appNameValue}],
                 [
                     'node_id' => \$node->id,
@@ -61,7 +61,7 @@ it('attaches a database connection to an app from the operator node through the 
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit database:attach %s --app=%s --env-prefix=DB --json',
+                'cd %s && orbit database:attach %s --instance=%s --env-prefix=DB --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($slug),
                 escapeshellarg($appName),
@@ -83,7 +83,7 @@ it('attaches a database connection to an app from the operator node through the 
         $appNameValue = var_export($appName, true);
         $cleanupPhp = <<<PHP
             \\App\\Models\\DatabaseConnection::query()->where('slug', {$slugValue})->delete();
-            \\App\\Models\\App::query()->where('name', {$appNameValue})->delete();
+            \\App\\Models\\Project::query()->where('name', {$appNameValue})->delete();
             echo 'cleaned';
             PHP;
 

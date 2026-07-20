@@ -68,7 +68,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/agent-ide": {
+    "/instances/{instance}/agent-ide": {
         parameters: {
             query?: never;
             header?: never;
@@ -84,7 +84,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/instances": {
+    "/instances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["appInstance.all"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project}/instances": {
         parameters: {
             query?: never;
             header?: never;
@@ -100,7 +116,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/instances/{instance}": {
+    "/projects/{project}/instances/{instance}": {
         parameters: {
             query?: never;
             header?: never;
@@ -116,7 +132,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps": {
+    "/projects": {
         parameters: {
             query?: never;
             header?: never;
@@ -132,7 +148,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/prune": {
+    "/instances/prune": {
         parameters: {
             query?: never;
             header?: never;
@@ -148,7 +164,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/register": {
+    "/instances/register": {
         parameters: {
             query?: never;
             header?: never;
@@ -164,7 +180,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}": {
+    "/projects/{project}": {
         parameters: {
             query?: never;
             header?: never;
@@ -180,7 +196,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/root": {
+    "/instances/{instance}/root": {
         parameters: {
             query?: never;
             header?: never;
@@ -196,7 +212,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/mounts": {
+    "/instances/{instance}/mounts": {
         parameters: {
             query?: never;
             header?: never;
@@ -212,7 +228,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/setup": {
+    "/instances/{instance}/setup": {
         parameters: {
             query?: never;
             header?: never;
@@ -228,7 +244,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/setup-steps": {
+    "/instances/{instance}/setup-steps": {
         parameters: {
             query?: never;
             header?: never;
@@ -244,7 +260,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/setup-steps/{step}": {
+    "/instances/{instance}/setup-steps/{step}": {
         parameters: {
             query?: never;
             header?: never;
@@ -260,7 +276,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/websocket/enable": {
+    "/instances/{instance}/websocket/enable": {
         parameters: {
             query?: never;
             header?: never;
@@ -276,7 +292,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/websocket/disable": {
+    "/instances/{instance}/websocket/disable": {
         parameters: {
             query?: never;
             header?: never;
@@ -292,7 +308,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/websocket/credentials": {
+    "/instances/{instance}/websocket/credentials": {
         parameters: {
             query?: never;
             header?: never;
@@ -308,7 +324,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/worker": {
+    "/instances/{instance}/worker": {
         parameters: {
             query?: never;
             header?: never;
@@ -324,7 +340,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/worker/enable": {
+    "/instances/{instance}/worker/enable": {
         parameters: {
             query?: never;
             header?: never;
@@ -340,7 +356,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apps/{app}/worker/disable": {
+    "/instances/{instance}/worker/disable": {
         parameters: {
             query?: never;
             header?: never;
@@ -1550,6 +1566,7 @@ export interface components {
             settings?: string[] | null;
             ingress_node?: string | null;
             postgres_node?: string | null;
+            postgres_process?: string | null;
             clickhouse_node?: string | null;
             reconverge_existing?: boolean | null;
         };
@@ -1605,7 +1622,7 @@ export interface components {
         /** SendAgentIdeMessageApiRequest */
         SendAgentIdeMessageApiRequest: {
             message: string;
-            app?: string;
+            instance?: string;
             workspace?: string;
             path?: string;
         };
@@ -1726,7 +1743,7 @@ export interface operations {
                             };
                             meta: {
                                 filters: {
-                                    app: string | null;
+                                    project: string | null;
                                     node: string | null;
                                     effect: string | null;
                                     correlation: string | null;
@@ -1922,7 +1939,7 @@ export interface operations {
                                 scope: unknown[] | null | string;
                                 supported: [
                                     "node",
-                                    "app"
+                                    "instance"
                                 ];
                             };
                         };
@@ -1960,7 +1977,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
@@ -1978,7 +1995,7 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                app: {
+                                instance: {
                                     [key: string]: unknown;
                                 };
                                 agent_ide: {
@@ -2004,10 +2021,10 @@ export interface operations {
                     "application/json": {
                         error: {
                             /** @constant */
-                            code: "app.not_found";
+                            code: "instance.not_found";
                             message: string;
                             meta: {
-                                app: string;
+                                instance: string;
                             };
                         };
                     };
@@ -2016,12 +2033,31 @@ export interface operations {
             422: components["responses"]["ValidationException"];
         };
     };
+    "appInstance.all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
     "appInstance.index": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                project: string;
             };
             cookie?: never;
         };
@@ -2032,34 +2068,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                app: string;
-                                instances: string[];
-                            };
-                            meta: string | {
-                                count: number;
-                            };
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "app.not_found";
-                            message: string;
-                            meta: {
-                                app: string;
-                            };
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -2069,7 +2078,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                project: string;
             };
             cookie?: never;
         };
@@ -2090,7 +2099,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                project: string;
                 instance: string;
             };
             cookie?: never;
@@ -2112,7 +2121,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                project: string;
                 instance: string;
             };
             cookie?: never;
@@ -2140,7 +2149,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The compact logical app inventory. */
+            /** @description The compact project inventory. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2149,7 +2158,7 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                apps: {
+                                projects: {
                                     name: string;
                                     repository: string | null;
                                     dependency_audit_status: string;
@@ -2198,12 +2207,12 @@ export interface operations {
                             /** @constant */
                             code: "authorization_failed";
                             /** @constant */
-                            message: "This node is not authorized to read the app registry.";
+                            message: "This node is not authorized to read the project registry.";
                             meta: {
                                 /** @constant */
                                 reason: "missing_permission";
                                 /** @constant */
-                                missing_permission: "app:read";
+                                missing_permission: "project:read";
                             };
                         };
                     } | {
@@ -2255,7 +2264,8 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                app: string;
+                                project: string;
+                                instance: string;
                                 stale_workspaces: string;
                                 dry_run: string;
                             };
@@ -2274,10 +2284,10 @@ export interface operations {
                     "application/json": {
                         error: {
                             /** @constant */
-                            code: "app.not_found";
+                            code: "instance.not_found";
                             message: string;
                             meta: {
-                                app: string;
+                                instance: string;
                             };
                         };
                     };
@@ -2291,20 +2301,20 @@ export interface operations {
                     "application/json": {
                         error: {
                             /** @constant */
-                            code: "app.agent_ide_query_failed";
+                            code: "instance.agent_ide_query_failed";
                             message: string;
                             meta: {
-                                app: string;
+                                instance: string;
                             };
                         };
                     } | {
                         error: {
                             /** @constant */
-                            code: "app.no_agent_ide_adapter";
+                            code: "instance.no_agent_ide_adapter";
                             /** @constant */
-                            message: "No agent IDE adapter configured for this app.";
+                            message: "No agent IDE adapter configured for this instance.";
                             meta: {
-                                app: string;
+                                instance: string;
                             };
                         };
                     } | {
@@ -2379,7 +2389,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                project: string;
             };
             cookie?: never;
         };
@@ -2393,45 +2403,18 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                app: {
+                                project: {
                                     [key: string]: unknown;
                                 };
                                 details: {
-                                    domain: string | null;
-                                    document_root: string;
-                                    node: {
-                                        name: string;
-                                        host: string;
-                                    };
-                                    agent_ide: {
-                                        adapter: string;
-                                        inherited_from: string;
-                                        /** @enum {string|null} */
-                                        workspace_discovery: "available" | "unsupported" | null;
-                                    };
                                     dependency_audits: string;
-                                    instances: {
-                                        name: string;
-                                        driver: string;
-                                        node: string | null;
-                                        url: string | null;
-                                        workspaces: unknown[];
-                                    }[];
-                                    workspaces: string[];
+                                    instances: string;
                                     processes: {
                                         name: string;
-                                        app_instance: string | null;
+                                        instance: string | null;
                                         runtime: string;
                                     }[];
-                                    routes: [
-                                        {
-                                            host: string | null;
-                                            /** @constant */
-                                            kind: "app";
-                                            /** @constant */
-                                            owner: "app";
-                                        }
-                                    ];
+                                    routes: unknown[];
                                 };
                             };
                         };
@@ -2447,8 +2430,14 @@ export interface operations {
                         error: {
                             /** @constant */
                             code: "authorization_failed";
-                            message: string | "This node is not authorized to read this app.";
-                            meta: unknown[];
+                            /** @constant */
+                            message: "This node is not authorized to read this project.";
+                            meta: {
+                                /** @constant */
+                                reason: "missing_permission";
+                                /** @constant */
+                                missing_permission: "project:read";
+                            };
                         };
                     } | {
                         error: {
@@ -2469,10 +2458,10 @@ export interface operations {
                     "application/json": {
                         error: {
                             /** @constant */
-                            code: "app.not_found";
+                            code: "project.not_found";
                             message: string;
                             meta: {
-                                app: string;
+                                project: string;
                             };
                         };
                     };
@@ -2485,7 +2474,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                project: string;
             };
             cookie?: never;
         };
@@ -2499,7 +2488,7 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                app: {
+                                project: {
                                     name: string;
                                     node: string;
                                     url: string;
@@ -2541,10 +2530,10 @@ export interface operations {
                     "application/json": {
                         error: {
                             /** @constant */
-                            code: "app.not_found";
+                            code: "project.not_found";
                             message: string;
                             meta: {
-                                name: string;
+                                project: string;
                             };
                         };
                     };
@@ -2560,7 +2549,7 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "Use --force to remove this app.";
+                            message: "Use --force to remove this project.";
                             meta: {
                                 /** @constant */
                                 field: "force";
@@ -2576,7 +2565,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
@@ -2598,10 +2587,10 @@ export interface operations {
                     "application/json": {
                         error: {
                             /** @constant */
-                            code: "app.not_found";
+                            code: "instance.not_found";
                             message: string;
                             meta: {
-                                app: string;
+                                instance: string;
                             };
                         };
                     };
@@ -2633,7 +2622,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
@@ -2654,7 +2643,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
@@ -2675,7 +2664,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
@@ -2696,13 +2685,13 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description The app instance setup result. */
+            /** @description The instance setup result. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2711,8 +2700,8 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                                 node: string;
                                 path: string;
                                 url: string;
@@ -2729,7 +2718,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The caller is not authorized to set up the app instance. */
+            /** @description The caller is not authorized to set up the instance. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2746,7 +2735,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The selected app was not found. */
+            /** @description The selected instance was not found. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2763,7 +2752,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The app instance selector or setup operation is invalid. */
+            /** @description The instance selector or setup operation is invalid. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2787,7 +2776,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
@@ -2808,7 +2797,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
@@ -2829,7 +2818,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
                 step: number;
             };
             cookie?: never;
@@ -2851,7 +2840,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
@@ -2866,36 +2855,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                binding: {
-                                    app: string;
-                                    /** @constant */
-                                    internal_host: "websocket.orbit";
-                                    public_hosts: unknown[];
-                                    allowed_origins: unknown[];
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "app.not_found";
-                            message: string;
-                            meta: {
-                                app: string;
-                            };
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
             422: components["responses"]["ValidationException"];
@@ -2906,7 +2866,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
@@ -2917,53 +2877,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                binding: {
-                                    app: string;
-                                    /** @constant */
-                                    internal_host: "websocket.orbit";
-                                    public_hosts: unknown[];
-                                    allowed_origins: unknown[];
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "app.not_found";
-                            message: string;
-                            meta: {
-                                app: string;
-                            };
-                        };
-                    };
-                };
-            };
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "websocket.binding_missing";
-                            message: string;
-                            meta: {
-                                app: string;
-                            };
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -2973,7 +2887,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
@@ -2984,56 +2898,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                credentials: {
-                                    app: string;
-                                    /** @constant */
-                                    internal_host: "websocket.orbit";
-                                    public_hosts: unknown[];
-                                    allowed_origins: unknown[];
-                                    reverb_app_id: string;
-                                    reverb_app_key: string;
-                                    reverb_app_secret: string;
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "app.not_found";
-                            message: string;
-                            meta: {
-                                app: string;
-                            };
-                        };
-                    };
-                };
-            };
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "websocket.binding_missing";
-                            message: string;
-                            meta: {
-                                app: string;
-                            };
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -3043,7 +2908,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
@@ -3057,8 +2922,8 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                                 changed: boolean;
@@ -3067,8 +2932,8 @@ export interface operations {
                     } | {
                         success: {
                             data: {
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                                 changed: string;
@@ -3077,8 +2942,8 @@ export interface operations {
                     } | {
                         success: {
                             data: {
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                             };
@@ -3121,10 +2986,10 @@ export interface operations {
                     "application/json": {
                         error: {
                             /** @constant */
-                            code: "app.not_found";
+                            code: "instance.not_found";
                             message: string;
                             meta: {
-                                app: string;
+                                instance: string;
                             };
                         };
                     };
@@ -3137,7 +3002,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: {
-                            code: string | "app.worker_readiness_failed";
+                            code: string | "instance.worker_readiness_failed";
                             message: string;
                             meta: unknown[];
                         };
@@ -3148,11 +3013,11 @@ export interface operations {
                             message: string;
                             meta: {
                                 /** @constant */
-                                field: "app";
+                                field: "instance";
                                 /** @constant */
-                                reason: "app_instance_unavailable";
-                                app: string;
-                                app_instance: string;
+                                reason: "instance_unavailable";
+                                project: string;
+                                instance: string;
                             };
                         };
                     } | {
@@ -3171,7 +3036,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
@@ -3185,8 +3050,8 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                                 changed: boolean;
@@ -3195,8 +3060,8 @@ export interface operations {
                     } | {
                         success: {
                             data: {
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                                 changed: string;
@@ -3205,8 +3070,8 @@ export interface operations {
                     } | {
                         success: {
                             data: {
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                             };
@@ -3249,10 +3114,10 @@ export interface operations {
                     "application/json": {
                         error: {
                             /** @constant */
-                            code: "app.not_found";
+                            code: "instance.not_found";
                             message: string;
                             meta: {
-                                app: string;
+                                instance: string;
                             };
                         };
                     };
@@ -3265,7 +3130,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: {
-                            code: string | "app.worker_readiness_failed";
+                            code: string | "instance.worker_readiness_failed";
                             message: string;
                             meta: unknown[];
                         };
@@ -3276,11 +3141,11 @@ export interface operations {
                             message: string;
                             meta: {
                                 /** @constant */
-                                field: "app";
+                                field: "instance";
                                 /** @constant */
-                                reason: "app_instance_unavailable";
-                                app: string;
-                                app_instance: string;
+                                reason: "instance_unavailable";
+                                project: string;
+                                instance: string;
                             };
                         };
                     } | {
@@ -3299,7 +3164,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                app: string;
+                instance: string;
             };
             cookie?: never;
         };
@@ -3313,8 +3178,8 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                                 changed: boolean;
@@ -3323,8 +3188,8 @@ export interface operations {
                     } | {
                         success: {
                             data: {
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                                 changed: string;
@@ -3333,8 +3198,8 @@ export interface operations {
                     } | {
                         success: {
                             data: {
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                                 worker_enabled: boolean;
                                 worker_config: unknown[] | null;
                             };
@@ -3377,10 +3242,10 @@ export interface operations {
                     "application/json": {
                         error: {
                             /** @constant */
-                            code: "app.not_found";
+                            code: "instance.not_found";
                             message: string;
                             meta: {
-                                app: string;
+                                instance: string;
                             };
                         };
                     };
@@ -3393,7 +3258,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         error: {
-                            code: string | "app.worker_readiness_failed";
+                            code: string | "instance.worker_readiness_failed";
                             message: string;
                             meta: unknown[];
                         };
@@ -3404,11 +3269,11 @@ export interface operations {
                             message: string;
                             meta: {
                                 /** @constant */
-                                field: "app";
+                                field: "instance";
                                 /** @constant */
-                                reason: "app_instance_unavailable";
-                                app: string;
-                                app_instance: string;
+                                reason: "instance_unavailable";
+                                project: string;
+                                instance: string;
                             };
                         };
                     } | {
@@ -3484,7 +3349,7 @@ export interface operations {
                         success: {
                             data: {
                                 nodes: unknown[];
-                                apps: unknown[];
+                                projects: unknown[];
                                 processes: unknown[];
                                 tools: unknown[];
                             };
@@ -3657,7 +3522,7 @@ export interface operations {
     "databaseConnections.databaseConnectionIndex": {
         parameters: {
             query?: {
-                app?: string;
+                instance?: string;
                 workspace?: string;
                 node?: string;
             };
@@ -3780,8 +3645,8 @@ export interface operations {
                                     limit: Record<string, never> | null;
                                     limit_capped: boolean;
                                 };
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                             };
                         };
                     };
@@ -3809,10 +3674,10 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "App is required.";
+                            message: "Instance is required.";
                             meta: string | {
                                 /** @constant */
-                                field: "app";
+                                field: "instance";
                             };
                             data: string;
                         };
@@ -3842,8 +3707,8 @@ export interface operations {
                             data: {
                                 run: {
                                     id: number;
-                                    app: string;
-                                    app_instance: string;
+                                    project: string;
+                                    instance: string;
                                     status: string;
                                     exit_code: number | null;
                                     started_at: string | null;
@@ -3892,10 +3757,10 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "App and positive run id are required.";
+                            message: "Instance and positive run id are required.";
                             meta: string | {
                                 /** @enum {string} */
-                                field: "app" | "run";
+                                field: "instance" | "run";
                             };
                             data: string;
                         };
@@ -3959,10 +3824,10 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "App is required.";
+                            message: "Instance is required.";
                             meta: string | {
                                 /** @constant */
-                                field: "app";
+                                field: "instance";
                             };
                             data: string;
                         };
@@ -4008,8 +3873,8 @@ export interface operations {
                                 steps: unknown[];
                             };
                             meta: string | {
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                                 count: number;
                             };
                         };
@@ -4026,10 +3891,10 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "App is required.";
+                            message: "Instance is required.";
                             meta: string | {
                                 /** @constant */
-                                field: "app";
+                                field: "instance";
                             };
                             data: string;
                         };
@@ -4057,8 +3922,8 @@ export interface operations {
                             data: {
                                 step: {
                                     id: number;
-                                    app: string;
-                                    app_instance: string;
+                                    project: string;
+                                    instance: string;
                                     title: string;
                                     command: string;
                                     order: number;
@@ -4094,10 +3959,10 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "App and command are required.";
+                            message: "Instance and command are required.";
                             meta: string | {
                                 /** @enum {string} */
-                                field: "app" | "command";
+                                field: "instance" | "command";
                             };
                             data: string;
                         };
@@ -4127,8 +3992,8 @@ export interface operations {
                             data: {
                                 step: {
                                     id: number;
-                                    app: string;
-                                    app_instance: string;
+                                    project: string;
+                                    instance: string;
                                     title: string;
                                     command: string;
                                     order: number;
@@ -4155,10 +4020,10 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "App is required.";
+                            message: "Instance is required.";
                             meta: string | {
                                 /** @constant */
-                                field: "app";
+                                field: "instance";
                             };
                             data: string;
                         };
@@ -4680,9 +4545,7 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                nodes: {
-                                    [key: string]: string;
-                                };
+                                nodes: unknown[];
                             };
                             meta: {
                                 doctor: {
@@ -4928,6 +4791,7 @@ export interface operations {
                             data: {
                                 node: {
                                     name: string;
+                                    tld: string | null;
                                     status: string;
                                     platform: string;
                                     roles: string[];
@@ -5012,17 +4876,31 @@ export interface operations {
                             };
                             meta: {
                                 warnings: [
-                                    {
-                                        /** @constant */
-                                        code: "node.artifact_enactment_failed";
-                                        /** @constant */
-                                        message: "Node artifact re-enactment failed after intent update.";
-                                        /** @constant */
-                                        family: "node";
-                                        /** @constant */
-                                        next_command: "doctor --family=node --restore";
-                                    }
-                                ] | string[];
+                                    [
+                                        {
+                                            /** @constant */
+                                            code: "node.artifact_enactment_failed";
+                                            /** @constant */
+                                            message: "Node DNS projection application failed after intent update.";
+                                            /** @constant */
+                                            family: "node";
+                                            /** @constant */
+                                            next_command: "doctor --family=node --restore";
+                                        }
+                                    ] | string[],
+                                    [
+                                        {
+                                            /** @constant */
+                                            code: "node.artifact_enactment_failed";
+                                            /** @constant */
+                                            message: "Node artifact re-enactment failed after intent update.";
+                                            /** @constant */
+                                            family: "node";
+                                            /** @constant */
+                                            next_command: "doctor --family=node --restore";
+                                        }
+                                    ] | string[]
+                                ];
                             };
                         };
                     };
@@ -5093,15 +4971,7 @@ export interface operations {
                                 grants_removed: unknown;
                             };
                             meta: {
-                                warnings: {
-                                    /** @constant */
-                                    code: "node.role_baseline_mismatch";
-                                    message: string;
-                                    /** @constant */
-                                    family: "node";
-                                    /** @constant */
-                                    next_command: "doctor --family=node --restore";
-                                }[];
+                                warnings: string[];
                             };
                         };
                     };
@@ -5334,7 +5204,7 @@ export interface operations {
     phpRuntime: {
         parameters: {
             query?: {
-                app?: string;
+                instance?: string;
                 workspace?: string;
                 node?: string;
                 live?: string;
@@ -5363,9 +5233,13 @@ export interface operations {
                                     available_images: unknown[];
                                     image_inventory_status: string;
                                     cli: string | null;
-                                    app: {
+                                    project: {
                                         name: string;
                                         php_version: string;
+                                    } | null;
+                                    instance: {
+                                        name: string;
+                                        project: string;
                                     } | null;
                                     workspace: {
                                         name: string;
@@ -5394,7 +5268,7 @@ export interface operations {
             content: {
                 "application/json": {
                     version?: string;
-                    app?: string;
+                    instance?: string;
                     workspace?: string;
                     node?: string;
                     inherit?: string;
@@ -5421,9 +5295,13 @@ export interface operations {
                                     available_images: unknown[];
                                     image_inventory_status: string;
                                     cli: string | null;
-                                    app: {
+                                    project: {
                                         name: string;
                                         php_version: string;
+                                    } | null;
+                                    instance: {
+                                        name: string;
+                                        project: string;
                                     } | null;
                                     workspace: {
                                         name: string;
@@ -5435,7 +5313,8 @@ export interface operations {
                                     /** @constant */
                                     target: "node_cli";
                                     node: string;
-                                    app: null;
+                                    project: null;
+                                    instance: null;
                                     workspace: null;
                                     previous: string | null;
                                     version: string;
@@ -5453,9 +5332,13 @@ export interface operations {
                                     available_images: unknown[];
                                     image_inventory_status: string;
                                     cli: string | null;
-                                    app: {
+                                    project: {
                                         name: string;
                                         php_version: string;
+                                    } | null;
+                                    instance: {
+                                        name: string;
+                                        project: string;
                                     } | null;
                                     workspace: {
                                         name: string;
@@ -5467,9 +5350,10 @@ export interface operations {
                                     /** @constant */
                                     target: "workspace";
                                     node: string;
-                                    app: string;
+                                    project: string | null;
+                                    instance: string;
                                     workspace: string;
-                                    previous: string;
+                                    previous: string | null;
                                     version: string | null;
                                     image: string | null;
                                     inherits: Record<string, never> | null;
@@ -5486,9 +5370,13 @@ export interface operations {
                                     available_images: unknown[];
                                     image_inventory_status: string;
                                     cli: string | null;
-                                    app: {
+                                    project: {
                                         name: string;
                                         php_version: string;
+                                    } | null;
+                                    instance: {
+                                        name: string;
+                                        project: string;
                                     } | null;
                                     workspace: {
                                         name: string;
@@ -5498,9 +5386,10 @@ export interface operations {
                                 };
                                 result: {
                                     /** @constant */
-                                    target: "app";
+                                    target: "instance";
                                     node: string;
-                                    app: string;
+                                    project: string;
+                                    instance: string;
                                     workspace: null;
                                     previous: string;
                                     version: string;
@@ -5572,8 +5461,8 @@ export interface operations {
             query?: {
                 /** @description Filter processes by node name. */
                 node?: string;
-                /** @description Filter processes by app name. */
-                app?: string;
+                /** @description Filter processes by project.instance selector. */
+                instance?: string;
                 /** @description Filter processes by workspace name. */
                 workspace?: string;
             };
@@ -5593,8 +5482,8 @@ export interface operations {
                             data: {
                                 context: {
                                     node: string;
-                                    app: string;
-                                    app_instance: string;
+                                    project: string;
+                                    instance: string;
                                     workspace: string;
                                 };
                                 processes: unknown[];
@@ -5817,7 +5706,7 @@ export interface operations {
                                     node: string;
                                     target: {
                                         /** @enum {string} */
-                                        type: "app_instance" | "app" | "analytics" | "websocket" | "workspace" | "gateway" | "upstream" | "redirect";
+                                        type: "instance" | "project" | "analytics" | "websocket" | "workspace" | "gateway" | "upstream" | "redirect";
                                         value: string | null;
                                     };
                                     redirect_code: number | null;
@@ -6008,6 +5897,7 @@ export interface operations {
                                     execution: {
                                         type: string;
                                         value: string;
+                                        timeout_seconds: number;
                                     };
                                     enabled: boolean;
                                     status: string;
@@ -6026,7 +5916,7 @@ export interface operations {
                                 };
                             };
                             meta: {
-                                app: string | null;
+                                instance: string | null;
                                 node: string | null;
                             };
                         };
@@ -6083,6 +5973,7 @@ export interface operations {
                                     execution: {
                                         type: string;
                                         value: string;
+                                        timeout_seconds: number;
                                     };
                                     enabled: boolean;
                                     /** @constant */
@@ -6198,7 +6089,7 @@ export interface operations {
                                 }[];
                             };
                             meta: {
-                                app: string | null;
+                                instance: string | null;
                                 node: string | null;
                                 count: number;
                             };
@@ -6539,7 +6430,7 @@ export interface operations {
         parameters: {
             query?: {
                 node?: string;
-                app?: string;
+                instance?: string;
                 self?: boolean;
             };
             header?: never;
@@ -6576,7 +6467,7 @@ export interface operations {
                             message: string;
                             meta: {
                                 /** @constant */
-                                field: "app";
+                                field: "instance";
                                 value: string | unknown[] | null;
                             };
                         };
@@ -7326,7 +7217,7 @@ export interface operations {
                             message: string;
                             meta: {
                                 /** @constant */
-                                field: "app";
+                                field: "instance";
                                 value: string | null;
                             };
                         };
@@ -7420,7 +7311,7 @@ export interface operations {
                                 run: {
                                     id: number;
                                     workspace: string;
-                                    app: string;
+                                    project: string | null;
                                     node: string | null;
                                     type: string;
                                     status: string;
@@ -7549,8 +7440,8 @@ export interface operations {
                             data: {
                                 workspace: {
                                     name: string;
-                                    app: string;
-                                    app_instance: string;
+                                    project: string | null;
+                                    instance: string;
                                     node: string | null;
                                     path: string;
                                     url: string;
@@ -7588,7 +7479,7 @@ export interface operations {
                             message: string;
                             meta: {
                                 name: string;
-                                apps: string[];
+                                instances: string[];
                             };
                         };
                     } | {
@@ -7627,7 +7518,7 @@ export interface operations {
                             message: string;
                             meta: string | {
                                 name: string;
-                                app: string | null;
+                                instance: string | null;
                                 /** @constant */
                                 reason: "missing_permission";
                                 /** @constant */
@@ -7686,8 +7577,8 @@ export interface operations {
                         success: {
                             data: {
                                 name: string;
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                                 /** @constant */
                                 action: "removed";
                                 proxy_routes_removed: number;
@@ -7796,7 +7687,8 @@ export interface operations {
                             message: "Workspace owning node could not be resolved.";
                             meta: string | {
                                 name: string;
-                                app: string;
+                                project: string | null;
+                                instance: string;
                             };
                         };
                     } | {
@@ -7829,7 +7721,7 @@ export interface operations {
                             message: string;
                             meta: string | {
                                 name: string;
-                                app: string | null;
+                                instance: string | null;
                             };
                         };
                     };
@@ -7873,8 +7765,8 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                app: string;
-                                app_instance: string;
+                                project: string;
+                                instance: string;
                                 workspace: string;
                                 node: string;
                                 url: string;
@@ -7953,7 +7845,7 @@ export interface operations {
                             message: string;
                             meta: {
                                 /** @enum {string} */
-                                field: "workspace" | "path" | "app";
+                                field: "workspace" | "path" | "instance";
                             };
                         };
                     } | {
@@ -7995,8 +7887,8 @@ export interface operations {
                             data: {
                                 workspace: {
                                     name: string;
-                                    app: string;
-                                    app_instance: string;
+                                    project: string | null;
+                                    instance: string;
                                     node: string | null;
                                     path: string;
                                     url: string;
@@ -8136,8 +8028,8 @@ export interface operations {
                                 };
                                 step: {
                                     id: number;
-                                    app: string;
-                                    app_instance: string;
+                                    project: string;
+                                    instance: string;
                                     phase: string;
                                     order: number;
                                     command: string;
@@ -8162,7 +8054,7 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "Workspace steps can only be changed on app instances. Use a dotted selector such as hauser.nmbp.";
+                            message: "Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp.";
                             meta: unknown[];
                         };
                     } | {
@@ -8176,7 +8068,7 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "Could not resolve parent app.";
+                            message: "Could not resolve an instance.";
                             meta: unknown[];
                         };
                     } | {
@@ -8220,7 +8112,7 @@ export interface operations {
                             code: "authorization_failed";
                             message: string;
                             meta: string | {
-                                app: string;
+                                project: string;
                             };
                         };
                     } | {
@@ -8246,17 +8138,17 @@ export interface operations {
                             message: string;
                             meta: {
                                 step_id: number;
-                                app: string;
+                                project: string;
                                 phase: string;
                             };
                         };
                     } | {
                         error: {
                             /** @constant */
-                            code: "workspace.app_not_found";
+                            code: "workspace.instance_not_found";
                             message: string;
                             meta: {
-                                app: string;
+                                instance: string;
                             };
                         };
                     };
@@ -8314,7 +8206,7 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "Workspace steps require a concrete app instance. Use a dotted selector such as hauser.nmbp.";
+                            message: "Workspace steps require a concrete instance. Use a dotted selector such as hauser.nmbp.";
                             meta: unknown[];
                         };
                     } | {
@@ -8328,7 +8220,7 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "Could not resolve parent app.";
+                            message: "Could not resolve an instance.";
                             meta: unknown[];
                         };
                     } | {
@@ -8364,7 +8256,7 @@ export interface operations {
                             code: "authorization_failed";
                             message: string;
                             meta: string | {
-                                app: string;
+                                project: string;
                             };
                         };
                     } | {
@@ -8386,10 +8278,10 @@ export interface operations {
                     "application/json": {
                         error: {
                             /** @constant */
-                            code: "workspace.app_not_found";
+                            code: "workspace.instance_not_found";
                             message: string;
                             meta: {
-                                app: string;
+                                instance: string;
                             };
                         };
                     };
@@ -8437,8 +8329,8 @@ export interface operations {
                                 };
                                 step: {
                                     id: number;
-                                    app: string;
-                                    app_instance: string;
+                                    project: string;
+                                    instance: string;
                                     phase: string;
                                     order: number;
                                     command: string;
@@ -8460,7 +8352,7 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "Workspace steps can only be changed on app instances. Use a dotted selector such as hauser.nmbp.";
+                            message: "Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp.";
                             meta: unknown[];
                         };
                     } | {
@@ -8474,7 +8366,7 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "Could not resolve parent app.";
+                            message: "Could not resolve an instance.";
                             meta: unknown[];
                         };
                     } | {
@@ -8517,7 +8409,7 @@ export interface operations {
                             /** @constant */
                             code: "validation_failed";
                             /** @constant */
-                            message: "Workspace lifecycle steps cannot read or copy the parent app .env file.";
+                            message: "Workspace lifecycle steps cannot read or copy the parent project .env file.";
                             meta: unknown[];
                         };
                     } | {
@@ -8561,7 +8453,7 @@ export interface operations {
                             code: "authorization_failed";
                             message: string;
                             meta: string | {
-                                app: string;
+                                project: string;
                             };
                         };
                     } | {
@@ -8587,17 +8479,17 @@ export interface operations {
                             message: string;
                             meta: {
                                 id: number;
-                                app: string;
+                                project: string;
                                 phase: string;
                             };
                         };
                     } | {
                         error: {
                             /** @constant */
-                            code: "workspace.app_not_found";
+                            code: "workspace.instance_not_found";
                             message: string;
                             meta: {
-                                app: string;
+                                instance: string;
                             };
                         };
                     };

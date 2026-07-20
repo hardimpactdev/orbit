@@ -20,7 +20,7 @@ final class SendAgentIdeMessageRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         public readonly string $message,
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $workspace = null,
         public readonly ?string $path = null,
     ) {}
@@ -38,7 +38,7 @@ final class SendAgentIdeMessageRequest extends GatewayRequest implements HasBody
         return array_filter(
             [
                 'message' => $this->message,
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'workspace' => $this->workspace,
                 'path' => $this->path,
             ],

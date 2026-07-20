@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\DatabaseConnections;
 
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 
@@ -28,7 +28,7 @@ final readonly class DatabaseConnectionTargetResolver
             ->first();
     }
 
-    public function resolveApp(?string $selector): ?App
+    public function resolveApp(?string $selector): ?Project
     {
         if ($selector === null || trim($selector) === '') {
             return null;
@@ -36,7 +36,7 @@ final readonly class DatabaseConnectionTargetResolver
 
         $selector = trim($selector);
 
-        return App::query()
+        return Project::query()
             ->where('name', $selector)
             ->orWhere('domain', $selector)
             ->first();
@@ -82,7 +82,7 @@ final readonly class DatabaseConnectionTargetResolver
         }
     }
 
-    public function resolveAppInstance(App $app, ?string $selector): ?AppInstance
+    public function resolveAppInstance(Project $app, ?string $selector): ?AppInstance
     {
         if ($selector === null || trim($selector) === '') {
             return null;
@@ -101,9 +101,9 @@ final readonly class DatabaseConnectionTargetResolver
         }
 
         [$appName, $instanceName] = explode(separator: '.', string: trim($selector), limit: 2);
-        $app = App::query()->where('name', $appName)->first();
+        $app = Project::query()->where('name', $appName)->first();
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return null;
         }
 

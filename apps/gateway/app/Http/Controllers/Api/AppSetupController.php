@@ -10,9 +10,9 @@ use App\Contracts\Loggable;
 use App\Contracts\ProgressReporter;
 use App\Enums\ActivityLogType;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -41,43 +41,44 @@ final class AppSetupController implements Loggable
 
     #[OpenApiResponse(
         status: 200,
-        description: 'The app instance setup result.',
-        type: "array{success: array{data: array{app: string, app_instance: string, node: string, path: string, url: string, action: 'set_up'|'converged', setup_steps: array{status: string, count: int, message: string}}, meta: list<mixed>}}",
+        description: 'The instance setup result.',
+        type: "array{success: array{data: array{project: string, instance: string, node: string, path: string, url: string, action: 'set_up'|'converged', setup_steps: array{status: string, count: int, message: string}}, meta: list<mixed>}}",
     )]
     #[OpenApiResponse(
         status: 403,
-        description: 'The caller is not authorized to set up the app instance.',
+        description: 'The caller is not authorized to set up the instance.',
         type: 'array{error: array{code: string, message: string, meta: array<string, mixed>}}',
     )]
     #[OpenApiResponse(
         status: 404,
-        description: 'The selected app was not found.',
+        description: 'The selected instance was not found.',
         type: 'array{error: array{code: string, message: string, meta: array<string, mixed>}}',
     )]
     #[OpenApiResponse(
         status: 422,
-        description: 'The app instance selector or setup operation is invalid.',
+        description: 'The instance selector or setup operation is invalid.',
         type: 'array{error: array{code: string, message: string, meta: array<string, mixed>}}',
     )]
     public function __invoke(
-        string $app,
+        string $instance,
         Request $request,
         SetupAppProgress $setupProgress,
         ProgressEventStreamResponseFactory $streams,
     ): JsonResponse|StreamedResponse {
+        $app = $instance;
         $target = $this->resolveAuthorizedTarget($app, $request);
 
         if ($target instanceof JsonResponse) {
             return $target;
         }
 
-        $targetApp = $target['app'];
+        $targetApp = $target['project'];
         $instance = $target['instance'];
         $node = $target['node'];
         $this->activitySubject = $instance;
         $this->activityProperties = [
-            'app' => $targetApp->name,
-            'app_instance' => $instance->name,
+            'project' => $targetApp->name,
+            'instance' => $instance->name,
             'status' => 'pending',
         ];
 
@@ -90,21 +91,21 @@ final class AppSetupController implements Loggable
         } catch (RuntimeException $exception) {
             $this->activityProperties['status'] = 'failed';
 
-            return $this->error('app.setup_failed', $exception->getMessage(), [
+            return $this->error('instance.setup_failed', $exception->getMessage(), [
                 'phase' => 'setup',
                 'node' => $node->name,
-                'app_instance' => $instance->name,
+                'instance' => $instance->name,
             ]);
         }
 
         $this->activityProperties['status'] = $result['setup_steps']['status'];
 
         if ($result['setup_steps']['status'] === 'failed') {
-            return $this->error('app.setup_step_failed', $result['setup_steps']['message'], [
+            return $this->error('instance.setup_step_failed', $result['setup_steps']['message'], [
                 'phase' => 'setup_steps',
                 'node' => $node->name,
                 'path' => $result['path'],
-                'app_instance' => $instance->name,
+                'instance' => $instance->name,
             ]);
         }
 
@@ -119,7 +120,7 @@ final class AppSetupController implements Loggable
     private function stream(
         SetupAppProgress $setupProgress,
         ProgressEventStreamResponseFactory $streams,
-        App $app,
+        Project $app,
         AppInstance $instance,
         Node $node,
     ): StreamedResponse {
@@ -129,12 +130,12 @@ final class AppSetupController implements Loggable
 
             if ($exitCode !== 0) {
                 $failure = $plan->failure() ?? [
-                    'code' => 'app.setup_failed',
-                    'message' => 'App setup failed.',
+                    'code' => 'instance.setup_failed',
+                    'message' => 'Instance setup failed.',
                     'meta' => [
                         'phase' => 'setup',
                         'node' => $node->name,
-                        'app_instance' => $instance->name,
+                        'instance' => $instance->name,
                     ],
                 ];
 
@@ -156,7 +157,7 @@ final class AppSetupController implements Loggable
     }
 
     /**
-     * @return array{app: App, instance: AppInstance, node: Node}|JsonResponse
+     * @return array{project: Project, instance: AppInstance, node: Node}|JsonResponse
      */
     private function resolveAuthorizedTarget(string $selector, Request $request): array|JsonResponse
     {
@@ -170,7 +171,7 @@ final class AppSetupController implements Loggable
         $instanceIsVisible = fn (AppInstance $instance): bool => $this->selectorResolver->instanceIsVisibleTo(
             $caller,
             $instance,
-            'app:write',
+            'instance:write',
         );
 
         try {
@@ -200,14 +201,14 @@ final class AppSetupController implements Loggable
             return $this->instanceUnavailable($selection->app, $instance);
         }
 
-        $authorization = $this->authorizer->authorize($caller, $node, 'app:write');
+        $authorization = $this->authorizer->authorize($caller, $node, 'instance:write');
 
         if (! $authorization->allowed) {
-            return $this->forbidden($node, $instance, $authorization, 'app:write');
+            return $this->forbidden($node, $instance, $authorization, 'instance:write');
         }
 
         return [
-            'app' => $selection->app,
+            'project' => $selection->app,
             'instance' => $instance,
             'node' => $node,
         ];
@@ -232,21 +233,26 @@ final class AppSetupController implements Loggable
         ], $status);
     }
 
-    private function appNotFound(string $app): JsonResponse
+    private function appNotFound(string $instance): JsonResponse
     {
-        return $this->error('app.not_found', "App '{$app}' was not found.", ['app' => $app], 404);
+        return $this->error(
+            'instance.not_found',
+            "Instance '{$instance}' was not found.",
+            ['instance' => $instance],
+            404,
+        );
     }
 
-    private function instanceUnavailable(App $app, ?AppInstance $instance): JsonResponse
+    private function instanceUnavailable(Project $project, ?AppInstance $instance): JsonResponse
     {
         return $this->error(
             'validation_failed',
-            "App instance '{$app->name}.{$instance?->name}' does not resolve an Orbit serving node.",
+            "Instance '{$project->name}.{$instance?->name}' does not resolve an Orbit serving node.",
             [
-                'field' => 'app',
-                'reason' => 'app_instance_unavailable',
-                'app' => $app->name,
-                'app_instance' => $instance?->name,
+                'field' => 'instance',
+                'reason' => 'instance_unavailable',
+                'project' => $project->name,
+                'instance' => $instance?->name,
             ],
         );
     }
@@ -271,7 +277,7 @@ final class AppSetupController implements Loggable
                 'reason' => $result->reason,
                 'missing_permission' => $result->missingPermission,
                 'serving_node' => $servingNode->name,
-                'app_instance' => $instance->name,
+                'instance' => $instance->name,
             ],
         );
     }
@@ -283,7 +289,7 @@ final class AppSetupController implements Loggable
 
     public function type(): string
     {
-        return 'api:POST /apps/{app}/setup';
+        return 'api:POST /instances/{instance}/setup';
     }
 
     public function subject(): ?Model

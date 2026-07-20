@@ -37,7 +37,7 @@ trait RendersAppAnalyticsBinding
     private function renderAnalyticsBindingHeader(array $binding): void
     {
         $this->line('binding:');
-        $this->line('  app: '.$this->analyticsStringField($binding, 'app'));
+        $this->line('  instance: '.$this->analyticsStringField($binding, 'instance'));
         $this->line('  enabled: '.($this->analyticsBoolField($binding, 'enabled') ? 'true' : 'false'));
 
         if (array_key_exists('site_domain', $binding)) {

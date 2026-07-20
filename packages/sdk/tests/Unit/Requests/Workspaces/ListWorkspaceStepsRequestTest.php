@@ -14,11 +14,11 @@ use Saloon\Http\Faking\MockResponse;
 
 uses(TestCase::class);
 it('resolves to GET /api/workspaces/steps/{phase}', function (): void {
-    $request = new ListWorkspaceStepsRequest(phase: 'setup', app: 'docs.development');
+    $request = new ListWorkspaceStepsRequest(phase: 'setup', instance: 'docs.development');
 
     expect($request->resolveEndpoint())->toBe('/api/workspaces/steps/setup');
     expect($request->getMethod())->toBe(Method::GET);
-    expect($request->query()->all())->toBe(['app' => 'docs.development']);
+    expect($request->query()->all())->toBe(['instance' => 'docs.development']);
 });
 
 it('serializes path lookups when no app is provided', function (): void {
@@ -39,8 +39,8 @@ it('returns a WorkspaceStepListResponse DTO', function (): void {
                     'steps' => [
                         [
                             'id' => 12,
-                            'app' => 'docs',
-                            'app_instance' => 'development',
+                            'project' => 'docs',
+                            'instance' => 'development',
                             'phase' => 'setup',
                             'order' => 1,
                             'command' => 'composer install',
@@ -55,14 +55,14 @@ it('returns a WorkspaceStepListResponse DTO', function (): void {
     $connector = new GatewayConnector(baseUrl: 'https://10.6.0.2', caPemPath: '/path/to/ca.pem');
     $connector->withMockClient($mock);
 
-    $dto = $connector->send(new ListWorkspaceStepsRequest(phase: 'setup', app: 'docs.development'))->dto();
+    $dto = $connector->send(new ListWorkspaceStepsRequest(phase: 'setup', instance: 'docs.development'))->dto();
 
     expect($dto)->toBeInstanceOf(WorkspaceStepListResponse::class);
     expect($dto->steps)->toBe([
         [
             'id' => 12,
-            'app' => 'docs',
-            'app_instance' => 'development',
+            'project' => 'docs',
+            'instance' => 'development',
             'phase' => 'setup',
             'order' => 1,
             'command' => 'composer install',

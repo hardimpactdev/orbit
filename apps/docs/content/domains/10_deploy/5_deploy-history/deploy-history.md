@@ -1,8 +1,8 @@
-# `orbit deploy:history [app]`
+# `orbit deploy:history [instance]`
 
 [Back to Deploy commands.](../README.md)
 
-List deployment runs for a concrete production app instance.
+List deployment runs for a concrete production instance.
 
 Use `deploy:history` to inspect durable deployment attempts recorded on the
 gateway. The command reads stored deployment history; it does not probe the
@@ -11,7 +11,7 @@ owning node or re-check application health.
 ## Usage
 
 ```bash
-orbit deploy:history [app] [--limit=<count>] [--json]
+orbit deploy:history [instance] [--limit=<count>] [--json]
 ```
 
 ## Examples
@@ -24,7 +24,7 @@ orbit deploy:history docs.production --json
 
 ## Arguments and options
 
-- `app`: dotted production app-instance selector. A bare app name or domain is
+- `instance`: dotted production instance selector. A bare project name or domain is
   valid only when the app has exactly one instance.
 - `--limit`: Maximum number of runs to return. Defaults to `50`; hard cap
   `500`.
@@ -33,7 +33,7 @@ orbit deploy:history docs.production --json
 ## What Happens
 
 Run `deploy:history` when you want to see past deployment attempts for one
-production app instance. It resolves the concrete instance, reads that
+production instance. It resolves the concrete instance, reads that
 instance's run history from gateway state, sorts newest runs first, and renders
 the selected output.
 
@@ -53,7 +53,7 @@ Use `--json` for machine-readable output.
 
 - [`orbit deploy:run`](../4_deploy-run/deploy-run.md)
 - [`orbit deploy:log`](../6_deploy-log/deploy-log.md)
-- [`doctor --family=app`](../../5_app/app-doctor.md)
+- [`doctor --family=instance`](../../5_project/instance-doctor.md)
 
 ## Technical Contract
 

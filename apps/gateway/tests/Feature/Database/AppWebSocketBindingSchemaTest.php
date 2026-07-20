@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
 use App\Models\AppWebSocketBinding;
+use App\Models\Project;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -42,7 +42,7 @@ it('creates the app websocket bindings table with the expected columns and broad
 });
 
 it('stores app websocket bindings with encrypted secret material', function (): void {
-    $app = App::factory()->create();
+    $app = Project::factory()->create();
 
     $binding = AppWebSocketBinding::query()->create([
         'app_id' => $app->id,
@@ -66,7 +66,7 @@ it('stores app websocket bindings with encrypted secret material', function (): 
 });
 
 it('enforces one websocket binding per app', function (): void {
-    $app = App::factory()->create();
+    $app = Project::factory()->create();
 
     AppWebSocketBinding::factory()->create([
         'app_id' => $app->id,
@@ -79,7 +79,7 @@ it('enforces one websocket binding per app', function (): void {
 });
 
 it('cascades websocket bindings when the app is deleted', function (): void {
-    $app = App::factory()->has(AppWebSocketBinding::factory(), 'webSocketBinding')->create();
+    $app = Project::factory()->has(AppWebSocketBinding::factory(), 'webSocketBinding')->create();
 
     expect(AppWebSocketBinding::query()->whereBelongsTo($app)->count())->toBe(1);
 

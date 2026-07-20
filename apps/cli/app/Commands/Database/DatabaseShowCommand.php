@@ -129,13 +129,15 @@ final class DatabaseShowCommand extends GatewayCommand
                 continue;
             }
 
-            $app = is_string($target['app'] ?? null) && $target['app'] !== '' ? $target['app'] : null;
+            $project = is_string($target['project'] ?? null) && $target['project'] !== ''
+                ? $target['project']
+                : null;
             $instance = is_string($target['instance'] ?? null) && $target['instance'] !== ''
                 ? $target['instance']
                 : null;
 
-            if ($app !== null && $instance !== null) {
-                $labels[] = "{$app}.{$instance}";
+            if ($project !== null && $instance !== null) {
+                $labels[] = "{$project}.{$instance}";
             }
         }
 

@@ -16,7 +16,7 @@ final class ScheduleListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'schedule:list
-        {--app= : Filter by app instance (app.instance; bare app only when unambiguous)}
+        {--instance= : Filter by instance (project.instance; bare project only when unambiguous)}
         {--node= : Filter by node scope}
         {--json}';
 
@@ -25,17 +25,17 @@ final class ScheduleListCommand extends GatewayCommand
 
     public function handle(): int
     {
-        if ($this->hasMutuallyExclusiveOptions('app', 'node')) {
+        if ($this->hasMutuallyExclusiveOptions('instance', 'node')) {
             return $this->renderFailure(
                 'validation_failed',
                 'The schedule filters are mutually exclusive.',
-                ['fields' => ['app', 'node']],
+                ['fields' => ['instance', 'node']],
             );
         }
 
         try {
             $response = $this->gatewayGet('/api/schedules', $this->filledQuery([
-                'app' => $this->stringOption('app'),
+                'instance' => $this->stringOption('instance'),
                 'node' => $this->stringOption('node'),
             ]));
         } catch (GatewayApiException $exception) {
@@ -88,11 +88,11 @@ final class ScheduleListCommand extends GatewayCommand
 
     private function emptyState(): string
     {
-        $app = $this->stringOption('app');
+        $instance = $this->stringOption('instance');
         $node = $this->stringOption('node');
 
-        if ($app !== null) {
-            return "No schedules found for app {$app}.";
+        if ($instance !== null) {
+            return "No schedules found for instance {$instance}.";
         }
 
         if ($node !== null) {

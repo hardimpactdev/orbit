@@ -13,7 +13,7 @@ class ProcessUpdateCommand extends ProcessGatewayCommand
         {name? : Existing process name}
         {--name= : New process name}
         {--node= : Owning node name}
-        {--app= : App or app-instance selector}
+        {--instance= : Instance selector}
         {--workspace= : Workspace name}
         {--command= : New command}
         {--restart-policy= : Restart policy (never|on_failure|always)}
@@ -30,7 +30,7 @@ class ProcessUpdateCommand extends ProcessGatewayCommand
         $node = $this->nodeContext();
         $input = ProcessUpdateInput::fromValues([
             'node' => $node,
-            'app' => $node === null ? $this->appContext() : $this->stringOption('app'),
+            'instance' => $node === null ? $this->appContext() : $this->stringOption('instance'),
             'workspace' => $this->workspaceContext(),
             'name' => $this->stringArgument('name'),
             'new_name' => $this->stringOption('name'),
@@ -64,7 +64,7 @@ class ProcessUpdateCommand extends ProcessGatewayCommand
             $payload,
             (string) $input->name,
             $input->newName,
-            $this->contextLabel($input->node, $input->app, $input->workspace),
+            $this->contextLabel($input->node, $input->instance, $input->workspace),
         );
     }
 

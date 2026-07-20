@@ -11,7 +11,7 @@ use Symfony\Component\Console\Input\InputOption;
 final class AppWebSocketDisableCommand extends AppGatewayCommand
 {
     #[\Override]
-    protected $name = 'app:websocket disable';
+    protected $name = 'instance:websocket disable';
 
     #[\Override]
     protected $description = 'Disable WebSocket support for an app.';
@@ -21,20 +21,20 @@ final class AppWebSocketDisableCommand extends AppGatewayCommand
     {
         parent::configure();
 
-        $this->addArgument('app', InputArgument::OPTIONAL, 'App name or hostname');
+        $this->addArgument('instance', InputArgument::OPTIONAL, 'Instance selector (project.instance or hostname)');
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Output JSON');
     }
 
     public function handle(): int
     {
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('instance');
 
         if ($selector === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         try {
-            $response = $this->gatewayPost($this->apiAppPath($selector, '/websocket/disable'));
+            $response = $this->gatewayPost($this->apiInstancePath($selector, '/websocket/disable'));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -46,7 +46,7 @@ final class AppWebSocketDisableCommand extends AppGatewayCommand
         $binding = $this->bindingData($response);
 
         $this->line('binding:');
-        $this->line('  app: '.$this->stringField($binding, 'app'));
+        $this->line('  instance: '.$this->stringField($binding, 'instance'));
         $this->line('  internal_host: '.$this->stringField($binding, 'internal_host'));
         $this->renderList('public_hosts', $this->listField($binding, 'public_hosts'));
         $this->renderList('allowed_origins', $this->listField($binding, 'allowed_origins'));

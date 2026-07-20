@@ -10,9 +10,9 @@ use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\ActivityLogType;
 use App\Enums\Apps\AppInstanceDriver;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppInstancePayloads;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -24,7 +24,7 @@ use ValueError;
 
 final class AppInstanceController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?Project $activitySubject = null;
 
     private string $currentAction = 'list';
 
@@ -35,8 +35,67 @@ final class AppInstanceController implements Loggable
         private readonly WorkspacePlacement $workspacePlacement,
     ) {}
 
-    public function index(string $app, Request $request): JsonResponse
+    public function all(Request $request): JsonResponse
     {
+        $this->currentAction = 'list';
+        $caller = $this->caller($request);
+
+        if ($caller instanceof JsonResponse) {
+            return $caller;
+        }
+
+        $project = $this->stringInput($request, 'project');
+        $query = AppInstance::query()->with(['project.node', 'runtimeMounts']);
+
+        if ($project !== null) {
+            $targetProject = Project::query()->where('name', $project)->first();
+
+            if (! $targetProject instanceof Project) {
+                return $this->projectNotFound($project);
+            }
+
+            $this->activitySubject = $targetProject;
+            $query->where('app_id', $targetProject->id);
+        }
+
+        $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
+        $instances = [];
+
+        foreach ($query
+            ->orderBy('app_id')
+            ->orderBy('name')
+            ->get() as $instance) {
+            if ($instance instanceof AppInstance) {
+                $instances[] = $instance;
+            }
+        }
+
+        $instances = array_values(array_filter(
+            $instances,
+            function (AppInstance $instance) use ($caller, $callerIsGateway): bool {
+                if ($instance->driver !== AppInstanceDriver::Orbit) {
+                    return $callerIsGateway;
+                }
+
+                $servingNode = $this->workspacePlacement->nodeForInstance($instance);
+
+                return $servingNode instanceof Node
+                && $this->authorizer->allows($caller, $servingNode, 'instance:read');
+            },
+        ));
+
+        if (! $callerIsGateway && $instances === []) {
+            return $this->authorizationFailed('instance:read');
+        }
+
+        return $this->success([
+            'instances' => array_map($this->payloads->instance(...), $instances),
+        ], ['count' => count($instances)]);
+    }
+
+    public function index(string $project, Request $request): JsonResponse
+    {
+        $app = $project;
         $this->currentAction = 'list';
         $targetApp = $this->resolveApp($app);
 
@@ -46,7 +105,7 @@ final class AppInstanceController implements Loggable
 
         $this->activitySubject = $targetApp;
 
-        if (! $targetApp instanceof App) {
+        if (! $targetApp instanceof Project) {
             return $this->appNotFound($app);
         }
 
@@ -68,16 +127,17 @@ final class AppInstanceController implements Loggable
 
                 $servingNode = $this->workspacePlacement->nodeForInstance($instance);
 
-                return $servingNode instanceof Node && $this->authorizer->allows($caller, $servingNode, 'app:read');
+                return $servingNode instanceof Node
+                && $this->authorizer->allows($caller, $servingNode, 'instance:read');
             },
         ));
 
         if (! $callerIsGateway && $instances === []) {
-            return $this->authorizationFailed('app:read');
+            return $this->authorizationFailed('instance:read');
         }
 
         return $this->success([
-            'app' => $targetApp->name,
+            'project' => $targetApp->name,
             'instances' => array_map(
                 $this->payloads->instance(...),
                 $instances,
@@ -85,8 +145,9 @@ final class AppInstanceController implements Loggable
         ], ['count' => count($instances)]);
     }
 
-    public function show(string $app, string $instance, Request $request): JsonResponse
+    public function show(string $project, string $instance, Request $request): JsonResponse
     {
+        $app = $project;
         $this->currentAction = 'show';
         $resolved = $this->resolveAppInstance($app, $instance);
 
@@ -97,7 +158,7 @@ final class AppInstanceController implements Loggable
         [$targetApp, $targetInstance] = $resolved;
         $this->activitySubject = $targetApp;
 
-        $authorization = $this->authorizeInstance($request, $targetInstance, 'app:read');
+        $authorization = $this->authorizeInstance($request, $targetInstance, 'instance:read');
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -106,8 +167,9 @@ final class AppInstanceController implements Loggable
         return $this->success($this->payloads->withCompatibility($targetInstance));
     }
 
-    public function store(string $app, Request $request): JsonResponse
+    public function store(string $project, Request $request): JsonResponse
     {
+        $app = $project;
         $this->currentAction = 'add';
         $targetApp = $this->resolveApp($app);
 
@@ -117,7 +179,7 @@ final class AppInstanceController implements Loggable
 
         $this->activitySubject = $targetApp;
 
-        if (! $targetApp instanceof App) {
+        if (! $targetApp instanceof Project) {
             return $this->appNotFound($app);
         }
 
@@ -136,7 +198,7 @@ final class AppInstanceController implements Loggable
                 'name',
                 "Instance '{$name}' already exists for app '{$targetApp->name}'.",
                 [
-                    'app' => $targetApp->name,
+                    'project' => $targetApp->name,
                     'instance' => $name,
                 ],
                 422,
@@ -188,8 +250,9 @@ final class AppInstanceController implements Loggable
         return $this->success($this->payloads->withCompatibility($instance));
     }
 
-    public function destroy(string $app, string $instance, Request $request): JsonResponse
+    public function destroy(string $project, string $instance, Request $request): JsonResponse
     {
+        $app = $project;
         $this->currentAction = 'remove';
         $resolved = $this->resolveAppInstance($app, $instance);
 
@@ -200,7 +263,7 @@ final class AppInstanceController implements Loggable
         [$targetApp, $targetInstance] = $resolved;
         $this->activitySubject = $targetApp;
 
-        $authorization = $this->authorizeInstance($request, $targetInstance, 'app:write');
+        $authorization = $this->authorizeInstance($request, $targetInstance, 'instance:write');
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -209,7 +272,7 @@ final class AppInstanceController implements Loggable
         if (! $request->boolean('destructive_consent') && ! $request->boolean('force')) {
             return $this->validationFailed(
                 'force',
-                'Removing an app instance requires destructive consent.',
+                'Removing an instance requires destructive consent.',
                 [
                     'field' => 'force',
                     'reason' => 'destructive_consent_required',
@@ -223,7 +286,7 @@ final class AppInstanceController implements Loggable
         return $this->success([
             'result' => [
                 'action' => 'removed',
-                'app' => $targetApp->name,
+                'project' => $targetApp->name,
                 'instance' => $instance,
             ],
         ]);
@@ -260,7 +323,7 @@ final class AppInstanceController implements Loggable
         if (! $node instanceof Node) {
             return $this->validationFailed(
                 'node',
-                'Orbit app instances require a valid --node value.',
+                'Orbit instances require a valid --node value.',
                 [
                     'field' => 'node',
                     'value' => $nodeSelector,
@@ -272,13 +335,13 @@ final class AppInstanceController implements Loggable
         $path = $this->stringInput($request, 'path');
 
         if ($path === null) {
-            return $this->validationFailed('path', 'Orbit app instances require a valid --path value.');
+            return $this->validationFailed('path', 'Orbit instances require a valid --path value.');
         }
 
         $documentRoot = $this->stringInput($request, 'root') ?? $this->stringInput($request, 'document_root');
 
         if ($documentRoot === null) {
-            return $this->validationFailed('root', 'Orbit app instances require a valid --root value.');
+            return $this->validationFailed('root', 'Orbit instances require a valid --root value.');
         }
 
         return new OrbitAppInstanceDriverConfigData(
@@ -562,7 +625,7 @@ final class AppInstanceController implements Loggable
     }
 
     /**
-     * @return array{0: App, 1: AppInstance}|JsonResponse
+     * @return array{0: Project, 1: AppInstance}|JsonResponse
      */
     private function resolveAppInstance(string $app, string $instance): array|JsonResponse
     {
@@ -572,23 +635,23 @@ final class AppInstanceController implements Loggable
             return $targetApp;
         }
 
-        if (! $targetApp instanceof App) {
+        if (! $targetApp instanceof Project) {
             return $this->appNotFound($app);
         }
 
         $targetInstance = $targetApp
             ->instances()
-            ->with(['app.node', 'runtimeMounts'])
+            ->with(['project.node', 'runtimeMounts'])
             ->where('name', $instance)
             ->first();
 
         if (! $targetInstance instanceof AppInstance) {
             return response()->json([
                 'error' => [
-                    'code' => 'app_instance.not_found',
-                    'message' => "Instance '{$instance}' was not found for app '{$targetApp->name}'.",
+                    'code' => 'instance.not_found',
+                    'message' => "Instance '{$instance}' was not found for project '{$targetApp->name}'.",
                     'meta' => [
-                        'app' => $targetApp->name,
+                        'project' => $targetApp->name,
                         'instance' => $instance,
                     ],
                 ],
@@ -598,18 +661,18 @@ final class AppInstanceController implements Loggable
         return [$targetApp, $targetInstance];
     }
 
-    private function resolveApp(string $selector): App|JsonResponse|null
+    private function resolveApp(string $selector): Project|JsonResponse|null
     {
-        $baseQuery = App::query()->with(['node', 'instances']);
+        $baseQuery = Project::query()->with(['node', 'instances']);
         $nameMatch = (clone $baseQuery)->where('name', $selector)->first();
 
-        if ($nameMatch instanceof App) {
+        if ($nameMatch instanceof Project) {
             return $nameMatch;
         }
 
         $matches = $baseQuery
             ->get()
-            ->filter(function (App $app) use ($selector): bool {
+            ->filter(function (Project $app) use ($selector): bool {
                 foreach ($app->instances as $instance) {
                     $placement = $this->payloads->placement($instance);
                     $host = parse_url((string) ($placement['url'] ?? ''), PHP_URL_HOST);
@@ -625,10 +688,10 @@ final class AppInstanceController implements Loggable
 
         if ($matches->count() > 1) {
             return $this->validationFailed(
-                'app',
-                "App selector '{$selector}' is ambiguous; use the app name.",
+                'project',
+                "Project selector '{$selector}' is ambiguous; use the project name.",
                 [
-                    'reason' => 'ambiguous_app_selector',
+                    'reason' => 'ambiguous_project_selector',
                     'selector' => $selector,
                 ],
                 422,
@@ -637,7 +700,7 @@ final class AppInstanceController implements Loggable
 
         $match = $matches->first();
 
-        return $match instanceof App ? $match : null;
+        return $match instanceof Project ? $match : null;
     }
 
     private function stringInput(Request $request, string $key): ?string
@@ -708,11 +771,16 @@ final class AppInstanceController implements Loggable
 
     private function appNotFound(string $app): JsonResponse
     {
+        return $this->projectNotFound($app);
+    }
+
+    private function projectNotFound(string $project): JsonResponse
+    {
         return response()->json([
             'error' => [
-                'code' => 'app.not_found',
-                'message' => "App '{$app}' not found.",
-                'meta' => ['app' => $app],
+                'code' => 'project.not_found',
+                'message' => "Project '{$project}' not found.",
+                'meta' => ['project' => $project],
             ],
         ], 404);
     }
@@ -738,7 +806,7 @@ final class AppInstanceController implements Loggable
 
         return $caller instanceof Node
             ? $caller
-            : $this->authorizationFailed('app:read', message: 'Peer identity unknown.');
+            : $this->authorizationFailed('instance:read', message: 'Peer identity unknown.');
     }
 
     private function authorizeInstance(Request $request, AppInstance $instance, string $permission): ?JsonResponse
@@ -775,8 +843,8 @@ final class AppInstanceController implements Loggable
 
         $targetNode = Node::query()->find($driverConfig->node_id);
 
-        if (! $targetNode instanceof Node || ! $this->authorizer->allows($caller, $targetNode, 'app:write')) {
-            return $this->authorizationFailed('app:write', $targetNode, $instance);
+        if (! $targetNode instanceof Node || ! $this->authorizer->allows($caller, $targetNode, 'instance:write')) {
+            return $this->authorizationFailed('instance:write', $targetNode, $instance);
         }
 
         return null;
@@ -791,13 +859,12 @@ final class AppInstanceController implements Loggable
         return response()->json([
             'error' => [
                 'code' => 'authorization_failed',
-                'message' =>
-                    $message ?? "This node is not authorized for '{$permission}' on the selected app instance.",
+                'message' => $message ?? "This node is not authorized for '{$permission}' on the selected instance.",
                 'meta' => array_filter([
                     'reason' => 'missing_permission',
                     'missing_permission' => $permission,
                     'serving_node' => $servingNode?->name,
-                    'app_instance' => $instance,
+                    'instance' => $instance,
                 ]),
             ],
         ], 403);
@@ -808,10 +875,10 @@ final class AppInstanceController implements Loggable
         return response()->json([
             'error' => [
                 'code' => 'authorization_failed',
-                'message' => 'External app instances can only be managed by the gateway.',
+                'message' => 'External instances can only be managed by the gateway.',
                 'meta' => array_filter([
                     'reason' => 'gateway_only_external_instance',
-                    'app_instance' => $instance,
+                    'instance' => $instance,
                 ]),
             ],
         ], 403);
@@ -835,10 +902,10 @@ final class AppInstanceController implements Loggable
     public function type(): string
     {
         return match ($this->currentAction) {
-            'add' => 'api:POST /apps/{app}/instances',
-            'remove' => 'api:DELETE /apps/{app}/instances/{instance}',
-            'show' => 'api:GET /apps/{app}/instances/{instance}',
-            default => 'api:GET /apps/{app}/instances',
+            'add' => 'api:POST /projects/{project}/instances',
+            'remove' => 'api:DELETE /projects/{project}/instances/{instance}',
+            'show' => 'api:GET /projects/{project}/instances/{instance}',
+            default => 'api:GET /instances',
         };
     }
 

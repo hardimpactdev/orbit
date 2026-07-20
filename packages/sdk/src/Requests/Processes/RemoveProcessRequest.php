@@ -19,7 +19,7 @@ final class RemoveProcessRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::DELETE;
 
     public function __construct(
-        public readonly string $app,
+        public readonly string $instance,
         public readonly string $name,
     ) {}
 
@@ -34,7 +34,7 @@ final class RemoveProcessRequest extends GatewayRequest implements HasBody
     protected function defaultBody(): array
     {
         return [
-            'app' => $this->app,
+            'instance' => $this->instance,
             'destructive_consent' => true,
             'destructive_consent_source' => 'force',
         ];

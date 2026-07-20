@@ -12,12 +12,12 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DeploymentRun;
 use App\Models\DeploymentRunStep;
 use App\Models\DeployStep;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeUser;
@@ -90,8 +90,8 @@ final readonly class DeployManager
         return [
             'steps' => $steps,
             'meta' => [
-                'app' => $instance->app->name,
-                'app_instance' => $instance->name,
+                'project' => $instance->app->name,
+                'instance' => $instance->name,
                 'count' => count($steps),
             ],
         ];
@@ -107,13 +107,13 @@ final readonly class DeployManager
 
         if (! $step instanceof DeployStep) {
             throw new GatewayApiException(
-                message: "Deployment step '{$selector}' was not found for app instance '{$this->targetName(
+                message: "Deployment step '{$selector}' was not found for instance '{$this->targetName(
                     $instance,
                 )}'.",
                 errorCode: 'deploy.step_not_found',
                 errorMeta: [
-                    'app' => $instance->app->name,
-                    'app_instance' => $instance->name,
+                    'project' => $instance->app->name,
+                    'instance' => $instance->name,
                     'step' => $selector,
                 ],
             );
@@ -145,15 +145,15 @@ final readonly class DeployManager
 
         if ($steps->isEmpty()) {
             throw new GatewayApiException(
-                message: "Deployment pipeline is empty for app instance '{$this->targetName($instance)}'.",
+                message: "Deployment pipeline is empty for instance '{$this->targetName($instance)}'.",
                 errorCode: 'deploy.pipeline_empty',
-                errorMeta: ['app' => $model->name, 'app_instance' => $instance->name],
+                errorMeta: ['project' => $model->name, 'instance' => $instance->name],
             );
         }
 
         $progress?->tree('Running Deployment', $this->progressSteps($steps, $detach));
-        $progress?->stepStart('resolve-app');
-        $progress?->stepDone('resolve-app', $this->targetName($instance));
+        $progress?->stepStart('resolve-instance');
+        $progress?->stepDone('resolve-instance', $this->targetName($instance));
 
         $startedAt = Carbon::now();
         $progress?->stepStart('create-run');
@@ -194,9 +194,9 @@ final readonly class DeployManager
             $progress?->stepStart($this->progressKey($step));
             $result = $this->runStep(
                 $model->node ?? throw new GatewayApiException(
-                    message: "App '{$model->name}' has no owning node.",
+                    message: "Project '{$model->name}' has no owning node.",
                     errorCode: 'deploy.execution_failed',
-                    errorMeta: ['app' => $model->name],
+                    errorMeta: ['project' => $model->name],
                 ),
                 command: $routedCommand,
                 cwd: $model->path,
@@ -284,13 +284,13 @@ final readonly class DeployManager
             $failedStep = $run->steps->firstWhere('status', 'failed');
 
             throw new GatewayApiException(
-                message: "Deployment step '{$failedStep?->title}' failed for app instance '{$this->targetName(
+                message: "Deployment step '{$failedStep?->title}' failed for instance '{$this->targetName(
                     $instance,
                 )}'.",
                 errorCode: 'deploy.step_failed',
                 errorMeta: [
-                    'app' => $model->name,
-                    'app_instance' => $instance->name,
+                    'project' => $model->name,
+                    'instance' => $instance->name,
                     'step' => $failedStep?->title,
                     'duration_ms' => $run->duration_ms,
                 ],
@@ -304,7 +304,7 @@ final readonly class DeployManager
         return $payload;
     }
 
-    public function runTarget(string $app): App
+    public function runTarget(string $app): Project
     {
         return $this->runtimeApp($this->productionInstance($app));
     }
@@ -321,7 +321,7 @@ final readonly class DeployManager
      * @return array{stdout: string, stderr: string}|null
      */
     private function runWarmupSteps(
-        App $app,
+        Project $app,
         AppInstance $instance,
         array $context,
         ?ProgressReporter $progress = null,
@@ -360,10 +360,10 @@ final readonly class DeployManager
 
             if (! $result->successful()) {
                 throw new GatewayApiException(
-                    message: "Deployment warmup step '{$warmupCommand}' failed for app '{$app->name}'.",
+                    message: "Deployment warmup step '{$warmupCommand}' failed for project '{$app->name}'.",
                     errorCode: 'deploy.warmup_failed',
                     errorMeta: [
-                        'app' => $app->name,
+                        'project' => $app->name,
                         'warmup_command' => $warmupCommand,
                     ],
                     errorData: [
@@ -388,7 +388,7 @@ final readonly class DeployManager
      *
      * @param  array<string, mixed>  $context
      */
-    private function runHttpWarmup(App $app, AppInstance $instance, array $context): void
+    private function runHttpWarmup(Project $app, AppInstance $instance, array $context): void
     {
         $warmupPaths = $instance->deploy_warmup_paths ?? [];
 
@@ -496,9 +496,9 @@ final readonly class DeployManager
     {
         $progressSteps = [
             [
-                'key' => 'resolve-app',
-                'label' => 'Resolve production app instance',
-                'doneLabel' => 'Resolved production app instance',
+                'key' => 'resolve-instance',
+                'label' => 'Resolve production instance',
+                'doneLabel' => 'Resolved production instance',
             ],
             [
                 'key' => 'create-run',
@@ -569,8 +569,8 @@ final readonly class DeployManager
                     'limit' => $effectiveLimit,
                     'limit_capped' => $limit > 500,
                 ],
-                'app' => $instance->app->name,
-                'app_instance' => $instance->name,
+                'project' => $instance->app->name,
+                'instance' => $instance->name,
             ],
         ];
     }
@@ -589,11 +589,11 @@ final readonly class DeployManager
 
         if (! $run instanceof DeploymentRun) {
             throw new GatewayApiException(
-                message: "Deployment run {$runId} was not found for app instance '{$this->targetName($instance)}'.",
+                message: "Deployment run {$runId} was not found for instance '{$this->targetName($instance)}'.",
                 errorCode: 'deploy.run_not_found',
                 errorMeta: [
-                    'app' => $instance->app->name,
-                    'app_instance' => $instance->name,
+                    'project' => $instance->app->name,
+                    'instance' => $instance->name,
                     'run' => $runId,
                 ],
             );
@@ -606,13 +606,13 @@ final readonly class DeployManager
 
             if ($steps->isEmpty()) {
                 throw new GatewayApiException(
-                    message: "Deployment step {$stepId} was not found in run {$runId} for app instance '{$this->targetName(
+                    message: "Deployment step {$stepId} was not found in run {$runId} for instance '{$this->targetName(
      $instance,
  )}'.",
                     errorCode: 'deploy.step_not_found',
                     errorMeta: [
-                        'app' => $instance->app->name,
-                        'app_instance' => $instance->name,
+                        'project' => $instance->app->name,
+                        'instance' => $instance->name,
                         'run' => $runId,
                         'step' => $stepId,
                     ],
@@ -658,18 +658,18 @@ final readonly class DeployManager
 
         if ($selection === null) {
             throw new GatewayApiException(
-                message: "App '{$selector}' was not found.",
-                errorCode: 'app.not_found',
-                errorMeta: ['app' => $selector],
+                message: "Instance '{$selector}' was not found.",
+                errorCode: 'instance.not_found',
+                errorMeta: ['instance' => $selector],
             );
         }
 
         if ($selection->app->environment !== 'production') {
             throw new GatewayApiException(
-                message: "App '{$selection->app->name}' is not a production app.",
-                errorCode: 'deploy.production_app_required',
+                message: "Project '{$selection->app->name}' is not production-capable.",
+                errorCode: 'deploy.production_project_required',
                 errorMeta: [
-                    'app' => $selection->app->name,
+                    'project' => $selection->app->name,
                     'environment' => $selection->app->environment,
                 ],
             );
@@ -689,12 +689,12 @@ final readonly class DeployManager
 
         if (! $instance instanceof AppInstance) {
             throw new GatewayApiException(
-                message: "App '{$selection->app->name}' requires a concrete app instance selector.",
+                message: "Project '{$selection->app->name}' requires a concrete instance selector.",
                 errorCode: 'validation_failed',
                 errorMeta: [
-                    'field' => 'app',
-                    'reason' => 'app_instance_required',
-                    'app' => $selection->app->name,
+                    'field' => 'instance',
+                    'reason' => 'instance_required',
+                    'project' => $selection->app->name,
                 ],
             );
         }
@@ -711,8 +711,8 @@ final readonly class DeployManager
 
         return [
             'id' => $step->id,
-            'app' => $step->appInstance->app->name,
-            'app_instance' => $step->appInstance->name,
+            'project' => $step->appInstance->app->name,
+            'instance' => $step->appInstance->name,
             'title' => $step->title,
             'command' => $step->command,
             'order' => $step->sort_order,
@@ -728,8 +728,8 @@ final readonly class DeployManager
 
         return [
             'id' => $run->id,
-            'app' => $run->appInstance->app->name,
-            'app_instance' => $run->appInstance->name,
+            'project' => $run->appInstance->app->name,
+            'instance' => $run->appInstance->name,
             'status' => $run->status,
             'exit_code' => $run->exit_code,
             'started_at' => $run->started_at?->toJSON(),
@@ -802,7 +802,7 @@ final readonly class DeployManager
      * @return array<string, mixed>
      */
     private function runContext(
-        App $app,
+        Project $app,
         AppInstance $instance,
         DeploymentRun $run,
         Carbon $startedAt,
@@ -814,10 +814,10 @@ final readonly class DeployManager
         $appUser = $this->appUser($app);
 
         return [
-            'app_name' => $app->name,
-            'app_instance' => $instance->name,
-            'app_path' => $appPath,
-            'app_user' => $appUser,
+            'project_name' => $app->name,
+            'instance' => $instance->name,
+            'project_path' => $appPath,
+            'project_user' => $appUser,
             'domain' => $app->domain,
             'repository' => $app->repository,
             'release' => $release,
@@ -828,9 +828,8 @@ final readonly class DeployManager
             'env_path' => "{$appPath}/.env",
             'storage_path' => "{$appPath}/storage",
             'database_path' => "{$appPath}/database/database.sqlite",
-            'app' => [
+            'project' => [
                 'name' => $app->name,
-                'instance' => $instance->name,
                 'path' => $appPath,
                 'user' => $appUser,
                 'domain' => $app->domain,
@@ -844,12 +843,12 @@ final readonly class DeployManager
         ];
     }
 
-    private function appUser(App $app): string
+    private function appUser(Project $app): string
     {
         return $this->appRuntimeUser->forApp($app);
     }
 
-    private function runtimeApp(AppInstance $instance): App
+    private function runtimeApp(AppInstance $instance): Project
     {
         $instance->loadMissing('app');
         $app = $instance->app;
@@ -861,11 +860,11 @@ final readonly class DeployManager
             || trim($config->path) === ''
         ) {
             throw new GatewayApiException(
-                message: "App instance '{$this->targetName($instance)}' does not support Orbit Agent deployment.",
+                message: "Instance '{$this->targetName($instance)}' does not support Orbit Agent deployment.",
                 errorCode: 'deploy.instance_driver_unsupported',
                 errorMeta: [
-                    'app' => $app->name,
-                    'app_instance' => $instance->name,
+                    'project' => $app->name,
+                    'instance' => $instance->name,
                     'driver' => $instance->driver->value,
                 ],
             );
@@ -876,11 +875,11 @@ final readonly class DeployManager
 
         if (! $runtimeApp->node instanceof Node) {
             throw new GatewayApiException(
-                message: "App instance '{$this->targetName($instance)}' has no owning node.",
+                message: "Instance '{$this->targetName($instance)}' has no owning node.",
                 errorCode: 'deploy.execution_failed',
                 errorMeta: [
-                    'app' => $app->name,
-                    'app_instance' => $instance->name,
+                    'project' => $app->name,
+                    'instance' => $instance->name,
                 ],
             );
         }

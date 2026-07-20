@@ -21,10 +21,10 @@ it('resolves to GET /api/tools/{tool}', function (): void {
 });
 
 it('serializes app node and live filters when provided', function (): void {
-    $request = new ShowToolRequest(tool: 'composer', app: 'docs', node: 'app-1', live: true);
+    $request = new ShowToolRequest(tool: 'composer', instance: 'docs', node: 'app-1', live: true);
 
     expect($request->query()->all())->toBe([
-        'app' => 'docs',
+        'instance' => 'docs',
         'node' => 'app-1',
         'live' => '1',
     ]);

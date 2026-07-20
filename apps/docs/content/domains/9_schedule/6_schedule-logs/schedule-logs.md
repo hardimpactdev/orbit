@@ -9,13 +9,13 @@ Use `schedule:logs` to inspect durable schedule run history captured by the gate
 ## Usage
 
 ```bash
-orbit schedule:logs [name] [--app=<app>] [--node=<node>] [--run=<id>] [--lines=<count>] [--json]
+orbit schedule:logs [name] [--instance=<project.instance>] [--node=<node>] [--run=<id>] [--lines=<count>] [--json]
 ```
 
 ## Examples
 
 ```bash
-orbit schedule:logs laravel-scheduler --app=docs.production
+orbit schedule:logs laravel-scheduler --instance=docs.production
 orbit schedule:logs backups --node=app-1 --run=19
 orbit schedule:logs backups --node=app-1 --lines=200
 ```
@@ -24,14 +24,14 @@ orbit schedule:logs backups --node=app-1 --lines=200
 
 - `name`: schedule slug. When omitted in interactive mode, Orbit shows a
   schedule data table.
-- `--app`: select the owning `app.instance`. A bare app name is shorthand only
+- `--instance`: select the owning `app.instance`. A bare project name is shorthand only
   when exactly one eligible instance is visible.
 - `--node`: disambiguate a node-scoped schedule.
 - `--run`: specific run id. Defaults to the latest run.
 - `--lines`: maximum captured output lines to render. Defaults to the command renderer limit.
 - `--json`: Output JSON.
 
-`--app` and `--node` are mutually exclusive filters.
+`--instance` and `--node` are mutually exclusive filters.
 
 ## What Happens
 

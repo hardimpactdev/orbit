@@ -64,10 +64,13 @@ final class ToolRemoveController implements Loggable
 
         $this->activityConsentSource = $this->destructiveConsentSource($request);
 
-        if ($this->toolTargetString($request, 'node') === null && $this->toolTargetString($request, 'app') === null) {
+        if (
+            $this->toolTargetString($request, 'node') === null
+            && $this->toolTargetString($request, 'instance') === null
+        ) {
             return $this->errorResponse(
                 code: 'validation_failed',
-                message: 'A node or app target is required. Provide --node or --app.',
+                message: 'A node or instance target is required. Provide --node or --instance.',
                 meta: ['fields' => ['target']],
                 status: 422,
             );

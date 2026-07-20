@@ -14,22 +14,22 @@ final class AppAgentIdeCommand extends AppGatewayCommand
     use WithStepTree;
 
     #[\Override]
-    protected $signature = 'app:agent-ide
-        {app? : App name or hostname}
+    protected $signature = 'instance:agent-ide
+        {instance? : Instance selector (project.instance or hostname)}
         {agent_ide? : Agent IDE adapter (opencode, polyscope, inherit, or none)}
         {--force : Confirm destructive workspace cleanup without prompting}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Set the default agent IDE for an app.';
+    protected $description = 'Set the default agent IDE for an instance.';
 
     public function handle(): int
     {
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('instance');
         $agentIde = $this->stringArgument('agent_ide');
 
         if ($selector === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         if ($agentIde === null) {
@@ -68,10 +68,10 @@ final class AppAgentIdeCommand extends AppGatewayCommand
     private function renderAgentIdeTree(string $selector, array $response): int
     {
         $outcome = $this->runStepOperation(
-            'Configuring App Agent IDE',
+            'Configuring Instance Agent IDE',
             $this->phases($response),
             work: static fn (): bool => true,
-            doneFooter: "App '{$selector}' agent IDE "
+            doneFooter: "Instance '{$selector}' agent IDE "
             .($this->action($response) === 'converged' ? 'unchanged' : 'configured'),
         );
 
@@ -102,7 +102,10 @@ final class AppAgentIdeCommand extends AppGatewayCommand
             ];
         }
 
-        $phases[] = ['label' => 'Apply and verify app agent IDE', 'doneLabel' => 'Applied and verified app agent IDE'];
+        $phases[] = [
+            'label' => 'Apply and verify instance agent IDE',
+            'doneLabel' => 'Applied and verified instance agent IDE',
+        ];
 
         return $phases;
     }
@@ -135,14 +138,14 @@ final class AppAgentIdeCommand extends AppGatewayCommand
     private function successLine(array $response): string
     {
         $data = $this->successData($response);
-        $app = is_array($data['app'] ?? null) ? $data['app'] : [];
-        $name = (string) ($app['name'] ?? '');
-        $node = (string) ($app['node'] ?? '');
+        $instance = is_array($data['instance'] ?? null) ? $data['instance'] : [];
+        $project = (string) ($instance['project'] ?? '');
+        $name = (string) ($instance['name'] ?? '');
+        $selector = $project !== '' && $name !== '' ? "{$project}.{$name}" : $name;
+        $node = (string) ($instance['node'] ?? '');
 
         $agentIde = is_array($data['agent_ide'] ?? null) ? $data['agent_ide'] : [];
-        $adapter = is_string($agentIde['adapter'] ?? null) && $agentIde['adapter'] !== ''
-            ? $agentIde['adapter']
-            : null;
+        $adapter = is_string($agentIde['adapter'] ?? null) && $agentIde['adapter'] !== '' ? $agentIde['adapter'] : null;
         $effective = is_string($agentIde['effective_adapter'] ?? null) && $agentIde['effective_adapter'] !== ''
             ? $agentIde['effective_adapter']
             : null;
@@ -150,31 +153,28 @@ final class AppAgentIdeCommand extends AppGatewayCommand
         if ($this->action($response) === 'converged') {
             $set = $adapter ?? 'none';
 
-            return "App \"{$name}\" agent IDE already set to \"{$set}\".";
+            return "Instance \"{$selector}\" agent IDE already set to \"{$set}\".";
         }
 
-        // App holds an explicit override.
         if ($adapter !== null) {
             $effectiveLabel = $effective ?? 'none';
 
-            return "App \"{$name}\" agent IDE set to \"{$adapter}\" (effective: \"{$effectiveLabel}\").";
+            return "Instance \"{$selector}\" agent IDE set to \"{$adapter}\" (effective: \"{$effectiveLabel}\").";
         }
 
-        // App explicitly disables the agent IDE (source app, no effective).
-        if (($agentIde['source'] ?? null) === 'app') {
-            return "App \"{$name}\" agent IDE set to none (effective: none).";
+        if (($agentIde['source'] ?? null) === 'instance') {
+            return "Instance \"{$selector}\" agent IDE set to none (effective: none).";
         }
 
-        // App inherits from the node/default chain.
         if ($effective === null) {
-            return "App \"{$name}\" agent IDE set to inherit (effective: none).";
+            return "Instance \"{$selector}\" agent IDE set to inherit (effective: none).";
         }
 
         if ($node !== '') {
-            return "App \"{$name}\" agent IDE set to inherit (effective: \"{$effective}\" from node \"{$node}\").";
+            return "Instance \"{$selector}\" agent IDE set to inherit (effective: \"{$effective}\" from node \"{$node}\").";
         }
 
-        return "App \"{$name}\" agent IDE set to inherit (effective: \"{$effective}\").";
+        return "Instance \"{$selector}\" agent IDE set to inherit (effective: \"{$effective}\").";
     }
 
     private function shouldPromptForCleanupConsent(GatewayApiException $exception, bool $force): bool
@@ -193,9 +193,7 @@ final class AppAgentIdeCommand extends AppGatewayCommand
         $previousAdapter = is_string($meta['previous_adapter'] ?? null)
             ? $meta['previous_adapter']
             : 'previous adapter';
-        $staleWorkspaces = is_array($meta['stale_workspaces'] ?? null)
-            ? $meta['stale_workspaces']
-            : [];
+        $staleWorkspaces = is_array($meta['stale_workspaces'] ?? null) ? $meta['stale_workspaces'] : [];
         $count = count($staleWorkspaces);
 
         return confirm(
@@ -209,7 +207,7 @@ final class AppAgentIdeCommand extends AppGatewayCommand
      */
     private function postAgentIde(string $selector, string $agentIde, bool $force): array
     {
-        return $this->gatewayPost($this->apiAppPath($selector, '/agent-ide'), [
+        return $this->gatewayPost($this->apiInstancePath($selector, '/agent-ide'), [
             'agent_ide' => $agentIde,
             'force' => $force,
         ]);

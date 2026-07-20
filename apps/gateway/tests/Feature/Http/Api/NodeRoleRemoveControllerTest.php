@@ -296,8 +296,8 @@ describe('NodeRoleRemoveController', function (): void {
             'consumer_node_id' => $node->id,
             'serving_node_id' => $node->id,
             'permissions' => [
-                'app:read',
-                'app:register',
+                'instance:read',
+                'instance:register',
                 'process:add',
                 'process:read',
                 'process:remove',

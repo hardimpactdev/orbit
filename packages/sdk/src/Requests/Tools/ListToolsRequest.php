@@ -15,7 +15,7 @@ final class ListToolsRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $node = null,
         public readonly bool $self = false,
     ) {}
@@ -32,7 +32,7 @@ final class ListToolsRequest extends GatewayRequest
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'node' => $this->node,
                 'self' => $this->self ? true : null,
             ],

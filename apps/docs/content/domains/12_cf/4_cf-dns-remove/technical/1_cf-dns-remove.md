@@ -69,7 +69,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `cf-dns:remove` may remove provider DNS used by proxy or app hostnames, but it
 does not create a Cloudflare doctor family. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md)
-owns ingress route health and [`doctor --family=app`](../../../5_app/app-doctor.md)
+owns ingress route health and [`doctor --family=instance`](../../../5_project/instance-doctor.md)
 owns app-domain health.
 
 ## Test Mapping

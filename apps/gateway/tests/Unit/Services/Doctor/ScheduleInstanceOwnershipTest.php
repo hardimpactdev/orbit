@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Schedule;
 use App\Services\Doctor\DoctorReportRunner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -18,7 +18,7 @@ it('derives schedule doctor scope from every concrete app instance placement', f
         'name' => 'static-app-host',
         'status' => 'active',
     ]);
-    $app = App::factory()->static()->for($node, 'node')->create(['name' => 'docs']);
+    $app = Project::factory()->static()->for($node, 'node')->create(['name' => 'docs']);
     $instance = AppInstance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitAppInstanceDriverConfigData(

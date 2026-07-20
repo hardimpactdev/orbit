@@ -11,24 +11,23 @@ use function Laravel\Prompts\text;
 final class AppSetupStepAddCommand extends AppGatewayCommand
 {
     #[\Override]
-    protected $signature = 'app-setup-step:add
-        {app? : App name or hostname}
-        {--app= : App name or hostname}
-        {--command= : Shell command to run during app setup}
+    protected $signature = 'instance-setup-step:add
+        {instance? : Instance selector (project.instance or hostname)}
+        {--command= : Shell command to run during instance setup}
         {--before= : Insert before this setup step id}
         {--after= : Insert after this setup step id}
         {--timeout=600 : Timeout in seconds}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Add an app setup step.';
+    protected $description = 'Add an instance setup step.';
 
     public function handle(): int
     {
-        $app = $this->resolveAppSelector();
+        $app = $this->resolveInstanceSelector();
 
         if ($app === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         $command = $this->resolveStepCommand();
@@ -58,7 +57,7 @@ final class AppSetupStepAddCommand extends AppGatewayCommand
         }
 
         if (is_int($before) && is_int($after)) {
-            return $this->renderFailure('app_setup.invalid_position', 'Both insertion flags cannot be supplied.', [
+            return $this->renderFailure('instance_setup.invalid_position', 'Both insertion flags cannot be supplied.', [
                 'before' => $before,
                 'after' => $after,
             ]);
@@ -66,7 +65,7 @@ final class AppSetupStepAddCommand extends AppGatewayCommand
 
         try {
             $response = $this->gatewayPost(
-                $this->apiAppPath($app, '/setup-steps'),
+                $this->apiInstancePath($app, '/setup-steps'),
                 $this->filledQuery([
                     'command' => $command,
                     'timeout' => $timeout,
@@ -83,7 +82,7 @@ final class AppSetupStepAddCommand extends AppGatewayCommand
         }
 
         $step = $this->step($response);
-        $this->line("Setup step added for app '{$this->scalarField($step, 'app')}'.");
+        $this->line("Setup step added for instance '{$this->scalarField($step, 'instance')}'.");
         $this->line('ID: '.$this->scalarField($step, 'id'));
         $this->line('Command: '.$this->scalarField($step, 'command'));
         $this->line('Order: '.$this->scalarField($step, 'order'));
@@ -92,16 +91,9 @@ final class AppSetupStepAddCommand extends AppGatewayCommand
         return self::SUCCESS;
     }
 
-    private function resolveAppSelector(): ?string
+    private function resolveInstanceSelector(): ?string
     {
-        $argument = $this->stringArgument('app');
-        $option = $this->stringOption('app');
-
-        if ($argument !== null && $option !== null && $argument !== $option) {
-            return null;
-        }
-
-        return $argument ?? $option ?? $this->appFromOrbitMarker();
+        return $this->stringArgument('instance') ?? $this->instanceFromOrbitMarker();
     }
 
     private function resolveStepCommand(): ?string

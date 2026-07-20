@@ -21,7 +21,7 @@ function profileSeed(E2ETopologyHarness $topology, string $gatewayApiIp): void
             }
         }
 
-        \App\Models\App::query()->delete();
+        \App\Models\Project::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             'consumer_node_id' => $nodes->get('operator-1'),
@@ -30,7 +30,7 @@ function profileSeed(E2ETopologyHarness $topology, string $gatewayApiIp): void
             'updated_at' => now(),
         ]);
 
-        \App\Models\App::query()->create([
+        \App\Models\Project::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'domain' => '__GATEWAY_API_IP__',

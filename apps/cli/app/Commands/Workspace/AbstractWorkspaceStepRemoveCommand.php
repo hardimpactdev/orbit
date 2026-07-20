@@ -33,13 +33,13 @@ abstract class AbstractWorkspaceStepRemoveCommand extends WorkspaceGatewayComman
             );
         }
 
-        $app = $this->stringOption('app') ?? $this->appFromOrbitMarker();
+        $app = $this->stringOption('instance') ?? $this->instanceFromOrbitMarker();
 
         try {
             $response = $this->gatewayDelete($this->pathWithQuery(
                 "/api/workspaces/steps/{$this->phase()}/{$step}",
                 [
-                    'app' => $app,
+                    'instance' => $app,
                     'path' => $app === null ? $this->hostCwd() : null,
                 ],
             ), [
@@ -65,16 +65,16 @@ abstract class AbstractWorkspaceStepRemoveCommand extends WorkspaceGatewayComman
         $data = $this->successData($response);
         $removed = is_array($data['step'] ?? null) ? $data['step'] : [];
         $stepId = is_int($removed['id'] ?? null) ? $removed['id'] : $step;
-        $app = is_string($removed['app'] ?? null) && $removed['app'] !== '' ? $removed['app'] : '';
-        $instance = is_string($removed['app_instance'] ?? null) && $removed['app_instance'] !== ''
-            ? $removed['app_instance']
+        $app = is_string($removed['project'] ?? null) && $removed['project'] !== '' ? $removed['project'] : '';
+        $instance = is_string($removed['instance'] ?? null) && $removed['instance'] !== ''
+            ? $removed['instance']
             : '';
         $target = $instance === '' ? $app : "{$app}.{$instance}";
 
-        $this->line("✓ Removed {$this->phaseLabel()} step {$stepId} from app instance '{$target}'.");
+        $this->line("✓ Removed {$this->phaseLabel()} step {$stepId} from instance '{$target}'.");
 
         if ($this->remainingStepCount($response) === 0) {
-            $this->line("App instance '{$target}' now has no workspace {$this->phaseLabel()} steps.");
+            $this->line("Instance '{$target}' now has no workspace {$this->phaseLabel()} steps.");
         } else {
             $this->line('Remaining steps renumbered.');
         }

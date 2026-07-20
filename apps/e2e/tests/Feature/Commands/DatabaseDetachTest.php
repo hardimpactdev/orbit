@@ -30,7 +30,7 @@ it('detaches a database connection from an app from the operator node through th
         $appNameValue = var_export($appName, true);
         $seedPhp = <<<PHP
             \$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-            \$app = \\App\\Models\\App::query()->updateOrCreate(
+            \$app = \\App\\Models\\Project::query()->updateOrCreate(
                 ['name' => {$appNameValue}],
                 [
                     'node_id' => \$node->id,
@@ -65,7 +65,7 @@ it('detaches a database connection from an app from the operator node through th
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit database:detach %s --app=%s --env-prefix=DB --json',
+                'cd %s && orbit database:detach %s --instance=%s --env-prefix=DB --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($slug),
                 escapeshellarg($appName),
@@ -88,7 +88,7 @@ it('detaches a database connection from an app from the operator node through th
         $appNameValue = var_export($appName, true);
         $cleanupPhp = <<<PHP
             \\App\\Models\\DatabaseConnection::query()->where('slug', {$slugValue})->delete();
-            \\App\\Models\\App::query()->where('name', {$appNameValue})->delete();
+            \\App\\Models\\Project::query()->where('name', {$appNameValue})->delete();
             echo 'cleaned';
             PHP;
 

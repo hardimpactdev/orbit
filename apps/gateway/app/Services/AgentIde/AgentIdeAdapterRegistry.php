@@ -70,7 +70,7 @@ final readonly class AgentIdeAdapterRegistry
      */
     public function supportedScopes(): array
     {
-        return ['node', 'app'];
+        return ['node', 'instance'];
     }
 
     public function isSupportedScope(string $scope): bool
@@ -85,7 +85,7 @@ final readonly class AgentIdeAdapterRegistry
     {
         return match ($scope) {
             'node' => ['none'],
-            'app' => ['inherit', 'none'],
+            'instance' => ['inherit', 'none'],
             default => [],
         };
     }

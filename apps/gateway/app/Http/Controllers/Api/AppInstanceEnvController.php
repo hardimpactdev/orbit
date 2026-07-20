@@ -8,8 +8,8 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\App;
 use App\Models\AppInstance;
+use App\Models\Project;
 use App\Services\Apps\AppInstanceEnvApplier;
 use App\Services\Apps\AppInstanceEnvRenderer;
 use Illuminate\Database\Eloquent\Model;
@@ -19,7 +19,7 @@ use Throwable;
 
 final class AppInstanceEnvController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?Project $activitySubject = null;
 
     private string $currentAction = 'list';
 
@@ -28,9 +28,10 @@ final class AppInstanceEnvController implements Loggable
         private readonly AppInstanceEnvApplier $applier,
     ) {}
 
-    #[RequiresPermission('app:read', servingNode: ServingNode::AppInstanceOwning)]
-    public function index(string $app, string $instance): JsonResponse
+    #[RequiresPermission('instance:read', servingNode: ServingNode::AppInstanceOwning)]
+    public function index(string $project, string $instance): JsonResponse
     {
+        $app = $project;
         $this->currentAction = 'list';
         $resolved = $this->resolve($app, $instance);
 
@@ -47,9 +48,10 @@ final class AppInstanceEnvController implements Loggable
         ]);
     }
 
-    #[RequiresPermission('app:write', servingNode: ServingNode::AppInstanceOwning)]
-    public function store(string $app, string $instance, Request $request): JsonResponse
+    #[RequiresPermission('instance:write', servingNode: ServingNode::AppInstanceOwning)]
+    public function store(string $project, string $instance, Request $request): JsonResponse
     {
+        $app = $project;
         $this->currentAction = 'set';
         $resolved = $this->resolve($app, $instance);
 
@@ -104,9 +106,10 @@ final class AppInstanceEnvController implements Loggable
         return $this->success($payload);
     }
 
-    #[RequiresPermission('app:read', servingNode: ServingNode::AppInstanceOwning)]
-    public function render(string $app, string $instance): JsonResponse
+    #[RequiresPermission('instance:read', servingNode: ServingNode::AppInstanceOwning)]
+    public function render(string $project, string $instance): JsonResponse
     {
+        $app = $project;
         $this->currentAction = 'render';
         $resolved = $this->resolve($app, $instance);
 
@@ -126,7 +129,7 @@ final class AppInstanceEnvController implements Loggable
     /**
      * @return array{
      *     scope: string,
-     *     app: string,
+     *     project: string,
      *     instance: string,
      *     workspace: null,
      *     path: string|null,
@@ -135,11 +138,11 @@ final class AppInstanceEnvController implements Loggable
      *     runtime_restarted: bool
      * }
      */
-    private function targetPayload(App $app, AppInstance $instance, bool $stored = false): array
+    private function targetPayload(Project $app, AppInstance $instance, bool $stored = false): array
     {
         return [
-            'scope' => 'app-instance',
-            'app' => $app->name,
+            'scope' => 'instance',
+            'project' => $app->name,
             'instance' => $instance->name,
             'workspace' => null,
             'path' => $this->applier->envPath($instance),
@@ -150,22 +153,22 @@ final class AppInstanceEnvController implements Loggable
     }
 
     /**
-     * @return array{0: App, 1: AppInstance}|JsonResponse
+     * @return array{0: Project, 1: AppInstance}|JsonResponse
      */
     private function resolve(string $app, string $instance): array|JsonResponse
     {
-        $targetApp = App::query()
+        $targetApp = Project::query()
             ->with('node')
             ->where('name', $app)
             ->orWhere('domain', $app)
             ->first();
 
-        if (! $targetApp instanceof App) {
+        if (! $targetApp instanceof Project) {
             return response()->json([
                 'error' => [
-                    'code' => 'app.not_found',
-                    'message' => "App '{$app}' not found.",
-                    'meta' => ['app' => $app],
+                    'code' => 'project.not_found',
+                    'message' => "Project '{$app}' not found.",
+                    'meta' => ['project' => $app],
                 ],
             ], 404);
         }
@@ -175,10 +178,10 @@ final class AppInstanceEnvController implements Loggable
         if (! $targetInstance instanceof AppInstance) {
             return response()->json([
                 'error' => [
-                    'code' => 'app_instance.not_found',
-                    'message' => "Instance '{$instance}' was not found for app '{$targetApp->name}'.",
+                    'code' => 'instance.not_found',
+                    'message' => "Instance '{$instance}' was not found for project '{$targetApp->name}'.",
                     'meta' => [
-                        'app' => $targetApp->name,
+                        'project' => $targetApp->name,
                         'instance' => $instance,
                     ],
                 ],
@@ -225,14 +228,14 @@ final class AppInstanceEnvController implements Loggable
         ], 422);
     }
 
-    private function applyFailed(App $app, AppInstance $instance, string $key, Throwable $exception): JsonResponse
+    private function applyFailed(Project $app, AppInstance $instance, string $key, Throwable $exception): JsonResponse
     {
         return response()->json([
             'error' => [
-                'code' => 'app_instance.env_apply_failed',
-                'message' => "Saved '{$key}' for instance '{$instance->name}', but applying it to the app runtime failed.",
+                'code' => 'instance.env_apply_failed',
+                'message' => "Saved '{$key}' for instance '{$instance->name}', but applying it to the instance runtime failed.",
                 'meta' => [
-                    'app' => $app->name,
+                    'project' => $app->name,
                     'instance' => $instance->name,
                     'key' => $key,
                     'reason' => $exception->getMessage(),
@@ -259,9 +262,9 @@ final class AppInstanceEnvController implements Loggable
     public function type(): string
     {
         return match ($this->currentAction) {
-            'set' => 'api:POST /apps/{app}/instances/{instance}/env',
-            'render' => 'api:GET /apps/{app}/instances/{instance}/env/render',
-            default => 'api:GET /apps/{app}/instances/{instance}/env',
+            'set' => 'api:POST /projects/{project}/instances/{instance}/env',
+            'render' => 'api:GET /projects/{project}/instances/{instance}/env/render',
+            default => 'api:GET /projects/{project}/instances/{instance}/env',
         };
     }
 

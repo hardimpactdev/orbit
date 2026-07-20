@@ -10,29 +10,29 @@ final class DeployStepRemoveCommand extends DeployGatewayCommand
 {
     #[\Override]
     protected $signature = 'deploy:step-remove
-        {app? : Production app-instance selector}
+        {instance? : Instance selector (project.instance)}
         {step? : Deployment step id or exact title}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Remove a deployment pipeline step from a production app instance.';
+    protected $description = 'Remove a deployment pipeline step from an instance.';
 
     public function handle(): int
     {
-        $app = $this->requiredArgument('app', 'app', 'App and step are required.');
+        $instanceSelector = $this->requiredArgument('instance', 'instance', 'Instance and step are required.');
 
-        if (is_int($app)) {
-            return $app;
+        if (is_int($instanceSelector)) {
+            return $instanceSelector;
         }
 
-        $step = $this->requiredArgument('step', 'step', 'App and step are required.');
+        $step = $this->requiredArgument('step', 'step', 'Instance and step are required.');
 
         if (is_int($step)) {
             return $step;
         }
 
-        $consent = $this->confirmRemoval($app, $step);
+        $consent = $this->confirmRemoval($instanceSelector, $step);
 
         if (is_int($consent)) {
             return $consent;
@@ -40,7 +40,7 @@ final class DeployStepRemoveCommand extends DeployGatewayCommand
 
         try {
             $response = $this->gatewayDelete('/api/deploy/steps/'.rawurlencode($step), [
-                'app' => $app,
+                'instance' => $instanceSelector,
                 'destructive_consent' => true,
             ]);
         } catch (GatewayApiException $exception) {
@@ -51,24 +51,24 @@ final class DeployStepRemoveCommand extends DeployGatewayCommand
             return $this->renderSuccess($response);
         }
 
-        return $this->renderHumanRemoval($response, $app, $step);
+        return $this->renderHumanRemoval($response, $instanceSelector, $step);
     }
 
     /**
      * @param  array<string, mixed>  $response
      */
-    private function renderHumanRemoval(array $response, string $app, string $step): int
+    private function renderHumanRemoval(array $response, string $instanceSelector, string $step): int
     {
         $stepData = $this->stepData($response);
 
         $id = $this->stepString($stepData, 'id') ?? $step;
         $title = $this->stepString($stepData, 'title') ?? $step;
-        $appName = $this->stepString($stepData, 'app') ?? $app;
-        $appInstance = $this->stepString($stepData, 'app_instance');
-        $target = $appInstance === null ? $appName : "{$appName}.{$appInstance}";
+        $project = $this->stepString($stepData, 'project');
+        $instance = $this->stepString($stepData, 'instance');
+        $target = $project !== null && $instance !== null ? "{$project}.{$instance}" : $instanceSelector;
         $order = $this->stepString($stepData, 'order');
 
-        $summary = "Removed deployment step #{$id} '{$title}' from app instance '{$target}'.";
+        $summary = "Removed deployment step #{$id} '{$title}' from instance '{$target}'.";
 
         if ($order !== null) {
             $summary .= " Previous order {$order}.";
@@ -113,7 +113,7 @@ final class DeployStepRemoveCommand extends DeployGatewayCommand
         return ($response['success']['meta']['history_preserved'] ?? null) === true;
     }
 
-    private function confirmRemoval(string $app, string $step): ?int
+    private function confirmRemoval(string $instanceSelector, string $step): ?int
     {
         if ($this->option('force') === true) {
             return null;
@@ -127,7 +127,7 @@ final class DeployStepRemoveCommand extends DeployGatewayCommand
             );
         }
 
-        if ($this->confirm("Remove deployment step '{$step}' from '{$app}'?", default: false)) {
+        if ($this->confirm("Remove deployment step '{$step}' from '{$instanceSelector}'?", default: false)) {
             return null;
         }
 

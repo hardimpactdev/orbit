@@ -16,7 +16,7 @@ final class DatabaseListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'database:list
-        {--app= : Filter by app selector}
+        {--instance= : Filter by instance selector (project.instance)}
         {--workspace= : Filter by workspace selector}
         {--node= : Filter by node selector}
         {--json}';
@@ -26,17 +26,17 @@ final class DatabaseListCommand extends GatewayCommand
 
     public function handle(): int
     {
-        if ($this->hasMutuallyExclusiveOptions('app', 'workspace')) {
+        if ($this->hasMutuallyExclusiveOptions('instance', 'workspace')) {
             return $this->renderFailure(
                 'validation_failed',
-                'Invalid scope: --app and --workspace cannot be combined.',
+                'Invalid scope: --instance and --workspace cannot be combined.',
                 ['field' => 'scope'],
             );
         }
 
         try {
             $response = $this->gatewayGet('/api/database-connections', $this->filledQuery([
-                'app' => $this->stringOption('app'),
+                'instance' => $this->stringOption('instance'),
                 'workspace' => $this->stringOption('workspace'),
                 'node' => $this->stringOption('node'),
             ]));
@@ -114,14 +114,14 @@ final class DatabaseListCommand extends GatewayCommand
      */
     private function appInstanceLabel(array $target): ?string
     {
-        $app = is_string($target['app'] ?? null) && $target['app'] !== '' ? $target['app'] : null;
+        $project = is_string($target['project'] ?? null) && $target['project'] !== '' ? $target['project'] : null;
         $instance = is_string($target['instance'] ?? null) && $target['instance'] !== '' ? $target['instance'] : null;
 
-        if ($app === null) {
+        if ($project === null) {
             return null;
         }
 
-        return $instance === null ? $app : "{$app} ({$instance})";
+        return $instance === null ? $project : "{$project} ({$instance})";
     }
 
     /**

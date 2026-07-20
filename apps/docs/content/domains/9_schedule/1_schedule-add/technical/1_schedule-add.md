@@ -1,4 +1,4 @@
-# Technical Contract: `orbit schedule:add [name] [--app=<app>] [--node=<node>] [--command=<command>] [--script=<path>] [--interval=<expression>] [--timezone=<timezone>] [--timeout=<seconds>] [--json]`
+# Technical Contract: `orbit schedule:add [name] [--instance=<project.instance>] [--node=<node>] [--command=<command>] [--script=<path>] [--interval=<expression>] [--timezone=<timezone>] [--timeout=<seconds>] [--json]`
 
 [Back to public `schedule-add` documentation.](../schedule-add.md)
 
@@ -9,12 +9,12 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity is authorized to manage schedules on the resolved
-  app instance's serving node or selected node.
+  instance's serving node or selected node.
 
 ## Signature
 
 ```bash
-orbit schedule:add [name] [--app=<app>] [--node=<node>] [--command=<command>] [--script=<path>] [--interval=<expression>] [--timezone=<timezone>] [--timeout=<seconds>] [--json]
+orbit schedule:add [name] [--instance=<project.instance>] [--node=<node>] [--command=<command>] [--script=<path>] [--interval=<expression>] [--timezone=<timezone>] [--timeout=<seconds>] [--json]
 ```
 
 ## Input Contract
@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Schedule slug unique within the selected concrete target. |
-| `app` | `--app` | `Required when no node target resolves and no target can be prompted.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare logical app is shorthand only when exactly one eligible instance is visible. |
+| `app` | `--instance` | `Required when no node target resolves and no target can be prompted.` | `Forbidden with `node`.` | `None.` | Visible eligible `app.instance`; a bare project is shorthand only when exactly one eligible instance is visible. |
 | `node` | `--node` | `Required when no app target resolves and no target can be prompted.` | `Forbidden with `app`.` | `local node:default when configured` | Visible active gateway or node with schedule capability. |
 | `command` | `--command` | `Required when `script` is absent.` | `Forbidden with `script`.` | `None.` | Non-empty command line accepted by the schedule execution policy for the target scope. |
 | `script` | `--script` | `Required when `command` is absent.` | `Forbidden with `command`.` | `None.` | Managed script path readable by the gateway policy and executable by the target node. |
@@ -45,11 +45,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 These rules describe how `schedule:add` resolves scope and writes the gateway schedule row.
 
 - Resolves exactly one target scope: app or node.
-- Resolves app scope to exactly one concrete app instance before writing. A
-  dotted selector addresses that instance; a bare app selector succeeds only
+- Resolves instance scope to exactly one concrete instance before writing. A
+  dotted selector addresses that instance; a bare project selector succeeds only
   when exactly one eligible instance is visible for `schedule:add`.
 - Creates one gateway schedule-configuration row in the `schedule` state family.
-- Stores the schedule name, scope, concrete `app_instance_id` when applicable,
+- Stores the schedule name, scope, concrete `instance_id` when applicable,
   target, interval, timezone, execution source, execution timeout, enabled state, and initial
   status.
 - Rejects ambiguous app selectors and writes that collide with an existing
@@ -60,7 +60,7 @@ These rules describe how `schedule:add` resolves scope and writes the gateway sc
 - Accepts exactly one execution source: `--command` or `--script`.
 - Stores inline commands as execution type `command`.
 - Stores managed script paths as execution type `script`.
-- Does not create app-instance process definitions, persistent services, or other runtime units.
+- Does not create instance process definitions, persistent services, or other runtime units.
 - The Orbit Scheduler executes the schedule each minute it is due.
 - Dispatch enforces the stored per-schedule timeout. Remote transport receives a 15-second completion buffer beyond the command timeout.
 - No per-schedule node-side artifact is applied.
@@ -87,7 +87,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Name collision | A schedule with the same name already exists in the selected concrete target. | `error.code=schedule.name_collision` |
-| App instance required | No eligible instance exists for a bare logical app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=app_instance_required` |
+| Instance required | No eligible instance exists for a bare project, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Interval invalid | The interval cannot be parsed against the schedule expression contract. | `error.code=schedule.interval_invalid` |
 | Timeout invalid | The timeout is outside `1..86400` seconds. | `error.code=validation_failed`, `error.meta.field=timeout` |
 | Execution source invalid | The selected command or script is rejected by schedule execution policy. | `error.code=schedule.execution_source_invalid` |
@@ -114,7 +114,7 @@ schedule creation attempts.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php` | CLI `schedule:add` POST payload, target and execution-source validation, default node when no target is supplied, and gateway error passthrough. |
-| `apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php` | Explicit and bare app-instance resolution, per-instance name uniqueness, serving-node payloads, and ambiguity before writes. |
+| `apps/gateway/tests/Feature/Http/Api/ScheduleAppInstanceOwnershipTest.php` | Explicit and bare instance resolution, per-instance name uniqueness, serving-node payloads, and ambiguity before writes. |
 | `apps/gateway/tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php` | Existing app-schedule ownership backfill and ambiguous migration stop. |
 
 Activity logging assertions remain a coverage gap until focused tests land.

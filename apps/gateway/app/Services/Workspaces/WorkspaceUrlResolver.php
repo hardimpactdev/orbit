@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
-use App\Models\App;
+use App\Models\Project;
 use App\Models\Workspace;
 
 final readonly class WorkspaceUrlResolver
@@ -19,7 +19,7 @@ final readonly class WorkspaceUrlResolver
 
         $app = $workspace->app;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return "https://{$workspace->name}";
         }
 
@@ -32,7 +32,7 @@ final readonly class WorkspaceUrlResolver
         return "https://{$workspace->name}.{$this->placementUrlHost($workspace, $app)}";
     }
 
-    private function placementUrlHost(Workspace $workspace, App $app): string
+    private function placementUrlHost(Workspace $workspace, Project $app): string
     {
         return $this->placement->baseUrlHost($workspace, $app);
     }

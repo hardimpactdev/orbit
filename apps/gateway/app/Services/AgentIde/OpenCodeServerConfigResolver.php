@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Services\AgentIde;
 
 use App\Data\AgentIde\OpenCodeServerConfig;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\Project;
 
 final class OpenCodeServerConfigResolver
 {
-    public function resolve(App $app): OpenCodeServerConfig
+    public function resolve(Project $app): OpenCodeServerConfig
     {
         $app->loadMissing('node');
 

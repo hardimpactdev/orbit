@@ -6,10 +6,12 @@ namespace App\Actions\Apps;
 
 use App\Actions\Workspaces\RemoveWorkspace;
 use App\Contracts\AgentIdeMessageAdapter;
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\AppAgentIdeDefaults;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use RuntimeException;
 
@@ -20,44 +22,54 @@ final readonly class PruneAppWorkspaces
         private AppAgentIdeDefaults $agentIdeDefaults,
         private AgentIdeMessageAdapter $adapter,
         private WorkspaceRoleGuard $workspaceRoleGuard,
+        private WorkspacePlacement $placement,
     ) {}
 
     /**
      * @return array{
-     *     app: string,
+     *     project: string,
+     *     instance: string,
      *     stale_workspaces: list<array{name: string, removed: bool}>,
      *     warnings: list<array<string, string>>,
      *     dry_run: bool,
      * }
      */
-    public function handle(App $app, bool $dryRun = false, ?string $adapterName = null): array
-    {
-        $app->loadMissing('node');
-        $this->workspaceRoleGuard->ensureNodeSupportsWorkspaces($app, $app->node);
+    public function handle(
+        Project $app,
+        AppInstance $instance,
+        bool $dryRun = false,
+        ?string $adapterName = null,
+    ): array {
+        $node = $this->placement->nodeForInstance($instance);
+        $this->workspaceRoleGuard->ensureNodeSupportsWorkspaces($app, $node);
 
-        $effectiveAdapter = $adapterName ?? $this->agentIdeDefaults->payloadFor($app)['effective_adapter'];
+        $effectiveAdapter = $adapterName ?? $this->agentIdeDefaults->payloadFor($instance, $node)['effective_adapter'];
 
         if ($effectiveAdapter === null) {
-            throw new RuntimeException('No agent IDE adapter configured for this app.');
+            throw new RuntimeException('No agent IDE adapter configured for this instance.');
         }
 
-        $nodeName = $app->node instanceof Node ? $app->node->name : '';
+        $nodeName = $node instanceof Node ? $node->name : '';
 
         $adapterWorkspaces = $this->adapter->workspaces(
-            ['app' => $app->name, 'node' => $nodeName],
+            ['app' => $app->name, 'instance' => $instance->name, 'node' => $nodeName],
             $effectiveAdapter,
         );
 
         $trackedWorkspaces = Workspace::query()
             ->where('app_id', $app->id)
+            ->where('app_instance_id', $instance->id)
             ->pluck('name')
+            ->map(static fn (mixed $name): string => (string) $name)
             ->all();
 
+        /** @var list<string> $trackedWorkspaces */
         $staleWorkspaces = array_values(array_diff($trackedWorkspaces, $adapterWorkspaces));
 
         if ($dryRun) {
             return [
-                'app' => $app->name,
+                'project' => $app->name,
+                'instance' => $instance->name,
                 'stale_workspaces' => array_map(fn (string $name): array => [
                     'name' => $name,
                     'removed' => false,
@@ -67,12 +79,15 @@ final readonly class PruneAppWorkspaces
             ];
         }
 
+        /** @var list<array{name: string, removed: bool}> $results */
         $results = [];
+        /** @var list<array<string, string>> $warnings */
         $warnings = [];
 
         foreach ($staleWorkspaces as $workspaceName) {
             $workspace = Workspace::query()
                 ->where('app_id', $app->id)
+                ->where('app_instance_id', $instance->id)
                 ->where('name', $workspaceName)
                 ->first();
 
@@ -96,7 +111,7 @@ final readonly class PruneAppWorkspaces
                     'code' => 'workspace.remove_failed',
                     'family' => 'workspace',
                     'message' => "Failed to remove workspace '{$workspaceName}': {$e->getMessage()}",
-                    'next_command' => "workspace:remove {$workspaceName} --app={$app->name} --force",
+                    'next_command' => "workspace:remove {$workspaceName} --instance={$app->name}.{$instance->name} --force",
                 ];
 
                 $results[] = [
@@ -107,7 +122,8 @@ final readonly class PruneAppWorkspaces
         }
 
         return [
-            'app' => $app->name,
+            'project' => $app->name,
+            'instance' => $instance->name,
             'stale_workspaces' => $results,
             'warnings' => $warnings,
             'dry_run' => false,

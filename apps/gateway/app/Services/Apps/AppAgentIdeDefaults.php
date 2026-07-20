@@ -4,36 +4,39 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Models\App;
+use App\Models\AppInstance;
+use App\Models\Node;
 use App\Services\AgentIde\AgentIdeAdapterRegistry;
 use App\Services\Nodes\NodeAgentIdeDefaults;
+use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class AppAgentIdeDefaults
 {
     public function __construct(
         private AgentIdeAdapterRegistry $registry,
+        private WorkspacePlacement $placement,
     ) {}
 
     /**
      * @return array{
-     *     app: array<string, mixed>,
+     *     instance: array<string, mixed>,
      *     agent_ide: array{adapter: string|null, source: string, effective_adapter: string|null},
      *     cleanup: array{workspaces_removed: list<string>},
      *     action: string,
      *     previous_adapter: string|null,
      * }
      */
-    public function set(App $app, string $adapter): array
+    public function set(AppInstance $instance, string $adapter): array
     {
-        $app->loadMissing('node');
+        $instance->loadMissing('project.node');
 
-        $previousAdapter = $this->payloadFor($app)['effective_adapter'];
-        $currentAdapter = $this->explicitAdapter($app);
+        $previousAdapter = $this->payloadFor($instance)['effective_adapter'];
+        $currentAdapter = $this->explicitAdapter($instance);
         $normalizedAdapter = $adapter === 'inherit' ? null : $adapter;
         $action = $currentAdapter === $normalizedAdapter ? 'converged' : 'set';
 
         if ($action === 'set') {
-            $config = is_array($app->agent_ide_config) ? $app->agent_ide_config : [];
+            $config = is_array($instance->agent_ide_config) ? $instance->agent_ide_config : [];
 
             if ($normalizedAdapter === null) {
                 unset($config['adapter']);
@@ -41,15 +44,15 @@ final readonly class AppAgentIdeDefaults
                 $config['adapter'] = $normalizedAdapter;
             }
 
-            $app->agent_ide_config = $config === [] ? null : $config;
-            $app->save();
-            $app->refresh();
-            $app->loadMissing('node');
+            $instance->agent_ide_config = $config === [] ? null : $config;
+            $instance->save();
+            $instance->refresh();
+            $instance->loadMissing('project.node');
         }
 
         return [
-            'app' => $this->appPayload($app),
-            'agent_ide' => $this->payloadFor($app),
+            'instance' => $this->instancePayload($instance),
+            'agent_ide' => $this->payloadFor($instance),
             'cleanup' => ['workspaces_removed' => []],
             'action' => $action,
             'previous_adapter' => $previousAdapter,
@@ -66,20 +69,20 @@ final readonly class AppAgentIdeDefaults
      */
     public function supportedAdapters(): array
     {
-        return $this->registry->supportedInputsForScope('app');
+        return $this->registry->supportedInputsForScope('instance');
     }
 
     /**
      * @return array{adapter: string|null, source: string, effective_adapter: string|null}
      */
-    public function payloadFor(App $app): array
+    public function payloadFor(AppInstance $instance, ?Node $node = null): array
     {
-        $explicitAdapter = $this->explicitAdapter($app);
+        $explicitAdapter = $this->explicitAdapter($instance);
 
         if ($explicitAdapter === 'none') {
             return [
                 'adapter' => 'none',
-                'source' => 'app',
+                'source' => 'instance',
                 'effective_adapter' => null,
             ];
         }
@@ -87,15 +90,16 @@ final readonly class AppAgentIdeDefaults
         if ($explicitAdapter !== null) {
             return [
                 'adapter' => $explicitAdapter,
-                'source' => 'app',
+                'source' => 'instance',
                 'effective_adapter' => $explicitAdapter,
             ];
         }
 
-        $app->loadMissing('node');
+        $instance->loadMissing('project.node');
+        $node ??= $this->placement->nodeForInstance($instance);
 
-        if ($app->node !== null) {
-            $nodeDefault = NodeAgentIdeDefaults::payloadFor($app->node);
+        if ($node instanceof Node) {
+            $nodeDefault = NodeAgentIdeDefaults::payloadFor($node);
             $nodeAdapter = $nodeDefault['adapter'];
 
             if ($nodeAdapter !== null) {
@@ -117,25 +121,21 @@ final readonly class AppAgentIdeDefaults
     /**
      * @return array<string, mixed>
      */
-    private function appPayload(App $app): array
+    private function instancePayload(AppInstance $instance): array
     {
+        $instance->loadMissing('project.node');
+        $project = $instance->project;
+
         return [
-            'name' => $app->name,
-            'node' => $app->node?->name,
-            'url' => $app->url(),
-            'path' => $app->path,
-            'root' => $app->document_root,
-            'repository' => $app->repository,
-            'runtime' => $app->runtimeKind()->value,
-            'runtime_config' => $app->runtimeConfig()->toArray(),
-            'php_version' => $app->php_version,
-            'adopted' => $app->adopted,
+            'project' => $project->name,
+            'name' => $instance->name,
+            'node' => $this->placement->nodeForInstance($instance)?->name,
         ];
     }
 
-    private function explicitAdapter(App $app): ?string
+    private function explicitAdapter(AppInstance $instance): ?string
     {
-        $adapter = $app->agent_ide_config['adapter'] ?? null;
+        $adapter = $instance->agent_ide_config['adapter'] ?? null;
 
         return is_string($adapter) && $adapter !== '' ? $adapter : null;
     }

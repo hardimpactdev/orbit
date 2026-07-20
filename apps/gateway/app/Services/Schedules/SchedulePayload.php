@@ -15,11 +15,11 @@ use Orbit\Sdk\Laravel\GatewayApiException;
 class SchedulePayload
 {
     /**
-     * @return array{schedules: list<array<string, mixed>>, meta: array{app: string|null, node: string|null, count: int}}
+     * @return array{schedules: list<array<string, mixed>>, meta: array{instance: string|null, node: string|null, count: int}}
      */
-    public function list(?string $app, ?string $node, ?Node $caller = null): array
+    public function list(?string $instance, ?string $node, ?Node $caller = null): array
     {
-        $this->ensureExclusiveFilters($app, $node);
+        $this->ensureExclusiveFilters($instance, $node);
 
         $appInstances = app(ScheduleAppInstanceResolver::class);
         $visibleNodeIds = $this->visibleNodeIds($caller, 'schedule:read');
@@ -27,8 +27,8 @@ class SchedulePayload
             ? $appInstances->visibleInstanceIds($caller, 'schedule:read')
             : null;
         $appSelection =
-            $app !== null && $caller instanceof Node
-                ? $appInstances->resolve($app, $caller, 'schedule:read')
+            $instance !== null && $caller instanceof Node
+                ? $appInstances->resolve($instance, $caller, 'schedule:read')
                 : null;
         $appInstanceId = $appSelection?->instance?->id;
 
@@ -60,16 +60,18 @@ class SchedulePayload
             ->orderBy('target_name')
             ->orderBy('name');
 
-        $schedules = $query
-            ->get()
-            ->map(fn (Schedule $schedule): array => $this->serialize($schedule))
-            ->values()
-            ->all();
+        $schedules = array_values(
+            $query
+                ->get()
+                ->map(fn (Schedule $schedule): array => $this->serialize($schedule))
+                ->values()
+                ->all(),
+        );
 
         return [
             'schedules' => $schedules,
             'meta' => [
-                'app' => $app,
+                'instance' => $instance,
                 'node' => $node,
                 'count' => count($schedules),
             ],
@@ -77,16 +79,16 @@ class SchedulePayload
     }
 
     /**
-     * @return array{schedule: array<string, mixed>, meta: array{app: string|null, node: string|null}}
+     * @return array{schedule: array<string, mixed>, meta: array{instance: string|null, node: string|null}}
      */
-    public function show(string $name, ?string $app, ?string $node, ?Node $caller = null): array
+    public function show(string $name, ?string $instance, ?string $node, ?Node $caller = null): array
     {
-        $schedule = $this->find($name, $app, $node, $caller);
+        $schedule = $this->find($name, $instance, $node, $caller);
 
         return [
             'schedule' => $this->serialize($schedule),
             'meta' => [
-                'app' => $app,
+                'instance' => $instance,
                 'node' => $node,
             ],
         ];
@@ -94,12 +96,12 @@ class SchedulePayload
 
     public function find(
         string $name,
-        ?string $app,
+        ?string $instance,
         ?string $node,
         ?Node $caller = null,
         string $permission = 'schedule:read',
     ): Schedule {
-        $this->ensureExclusiveFilters($app, $node);
+        $this->ensureExclusiveFilters($instance, $node);
 
         $appInstances = app(ScheduleAppInstanceResolver::class);
         $visibleNodeIds = $this->visibleNodeIds($caller, $permission);
@@ -107,8 +109,8 @@ class SchedulePayload
             ? $appInstances->visibleInstanceIds($caller, $permission)
             : null;
         $appSelection =
-            $app !== null && $caller instanceof Node
-                ? $appInstances->resolve($app, $caller, $permission)
+            $instance !== null && $caller instanceof Node
+                ? $appInstances->resolve($instance, $caller, $permission)
                 : null;
         $appInstanceId = $appSelection?->instance?->id;
 
@@ -147,7 +149,7 @@ class SchedulePayload
         if (! $schedule instanceof Schedule) {
             throw new GatewayApiException("Schedule '{$name}' was not found.", 'schedule.not_found', [
                 'name' => $name,
-                'app' => $app,
+                'instance' => $instance,
                 'node' => $node,
             ]);
         }
@@ -168,14 +170,14 @@ class SchedulePayload
         return $schedule;
     }
 
-    private function ensureExclusiveFilters(?string $app, ?string $node): void
+    private function ensureExclusiveFilters(?string $instance, ?string $node): void
     {
-        if ($app === null || $node === null) {
+        if ($instance === null || $node === null) {
             return;
         }
 
         throw new GatewayApiException('The schedule filters are mutually exclusive.', 'validation_failed', [
-            'fields' => ['app', 'node'],
+            'fields' => ['instance', 'node'],
         ]);
     }
 
@@ -277,9 +279,9 @@ class SchedulePayload
 
         return [
             'name' => $schedule->name,
-            'scope' => $schedule->scope,
+            'scope' => $schedule->scope === 'app' ? 'instance' : $schedule->scope,
             'target' => [
-                'type' => $schedule->scope,
+                'type' => $schedule->scope === 'app' ? 'instance' : $schedule->scope,
                 'name' => $schedule->target_name,
                 'node' => $targetNode?->name,
             ],

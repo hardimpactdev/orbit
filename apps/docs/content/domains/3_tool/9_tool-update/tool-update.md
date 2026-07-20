@@ -11,7 +11,7 @@ first install, process runtime migration, or configuration-only repair.
 ## Usage
 
 ```bash
-orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]
+orbit tool:update [tool] [--instance=<project.instance>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]
 ```
 
 ## Examples
@@ -20,8 +20,8 @@ orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<vers
 orbit tool:update composer --node=app-1
 orbit tool:update composer --node=app-1 --expected-version=2.9.2
 orbit tool:update --node=app-1
-orbit tool:update opencode-cli --app=docs --json
-orbit tool:update opencode-cli --app=docs --stream-json
+orbit tool:update opencode-cli --instance=docs --json
+orbit tool:update opencode-cli --instance=docs --stream-json
 ```
 
 ## Arguments and options
@@ -32,12 +32,12 @@ orbit tool:update opencode-cli --app=docs --stream-json
   `--version` console option. When omitted, the tool definition's latest
   supported version is used.
 - `--node`: Target node. Defaults to local `node:default` when configured.
-- `--app`: Resolve the target node from an app.
+- `--instance`: Resolve the target node from an app.
 - `--json`: Output JSON.
 - `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive
   with `--json`.
 
-Target context is required when neither `--node`, `--app`, nor local
+Target context is required when neither `--node`, `--instance`, nor local
 `node:default` resolves a node.
 
 ## What Happens

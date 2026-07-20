@@ -2,7 +2,7 @@
 
 [Back to Process commands.](../README.md)
 
-List process configuration and last known runtime state for a node, app instance, or
+List process configuration and last known runtime state for a node, instance, or
 workspace.
 
 `process:list` reads process definitions and latest durable lifecycle events
@@ -11,10 +11,10 @@ from the gateway without performing live node inspection.
 ## Usage
 
 ```bash
-orbit process:list --app=docs.production
-orbit process:list --app=docs.development --workspace=feature-docs
+orbit process:list --instance=docs.production
+orbit process:list --instance=docs.development --workspace=feature-docs
 orbit process:list --node=app-dev-1
-orbit process:list --app=docs.production --json
+orbit process:list --instance=docs.production --json
 ```
 
 ## Behavior Summary
@@ -22,8 +22,8 @@ orbit process:list --app=docs.production --json
 Use this command to inspect process configuration and last known state without live node probing.
 
 - **Process Definitions**: Reads process definitions from gateway configuration.
-- **Context Resolution**: Resolves a node, app instance, or workspace context. Prefer `<app.instance>`; a bare app slug is accepted only when that logical app has exactly one instance. A workspace context includes workspace-owned definitions and app-instance-owned definitions inherited by that workspace.
-- **Placement**: App-instance and workspace contexts read runtime identities from the instance's serving node.
+- **Context Resolution**: Resolves a node, instance, or workspace context. Prefer `<project.instance>`; a bare project slug is accepted only when that project has exactly one instance. A workspace context includes workspace-owned definitions and instance-owned definitions inherited by that workspace.
+- **Placement**: Instance and workspace contexts read runtime identities from the instance's serving node.
 - **Runtime Identity**: Derives expected runtime unit identities for that context.
 - **Service Metadata**: Includes safe connection metadata for service process
   definitions, including service identifier, version family, concrete version,

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Proxy;
 
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Workspaces\WorkspacePlacement;
 
@@ -27,7 +27,7 @@ final readonly class AppProxyRouteTargetResolver
         $route->loadMissing(['app.instances', 'app.node']);
         $app = $route->app;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return null;
         }
 
@@ -53,12 +53,12 @@ final readonly class AppProxyRouteTargetResolver
         return $route->node;
     }
 
-    public function selector(App $app, AppInstance $instance): string
+    public function selector(Project $app, AppInstance $instance): string
     {
         return "{$app->name}.{$instance->name}";
     }
 
-    public function routeDomain(ProxyRoute $route, App $app, ?AppInstance $instance = null): string
+    public function routeDomain(ProxyRoute $route, Project $app, ?AppInstance $instance = null): string
     {
         if ($instance instanceof AppInstance) {
             $domain = $this->placement->instanceUrlHost($instance, $app);

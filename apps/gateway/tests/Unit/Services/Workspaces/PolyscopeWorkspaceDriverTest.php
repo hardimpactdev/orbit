@@ -4,16 +4,10 @@ declare(strict_types=1);
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\WorkspaceCreateFailed;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Services\ActivityLogCorrelation;
-use App\Services\ActivityLogger;
-use App\Services\Operations\OperationRunRecorder;
-use App\Services\Operations\OperationTokenFactory;
-use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Models\Project;
 use App\Services\RemoteShell\RemoteExecutor;
-use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Workspaces\PolyscopeWorkspaceBranchAligner;
 use App\Services\Workspaces\PolyscopeWorkspaceDriver;
@@ -21,7 +15,6 @@ use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Orbit\Core\Http\JsonEnvelope;
-use Orbit\Core\Security\OperationTokenSigner;
 use Tests\Fakes\RemoteExecutorBackedInternalExecutor;
 use Tests\TestCase;
 
@@ -29,7 +22,7 @@ uses(TestCase::class, RefreshDatabase::class);
 
 it('reads Polyscope config through the Agent-push lookup command with stdout suppression requested', function (): void {
     $node = polyscopeWorkspaceDriverAppDevNode();
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/srv/docs',
@@ -95,7 +88,7 @@ it('does not leak Polyscope api tokens from config lookup output into workspace 
 ): void {
     $secret = 'poly-token-secret-round-2';
     $node = polyscopeWorkspaceDriverAppDevNode();
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/srv/docs',
@@ -151,7 +144,7 @@ it('does not leak Polyscope api tokens from config lookup output into workspace 
 it('treats Polyscope config lookup error messages as untrusted remote output', function (): void {
     $secret = 'secret-token-probe-XYZ';
     $node = polyscopeWorkspaceDriverAppDevNode();
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/srv/docs',

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Analytics;
 
 use App\Models\AppAnalyticsBinding;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\IngressResolver;
@@ -20,10 +21,10 @@ final readonly class AppAnalyticsPayloadFactory
     ) {}
 
     /** @return array<string, mixed> */
-    public function enableResult(AppAnalyticsBinding $binding): array
+    public function enableResult(AppAnalyticsBinding $binding, AppInstance $instance): array
     {
         return [
-            'binding' => $this->integrationBinding($binding),
+            'binding' => $this->integrationBinding($binding, $instance),
             'route_enactment' => [
                 'status' => 'completed',
                 'placements' => ['router', 'ingress'],
@@ -48,23 +49,24 @@ final readonly class AppAnalyticsPayloadFactory
     }
 
     /** @return array<string, mixed> */
-    public function verificationContext(AppAnalyticsBinding $binding): array
+    public function verificationContext(AppAnalyticsBinding $binding, AppInstance $instance): array
     {
         return [
-            'binding' => $this->integrationBinding($binding),
+            'binding' => $this->integrationBinding($binding, $instance),
             'routes' => $this->routeStatuses($binding),
             'dns_expectation' => $this->dnsExpectation($binding),
         ];
     }
 
     /** @return array<string, mixed> */
-    public function binding(AppAnalyticsBinding $binding): array
+    public function binding(AppAnalyticsBinding $binding, AppInstance $instance): array
     {
         $binding->loadMissing('app');
         $publicHosts = $this->stringList($binding->public_hosts);
 
         return [
-            'app' => $binding->app->name,
+            'project' => $binding->app->name,
+            'instance' => $instance->name,
             'enabled' => $binding->enabled,
             'internal_host' => AnalyticsRouteRegistrar::ServiceDomain,
             'dashboard_url' => 'https://'.AnalyticsRouteRegistrar::ServiceDomain,
@@ -82,9 +84,9 @@ final readonly class AppAnalyticsPayloadFactory
     }
 
     /** @return array<string, mixed> */
-    private function integrationBinding(AppAnalyticsBinding $binding): array
+    private function integrationBinding(AppAnalyticsBinding $binding, AppInstance $instance): array
     {
-        $bindingPayload = $this->binding($binding);
+        $bindingPayload = $this->binding($binding, $instance);
         $siteDomain = $this->siteDomain($binding);
         $publicHosts = $this->stringList($binding->public_hosts);
 

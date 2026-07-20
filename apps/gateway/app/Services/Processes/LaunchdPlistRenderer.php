@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
-use App\Models\App;
+use App\Enums\ProcessRestartPolicy;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Nodes\NodeHostPaths;
@@ -21,7 +22,7 @@ final readonly class LaunchdPlistRenderer
         private LaravelViteDevServerEnvironment $vite,
     ) {}
 
-    public function unitName(App $app, Process $process, ?Workspace $workspace = null): string
+    public function unitName(Project $app, Process $process, ?Workspace $workspace = null): string
     {
         $process->loadMissing('owner');
 
@@ -63,7 +64,7 @@ final readonly class LaunchdPlistRenderer
         return $this->homeDirectory($node)."/Library/Logs/Orbit/processes/{$runtimeUnit}.err.log";
     }
 
-    public function render(Node $node, App $app, Process $process, ?Workspace $workspace = null): string
+    public function render(Node $node, Project $app, Process $process, ?Workspace $workspace = null): string
     {
         $runtimeUnit = $this->unitName($app, $process, $workspace);
         $label = $this->label($runtimeUnit);
@@ -71,7 +72,7 @@ final readonly class LaunchdPlistRenderer
         $workingDir = $this->workingDirectory($node, $app, $process, $workspace);
         $stdout = $this->stdoutLogPath($runtimeUnit, $node);
         $stderr = $this->stderrLogPath($runtimeUnit, $node);
-        $keepAlive = $process->restart_policy !== \App\Enums\ProcessRestartPolicy::Never ? '<true/>' : '<false/>';
+        $keepAlive = $process->restart_policy !== ProcessRestartPolicy::Never ? '<true/>' : '<false/>';
 
         $envLines = $this->environmentEntries($app, $node, $workspace, $home);
 
@@ -108,7 +109,7 @@ final readonly class LaunchdPlistRenderer
 
     private function workingDirectory(
         Node $node,
-        App $app,
+        Project $app,
         Process $process,
         ?Workspace $workspace,
     ): string {
@@ -130,7 +131,7 @@ final readonly class LaunchdPlistRenderer
     /**
      * @return list<string>
      */
-    private function environmentEntries(App $app, Node $node, ?Workspace $workspace, string $home): array
+    private function environmentEntries(Project $app, Node $node, ?Workspace $workspace, string $home): array
     {
         $environment =
             [

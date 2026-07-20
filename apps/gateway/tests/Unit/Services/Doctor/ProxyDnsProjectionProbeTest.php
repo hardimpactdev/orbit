@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
@@ -56,7 +57,7 @@ it('reports a missing owner fragment when vpn intent requires dns capability', f
         ->and($drift[0]->key)
         ->toBe('proxy.dns_mapping_mismatch')
         ->and($drift[0]->kind)
-        ->toBe(\App\Enums\DriftKind::Missing);
+        ->toBe(DriftKind::Missing);
 });
 
 afterEach(function (): void {

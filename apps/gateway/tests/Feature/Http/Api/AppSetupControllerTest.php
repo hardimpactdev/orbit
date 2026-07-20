@@ -5,11 +5,11 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupStep;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -36,7 +36,7 @@ final class AppSetupControllerTestShell implements RemoteShell
     }
 }
 
-function createAppSetupCallerNode(array $permissions = ['app:write']): Node
+function createAppSetupCallerNode(array $permissions = ['instance:write']): Node
 {
     $caller = Node::factory()->create([
         'name' => 'app-setup-caller',
@@ -67,7 +67,7 @@ function createAppSetupTarget(): array
             'name' => 'app-1',
             'user' => 'orbit',
         ]);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/home/orbit/apps/docs',
@@ -90,7 +90,7 @@ describe('AppSetupController', function (): void {
     it('runs configured setup steps for authorized callers', function (): void {
         [$node, $app, $instance] = createAppSetupTarget();
         $caller = createAppSetupCallerNode();
-        grantAppSetupAccess($caller, $node, ['app:write']);
+        grantAppSetupAccess($caller, $node, ['instance:write']);
         AppSetupStep::factory()->create([
             'app_instance_id' => $instance->id,
             'command' => 'npm install',
@@ -101,7 +101,7 @@ describe('AppSetupController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/docs/setup',
+            '/api/instances/docs/setup',
             [],
             [],
             [],
@@ -113,8 +113,8 @@ describe('AppSetupController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.app', 'docs')
-            ->assertJsonPath('success.data.app_instance', 'development')
+            ->assertJsonPath('success.data.project', 'docs')
+            ->assertJsonPath('success.data.instance', 'development')
             ->assertJsonPath('success.data.setup_steps.status', 'completed')
             ->assertJsonPath('success.data.setup_steps.count', 1)
             ->assertJsonPath('success.meta', []);
@@ -134,22 +134,22 @@ describe('AppSetupController', function (): void {
             ->toBe(AppInstance::class)
             ->and($activity->subject_id)
             ->toBe($instance->id)
-            ->and($activity->properties->get('app'))
+            ->and($activity->properties->get('project'))
             ->toBe('docs')
-            ->and($activity->properties->get('app_instance'))
+            ->and($activity->properties->get('instance'))
             ->toBe('development')
             ->and($activity->properties->get('status'))
             ->toBe('completed');
     });
 
-    it('rejects callers without app write permission', function (): void {
+    it('rejects callers without instance write permission', function (): void {
         [$node] = createAppSetupTarget();
         $caller = createAppSetupCallerNode();
-        grantAppSetupAccess($caller, $node, ['app:read']);
+        grantAppSetupAccess($caller, $node, ['instance:read']);
 
         $response = $this->call(
             'POST',
-            '/api/apps/docs/setup',
+            '/api/instances/docs/setup',
             [],
             [],
             [],
@@ -162,11 +162,11 @@ describe('AppSetupController', function (): void {
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:write')
-            ->assertJsonPath('error.meta.app_instance', 'development');
+            ->assertJsonPath('error.meta.missing_permission', 'instance:write')
+            ->assertJsonPath('error.meta.instance', 'development');
     });
 
-    it('requires a concrete instance when a bare app selector is ambiguous', function (): void {
+    it('requires a concrete instance when a bare project selector is ambiguous', function (): void {
         [$node, $app] = createAppSetupTarget();
         AppInstance::factory()->for($app)->create([
             'name' => 'production',
@@ -179,11 +179,11 @@ describe('AppSetupController', function (): void {
             ),
         ]);
         $caller = createAppSetupCallerNode();
-        grantAppSetupAccess($caller, $node, ['app:write']);
+        grantAppSetupAccess($caller, $node, ['instance:write']);
 
         $response = $this->call(
             'POST',
-            '/api/apps/docs/setup',
+            '/api/instances/docs/setup',
             [],
             [],
             [],
@@ -196,7 +196,7 @@ describe('AppSetupController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.reason', 'app_instance_required')
+            ->assertJsonPath('error.meta.reason', 'instance_required')
             ->assertJsonPath('error.meta.instances', ['development', 'production']);
     });
 
@@ -214,12 +214,12 @@ describe('AppSetupController', function (): void {
             ),
         ]);
         $caller = createAppSetupCallerNode();
-        grantAppSetupAccess($caller, $visibleNode, ['app:write']);
+        grantAppSetupAccess($caller, $visibleNode, ['instance:write']);
         app()->instance(RemoteShell::class, new AppSetupControllerTestShell);
 
         $response = $this->call(
             'POST',
-            '/api/apps/docs/setup',
+            '/api/instances/docs/setup',
             [],
             [],
             [],
@@ -232,7 +232,7 @@ describe('AppSetupController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.reason', 'app_instance_required');
+            ->assertJsonPath('error.meta.reason', 'instance_required');
 
         expect($response->json('error.meta'))
             ->not->toHaveKey('instances')->and($response->content())
@@ -253,12 +253,12 @@ describe('AppSetupController', function (): void {
             ),
         ]);
         $caller = createAppSetupCallerNode();
-        grantAppSetupAccess($caller, $visibleNode, ['app:write']);
+        grantAppSetupAccess($caller, $visibleNode, ['instance:write']);
         app()->instance(RemoteShell::class, new AppSetupControllerTestShell);
 
         $hidden = $this->call(
             'POST',
-            '/api/apps/docs.production/setup',
+            '/api/instances/docs.production/setup',
             [],
             [],
             [],
@@ -269,7 +269,7 @@ describe('AppSetupController', function (): void {
         );
         $missing = $this->call(
             'POST',
-            '/api/apps/docs.does-not-exist/setup',
+            '/api/instances/docs.does-not-exist/setup',
             [],
             [],
             [],

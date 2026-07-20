@@ -23,14 +23,14 @@ it('resolves to GET /api/workspaces/{name}/history', function (): void {
 it('serializes filters when provided', function (): void {
     $request = new ShowWorkspaceHistoryRequest(
         name: 'feature-docs',
-        app: 'docs',
+        instance: 'docs',
         limit: 25,
         since: '2026-05-01T00:00:00Z',
         until: '2026-05-02T00:00:00Z',
     );
 
     expect($request->query()->all())->toBe([
-        'app' => 'docs',
+        'instance' => 'docs',
         'limit' => 25,
         'since' => '2026-05-01T00:00:00Z',
         'until' => '2026-05-02T00:00:00Z',

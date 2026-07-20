@@ -32,7 +32,7 @@ final readonly class ToolTargetSelectionResolver
         return ToolRegistryFailure::validation(
             'target',
             '',
-            'A node or app target is required. Provide --node or --app.',
+            'A node or instance target is required. Provide --node or --instance.',
         );
     }
 
@@ -73,17 +73,17 @@ final readonly class ToolTargetSelectionResolver
 
         if (! $appNode instanceof Node) {
             return ToolRegistryFailure::validation(
-                'app',
+                'instance',
                 $app,
-                "Invalid value for --app: '{$app}'. Expected a visible app name, domain, or app.node-tld selector.",
+                "Invalid value for --instance: '{$app}'. Expected a visible project.instance selector, domain, or instance host.",
             );
         }
 
         if ($nodeFilter instanceof Node && $nodeFilter->id !== $appNode->id) {
             return ToolRegistryFailure::validation(
-                'app',
+                'instance',
                 $app,
-                "Invalid value for --app: '{$app}'. App is not owned by the selected node.",
+                "Invalid value for --instance: '{$app}'. Instance is not owned by the selected node.",
                 [
                     'node' => $nodeFilter->name,
                     'resolved_node' => $appNode->name,

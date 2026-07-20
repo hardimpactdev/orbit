@@ -62,7 +62,7 @@ it is ported; it is never an implicit managed-execution fallback.
 See [`references/concepts.md`](references/concepts.md) for: gateway/client
 terminology, node roles, Orbit Agent capability, state families and `doctor`,
 identity slug rules, execution lanes, JSON envelope shape, and the `--node` /
-`--app` / `--workspace` resolution order.
+`--instance` / `--workspace` resolution order.
 
 See [`references/skill.md`](references/skill.md) for installing the bundled
 Orbit skill into Codex, Claude, Antigravity, Grok, or an explicit local path.
@@ -139,40 +139,40 @@ command catalog when command completeness matters.
 | `orbit gateway:trust` | Trust the gateway root CA in the local OS trust store |
 | `orbit gateway:list\|use\|status` | Inspect or switch local gateway entries |
 
-### Apps  -  [`references/app.md`](references/app.md)
+### Projects and instances  -  [`references/app.md`](references/app.md)
 
 | Command | What it does |
 |---|---|
-| `orbit app:new [name]` | Create or clone a new app on an app-role node |
-| `orbit app:register [name]` | Register or re-apply Orbit management for an existing app path |
-| `orbit app:list` | List registered apps |
-| `orbit app:show [app]` | Show app intent, owning node, URL, agent IDE, owned routes |
-| `orbit app:root [app] [root]` | Change the app document root (relative to the app path) |
-| `orbit app:setup [app]` | Run configured setup steps on the owning app node |
-| `orbit app-setup-step:add` | Add a finite bootstrap command to an app's setup pipeline |
-| `orbit app-setup-step:list` | List an app's configured setup steps |
-| `orbit app-setup-step:remove` | Remove one app setup step |
-| `orbit app:remove [app]` | Remove an app and its owned artifacts |
-| `orbit app:prune [app]` | Remove stale workspaces (`--dry-run` to preview) |
-| `orbit app:agent-ide [app] [adapter]` | Set or inherit the Agent IDE adapter for an app |
-| `orbit app:worker [app]` | Inspect or change FrankenPHP worker mode |
-| `orbit app:websocket enable\|disable\|credentials` | Manage app WebSocket binding and credentials |
-| `orbit app:instance list\|show\|add\|remove` | Manage concrete app runtime/deploy instances |
-| `orbit app:env list\|set\|render` | Manage and render app-instance env values |
+| `orbit project:new [project]` | Create a project and its first instance on an app-role node |
+| `orbit project:list` | List logical projects |
+| `orbit project:show [project]` | Show project identity with visible instances and workspaces |
+| `orbit project:remove [project]` | Remove a project and all of its owned instances and workspaces |
+| `orbit instance:register [project]` | Adopt or reconverge an existing project path as an Orbit instance |
+| `orbit instance:list\|show\|add\|remove` | Inspect and manage concrete project placements |
+| `orbit instance:root [project.instance] [root]` | Change one instance's document root |
+| `orbit instance:setup [project.instance]` | Run the selected instance's setup pipeline |
+| `orbit instance-setup-step:add\|list\|remove` | Manage one instance's finite setup pipeline |
+| `orbit instance:prune [project.instance]` | Remove stale workspaces (`--dry-run` to preview) |
+| `orbit instance:agent-ide [project.instance] [adapter]` | Set or inherit one instance's Agent IDE adapter |
+| `orbit instance:worker [project.instance]` | Inspect or change one instance's FrankenPHP worker mode |
+| `orbit instance:mount list\|add\|remove` | Manage one instance's FrankenPHP runtime mounts |
+| `orbit instance:analytics enable\|disable\|show\|verify` | Manage one instance's analytics binding |
+| `orbit instance:websocket enable\|disable\|credentials` | Manage one instance's WebSocket binding and credentials |
+| `orbit instance:env list\|set\|render` | Manage and render one instance's environment values |
 
 ### Workspaces  -  [`references/workspace.md`](references/workspace.md)
 
 | Command | What it does |
 |---|---|
-| `orbit workspace:new [name]` | Create a new workspace intent for an app |
-| `orbit workspace:list` | List workspaces (filter by `--app` / `--node`) |
+| `orbit workspace:new [name]` | Create a new workspace for an instance |
+| `orbit workspace:list` | List workspaces (filter by `--instance` / `--node`) |
 | `orbit workspace:show [name]` | Show workspace registry record |
 | `orbit workspace:setup [name]` | Run setup steps to converge the workspace to ready-to-develop |
 | `orbit workspace:remove [name]` | Remove a workspace and its artifacts (`--keep-files` to retain disk) |
 | `orbit workspace:history [name]` | Show workspace lifecycle history |
 | `orbit workspace:log [run]` | Show captured stdout/stderr for a lifecycle run |
-| `orbit workspace-setup-step:add\|list\|remove` | Manage app-scoped workspace setup pipeline |
-| `orbit workspace-teardown-step:add\|list\|remove` | Manage app-scoped workspace teardown pipeline |
+| `orbit workspace-setup-step:add\|list\|remove` | Manage an instance-scoped workspace setup pipeline |
+| `orbit workspace-teardown-step:add\|list\|remove` | Manage an instance-scoped workspace teardown pipeline |
 
 ### Processes  -  [`references/process.md`](references/process.md)
 
@@ -205,7 +205,7 @@ that tool definition.
 
 | Command | What it does |
 |---|---|
-| `orbit tool:list` | List tracked tools (filter by `--app` / `--node`) |
+| `orbit tool:list` | List tracked tools (filter by `--instance` / `--node`) |
 | `orbit tool:show <tool>` | Show one tool (`--live` for live probe) |
 | `orbit tool:install <tool>` | Install a managed tool (`--status=running` to also start) |
 | `orbit tool:update [tool]` | Update a managed tool |
@@ -300,15 +300,15 @@ that tool definition.
 
 | Command | What it does |
 |---|---|
-| `orbit activity:list` | List gateway activity history (filter by `--app` / `--node` / `--effect` / `--correlation`) |
+| `orbit activity:list` | List gateway activity history (filter by `--project` / `--node` / `--effect` / `--correlation`) |
 | `orbit activity:show [id]` | Show one activity entry |
 
 ### Agent IDE  -  [`references/agent-ide.md`](references/agent-ide.md)
 
 | Command | What it does |
 |---|---|
-| `orbit agent-ide:message [message]` | Send a message to an active Agent IDE session for an app/workspace |
-| `orbit node:agent-ide` / `orbit app:agent-ide` | Set the adapter (covered in node.md / app.md) |
+| `orbit agent-ide:message [message]` | Send a message to an active Agent IDE session for an instance/workspace |
+| `orbit node:agent-ide` / `orbit instance:agent-ide` | Set the adapter (covered in node.md / app.md) |
 
 ### VPN  -  [`references/vpn.md`](references/vpn.md)
 
@@ -334,25 +334,25 @@ orbit gateway:add 10.6.0.1
 orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --tld=gateway --operator-name=my-mac --operator-tld=my-mac
 ```
 
-**Create a development app + database**
+**Create a development project + database**
 
 ```bash
 orbit node:default beast              # set local default development node (one-time)
-orbit app:new myapp --repo=acme/myapp # served at myapp.<beast-tld>
+orbit project:new myapp --repo=acme/myapp # creates myapp.development
 orbit process:add mysql8 --service=mysql --runtime=docker --version=8.3 --node=beast
 orbit database:add-user myapp --service=mysql8 --node=beast --database=myapp --username=myapp --password='...'
-orbit database:attach myapp --app=myapp --env-prefix=DB
-orbit doctor --app=myapp --family=database_connection --restore
+orbit database:attach myapp --instance=myapp.development --env-prefix=DB
+orbit doctor --instance=myapp.development --family=database_connection --restore
 ```
 
-**Deploy a production app**
+**Deploy a production instance**
 
 ```bash
-orbit app:new myapp --node=prod-1 --repo=acme/myapp --domain=myapp.com
-orbit deploy:step-add myapp 'composer install --no-dev' --title='install deps'
-orbit deploy:step-add myapp 'php artisan migrate --force' --title='migrate'
-orbit deploy:run myapp
-orbit deploy:history myapp
+orbit project:new myapp --node=prod-1 --repo=acme/myapp --domain=myapp.com
+orbit deploy:step-add myapp.development 'composer install --no-dev' --title='install deps'
+orbit deploy:step-add myapp.development 'php artisan migrate --force' --title='migrate'
+orbit deploy:run myapp.development
+orbit deploy:history myapp.development
 ```
 
 **Publish the fleet S3 endpoint**
@@ -370,7 +370,7 @@ orbit doctor --node=beast                          # report drift across all fam
 orbit doctor --all                                 # verify eligible active fleet nodes
 orbit doctor --node=beast --family=proxy --family=process
 orbit doctor --node=beast --restore                # reapply gateway intent
-orbit doctor --node=beast --adopt --family=app     # adopt node reality (DR / fleet adoption)
+orbit doctor --node=beast --adopt --family=instance # adopt node reality (DR / fleet adoption)
 orbit doctor --node=beast --stream-json            # long-running agent progress
 ```
 
@@ -381,10 +381,10 @@ operations, prefer `--stream-json` when the command offers it so progress
 arrives as incremental NDJSON frames. Use `--json` when only the final
 machine-readable result is needed.
 
-**Move an app to a different PHP version**
+**Move an instance to a different PHP version**
 
 ```bash
-orbit php:use 8.4 --app=myapp        # recreates app FrankenPHP runtime artifact
+orbit php:use 8.4 --instance=myapp.development # recreates its FrankenPHP runtime artifact
 orbit php:use 8.5 --cli --node=beast # default CLI PHP for that node
 ```
 
@@ -392,8 +392,8 @@ orbit php:use 8.5 --cli --node=beast # default CLI PHP for that node
 
 ```bash
 orbit node:agent-ide beast opencode  # node default
-orbit app:agent-ide myapp inherit    # use node default
-orbit app:agent-ide myapp polyscope  # per-app override
+orbit instance:agent-ide myapp.development inherit   # use node default
+orbit instance:agent-ide myapp.development polyscope # per-instance override
 ```
 
 **Opt a supported roleless node into managed Agent execution**

@@ -8,7 +8,7 @@ Read retained log lines from a tool that declares a logs capability.
 
 ```bash
 orbit tool:logs <tool> --node=<node>
-orbit tool:logs opencode-cli --app=<app> --lines=200
+orbit tool:logs opencode-cli --instance=<project.instance> --lines=200
 orbit tool:logs dns --lines=50
 orbit tool:logs dns --json
 ```
@@ -28,7 +28,7 @@ exact process row. `dns` is the gateway-local exception and reads the one
 ## Options
 
 - `--node=<node>` selects the target node.
-- `--app=<app>` resolves the target node from an app selector.
+- `--instance=<project.instance>` resolves the target node from an instance selector.
 - `--lines=<number>` selects the positive number of retained lines. The
   default is `100`.
 - `--json` returns a single JSON envelope.

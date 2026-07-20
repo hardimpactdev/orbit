@@ -6,8 +6,8 @@ namespace App\Services\Apps;
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Nodes\NodeRoleName;
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspacePlacement;
 
@@ -19,7 +19,7 @@ final readonly class RuntimeHostRoutingPolicy
     ) {}
 
     /** @return array<string, string> */
-    public function forApp(App $app): array
+    public function forApp(Project $app): array
     {
         if (! $this->appliesToApp($app)) {
             return [];
@@ -36,7 +36,7 @@ final readonly class RuntimeHostRoutingPolicy
         $workspace->loadMissing(['app', 'app.instances', 'appInstance']);
         $app = $workspace->app;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return [];
         }
 
@@ -51,14 +51,14 @@ final readonly class RuntimeHostRoutingPolicy
         ];
     }
 
-    private function appliesToApp(App $app): bool
+    private function appliesToApp(Project $app): bool
     {
         $app->loadMissing('node.roleAssignments');
 
         return $app->node instanceof Node && $this->appliesTo($app, $app->node);
     }
 
-    private function appliesTo(App $app, Node $node): bool
+    private function appliesTo(Project $app, Node $node): bool
     {
         if ($app->runtimeKind() !== AppRuntimeKind::Php || $app->environment === 'production') {
             return false;

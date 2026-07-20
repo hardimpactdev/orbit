@@ -392,7 +392,7 @@ final readonly class E2EPreparedTopology
                 \\App\\Models\\ProxyRoute::query()
                     ->whereIn('node_id', \$staleNodeIds)
                     ->delete();
-                \\App\\Models\\App::query()
+                \\App\\Models\\Project::query()
                     ->whereIn('node_id', \$staleNodeIds)
                     ->delete();
                 \\App\\Models\\Node::query()

@@ -5,12 +5,10 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Enums\Nodes\NodeStatus;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use Illuminate\Database\Eloquent\Builder;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
@@ -19,6 +17,7 @@ final readonly class StaleToolIntentRemover
 {
     public function __construct(
         private ToolCatalog $catalog,
+        private ToolAppNodeResolver $instanceNodes,
         private NodeRoleAssignments $nodeRoleAssignments,
     ) {}
 
@@ -87,40 +86,7 @@ final readonly class StaleToolIntentRemover
             return null;
         }
 
-        $model = OrbitApp::query()
-            ->with('node')
-            ->where(static function (Builder $query) use ($app): void {
-                $query->where('name', $app)
-                    ->orWhere('domain', $app);
-            })
-            ->first();
-
-        if (! $model instanceof OrbitApp && str_contains($app, '.')) {
-            [$appName, $nodeTld] = explode('.', $app, limit: 2);
-
-            if ($appName !== '' && $nodeTld !== '') {
-                $model = OrbitApp::query()
-                    ->with('node')
-                    ->where('name', $appName)
-                    ->whereHas('node', function (Builder $query) use ($nodeTld): void {
-                        $query
-                            ->whereIn('id', $this->nodeRoleAssignments->activeAppHostNodeIds())
-                            ->where('status', NodeStatus::Active->value)
-                            ->where('tld', $nodeTld);
-                    })
-                    ->first();
-            }
-        }
-
-        if (! $model instanceof OrbitApp || ! $model->node instanceof Node) {
-            return null;
-        }
-
-        if (! $model->node->isActive() || ! $this->nodeRoleAssignments->nodeHasActiveAppHostRole($model->node)) {
-            return null;
-        }
-
-        return $model->node;
+        return $this->instanceNodes->resolve($app);
     }
 
     private function removeOwnedProxyRoutes(string $tool, Node $node): int

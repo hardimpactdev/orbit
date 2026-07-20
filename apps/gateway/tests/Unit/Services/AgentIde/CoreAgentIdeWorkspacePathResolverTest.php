@@ -3,21 +3,14 @@
 declare(strict_types=1);
 
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
 use App\Models\Node;
-use App\Services\ActivityLogCorrelation;
-use App\Services\ActivityLogger;
+use App\Models\Project;
 use App\Services\AgentIde\CoreAgentIdeWorkspacePathResolver;
-use App\Services\Operations\OperationRunRecorder;
-use App\Services\Operations\OperationTokenFactory;
-use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
-use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Http\JsonEnvelope;
-use Orbit\Core\Security\OperationTokenSigner;
 use Tests\Fakes\RemoteExecutorBackedInternalExecutor;
 use Tests\TestCase;
 
@@ -25,7 +18,7 @@ uses(TestCase::class, RefreshDatabase::class);
 
 it('resolves OpenCode workspace paths through the local executor lookup command', function (): void {
     $node = Node::factory()->appDev()->create();
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/srv/docs',
@@ -75,7 +68,7 @@ it('resolves OpenCode workspace paths through the local executor lookup command'
 
 it('resolves Polyscope workspace paths through the local executor lookup command', function (): void {
     $node = Node::factory()->appDev()->create();
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/srv/docs',

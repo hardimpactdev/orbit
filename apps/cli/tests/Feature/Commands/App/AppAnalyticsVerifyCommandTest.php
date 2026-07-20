@@ -15,8 +15,8 @@ describe('AppAnalyticsVerifyCommand', function (): void {
             analyticsVerificationResult(ready: true),
         ));
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics verify', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:analytics verify', [
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -25,7 +25,7 @@ describe('AppAnalyticsVerifyCommand', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'GET'
-                && $request->url() === 'https://gateway.test/api/apps/docs/analytics/verify'
+                && $request->url() === 'https://gateway.test/api/instances/docs/analytics/verify'
             ),
         );
 
@@ -47,8 +47,8 @@ describe('AppAnalyticsVerifyCommand', function (): void {
             analyticsVerificationResult(ready: false),
         ));
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics verify', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:analytics verify', [
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -58,7 +58,7 @@ describe('AppAnalyticsVerifyCommand', function (): void {
             ->toBe(1)
             ->and($decoded['error']['code'])
             ->toBe('analytics.public_not_ready')
-            ->and($decoded['error']['meta']['app'])
+            ->and($decoded['error']['meta']['instance'])
             ->toBe('docs')
             ->and($decoded['error']['data']['verification']['ready'])
             ->toBeFalse();
@@ -72,7 +72,7 @@ describe('AppAnalyticsVerifyCommand', function (): void {
             analyticsVerificationResult(ready: true),
         ));
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics verify', ['app' => 'docs']);
+        [$exitCode, $output] = runCommand($this, 'instance:analytics verify', ['instance' => 'docs']);
 
         expect($exitCode)
             ->toBe(0)
@@ -90,13 +90,13 @@ describe('AppAnalyticsVerifyCommand', function (): void {
             ->toContain('plausible_site: unchecked');
     });
 
-    it('requires an app selector before gateway or public requests', function (): void {
+    it('requires an instance selector before gateway or public requests', function (): void {
         fakeGateway(fakeSuccessEnvelope());
         app()->instance(AnalyticsReadinessVerifier::class, new FakeAnalyticsReadinessVerifier(
             analyticsVerificationResult(ready: true),
         ));
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics verify', ['--json' => true]);
+        [$exitCode, $output] = runCommand($this, 'instance:analytics verify', ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -107,7 +107,7 @@ describe('AppAnalyticsVerifyCommand', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     });
 });
 
@@ -129,7 +129,7 @@ function analyticsVerificationContext(): array
 {
     return [
         'binding' => [
-            'app' => 'docs',
+            'instance' => 'docs',
             'enabled' => true,
             'site_domain' => 'docs.test',
             'public_hosts' => ['analytics.docs.test'],
@@ -146,7 +146,7 @@ function analyticsVerificationContext(): array
 function analyticsVerificationResult(bool $ready): array
 {
     return [
-        'app' => 'docs',
+        'instance' => 'docs',
         'ready' => $ready,
         'hosts' => [[
             'host' => 'analytics.docs.test',

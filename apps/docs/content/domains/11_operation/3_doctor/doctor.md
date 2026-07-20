@@ -75,7 +75,7 @@ Doctor does not create a separate DNS row or DNS state family.
 ## Usage
 
 ```bash
-orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self|--all] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
+orbit doctor [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>|--self|--all] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
 ```
 
 ## Examples
@@ -83,9 +83,9 @@ orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self|--all
 ```bash
 orbit doctor
 orbit doctor --family=node --self
-orbit doctor --fix --family=app --app=docs
-orbit doctor --restore --family=app --app=docs
-orbit doctor --adopt --family=workspace --app=docs --workspace=feature-api --json
+orbit doctor --fix --family=instance --instance=docs.development
+orbit doctor --restore --family=instance --instance=docs.development
+orbit doctor --adopt --family=workspace --instance=docs --workspace=feature-api --json
 orbit doctor --restore --family=node --key=node.security.public_ssh_deny --dry-run --json
 orbit doctor --node=app-1 --stream-json
 orbit doctor --all --stream-json
@@ -103,10 +103,10 @@ orbit doctor --all --stream-json
 - `--node`: Limit the run to one gateway-known node.
 - `--self`: Limit the run to the caller's gateway-known node identity.
 - `--all`: Verify every eligible active role-bearing fleet node. This is the
-  only fleet mode and is mutually exclusive with `--node`, `--self`, `--app`,
+  only fleet mode and is mutually exclusive with `--node`, `--self`, `--instance`,
   and `--workspace`. Use `--all`; `--node=all` is rejected as
   `validation_failed` before probes.
-- `--app`: Limit the run to one app and the family facts owned by that app.
+- `--instance`: Limit the run to one app and the family facts owned by that app.
 - `--workspace`: Limit the run to one workspace and its owned facts.
 
 **Resolution modes:**
@@ -178,7 +178,7 @@ own concrete issue codes and action maps:
 
 **App families:**
 
-- [`doctor --family=app`](../../5_app/app-doctor.md)
+- [`doctor --family=instance`](../../5_project/instance-doctor.md)
 - [`doctor --family=workspace`](../../6_workspace/workspace-doctor.md)
 - [`doctor --family=process`](../../7_process/process-doctor.md)
 - [`doctor --family=proxy`](../../8_proxy/proxy-doctor.md)

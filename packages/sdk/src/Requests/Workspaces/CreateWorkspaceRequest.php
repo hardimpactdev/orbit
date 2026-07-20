@@ -20,7 +20,7 @@ final class CreateWorkspaceRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         public readonly string $name,
-        public readonly string $app,
+        public readonly string $instance,
         public readonly ?string $base = null,
         public readonly ?string $phpVersion = null,
     ) {}
@@ -38,7 +38,7 @@ final class CreateWorkspaceRequest extends GatewayRequest implements HasBody
         return array_filter(
             [
                 'name' => $this->name,
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'base' => $this->base,
                 'php_version' => $this->phpVersion,
             ],
@@ -57,7 +57,8 @@ final class CreateWorkspaceRequest extends GatewayRequest implements HasBody
 
         return new CreateWorkspaceResponse(
             name: is_string($workspace['name'] ?? null) ? $workspace['name'] : $this->name,
-            app: is_string($workspace['app'] ?? null) ? $workspace['app'] : $this->app,
+            project: is_string($workspace['project'] ?? null) ? $workspace['project'] : '',
+            instance: is_string($workspace['instance'] ?? null) ? $workspace['instance'] : '',
             node: is_string($workspace['node'] ?? null) ? $workspace['node'] : null,
             path: is_string($workspace['path'] ?? null) ? $workspace['path'] : null,
             url: is_string($workspace['url'] ?? null) ? $workspace['url'] : null,

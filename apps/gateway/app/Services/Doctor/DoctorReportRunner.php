@@ -19,7 +19,6 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\RemoteShellFailed;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -28,6 +27,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
@@ -83,7 +83,10 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Process as ProcessFacade;
+use JsonException;
+use LogicException;
 use Orbit\Core\Enums\InternalCommand;
+use RuntimeException;
 use Throwable;
 
 final readonly class DoctorReportRunner
@@ -852,7 +855,7 @@ final readonly class DoctorReportRunner
             try {
                 /** @var array<string, mixed> $payload */
                 $payload = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
-            } catch (\JsonException) {
+            } catch (JsonException) {
                 continue;
             }
 
@@ -931,7 +934,7 @@ final readonly class DoctorReportRunner
         try {
             /** @var array<string, mixed> $payload */
             $payload = json_decode($line, associative: true, depth: 512, flags: JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
+        } catch (JsonException) {
             return null;
         }
 
@@ -1905,7 +1908,7 @@ final readonly class DoctorReportRunner
                 'node' => $node->name,
                 'key' => 'process.runtime_unit_missing',
                 'kind' => DriftKind::Missing->value,
-                'summary' => "FrankenPHP runtime intent is missing for app instance {$app->name}.{$instance->name}.",
+                'summary' => "FrankenPHP runtime intent is missing for instance {$app->name}.{$instance->name}.",
                 'detail' => [
                     'app' => $app->name,
                     'app_instance' => $instance->name,
@@ -1919,7 +1922,7 @@ final readonly class DoctorReportRunner
         return $issues;
     }
 
-    private function appHasManagedFrankenPhpRuntimeIntent(App $app): bool
+    private function appHasManagedFrankenPhpRuntimeIntent(Project $app): bool
     {
         return Process::query()
             ->where('owner_type', $app->getMorphClass())
@@ -2286,7 +2289,7 @@ final readonly class DoctorReportRunner
     /**
      * @return array<string, mixed>
      */
-    private function appIssuePayload(DriftEntry $entry, App $app): array
+    private function appIssuePayload(DriftEntry $entry, Project $app): array
     {
         $app->loadMissing('node');
 
@@ -2331,7 +2334,7 @@ final readonly class DoctorReportRunner
     {
         $app = $process->ownerApp();
         $app?->loadMissing('node');
-        $node = $app instanceof App ? $app->node : $process->node;
+        $node = $app instanceof Project ? $app->node : $process->node;
 
         return $this->annotateIssue([
             'family' => $entry->family,
@@ -2787,7 +2790,7 @@ final readonly class DoctorReportRunner
 
         try {
             $this->databaseConnectionRestorer->restore($target);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => 'database_connection',
                 'node' => $nodeName,
@@ -2909,7 +2912,7 @@ final readonly class DoctorReportRunner
 
         try {
             $this->nodesProbe->reconcile($targetNode, $entry);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => 'node',
                 'node' => $targetNode->name,
@@ -3011,7 +3014,7 @@ final readonly class DoctorReportRunner
 
         $app = $process->ownerApp();
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return $this->applyNodeOwnedProcessIssue($node, $key, $process);
         }
 
@@ -3025,7 +3028,7 @@ final readonly class DoctorReportRunner
         try {
             $this->refreshManagedFrankenPhpProcessIntent($process);
             $warnings = app(EnsureAppProcessRuntimeUnits::class)->handle($app, $appInstance);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => 'process',
                 'node' => $node->name,
@@ -3084,16 +3087,16 @@ final readonly class DoctorReportRunner
             return null;
         }
 
-        $app = App::query()
+        $app = Project::query()
             ->with('instances')
             ->where('name', $appName)
             ->first();
-        $instance = $app instanceof App
+        $instance = $app instanceof Project
             ? $app->instances->firstWhere('name', $instanceName)
             : null;
 
         if (
-            ! $app instanceof App
+            ! $app instanceof Project
             || ! $instance instanceof AppInstance
             || $this->workspacePlacement->nodeForInstance($instance)?->id !== $node->id
         ) {
@@ -3176,7 +3179,7 @@ final readonly class DoctorReportRunner
             return null;
         }
 
-        if ($hashLabel === AppRuntimeContainer::SpecHashLabel && $process->owner instanceof App) {
+        if ($hashLabel === AppRuntimeContainer::SpecHashLabel && $process->owner instanceof Project) {
             return $this->restoreManagedFrankenPhpAppRuntime($node, $key, $process, $process->owner);
         }
 
@@ -3190,7 +3193,7 @@ final readonly class DoctorReportRunner
     /**
      * @return array<string, mixed>
      */
-    private function restoreManagedFrankenPhpAppRuntime(Node $node, string $key, Process $process, App $app): array
+    private function restoreManagedFrankenPhpAppRuntime(Node $node, string $key, Process $process, Project $app): array
     {
         $process->loadMissing('appInstance');
         $appInstance = $process->appInstance;
@@ -3216,7 +3219,7 @@ final readonly class DoctorReportRunner
                     'app' => $app->name,
                     'app_instance' => $appInstance?->name,
                     'process' => $process->name,
-                    'error' => 'Process app instance has no active serving node.',
+                    'error' => 'Process instance has no active serving node.',
                 ],
             ];
         }
@@ -3228,7 +3231,7 @@ final readonly class DoctorReportRunner
 
             $container = app(AppRuntimeContainerRenderer::class)->renderForInstance($app, $appInstance);
             $outcome = $this->appRuntimeContainerManagerForAgentPush()->apply($instanceNode, $container);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => 'process',
                 'node' => $node->name,
@@ -3297,7 +3300,7 @@ final readonly class DoctorReportRunner
         $app = $workspace->app;
         $workspaceNode = $this->workspacePlacement->nodeForWorkspace($workspace);
 
-        if (! $app instanceof App || ! $workspaceNode instanceof Node || $workspaceNode->id !== $node->id) {
+        if (! $app instanceof Project || ! $workspaceNode instanceof Node || $workspaceNode->id !== $node->id) {
             return [
                 'family' => 'process',
                 'node' => $node->name,
@@ -3309,7 +3312,7 @@ final readonly class DoctorReportRunner
                 'details' => [
                     'workspace' => $workspace->name,
                     'process' => $process->name,
-                    'error' => 'Process workspace has no active parent app node.',
+                    'error' => 'Process workspace has no active parent project node.',
                 ],
             ];
         }
@@ -3320,7 +3323,7 @@ final readonly class DoctorReportRunner
 
             $container = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace);
             $outcome = $this->workspaceRuntimeContainerManagerForAgentPush()->apply($workspaceNode, $container);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => 'process',
                 'node' => $workspaceNode instanceof Node ? $workspaceNode->name : $node->name,
@@ -3490,10 +3493,10 @@ final readonly class DoctorReportRunner
 
         $ensureFrankenPhpRuntimeProcess = app(EnsureFrankenPhpRuntimeProcess::class);
 
-        if ($hashLabel === AppRuntimeContainer::SpecHashLabel && $process->owner instanceof App) {
+        if ($hashLabel === AppRuntimeContainer::SpecHashLabel && $process->owner instanceof Project) {
             if (! $process->appInstance instanceof AppInstance) {
-                throw new \RuntimeException(
-                    'A concrete app instance is required to refresh FrankenPHP process intent.',
+                throw new RuntimeException(
+                    'A concrete instance is required to refresh FrankenPHP process intent.',
                 );
             }
 
@@ -3545,7 +3548,7 @@ final readonly class DoctorReportRunner
 
             $process->refresh();
             $action = $this->applyNodeOwnedProcessIssue($node, $key, $process);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => 'process',
                 'node' => $node->name,
@@ -3601,7 +3604,7 @@ final readonly class DoctorReportRunner
             $driver = $this->processRuntimeDrivers->forProcess($process);
             $runtimeUnit = $driver->runtimeUnitName($runtimeApp, $process, $workspace);
             $restored = $driver->apply($node, $runtimeApp, $process, $workspace);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => 'process',
                 'node' => $node->name,
@@ -3723,7 +3726,7 @@ final readonly class DoctorReportRunner
             $driver = $this->processRuntimeDrivers->forProcess($process);
 
             return $driver->runtimeUnitName($context->runtimeApp(), $process, $context->runtimeWorkspaceFor($process));
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }
@@ -3741,7 +3744,7 @@ final readonly class DoctorReportRunner
             );
         }
 
-        if ($process->owner instanceof App) {
+        if ($process->owner instanceof Project) {
             if (! $process->appInstance instanceof AppInstance) {
                 return null;
             }
@@ -3759,7 +3762,7 @@ final readonly class DoctorReportRunner
             $process->owner->loadMissing(['app', 'appInstance']);
 
             if (
-                ! $process->owner->app instanceof App
+                ! $process->owner->app instanceof Project
                 || ! $process->appInstance instanceof AppInstance
                 || ! $process->owner->appInstance instanceof AppInstance
                 || ! $process->appInstance->is($process->owner->appInstance)
@@ -3802,16 +3805,16 @@ final readonly class DoctorReportRunner
         $appInstanceName = is_string($detail['app_instance'] ?? null) ? $detail['app_instance'] : null;
 
         if ($appInstanceName !== null) {
-            $app = App::query()
+            $app = Project::query()
                 ->with(['node', 'instances'])
                 ->where('name', $appName)
                 ->first();
-            $instance = $app instanceof App
+            $instance = $app instanceof Project
                 ? $app->instances->firstWhere('name', $appInstanceName)
                 : null;
 
             if (
-                $app instanceof App
+                $app instanceof Project
                 && $instance instanceof AppInstance
                 && $this->workspacePlacement->nodeForInstance($instance)?->id === $node->id
             ) {
@@ -3825,13 +3828,13 @@ final readonly class DoctorReportRunner
             return null;
         }
 
-        $app = App::query()
+        $app = Project::query()
             ->with('node')
             ->where('node_id', $node->id)
             ->where('name', $appName)
             ->first();
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return null;
         }
 
@@ -3841,11 +3844,11 @@ final readonly class DoctorReportRunner
     /**
      * @return array<string, mixed>|null
      */
-    private function handleAppInstanceAction(App $app, AppInstance $instance, DriftEntry $entry): ?array
+    private function handleAppInstanceAction(Project $app, AppInstance $instance, DriftEntry $entry): ?array
     {
         try {
             return $this->appsFixer->fixInstance($app, $instance, $entry);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $node = $this->workspacePlacement->nodeForInstance($instance);
 
             return [
@@ -3877,7 +3880,7 @@ final readonly class DoctorReportRunner
     {
         try {
             $probe = $this->appsProbe->introspectNodeRuntimeConfigs($node);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => 'app',
                 'node' => $node->name,
@@ -3930,7 +3933,7 @@ final readonly class DoctorReportRunner
     {
         try {
             return $this->appsFixer->removeRuntimeConfigExtra($node, $appSlug);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => 'app',
                 'node' => $node->name,
@@ -4067,7 +4070,7 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->proxyRouteFixer->fixCaddyContainer($node, $entry);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => $entry->family,
                 'node' => $node->name,
@@ -4094,7 +4097,7 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->proxyRouteFixer->restoreAgentToolRoute($node, $entry);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => $entry->family,
                 'node' => $node->name,
@@ -4121,7 +4124,7 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->proxyRouteFixer->fixGlobalConfig($node, $entry);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => $entry->family,
                 'node' => $node->name,
@@ -4148,7 +4151,7 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->webSocketProxyDoctorProbe->restore($node, $entry);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => $entry->family,
                 'node' => $node->name,
@@ -4175,7 +4178,7 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->s3ProxyDoctorProbe->restore($node, $entry);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => $entry->family,
                 'node' => $node->name,
@@ -4202,7 +4205,7 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->analyticsProxyDoctorProbe->restore($node, $entry);
-        } catch (\Throwable $throwable) {
+        } catch (Throwable $throwable) {
             return [
                 'family' => $entry->family,
                 'node' => $node->name,
@@ -4229,7 +4232,7 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->analyticsPublicProxyDoctorProbe->restore($node, $entry);
-        } catch (\Throwable $throwable) {
+        } catch (Throwable $throwable) {
             return [
                 'family' => $entry->family,
                 'node' => $node->name,
@@ -4324,9 +4327,9 @@ final readonly class DoctorReportRunner
             match ($key) {
                 'node.dns_mapping_mismatch' => $this->dnsmasqReconciler->reconcileNodeRecords(),
                 'proxy.dns_mapping_mismatch' => $this->dnsmasqReconciler->reconcileProxyRecords(),
-                default => throw new \LogicException("Unsupported DNS projection issue [{$key}]."),
+                default => throw new LogicException("Unsupported DNS projection issue [{$key}]."),
             };
-        } catch (\Throwable $throwable) {
+        } catch (Throwable $throwable) {
             return [
                 'family' => $family,
                 'node' => $targetNode->name,
@@ -4367,7 +4370,7 @@ final readonly class DoctorReportRunner
 
         try {
             $restored = $this->dnsRuntimeProbe->restore($key);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => 'tool',
                 'node' => $node->name,
@@ -4432,7 +4435,7 @@ final readonly class DoctorReportRunner
                     $this->driftEntryFromStoredParts('schedule', $key, $detail, $issue),
                     $schedule instanceof Schedule ? $schedule : null,
                 );
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 return [
                     'family' => 'schedule',
                     'node' => $gatewayNode->name,
@@ -5036,7 +5039,7 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->proxyRouteFixer->fix($route, $entry);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $route->loadMissing('node');
 
             return [
@@ -5065,7 +5068,7 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->proxyRouteFixer->removeExtra($node, $entry->key);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => $entry->family,
                 'node' => $node->name,
@@ -5172,7 +5175,7 @@ final readonly class DoctorReportRunner
         ];
     }
 
-    private function ensureAppRuntimeTlsMaterial(App $app, Node $node): void
+    private function ensureAppRuntimeTlsMaterial(Project $app, Node $node): void
     {
         $innerTlsPolicy = app(AppDevelopmentInnerTlsPolicy::class);
 
@@ -5203,11 +5206,11 @@ final readonly class DoctorReportRunner
     /**
      * @return array<string, mixed>|null
      */
-    private function handleAppAction(App $app, DriftEntry $entry): ?array
+    private function handleAppAction(Project $app, DriftEntry $entry): ?array
     {
         try {
             return $this->appsFixer->fix($app, $entry);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $app->loadMissing('node');
 
             return [
@@ -5236,7 +5239,7 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->firewallRuleFixer->fix($rule, $entry);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $rule->loadMissing('node');
 
             return [
@@ -5265,7 +5268,7 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->toolsFixer->fix($tool, $entry);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $tool->loadMissing('node');
 
             return [
@@ -5294,7 +5297,7 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->schedulesFixer->fix($schedule, $entry);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return [
                 'family' => $entry->family,
                 'node' => $this->scheduleNodeName($schedule),

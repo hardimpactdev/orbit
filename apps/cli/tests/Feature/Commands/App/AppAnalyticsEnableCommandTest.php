@@ -9,7 +9,7 @@ describe('AppAnalyticsEnableCommand', function (): void {
     it('forwards enable payloads to the gateway app analytics endpoint', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'binding' => [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'enabled' => true,
                 'site_domain' => 'docs.test',
                 'internal_host' => 'analytics.orbit',
@@ -19,8 +19,8 @@ describe('AppAnalyticsEnableCommand', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics enable', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:analytics enable', [
+            'instance' => 'docs',
             '--host' => ['analytics.docs.test', 'metrics.docs.test'],
             '--json' => true,
         ]);
@@ -30,7 +30,7 @@ describe('AppAnalyticsEnableCommand', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/apps/docs/analytics/enable'
+                && $request->url() === 'https://gateway.test/api/instances/docs/analytics/enable'
                 && $request->data() === [
                     'public_hosts' => ['analytics.docs.test', 'metrics.docs.test'],
                 ]
@@ -50,7 +50,7 @@ describe('AppAnalyticsEnableCommand', function (): void {
     it('renders enable responses in human mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'binding' => [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'enabled' => true,
                 'site_domain' => 'docs.test',
                 'internal_host' => 'analytics.orbit',
@@ -77,14 +77,14 @@ describe('AppAnalyticsEnableCommand', function (): void {
             'remaining_actions' => ['configure_provider_dns', 'verify_public_readiness'],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics enable', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:analytics enable', [
+            'instance' => 'docs',
             '--host' => ['analytics.docs.test'],
         ]);
 
         $expectedBinding = implode(PHP_EOL, [
             'binding:',
-            '  app: docs',
+            '  instance: docs',
             '  enabled: true',
             '  site_domain: docs.test',
             '  internal_host: analytics.orbit',
@@ -119,11 +119,11 @@ describe('AppAnalyticsEnableCommand', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('Enabling App Analytics')
+            ->toContain('Enabling Instance Analytics')
             ->and($output)
             ->toContain('Apply ingress TLS and tracking routes')
             ->and($output)
-            ->toContain("Analytics enabled for app 'docs'")
+            ->toContain("Analytics enabled for instance 'docs'")
             ->and($output)
             ->toContain($expectedBinding)
             ->and($output)
@@ -133,7 +133,7 @@ describe('AppAnalyticsEnableCommand', function (): void {
     it('requires an app selector before sending gateway requests', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics enable', [
+        [$exitCode, $output] = runCommand($this, 'instance:analytics enable', [
             '--json' => true,
         ]);
 
@@ -146,18 +146,18 @@ describe('AppAnalyticsEnableCommand', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     });
 
     it('maps gateway failures into canonical CLI failures', function (): void {
         fakeGateway(fakeErrorEnvelope(
             'analytics.prerequisite_failed',
             'No active analytics backend is available.',
-            ['app' => 'docs'],
+            ['instance' => 'docs'],
         ), 422);
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics enable', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:analytics enable', [
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -167,7 +167,7 @@ describe('AppAnalyticsEnableCommand', function (): void {
             ->toBe(1)
             ->and($decoded['error']['code'])
             ->toBe('analytics.prerequisite_failed')
-            ->and($decoded['error']['meta']['app'])
+            ->and($decoded['error']['meta']['instance'])
             ->toBe('docs');
     });
 });

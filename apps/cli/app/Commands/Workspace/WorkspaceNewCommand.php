@@ -16,7 +16,7 @@ final class WorkspaceNewCommand extends WorkspaceGatewayCommand
     #[\Override]
     protected $signature = 'workspace:new
         {name? : Workspace name}
-        {--app= : Parent app name or app.instance selector}
+        {--instance= : Owning instance selector (project.instance)}
         {--base=main : Base git ref}
         {--php-version= : PHP version override}
         {--json : Output JSON}
@@ -42,14 +42,17 @@ final class WorkspaceNewCommand extends WorkspaceGatewayCommand
         $app = $this->resolveApp();
 
         if ($app === null) {
-            return $this->failValidation('app', 'Parent app is required. Pass --app= or run from an app directory.');
+            return $this->failValidation(
+                'instance',
+                'Owning instance is required. Pass --instance= or run from a project directory.',
+            );
         }
 
         return $this->streamProgress(
             '/api/workspaces',
             [
                 'name' => $name,
-                'app' => $app,
+                'instance' => $app,
                 'base' => $this->stringOption('base') ?? 'main',
                 'php_version' => $this->stringOption('php-version'),
             ],
@@ -74,14 +77,14 @@ final class WorkspaceNewCommand extends WorkspaceGatewayCommand
 
     private function resolveApp(): ?string
     {
-        $app = $this->stringOption('app') ?? $this->appFromOrbitMarker();
+        $app = $this->stringOption('instance') ?? $this->instanceFromOrbitMarker();
 
         if ($app !== null) {
             return $app;
         }
 
         if ($this->isInteractiveInput()) {
-            return trim(text(label: 'Parent app', required: true));
+            return trim(text(label: 'Owning instance', required: true));
         }
 
         return null;

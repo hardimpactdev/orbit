@@ -7,21 +7,25 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Apps\PruneAppWorkspaces;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\SetAppAgentIdeApiRequest;
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppAgentIdeDefaults;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
+use RuntimeException;
 
-#[RequiresPermission('app:agent', servingNode: ServingNode::AppOwning)]
+#[RequiresPermission('instance:agent', servingNode: ServingNode::AppInstanceOwning)]
 final class AppAgentIdeController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?AppInstance $activitySubject = null;
 
     private ?string $activityTargetName = null;
 
@@ -31,26 +35,42 @@ final class AppAgentIdeController implements Loggable
 
     public function __construct(
         private readonly AppAgentIdeDefaults $defaults,
+        private readonly AppSelectorResolver $appSelectorResolver,
         private readonly PruneAppWorkspaces $pruneAppWorkspaces,
         private readonly WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
-    public function __invoke(SetAppAgentIdeApiRequest $request, string $app): JsonResponse
+    public function __invoke(SetAppAgentIdeApiRequest $request, string $instance): JsonResponse
     {
-        $this->activityTargetName = $app;
+        $selector = $instance;
+        $this->activityTargetName = $selector;
 
-        $targetApp = $this->resolveApp($app);
-
-        if (! $targetApp instanceof App) {
+        try {
+            $selection = $this->appSelectorResolver->requireInstance(
+                $this->appSelectorResolver->resolveRequired($selector),
+            );
+        } catch (AppSelectionResolutionFailed) {
             return $this->error(
-                code: 'app.not_found',
-                message: "App '{$app}' not found.",
-                meta: ['app' => $app],
+                code: 'instance.not_found',
+                message: "Instance '{$selector}' not found.",
+                meta: ['instance' => $selector],
                 status: 404,
             );
         }
 
-        $targetApp->loadMissing('node');
+        $project = $selection->app;
+        $targetInstance = $selection->instance;
+
+        if (! $targetInstance instanceof AppInstance) {
+            return $this->error(
+                code: 'instance.not_found',
+                message: "Instance '{$selector}' not found.",
+                meta: ['instance' => $selector],
+                status: 404,
+            );
+        }
+
+        $this->activityTargetName = "{$project->name}.{$targetInstance->name}";
 
         /** @var mixed $caller */
         $caller = $request->user();
@@ -67,7 +87,7 @@ final class AppAgentIdeController implements Loggable
 
         if (! $this->defaults->isSupported($agentIde)) {
             return $this->error(
-                code: 'app.unsupported_adapter',
+                code: 'instance.unsupported_adapter',
                 message: "The adapter \"{$agentIde}\" is not supported.",
                 meta: [
                     'adapter' => $agentIde,
@@ -77,19 +97,24 @@ final class AppAgentIdeController implements Loggable
             );
         }
 
-        $data = $this->defaults->set($targetApp, $agentIde);
+        $data = $this->defaults->set($targetInstance, $agentIde);
 
         if ($data['action'] === 'set') {
-            $cleanupResult = $this->maybeCleanupWorkspaces($targetApp, $data, $request->force());
+            $cleanupResult = $this->maybeCleanupWorkspaces(
+                $project,
+                $targetInstance,
+                $data,
+                $request->force(),
+            );
 
-            if (isset($cleanupResult['error'])) {
-                return response()->json($cleanupResult, 422);
+            if ($cleanupResult instanceof JsonResponse) {
+                return $cleanupResult;
             }
 
             $data = $cleanupResult;
         }
 
-        $this->activitySubject = $targetApp->refresh();
+        $this->activitySubject = $targetInstance->refresh();
         $this->activityAgentIde = $data['agent_ide']['effective_adapter'] ?? $data['agent_ide']['adapter'];
         $this->activityAction = $data['action'];
 
@@ -102,22 +127,26 @@ final class AppAgentIdeController implements Loggable
 
     /**
      * @param  array{
-     *     app: array<string, mixed>,
+     *     instance: array<string, mixed>,
      *     agent_ide: array{adapter: string|null, source: string, effective_adapter: string|null},
      *     cleanup: array{workspaces_removed: list<string>},
      *     action: string,
      *     previous_adapter: string|null,
      * }  $data
      * @return array{
-     *     app: array<string, mixed>,
+     *     instance: array<string, mixed>,
      *     agent_ide: array{adapter: string|null, source: string, effective_adapter: string|null},
      *     cleanup: array{workspaces_removed: list<string>},
      *     action: string,
      *     previous_adapter: string|null,
-     * }
+     * }|JsonResponse
      */
-    private function maybeCleanupWorkspaces(App $app, array $data, bool $force): array
-    {
+    private function maybeCleanupWorkspaces(
+        Project $project,
+        AppInstance $instance,
+        array $data,
+        bool $force,
+    ): array|JsonResponse {
         $previousAdapter = $data['previous_adapter'];
         $currentEffective = $data['agent_ide']['effective_adapter'];
 
@@ -126,7 +155,12 @@ final class AppAgentIdeController implements Loggable
         }
 
         try {
-            $dryRun = $this->pruneAppWorkspaces->handle($app, dryRun: true, adapterName: $previousAdapter);
+            $dryRun = $this->pruneAppWorkspaces->handle(
+                $project,
+                $instance,
+                dryRun: true,
+                adapterName: $previousAdapter,
+            );
             $staleWorkspaces = $dryRun['stale_workspaces'];
 
             if ($staleWorkspaces === []) {
@@ -144,10 +178,15 @@ final class AppAgentIdeController implements Loggable
                         'stale_workspaces' => array_map(fn (array $ws): string => $ws['name'], $staleWorkspaces),
                     ],
                     status: 422,
-                )->getData(true);
+                );
             }
 
-            $result = $this->pruneAppWorkspaces->handle($app, dryRun: false, adapterName: $previousAdapter);
+            $result = $this->pruneAppWorkspaces->handle(
+                $project,
+                $instance,
+                dryRun: false,
+                adapterName: $previousAdapter,
+            );
             $removed = array_values(array_filter(
                 $result['stale_workspaces'],
                 fn (array $ws): bool => $ws['removed'],
@@ -157,27 +196,11 @@ final class AppAgentIdeController implements Loggable
                 fn (array $ws): string => $ws['name'],
                 $removed,
             );
-        } catch (\RuntimeException) {
+        } catch (RuntimeException) {
             // Adapter does not support workspace discovery; skip cleanup.
         }
 
         return $data;
-    }
-
-    private function resolveApp(string $selector): ?App
-    {
-        return App::query()
-            ->with('node')
-            ->get()
-            ->filter(
-                fn (App $app): bool => (
-                    $app->name === $selector
-                    || $app->domain === $selector
-                    || $app->url() === "https://{$selector}"
-                ),
-            )
-            ->values()
-            ->first();
     }
 
     /**
@@ -217,7 +240,7 @@ final class AppAgentIdeController implements Loggable
 
     public function type(): string
     {
-        return 'api:POST /apps/{app}/agent-ide';
+        return 'api:POST /instances/{instance}/agent-ide';
     }
 
     public function activityLogAction(): string
@@ -241,7 +264,7 @@ final class AppAgentIdeController implements Loggable
     public function properties(): array
     {
         return [
-            'target_app' => $this->activityTargetName ?? (string) request()->route('app'),
+            'target_instance' => $this->activityTargetName ?? (string) request()->route('instance'),
             'agent_ide' => $this->activityAgentIde,
             'action' => $this->activityAction,
         ];
@@ -257,21 +280,21 @@ final class AppAgentIdeController implements Loggable
 
     public function description(): ?string
     {
-        $target = $this->activityTargetName ?? (string) request()->route('app');
+        $target = $this->activityTargetName ?? (string) request()->route('instance');
 
         if ($target === '' || $this->activityAction === null) {
             return null;
         }
 
         if ($this->activityAgentIde === null) {
-            return "App {$target} agent IDE cleared";
+            return "Instance {$target} agent IDE cleared";
         }
 
         if ($this->activityAction === 'converged') {
-            return "App {$target} agent IDE already set to {$this->activityAgentIde}";
+            return "Instance {$target} agent IDE already set to {$this->activityAgentIde}";
         }
 
-        return "App {$target} agent IDE set to {$this->activityAgentIde}";
+        return "Instance {$target} agent IDE set to {$this->activityAgentIde}";
     }
 
     public function activityLogDescription(): ?string

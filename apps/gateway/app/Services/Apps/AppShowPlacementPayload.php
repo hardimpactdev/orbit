@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Models\App;
 use App\Models\AppInstance;
+use App\Models\Project;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 
@@ -23,7 +23,7 @@ final readonly class AppShowPlacementPayload
      *     instances: list<array<string, mixed>>,
      * }
      */
-    public function forApp(App $app, array $instances, bool $includeWorkspaces = true): array
+    public function forApp(Project $app, array $instances, bool $includeWorkspaces = true): array
     {
         $visibleInstanceIds = array_map(static fn (AppInstance $instance): int => $instance->id, $instances);
         $workspacePayloads = $includeWorkspaces
@@ -51,7 +51,7 @@ final readonly class AppShowPlacementPayload
      * @param  list<int>  $visibleInstanceIds
      * @return array<int, list<array{name: string, url: string, lifecycle_status: string}>>
      */
-    private function workspacePayloadsByInstance(App $app, array $visibleInstanceIds): array
+    private function workspacePayloadsByInstance(Project $app, array $visibleInstanceIds): array
     {
         $payloads = [];
         $app->loadMissing('workspaces');

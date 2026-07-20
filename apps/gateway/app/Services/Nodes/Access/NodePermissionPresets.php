@@ -91,8 +91,9 @@ final class NodePermissionPresets
     private function appDevelopmentSelf(): array
     {
         return [
-            'app:read',
-            'app:register',
+            'project:read',
+            'instance:read',
+            'instance:register',
             'process:add',
             'process:read',
             'process:remove',
@@ -106,7 +107,7 @@ final class NodePermissionPresets
      */
     private function appProductionSelf(): array
     {
-        return ['app:read'];
+        return ['project:read', 'instance:read'];
     }
 
     /**
@@ -126,7 +127,8 @@ final class NodePermissionPresets
     private function operator(): array
     {
         return [
-            'app:read',
+            'project:read',
+            'instance:read',
             'database:read',
             'doctor:verify',
             'firewall_rule:read',
@@ -144,7 +146,8 @@ final class NodePermissionPresets
     {
         return [
             'activity:read',
-            'app:read',
+            'project:read',
+            'instance:read',
             'cf:dns:list',
             'cf:zone:list',
             'database:read',
@@ -173,17 +176,19 @@ final class NodePermissionPresets
     private function developer(): array
     {
         return [
-            'app:read',
-            'app:write',
-            'app:register',
-            'app:remove',
-            'app:prune',
-            'app:agent',
-            'app:root',
-            'app:update',
-            'app:new',
-            'app:worker',
-            'app:mount',
+            'project:read',
+            'project:write',
+            'project:remove',
+            'project:new',
+            'instance:read',
+            'instance:write',
+            'instance:register',
+            'instance:prune',
+            'instance:agent',
+            'instance:root',
+            'instance:update',
+            'instance:worker',
+            'instance:mount',
             'workspace:read',
             'workspace:write',
             'workspace:new',
@@ -250,19 +255,24 @@ final class NodePermissionPresets
             // Agent IDE
             'agent-ide:message',
 
-            // App
-            'app:credentials',
-            'app:read',
-            'app:write',
-            'app:register',
-            'app:remove',
-            'app:prune',
-            'app:agent',
-            'app:root',
-            'app:update',
-            'app:new',
-            'app:worker',
-            'app:mount',
+            // Project
+            'project:read',
+            'project:write',
+            'project:remove',
+            'project:new',
+
+            // Instance
+            'instance:credentials',
+            'instance:read',
+            'instance:write',
+            'instance:register',
+            'instance:remove',
+            'instance:prune',
+            'instance:agent',
+            'instance:root',
+            'instance:update',
+            'instance:worker',
+            'instance:mount',
 
             // Cloudflare
             'cf:cache:flush',

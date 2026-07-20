@@ -5,7 +5,7 @@
 Show workspace registry configuration and runtime expectations.
 
 `workspace:show` provides a detailed view of a workspace's gateway-tracked
-configuration. It reports the parent app, required selected app instance,
+configuration. It reports the parent project, required selected instance,
 effective owning node, branch, path, and canonical URL.
 
 It also returns runtime expectations (effective PHP version and inheritance
@@ -19,17 +19,17 @@ nodes.
 ## Usage
 
 ```bash
-orbit workspace:show [name] [--app=<app>] [--json]
+orbit workspace:show [name] [--instance=<project.instance>] [--json]
 ```
 
 ## Arguments and options
 
 - `name`: The workspace name. Optional when the current working directory
   resolves to a known workspace path.
-- `--app=<app>`: The parent app slug or app-instance selector. Use dot
-  notation such as `happie.nmbp` to select one concrete app instance
-  explicitly. A bare app slug is shorthand only when it resolves to exactly one
-  instance; otherwise resolution fails with `app_instance_required`. Required
+- `--instance=<project.instance>`: The parent project slug or instance selector. Use dot
+  notation such as `happie.nmbp` to select one concrete instance
+  explicitly. A bare project slug is shorthand only when it resolves to exactly one
+  instance; otherwise resolution fails with `instance_required`. Required
   when `name` matches more than one workspace record. Workspace names are unique
   within an app but not globally unique.
 - `--json`: Output structured JSON. Forces non-interactive input mode.
@@ -44,11 +44,11 @@ Reads workspace configuration and related gateway history from the gateway datab
 
 ### Display
 
-Shows the workspace identity (name, parent app, branch, path, URL), owning node, runtime expectations with PHP version inheritance source, effective agent IDE resolution, inherited processes, the workspace-owned proxy route, and the latest setup run summary.
+Shows the workspace identity (name, parent project, branch, path, URL), owning node, runtime expectations with PHP version inheritance source, effective agent IDE resolution, inherited processes, the workspace-owned proxy route, and the latest setup run summary.
 
 ### Ambiguous Name
 
-Fails with `workspace.ambiguous_name` when `name` matches multiple workspaces and `--app` is missing in non-interactive mode.
+Fails with `workspace.ambiguous_name` when `name` matches multiple workspaces and `--instance` is missing in non-interactive mode.
 
 ### Registry-Only
 
@@ -66,17 +66,17 @@ orbit workspace:show feature-docs
 
 ### Show a workspace with app disambiguation
 
-Pass a bare `--app` when the workspace name exists under more than one app and
-that app has exactly one concrete instance.
+Pass a bare `--instance` when the workspace name exists under more than one app and
+that project has exactly one concrete instance.
 
 ```bash
-orbit workspace:show feature-docs --app=docs
+orbit workspace:show feature-docs --instance=docs
 ```
 
-Use dot notation to select the concrete app instance explicitly.
+Use dot notation to select the concrete instance explicitly.
 
 ```bash
-orbit workspace:show recipes --app=happie.nmbp
+orbit workspace:show recipes --instance=happie.nmbp
 ```
 
 ### Show a workspace as JSON
@@ -84,7 +84,7 @@ orbit workspace:show recipes --app=happie.nmbp
 Add `--json` to receive a machine-readable payload suitable for scripting.
 
 ```bash
-orbit workspace:show feature-docs --app=docs --json
+orbit workspace:show feature-docs --instance=docs --json
 ```
 
 ## Related

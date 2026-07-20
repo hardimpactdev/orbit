@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Carbon;
 use InvalidArgumentException;
+use Override;
 
 /**
  * @property int $id
@@ -37,7 +38,7 @@ use InvalidArgumentException;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Model|null $owner
- * @property-read App|null $app
+ * @property-read Project|null $app
  * @property-read AppInstance|null $appInstance
  * @property-read Node|null $node
  * @property-read Collection<int, ProcessEvent> $events
@@ -49,7 +50,7 @@ class Process extends Model
 {
     use HasFactory;
 
-    #[\Override]
+    #[Override]
     protected static function booted(): void
     {
         static::saving(function (Process $process): void {
@@ -69,7 +70,7 @@ class Process extends Model
         });
     }
 
-    #[\Override]
+    #[Override]
     protected $fillable = [
         'node_id',
         'owner_type',
@@ -86,13 +87,13 @@ class Process extends Model
         'sort_order',
     ];
 
-    #[\Override]
+    #[Override]
     protected $attributes = [
         'runtime' => 'systemd',
         'runtime_config' => '[]',
     ];
 
-    #[\Override]
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -149,11 +150,11 @@ class Process extends Model
         return $query->whereIn('runtime_config->service', $services);
     }
 
-    public function ownerApp(): ?App
+    public function ownerApp(): ?Project
     {
         $this->loadMissing('owner');
 
-        if ($this->owner instanceof App) {
+        if ($this->owner instanceof Project) {
             return $this->owner;
         }
 
@@ -166,7 +167,7 @@ class Process extends Model
         return null;
     }
 
-    public function getAppAttribute(): ?App
+    public function getAppAttribute(): ?Project
     {
         return $this->ownerApp();
     }
@@ -183,7 +184,7 @@ class Process extends Model
             return (int) $this->owner_id;
         }
 
-        if ($ownerClass === App::class) {
+        if ($ownerClass === Project::class) {
             return $this->appInstanceNodeIdForApp((int) $this->owner_id);
         }
 
@@ -196,7 +197,7 @@ class Process extends Model
 
             if ($this->app_instance_id !== null && $workspace->app_instance_id !== $this->app_instance_id) {
                 throw new InvalidArgumentException(
-                    "Process '{$this->name}' app instance does not match its workspace owner.",
+                    "Process '{$this->name}' instance does not match its workspace owner.",
                 );
             }
 
@@ -216,7 +217,7 @@ class Process extends Model
     {
         if ($this->app_instance_id === null) {
             throw new InvalidArgumentException(
-                "Process '{$this->name}' requires concrete app instance ownership.",
+                "Process '{$this->name}' requires concrete instance ownership.",
             );
         }
 
@@ -224,7 +225,7 @@ class Process extends Model
 
         if (! $instance instanceof AppInstance || $instance->app_id !== $appId) {
             throw new InvalidArgumentException(
-                "Process '{$this->name}' app instance does not belong to its app owner.",
+                "Process '{$this->name}' instance does not belong to its app owner.",
             );
         }
 
@@ -232,7 +233,7 @@ class Process extends Model
 
         if (! $node instanceof Node) {
             throw new InvalidArgumentException(
-                "Process '{$this->name}' app instance has no concrete serving node.",
+                "Process '{$this->name}' instance has no concrete serving node.",
             );
         }
 

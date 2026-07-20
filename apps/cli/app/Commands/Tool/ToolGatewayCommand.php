@@ -48,7 +48,7 @@ abstract class ToolGatewayCommand extends GatewayCommand
      */
     protected function toolTargetPayload(bool $requireTarget = false): array|int
     {
-        $app = $this->stringOption('app');
+        $app = $this->stringOption('instance');
         $node = $this->stringOption('node');
 
         if ($node === null && $app === null) {
@@ -60,7 +60,7 @@ abstract class ToolGatewayCommand extends GatewayCommand
         }
 
         $payload = $this->filledQuery([
-            'app' => $app,
+            'instance' => $app,
             'node' => $node,
         ]);
 
@@ -75,7 +75,7 @@ abstract class ToolGatewayCommand extends GatewayCommand
 
             return $this->renderFailure(
                 'validation_failed',
-                'A node or app target is required.',
+                'A node or instance target is required.',
                 ['fields' => ['target']],
             );
         }

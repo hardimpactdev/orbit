@@ -166,7 +166,7 @@ describe('Cloudflare human render commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'cache' => [
                 'zone' => 'example.com',
-                'app' => null,
+                'project' => null,
                 'action' => 'flush',
                 'status' => 'flushed',
             ],
@@ -194,7 +194,7 @@ describe('Cloudflare human render commands', function (): void {
     it('renders cf-cache-rule:add as a progress tree with a ready success line', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'rule' => [
-                'app' => 'docs',
+                'project' => 'docs',
                 'zone' => 'example.com',
                 'action' => 'add',
                 'cache' => true,
@@ -207,7 +207,7 @@ describe('Cloudflare human render commands', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, command: 'cf-cache-rule:add', params: [
-            'app' => 'docs',
+            'project' => 'docs',
         ]);
 
         expect($exitCode)
@@ -215,7 +215,7 @@ describe('Cloudflare human render commands', function (): void {
             ->and($output)
             ->toContain('Adding Cloudflare cache rule')
             ->and($output)
-            ->toContain('Resolve app domain')
+            ->toContain('Resolve project domain')
             ->and($output)
             ->toContain('Resolve Cloudflare zone')
             ->and($output)
@@ -230,7 +230,7 @@ describe('Cloudflare human render commands', function (): void {
     it('renders cf-cache-rule:remove as a progress tree with a removed success line', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'rule' => [
-                'app' => 'docs',
+                'project' => 'docs',
                 'zone' => 'example.com',
                 'action' => 'remove',
                 'status' => 'removed',
@@ -240,7 +240,7 @@ describe('Cloudflare human render commands', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, command: 'cf-cache-rule:remove', params: [
-            'app' => 'docs',
+            'project' => 'docs',
             '--force' => true,
         ]);
 
@@ -249,7 +249,7 @@ describe('Cloudflare human render commands', function (): void {
             ->and($output)
             ->toContain('Removing Cloudflare cache rule')
             ->and($output)
-            ->toContain('Resolve app domain')
+            ->toContain('Resolve project domain')
             ->and($output)
             ->toContain('Resolve Cloudflare zone')
             ->and($output)

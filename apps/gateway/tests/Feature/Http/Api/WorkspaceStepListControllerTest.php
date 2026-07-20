@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\WorkspaceLifecyclePhase;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -50,7 +50,7 @@ describe('WorkspaceStepListController', function (): void {
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepListAccess($caller, $localNode);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'happie',
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/happie',
@@ -74,7 +74,7 @@ describe('WorkspaceStepListController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/steps/setup?app=happie.nmbp',
+            '/api/workspaces/steps/setup?instance=happie.nmbp',
             [],
             [],
             [],
@@ -85,14 +85,14 @@ describe('WorkspaceStepListController', function (): void {
             ->assertOk()
             ->assertJsonCount(1, 'success.data.steps')
             ->assertJsonPath('success.data.steps.0.command', 'instance composer install')
-            ->assertJsonPath('success.data.steps.0.app_instance', 'nmbp');
+            ->assertJsonPath('success.data.steps.0.instance', 'nmbp');
     });
 
     it('returns visible setup steps sorted by order', function (): void {
         $caller = createWorkspaceStepListCallerNode();
         $node = createTestAppHostNode();
         grantWorkspaceStepListAccess($caller, $node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $instance = AppInstance::factory()->create(['app_id' => $app->id, 'name' => 'development']);
         WorkspaceStep::factory()->create([
             'app_id' => $app->id,
@@ -111,7 +111,7 @@ describe('WorkspaceStepListController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/steps/setup?app=docs.development',
+            '/api/workspaces/steps/setup?instance=docs.development',
             [],
             [],
             [],
@@ -121,7 +121,7 @@ describe('WorkspaceStepListController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.steps.0.command', 'composer install')
-            ->assertJsonPath('success.data.steps.0.app', 'docs')
+            ->assertJsonPath('success.data.steps.0.project', 'docs')
             ->assertJsonPath('success.data.steps.0.phase', 'setup');
     });
 
@@ -129,7 +129,7 @@ describe('WorkspaceStepListController', function (): void {
         $caller = createWorkspaceStepListCallerNode();
         $node = createTestAppHostNode();
         grantWorkspaceStepListAccess($caller, $node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
             'path' => '/srv/docs/.worktrees/feature-docs',
@@ -159,7 +159,7 @@ describe('WorkspaceStepListController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/steps/setup?app=missing',
+            '/api/workspaces/steps/setup?instance=missing',
             [],
             [],
             [],
@@ -168,19 +168,19 @@ describe('WorkspaceStepListController', function (): void {
 
         $response
             ->assertNotFound()
-            ->assertJsonPath('error.code', 'workspace.app_not_found')
-            ->assertJsonPath('error.meta.app', 'missing');
+            ->assertJsonPath('error.code', 'workspace.instance_not_found')
+            ->assertJsonPath('error.meta.instance', 'missing');
     });
 
     it('returns authorization failures for hidden apps', function (): void {
         createWorkspaceStepListCallerNode();
         $node = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         AppInstance::factory()->create(['app_id' => $app->id, 'name' => 'development']);
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/steps/setup?app=docs.development',
+            '/api/workspaces/steps/setup?instance=docs.development',
             [],
             [],
             [],

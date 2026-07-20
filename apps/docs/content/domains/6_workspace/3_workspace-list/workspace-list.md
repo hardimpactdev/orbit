@@ -14,28 +14,28 @@ output stays a fast registry read.
 ## Usage
 
 ```bash
-orbit workspace:list [--app=<app>] [--node=<slug>] [--json]
+orbit workspace:list [--instance=<project.instance>] [--node=<slug>] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit workspace:list
-orbit workspace:list --app=docs
-orbit workspace:list --app=happie.nmbp
+orbit workspace:list --instance=docs
+orbit workspace:list --instance=happie.nmbp
 orbit workspace:list --node=app-1
-orbit workspace:list --app=docs --node=app-1
+orbit workspace:list --instance=docs --node=app-1
 orbit workspace:list --json
 ```
 
 ## Arguments and options
 
-- `--app`: filter by parent app slug or app-instance selector. Use dot
-  notation such as `happie.nmbp` to target one concrete app instance.
+- `--instance`: filter by parent project slug or instance selector. Use dot
+  notation such as `happie.nmbp` to target one concrete instance.
 - `--node`: filter by owning node slug.
 - `--json`: Output JSON.
 
-When both `--app` and `--node` are supplied, results are the intersection
+When both `--instance` and `--node` are supplied, results are the intersection
 (workspaces matching both filters).
 
 ## What Happens
@@ -48,9 +48,9 @@ requested filters:
 1. Connects to the gateway API.
 2. Reads workspace registry configuration scoped to what the caller is
    authorized to see.
-3. Filters by app, app instance, or node when options are supplied (combined
+3. Filters by app, instance, or node when options are supplied (combined
    with AND).
-4. Returns a list of workspaces with their names, parent apps, selected app
+4. Returns a list of workspaces with their names, parent projects, selected app
    instances, effective host nodes, canonical URLs, and registry
    lifecycle statuses.
 
@@ -63,10 +63,10 @@ requested filters:
 ## Output
 
 Both renderers use the same deterministic ordering: workspaces are sorted by
-owning node name, then by parent app name, then by workspace name (alphabetical,
+owning node name, then by parent project name, then by workspace name (alphabetical,
 case-insensitive).
 
-Human output presents that ordering as tables grouped by parent app within node.
+Human output presents that ordering as tables grouped by parent project within node.
 
 JSON output returns a flat list of workspaces in the same order under the
 machine-readable output. See the
@@ -87,7 +87,7 @@ Use these commands to inspect or act on individual workspaces.
 - [`workspace:show`](../4_workspace-show/workspace-show.md) — inspect a single workspace
 - [`workspace:remove`](../5_workspace-remove/workspace-remove.md) — remove a workspace
 - [`doctor --family=workspace`](../workspace-doctor.md) — verify and repair workspace drift
-- [`app:list`](../../5_app/3_app-list/app-list.md) — list parent apps
+- [`project:list`](../../5_project/3_project-list/project-list.md) — list parent projects
 
 ## Technical Contract
 

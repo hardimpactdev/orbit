@@ -70,7 +70,7 @@ envelope.
 
 ## Related
 
-- [`doctor --family=app`](../../5_app/app-doctor.md)
+- [`doctor --family=instance`](../../5_project/instance-doctor.md)
 - [`doctor --family=proxy`](../../8_proxy/proxy-doctor.md)
 
 ***

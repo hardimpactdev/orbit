@@ -471,7 +471,7 @@ it('renders ssh and performance handles for app roles in json output', function 
         ->and($byRole['dev']['endpoint'])
         ->toContain('10.6.0.4')
         ->and($byRole['dev']['note'])
-        ->toContain('orbit app:new')
+        ->toContain('orbit project:new')
         ->and($byRole['dev']['note'])
         ->toContain('time_total');
 });

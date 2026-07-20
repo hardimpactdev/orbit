@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Concerns;
 
+use App\Data\Apps\AppSelection;
 use App\Enums\Nodes\NodeStatus;
-use App\Models\App;
+use App\Exceptions\AppSelectionResolutionFailed;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\Project;
 use App\Models\ProxyRoute;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\AgentToolAuthorizer;
 use App\Services\Tools\ToolCatalog;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -134,7 +139,7 @@ trait ResolvesVisibleToolNodes
         $tool = $options['tool'];
         $unsupportedPolicy = $options['unsupported_policy'];
         $node = $this->toolTargetString($request, 'node');
-        $app = $this->toolTargetString($request, 'app');
+        $app = $this->toolTargetString($request, 'instance');
         $nodeFilter = null;
 
         if ($node !== null) {
@@ -153,14 +158,14 @@ trait ResolvesVisibleToolNodes
             $appNode = $this->resolveAppNodeFilter($app, $caller, $visibleNodeIds);
 
             if (! $appNode instanceof Node) {
-                return $this->toolTargetFailure($app, 'app', $caller, $visibleNodeIds);
+                return $this->toolTargetFailure($app, 'instance', $caller, $visibleNodeIds);
             }
 
             if ($nodeFilter instanceof Node && $nodeFilter->id !== $appNode->id) {
                 return $this->toolTargetValidationFailed(
-                    'app',
+                    'instance',
                     $app,
-                    "Invalid value for --app: '{$app}'. App is not owned by the selected node.",
+                    "Invalid value for --instance: '{$app}'. Instance is not owned by the selected node.",
                 );
             }
 
@@ -235,48 +240,35 @@ trait ResolvesVisibleToolNodes
      */
     private function resolveAppNodeFilter(string $app, Node $caller, array $visibleNodeIds): ?Node
     {
-        $model = App::query()
-            ->with('node')
-            ->when(
-                ! $this->nodeRoleAssignments()->nodeIsGateway($caller),
-                fn (Builder $query) => $query->whereIn('node_id', $visibleNodeIds),
-            )
-            ->where(function (Builder $query) use ($app): void {
-                $query->where('name', $app)
-                    ->orWhere('domain', $app);
-            })
-            ->first();
+        try {
+            $selection = app(AppSelectorResolver::class)->resolve($app);
 
-        if (! $model instanceof App && str_contains($app, '.')) {
-            [$appName, $nodeTld] = explode('.', $app, 2);
-
-            if ($appName !== '' && $nodeTld !== '') {
-                $model = App::query()
-                    ->with('node')
-                    ->when(
-                        ! $this->nodeRoleAssignments()->nodeIsGateway($caller),
-                        fn (Builder $query) => $query->whereIn('node_id', $visibleNodeIds),
-                    )
-                    ->where('name', $appName)
-                    ->whereHas('node', function (Builder $query) use ($nodeTld): void {
-                        $query
-                            ->whereIn('id', $this->nodeRoleAssignments()->activeAppHostNodeIds())
-                            ->where('status', NodeStatus::Active->value)
-                            ->where('tld', $nodeTld);
-                    })
-                    ->first();
+            if (! $selection instanceof AppSelection) {
+                return null;
             }
-        }
 
-        if (! $model instanceof App || ! $model->node instanceof Node) {
+            $selection = app(AppSelectorResolver::class)->requireInstance($selection);
+        } catch (AppSelectionResolutionFailed) {
             return null;
         }
 
-        if (! $model->node->isActive() || ! $this->nodeRoleAssignments()->nodeHasActiveAppHostRole($model->node)) {
+        $instance = $selection->instance;
+
+        if (! $instance instanceof AppInstance) {
             return null;
         }
 
-        return $model->node;
+        $node = app(WorkspacePlacement::class)->nodeForInstance($instance);
+
+        if (! $node instanceof Node || ! $node->isActive()) {
+            return null;
+        }
+
+        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && ! in_array($node->id, $visibleNodeIds, true)) {
+            return null;
+        }
+
+        return $node;
     }
 
     private function toolTargetString(Request $request, string $key): ?string
@@ -352,7 +344,7 @@ trait ResolvesVisibleToolNodes
             return $query->exists();
         }
 
-        return App::query()
+        return Project::query()
             ->where(function (Builder $query) use ($value): void {
                 $query->where('name', $value)
                     ->orWhere('domain', $value);

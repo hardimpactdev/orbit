@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessEvent;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -47,7 +47,7 @@ describe('ProcessStopController', function (): void {
         $caller = createProcessStopCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessStopAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessStopApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -57,7 +57,7 @@ describe('ProcessStopController', function (): void {
             'POST',
             '/api/processes/stop',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'name' => 'vite',
             ],
             [],
@@ -76,7 +76,7 @@ describe('ProcessStopController', function (): void {
     it('returns partial runtime failure data', function (): void {
         createProcessStopCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'sort_order' => 10]);
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'sort_order' => 20]);
         app()->instance(RemoteShell::class, new ProcessStopApiRemoteShell([
@@ -88,7 +88,7 @@ describe('ProcessStopController', function (): void {
             'POST',
             '/api/processes/stop',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
             ],
             [],
             [],
@@ -105,7 +105,7 @@ describe('ProcessStopController', function (): void {
     it('requires authorization before runtime side effects', function (): void {
         createProcessStopCallerNode();
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         $remoteShell = new ProcessStopApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
@@ -114,7 +114,7 @@ describe('ProcessStopController', function (): void {
             'POST',
             '/api/processes/stop',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'name' => 'vite',
             ],
             [],

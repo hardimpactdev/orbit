@@ -6,9 +6,9 @@ namespace App\Services\Apps;
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\OrbitContainerNames;
@@ -51,7 +51,7 @@ final readonly class AppRuntimeContainerRenderer
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
-    public function render(App $app, ?string $preloadPath = null): AppRuntimeContainer
+    public function render(Project $app, ?string $preloadPath = null): AppRuntimeContainer
     {
         $sourcePath = rtrim($app->path, '/');
         $app->loadMissing('instances');
@@ -64,8 +64,11 @@ final readonly class AppRuntimeContainerRenderer
         );
     }
 
-    public function renderForInstance(App $app, AppInstance $instance, ?string $preloadPath = null): AppRuntimeContainer
-    {
+    public function renderForInstance(
+        Project $app,
+        AppInstance $instance,
+        ?string $preloadPath = null,
+    ): AppRuntimeContainer {
         return $this->renderTarget(
             app: $this->runtimeAppForInstance($app, $instance),
             instance: $instance,
@@ -75,7 +78,7 @@ final readonly class AppRuntimeContainerRenderer
     }
 
     private function renderTarget(
-        App $app,
+        Project $app,
         ?AppInstance $instance,
         string $runtimeSlug,
         ?string $preloadPath = null,
@@ -162,22 +165,22 @@ final readonly class AppRuntimeContainerRenderer
         );
     }
 
-    public function containerName(App $app): string
+    public function containerName(Project $app): string
     {
         return $this->containerNameForSlug($app->name);
     }
 
-    public function containerNameForInstance(App $app, AppInstance $instance): string
+    public function containerNameForInstance(Project $app, AppInstance $instance): string
     {
         return $this->containerNameForSlug($this->instanceSlug($app, $instance));
     }
 
-    public function phpIniHostPath(App $app): string
+    public function phpIniHostPath(Project $app): string
     {
         return $this->phpIniHostPathForSlug($app, $app->name);
     }
 
-    public function phpIniHostPathForInstance(App $app, AppInstance $instance): string
+    public function phpIniHostPathForInstance(Project $app, AppInstance $instance): string
     {
         return $this->phpIniHostPathForSlug(
             $this->runtimeAppForInstance($app, $instance),
@@ -185,7 +188,7 @@ final readonly class AppRuntimeContainerRenderer
         );
     }
 
-    private function phpIniHostPathForSlug(App $app, string $runtimeSlug): string
+    private function phpIniHostPathForSlug(Project $app, string $runtimeSlug): string
     {
         $app->loadMissing('node');
 
@@ -196,7 +199,7 @@ final readonly class AppRuntimeContainerRenderer
         return $this->nodeHostPaths->appRuntimeConfigPath($app->node, $runtimeSlug);
     }
 
-    public function upstreamUrl(App $app): string
+    public function upstreamUrl(Project $app): string
     {
         if ($this->innerTlsPolicy->appliesToApp($app)) {
             return 'https://'.$this->containerName($app).':'.AppDevelopmentInnerTlsPolicy::InternalTlsPort;
@@ -205,12 +208,12 @@ final readonly class AppRuntimeContainerRenderer
         return 'http://'.$this->containerName($app).':'.self::InternalPort;
     }
 
-    public function targetName(App $app, ?AppInstance $instance = null): string
+    public function targetName(Project $app, ?AppInstance $instance = null): string
     {
         return $instance instanceof AppInstance ? "{$app->name}.{$instance->name}" : $app->name;
     }
 
-    public function instanceSlug(App $app, AppInstance $instance): string
+    public function instanceSlug(Project $app, AppInstance $instance): string
     {
         return "{$app->name}-{$instance->name}";
     }
@@ -220,7 +223,7 @@ final readonly class AppRuntimeContainerRenderer
         return "orbit-app-{$runtimeSlug}";
     }
 
-    public function runtimeAppForInstance(App $app, AppInstance $instance): App
+    public function runtimeAppForInstance(Project $app, AppInstance $instance): Project
     {
         $runtimeApp = clone $app;
         $node = $this->placement->nodeForInstance($instance);
@@ -251,7 +254,7 @@ final readonly class AppRuntimeContainerRenderer
     /**
      * @return array<string, string>
      */
-    private function environmentFor(App $app, ?AppInstance $instance): array
+    private function environmentFor(Project $app, ?AppInstance $instance): array
     {
         $environment = [
             'SERVER_ROOT' => $this->documentRootInContainer($app),
@@ -287,7 +290,7 @@ final readonly class AppRuntimeContainerRenderer
     }
 
     /**
-     * Worker-mode env vars are emitted only when the app instance enables worker mode.
+     * Worker-mode env vars are emitted only when the instance enables worker mode.
      * The instance's stored worker_config is the single source of truth; classic mode is
      * the default and emits none of these vars.
      *
@@ -302,7 +305,7 @@ final readonly class AppRuntimeContainerRenderer
      *
      * @return array<string, string>
      */
-    private function workerEnvironmentFor(App $app, AppInstance $instance): array
+    private function workerEnvironmentFor(Project $app, AppInstance $instance): array
     {
         $config = $instance->workerConfig();
         $workerFile = $this->frankenPhpWorkerFilePath($app);
@@ -313,12 +316,12 @@ final readonly class AppRuntimeContainerRenderer
         ];
     }
 
-    public function frankenPhpWorkerFilePath(App $app): string
+    public function frankenPhpWorkerFilePath(Project $app): string
     {
         return $this->documentRootInContainer($app).'/'.self::WorkerFileName;
     }
 
-    public function documentRootInContainer(App $app): string
+    public function documentRootInContainer(Project $app): string
     {
         $documentRoot = trim($app->document_root, characters: '/');
 
@@ -334,7 +337,7 @@ final readonly class AppRuntimeContainerRenderer
      * readiness validator must agree on this so what readiness checks
      * matches what the runtime points `FRANKENPHP_CONFIG` at.
      */
-    public static function workerFileRelativeToSource(App $app): string
+    public static function workerFileRelativeToSource(Project $app): string
     {
         $documentRoot = trim($app->document_root, characters: '/');
 

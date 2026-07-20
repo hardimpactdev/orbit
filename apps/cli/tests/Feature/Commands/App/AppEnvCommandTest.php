@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
-describe('app:env', function (): void {
+describe('instance:env', function (): void {
     it('sets instance env values through the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'variable' => [
@@ -15,10 +15,9 @@ describe('app:env', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:env', [
+        [$exitCode, $output] = runCommand($this, 'instance:env', [
             'action' => 'set',
-            'app' => 'billing',
-            '--instance' => 'development',
+            'instance' => 'billing.development',
             '--key' => 'APP_DEBUG',
             '--value' => 'false',
             '--json' => true,
@@ -29,7 +28,7 @@ describe('app:env', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/apps/billing/instances/development/env'
+                && $request->url() === 'https://gateway.test/api/projects/billing/instances/development/env'
                 && $request->data() === [
                     'key' => 'APP_DEBUG',
                     'value' => 'false',
@@ -42,8 +41,8 @@ describe('app:env', function (): void {
 
     it('renders human set output naming the saved key and instance', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'scope' => 'app-instance',
-            'app' => 'billing',
+            'scope' => 'instance',
+            'project' => 'billing',
             'instance' => 'development',
             'workspace' => null,
             'path' => '/home/orbit/apps/billing-development/.env',
@@ -57,10 +56,9 @@ describe('app:env', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:env', [
+        [$exitCode, $output] = runCommand($this, 'instance:env', [
             'action' => 'set',
-            'app' => 'billing',
-            '--instance' => 'development',
+            'instance' => 'billing.development',
             '--key' => 'APP_DEBUG',
             '--value' => 'false',
         ]);
@@ -68,7 +66,7 @@ describe('app:env', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Saved 'APP_DEBUG' for app instance 'billing.development'.")
+            ->toContain("Saved 'APP_DEBUG' for instance 'billing.development'.")
             ->and($output)
             ->toContain('Path: /home/orbit/apps/billing-development/.env')
             ->and($output)
@@ -84,8 +82,8 @@ describe('app:env', function (): void {
 
     it('renders human render output as an aligned effective env map', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'scope' => 'app-instance',
-            'app' => 'billing',
+            'scope' => 'instance',
+            'project' => 'billing',
             'instance' => 'production',
             'workspace' => null,
             'path' => '/home/orbit/apps/billing-production/.env',
@@ -98,10 +96,9 @@ describe('app:env', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:env', [
+        [$exitCode, $output] = runCommand($this, 'instance:env', [
             'action' => 'render',
-            'app' => 'billing',
-            '--instance' => 'production',
+            'instance' => 'billing.production',
         ]);
 
         expect($exitCode)
@@ -111,7 +108,7 @@ describe('app:env', function (): void {
             ->and($output)
             ->toContain('DB_PASSWORD=')
             ->and($output)
-            ->toContain('Scope: app-instance')
+            ->toContain('Scope: instance')
             ->and($output)
             ->toContain('Path: /home/orbit/apps/billing-production/.env')
             ->and($output)
@@ -123,8 +120,8 @@ describe('app:env', function (): void {
 
     it('renders human render output with an empty effective env map', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'scope' => 'app-instance',
-            'app' => 'billing',
+            'scope' => 'instance',
+            'project' => 'billing',
             'instance' => 'production',
             'workspace' => null,
             'path' => '/home/orbit/apps/billing-production/.env',
@@ -134,10 +131,9 @@ describe('app:env', function (): void {
             'variables' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:env', [
+        [$exitCode, $output] = runCommand($this, 'instance:env', [
             'action' => 'render',
-            'app' => 'billing',
-            '--instance' => 'production',
+            'instance' => 'billing.production',
         ]);
 
         expect($exitCode)
@@ -145,31 +141,30 @@ describe('app:env', function (): void {
             ->and($output)
             ->toContain('No environment values found.')
             ->and($output)
-            ->toContain('Scope: app-instance')
+            ->toContain('Scope: instance')
             ->and($output)
             ->toContain('Path: /home/orbit/apps/billing-production/.env')
             ->and($output)
             ->not->toContain('{');
     });
 
-    it('renders app instance env with app selector supplied as --app', function (): void {
+    it('renders instance env with a dotted selector', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'variables' => [
                 'APP_ENV' => ['value' => 'production', 'secret' => false],
             ],
         ]));
 
-        [$exitCode] = runCommand($this, 'app:env', [
+        [$exitCode] = runCommand($this, 'instance:env', [
             'action' => 'render',
-            '--app' => 'billing',
-            '--instance' => 'production',
+            'instance' => 'billing.production',
             '--json' => true,
         ]);
 
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'GET'
-                && $request->url() === 'https://gateway.test/api/apps/billing/instances/production/env/render'
+                && $request->url() === 'https://gateway.test/api/projects/billing/instances/production/env/render'
             ),
         );
 
@@ -178,8 +173,8 @@ describe('app:env', function (): void {
 
     it('renders human list output as a table of non-secret env variables', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'scope' => 'app-instance',
-            'app' => 'billing',
+            'scope' => 'instance',
+            'project' => 'billing',
             'instance' => 'production',
             'workspace' => null,
             'path' => '/home/orbit/apps/billing-production/.env',
@@ -192,10 +187,9 @@ describe('app:env', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:env', [
+        [$exitCode, $output] = runCommand($this, 'instance:env', [
             'action' => 'list',
-            'app' => 'billing',
-            '--instance' => 'production',
+            'instance' => 'billing.production',
         ]);
 
         expect($exitCode)
@@ -213,7 +207,7 @@ describe('app:env', function (): void {
             ->and($output)
             ->toContain('false')
             ->and($output)
-            ->toContain('Scope: app-instance')
+            ->toContain('Scope: instance')
             ->and($output)
             ->toContain('Path: /home/orbit/apps/billing-production/.env')
             ->and($output)
@@ -223,8 +217,8 @@ describe('app:env', function (): void {
 
     it('renders human empty list output when no env variables exist', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'scope' => 'app-instance',
-            'app' => 'billing',
+            'scope' => 'instance',
+            'project' => 'billing',
             'instance' => 'production',
             'workspace' => null,
             'path' => '/home/orbit/apps/billing-production/.env',
@@ -234,10 +228,9 @@ describe('app:env', function (): void {
             'variables' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:env', [
+        [$exitCode, $output] = runCommand($this, 'instance:env', [
             'action' => 'list',
-            'app' => 'billing',
-            '--instance' => 'production',
+            'instance' => 'billing.production',
         ]);
 
         expect($exitCode)
@@ -245,19 +238,17 @@ describe('app:env', function (): void {
             ->and($output)
             ->toContain('No environment values found.')
             ->and($output)
-            ->toContain('Scope: app-instance')
+            ->toContain('Scope: instance')
             ->and($output)
             ->toContain('Path: /home/orbit/apps/billing-production/.env');
     });
 
-    it('fails before gateway io when app selectors conflict', function (): void {
+    it('fails before gateway io when the selector is not dotted', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'app:env', [
+        [$exitCode, $output] = runCommand($this, 'instance:env', [
             'action' => 'list',
-            'app' => 'billing',
-            '--app' => 'crm',
-            '--instance' => 'development',
+            'instance' => 'billing',
             '--json' => true,
         ]);
 
@@ -270,7 +261,7 @@ describe('app:env', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     });
 
     it('forwards apply requests when setting instance env values', function (): void {
@@ -287,10 +278,9 @@ describe('app:env', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:env', [
+        [$exitCode, $output] = runCommand($this, 'instance:env', [
             'action' => 'set',
-            'app' => 'billing',
-            '--instance' => 'development',
+            'instance' => 'billing.development',
             '--key' => 'MAIL_MAILER',
             '--value' => 'smtp',
             '--apply' => true,
@@ -302,7 +292,7 @@ describe('app:env', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/apps/billing/instances/development/env'
+                && $request->url() === 'https://gateway.test/api/projects/billing/instances/development/env'
                 && $request->data() === [
                     'key' => 'MAIL_MAILER',
                     'value' => 'smtp',
@@ -317,10 +307,9 @@ describe('app:env', function (): void {
     it('rejects apply outside set actions before gateway io', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'app:env', [
+        [$exitCode, $output] = runCommand($this, 'instance:env', [
             'action' => 'list',
-            'app' => 'billing',
-            '--instance' => 'development',
+            'instance' => 'billing.development',
             '--apply' => true,
             '--json' => true,
         ]);
@@ -337,13 +326,13 @@ describe('app:env', function (): void {
             ->toBe('apply');
     });
 
-    it('does not infer a parent app apply target from workspace cwd', function (): void {
+    it('does not infer a parent instance apply target from workspace cwd', function (): void {
         Http::fake();
         $previous = getenv('ORBIT_HOST_CWD');
         putenv('ORBIT_HOST_CWD=/home/orbit/apps/billing/.worktrees/feature-mail');
 
         try {
-            [$exitCode, $output] = runCommand(test: $this, command: 'app:env', params: [
+            [$exitCode, $output] = runCommand(test: $this, command: 'instance:env', params: [
                 'action' => 'set',
                 '--key' => 'APP_DEBUG',
                 '--value' => 'true',
@@ -365,16 +354,15 @@ describe('app:env', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     });
 
     it('does not allow secret writes in the first slice', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'app:env', [
+        [$exitCode, $output] = runCommand($this, 'instance:env', [
             'action' => 'set',
-            'app' => 'billing',
-            '--instance' => 'development',
+            'instance' => 'billing.development',
             '--key' => 'API_TOKEN',
             '--value' => 'secret',
             '--secret' => true,

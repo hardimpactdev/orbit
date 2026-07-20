@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
+use App\Models\Project;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\WebSockets\WebSocketRuntimeAppConfigSyncer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -16,8 +18,8 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     app()->instance(
-        \App\Services\RemoteShell\RunsInternalCommands::class,
-        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+        RunsInternalCommands::class,
+        app(RemoteLocalExecutor::class),
     );
 });
 
@@ -49,7 +51,7 @@ it('syncs enabled binding credentials to each active websocket node runtime conf
             'wireguard_address' => '10.6.0.45',
         ]);
 
-    $app = App::factory()->create(['name' => 'docs']);
+    $app = Project::factory()->create(['name' => 'docs']);
 
     AppWebSocketBinding::factory()->create([
         'app_id' => $app->id,

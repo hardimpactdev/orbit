@@ -2,13 +2,13 @@
 
 [Back to Database commands.](../README.md)
 
-Detach one stored connection from one app instance or workspace env
+Detach one stored connection from one instance or workspace env
 prefix.
 
 ## Usage
 
 ```bash
-orbit database:detach {connection} (--app=<app> --instance=<name>|--workspace=<workspace>) [--env-prefix=DB] [--json]
+orbit database:detach {connection} (--instance=<project.instance>|--workspace=<workspace>) [--env-prefix=DB] [--json]
 ```
 
 ## Technical Contract

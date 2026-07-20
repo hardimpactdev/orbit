@@ -43,7 +43,7 @@ For `php:*` workflow (selecting a runtime for an app/workspace/CLI), see [`php.m
 List tracked tool state.
 
 ```bash
-orbit tool:list [--app=<name>] [--node=<name>] [--json]
+orbit tool:list [--instance=<name>] [--node=<name>] [--json]
 ```
 
 ## `orbit tool:show <tool>`
@@ -51,7 +51,7 @@ orbit tool:list [--app=<name>] [--node=<name>] [--json]
 Show one tool tracked by the gateway registry.
 
 ```bash
-orbit tool:show <tool> [--app=<name>] [--node=<name>] [--live] [--json]
+orbit tool:show <tool> [--instance=<name>] [--node=<name>] [--live] [--json]
 ```
 
 `--live` requests live gateway-side inspection of the actual node state (otherwise reads gateway intent only).
@@ -61,7 +61,7 @@ orbit tool:show <tool> [--app=<name>] [--node=<name>] [--live] [--json]
 Provision a managed tool on a node.
 
 ```bash
-orbit tool:install <tool> [--app=<name>] [--node=<name>]
+orbit tool:install <tool> [--instance=<name>] [--node=<name>]
                    [--status=installed|running] [--tool-version=<v>]
                    [--user=<name>] [--with-process] [--no-process] [--json|--stream-json]
 ```
@@ -88,7 +88,7 @@ orbit tool:install claude-code --node=app-1 --user=agent
 Update a managed tool to the catalog target version.
 
 ```bash
-orbit tool:update [<tool>] [--app=<name>] [--node=<name>] [--expected-version=<v>] [--json|--stream-json]
+orbit tool:update [<tool>] [--instance=<name>] [--node=<name>] [--expected-version=<v>] [--json|--stream-json]
 ```
 
 ## `orbit tool:start|stop|restart|reload <tool>`
@@ -112,13 +112,13 @@ tools do not use a second parallel lifecycle implementation.
 
 ```bash
 orbit tool:logs dns --node=<node> [--lines=100] [--json]
-orbit tool:logs opencode-cli --app=<app> [--lines=200] [--json]
+orbit tool:logs opencode-cli --instance=<project.instance> [--lines=200] [--json]
 ```
 
 ## `orbit tool:remove <tool>`
 
 ```bash
-orbit tool:remove <tool> [--app=<name>] [--node=<name>] [--force] [--json]
+orbit tool:remove <tool> [--instance=<name>] [--node=<name>] [--force] [--json]
 ```
 
 `tool:remove` does not support `--stream-json`; it uses the blocking remove path.
@@ -128,7 +128,7 @@ orbit tool:remove <tool> [--app=<name>] [--node=<name>] [--force] [--json]
 Re-provision or rotate tool-owned configuration. Tool-specific options.
 
 ```bash
-orbit tool:reconfigure <tool> [--app=<name>] [--node=<name>]
+orbit tool:reconfigure <tool> [--instance=<name>] [--node=<name>]
                        [--password=<value>] [--json|--stream-json]
 ```
 
@@ -145,7 +145,7 @@ Examples:
 Read managed connection credentials. Default service username is `orbit` when the protocol has a username concept. Generated passwords are created by Orbit during install/reconfigure.
 
 ```bash
-orbit tool:credentials [<tool>] [--app=<name>] [--node=<name>] [--json]
+orbit tool:credentials [<tool>] [--instance=<name>] [--node=<name>] [--json]
 ```
 
 Without `<tool>`, returns credentials for every credential-bearing tool on the resolved target.

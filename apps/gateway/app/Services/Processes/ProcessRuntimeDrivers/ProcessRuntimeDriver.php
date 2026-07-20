@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace App\Services\Processes\ProcessRuntimeDrivers;
 
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 
 interface ProcessRuntimeDriver
 {
-    public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string;
+    public function runtimeUnitName(Project $app, Process $process, ?Workspace $workspace = null): string;
 
     public function apply(
         Node $node,
-        App $app,
+        Project $app,
         Process $process,
         ?Workspace $workspace = null,
     ): bool;
@@ -31,7 +31,7 @@ interface ProcessRuntimeDriver
     public function restart(Node $node, string $runtimeUnit): bool;
 
     public function logScript(
-        App $app,
+        Project $app,
         Process $process,
         ?Workspace $workspace,
         string $runtimeUnit,

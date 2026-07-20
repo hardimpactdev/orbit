@@ -28,7 +28,7 @@ return [
         'family' => 'proxy',
         'kind' => 'command_handoff',
         'allowed_next_commands' => [
-            'app:register',
+            'instance:register',
         ],
     ],
     'proxy.enactment_deferred' => [

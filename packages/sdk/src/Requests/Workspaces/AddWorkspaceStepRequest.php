@@ -21,7 +21,7 @@ final class AddWorkspaceStepRequest extends WorkspaceStepRequest implements HasB
         public readonly string $phase,
         public readonly string $command,
         public readonly int $timeout,
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $path = null,
         public readonly ?int $before = null,
         public readonly ?int $after = null,
@@ -39,7 +39,7 @@ final class AddWorkspaceStepRequest extends WorkspaceStepRequest implements HasB
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'path' => $this->path,
                 'command' => $this->command,
                 'timeout' => $this->timeout,

@@ -92,7 +92,7 @@ describe('WorkspaceStream commands', function (): void {
                 'footer' => "Workspace 'feature-docs' created",
                 'result' => [
                     'result' => ['action' => 'created'],
-                    'workspace' => ['name' => 'feature-docs', 'app' => 'docs'],
+                    'workspace' => ['name' => 'feature-docs', 'project' => 'docs', 'instance' => 'development'],
                     'meta' => ['node' => 'app-1', 'base' => 'main'],
                 ],
             ],
@@ -106,7 +106,7 @@ describe('WorkspaceStream commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:new', [
             'name' => 'feature-docs',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--base' => 'main',
             '--php-version' => '8.5',
             '--json' => true,
@@ -121,7 +121,7 @@ describe('WorkspaceStream commands', function (): void {
                 && $request->hasHeader('Accept', 'text/event-stream')
                 && $request->data() === [
                     'name' => 'feature-docs',
-                    'app' => 'docs',
+                    'instance' => 'docs',
                     'base' => 'main',
                     'php_version' => '8.5',
                 ]
@@ -164,7 +164,7 @@ describe('WorkspaceStream commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:setup', [
             'name' => 'feature-docs',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--path' => '/Users/nckrtl/Sites/docs/.worktrees/feature-docs',
         ]);
 
@@ -199,7 +199,7 @@ describe('WorkspaceStream commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:setup', [
             'name' => 'feature-docs',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -225,7 +225,7 @@ describe('WorkspaceStream commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:setup', [
             'name' => 'feature-docs',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -244,7 +244,7 @@ describe('WorkspaceStream commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:setup', [
             'name' => 'feature-docs',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -263,7 +263,7 @@ describe('WorkspaceStream commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:setup', [
             'name' => 'feature-docs',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--json' => true,
         ]);
 

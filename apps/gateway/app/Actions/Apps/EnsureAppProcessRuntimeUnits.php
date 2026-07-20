@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Apps;
 
 use App\Contracts\SiteCertificateInstaller;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessRuntimeApp;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
@@ -29,14 +29,14 @@ final readonly class EnsureAppProcessRuntimeUnits
     /**
      * @return list<array<string, string>>
      */
-    public function handle(App $app, ?AppInstance $appInstance = null, ?Node $consumer = null): array
+    public function handle(Project $app, ?AppInstance $appInstance = null, ?Node $consumer = null): array
     {
         $app->loadMissing(['node', 'instances']);
         $appInstance ??= $this->soleInstance($app);
         $node = $this->placement->nodeForInstance($appInstance);
 
         if (! $node instanceof Node) {
-            throw new RuntimeException("App instance '{$app->name}.{$appInstance->name}' has no owning node.");
+            throw new RuntimeException("Instance '{$app->name}.{$appInstance->name}' has no owning node.");
         }
 
         $app = ProcessRuntimeApp::make($app, $node, $appInstance);
@@ -86,7 +86,7 @@ final readonly class EnsureAppProcessRuntimeUnits
         return $warnings;
     }
 
-    private function soleInstance(App $app): AppInstance
+    private function soleInstance(Project $app): AppInstance
     {
         $instances = $app->instances->values();
         $instance = $instances->first();
@@ -95,13 +95,13 @@ final readonly class EnsureAppProcessRuntimeUnits
             return $instance;
         }
 
-        throw new RuntimeException("App '{$app->name}' requires one concrete app instance for process enactment.");
+        throw new RuntimeException("App '{$app->name}' requires one concrete instance for process enactment.");
     }
 
     /**
      * @return list<array<string, string>>
      */
-    private function applyProcess(App $app, Process $process, ?Workspace $workspace): array
+    private function applyProcess(Project $app, Process $process, ?Workspace $workspace): array
     {
         $driver = $this->runtimeDrivers->forProcess($process);
         $unitName = $driver->runtimeUnitName($app, $process, $workspace);
@@ -126,7 +126,7 @@ final readonly class EnsureAppProcessRuntimeUnits
         return is_string($hashLabel) && trim($hashLabel) !== '';
     }
 
-    private function validateProcessRuntimes(App $app): void
+    private function validateProcessRuntimes(Project $app): void
     {
         $app->processes->each(fn (Process $process): mixed => $this->runtimeDrivers->forProcess($process));
     }
@@ -134,7 +134,7 @@ final readonly class EnsureAppProcessRuntimeUnits
     /**
      * @return array<string, string>|null
      */
-    private function ensureSiteCertificate(App $app, ?Workspace $workspace): ?array
+    private function ensureSiteCertificate(Project $app, ?Workspace $workspace): ?array
     {
         if ($app->node === null) {
             throw new RuntimeException("App '{$app->name}' has no owning node.");
@@ -156,7 +156,7 @@ final readonly class EnsureAppProcessRuntimeUnits
         }
     }
 
-    private function host(App $app, ?Workspace $workspace): string
+    private function host(Project $app, ?Workspace $workspace): string
     {
         $url = $workspace instanceof Workspace ? $workspace->url() : $app->url();
         $host = parse_url($url, PHP_URL_HOST);
@@ -171,7 +171,7 @@ final readonly class EnsureAppProcessRuntimeUnits
     /**
      * @return list<Workspace|null>
      */
-    private function runtimeContexts(App $app, ?Node $consumer): array
+    private function runtimeContexts(Project $app, ?Node $consumer): array
     {
         $contexts = [null];
 

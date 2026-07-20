@@ -34,7 +34,7 @@ final class DoctorPanelRenderer
      */
     private const array CATEGORY_LABELS = [
         'node' => 'Node',
-        'app' => 'Apps',
+        'instance' => 'Instances',
         'workspace' => 'Workspaces',
         'process' => 'Processes',
         'proxy' => 'Proxy routes',
@@ -52,7 +52,7 @@ final class DoctorPanelRenderer
      * @var array<string, array{label: string, keys: list<string>}>
      */
     private const array ENTITY_COLUMNS = [
-        'app' => ['label' => 'APP', 'keys' => ['app', 'slug', 'name']],
+        'instance' => ['label' => 'INSTANCE', 'keys' => ['instance', 'project', 'slug', 'name']],
         'workspace' => ['label' => 'WORKSPACE', 'keys' => ['workspace', 'name']],
         'process' => ['label' => 'PROCESS', 'keys' => ['process', 'name', 'unit']],
         'proxy' => ['label' => 'DOMAIN', 'keys' => ['domain', 'host']],
@@ -71,7 +71,7 @@ final class DoctorPanelRenderer
      * @var array<string, array{label: string, keys: list<string>}>
      */
     private const array ISSUE_RESOURCE_LABELS = [
-        'app' => ['label' => 'App', 'keys' => ['app', 'slug', 'name']],
+        'instance' => ['label' => 'Instance', 'keys' => ['instance', 'project', 'slug', 'name']],
         'workspace' => ['label' => 'Workspace', 'keys' => ['workspace', 'name']],
         'process' => ['label' => 'Process', 'keys' => ['process', 'name', 'unit']],
         'proxy' => ['label' => 'Proxy route', 'keys' => ['domain', 'host', 'route']],
@@ -118,7 +118,7 @@ final class DoctorPanelRenderer
      *
      * @var list<string>
      */
-    private const array PROCESS_APP_KEYS = ['app', 'slug'];
+    private const array PROCESS_APP_KEYS = ['project', 'slug'];
 
     /** Issue-kind sort order within a category. */
     private const array KIND_ORDER = ['unverifiable', 'missing', 'divergent', 'extra'];
@@ -1046,9 +1046,11 @@ final class DoctorPanelRenderer
             return "{$resource['label']} {$value}";
         }
 
-        $app = $this->firstDetailValue($detail, self::PROCESS_APP_KEYS);
+        $project = $this->firstDetailValue($detail, self::PROCESS_APP_KEYS);
 
-        return $app === '' ? "{$resource['label']} {$value}" : "{$resource['label']} {$value} for app {$app}";
+        return $project === ''
+            ? "{$resource['label']} {$value}"
+            : "{$resource['label']} {$value} for project {$project}";
     }
 
     /**
@@ -1071,15 +1073,15 @@ final class DoctorPanelRenderer
                 : "Database connection {$envPrefix} for workspace {$workspace}";
         }
 
-        $app = $this->firstDetailValue($detail, ['app']);
+        $project = $this->firstDetailValue($detail, ['project']);
 
-        if ($app === '') {
+        if ($project === '') {
             return '';
         }
 
         return $envPrefix === ''
-            ? "Database connection for app {$app}"
-            : "Database connection {$envPrefix} for app {$app}";
+            ? "Database connection for project {$project}"
+            : "Database connection {$envPrefix} for project {$project}";
     }
 
     /**

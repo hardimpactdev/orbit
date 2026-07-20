@@ -15,11 +15,9 @@ final class AppEnvCommand extends AppGatewayCommand
     use WithStepTree;
 
     #[\Override]
-    protected $signature = 'app:env
+    protected $signature = 'instance:env
         {action? : Action to perform (list|set|render)}
-        {app? : App name or hostname}
-        {--app= : App name or hostname}
-        {--instance= : App instance name}
+        {instance? : project.instance selector}
         {--key= : Env key for set}
         {--value= : Env value for set}
         {--apply : Persist and apply set values to the remote app runtime}
@@ -27,7 +25,7 @@ final class AppEnvCommand extends AppGatewayCommand
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'List, set, or render app instance environment values.';
+    protected $description = 'List, set, or render instance environment values.';
 
     public function handle(): int
     {
@@ -53,22 +51,16 @@ final class AppEnvCommand extends AppGatewayCommand
             return $this->failValidation('apply', 'The --apply option is only supported for set.');
         }
 
-        $app = $this->appSelector();
+        $target = $this->instanceSelector();
 
-        if (is_int($app)) {
-            return $app;
-        }
-
-        $instance = $this->stringOption('instance');
-
-        if ($instance === null) {
-            return $this->failValidation('instance', 'The --instance option is required.');
+        if (is_int($target)) {
+            return $target;
         }
 
         return match ($action) {
-            'list' => $this->listEnv($app, $instance),
-            'set' => $this->setEnv($app, $instance),
-            'render' => $this->renderEnv($app, $instance),
+            'list' => $this->listEnv($target['project'], $target['instance']),
+            'set' => $this->setEnv($target['project'], $target['instance']),
+            'render' => $this->renderEnv($target['project'], $target['instance']),
         };
     }
 
@@ -171,9 +163,9 @@ final class AppEnvCommand extends AppGatewayCommand
         $savedKey = $this->savedKey($response, $key);
         $savedInstance = $this->savedInstance($response, $instance);
         $data = $this->successData($response);
-        $savedApp = is_string($data['app'] ?? null) ? $data['app'] : $app;
+        $savedProject = is_string($data['project'] ?? null) ? $data['project'] : $app;
 
-        $this->line("Saved '{$savedKey}' for app instance '{$savedApp}.{$savedInstance}'.");
+        $this->line("Saved '{$savedKey}' for instance '{$savedProject}.{$savedInstance}'.");
         $this->renderTargetOutcome($data);
 
         return self::SUCCESS;
@@ -296,8 +288,8 @@ final class AppEnvCommand extends AppGatewayCommand
     {
         $path = is_string($data['path'] ?? null) ? $data['path'] : '—';
 
-        $this->line("{$prefix}Scope: app-instance");
-        $this->line("{$prefix}App: ".(is_string($data['app'] ?? null) ? $data['app'] : '—'));
+        $this->line("{$prefix}Scope: instance");
+        $this->line("{$prefix}Project: ".(is_string($data['project'] ?? null) ? $data['project'] : '—'));
         $this->line("{$prefix}Instance: ".(is_string($data['instance'] ?? null) ? $data['instance'] : '—'));
         $this->line("{$prefix}Workspace: —");
         $this->line("{$prefix}Path: {$path}");
@@ -395,29 +387,34 @@ final class AppEnvCommand extends AppGatewayCommand
         return $rendered;
     }
 
-    private function appSelector(): string|int
+    /**
+     * @return array{project: string, instance: string}|int
+     */
+    private function instanceSelector(): array|int
     {
-        $argument = $this->stringArgument('app');
-        $option = $this->stringOption('app');
+        $selector = $this->stringArgument('instance');
 
-        if ($argument !== null && $option !== null && $argument !== $option) {
+        if ($selector === null) {
+            return $this->failValidation('instance', 'The instance argument is required.');
+        }
+
+        $separator = strrpos($selector, '.');
+
+        if ($separator === false || $separator === 0 || $separator === (strlen($selector) - 1)) {
             return $this->failValidation(
-                'app',
-                'The [app] argument and --app option must match when both are provided.',
+                'instance',
+                'Use a project.instance selector, for example billing.production.',
             );
         }
 
-        $app = $option ?? $argument;
-
-        if ($app === null) {
-            return $this->failValidation('app', 'App is required.');
-        }
-
-        return $app;
+        return [
+            'project' => substr($selector, 0, $separator),
+            'instance' => substr($selector, $separator + 1),
+        ];
     }
 
     private function envPath(string $app, string $instance): string
     {
-        return $this->apiAppPath($app, '/instances/'.rawurlencode($instance).'/env');
+        return $this->apiProjectPath($app, '/instances/'.rawurlencode($instance).'/env');
     }
 }

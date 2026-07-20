@@ -7,10 +7,10 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\DriftKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
@@ -76,7 +76,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
     $logicalDefaultNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
     $originalInstanceNode = createOrbitSchedulerAppHostNode(['name' => 'app-2']);
     $currentInstanceNode = createOrbitSchedulerAppHostNode(['name' => 'app-3']);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $logicalDefaultNode->id,
         'path' => '/srv/docs',
@@ -160,7 +160,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
 it('dispatches remote schedules through the internal schedule command without transitional fallback opt in', function (): void {
     $gateway = createOrbitSchedulerGatewayNode();
     $appNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'path' => '/srv/docs']);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'path' => '/srv/docs']);
     Schedule::factory()
         ->forApp($app)
         ->create([
@@ -243,7 +243,7 @@ it('dispatches multiple remote schedules through the internal schedule command',
     $thirdNode = createOrbitSchedulerAppHostNode(['name' => 'app-3']);
 
     foreach ([[$firstNode, 'one'], [$secondNode, 'two'], [$thirdNode, 'three']] as [$node, $name]) {
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => $name,
             'node_id' => $node->id,
             'path' => "/srv/{$name}",
@@ -321,7 +321,7 @@ it('skips schedules that are not due', function (): void {
 it('records remote dispatch failures as failed gateway history', function (): void {
     createOrbitSchedulerGatewayNode();
     $appNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
     Schedule::factory()
         ->forApp($app)
         ->create([

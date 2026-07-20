@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Models\App;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\ProxyRouteRenderer;
 
@@ -42,7 +42,7 @@ final readonly class AppProxyRouteRuntimeUpstreamBackfill
             ->each(function (ProxyRoute $route) use ($renderer): void {
                 $app = $route->app;
 
-                if (! $app instanceof App) {
+                if (! $app instanceof Project) {
                     return;
                 }
 
@@ -139,7 +139,7 @@ final readonly class AppProxyRouteRuntimeUpstreamBackfill
      *
      * @param  array<string, mixed>  $config
      */
-    private function buildTransientRoute(ProxyRoute $route, array $config, App $app): ProxyRoute
+    private function buildTransientRoute(ProxyRoute $route, array $config, Project $app): ProxyRoute
     {
         $transient = new ProxyRoute([
             'node_id' => $route->node_id,

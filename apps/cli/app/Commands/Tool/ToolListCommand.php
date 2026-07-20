@@ -17,7 +17,7 @@ final class ToolListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'tool:list
-        {--app= : Filter by app selector}
+        {--instance= : Filter by instance selector}
         {--node= : Filter by owning node}
         {--all : Show tools across all visible nodes}
         {--json}';
@@ -58,7 +58,7 @@ final class ToolListCommand extends GatewayCommand
     private function toolListQuery(): array
     {
         return new ToolListQueryResolver(
-            app: $this->stringOption('app'),
+            instance: $this->stringOption('instance'),
             node: $this->stringOption('node'),
             defaultNode: app(OrbitConfigStore::class)->defaultNode(),
             all: (bool) $this->option('all'),

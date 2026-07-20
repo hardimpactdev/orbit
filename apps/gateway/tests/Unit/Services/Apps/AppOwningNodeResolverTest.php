@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppOwningNodeResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -21,21 +21,21 @@ function appOwningNodeResolverNode(): Node
 }
 
 /** @param array<string, mixed> $attributes */
-function appOwningNodeResolverApp(array $attributes = []): App
+function appOwningNodeResolverApp(array $attributes = []): Project
 {
-    $app = App::factory()->create($attributes);
+    $app = Project::factory()->create($attributes);
 
-    assert($app instanceof App);
+    assert($app instanceof Project);
 
     return $app;
 }
 
 /** @param array<string, mixed> $attributes */
-function appOwningNodeResolverUnsavedApp(array $attributes = []): App
+function appOwningNodeResolverUnsavedApp(array $attributes = []): Project
 {
-    $app = App::factory()->make($attributes);
+    $app = Project::factory()->make($attributes);
 
-    assert($app instanceof App);
+    assert($app instanceof Project);
 
     return $app;
 }

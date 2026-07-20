@@ -24,16 +24,16 @@ final readonly class DeployOperationRunner
     /**
      * @return array{uuid: string, stream_descriptor_url: string, events_url: string}
      */
-    public function start(string $app, Node $caller): array
+    public function start(string $instanceSelector, Node $caller): array
     {
-        $target = $this->deploy->runTarget($app);
+        $target = $this->deploy->runTarget($instanceSelector);
         $node = $target->node;
 
         if (! $node instanceof Node) {
             throw new GatewayApiException(
-                "App '{$target->name}' has no owning node.",
+                "Project '{$target->name}' has no owning node.",
                 'deploy.execution_failed',
-                ['app' => $target->name],
+                ['project' => $target->name, 'instance' => $instanceSelector],
             );
         }
 
@@ -52,7 +52,7 @@ final readonly class DeployOperationRunner
         ];
     }
 
-    public function execute(string $operationRunId, string $app): void
+    public function execute(string $operationRunId, string $instanceSelector): void
     {
         $operation = OperationRun::query()->findOrFail($operationRunId);
         $this->operationRuns->running($operation->id);
@@ -63,7 +63,7 @@ final readonly class DeployOperationRunner
         );
 
         try {
-            $result = $this->deploy->run($app, detach: false, progress: $reporter);
+            $result = $this->deploy->run($instanceSelector, detach: false, progress: $reporter);
             $data = ['run' => $result['run']];
 
             if (isset($result['output'])) {

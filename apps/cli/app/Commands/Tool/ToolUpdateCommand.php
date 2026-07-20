@@ -9,7 +9,7 @@ final class ToolUpdateCommand extends ToolGatewayCommand
     #[\Override]
     protected $signature = 'tool:update
         {tool? : Tool catalog name to update}
-        {--app= : Resolve target by app selector}
+        {--instance= : Resolve target by instance selector}
         {--node= : Resolve target by node}
         {--expected-version= : Expected version constraint}
         {--json : Output JSON}

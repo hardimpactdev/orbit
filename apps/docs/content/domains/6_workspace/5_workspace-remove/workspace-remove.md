@@ -13,7 +13,7 @@ workspace or reset its state.
 Run this command to tear down a workspace and its owned artifacts.
 
 ```bash
-orbit workspace:remove [name] [--app=<app>] [--keep-files] [--force] [--json]
+orbit workspace:remove [name] [--instance=<project.instance>] [--keep-files] [--force] [--json]
 ```
 
 Destructive consent is always required before removal side effects start.
@@ -60,8 +60,8 @@ orbit workspace:remove feature-api --force
 
 - `name`: workspace name. Optional when running from inside a registered
   workspace directory.
-- `--app=<app>`: the parent app slug or app-instance selector. Use dot
-  notation such as `happie.nmbp` to target one concrete app instance.
+- `--instance=<project.instance>`: the parent project slug or instance selector. Use dot
+  notation such as `happie.nmbp` to target one concrete instance.
   Required only when the workspace name is ambiguous across visible targets.
 - `--keep-files`: remove Orbit configuration and runtime artifacts (proxy
   routes, inherited processes, runtime container) but leave the workspace worktree on
@@ -115,9 +115,9 @@ The output format depends on whether `--json` is passed.
 
 - CLI caller must reach the Orbit gateway.
 - Caller identity must have `workspace:remove` on the workspace's owning node.
-  Every workspace uses its selected app instance node for cleanup.
+  Every workspace uses its selected instance node for cleanup.
 - Agent push handles runtime, process, teardown-step, and worktree cleanup on
-  the concrete app-instance node. If cleanup
+  the concrete instance node. If cleanup
   cannot finish after workspace configuration removal,
   the command still succeeds and reports warnings with repair commands.
 - Destructive consent is required through the interactive confirmation prompt

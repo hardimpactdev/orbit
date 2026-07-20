@@ -15,7 +15,7 @@ final class ListDatabaseConnectionsRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $workspace = null,
         public readonly ?string $node = null,
     ) {}
@@ -32,7 +32,7 @@ final class ListDatabaseConnectionsRequest extends GatewayRequest
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'workspace' => $this->workspace,
                 'node' => $this->node,
             ],

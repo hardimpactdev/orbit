@@ -9,7 +9,7 @@ final class ToolReloadCommand extends ToolLifecycleCommand
     #[\Override]
     protected $signature = 'tool:reload
         {tool? : Tool catalog name to reload}
-        {--app= : Resolve target by app selector}
+        {--instance= : Resolve target by instance selector}
         {--node= : Resolve target by node}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';

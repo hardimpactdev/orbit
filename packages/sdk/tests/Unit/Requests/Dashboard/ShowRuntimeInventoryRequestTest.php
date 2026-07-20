@@ -27,7 +27,7 @@ it('returns a runtime inventory DTO', function (): void {
             'success' => [
                 'data' => [
                     'nodes' => [['name' => 'app-1']],
-                    'apps' => [['name' => 'docs', 'node' => 'app-1']],
+                    'projects' => [['name' => 'docs', 'node' => 'app-1']],
                     'processes' => [['name' => 'queue', 'node' => 'app-1']],
                     'tools' => [['name' => 'composer', 'node' => 'app-1']],
                 ],
@@ -42,7 +42,7 @@ it('returns a runtime inventory DTO', function (): void {
 
     expect($dto)->toBeInstanceOf(RuntimeInventoryResponse::class);
     expect($dto->nodes)->toBe([['name' => 'app-1']]);
-    expect($dto->apps)->toBe([['name' => 'docs', 'node' => 'app-1']]);
+    expect($dto->projects)->toBe([['name' => 'docs', 'node' => 'app-1']]);
     expect($dto->processes)->toBe([['name' => 'queue', 'node' => 'app-1']]);
     expect($dto->tools)->toBe([['name' => 'composer', 'node' => 'app-1']]);
 });

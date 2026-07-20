@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Php\PhpRuntimePolicy;
@@ -22,7 +22,7 @@ final readonly class ProcessDockerContainerRenderer
         private LaravelViteDevServerEnvironment $vite,
     ) {}
 
-    public function render(App $app, Process $process, ?Workspace $workspace = null): ProcessDockerContainer
+    public function render(Project $app, Process $process, ?Workspace $workspace = null): ProcessDockerContainer
     {
         $process->loadMissing('owner');
 
@@ -76,7 +76,7 @@ final readonly class ProcessDockerContainerRenderer
         );
     }
 
-    public function containerName(App $app, Process $process, ?Workspace $workspace = null): string
+    public function containerName(Project $app, Process $process, ?Workspace $workspace = null): string
     {
         $process->loadMissing('owner');
 
@@ -158,7 +158,7 @@ final readonly class ProcessDockerContainerRenderer
         );
     }
 
-    private function resolvePhpVersion(App $app, ?Workspace $workspace): ?string
+    private function resolvePhpVersion(Project $app, ?Workspace $workspace): ?string
     {
         if ($workspace instanceof Workspace) {
             $version = $workspace->effectivePhpVersion();
@@ -171,7 +171,7 @@ final readonly class ProcessDockerContainerRenderer
         return is_string($version) && trim($version) !== '' ? trim($version) : null;
     }
 
-    private function resolveSourcePath(App $app, ?Workspace $workspace, Process $process): string
+    private function resolveSourcePath(Project $app, ?Workspace $workspace, Process $process): string
     {
         $path = $workspace instanceof Workspace ? $workspace->path : $app->path;
         $path = rtrim($path, '/');
@@ -188,7 +188,7 @@ final readonly class ProcessDockerContainerRenderer
     /**
      * @return array<string, string>
      */
-    private function environmentFor(App $app, Process $process, ?Workspace $workspace, string $phpVersion): array
+    private function environmentFor(Project $app, Process $process, ?Workspace $workspace, string $phpVersion): array
     {
         $home = '/root';
 

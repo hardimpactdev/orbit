@@ -3,10 +3,11 @@
 declare(strict_types=1);
 
 use App\Contracts\SiteCertificateInstaller;
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\WebSockets\WebSocketBindingService;
 use App\Services\WebSockets\WebSocketRuntimeAppConfigSyncer;
@@ -43,7 +44,7 @@ function createAppWebSocketCallerNode(array $overrides = [], ?string $role = nul
 /**
  * @param  list<string>  $permissions
  */
-function grantAppWebSocketAccess(Node $caller, Node $appNode, array $permissions = ['app:write']): void
+function grantAppWebSocketAccess(Node $caller, Node $appNode, array $permissions = ['instance:write']): void
 {
     NodeAccess::query()->create([
         'consumer_node_id' => $caller->id,
@@ -74,7 +75,7 @@ function createAppWebSocketRoutePrerequisites(bool $withRouter = true, bool $wit
     }
 }
 
-function createAppWebSocketApp(?string $domain = 'docs.test', bool $withIngress = true): App
+function createAppWebSocketApp(?string $domain = 'docs.test', bool $withIngress = true): Project
 {
     $ingress = $withIngress
         ? Node::factory()
@@ -99,11 +100,15 @@ function createAppWebSocketApp(?string $domain = 'docs.test', bool $withIngress 
             ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
     }
 
-    return App::factory()->create([
+    $project = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'domain' => $domain,
     ]);
+
+    AppInstance::factory()->for($project)->create(['name' => 'production']);
+
+    return $project;
 }
 
 /**
@@ -163,13 +168,13 @@ describe('AppWebSocketController', function (): void {
         $app = createAppWebSocketApp();
         grantAppWebSocketAccess($caller, $app->node);
 
-        $response = postAppWebSocketEnableJson('/api/apps/docs/websocket/enable', [
+        $response = postAppWebSocketEnableJson('/api/instances/docs/websocket/enable', [
             'public_hosts' => ['ws.docs.test', 'events.docs.test'],
         ]);
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.binding.app', 'docs')
+            ->assertJsonPath('success.data.binding.project', 'docs')
             ->assertJsonPath('success.data.binding.internal_host', 'websocket.orbit')
             ->assertJsonPath('success.data.binding.public_hosts', ['ws.docs.test', 'events.docs.test'])
             ->assertJsonPath('success.data.binding.allowed_origins', ['https://docs.test'])
@@ -195,16 +200,16 @@ describe('AppWebSocketController', function (): void {
         $caller = createAppWebSocketCallerNode();
         createAppWebSocketRoutePrerequisites();
         $app = createAppWebSocketApp();
-        grantAppWebSocketAccess($caller, $app->node, ['app:read']);
+        grantAppWebSocketAccess($caller, $app->node, ['instance:read']);
 
-        $response = postAppWebSocketEnableJson('/api/apps/docs/websocket/enable', [
+        $response = postAppWebSocketEnableJson('/api/instances/docs/websocket/enable', [
             'public_hosts' => ['ws.docs.test'],
         ]);
 
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:write')
+            ->assertJsonPath('error.meta.missing_permission', 'instance:write')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
         expect(AppWebSocketBinding::query()->count())->toBe(0);
@@ -215,7 +220,7 @@ describe('AppWebSocketController', function (): void {
         createAppWebSocketRoutePrerequisites();
         createAppWebSocketApp();
 
-        $response = postAppWebSocketEnableJson('/api/apps/docs/websocket/enable', [
+        $response = postAppWebSocketEnableJson('/api/instances/docs/websocket/enable', [
             'public_hosts' => 'ws.docs.test',
         ]);
 
@@ -232,14 +237,14 @@ describe('AppWebSocketController', function (): void {
         createAppWebSocketRoutePrerequisites(withWebSocket: false);
         createAppWebSocketApp();
 
-        $response = postAppWebSocketEnableJson('/api/apps/docs/websocket/enable', [
+        $response = postAppWebSocketEnableJson('/api/instances/docs/websocket/enable', [
             'public_hosts' => [],
         ]);
 
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'websocket.prerequisite_failed')
-            ->assertJsonPath('error.meta.app', 'docs');
+            ->assertJsonPath('error.meta.project', 'docs');
 
         expect(AppWebSocketBinding::query()->count())->toBe(0);
     });
@@ -249,14 +254,14 @@ describe('AppWebSocketController', function (): void {
         createAppWebSocketRoutePrerequisites();
         createAppWebSocketApp(withIngress: false);
 
-        $response = postAppWebSocketEnableJson('/api/apps/docs/websocket/enable', [
+        $response = postAppWebSocketEnableJson('/api/instances/docs/websocket/enable', [
             'public_hosts' => ['ws.docs.test'],
         ]);
 
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'websocket.prerequisite_failed')
-            ->assertJsonPath('error.meta.app', 'docs');
+            ->assertJsonPath('error.meta.project', 'docs');
 
         expect(AppWebSocketBinding::query()->count())
             ->toBe(0)
@@ -268,29 +273,29 @@ describe('AppWebSocketController', function (): void {
         createAppWebSocketCallerNode(role: 'gateway');
         createAppWebSocketRoutePrerequisites();
 
-        $response = postAppWebSocketEnableJson('/api/apps/missing/websocket/enable', [
+        $response = postAppWebSocketEnableJson('/api/instances/missing/websocket/enable', [
             'public_hosts' => [],
         ]);
 
         $response
             ->assertNotFound()
-            ->assertJsonPath('error.code', 'app.not_found')
-            ->assertJsonPath('error.meta.app', 'missing');
+            ->assertJsonPath('error.code', 'instance.not_found')
+            ->assertJsonPath('error.meta.instance', 'missing');
     });
 
     it('returns app websocket credentials for authorized callers', function (): void {
         $caller = createAppWebSocketCallerNode();
         createAppWebSocketRoutePrerequisites();
         $app = createAppWebSocketApp();
-        grantAppWebSocketAccess($caller, $app->node, ['app:credentials']);
+        grantAppWebSocketAccess($caller, $app->node, ['instance:credentials']);
 
         $binding = app(WebSocketBindingService::class)->enable($app, ['ws.docs.test']);
 
-        $response = getAppWebSocketCredentialsJson('/api/apps/docs/websocket/credentials');
+        $response = getAppWebSocketCredentialsJson('/api/instances/docs/websocket/credentials');
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.credentials.app', 'docs')
+            ->assertJsonPath('success.data.credentials.project', 'docs')
             ->assertJsonPath('success.data.credentials.internal_host', 'websocket.orbit')
             ->assertJsonPath('success.data.credentials.public_hosts', ['ws.docs.test'])
             ->assertJsonPath('success.data.credentials.allowed_origins', ['https://docs.test'])
@@ -303,16 +308,16 @@ describe('AppWebSocketController', function (): void {
         $caller = createAppWebSocketCallerNode();
         createAppWebSocketRoutePrerequisites();
         $app = createAppWebSocketApp();
-        grantAppWebSocketAccess($caller, $app->node, ['app:write']);
+        grantAppWebSocketAccess($caller, $app->node, ['instance:write']);
 
         app(WebSocketBindingService::class)->enable($app, ['ws.docs.test']);
 
-        $response = getAppWebSocketCredentialsJson('/api/apps/docs/websocket/credentials');
+        $response = getAppWebSocketCredentialsJson('/api/instances/docs/websocket/credentials');
 
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:credentials')
+            ->assertJsonPath('error.meta.missing_permission', 'instance:credentials')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
     });
 
@@ -320,26 +325,26 @@ describe('AppWebSocketController', function (): void {
         $caller = createAppWebSocketCallerNode();
         createAppWebSocketRoutePrerequisites();
         $app = createAppWebSocketApp();
-        grantAppWebSocketAccess($caller, $app->node, ['app:credentials']);
+        grantAppWebSocketAccess($caller, $app->node, ['instance:credentials']);
 
-        $response = getAppWebSocketCredentialsJson('/api/apps/docs/websocket/credentials');
+        $response = getAppWebSocketCredentialsJson('/api/instances/docs/websocket/credentials');
 
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'websocket.binding_missing')
-            ->assertJsonPath('error.meta.app', 'docs');
+            ->assertJsonPath('error.meta.project', 'docs');
     });
 
     it('returns app not found for unknown credential app selectors', function (): void {
         createAppWebSocketCallerNode(role: 'gateway');
         createAppWebSocketRoutePrerequisites();
 
-        $response = getAppWebSocketCredentialsJson('/api/apps/missing/websocket/credentials');
+        $response = getAppWebSocketCredentialsJson('/api/instances/missing/websocket/credentials');
 
         $response
             ->assertNotFound()
-            ->assertJsonPath('error.code', 'app.not_found')
-            ->assertJsonPath('error.meta.app', 'missing');
+            ->assertJsonPath('error.code', 'instance.not_found')
+            ->assertJsonPath('error.meta.instance', 'missing');
     });
 
     it('disables app websocket bindings for authorized callers', function (): void {
@@ -356,11 +361,11 @@ describe('AppWebSocketController', function (): void {
             ProxyRoute::query()->where('domain', 'ws.docs.test')->where('owner_type', 'app-websocket')->exists(),
         )->toBeTrue();
 
-        $response = postAppWebSocketDisableJson('/api/apps/docs/websocket/disable');
+        $response = postAppWebSocketDisableJson('/api/instances/docs/websocket/disable');
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.binding.app', 'docs')
+            ->assertJsonPath('success.data.binding.project', 'docs')
             ->assertJsonPath('success.data.binding.internal_host', 'websocket.orbit')
             ->assertJsonPath('success.data.binding.public_hosts', [])
             ->assertJsonPath('success.data.binding.allowed_origins', ['https://docs.test'])
@@ -385,16 +390,16 @@ describe('AppWebSocketController', function (): void {
         $caller = createAppWebSocketCallerNode();
         createAppWebSocketRoutePrerequisites();
         $app = createAppWebSocketApp();
-        grantAppWebSocketAccess($caller, $app->node, ['app:credentials']);
+        grantAppWebSocketAccess($caller, $app->node, ['instance:credentials']);
 
         $binding = app(WebSocketBindingService::class)->enable($app, ['ws.docs.test']);
 
-        $response = postAppWebSocketDisableJson('/api/apps/docs/websocket/disable');
+        $response = postAppWebSocketDisableJson('/api/instances/docs/websocket/disable');
 
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:write')
+            ->assertJsonPath('error.meta.missing_permission', 'instance:write')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
         expect($binding->refresh()->enabled)
@@ -409,23 +414,23 @@ describe('AppWebSocketController', function (): void {
         $app = createAppWebSocketApp();
         grantAppWebSocketAccess($caller, $app->node);
 
-        $response = postAppWebSocketDisableJson('/api/apps/docs/websocket/disable');
+        $response = postAppWebSocketDisableJson('/api/instances/docs/websocket/disable');
 
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'websocket.binding_missing')
-            ->assertJsonPath('error.meta.app', 'docs');
+            ->assertJsonPath('error.meta.project', 'docs');
     });
 
     it('returns app not found for unknown disable app selectors', function (): void {
         createAppWebSocketCallerNode(role: 'gateway');
         createAppWebSocketRoutePrerequisites();
 
-        $response = postAppWebSocketDisableJson('/api/apps/missing/websocket/disable');
+        $response = postAppWebSocketDisableJson('/api/instances/missing/websocket/disable');
 
         $response
             ->assertNotFound()
-            ->assertJsonPath('error.code', 'app.not_found')
-            ->assertJsonPath('error.meta.app', 'missing');
+            ->assertJsonPath('error.code', 'instance.not_found')
+            ->assertJsonPath('error.meta.instance', 'missing');
     });
 });

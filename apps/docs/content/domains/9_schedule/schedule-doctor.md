@@ -10,7 +10,7 @@ The schedule family doctor implements the
 
 The schedule family owns these facts:
 
-- gateway-owned schedule rows: scope, concrete app-instance ownership where
+- gateway-owned schedule rows: scope, concrete instance ownership where
   applicable, target, interval, timezone, execution source, enabled state, and
   scheduler metadata;
 - the `orbit-scheduler` Swarm service using the Orbit gateway image;
@@ -59,7 +59,7 @@ The table below lists every issue code the schedule probe may emit and the condi
 
 | Code | Detected when |
 | --- | --- |
-| `schedule.record_incomplete` | A selected gateway schedule lacks scope, concrete app-instance ownership where required, target, interval, timezone, execution source, or enabled state. |
+| `schedule.record_incomplete` | A selected gateway schedule lacks scope, concrete instance ownership where required, target, interval, timezone, execution source, or enabled state. |
 | `schedule.target_invalid` | The schedule points at a missing, inactive, unsupported, or role-incompatible target. |
 | `schedule.runtime_backend_unavailable` | The gateway Swarm runtime or gateway image cannot run the scheduler daemon. |
 | `schedule.scheduler_missing` | The `orbit_orbit-scheduler` Swarm service has no desired scheduler replica. |

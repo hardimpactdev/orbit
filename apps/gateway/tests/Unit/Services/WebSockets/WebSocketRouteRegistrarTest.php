@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Contracts\SiteCertificateInstaller;
-use App\Models\App;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\WebSockets\WebSocketRouteRegistrar;
@@ -17,7 +17,7 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 /**
- * @return array{0: App, 1: Node, 2: Node}
+ * @return array{0: Project, 1: Node, 2: Node}
  */
 function websocketRouteRegistrarAppWithIngress(): array
 {
@@ -51,7 +51,7 @@ function websocketRouteRegistrarAppWithIngress(): array
         ->where('role', 'app-prod')
         ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
 
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'domain' => 'docs.example.com',
@@ -389,7 +389,7 @@ it('requires an ingress route when public websocket hosts are configured', funct
             'name' => 'app-prod-1',
             'wireguard_address' => '10.6.0.21',
         ]);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'node_id' => $appNode->id,
     ]);
     $binding = AppWebSocketBinding::factory()->create([

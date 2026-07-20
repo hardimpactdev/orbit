@@ -19,17 +19,17 @@ These rules define the analytics command domain and its role boundary.
   failed deployment or cleanup is completed instead of duplicated on another
   node.
 - Public app analytics hosts, such as `https://analytics.example.com`, are
-  tracking-only routes created for a selected concrete app instance. They use
+  tracking-only routes created for a selected concrete instance. They use
   that instance's public domain, proxy Plausible script and event paths only,
   and must not expose the dashboard publicly.
-- Enabling app analytics resolves one app instance and its serving-node
+- Enabling app analytics resolves one instance and its serving-node
   authorization boundary before route effects. That instance must have a
   configured public domain. Orbit defaults the tracking host to
   `analytics.<instance-domain>`, enacts the router and ingress artifacts before
   reporting success, and returns the script base URL for that instance plus the
   event endpoint operators use to adapt the Plausible-generated snippet.
   Shared analytics policy that carries no placement fact may remain owned by
-  the logical app; public domains, hosts, route targets, and serving-node
+  the project; public domains, hosts, route targets, and serving-node
   authorization never do.
 - Plausible version, environment, lifecycle, logs, and endpoint state belong to
   the process row generated for the analytics role. There is no
@@ -75,9 +75,9 @@ state owned by node, app, process, and proxy families.
   [`doctor --family=proxy`](../8_proxy/proxy-doctor.md) owns route artifact
   drift and restores a missing or divergent private analytics route from the
   singleton active role assignment.
-- [`app`](../5_app/README.md) owns shared non-placement binding policy for the
-  logical app and concrete public tracking-host placement for each selected
-  app instance. [`doctor --family=app`](../5_app/app-doctor.md) owns app
+- [`app`](../5_project/README.md) owns shared non-placement binding policy for the
+  project and concrete public tracking-host placement for each selected
+  instance. [`doctor --family=instance`](../5_project/instance-doctor.md) owns app
   binding drift.
 
 There is no `doctor --family=analytics` contract in v1.
@@ -104,7 +104,7 @@ convergence.
 
 ## Related
 
-- [`orbit app:analytics enable`](../5_app/16_app-analytics-enable/app-analytics-enable.md)
+- [`orbit instance:analytics enable`](../5_project/16_instance-analytics-enable/instance-analytics-enable.md)
 - [`orbit node role:add`](../1_node/12_node-role-add/node-role-add.md)
 - [`orbit process:*`](../7_process/README.md)
 - [`orbit proxy:*`](../8_proxy/README.md)

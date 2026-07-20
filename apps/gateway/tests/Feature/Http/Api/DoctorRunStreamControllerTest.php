@@ -6,9 +6,9 @@ use App\Contracts\RemoteShell;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -168,7 +168,7 @@ it('streams partial fleet doctor snapshots with completed-node issues on node do
 it('streams fleet per-node completed and total progress while a node is running', function (): void {
     createDoctorRunStreamCallerNode();
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'path' => '/home/orbit/apps/docs',
@@ -401,10 +401,10 @@ it('streams node family completed and total for opaque composite checks', functi
     ))->toBeFalse();
 });
 
-it('streams app family totals that include app-instance and runtime-config inventory scans', function (): void {
+it('streams instance family totals that include instance and runtime-config inventory scans', function (): void {
     createDoctorRunStreamCallerNode();
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'path' => '/home/orbit/apps/docs',
@@ -431,7 +431,7 @@ it('streams app family totals that include app-instance and runtime-config inven
         '/api/doctor/run',
         [
             'mode' => 'verify',
-            'families' => ['app'],
+            'families' => ['instance'],
             'node' => 'app-1',
         ],
         [],
@@ -444,22 +444,22 @@ it('streams app family totals that include app-instance and runtime-config inven
 
     $response->assertOk();
 
-    $appProgress = doctorRunStreamFamilyCheckProgressSnapshots(
+    $instanceProgress = doctorRunStreamFamilyCheckProgressSnapshots(
         doctorRunStreamDoctorFrames(doctorRunStreamFrames($response->streamedContent())),
-        'app',
+        'instance',
     );
 
-    expect($appProgress)
-        ->not->toBeEmpty()->and(collect($appProgress)->pluck('total')->unique()->all())->toBe([2])->and(
-            $appProgress,
+    expect($instanceProgress)
+        ->not->toBeEmpty()->and(collect($instanceProgress)->pluck('total')->unique()->all())->toBe([2])->and(
+            $instanceProgress,
         )->toContain([
-            'family' => 'app',
+            'family' => 'instance',
             'status' => 'checking',
             'completed' => 1,
             'total' => 2,
-        ])->and($appProgress)
+        ])->and($instanceProgress)
         ->not->toContain([
-            'family' => 'app',
+            'family' => 'instance',
             'status' => 'checking',
             'completed' => 1,
             'total' => 1,
@@ -469,7 +469,7 @@ it('streams app family totals that include app-instance and runtime-config inven
 it('streams per-family completed and total check counts when workspace inventory is knowable', function (): void {
     createDoctorRunStreamCallerNode();
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'path' => '/home/orbit/apps/docs',
@@ -567,7 +567,7 @@ it('streams node-scoped doctor progress per family as each family is probed', fu
     expect(doctorRunStreamStepEventIndex($stepEvents, 'node', 'running'))
         ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'node', 'done'))
         ->and(doctorRunStreamStepEventIndex($stepEvents, 'node', 'done'))
-        ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'app', 'running'));
+        ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'instance', 'running'));
 });
 
 /**

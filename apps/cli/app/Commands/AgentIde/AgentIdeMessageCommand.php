@@ -15,7 +15,7 @@ final class AgentIdeMessageCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'agent-ide:message
         {message? : Message to send}
-        {--app= : App name or hostname}
+        {--instance= : Instance selector (project.instance)}
         {--workspace= : Workspace name or hostname}
         {--stdin : Read message from stdin}
         {--json : Output JSON}';
@@ -47,23 +47,23 @@ final class AgentIdeMessageCommand extends GatewayCommand
             );
         }
 
-        $app = $this->stringOption('app');
+        $instance = $this->stringOption('instance');
         $workspace = $this->stringOption('workspace');
 
-        if ($app !== null && $workspace !== null) {
+        if ($instance !== null && $workspace !== null) {
             return $this->failValidation(
                 field: 'target',
-                message: 'Pass either --app or --workspace, not both.',
+                message: 'Pass either --instance or --workspace, not both.',
                 reason: 'conflicting_target_options',
             );
         }
 
-        $payload = $this->payload($message, $app, $workspace);
+        $payload = $this->payload($message, $instance, $workspace);
 
         if ($payload === null) {
             return $this->failValidation(
                 field: 'target',
-                message: 'Run this command from an app/workspace directory or pass --app/--workspace.',
+                message: 'Run this command from an instance/workspace directory or pass --instance/--workspace.',
                 reason: 'missing_required_input',
             );
         }
@@ -119,12 +119,12 @@ final class AgentIdeMessageCommand extends GatewayCommand
     /**
      * @return array<string, string>|null
      */
-    private function payload(string $message, ?string $app, ?string $workspace): ?array
+    private function payload(string $message, ?string $instance, ?string $workspace): ?array
     {
-        if ($app !== null) {
+        if ($instance !== null) {
             return [
                 'message' => $message,
-                'app' => $app,
+                'instance' => $instance,
             ];
         }
 
@@ -159,13 +159,18 @@ final class AgentIdeMessageCommand extends GatewayCommand
         $data = $this->successData($response);
         $agentIde = is_array($data['agent_ide'] ?? null) ? $data['agent_ide'] : [];
         $target = is_array($agentIde['target'] ?? null) ? $agentIde['target'] : [];
-        $app = is_string($target['app'] ?? null) && $target['app'] !== ''
-            ? $target['app']
+        $project = is_string($target['project'] ?? null) && $target['project'] !== ''
+            ? $target['project']
             : 'target';
+        $instance = is_string($target['instance'] ?? null) && $target['instance'] !== ''
+            ? $target['instance']
+            : null;
         $workspace = is_string($target['workspace'] ?? null) && $target['workspace'] !== ''
             ? $target['workspace']
             : null;
-        $targetLabel = $workspace !== null ? "{$app}/{$workspace}" : $app;
+        $targetLabel = $workspace !== null
+            ? "{$project}.{$instance}/{$workspace}"
+            : ($instance !== null ? "{$project}.{$instance}" : $project);
         $adapter = is_string($agentIde['adapter'] ?? null) && $agentIde['adapter'] !== ''
             ? $agentIde['adapter']
             : 'adapter';

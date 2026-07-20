@@ -6,7 +6,7 @@ This domain owns the command contracts and product vocabulary for Orbit's proces
 
 ## Responsibilities
 
-The process domain holds the contracts, concepts, and doctor material that describe Orbit's process command family. Persisted app-scoped process definitions belong to one concrete app instance and execute on that instance's serving node.
+The process domain holds the contracts, concepts, and doctor material that describe Orbit's process command family. Persisted instance-scoped process definitions belong to one concrete instance and execute on that instance's serving node.
 
 - Keep this domain's command contracts aligned with Orbit's current behavior.
 - Own the domain-specific concepts, doctor docs, command pages, and technical contracts already present in this directory.

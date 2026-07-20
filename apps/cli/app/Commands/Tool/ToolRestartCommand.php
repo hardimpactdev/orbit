@@ -9,7 +9,7 @@ final class ToolRestartCommand extends ToolLifecycleCommand
     #[\Override]
     protected $signature = 'tool:restart
         {tool? : Tool catalog name to restart}
-        {--app= : Resolve target by app selector}
+        {--instance= : Resolve target by instance selector}
         {--node= : Resolve target by node}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';

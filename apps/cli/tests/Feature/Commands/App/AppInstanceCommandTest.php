@@ -5,20 +5,18 @@ declare(strict_types=1);
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
-describe('app:instance', function (): void {
-    it('adds laravel cloud app instances through the gateway', function (): void {
+describe('instance commands', function (): void {
+    it('adds Laravel Cloud instances through the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'instance' => [
-                'app' => 'billing',
+                'project' => 'billing',
                 'name' => 'production-cloud',
                 'driver' => 'laravel-cloud',
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:instance', [
-            'action' => 'add',
-            'app' => 'billing',
-            '--instance' => 'production-cloud',
+        [$exitCode, $output] = runCommand($this, 'instance:add', [
+            'instance' => 'billing.production-cloud',
             '--driver' => 'laravel-cloud',
             '--cloud-app' => 'app_123',
             '--cloud-environment' => 'env_123',
@@ -34,7 +32,7 @@ describe('app:instance', function (): void {
 
             return (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/apps/billing/instances'
+                && $request->url() === 'https://gateway.test/api/projects/billing/instances'
                 && $data['name'] === 'production-cloud'
                 && $data['driver'] === 'laravel-cloud'
                 && $data['cloud_application'] === 'app_123'
@@ -50,7 +48,7 @@ describe('app:instance', function (): void {
     it('renders human add output with the created instance name driver and extensions', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'instance' => [
-                'app' => 'billing',
+                'project' => 'billing',
                 'name' => 'production',
                 'driver' => 'orbit',
                 'driver_config' => ['node' => 'app-1'],
@@ -63,10 +61,8 @@ describe('app:instance', function (): void {
             'cloud_compatibility' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:instance', [
-            'action' => 'add',
-            'app' => 'billing',
-            '--instance' => 'production',
+        [$exitCode, $output] = runCommand($this, 'instance:add', [
+            'instance' => 'billing.production',
             '--node' => 'app-1',
             '--php-extension' => ['intl', 'redis'],
         ]);
@@ -74,7 +70,7 @@ describe('app:instance', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Added instance 'production' to app 'billing'.")
+            ->toContain("Added instance 'production' to project 'billing'.")
             ->and($output)
             ->toContain('  driver: orbit')
             ->and($output)
@@ -89,7 +85,7 @@ describe('app:instance', function (): void {
     it('renders human add output without an extensions line when none are required', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'instance' => [
-                'app' => 'billing',
+                'project' => 'billing',
                 'name' => 'production',
                 'driver' => 'orbit',
                 'driver_config' => ['node' => 'app-1'],
@@ -102,17 +98,15 @@ describe('app:instance', function (): void {
             'cloud_compatibility' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:instance', [
-            'action' => 'add',
-            'app' => 'billing',
-            '--instance' => 'production',
+        [$exitCode, $output] = runCommand($this, 'instance:add', [
+            'instance' => 'billing.production',
             '--node' => 'app-1',
         ]);
 
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Added instance 'production' to app 'billing'.")
+            ->toContain("Added instance 'production' to project 'billing'.")
             ->and($output)
             ->toContain('  driver: orbit')
             ->and($output)
@@ -124,15 +118,13 @@ describe('app:instance', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => [
                 'action' => 'removed',
-                'app' => 'billing',
+                'project' => 'billing',
                 'instance' => 'production',
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:instance', [
-            'action' => 'remove',
-            'app' => 'billing',
-            '--instance' => 'production',
+        [$exitCode, $output] = runCommand($this, 'instance:remove', [
+            'instance' => 'billing.production',
             '--force' => true,
         ]);
 
@@ -145,23 +137,43 @@ describe('app:instance', function (): void {
             ->not->toContain('result:');
     });
 
-    it('supports --app as the app selector for scripts and agents', function (): void {
+    it('confirms interactive instance removal when force is absent', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => [
+                'action' => 'removed',
+                'project' => 'billing',
+                'instance' => 'production',
+            ],
+        ]));
+
+        $this
+            ->artisan('instance:remove', [
+                'instance' => 'billing.production',
+            ])
+            ->expectsConfirmation(
+                "Remove instance 'billing.production'? The project and sibling instances will remain.",
+                'yes',
+            )
+            ->expectsOutput("Removed instance 'production'.")
+            ->assertSuccessful();
+    });
+
+    it('filters the global instance list by project', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'instances' => [],
         ], [
             'count' => 0,
         ]));
 
-        [$exitCode] = runCommand($this, 'app:instance', [
-            'action' => 'list',
-            '--app' => 'billing',
+        [$exitCode] = runCommand($this, 'instance:list', [
+            '--project' => 'billing',
             '--json' => true,
         ]);
 
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'GET'
-                && $request->url() === 'https://gateway.test/api/apps/billing/instances'
+                && $request->url() === 'https://gateway.test/api/instances?project=billing'
             ),
         );
 
@@ -170,10 +182,9 @@ describe('app:instance', function (): void {
 
     it('renders human list output as a table of instances', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'app' => 'billing',
             'instances' => [
                 [
-                    'app' => 'billing',
+                    'project' => 'billing',
                     'name' => 'production',
                     'driver' => 'orbit',
                     'driver_config' => ['node' => 'app-1'],
@@ -185,7 +196,7 @@ describe('app:instance', function (): void {
                     'latest_deployment_status' => 'succeeded',
                 ],
                 [
-                    'app' => 'billing',
+                    'project' => 'billing',
                     'name' => 'cloud',
                     'driver' => 'laravel-cloud',
                     'driver_config' => [],
@@ -199,15 +210,12 @@ describe('app:instance', function (): void {
             ],
         ], ['count' => 2]));
 
-        [$exitCode, $output] = runCommand($this, 'app:instance', [
-            'action' => 'list',
-            'app' => 'billing',
-        ]);
+        [$exitCode, $output] = runCommand($this, 'instance:list');
 
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('APP')
+            ->toContain('PROJECT')
             ->and($output)
             ->toContain('NAME')
             ->and($output)
@@ -247,14 +255,10 @@ describe('app:instance', function (): void {
 
     it('renders human empty list output when no instances exist', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'app' => 'billing',
             'instances' => [],
         ], ['count' => 0]));
 
-        [$exitCode, $output] = runCommand($this, 'app:instance', [
-            'action' => 'list',
-            'app' => 'billing',
-        ]);
+        [$exitCode, $output] = runCommand($this, 'instance:list');
 
         expect($exitCode)->toBe(0)->and($output)->toBe('No instances found.');
     });
@@ -262,7 +266,7 @@ describe('app:instance', function (): void {
     it('renders human show output as an instance detail summary', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'instance' => [
-                'app' => 'billing',
+                'project' => 'billing',
                 'name' => 'production',
                 'driver' => 'orbit',
                 'driver_config' => ['node' => 'app-1', 'document_root' => '/srv/billing/public'],
@@ -277,10 +281,8 @@ describe('app:instance', function (): void {
             'cloud_compatibility' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:instance', [
-            'action' => 'show',
-            'app' => 'billing',
-            '--instance' => 'production',
+        [$exitCode, $output] = runCommand($this, 'instance:show', [
+            'instance' => 'billing.production',
         ]);
 
         expect($exitCode)
@@ -288,7 +290,7 @@ describe('app:instance', function (): void {
             ->and($output)
             ->toContain('Instance: production')
             ->and($output)
-            ->toContain('App')
+            ->toContain('Project')
             ->and($output)
             ->toContain('billing')
             ->and($output)
@@ -316,14 +318,11 @@ describe('app:instance', function (): void {
             ->not->toContain('"driver_config"');
     });
 
-    it('fails deterministic validation when positional app and --app differ', function (): void {
+    it('rejects an instance selector without its project', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'app:instance', [
-            'action' => 'show',
-            'app' => 'billing',
-            '--app' => 'crm',
-            '--instance' => 'production',
+        [$exitCode, $output] = runCommand($this, 'instance:show', [
+            'instance' => 'production',
             '--json' => true,
         ]);
 
@@ -336,16 +335,14 @@ describe('app:instance', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     });
 
     it('requires force before removing an instance non-interactively', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'app:instance', [
-            'action' => 'remove',
-            'app' => 'billing',
-            '--instance' => 'production',
+        [$exitCode, $output] = runCommand($this, 'instance:remove', [
+            'instance' => 'billing.production',
             '--json' => true,
         ]);
 

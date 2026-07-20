@@ -16,27 +16,27 @@ final class DeployStepListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'deploy:step-list
-        {app : Production app-instance selector}
+        {instance : Instance selector (project.instance)}
         {--json}';
 
     #[\Override]
-    protected $description = 'List deployment pipeline steps for a production app instance.';
+    protected $description = 'List deployment pipeline steps for an instance.';
 
     public function handle(): int
     {
-        $app = $this->stringArgument('app');
+        $instanceSelector = $this->stringArgument('instance');
 
-        if ($app === null) {
+        if ($instanceSelector === null) {
             return $this->renderFailure(
                 'validation_failed',
-                'The app argument is required.',
-                ['field' => 'app'],
+                'The instance argument is required.',
+                ['field' => 'instance'],
             );
         }
 
         try {
             $response = $this->gatewayGet('/api/deploy/steps', $this->filledQuery([
-                'app' => $app,
+                'instance' => $instanceSelector,
             ]));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
@@ -49,7 +49,7 @@ final class DeployStepListCommand extends GatewayCommand
         $steps = $this->stepsFromResponse($response);
 
         if ($steps === []) {
-            $this->line("No deployment steps found for {$app}.");
+            $this->line("No deployment steps found for {$instanceSelector}.");
 
             return self::SUCCESS;
         }

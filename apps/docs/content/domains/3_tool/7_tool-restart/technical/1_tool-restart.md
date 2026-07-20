@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:restart <tool> [--app=<app>] [--node=<node>] [--json|--stream-json]`
+# Technical Contract: `orbit tool:restart <tool> [--instance=<project.instance>] [--node=<node>] [--json|--stream-json]`
 
 [Back to public `tool-restart` documentation.](../tool-restart.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit tool:restart <tool> [--app=<app>] [--node=<node>] [--json|--stream-json]
+orbit tool:restart <tool> [--instance=<project.instance>] [--node=<node>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -24,8 +24,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | Always. | Never. | None. | Registered lifecycle-capable tool name. |
-| `node` | `--node` | When no `--app` or local `node:default` is available. | Never. | `node:default` when set. | Visible active node slug; selected tool must satisfy its operating-system, runtime-user, TLD/route, isolation, and gateway-local constraints. |
-| `app` | `--app` | Optional. | Never. | None. | Visible app selector used to resolve the owning node. |
+| `node` | `--node` | When no `--instance` or local `node:default` is available. | Never. | `node:default` when set. | Visible active node slug; selected tool must satisfy its operating-system, runtime-user, TLD/route, isolation, and gateway-local constraints. |
+| `app` | `--instance` | Optional. | Never. | None. | Visible app selector used to resolve the owning node. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 | `stream-json` | `--stream-json` | Optional. | Never. | `false` | Selects newline-delimited progress frames and non-interactive input mode. Mutually exclusive with `--json`. |
 

@@ -4,7 +4,7 @@ Process commands manage runtime units that Orbit owns and keeps running. A proce
 definition is stored on the gateway, may be scoped to a node, concrete app
 instance, or workspace, and owns its lifecycle through a selected runtime backend.
 
-The gateway is the source of truth for process configuration. When node-side work is required, the gateway renders and applies derived runtime units on the resolved node or the selected app instance's serving node.
+The gateway is the source of truth for process configuration. When node-side work is required, the gateway renders and applies derived runtime units on the resolved node or the selected instance's serving node.
 
 ## Domain Rules
 
@@ -19,17 +19,17 @@ These rules cover who owns process configuration and how process definitions are
   They cannot start or end with a hyphen and are limited to 64 characters.
 - `process:update --name=<new-slug>` is the public rename path when the selected
   runtime/backend can safely replace derived unit identity.
-- Process definitions may be scoped to a node, concrete app instance, or
-  workspace. An app-scoped definition belongs to the `AppInstance`, never only
-  to the logical app. A workspace-scoped definition belongs to a workspace
-  that already identifies its app instance. The scope selects the serving node
+- Process definitions may be scoped to a node, concrete instance, or
+  workspace. An instance-scoped definition belongs to the `AppInstance`, never only
+  to the project. A workspace-scoped definition belongs to a workspace
+  that already identifies its instance. The scope selects the serving node
   and default runtime context.
-- Canonical app-instance identity stores and returns both the logical `app` slug
-  and the concrete `app_instance` slug. Public commands prefer
-  `--app=<app.instance>`. A bare logical-app slug is shorthand only when that
+- Canonical instance identity stores and returns both the logical `app` slug
+  and the concrete `instance` slug. Public commands prefer
+  `--instance=<project.instance>`. A bare project slug is shorthand only when that
   app has exactly one instance; otherwise commands fail with
-  `error.code=validation_failed`, `error.meta.field=app`, and
-  `error.meta.reason=app_instance_required`.
+  `error.code=validation_failed`, `error.meta.field=instance`, and
+  `error.meta.reason=instance_required`.
 - Process definitions have a stable order inside their owning scope.
   `process:add` appends new definitions after existing ones in that scope.
 - Read and bulk lifecycle commands use that order.
@@ -46,10 +46,10 @@ These rules cover who owns process configuration and how process definitions are
 These rules describe how runtime units are derived from process definitions.
 
 - Runtime units are the process-family product noun: concrete runnable units
-  derived from node/app-instance/workspace scope and process configuration. They are not
+  derived from node/instance/workspace scope and process configuration. They are not
   gateway state rows.
 - Node-level and workspace-scoped process definitions normally render one
-  runtime unit. App-instance-scoped inherited process definitions may render
+  runtime unit. Instance-scoped inherited process definitions may render
   one runtime unit for that instance's main context and one runtime unit for
   each active workspace belonging to that same instance. These units all run
   on the instance's serving node.
@@ -57,18 +57,18 @@ These rules describe how runtime units are derived from process definitions.
   `systemd` for Linux host commands, `launchd` for macOS host commands,
   `docker` for containerized processes, or `docker-swarm` for selected
   node-owned managed service processes.
-- Public app-instance/workspace host-command process definitions use the host
+- Public instance/workspace host-command process definitions use the host
   command runtime for their serving node: `systemd` on Linux and `launchd` on macOS.
   App/workspace `docker` rows remain reserved for Orbit-managed runtime
   processes such as generated FrankenPHP web-runtime units, not arbitrary
   public host commands.
 - The process definition supplies shared fields such as command, restart policy,
   runtime backend, runtime configuration, and crash notification policy. The
-  rendering context supplies per-instance fields such as node/app/app-instance/workspace
+  rendering context supplies per-instance fields such as node/app/instance/workspace
   identity, path, URL, environment, ports, and volumes.
 - Runtime unit names use Orbit-owned backend-safe names such as
-  `orbit_<scope>_<process>`. App/workspace identities include both logical app
-  and app-instance slugs so two instances of one app cannot collide. When process identity is renamed, Orbit replaces
+  `orbit_<scope>_<process>`. App/workspace identities include both project
+  and instance slugs so two instances of one app cannot collide. When process identity is renamed, Orbit replaces
   derived runtime units and removes names from the previous identity instead of leaving
   orphaned units.
 - The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
@@ -214,7 +214,7 @@ Scheduler live in
 
 Process commands are authorized by the gateway against the authenticated
 WireGuard peer and the scoped permission set stored on the grant that
-connects the caller to the resolved node or app instance serving node. The CLI does not detect or
+connects the caller to the resolved node or instance serving node. The CLI does not detect or
 branch on the node-role column locally.
 
 - `process:list` requires `process:read` on a grant to the resolved node or app
@@ -223,13 +223,13 @@ branch on the node-role column locally.
 - Runtime-lifecycle commands (`process:start`, `process:stop`,
   `process:restart`) require their matching `process:start`, `process:stop`,
   or `process:restart` permission on a grant to that node. Self-targeting
-  calls from the app instance serving node are authorized by its
+  calls from the instance serving node are authorized by its
   self-grant — see [Architecture: Self-grants and
   self-serving](../../architecture.md#self-grants-and-self-serving).
 - Configuration mutation commands (`process:add`, `process:update`,
   `process:remove`) require their matching mutation permission and are
   typically reserved for admin-class presets. The exception is the `app-dev`
-  self-grant: an app-dev node can create, update, and remove app-instance-owned
+  self-grant: an app-dev node can create, update, and remove instance-owned
   process definitions for instances served by that same node. `app-prod` self-grants do not
   include process mutation permissions, and app-dev self-grants do not include
   runtime lifecycle permissions such as `process:start`, `process:stop`, or
@@ -288,7 +288,7 @@ Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by the
 
 The crash hooks that Orbit manages on nodes post `crashed` events back to the gateway when the process definition's crash-notification policy is enabled. No crash hook is required for `crash_notification=none`. The payload includes a stable event id, runtime unit name, exit code, exit status, and occurrence time. Duplicate event ids return the original record instead of creating duplicate history.
 
-When the runtime unit name resolves to active process configuration, the event is linked to the process, logical app, concrete app instance, workspace, and node. Unmatched units are still recorded with their raw runtime-unit name so operators do not lose crash history while doctor or process configuration is being repaired.
+When the runtime unit name resolves to active process configuration, the event is linked to the process, project, concrete instance, workspace, and node. Unmatched units are still recorded with their raw runtime-unit name so operators do not lose crash history while doctor or process configuration is being repaired.
 
 Agent IDE crash notification is a consumer of the recorded crash event. For `agent_ide`, Orbit reads a short recent journal tail for the runtime unit and sends a crash report to the effective app or workspace Agent IDE session when one is available. Failure to read the log tail or deliver the notification does not fail event ingestion.
 

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * @property int $id
@@ -30,7 +31,7 @@ use Illuminate\Support\Carbon;
  * @property string $status
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read App|null $app
+ * @property-read Project|null $app
  * @property-read AppInstance|null $appInstance
  * @property-read Node|null $node
  * @property-read ScheduleRun|null $latestRun
@@ -40,7 +41,7 @@ class Schedule extends Model
 {
     use HasFactory;
 
-    #[\Override]
+    #[Override]
     protected $fillable = [
         'schedule_key',
         'name',
@@ -58,7 +59,7 @@ class Schedule extends Model
         'status',
     ];
 
-    #[\Override]
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -68,11 +69,19 @@ class Schedule extends Model
     }
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return BelongsTo<Project, $this>
+     */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class, 'app_id');
+    }
+
+    /**
+     * @return BelongsTo<Project, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->project();
     }
 
     /**

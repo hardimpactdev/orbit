@@ -6,8 +6,8 @@ namespace App\Services\Workspaces;
 
 use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
@@ -40,8 +40,8 @@ final readonly class EnsureWorkspaceProxyRoute
 
         $app = $workspace->app;
 
-        if (! $app instanceof App) {
-            throw new RuntimeException("Workspace '{$workspace->name}' has no parent app.");
+        if (! $app instanceof Project) {
+            throw new RuntimeException("Workspace '{$workspace->name}' has no parent project.");
         }
 
         $node = $this->placement->nodeForWorkspace($workspace);
@@ -103,7 +103,7 @@ final readonly class EnsureWorkspaceProxyRoute
      *     tls: array{cert_path: string, key_path: string},
      * }  $config
      */
-    private function renderCaddySite(Workspace $workspace, App $app, string $domain, array $config): string
+    private function renderCaddySite(Workspace $workspace, Project $app, string $domain, array $config): string
     {
         $pathBlocking = $app->document_root === '.'
             ? 'import path_blocking_project_root'
@@ -197,7 +197,7 @@ final readonly class EnsureWorkspaceProxyRoute
         return $this->placement->workspaceDomain($workspace);
     }
 
-    private function documentRoot(Workspace $workspace, App $app): string
+    private function documentRoot(Workspace $workspace, Project $app): string
     {
         $root = trim($this->placement->documentRootForWorkspace($workspace), '/');
 
@@ -211,7 +211,7 @@ final readonly class EnsureWorkspaceProxyRoute
     /**
      * @return array{0: Node, 1: array<string, mixed>, 2: string}
      */
-    private function routeArtifact(Workspace $workspace, App $app, Node $node, string $domain): array
+    private function routeArtifact(Workspace $workspace, Project $app, Node $node, string $domain): array
     {
         $isPhp = $app->runtimeKind() === AppRuntimeKind::Php;
         $runtimeUpstream = $isPhp ? $this->runtimeContainerRenderer->upstreamUrl($workspace) : null;

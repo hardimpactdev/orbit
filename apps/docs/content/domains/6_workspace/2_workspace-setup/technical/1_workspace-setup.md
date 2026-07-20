@@ -7,7 +7,7 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The current node identity is authorized to manage the target workspace or
-  parent app.
+  parent project.
 - The gateway can reach the owning node through Agent push.
 
 [Back to the public command page.](../workspace-setup.md)
@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace:setup [name] [--app=<app>] [--path=<path>] [--json|--stream-json]
+orbit workspace:setup [name] [--instance=<project.instance>] [--path=<path>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -24,8 +24,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
-| `name` | `[name]` | When local workspace context, Codex metadata for an explicit `--path`, and Agent IDE adapter resolution cannot resolve it. | Local workspace context, Codex metadata for an explicit `--path`, or adapter-resolved identity when available. | Workspace slug (lowercase letters, digits, and hyphens; max 63 chars independent of the parent app slug; cannot start/end with hyphen). |
-| `--app` | `text` | No local context or default. | Local app-instance default. | Valid parent app slug or app-instance selector such as `happie.nmbp`. A bare app slug must resolve to exactly one concrete instance or fail with `error.meta.reason=app_instance_required`. |
+| `name` | `[name]` | When local workspace context, Codex metadata for an explicit `--path`, and Agent IDE adapter resolution cannot resolve it. | Local workspace context, Codex metadata for an explicit `--path`, or adapter-resolved identity when available. | Workspace slug (lowercase letters, digits, and hyphens; max 63 chars independent of the parent project slug; cannot start/end with hyphen). |
+| `--instance` | `text` | No local context or default. | Local instance default. | Valid parent project slug or instance selector such as `happie.nmbp`. A bare project slug must resolve to exactly one concrete instance or fail with `error.meta.reason=instance_required`. |
 | `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning node. | Absolute path on the owning node. See `--path` rules below. |
 | `--json` | `flag` | Optional. | `false` | n/a |
 | `--stream-json` | `flag` | Optional. | `false` | Forces non-interactive mode and emits newline-delimited progress JSON. Mutually exclusive with `--json`. |
@@ -33,14 +33,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 The `--path` value must be an absolute path on the owning node. A relative
 or non-absolute value fails before side effects with
 `error.code=validation_failed`, `error.meta.field=path`. The path must exist
-on the node and must be distinct from the parent app root. It may live outside
-the parent app path, including external agent worktree directories.
+on the node and must be distinct from the parent project root. It may live outside
+the parent project path, including external agent worktree directories.
 
 ## Input Resolution
 
 1. **Resolve Workspace Identity**: Resolve `[name]` and parent `app` in this
    order:
-   - Explicit `[name]` positional + explicit `--app`.
+   - Explicit `[name]` positional + explicit `--instance`.
    - **Explicit `--path` Codex metadata:** when `[name]` is missing and
      `--path` is a Codex-managed Git worktree at
      `~/.codex/worktrees/<key>/<repo>`, the local CLI reads the worktree's
@@ -53,66 +53,66 @@ the parent app path, including external agent worktree directories.
      continue to the gateway lookup and adapter flow. Codex is not an Agent IDE
      adapter.
    - **Explicit `--path` adapter lookup:** when `[name]` is missing and
-     `--path` plus `--app` are supplied, Orbit first asks the selected app's
+     `--path` plus `--instance` are supplied, Orbit first asks the selected app's
      effective Agent IDE adapter to resolve the absolute path. A successful
      match supplies the workspace name, absolute path, and adapter workspace
-     id. An app-instance selector such as `happie.nmbp` selects the instance
-     explicitly; a bare app selector must resolve to exactly one instance
+     id. An instance selector such as `happie.nmbp` selects the instance
+     explicitly; a bare project selector must resolve to exactly one instance
      before the workspace may be adopted.
    - **CWD path-ownership lookup (gateway-authoritative):** when `[name]`
      is missing, Orbit asks the gateway to resolve the caller's absolute
      current directory against registered app and workspace paths for the
      caller's node identity. The lookup returns one of four outcomes:
      - `workspace` — CWD is inside a registered workspace path. The gateway
-       returns the workspace name, parent app slug, required selected app
+       returns the workspace name, parent project slug, required selected app
        instance, and stored workspace path. The command proceeds with
-       these values; `--app` and `--path` must agree if also supplied,
+       these values; `--instance` and `--path` must agree if also supplied,
        otherwise the command fails with
-       `error.code=validation_failed`/`error.meta.field=app|path` before
+       `error.code=validation_failed`/`error.meta.field=instance|path` before
        side effects.
      - `app_root` — CWD is a registered app's own path, not a workspace
        path under it. The command fails before side effects with
        `error.code=workspace.path_is_app_root`,
-       `error.meta.app=<app>`, and
+       `error.meta.project=<project>`, and
        `error.meta.next_command=orbit workspace:new`. The app root is not
        a workspace and `workspace:setup` does not promote it to one.
-     - `inside_app` — CWD is under a registered app or app-instance path but
+     - `inside_app` — CWD is under a registered app or instance path but
        does not match any registered workspace path under that target. The
-       parent app and exactly one concrete app instance are resolved from the
+       parent project and exactly one concrete instance are resolved from the
        lookup. Zero or multiple instance matches fail with
-       `error.meta.reason=app_instance_required`; the workspace name is
+       `error.meta.reason=instance_required`; the workspace name is
        resolved through the adapter probe below, or through interactive
        prompts.
      - `unregistered` — CWD does not match any known app or workspace path.
        The adapter probe below runs across all of the caller node's
        configured adapters; otherwise fall through to local-context
-       defaults (`.orbit/config` marker for `--app`) and interactive
+       defaults (`.orbit/config` marker for `--instance`) and interactive
        prompts. Non-interactive mode without an adapter resolution fails
        fast with `validation_failed`.
    - **Agent-IDE adapter probe** (after an explicit `--path` lookup or after
      the CWD lookup, when `[name]` is still missing and the lookup outcome was
      `inside_app` or `unregistered`):
      - The CLI gathers the **effective adapters** to probe:
-       - On `inside_app`, only the parent app's effective adapter.
+       - On `inside_app`, only the parent project's effective adapter.
        - On `unregistered`, every adapter currently effective for any app
          owned by the caller's node.
      - Each effective adapter that exposes the `workspace_path_resolution`
        capability is asked to resolve the absolute CWD to one of its
        managed workspaces. The adapter returns either no match or a
-       descriptor with workspace name, parent app slug, absolute path, and
+       descriptor with workspace name, parent project slug, absolute path, and
        adapter workspace id.
      - Outcomes:
        - Exactly one adapter returns a match → use the returned workspace
-         name and parent app for identity. Explicit `--app` and `[name]`,
+         name and parent project for identity. Explicit `--instance` and `[name]`,
          if supplied, must agree with the adapter; mismatches fail with
          `error.code=validation_failed`,
-         `error.meta.field=app|name`, `error.meta.reason=adapter_mismatch`
+         `error.meta.field=instance|name`, `error.meta.reason=adapter_mismatch`
          before side effects.
        - Multiple adapters return a match → fail with
-         `error.code=validation_failed`, `error.meta.field=app`,
+         `error.code=validation_failed`, `error.meta.field=instance`,
          `error.meta.reason=adapter_ambiguous`,
          `error.meta.adapters=[…]`. The operator disambiguates with
-         `--app`.
+         `--instance`.
        - No adapter returns a match → continue to prompts / non-interactive
          failure.
        - An adapter errors during probe (transport, auth, unexpected
@@ -134,8 +134,8 @@ the parent app path, including external agent worktree directories.
    - Target node must be reachable and carry an active `app-dev` role. An
      `app-prod` target fails before side effects with
      `workspace.unsupported_for_production`.
-   - Path must be a workspace source path, not the parent app root. Explicit
-     `--path` adoption may register paths outside the parent app path,
+   - Path must be a workspace source path, not the parent project root. Explicit
+     `--path` adoption may register paths outside the parent project path,
      including external agent worktree directories.
    - Path must exist on the node (created by `workspace:new` or manual
      provisioning before adoption).
@@ -186,7 +186,7 @@ authorization decision.
    - Hands proxy backend artifact convergence to the `proxy` family.
 4. **Setup Steps** (`phase=setup_steps`):
    - Reads configured setup step definitions owned by the workspace's selected
-     app instance.
+     instance.
    - Executes steps sequentially in the workspace directory on the node through typed `internal:workspace-setup-step` over agent-push on agent-capable nodes.
    - Setup environment values travel only in the token-bound stdin payload, not in transport metadata or activity summaries.
    - A stored setup command that directly consumes `$ORBIT_APP_PATH/.env` is
@@ -198,7 +198,7 @@ authorization decision.
    - Steps receive the lifecycle environment defined in the
      [Workspaces README](../../README.md#lifecycle-step-environment).
 5. **Processes** (`phase=processes`):
-   - Starts processes inherited from the selected app instance if they are
+   - Starts processes inherited from the selected instance if they are
      configured to start on setup.
 6. **HTTP Probe** (`phase=http_probe`):
    - Performs an HTTP request to the workspace URL.
@@ -228,7 +228,7 @@ re-renders artifacts and verifies command-owned application. The outcome layer r
 
 This separation keeps durable adoption state on the workspace entity while
 letting `result.action` describe what this run did, mirroring the
-`app:register` exemplar.
+`instance:register` exemplar.
 
 ## Renderer Contracts
 
@@ -247,7 +247,7 @@ registry, Agent-push, or runtime effects. This failure uses
 
 - **Path Is App Root**: The resolved CWD is a registered app's own path, not
   a workspace path under it. Fails before side effects with
-  `error.code=workspace.path_is_app_root`, `error.meta.app=<app>`,
+  `error.code=workspace.path_is_app_root`, `error.meta.project=<project>`,
   `error.meta.path=<cwd>`, and
   `error.meta.next_command=orbit workspace:new`. The app root is not a
   workspace and `workspace:setup` never promotes it to one. The hint points
@@ -259,8 +259,8 @@ registry, Agent-push, or runtime effects. This failure uses
   `error.meta.adapter=<name>`, and `error.meta.reason=<short>`. The probe
   does not silently fall through on adapter errors.
 - **Path Is App Root (Explicit `--path`)**: The supplied `--path` equals the
-  parent app's own root path. Fails before side effects with
-  `error.code=workspace.path_is_app_root`, `error.meta.app=<app>`,
+  parent project's own root path. Fails before side effects with
+  `error.code=workspace.path_is_app_root`, `error.meta.project=<project>`,
   `error.meta.path=<path>`, and
   `error.meta.next_command=orbit workspace:new`.
 - **Remote Failures**: Agent-push timeout, permission denied, or remote command
@@ -285,7 +285,7 @@ registry, Agent-push, or runtime effects. This failure uses
 
 When a phase after `phase=registry` fails, configuration and gateway-managed
 artifacts already written remain in place. This is the same convergence
-policy used by `app:register` for production-domain activation: configuration
+policy used by `instance:register` for production-domain activation: configuration
 persists, retry by re-running the same command. Setup-step failures are
 *not* converted into `success.meta.warnings[]` because doctor cannot fix a
 failing project script; they belong to command outcome and workspace
@@ -313,7 +313,7 @@ all documented command failures exit with the standard command failure status
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Configuration convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, `success.meta.warnings[]` payloads, and per-phase failure metadata. |
-| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php` | Explicit `--path` adoption outside the parent app path, adapter identity for app+path setup without a positional name, and parent-app-root rejection before side effects. |
+| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php` | Explicit `--path` adoption outside the parent project path, adapter identity for app+path setup without a positional name, and parent-instance-root rejection before side effects. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Gateway forwarding, local-workflow setup paths, and `workspace:setup` validation before opening a stream. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Streamed setup rendering, gateway progress, and failure output paths. |
 | `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, agent-push dispatch, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |

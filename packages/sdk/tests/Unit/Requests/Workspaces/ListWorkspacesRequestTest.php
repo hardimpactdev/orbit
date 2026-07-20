@@ -21,10 +21,10 @@ it('resolves to GET /api/workspaces', function (): void {
 });
 
 it('serializes app and node filters when provided', function (): void {
-    $request = new ListWorkspacesRequest(app: 'docs', node: 'app-1');
+    $request = new ListWorkspacesRequest(instance: 'docs', node: 'app-1');
 
     expect($request->query()->all())->toBe([
-        'app' => 'docs',
+        'instance' => 'docs',
         'node' => 'app-1',
     ]);
 });
@@ -41,7 +41,7 @@ it('returns a WorkspaceListResponse DTO with workspaces', function (): void {
             'success' => [
                 'data' => [
                     'workspaces' => [
-                        ['name' => 'feature-docs', 'app' => 'docs'],
+                        ['name' => 'feature-docs', 'instance' => 'docs'],
                     ],
                 ],
             ],
@@ -55,6 +55,6 @@ it('returns a WorkspaceListResponse DTO with workspaces', function (): void {
 
     expect($dto)->toBeInstanceOf(WorkspaceListResponse::class);
     expect($dto->workspaces)->toBe([
-        ['name' => 'feature-docs', 'app' => 'docs'],
+        ['name' => 'feature-docs', 'instance' => 'docs'],
     ]);
 });

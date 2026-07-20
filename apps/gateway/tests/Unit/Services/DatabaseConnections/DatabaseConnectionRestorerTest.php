@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
 use App\Services\RemoteShell\RemoteEnvFile;
@@ -310,9 +310,9 @@ describe('DatabaseConnectionRestorer', function (): void {
 /**
  * @param  array<string, mixed>  $attributes
  */
-function databaseConnectionRestorerApp(array $attributes): App
+function databaseConnectionRestorerApp(array $attributes): Project
 {
-    $app = App::factory()->create($attributes);
+    $app = Project::factory()->create($attributes);
 
     AppInstance::factory()->for($app)->create([
         'driver_config' => new OrbitAppInstanceDriverConfigData(
@@ -326,7 +326,7 @@ function databaseConnectionRestorerApp(array $attributes): App
     return $app;
 }
 
-function databaseConnectionRestorerAppInstance(App $app): AppInstance
+function databaseConnectionRestorerAppInstance(Project $app): AppInstance
 {
     return $app->instances()->firstOrFail();
 }

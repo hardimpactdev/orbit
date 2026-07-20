@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,7 +15,7 @@ uses(RefreshDatabase::class);
 
 it('does not derive runtime-unit aliases for workspaces whose placement is unresolved', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
     $development = AppInstance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),

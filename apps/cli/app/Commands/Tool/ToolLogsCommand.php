@@ -12,7 +12,7 @@ final class ToolLogsCommand extends ToolGatewayCommand
     #[\Override]
     protected $signature = 'tool:logs
         {tool? : Tool catalog name whose logs should be read}
-        {--app= : Resolve target by app selector}
+        {--instance= : Resolve target by instance selector}
         {--node= : Resolve target by node}
         {--lines=100 : Number of historical lines}
         {--json : Output JSON}';

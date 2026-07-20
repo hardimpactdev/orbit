@@ -10,7 +10,7 @@ describe('workspace:env', function (): void {
     it('sets and applies a workspace env value through the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'scope' => 'workspace',
-            'app' => 'billing',
+            'project' => 'billing',
             'instance' => 'development',
             'workspace' => 'feature-mail',
             'path' => '/home/orbit/apps/billing/.worktrees/feature-mail/.env',
@@ -27,7 +27,7 @@ describe('workspace:env', function (): void {
         [$exitCode, $output] = runCommand(test: $this, command: 'workspace:env', params: [
             'action' => 'set',
             'name' => 'feature-mail',
-            '--app' => 'billing.development',
+            '--instance' => 'billing.development',
             '--key' => 'MAIL_MAILER',
             '--value' => 'smtp',
             '--apply' => true,
@@ -38,7 +38,7 @@ describe('workspace:env', function (): void {
             fn (Request $request): bool => (
                 $request->method() === 'POST'
                 && $request->url()
-                === 'https://gateway.test/api/workspaces/feature-mail/env?app=billing&instance=development'
+                === 'https://gateway.test/api/workspaces/feature-mail/env?instance=billing.development'
                 && $request->data() === [
                     'key' => 'MAIL_MAILER',
                     'value' => 'smtp',
@@ -56,7 +56,7 @@ describe('workspace:env', function (): void {
     it('renders human workspace target metadata when no explicit values exist', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'scope' => 'workspace',
-            'app' => 'billing',
+            'project' => 'billing',
             'instance' => 'development',
             'workspace' => 'feature-mail',
             'path' => '/home/orbit/apps/billing/.worktrees/feature-mail/.env',
@@ -69,7 +69,7 @@ describe('workspace:env', function (): void {
         [$exitCode, $output] = runCommand(test: $this, command: 'workspace:env', params: [
             'action' => 'list',
             'name' => 'feature-mail',
-            '--app' => 'billing.development',
+            '--instance' => 'billing.development',
         ]);
 
         expect($exitCode)
@@ -79,7 +79,7 @@ describe('workspace:env', function (): void {
             ->and($output)
             ->toContain('Scope: workspace')
             ->and($output)
-            ->toContain('App: billing')
+            ->toContain('Project: billing')
             ->and($output)
             ->toContain('Instance: development')
             ->and($output)
@@ -101,13 +101,13 @@ describe('workspace:env', function (): void {
         Http::fake([
             'https://gateway.test/*' => Http::sequence()
                 ->push(fakeSuccessEnvelope([
-                    'app' => 'billing',
+                    'project' => 'billing',
                     'instance' => 'development',
                     'workspace' => 'feature-mail',
                 ]))
                 ->push(fakeSuccessEnvelope([
                     'scope' => 'workspace',
-                    'app' => 'billing',
+                    'project' => 'billing',
                     'instance' => 'development',
                     'workspace' => 'feature-mail',
                     'path' => '/worktrees/feature-mail/.env',
@@ -143,7 +143,7 @@ describe('workspace:env', function (): void {
             fn (Request $request): bool => (
                 $request->method() === 'GET'
                 && $request->url()
-                === 'https://gateway.test/api/workspaces/feature-mail/env?app=billing&instance=development'
+                === 'https://gateway.test/api/workspaces/feature-mail/env?instance=billing.development'
             ),
         );
 

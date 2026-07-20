@@ -13,9 +13,9 @@ use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\WorkspaceStep;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\AuthorizationResult;
@@ -75,7 +75,7 @@ final class WorkspaceStepStoreController implements Loggable
         if ($this->envInheritanceGuard->consumesParentEnv($command)) {
             return $this->validationFailed(
                 'command',
-                'Workspace lifecycle steps cannot read or copy the parent app .env file.',
+                'Workspace lifecycle steps cannot read or copy the parent project .env file.',
                 ['reason' => 'parent_env_inheritance_forbidden'],
             );
         }
@@ -103,11 +103,11 @@ final class WorkspaceStepStoreController implements Loggable
             return $this->invalidPosition($before, $after);
         }
 
-        $appSlug = $this->stringValue($input, 'app');
+        $appSlug = $this->stringValue($input, 'instance');
         $path = $this->stringValue($input, 'path');
 
         if ($appSlug === null && $path === null) {
-            return $this->validationFailed('app', 'Could not resolve parent app.', [
+            return $this->validationFailed('instance', 'Could not resolve an instance.', [
                 'reason' => 'missing_required_input',
             ]);
         }
@@ -135,8 +135,8 @@ final class WorkspaceStepStoreController implements Loggable
         }
 
         if (! $servingNode instanceof Node) {
-            return $this->authorizationFailed("Could not resolve owning node for app '{$app->name}'.", [
-                'app' => $app->name,
+            return $this->authorizationFailed("Could not resolve owning node for project '{$app->name}'.", [
+                'project' => $app->name,
             ]);
         }
 
@@ -189,7 +189,7 @@ final class WorkspaceStepStoreController implements Loggable
     }
 
     private function anchorStep(
-        App $app,
+        Project $app,
         WorkspaceLifecyclePhase $phase,
         ?int $stepId,
         AppInstance $instance,
@@ -204,9 +204,9 @@ final class WorkspaceStepStoreController implements Loggable
     private function appInstanceRequired(): JsonResponse
     {
         return $this->validationFailed(
-            'app',
-            'Workspace steps can only be changed on app instances. Use a dotted selector such as hauser.nmbp.',
-            ['reason' => 'app_instance_required'],
+            'instance',
+            'Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp.',
+            ['reason' => 'instance_required'],
         );
     }
 
@@ -308,24 +308,24 @@ final class WorkspaceStepStoreController implements Loggable
         return response()->json([
             'error' => [
                 'code' => 'workspace.step_not_found',
-                'message' => "Referenced insertion step '{$id}' not found for app '{$app}' in phase '{$phase->value}'.",
+                'message' => "Referenced insertion step '{$id}' not found for project '{$app}' in phase '{$phase->value}'.",
                 'meta' => [
                     'id' => $id,
-                    'app' => $app,
+                    'project' => $app,
                     'phase' => $phase->value,
                 ],
             ],
         ], 404);
     }
 
-    private function appNotFound(string $app): JsonResponse
+    private function appNotFound(string $instance): JsonResponse
     {
         return response()->json([
             'error' => [
-                'code' => 'workspace.app_not_found',
-                'message' => "App '{$app}' not found.",
+                'code' => 'workspace.instance_not_found',
+                'message' => "Instance '{$instance}' not found.",
                 'meta' => [
-                    'app' => $app,
+                    'instance' => $instance,
                 ],
             ],
         ], 404);

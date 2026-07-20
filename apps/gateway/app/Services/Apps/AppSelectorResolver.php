@@ -7,9 +7,9 @@ namespace App\Services\Apps;
 use App\Data\Apps\AppSelection;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -33,32 +33,32 @@ final readonly class AppSelectorResolver
             return null;
         }
 
-        $app = App::query()
+        $app = Project::query()
             ->with(['node', 'instances'])
             ->where('name', $value)
             ->first();
 
-        if ($app instanceof App) {
+        if ($app instanceof Project) {
             return new AppSelection(app: $app, selector: $value);
         }
 
-        $app = App::query()
+        $app = Project::query()
             ->with(['node', 'instances'])
             ->where('domain', $value)
             ->first();
 
-        if ($app instanceof App) {
+        if ($app instanceof Project) {
             return new AppSelection(app: $app, selector: $value);
         }
 
         if (str_contains($value, '.')) {
             [$appName, $instanceSelector] = explode('.', $value, 2);
-            $app = App::query()
+            $app = Project::query()
                 ->with(['node', 'instances'])
                 ->where('name', $appName)
                 ->first();
 
-            if ($app instanceof App) {
+            if ($app instanceof Project) {
                 return new AppSelection(
                     app: $app,
                     instance: $this->resolveInstance(
@@ -73,21 +73,24 @@ final readonly class AppSelectorResolver
             }
         }
 
-        $app = App::query()
+        $app = Project::query()
             ->with(['node', 'instances'])
             ->get()
             ->first(
-                fn (App $candidate): bool => $candidate->url() === "https://{$value}" || $candidate->url() === $value,
+                fn (Project $candidate): bool => (
+                    $candidate->url() === "https://{$value}"
+                    || $candidate->url() === $value
+                ),
             );
 
-        if ($app instanceof App) {
+        if ($app instanceof Project) {
             return new AppSelection(app: $app, selector: $value);
         }
 
         return null;
     }
 
-    public function resolveRequired(?string $selector, string $field = 'app'): AppSelection
+    public function resolveRequired(?string $selector, string $field = 'instance'): AppSelection
     {
         $selection = $this->resolve($selector);
 
@@ -97,7 +100,7 @@ final readonly class AppSelectorResolver
 
         throw new AppSelectionResolutionFailed(
             'validation_failed',
-            'App not found. Pass --app=<name> explicitly.',
+            'Project or instance not found. Pass --instance=<project.instance> explicitly.',
             ['field' => $field],
         );
     }
@@ -107,7 +110,7 @@ final readonly class AppSelectorResolver
      */
     public function requireInstance(
         AppSelection $selection,
-        string $field = 'app',
+        string $field = 'instance',
         ?callable $instanceIsVisible = null,
     ): AppSelection {
         if ($selection->instance instanceof AppInstance) {
@@ -129,8 +132,8 @@ final readonly class AppSelectorResolver
 
         $meta = [
             'field' => $field,
-            'reason' => 'app_instance_required',
-            'app' => $selection->app->name,
+            'reason' => 'instance_required',
+            'project' => $selection->app->name,
         ];
         $visibleInstances = $instanceIsVisible === null
             ? $instances
@@ -142,7 +145,7 @@ final readonly class AppSelectorResolver
 
         throw new AppSelectionResolutionFailed(
             'validation_failed',
-            "App '{$selection->app->name}' requires a concrete app instance selector.",
+            "Project '{$selection->app->name}' requires a concrete instance selector.",
             $meta,
         );
     }
@@ -163,10 +166,10 @@ final readonly class AppSelectorResolver
             return $instanceSelection;
         }
 
-        $app = App::query()
+        $app = Project::query()
             ->with(['node', 'instances'])
             ->get()
-            ->first(function (App $app) use ($normalizedPath): bool {
+            ->first(function (Project $app) use ($normalizedPath): bool {
                 $appPath = rtrim($app->path, '/');
 
                 return (
@@ -175,7 +178,7 @@ final readonly class AppSelectorResolver
                 );
             });
 
-        if ($app instanceof App) {
+        if ($app instanceof Project) {
             return new AppSelection(app: $app, selector: $normalizedPath);
         }
 
@@ -191,7 +194,7 @@ final readonly class AppSelectorResolver
                 );
             });
 
-        if (! $workspace instanceof Workspace || ! $workspace->app instanceof App) {
+        if (! $workspace instanceof Workspace || ! $workspace->app instanceof Project) {
             return null;
         }
 
@@ -234,7 +237,7 @@ final readonly class AppSelectorResolver
             return true;
         }
 
-        return $permission !== 'app:read' && $this->authorizer->allows($caller, $node, 'app:read');
+        return $permission !== 'instance:read' && $this->authorizer->allows($caller, $node, 'instance:read');
     }
 
     private function resolveInstanceByPath(string $path): ?AppSelection
@@ -242,10 +245,10 @@ final readonly class AppSelectorResolver
         $bestSelection = null;
         $bestLength = -1;
 
-        App::query()
+        Project::query()
             ->with(['node', 'instances'])
             ->get()
-            ->each(function (App $app) use ($path, &$bestSelection, &$bestLength): void {
+            ->each(function (Project $app) use ($path, &$bestSelection, &$bestLength): void {
                 $instance = $this->placement->matchingOrbitInstanceForPath($app, $path);
                 $config = $instance?->driver_config;
 
@@ -279,7 +282,7 @@ final readonly class AppSelectorResolver
      * @param  (callable(AppInstance): bool)|null  $instanceIsVisible
      */
     private function resolveInstance(
-        App $app,
+        Project $app,
         string $instanceSelector,
         string $fullSelector,
         ?callable $instanceIsVisible,
@@ -316,10 +319,10 @@ final readonly class AppSelectorResolver
 
             throw new AppSelectionResolutionFailed(
                 'validation_failed',
-                "App instance selector '{$fullSelector}' is ambiguous.",
+                "Instance selector '{$fullSelector}' is ambiguous.",
                 [
-                    'field' => 'app',
-                    'app' => $app->name,
+                    'field' => 'instance',
+                    'project' => $app->name,
                     'selector' => $fullSelector,
                     'instances' => $instanceNames,
                 ],
@@ -328,10 +331,10 @@ final readonly class AppSelectorResolver
 
         throw new AppSelectionResolutionFailed(
             'validation_failed',
-            "App instance '{$fullSelector}' not found.",
+            "Instance '{$fullSelector}' not found.",
             [
-                'field' => 'app',
-                'app' => $app->name,
+                'field' => 'instance',
+                'project' => $app->name,
                 'instance' => $instanceSelector,
             ],
         );

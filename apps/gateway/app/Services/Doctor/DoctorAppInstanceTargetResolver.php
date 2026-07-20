@@ -39,9 +39,9 @@ final readonly class DoctorAppInstanceTargetResolver
 
         if ($selection === null) {
             throw new AppSelectionResolutionFailed(
-                'app.not_found',
-                "App '{$selector}' was not found.",
-                ['field' => 'app', 'app' => $selector],
+                'instance.not_found',
+                "Instance '{$selector}' was not found.",
+                ['field' => 'instance', 'instance' => $selector],
             );
         }
 
@@ -55,11 +55,11 @@ final readonly class DoctorAppInstanceTargetResolver
         if (! $instance instanceof AppInstance) {
             throw new AppSelectionResolutionFailed(
                 'validation_failed',
-                "App '{$selection->app->name}' requires a concrete app instance selector.",
+                "Project '{$selection->app->name}' requires a concrete instance selector.",
                 [
-                    'field' => 'app',
-                    'reason' => 'app_instance_required',
-                    'app' => $selection->app->name,
+                    'field' => 'instance',
+                    'reason' => 'instance_required',
+                    'project' => $selection->app->name,
                 ],
             );
         }
@@ -78,12 +78,12 @@ final readonly class DoctorAppInstanceTargetResolver
 
             throw new AppSelectionResolutionFailed(
                 'validation_failed',
-                "App instance '{$selection->app->name}.{$instance->name}' does not resolve an Orbit serving node.",
+                "Instance '{$selection->app->name}.{$instance->name}' does not resolve an Orbit serving node.",
                 [
-                    'field' => 'app',
-                    'reason' => 'app_instance_unavailable',
-                    'app' => $selection->app->name,
-                    'app_instance' => $instance->name,
+                    'field' => 'instance',
+                    'reason' => 'instance_unavailable',
+                    'project' => $selection->app->name,
+                    'instance' => $instance->name,
                 ],
             );
         }
@@ -128,18 +128,18 @@ final readonly class DoctorAppInstanceTargetResolver
     ): AppSelectionResolutionFailed {
         if (! $wasExplicitInstance) {
             return new AppSelectionResolutionFailed(
-                'app.not_found',
-                "App '{$selector}' was not found.",
-                ['field' => 'app', 'app' => $selector],
+                'instance.not_found',
+                "Instance '{$selector}' was not found.",
+                ['field' => 'instance', 'instance' => $selector],
             );
         }
 
         return new AppSelectionResolutionFailed(
             'validation_failed',
-            "App instance '{$selector}' not found.",
+            "Instance '{$selector}' not found.",
             [
-                'field' => 'app',
-                'app' => $app,
+                'field' => 'instance',
+                'project' => $app,
                 'instance' => $instance,
             ],
         );

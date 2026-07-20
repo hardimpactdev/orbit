@@ -83,14 +83,14 @@ it('returns gateway adapter choices for node scope without credentials or sessio
         ->assertJsonMissingPath('success.data.adapters.0.sessions');
 });
 
-it('returns app scope reserved tokens before registered adapters', function (): void {
+it('returns instance scope reserved tokens before registered adapters', function (): void {
     DB::table('nodes')->insert(agentIdeChoicesNodeRow());
 
-    $response = getAgentIdeChoicesJson('app');
+    $response = getAgentIdeChoicesJson('instance');
 
     $response
         ->assertOk()
-        ->assertJsonPath('success.data.scope', 'app')
+        ->assertJsonPath('success.data.scope', 'instance')
         ->assertJsonPath('success.data.reserved_tokens', ['inherit', 'none'])
         ->assertJsonPath('success.data.adapters.0.name', 'opencode')
         ->assertJsonPath('success.data.adapters.1.name', 'polyscope');
@@ -106,5 +106,5 @@ it('rejects unsupported adapter choice scopes', function (): void {
         ->assertJsonPath('error.code', 'validation_failed')
         ->assertJsonPath('error.message', 'Agent IDE adapter scope is not supported.')
         ->assertJsonPath('error.meta.scope', 'workspace')
-        ->assertJsonPath('error.meta.supported', ['node', 'app']);
+        ->assertJsonPath('error.meta.supported', ['node', 'instance']);
 });

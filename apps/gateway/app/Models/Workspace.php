@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * @property int $id
@@ -27,7 +28,8 @@ use Illuminate\Support\Carbon;
  * @property WorkspaceLifecycleStatus $lifecycle_status
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read App|null $app
+ * @property-read Project|null $project
+ * @property-read Project|null $app
  * @property-read AppInstance $appInstance
  * @property-read Collection<int, DatabaseConnection> $databaseConnections
  * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
@@ -40,7 +42,7 @@ class Workspace extends Model
 {
     use HasFactory;
 
-    #[\Override]
+    #[Override]
     protected $fillable = [
         'app_id',
         'app_instance_id',
@@ -52,7 +54,7 @@ class Workspace extends Model
         'lifecycle_status',
     ];
 
-    #[\Override]
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -61,11 +63,21 @@ class Workspace extends Model
     }
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return BelongsTo<Project, $this>
+     */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class, 'app_id');
+    }
+
+    /**
+     * Private compatibility relation for app-named persistence identifiers.
+     *
+     * @return BelongsTo<Project, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->project();
     }
 
     /**
@@ -141,9 +153,9 @@ class Workspace extends Model
             return $this->php_version;
         }
 
-        $this->loadMissing('app');
+        $this->loadMissing('project');
 
-        return $this->app?->php_version;
+        return $this->project?->php_version;
     }
 
     public function url(): string

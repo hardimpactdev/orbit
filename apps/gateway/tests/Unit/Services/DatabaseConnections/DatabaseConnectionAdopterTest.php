@@ -6,17 +6,18 @@ use App\Contracts\RemoteShell;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
 use App\Services\RemoteShell\RemoteEnvFile;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -54,7 +55,7 @@ describe('DatabaseConnectionAdopter', function (): void {
         ]);
 
         Http::preventStrayRequests();
-        Http::fake(function (\Illuminate\Http\Client\Request $request) use ($appPath, $workspacePath): mixed {
+        Http::fake(function (Request $request) use ($appPath, $workspacePath): mixed {
             $input = json_decode((string) $request['input'], associative: true);
             $path = is_array($input) ? $input['path'] ?? null : null;
             $contents = $path === $workspacePath.'/.env'
@@ -79,7 +80,7 @@ describe('DatabaseConnectionAdopter', function (): void {
             ->and(DatabaseConnectionTarget::query()->whereNotNull('app_instance_id')->count())
             ->toBe(1);
 
-        Http::assertNotSent(function (\Illuminate\Http\Client\Request $request) use ($workspacePath): bool {
+        Http::assertNotSent(function (Request $request) use ($workspacePath): bool {
             $input = json_decode((string) $request['input'], associative: true);
 
             return is_array($input) && ($input['path'] ?? null) === $workspacePath.'/.env';
@@ -583,9 +584,9 @@ describe('DatabaseConnectionAdopter', function (): void {
 /**
  * @param  array<string, mixed>  $attributes
  */
-function databaseConnectionAdopterApp(array $attributes): App
+function databaseConnectionAdopterApp(array $attributes): Project
 {
-    $app = App::factory()->create($attributes);
+    $app = Project::factory()->create($attributes);
 
     AppInstance::factory()->for($app)->create([
         'driver_config' => new OrbitAppInstanceDriverConfigData(
@@ -599,7 +600,7 @@ function databaseConnectionAdopterApp(array $attributes): App
     return $app;
 }
 
-function databaseConnectionAdopterAppInstance(App $app): AppInstance
+function databaseConnectionAdopterAppInstance(Project $app): AppInstance
 {
     return $app->instances()->firstOrFail();
 }

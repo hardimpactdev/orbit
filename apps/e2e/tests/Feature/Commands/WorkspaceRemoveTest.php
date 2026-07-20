@@ -28,7 +28,7 @@ function workspaceRemoveSeed(E2ETopologyHarness $topology, string $workspaceName
         \\Illuminate\\Support\\Facades\\DB::table('workspace_steps')->delete();
         \\Illuminate\\Support\\Facades\\DB::table('proxy_routes')->delete();
         \\Illuminate\\Support\\Facades\\DB::table('workspaces')->delete();
-        \\App\\Models\\App::query()->delete();
+        \\App\\Models\\Project::query()->delete();
         \\Illuminate\\Support\\Facades\\DB::table('node_access')->delete();
         \\Illuminate\\Support\\Facades\\DB::table('node_access')->insert([
             'consumer_node_id' => \$nodes->get('operator-1'),
@@ -39,7 +39,7 @@ function workspaceRemoveSeed(E2ETopologyHarness $topology, string $workspaceName
             'updated_at' => now(),
         ]);
 
-        \$app = \\App\\Models\\App::query()->create([
+        \$app = \\App\\Models\\Project::query()->create([
             'name' => 'docs',
             'node_id' => \$nodes->get('app-dev-1'),
             'path' => '/home/orbit/apps/docs',
@@ -104,7 +104,7 @@ it('removes a workspace from a non-gateway caller through the gateway api', func
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit workspace:remove %s --app=docs --keep-files --force --json',
+                'cd %s && orbit workspace:remove %s --instance=docs --keep-files --force --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($workspaceName),
             ),
@@ -132,7 +132,7 @@ it('removes a workspace from a non-gateway caller through the gateway api', func
                 .escapeshellarg("echo json_encode([
                 'workspace' => \\App\\Models\\Workspace::query()->where('name', '{$workspaceName}')->exists(),
                 'route_count' => \\App\\Models\\ProxyRoute::query()->where('domain', '{$workspaceName}.docs.test')->count(),
-                'app' => \\App\\Models\\App::query()->where('name', 'docs')->exists(),
+                'app' => \\App\\Models\\Project::query()->where('name', 'docs')->exists(),
             ], JSON_THROW_ON_ERROR);"),
             timeoutSeconds: 120,
         );

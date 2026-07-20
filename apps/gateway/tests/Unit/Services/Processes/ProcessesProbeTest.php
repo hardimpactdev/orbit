@@ -14,11 +14,11 @@ use App\Enums\DriftKind;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerRenderer;
@@ -603,7 +603,7 @@ describe('systemd unit reality', function (): void {
     it('probes inherited runtime units only for workspaces on the process app instance', function (): void {
         $developmentNode = createTestAppHostNode(['name' => 'app-development']);
         $productionNode = createTestAppHostNode(['name' => 'app-production']);
-        $app = App::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
+        $app = Project::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
         $development = AppInstance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
@@ -881,7 +881,7 @@ describe('registry intent', function (): void {
 describe('owner app eligibility', function (): void {
     it('requires an owner app on an active app node', function (callable $createNode): void {
         $node = $createNode();
-        $app = App::factory()->for($node, 'node')->create();
+        $app = Project::factory()->for($node, 'node')->create();
         $process = processFor($app, ['name' => 'vite']);
 
         $drift = $this->probe->diff($process, new ProbeSnapshot([]));
@@ -1063,7 +1063,7 @@ describe('docker runtime probe scope', function (): void {
                 ],
             ]);
         $containerHash = app(ProcessDockerContainerRenderer::class)
-            ->render(new App(['name' => 'runtime']), $process)
+            ->render(new Project(['name' => 'runtime']), $process)
             ->specHash();
         $shell = new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(
@@ -1497,11 +1497,11 @@ function issue(array $drift, string $key): ?DriftEntry
     return collect($drift)->first(fn (DriftEntry $entry): bool => $entry->key === $key);
 }
 
-function processableApp(array $overrides = []): App
+function processableApp(array $overrides = []): Project
 {
     $node = createTestAppHostNode();
 
-    $app = App::factory()
+    $app = Project::factory()
         ->for($node, 'node')
         ->create($overrides);
 
@@ -1519,7 +1519,7 @@ function processableApp(array $overrides = []): App
     return $app;
 }
 
-function processFor(App $app, array $overrides = []): Process
+function processFor(Project $app, array $overrides = []): Process
 {
     return Process::factory()
         ->forOwner($app)
@@ -1627,7 +1627,7 @@ it('introspects launchd runtime units through user LaunchAgent plist checks', fu
         'platform' => 'macos_26-5-1',
         'user' => 'orbit',
     ]);
-    $app = App::factory()
+    $app = Project::factory()
         ->for($node, 'node')
         ->create([
             'name' => 'docs',

@@ -3,10 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\Project;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -116,8 +119,8 @@ describe('ToolShowController', function (): void {
 
         app()->instance(RemoteShell::class, $remoteShell);
         app()->instance(
-            \App\Services\RemoteShell\RunsInternalCommands::class,
-            new class implements \App\Services\RemoteShell\RunsInternalCommands {
+            RunsInternalCommands::class,
+            new class implements RunsInternalCommands {
                 public function runInternal(
                     Node $node,
                     string $commandName,
@@ -147,17 +150,25 @@ describe('ToolShowController', function (): void {
         expect($remoteShell->wasCalled)->toBeFalse();
     });
 
-    it('resolves the target node from an app selector', function (): void {
+    it('resolves the target node from an instance selector', function (): void {
         $caller = createToolShowCallerNode();
         $node = createTestAppHostNode(['name' => 'app-1']);
         grantToolShowAccess($caller, $node);
 
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
+        $project = Project::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+            'domain' => 'docs.example.com',
+        ]);
+        AppInstance::factory()->for($project)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
+        ]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $node->id]);
 
         $response = $this->call(
             'GET',
-            '/api/tools/php?app=docs',
+            '/api/tools/php?instance=docs',
             [],
             [],
             [],

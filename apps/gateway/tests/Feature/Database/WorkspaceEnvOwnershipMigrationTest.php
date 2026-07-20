@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Enums\WorkspaceLifecyclePhase;
-use App\Models\App;
 use App\Models\AppInstance;
+use App\Models\Project;
 use App\Models\WorkspaceStep;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -12,7 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 it('removes legacy setup and teardown steps that consume the parent env', function (): void {
-    $app = App::factory()->create();
+    $app = Project::factory()->create();
     $instance = AppInstance::factory()->for($app)->create();
     $unsafeSetup = WorkspaceStep::factory()->create([
         'app_id' => $app->id,

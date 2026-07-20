@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -27,7 +27,7 @@ function createAppRootCallerNode(array $overrides = []): Node
 /**
  * @param  list<string>  $permissions
  */
-function grantAppRootAccess(Node $caller, Node $appNode, array $permissions = ['app:root']): void
+function grantAppRootAccess(Node $caller, Node $appNode, array $permissions = ['instance:root']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -53,14 +53,18 @@ describe('AppRootController', function (): void {
         ]);
         grantAppRootAccess($caller, $targetNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
             'path' => '/home/orbit/apps/docs',
             'document_root' => 'public',
         ]);
-        AppInstance::factory()->for($app)->create([
-            'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $targetNode->id),
+        $instance = AppInstance::factory()->for($app)->create([
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $targetNode->id,
+                path: $app->path,
+                document_root: 'public',
+            ),
         ]);
 
         app()->instance(RemoteShell::class, new AppRootApiSequencedRemoteShell([
@@ -71,7 +75,7 @@ describe('AppRootController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/docs/root',
+            '/api/instances/docs/root',
             [
                 'root' => 'web',
             ],
@@ -82,14 +86,20 @@ describe('AppRootController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.app.root', 'web')
+            ->assertJsonPath('success.data.project.name', 'docs')
+            ->assertJsonPath('success.data.instance.root', 'web')
             ->assertJsonPath('success.data.result.changed', true)
             ->assertJsonPath('success.meta.node', 'app-1');
 
-        expect(App::query()->where('name', 'docs')->value('document_root'))->toBe('web');
+        expect($instance->refresh()->driver_config)
+            ->toBeInstanceOf(OrbitAppInstanceDriverConfigData::class)
+            ->and($instance->driver_config->document_root)
+            ->toBe('web')
+            ->and(Project::query()->where('name', 'docs')->value('document_root'))
+            ->toBe('public');
     });
 
-    it('rejects root updates when the caller lacks app:root on the app node', function (): void {
+    it('rejects root updates when the caller lacks instance:root on the app node', function (): void {
         Node::factory()->create([
             'name' => 'gateway-1',
         ]);
@@ -99,9 +109,9 @@ describe('AppRootController', function (): void {
             'name' => 'app-1',
             'status' => 'active',
         ]);
-        grantAppRootAccess($caller, $targetNode, ['app:read']);
+        grantAppRootAccess($caller, $targetNode, ['instance:read']);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
         ]);
@@ -113,7 +123,7 @@ describe('AppRootController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/apps/docs/root',
+            '/api/instances/docs/root',
             [
                 'root' => 'web',
             ],
@@ -125,10 +135,10 @@ describe('AppRootController', function (): void {
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:root')
+            ->assertJsonPath('error.meta.missing_permission', 'instance:root')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
-        expect(App::query()->where('name', 'docs')->value('document_root'))->toBe('public');
+        expect(Project::query()->where('name', 'docs')->value('document_root'))->toBe('public');
     });
 });
 

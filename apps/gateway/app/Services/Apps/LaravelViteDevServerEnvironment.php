@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -28,7 +28,7 @@ final readonly class LaravelViteDevServerEnvironment
      *     VITE_DEV_SERVER_CERT: string,
      * }
      */
-    public function shellVariables(App $app, Node $node, ?Workspace $workspace = null): array
+    public function shellVariables(Project $app, Node $node, ?Workspace $workspace = null): array
     {
         $url = $this->url($app, $workspace);
         $host = $this->host($app, $workspace);
@@ -52,7 +52,7 @@ final readonly class LaravelViteDevServerEnvironment
      *     VITE_DEV_SERVER_CERT: string,
      * }
      */
-    public function containerVariables(App $app, ?Workspace $workspace = null): array
+    public function containerVariables(Project $app, ?Workspace $workspace = null): array
     {
         $url = $this->url($app, $workspace);
         $host = $this->host($app, $workspace);
@@ -70,7 +70,7 @@ final readonly class LaravelViteDevServerEnvironment
     /**
      * @return list<array{source: string, target: string, read_only: bool}>
      */
-    public function containerCertificateMounts(App $app, ?Workspace $workspace = null): array
+    public function containerCertificateMounts(Project $app, ?Workspace $workspace = null): array
     {
         $app->loadMissing('node');
         $node = $workspace instanceof Workspace ? $this->placement->nodeForWorkspace($workspace) : $app->node;
@@ -97,12 +97,12 @@ final readonly class LaravelViteDevServerEnvironment
         ];
     }
 
-    public function url(App $app, ?Workspace $workspace = null): string
+    public function url(Project $app, ?Workspace $workspace = null): string
     {
         return $workspace instanceof Workspace ? $workspace->url() : $app->url();
     }
 
-    public function host(App $app, ?Workspace $workspace = null): string
+    public function host(Project $app, ?Workspace $workspace = null): string
     {
         $url = $this->url($app, $workspace);
         $host = parse_url($url, PHP_URL_HOST);
@@ -122,7 +122,7 @@ final readonly class LaravelViteDevServerEnvironment
         return $this->fallbackHost($app, $workspace);
     }
 
-    private function fallbackHost(App $app, ?Workspace $workspace): string
+    private function fallbackHost(Project $app, ?Workspace $workspace): string
     {
         return $workspace instanceof Workspace ? "{$workspace->name}.{$app->name}" : $app->name;
     }

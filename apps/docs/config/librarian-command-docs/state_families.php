@@ -7,9 +7,9 @@ return [
         'singular' => 'node',
         'doctor_doc' => 'domains/1_node/node-doctor.md',
     ],
-    'app' => [
-        'singular' => 'app',
-        'doctor_doc' => 'domains/5_app/app-doctor.md',
+    'instance' => [
+        'singular' => 'instance',
+        'doctor_doc' => 'domains/5_project/instance-doctor.md',
     ],
     'workspace' => [
         'singular' => 'workspace',

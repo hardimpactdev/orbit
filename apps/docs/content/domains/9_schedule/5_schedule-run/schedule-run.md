@@ -9,13 +9,13 @@ Use `schedule:run` to test a recurring schedule, run a missed task, or execute a
 ## Usage
 
 ```bash
-orbit schedule:run [name] [--app=<app>] [--node=<node>] [--json]
+orbit schedule:run [name] [--instance=<project.instance>] [--node=<node>] [--json]
 ```
 
 ## Examples
 
 ```bash
-orbit schedule:run laravel-scheduler --app=docs.production
+orbit schedule:run laravel-scheduler --instance=docs.production
 orbit schedule:run backups --node=app-1
 ```
 
@@ -23,22 +23,22 @@ orbit schedule:run backups --node=app-1
 
 - `name`: schedule slug. When omitted in interactive mode, Orbit shows a
   schedule data table.
-- `--app`: select the owning `app.instance`. A bare app name is shorthand only
+- `--instance`: select the owning `app.instance`. A bare project name is shorthand only
   when exactly one eligible instance is visible.
 - `--node`: disambiguate a node-scoped schedule.
 - `--json`: Output JSON.
 
-`--app` and `--node` are mutually exclusive filters.
+`--instance` and `--node` are mutually exclusive filters.
 
 ## What Happens
 
 Use `schedule:run` when you want to test a schedule or run a missed task on
 demand. `schedule:run` resolves the schedule from gateway configuration,
-executes its stored command or script once on the owning app instance's serving
+executes its stored command or script once on the owning instance's serving
 node and path (or the selected node target) through the gateway, and records
 the run output in gateway schedule history.
 
-It does not change the recurring interval, enabled state, app-instance process definitions, or schedule ownership.
+It does not change the recurring interval, enabled state, instance process definitions, or schedule ownership.
 
 ## Output
 

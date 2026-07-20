@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Workspaces;
 
 use App\Enums\WorkspaceLifecyclePhase;
-use App\Models\App;
 use App\Models\AppInstance;
+use App\Models\Project;
 use App\Models\WorkspaceStep;
 
 class WorkspaceStepListPayload
@@ -18,7 +18,7 @@ class WorkspaceStepListPayload
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function forApp(App $app, WorkspaceLifecyclePhase $phase, AppInstance $instance): array
+    public function forApp(Project $app, WorkspaceLifecyclePhase $phase, AppInstance $instance): array
     {
         return $this->stepPolicy
             ->stepsFor($app, $phase, $instance)
@@ -30,15 +30,15 @@ class WorkspaceStepListPayload
     /**
      * @return array<string, mixed>
      */
-    public function forStep(WorkspaceStep $step, ?App $app = null): array
+    public function forStep(WorkspaceStep $step, ?Project $app = null): array
     {
         $step->loadMissing(['app', 'appInstance']);
         $app ??= $step->app;
 
         return [
             'id' => $step->id,
-            'app' => $app?->name,
-            'app_instance' => $step->appInstance->name,
+            'project' => $app?->name,
+            'instance' => $step->appInstance->name,
             'phase' => $step->phase->value,
             'order' => $step->sort_order,
             'command' => $step->command,

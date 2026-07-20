@@ -34,7 +34,7 @@ final readonly class ScheduleRunController implements Loggable
         try {
             $schedule = $this->payload->find(
                 $name,
-                $this->stringQuery($request, 'app'),
+                $this->stringQuery($request, 'instance'),
                 $this->stringQuery($request, 'node'),
                 $caller,
                 'schedule:run',

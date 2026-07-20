@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Models\Node;
+use App\Models\Workspace;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
@@ -15,7 +17,7 @@ it('leaves node-owned process events without app instance ownership', function (
         DB::table('processes')->insert([
             'id' => 1,
             'node_id' => 1,
-            'owner_type' => App\Models\Node::class,
+            'owner_type' => Node::class,
             'owner_id' => 1,
             'name' => 'valkey',
             'command' => 'valkey-server',
@@ -48,7 +50,7 @@ it('leaves node-owned process events without app instance ownership', function (
         expect(fn (): bool => DB::table('processes')->insert([
             'id' => 2,
             'node_id' => 1,
-            'owner_type' => App\Models\Node::class,
+            'owner_type' => Node::class,
             'owner_id' => 1,
             'app_instance_id' => null,
             'name' => 'valkey',
@@ -84,8 +86,8 @@ it('backfills app and workspace process ownership without replicating definition
             'app_instance_id' => 2,
         ]);
         DB::table('processes')->insert([
-            historical_process(1, 1, App\Models\App::class, 1, 'queue', $now),
-            historical_process(2, 2, App\Models\Workspace::class, 1, 'vite', $now),
+            historical_process(1, 1, 'App\\Models\\App', 1, 'queue', $now),
+            historical_process(2, 2, Workspace::class, 1, 'vite', $now),
         ]);
         DB::table('process_events')->insert([
             historical_process_event(1, 'evt-app', 1, 1, null, 1, $now),
@@ -126,7 +128,7 @@ it('stops before schema mutation when historical app process ownership is ambigu
             historical_process_instance(2, 1, 'production', 3, '/srv/docs-production'),
         ]);
         DB::table('processes')->insert(
-            historical_process(1, 1, App\Models\App::class, 1, 'queue', $now),
+            historical_process(1, 1, 'App\\Models\\App', 1, 'queue', $now),
         );
 
         expect(fn (): mixed => process_app_instance_ownership_migration()->up())
@@ -194,7 +196,7 @@ it('stops before schema mutation when historical event ownership candidates conf
             'app_instance_id' => 2,
         ]);
         DB::table('processes')->insert(
-            historical_process(1, 1, App\Models\App::class, 1, 'queue', $now),
+            historical_process(1, 1, 'App\\Models\\App', 1, 'queue', $now),
         );
         DB::table('process_events')->insert(
             historical_process_event(1, 'evt-conflict', 1, 1, 1, 1, $now),

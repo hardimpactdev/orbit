@@ -8,30 +8,31 @@ use Database\Factories\AppAnalyticsBindingFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Override;
 
 /**
  * @property int $id
  * @property int $app_id
  * @property bool $enabled
  * @property list<string> $public_hosts
- * @property-read App $app
+ * @property-read Project $app
  */
 class AppAnalyticsBinding extends Model
 {
     /** @use HasFactory<AppAnalyticsBindingFactory> */
     use HasFactory;
 
-    #[\Override]
+    #[Override]
     protected $table = 'app_analytics_bindings';
 
-    #[\Override]
+    #[Override]
     protected $fillable = [
         'app_id',
         'enabled',
         'public_hosts',
     ];
 
-    #[\Override]
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -41,10 +42,18 @@ class AppAnalyticsBinding extends Model
     }
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return BelongsTo<Project, $this>
+     */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class, 'app_id');
+    }
+
+    /**
+     * @return BelongsTo<Project, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->project();
     }
 }

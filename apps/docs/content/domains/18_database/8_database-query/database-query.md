@@ -13,7 +13,7 @@ mapping instead of reading `.env` files directly.
 orbit database:query {target} --sql=<sql> [--connection=<slug>] [--limit=50] [--full] [--write] [--json]
 ```
 
-`target` resolves a dotted app-instance or workspace context, or a direct
+`target` resolves a dotted instance or workspace context, or a direct
 connection slug. `--connection` is optional when
 the target has exactly one attached mapping for the selected prefix.
 

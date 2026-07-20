@@ -6,28 +6,37 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\App;
+use App\Models\Project;
 use App\Services\Apps\AppRootUpdater;
+use App\Services\Apps\AppSelectorResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-#[RequiresPermission('app:root', servingNode: ServingNode::AppOwning)]
+#[RequiresPermission('instance:root', servingNode: ServingNode::AppOwning)]
 final class AppRootController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?Project $activitySubject = null;
 
-    public function __invoke(string $app, Request $request): JsonResponse
+    public function __invoke(string $instance, Request $request): JsonResponse
     {
-        $targetApp = $this->resolveApp($app);
-
-        if (! $targetApp instanceof App) {
-            return $this->error('app.not_found', "Application '{$app}' not found.", ['app' => $app], 404);
+        try {
+            $selection = app(AppSelectorResolver::class)->requireInstance(
+                app(AppSelectorResolver::class)->resolveRequired($instance),
+            );
+        } catch (AppSelectionResolutionFailed) {
+            return $this->error(
+                'instance.not_found',
+                "Instance '{$instance}' not found.",
+                ['instance' => $instance],
+                404,
+            );
         }
 
-        $targetApp->loadMissing('node');
+        $targetApp = $selection->app;
 
         $root = $this->optionalString($request, 'root');
 
@@ -36,30 +45,14 @@ final class AppRootController implements Loggable
         }
 
         $result = app(AppRootUpdater::class)->update([
-            'app' => $app,
+            'instance' => $instance,
             'root' => $root,
             '--json' => true,
         ]);
 
-        $this->activitySubject = App::query()->where('name', $targetApp->name)->first();
+        $this->activitySubject = Project::query()->where('name', $targetApp->name)->first();
 
         return response()->json($result->payload, $result->successful() ? 200 : 422);
-    }
-
-    private function resolveApp(string $selector): ?App
-    {
-        return App::query()
-            ->with('node')
-            ->get()
-            ->filter(
-                fn (App $app): bool => (
-                    $app->name === $selector
-                    || $app->domain === $selector
-                    || $app->url() === "https://{$selector}"
-                ),
-            )
-            ->values()
-            ->first();
     }
 
     private function optionalString(Request $request, string $key): ?string
@@ -95,7 +88,7 @@ final class AppRootController implements Loggable
 
     public function type(): string
     {
-        return 'api:POST /apps/{app}/root';
+        return 'api:POST /instances/{instance}/root';
     }
 
     public function activityLogAction(): string

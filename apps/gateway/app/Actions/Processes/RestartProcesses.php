@@ -78,8 +78,8 @@ final readonly class RestartProcesses
             $runtimes[] = [
                 'process' => $process->name,
                 'node' => $context->node->name,
-                'app' => $context->app?->name,
-                'app_instance' => $context->appInstance?->name,
+                'project' => $context->app?->name,
+                'instance' => $context->appInstance?->name,
                 'workspace' => $workspace?->name,
                 'runtime_unit' => $runtimeUnit,
                 'state' => $ok ? 'running' : 'failed',

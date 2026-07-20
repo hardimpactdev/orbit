@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Contracts\AgentIdeMessageAdapter;
-use App\Models\App;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +28,7 @@ function createAppPruneCallerNode(array $overrides = []): Node
 /**
  * @param  list<string>  $permissions
  */
-function grantAppPruneAccess(Node $caller, Node $appNode, array $permissions = ['app:prune']): void
+function grantAppPruneAccess(Node $caller, Node $appNode, array $permissions = ['instance:prune']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -38,30 +40,45 @@ function grantAppPruneAccess(Node $caller, Node $appNode, array $permissions = [
     ]);
 }
 
+function createAppPruneInstance(Project $project, Node $node): AppInstance
+{
+    return AppInstance::factory()->for($project)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            path: $project->path,
+            document_root: $project->document_root,
+            domain: $project->domain,
+        ),
+        'agent_ide_config' => ['adapter' => 'opencode'],
+    ]);
+}
+
 beforeEach(function (): void {
     app()->instance(AgentIdeMessageAdapter::class, new AppPruneControllerAdapter);
 });
 
 describe('AppPruneController', function (): void {
-    it('prunes stale workspaces for callers with app:prune on the app node', function (): void {
+    it('prunes stale workspaces for callers with instance:prune on the app node', function (): void {
         $caller = createAppPruneCallerNode();
         $appNode = Node::factory()->appDev()->create(['name' => 'app-1']);
         grantAppPruneAccess($caller, $appNode);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
-            'agent_ide_config' => ['adapter' => 'opencode'],
         ]);
+        $instance = createAppPruneInstance($app, $appNode);
         Workspace::factory()->create([
             'name' => 'stale-ws',
             'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
         ]);
 
         $response = $this->call(
             'POST',
-            '/api/apps/prune',
+            '/api/instances/prune',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'dry_run' => true,
             ],
             [],
@@ -71,27 +88,28 @@ describe('AppPruneController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.app', 'docs')
+            ->assertJsonPath('success.data.project', 'docs')
+            ->assertJsonPath('success.data.instance', 'development')
             ->assertJsonPath('success.data.stale_workspaces.0.name', 'stale-ws')
             ->assertJsonPath('success.data.stale_workspaces.0.removed', false)
             ->assertJsonPath('success.data.dry_run', true);
     });
 
-    it('rejects callers without app:prune on the app node', function (): void {
+    it('rejects callers without instance:prune on the app node', function (): void {
         $caller = createAppPruneCallerNode();
         $appNode = Node::factory()->appDev()->create(['name' => 'app-1']);
-        grantAppPruneAccess($caller, $appNode, ['app:read']);
-        App::factory()->create([
+        grantAppPruneAccess($caller, $appNode, ['instance:read']);
+        $project = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
-            'agent_ide_config' => ['adapter' => 'opencode'],
         ]);
+        createAppPruneInstance($project, $appNode);
 
         $response = $this->call(
             'POST',
-            '/api/apps/prune',
+            '/api/instances/prune',
             [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'dry_run' => true,
             ],
             [],
@@ -102,7 +120,7 @@ describe('AppPruneController', function (): void {
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:prune')
+            ->assertJsonPath('error.meta.missing_permission', 'instance:prune')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
     });
 
@@ -115,18 +133,18 @@ describe('AppPruneController', function (): void {
         ]);
         $developmentNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
         grantAppPruneAccess($caller, $developmentNode);
-        App::factory()->for($developmentNode, 'node')->create([
+        $developmentProject = Project::factory()->for($developmentNode, 'node')->create([
             'name' => 'docs',
-            'agent_ide_config' => ['adapter' => 'opencode'],
         ]);
+        createAppPruneInstance($developmentProject, $developmentNode);
         $adapter = new AppPruneControllerAdapter;
         app()->instance(AgentIdeMessageAdapter::class, $adapter);
 
         $this
             ->call(
                 'POST',
-                '/api/apps/prune',
-                ['app' => 'docs', 'dry_run' => true],
+                '/api/instances/prune',
+                ['instance' => 'docs', 'dry_run' => true],
                 [],
                 [],
                 ['REMOTE_ADDR' => APP_PRUNE_CALLER_WG_IP],
@@ -143,16 +161,16 @@ describe('AppPruneController', function (): void {
             'status' => 'active',
         ]);
         $productionNode = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
-        App::factory()->for($productionNode, 'node')->create([
+        $productionProject = Project::factory()->for($productionNode, 'node')->create([
             'name' => 'shop',
-            'agent_ide_config' => ['adapter' => 'opencode'],
         ]);
+        createAppPruneInstance($productionProject, $productionNode);
 
         $this
             ->call(
                 'POST',
-                '/api/apps/prune',
-                ['app' => 'shop', 'dry_run' => true],
+                '/api/instances/prune',
+                ['instance' => 'shop', 'dry_run' => true],
                 [],
                 [],
                 ['REMOTE_ADDR' => APP_PRUNE_CALLER_WG_IP],

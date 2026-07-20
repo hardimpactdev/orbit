@@ -25,7 +25,7 @@ it('serializes doctor filters into the body', function (): void {
         families: ['node'],
         node: 'app-1',
         self: true,
-        app: 'docs',
+        instance: 'docs',
         workspace: 'main',
         key: 'node.security.host_key.app-1',
     );
@@ -34,7 +34,7 @@ it('serializes doctor filters into the body', function (): void {
         'families' => ['node'],
         'node' => 'app-1',
         'self' => true,
-        'app' => 'docs',
+        'instance' => 'docs',
         'workspace' => 'main',
         'key' => 'node.security.host_key.app-1',
     ]);

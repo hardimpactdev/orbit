@@ -6,6 +6,7 @@ use App\Models\GatewayExtension;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 
@@ -185,4 +186,40 @@ it('requires the disable permission for the Cloudflare SSL disable API route', f
         ->assertJsonPath('error.meta.missing_permission', 'cf:ssl:disable');
 
     Http::assertNothingSent();
+});
+
+it('adds a cache rule for a project without exposing app vocabulary', function (): void {
+    $gateway = createCloudflareApiCallerNode();
+    Project::factory()->for($gateway, 'node')->create([
+        'name' => 'docs',
+        'domain' => 'docs.example.com',
+    ]);
+
+    Http::fake([
+        'https://api.cloudflare.com/client/v4/zones*' => Http::response([
+            'success' => true,
+            'result' => [[
+                'id' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'name' => 'example.com',
+                'status' => 'active',
+            ]],
+        ]),
+        'https://api.cloudflare.com/client/v4/zones/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/rulesets' => Http::sequence()
+            ->push(['success' => true, 'result' => []])
+            ->push(['success' => true, 'result' => ['id' => 'cache-rules']]),
+    ]);
+
+    $response = $this->call(
+        'POST',
+        '/api/cloudflare/cache-rules/docs',
+        [],
+        [],
+        [],
+        ['REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('success.data.rule.project', 'docs')
+        ->assertJsonMissingPath('success.data.rule.app');
 });

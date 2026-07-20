@@ -24,9 +24,14 @@ abstract class AppGatewayCommand extends GatewayCommand
         ]);
     }
 
-    protected function apiAppPath(string $selector, string $suffix = ''): string
+    protected function apiInstancePath(string $selector, string $suffix = ''): string
     {
-        return '/api/apps/'.rawurlencode($selector).$suffix;
+        return '/api/instances/'.rawurlencode($selector).$suffix;
+    }
+
+    protected function apiProjectPath(string $project, string $suffix = ''): string
+    {
+        return '/api/projects/'.rawurlencode($project).$suffix;
     }
 
     /**

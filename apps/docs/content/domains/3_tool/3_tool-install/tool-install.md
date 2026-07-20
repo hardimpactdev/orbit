@@ -14,7 +14,7 @@ MySQL or Valkey are not tool installs; use `process:add --service=<identifier>` 
 ## Usage
 
 ```bash
-orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
+orbit tool:install <tool> [--instance=<project.instance>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
 ```
 
 ## Examples
@@ -34,7 +34,7 @@ orbit tool:install codex-cli --node=app-1 --user=agent
 
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node.
-- `--app`: Resolve the target node from an app.
+- `--instance`: Resolve the target node from an app.
 - `--tool-version`: Specific tool version supported by the tool definition.
   Tools that do not explicitly support install versions fail with
   `validation_failed`.
@@ -56,7 +56,7 @@ orbit tool:install codex-cli --node=app-1 --user=agent
 - `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive
   with `--json`.
 
-Target context is required. Provide `--node`, `--app`, configure local
+Target context is required. Provide `--node`, `--instance`, configure local
 `node:default`, or select a target interactively. `tool:install` does not use a
 silent single-node fallback.
 

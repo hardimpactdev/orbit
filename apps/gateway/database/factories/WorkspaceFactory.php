@@ -6,8 +6,8 @@ namespace Database\Factories;
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\WorkspaceLifecycleStatus;
-use App\Models\App;
 use App\Models\AppInstance;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -23,10 +23,10 @@ class WorkspaceFactory extends Factory
         $name = fake()->unique()->slug(2);
 
         return [
-            'app_id' => App::factory(),
+            'app_id' => Project::factory(),
             'app_instance_id' => static function (array $attributes): int {
                 $appId = (int) $attributes['app_id'];
-                $app = App::query()->findOrFail($appId);
+                $app = Project::query()->findOrFail($appId);
 
                 return (int) (
                     AppInstance::query()->where('app_id', $appId)->value('id')

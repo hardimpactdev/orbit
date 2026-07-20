@@ -9,10 +9,12 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\DriftKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppsProbe;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -33,7 +35,7 @@ describe('interface contract', function (): void {
     });
 
     it('returns empty snapshot from introspect', function (): void {
-        $app = new App(['name' => 'site']);
+        $app = new Project(['name' => 'site']);
         $snapshot = $this->probe->introspect($app);
 
         expect($snapshot->isEmpty())->toBeTrue();
@@ -43,7 +45,7 @@ describe('interface contract', function (): void {
 describe('docker-first probe', function (): void {
     it('dispatches app introspection through the internal agent-push command', function (): void {
         $node = appsProbeAgentNode();
-        $app = App::factory()
+        $app = Project::factory()
             ->for($node, 'node')
             ->create([
                 'name' => 'docs',
@@ -70,7 +72,7 @@ describe('docker-first probe', function (): void {
 
     it('passes app reality inputs as a typed JSON payload', function (): void {
         $node = appsProbeAgentNode();
-        $app = App::factory()
+        $app = Project::factory()
             ->for($node, 'node')
             ->create([
                 'name' => 'docs',
@@ -96,7 +98,7 @@ describe('docker-first probe', function (): void {
     it('passes app instance runtime inputs as a concrete target payload', function (): void {
         $beast = appsProbeAgentNode(['name' => 'beast', 'wireguard_address' => '10.6.0.62']);
         $nmbp = appsProbeAgentNode(['name' => 'nmbp', 'platform' => 'darwin', 'user' => 'nckrtl', 'tld' => 'nmbp']);
-        $app = App::factory()
+        $app = Project::factory()
             ->for($beast, 'node')
             ->create([
                 'name' => 'hauser',
@@ -137,7 +139,7 @@ describe('docker-first probe', function (): void {
 describe('source path and document root reality', function (): void {
     it('introspects source path, document root, and runtime container reality on the owning app node', function (): void {
         $node = appsProbeAgentNode();
-        $app = App::factory()
+        $app = Project::factory()
             ->for($node, 'node')
             ->create([
                 'name' => 'docs',
@@ -164,7 +166,7 @@ describe('source path and document root reality', function (): void {
 
     it('detects missing source paths', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
 
         $snapshot = new ProbeSnapshot([
             'docs' => [
@@ -182,7 +184,7 @@ describe('source path and document root reality', function (): void {
 
     it('hands app instance runtime mismatches to process doctor without duplicate app issues', function (): void {
         $node = appNode(['name' => 'nmbp', 'platform' => 'darwin', 'user' => 'nckrtl', 'tld' => 'nmbp']);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'hauser',
             'node_id' => $node->id,
             'path' => '/Users/nckrtl/apps/hauser',
@@ -209,7 +211,7 @@ describe('source path and document root reality', function (): void {
 
     it('detects missing document roots after the source path exists', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
 
         $snapshot = new ProbeSnapshot([
             'docs' => [
@@ -226,7 +228,7 @@ describe('source path and document root reality', function (): void {
 
     it('detects document roots that resolve outside the app path', function (): void {
         $node = appNode();
-        $app = App::factory()
+        $app = Project::factory()
             ->for($node, 'node')
             ->create([
                 'name' => 'docs',
@@ -243,7 +245,7 @@ describe('source path and document root reality', function (): void {
 describe('PHP runtime reality', function (): void {
     it('detects unavailable Docker runtimes on the owning app node', function (): void {
         $node = appNode();
-        $app = App::factory()
+        $app = Project::factory()
             ->for($node, 'node')
             ->create([
                 'name' => 'docs',
@@ -261,7 +263,7 @@ describe('PHP runtime reality', function (): void {
 
     it('does not report PHP runtime drift when the source path is missing', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
 
         $snapshot = new ProbeSnapshot([
             'docs' => convergedRuntimeSnapshot([
@@ -278,7 +280,7 @@ describe('PHP runtime reality', function (): void {
 
     it('emits app.php_version_unavailable when the selected FrankenPHP image is not on the owning node', function (): void {
         $node = appNode();
-        $app = App::factory()
+        $app = Project::factory()
             ->for($node, 'node')
             ->create([
                 'name' => 'docs',
@@ -309,7 +311,7 @@ describe('PHP runtime reality', function (): void {
         'hands unknown image-probe failure with no runtime unit to process doctor',
         function (): void {
             $node = appNode();
-            $app = App::factory()
+            $app = Project::factory()
                 ->for($node, 'node')
                 ->create([
                     'name' => 'docs',
@@ -347,7 +349,7 @@ describe('PHP runtime reality', function (): void {
 
     it('hands unknown image-probe failure with a mismatched runtime unit to process doctor', function (): void {
         $node = appNode();
-        $app = App::factory()
+        $app = Project::factory()
             ->for($node, 'node')
             ->create([
                 'name' => 'docs',
@@ -379,7 +381,7 @@ describe('PHP runtime reality', function (): void {
 
     it('does not emit app.php_version_unavailable for static apps regardless of node image availability', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
+        $app = Project::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
 
         $snapshot = new ProbeSnapshot([
             'marketing' => convergedRuntimeSnapshot(['runtime_image_available' => false]),
@@ -394,7 +396,7 @@ describe('PHP runtime reality', function (): void {
 describe('runtime container reality', function (): void {
     it('hands missing FrankenPHP runtime units to process doctor without duplicate app issues', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
 
         $snapshot = new ProbeSnapshot([
             'docs' => convergedRuntimeSnapshot([
@@ -412,7 +414,7 @@ describe('runtime container reality', function (): void {
 
     it('hands FrankenPHP runtime unit mismatches to process doctor without duplicate app issues', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
 
         $snapshot = new ProbeSnapshot([
             'docs' => convergedRuntimeSnapshot(['container_spec_matches' => false]),
@@ -425,7 +427,7 @@ describe('runtime container reality', function (): void {
 
     it('does not report runtime container drift before Docker is available', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
 
         $snapshot = new ProbeSnapshot([
             'docs' => convergedRuntimeSnapshot([
@@ -443,7 +445,7 @@ describe('runtime container reality', function (): void {
 
     it('does not report runtime container drift for static apps', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
+        $app = Project::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
 
         $snapshot = new ProbeSnapshot([
             'marketing' => convergedRuntimeSnapshot([
@@ -462,7 +464,7 @@ describe('runtime container reality', function (): void {
         'hands a stopped FrankenPHP runtime unit to process doctor without duplicate app issues',
         function (): void {
             $node = appNode();
-            $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+            $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
 
             $snapshot = new ProbeSnapshot([
                 'docs' => convergedRuntimeSnapshot([
@@ -484,7 +486,7 @@ describe('runtime container reality', function (): void {
 describe('managed runtime config reality', function (): void {
     it('detects missing managed runtime config files for PHP apps', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
 
         $snapshot = new ProbeSnapshot([
             'docs' => convergedRuntimeSnapshot([
@@ -501,7 +503,7 @@ describe('managed runtime config reality', function (): void {
 
     it('detects managed runtime config hash mismatches', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
 
         $snapshot = new ProbeSnapshot([
             'docs' => convergedRuntimeSnapshot(['runtime_config_matches' => false]),
@@ -514,7 +516,7 @@ describe('managed runtime config reality', function (): void {
 
     it('does not report runtime config drift for static apps', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
+        $app = Project::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
 
         $snapshot = new ProbeSnapshot([
             'marketing' => convergedRuntimeSnapshot([
@@ -631,8 +633,8 @@ describe('managed runtime config reality', function (): void {
         function (): void {
             $node = appsProbeAgentNode();
             app()->instance(
-                \App\Services\RemoteShell\RunsInternalCommands::class,
-                app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+                RunsInternalCommands::class,
+                app(RemoteLocalExecutor::class),
             );
             Http::preventStrayRequests();
             Http::fake([
@@ -680,7 +682,7 @@ describe('managed runtime config reality', function (): void {
 describe('production security reality', function (): void {
     it('detects production app runtime container isolation drift', function (): void {
         $node = appNode([], role: 'app-prod');
-        $app = App::factory()
+        $app = Project::factory()
             ->for($node, 'node')
             ->create([
                 'name' => 'docs',
@@ -709,7 +711,7 @@ describe('production security reality', function (): void {
 
     it('does not apply production app security drift to development apps', function (): void {
         $node = appNode();
-        $app = App::factory()
+        $app = Project::factory()
             ->for($node, 'node')
             ->create([
                 'name' => 'docs',
@@ -739,7 +741,7 @@ describe('production security reality', function (): void {
 describe('registry intent', function (): void {
     it('passes complete app records on active app nodes', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create();
+        $app = Project::factory()->for($node, 'node')->create();
 
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
 
@@ -761,7 +763,7 @@ describe('registry intent', function (): void {
             'updated_at' => now(),
         ]);
 
-        $app = App::findOrFail($id);
+        $app = Project::findOrFail($id);
 
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
 
@@ -775,7 +777,7 @@ describe('registry intent', function (): void {
 describe('owning node eligibility', function (): void {
     it('requires an active app node owner', function (callable $createNode): void {
         $node = $createNode();
-        $app = App::factory()->for($node, 'node')->create();
+        $app = Project::factory()->for($node, 'node')->create();
 
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
         $ownerIssues = array_values(array_filter(
@@ -792,7 +794,7 @@ describe('owning node eligibility', function (): void {
 
     it('accepts active app node owners', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create();
+        $app = Project::factory()->for($node, 'node')->create();
 
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
         $ownerIssues = array_filter(
@@ -804,14 +806,17 @@ describe('owning node eligibility', function (): void {
     });
 });
 
-describe('app agent IDE defaults', function (): void {
-    it('detects unsupported app agent IDE adapters', function (): void {
+describe('instance agent IDE defaults', function (): void {
+    it('detects unsupported instance agent IDE adapters', function (): void {
         $node = appNode();
-        $app = App::factory()
+        $app = Project::factory()
             ->for($node, 'node')
+            ->create();
+        $instance = AppInstance::factory()
+            ->for($app)
             ->create(['agent_ide_config' => ['adapter' => 'unsupported']]);
 
-        $drift = $this->probe->diff($app, new ProbeSnapshot([]));
+        $drift = $this->probe->diffInstance($app, $instance, new ProbeSnapshot([]));
         $adapterIssues = array_values(array_filter(
             $drift,
             fn (DriftEntry $entry): bool => $entry->key === 'app.agent_ide_default_invalid',
@@ -821,13 +826,16 @@ describe('app agent IDE defaults', function (): void {
         expect($adapterIssues[0]->kind)->toBe(DriftKind::Divergent);
     });
 
-    it('accepts supported app agent IDE adapters', function (?array $agentIdeConfig): void {
+    it('accepts supported instance agent IDE adapters', function (?array $agentIdeConfig): void {
         $node = appNode();
-        $app = App::factory()
+        $app = Project::factory()
             ->for($node, 'node')
+            ->create();
+        $instance = AppInstance::factory()
+            ->for($app)
             ->create(['agent_ide_config' => $agentIdeConfig]);
 
-        $drift = $this->probe->diff($app, new ProbeSnapshot([]));
+        $drift = $this->probe->diffInstance($app, $instance, new ProbeSnapshot([]));
         $adapterIssues = array_filter(
             $drift,
             fn (DriftEntry $entry): bool => $entry->key === 'app.agent_ide_default_invalid',
@@ -889,8 +897,8 @@ function appsProbeAgentNode(array $overrides = []): Node
 function fakeAppsRuntimeConfigsProbe(string $stdout): void
 {
     app()->instance(
-        \App\Services\RemoteShell\RunsInternalCommands::class,
-        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+        RunsInternalCommands::class,
+        app(RemoteLocalExecutor::class),
     );
     Http::preventStrayRequests();
     Http::fake([
@@ -936,8 +944,8 @@ function appsRuntimeConfigsProbeWasSent(): bool
 function fake_apps_introspect_probe(array $snapshot): void
 {
     app()->instance(
-        \App\Services\RemoteShell\RunsInternalCommands::class,
-        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+        RunsInternalCommands::class,
+        app(RemoteLocalExecutor::class),
     );
     Http::preventStrayRequests();
     Http::fake([

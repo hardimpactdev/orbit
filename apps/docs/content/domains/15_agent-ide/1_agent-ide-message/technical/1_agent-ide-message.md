@@ -17,7 +17,7 @@
 ## Signature
 
 ```bash
-orbit agent-ide:message [message] [--app=<app>] [--workspace=<workspace>] [--stdin] [--json]
+orbit agent-ide:message [message] [--instance=<project.instance>] [--workspace=<workspace>] [--stdin] [--json]
 ```
 
 ## Input Contract
@@ -29,8 +29,8 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `message` | `[message]` or stdin | Always. | `[message]` is present and `--stdin` is true. | None. | Non-empty UTF-8 text. Positional message trims surrounding whitespace; stdin preserves the body except for one trailing newline added by common shells. |
 | `stdin` | `--stdin` | Never. | `[message]` is present. | `false`. | Reads message body from standard input. |
-| `app` | `--app` | Required when neither `--workspace` nor current-directory context resolves a target. | `--workspace` is present. | Current-directory app-instance context when available. | Visible dotted app-instance selector. A bare logical app may resolve only when exactly one instance exists. |
-| `workspace` | `--workspace` | Required when neither `--app` nor current-directory context resolves a target. | `--app` is present. | Current workspace context when the command runs from a workspace path. | Existing workspace name or hostname, resolved inside app scope when an app context is known. |
+| `app` | `--instance` | Required when neither `--workspace` nor current-directory context resolves a target. | `--workspace` is present. | Current-directory instance context when available. | Visible dotted instance selector. A bare project may resolve only when exactly one instance exists. |
+| `workspace` | `--workspace` | Required when neither `--instance` nor current-directory context resolves a target. | `--instance` is present. | Current workspace context when the command runs from a workspace path. | Existing workspace name or hostname, resolved inside instance scope when an app context is known. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Mode Contracts
@@ -42,21 +42,21 @@ This command follows the shared
 
 1. Select the output renderer.
 2. Validate mutually exclusive inputs:
-   - `--app` and `--workspace` cannot be combined.
+   - `--instance` and `--workspace` cannot be combined.
    - `[message]` and `--stdin` cannot be combined.
 3. Resolve `message` from `[message]` or stdin.
 4. Resolve target context:
    - `--workspace=<workspace>` selects a workspace context.
-   - `--app=<app.instance>` selects that instance's main context and serving
+   - `--instance=<project.instance>` selects that instance's main context and serving
      node.
    - omitted target resolves from current workspace path, then current app path.
 5. Call the gateway. The gateway authorizes the WireGuard peer against the
-   selected app instance's serving node, or the workspace's selected-instance
+   selected instance's serving node, or the workspace's selected-instance
    serving node.
 6. The gateway resolves the effective Agent IDE adapter:
    - future workspace-level override, when present;
    - app override;
-   - selected app instance serving-node default;
+   - selected instance serving-node default;
    - no adapter.
 7. The gateway validates that the resolved adapter is registered with the
    gateway-owned adapter registry.
@@ -68,19 +68,19 @@ This command follows the shared
 
 ### Target Resolution Rules
 
-Explicit `--workspace` wins over current-directory context. Explicit `--app`
-targets one concrete app instance's main context and does not imply a workspace;
-a logical app record never supplies placement or a node default. When resolving
-from the current directory, workspace context takes priority over parent app
-context. Every app or workspace result includes its logical parent app and
-selected app instance.
+Explicit `--workspace` wins over current-directory context. Explicit `--instance`
+targets one concrete instance's main context and does not imply a workspace;
+a project record never supplies placement or a node default. When resolving
+from the current directory, workspace context takes priority over parent project
+context. Every app or workspace result includes its logical parent project and
+selected instance.
 - Workspace and path targets require an active `app-dev` serving node and a
   caller that is not `app-prod`. The gateway rejects either production side
   with `workspace.unsupported_for_production` before target lookup, adapter
   session lookup, or delivery. Messages to the app's main context remain
   available under their normal authorization contract.
 - App-context authorization, path resolution, and the effective node adapter
-  use the selected instance's serving node. They never use a logical app
+  use the selected instance's serving node. They never use a project
   owning-node field.
 - If the requested target is hidden from the caller, return
   `authorization_failed` instead of leaking target existence.
@@ -89,7 +89,7 @@ selected app instance.
 
 - Resolve the effective adapter through the shared inheritance chain documented
   in [Agent IDE Integration](../../../../architecture.md#agent-ide-integration).
-- `none` at app scope means the app explicitly disables Agent IDE messaging;
+- `none` at instance scope means the app explicitly disables Agent IDE messaging;
   fail with `no_effective_adapter`.
 - A missing node/app default also fails with `no_effective_adapter`.
 - Adapter support is gateway-owned. The command must not accept an adapter name
@@ -163,7 +163,7 @@ adapter credentials, raw adapter output, or secrets.
 
 - `agent-ide:message` is communication, not convergence.
 - `doctor --family=node` verifies Agent IDE defaults that are owned by the node, when supported.
-- `doctor --family=app` verifies Agent IDE configuration that is owned by the app, when supported.
+- `doctor --family=instance` verifies Agent IDE configuration that is owned by the app, when supported.
 - `doctor --family=workspace` owns workspace state that adapters may reference.
 - `doctor --family=process` owns crash-event policy and history that may trigger
   Agent IDE notifications, plus the lifecycle of adapter servers backed by processes.

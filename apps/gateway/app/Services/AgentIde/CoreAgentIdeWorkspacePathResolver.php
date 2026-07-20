@@ -7,7 +7,7 @@ namespace App\Services\AgentIde;
 use App\Contracts\AgentIdeWorkspacePathResolver;
 use App\Data\AgentIde\WorkspacePathResolution;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
+use App\Models\Project;
 use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 use RuntimeException;
@@ -18,7 +18,7 @@ final readonly class CoreAgentIdeWorkspacePathResolver implements AgentIdeWorksp
         private RunsInternalCommands $localExecutor,
     ) {}
 
-    public function resolve(string $adapter, App $app, string $absolutePath): ?WorkspacePathResolution
+    public function resolve(string $adapter, Project $app, string $absolutePath): ?WorkspacePathResolution
     {
         return match ($adapter) {
             'opencode' => $this->resolveOpenCode($app, $absolutePath),
@@ -27,17 +27,17 @@ final readonly class CoreAgentIdeWorkspacePathResolver implements AgentIdeWorksp
         };
     }
 
-    private function resolveOpenCode(App $app, string $absolutePath): ?WorkspacePathResolution
+    private function resolveOpenCode(Project $app, string $absolutePath): ?WorkspacePathResolution
     {
         return $this->resolveWorkspace('opencode', $app, $absolutePath);
     }
 
-    private function resolvePolyscope(App $app, string $absolutePath): ?WorkspacePathResolution
+    private function resolvePolyscope(Project $app, string $absolutePath): ?WorkspacePathResolution
     {
         return $this->resolveWorkspace('polyscope', $app, $absolutePath);
     }
 
-    private function resolveWorkspace(string $adapter, App $app, string $absolutePath): ?WorkspacePathResolution
+    private function resolveWorkspace(string $adapter, Project $app, string $absolutePath): ?WorkspacePathResolution
     {
         $app->loadMissing('node');
 

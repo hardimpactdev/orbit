@@ -7,10 +7,10 @@ use App\Contracts\RemoteShell;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\WorkspaceLifecycleStatus;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -45,7 +45,7 @@ beforeEach(function (): void {
             'path' => '/home/nckrtl/apps/demo',
             'php_version' => '8.5',
             'document_root' => 'public',
-            'agent_ide_config' => json_encode(['adapter' => 'opencode']),
+            'agent_ide_config' => null,
             'created_at' => now(),
             'updated_at' => now(),
         ],
@@ -60,6 +60,7 @@ beforeEach(function (): void {
             document_root: 'public',
             domain: 'demo.beast',
         ),
+        'agent_ide_config' => ['adapter' => 'opencode'],
     ]);
 
     app()->instance(AgentIdeMessageAdapter::class, new PruneAppActionTestAdapter);
@@ -84,11 +85,12 @@ it('identifies stale workspaces', function (): void {
         'agent_ide_workspace_id' => 'sess_123',
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $prune = app(PruneAppWorkspaces::class);
-    $result = $prune->handle($app);
+    $result = $prune->handle($app, AppInstance::query()->firstOrFail());
 
-    expect($result['app'])->toBe('demo');
+    expect($result['project'])->toBe('demo');
+    expect($result['instance'])->toBe('development');
     expect($result['stale_workspaces'])->toHaveCount(1);
     expect($result['stale_workspaces'][0]['name'])->toBe('stale-ws');
     expect($result['stale_workspaces'][0]['removed'])->toBeTrue();
@@ -104,9 +106,9 @@ it('dry-run does not remove workspaces', function (): void {
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $prune = app(PruneAppWorkspaces::class);
-    $result = $prune->handle($app, dryRun: true);
+    $result = $prune->handle($app, AppInstance::query()->firstOrFail(), dryRun: true);
 
     expect($result['dry_run'])->toBeTrue();
     expect($result['stale_workspaces'][0]['removed'])->toBeFalse();
@@ -123,21 +125,21 @@ it('returns empty when no stale workspaces', function (): void {
         'agent_ide_workspace_id' => 'sess_123',
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $prune = app(PruneAppWorkspaces::class);
-    $result = $prune->handle($app);
+    $result = $prune->handle($app, AppInstance::query()->firstOrFail());
 
     expect($result['stale_workspaces'])->toBe([]);
 });
 
 it('throws when no adapter configured', function (): void {
-    App::query()->update(['agent_ide_config' => null]);
+    AppInstance::query()->update(['agent_ide_config' => null]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $prune = app(PruneAppWorkspaces::class);
 
-    expect(fn () => $prune->handle($app))
-        ->toThrow(RuntimeException::class, 'No agent IDE adapter configured for this app.');
+    expect(fn () => $prune->handle($app, AppInstance::query()->firstOrFail()))
+        ->toThrow(RuntimeException::class, 'No agent IDE adapter configured for this instance.');
 });
 
 it('prunes using explicit adapter name', function (): void {
@@ -149,11 +151,12 @@ it('prunes using explicit adapter name', function (): void {
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
     ]);
 
-    $app = App::query()->with('node')->first();
+    $app = Project::query()->with('node')->first();
     $prune = app(PruneAppWorkspaces::class);
-    $result = $prune->handle($app, adapterName: 'opencode');
+    $result = $prune->handle($app, AppInstance::query()->firstOrFail(), adapterName: 'opencode');
 
-    expect($result['app'])->toBe('demo');
+    expect($result['project'])->toBe('demo');
+    expect($result['instance'])->toBe('development');
     expect($result['stale_workspaces'])->toHaveCount(1);
     expect($result['stale_workspaces'][0]['name'])->toBe('stale-ws');
     expect($result['stale_workspaces'][0]['removed'])->toBeTrue();

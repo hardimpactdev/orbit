@@ -42,7 +42,7 @@ final class DatabaseConnectionDetachController extends DatabaseConnectionApiCont
         }
 
         if ($owner instanceof AppInstance) {
-            $targetType = 'app_instance';
+            $targetType = 'instance';
             $targetName = $owner->app->name.'.'.$owner->name;
             $result = $this->registry->detachFromAppInstance($connection, $owner, $envPrefix);
         } elseif ($owner instanceof Workspace) {

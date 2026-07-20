@@ -15,7 +15,7 @@ use Saloon\Http\Faking\MockResponse;
 uses(TestCase::class);
 
 it('targets the process stop gateway endpoint with optional filters', function (): void {
-    $request = new StopProcessesRequest(app: 'docs', workspace: 'feature-docs', name: 'vite');
+    $request = new StopProcessesRequest(instance: 'docs', workspace: 'feature-docs', name: 'vite');
 
     expect($request->getMethod())
         ->toBe(Method::POST)
@@ -23,7 +23,7 @@ it('targets the process stop gateway endpoint with optional filters', function (
         ->toBe('/api/processes/stop')
         ->and($request->body()->all())
         ->toBe([
-            'app' => 'docs',
+            'instance' => 'docs',
             'workspace' => 'feature-docs',
             'name' => 'vite',
         ]);
@@ -37,7 +37,7 @@ it('returns a ProcessStopResponse DTO', function (): void {
                     'runtimes' => [
                         [
                             'process' => 'vite',
-                            'app' => 'docs',
+                            'instance' => 'docs',
                             'workspace' => null,
                             'runtime_unit' => 'orbit_docs_main_vite',
                             'state' => 'stopped',
@@ -53,7 +53,7 @@ it('returns a ProcessStopResponse DTO', function (): void {
     $connector = new GatewayConnector(baseUrl: 'https://10.6.0.2', caPemPath: '/path/to/ca.pem');
     $connector->withMockClient($mock);
 
-    $dto = $connector->send(new StopProcessesRequest(app: 'docs', workspace: null, name: 'vite'))->dto();
+    $dto = $connector->send(new StopProcessesRequest(instance: 'docs', workspace: null, name: 'vite'))->dto();
 
     expect($dto)->toBeInstanceOf(ProcessStopResponse::class)->and($dto->data['runtimes'][0]['state'])->toBe('stopped');
 });

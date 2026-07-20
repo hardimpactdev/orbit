@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\CodexApp\CodexAppConfigMerger;
 use App\Services\CodexApp\RemoteCodexAppConfig;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -20,12 +20,12 @@ final readonly class CodexAppController
 
     public function add(
         Request $request,
-        string $app,
+        string $project,
         RemoteCodexAppConfig $codexConfig,
         CodexAppConfigMerger $merger,
         ToolCatalog $catalog,
     ): JsonResponse {
-        $context = $this->mutationContext($request, $app, $catalog);
+        $context = $this->mutationContext($request, $project, $catalog);
 
         if ($context instanceof JsonResponse) {
             return $context;
@@ -65,12 +65,12 @@ final readonly class CodexAppController
 
     public function remove(
         Request $request,
-        string $app,
+        string $project,
         RemoteCodexAppConfig $codexConfig,
         CodexAppConfigMerger $merger,
         ToolCatalog $catalog,
     ): JsonResponse {
-        $context = $this->mutationContext($request, $app, $catalog);
+        $context = $this->mutationContext($request, $project, $catalog);
 
         if ($context instanceof JsonResponse) {
             return $context;
@@ -148,9 +148,9 @@ final readonly class CodexAppController
     }
 
     /**
-     * @return array{0: OrbitApp, 1: Node}|JsonResponse
+     * @return array{0: Project, 1: Node}|JsonResponse
      */
-    private function mutationContext(Request $request, string $app, ToolCatalog $catalog): array|JsonResponse
+    private function mutationContext(Request $request, string $project, ToolCatalog $catalog): array|JsonResponse
     {
         $caller = $this->caller($request);
 
@@ -158,10 +158,10 @@ final readonly class CodexAppController
             return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
         }
 
-        $model = $this->resolveApp($app);
+        $model = $this->resolveApp($project);
 
-        if (! $model instanceof OrbitApp || ! $model->node instanceof Node) {
-            return $this->error('app.not_found', "App '{$app}' not found.", ['app' => $app], 404);
+        if (! $model instanceof Project || ! $model->node instanceof Node) {
+            return $this->error('project.not_found', "Project '{$project}' not found.", ['project' => $project], 404);
         }
 
         if (! app(NodeAccessAuthorizer::class)->allows($caller, $model->node, 'codex:app')) {
@@ -350,9 +350,9 @@ final readonly class CodexAppController
         ]];
     }
 
-    private function resolveApp(string $selector): ?OrbitApp
+    private function resolveApp(string $selector): ?Project
     {
-        return OrbitApp::query()
+        return Project::query()
             ->with('node')
             ->where(function ($query) use ($selector): void {
                 $query->where('name', $selector)
@@ -362,12 +362,12 @@ final readonly class CodexAppController
     }
 
     /**
-     * @return array{app: string, label: string, ssh_alias: string, remote_path: string}
+     * @return array{project: string, label: string, ssh_alias: string, remote_path: string}
      */
-    private function projectPayload(OrbitApp $app): array
+    private function projectPayload(Project $app): array
     {
         return [
-            'app' => $app->name,
+            'project' => $app->name,
             'label' => $app->name,
             'ssh_alias' => $this->sshAlias($app),
             'remote_path' => rtrim($app->path, '/'),
@@ -377,21 +377,21 @@ final readonly class CodexAppController
     /**
      * @param  array<string, mixed>  $connection
      * @param  array<string, mixed>  $project
-     * @return array{app: string, label: string, ssh_alias: string, remote_path: string}
+     * @return array{project: string, label: string, ssh_alias: string, remote_path: string}
      */
     private function projectPayloadFromConfig(array $connection, array $project): array
     {
         $label = (string) ($project['label'] ?? '');
 
         return [
-            'app' => $label,
+            'project' => $label,
             'label' => $label,
             'ssh_alias' => (string) ($connection['sshAlias'] ?? ''),
             'remote_path' => (string) ($project['remotePath'] ?? ''),
         ];
     }
 
-    private function sshAlias(OrbitApp $app): string
+    private function sshAlias(Project $app): string
     {
         return $app->node instanceof Node ? $app->node->name : $app->name;
     }

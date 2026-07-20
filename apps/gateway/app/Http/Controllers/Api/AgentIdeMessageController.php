@@ -6,13 +6,17 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Requests\Api\SendAgentIdeMessageApiRequest;
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\AgentIde\AgentIdeMessageDelivery;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -29,7 +33,9 @@ final class AgentIdeMessageController implements Loggable
 
     public function __construct(
         private readonly AgentIdeMessageDelivery $delivery,
+        private readonly AppSelectorResolver $appSelectorResolver,
         private readonly NodeAccessAuthorizer $authorizer,
+        private readonly WorkspacePlacement $placement,
         private readonly WorkspaceRoleGuard $workspaceRoleGuard,
     ) {}
 
@@ -68,18 +74,32 @@ final class AgentIdeMessageController implements Loggable
             return $this->sendPathMessage($request, $caller, $pathSelector);
         }
 
-        $app = $this->resolveApp($request->appSelector());
+        $instanceSelector = $request->instanceSelector();
+        $selection = $this->appSelectorResolver->resolve($instanceSelector);
 
-        if (! $app instanceof App) {
+        if ($selection === null) {
             return $this->error(
                 code: 'target_not_found',
-                message: "App '{$request->appSelector()}' not found or not visible.",
-                meta: ['app' => $request->appSelector()],
+                message: "Instance '{$instanceSelector}' not found or not visible.",
+                meta: ['instance' => $instanceSelector],
                 status: 404,
             );
         }
 
-        return $this->sendAppMessage($request, $caller, $app);
+        try {
+            $selection = $this->appSelectorResolver->requireInstance($selection);
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->error(
+                code: $exception->errorCode,
+                message: $exception->getMessage(),
+                meta: $exception->meta,
+                status: 422,
+            );
+        }
+
+        assert($selection->instance instanceof AppInstance);
+
+        return $this->sendInstanceMessage($request, $caller, $selection->instance);
     }
 
     private function sendPathMessage(SendAgentIdeMessageApiRequest $request, Node $caller, string $path): JsonResponse
@@ -90,40 +110,56 @@ final class AgentIdeMessageController implements Loggable
             return $this->sendWorkspaceMessage($request, $caller, $workspace->name);
         }
 
-        $app = $this->resolveAppFromPath($path);
+        $selection = $this->appSelectorResolver->resolveByPath($path);
 
-        if ($app instanceof App) {
-            return $this->sendAppMessage($request, $caller, $app);
+        if ($selection !== null) {
+            try {
+                $selection = $this->appSelectorResolver->requireInstance($selection);
+            } catch (AppSelectionResolutionFailed $exception) {
+                return $this->error(
+                    code: $exception->errorCode,
+                    message: $exception->getMessage(),
+                    meta: $exception->meta,
+                    status: 422,
+                );
+            }
+
+            assert($selection->instance instanceof AppInstance);
+
+            return $this->sendInstanceMessage($request, $caller, $selection->instance);
         }
 
         return $this->error(
             code: 'validation_failed',
-            message: 'Run this command from an app/workspace directory or pass --app/--workspace.',
+            message: 'Run this command from an instance/workspace directory or pass --instance/--workspace.',
             meta: ['field' => 'target'],
             status: 422,
         );
     }
 
-    private function sendAppMessage(SendAgentIdeMessageApiRequest $request, Node $caller, App $app): JsonResponse
-    {
-        $app->loadMissing('node');
-
-        $authorizationMeta = $this->messageAuthorizationMeta($caller, $app);
+    private function sendInstanceMessage(
+        SendAgentIdeMessageApiRequest $request,
+        Node $caller,
+        AppInstance $instance,
+    ): JsonResponse {
+        $instance->loadMissing('project');
+        $project = $instance->project;
+        $authorizationMeta = $this->messageAuthorizationMeta($caller, $instance);
 
         if ($authorizationMeta !== null) {
             return $this->error(
                 code: 'authorization_failed',
-                message: "This node is not authorized to message app '{$app->name}'.",
+                message: "This node is not authorized to message instance '{$project->name}.{$instance->name}'.",
                 meta: $authorizationMeta,
                 status: 403,
             );
         }
 
         try {
-            $data = $this->delivery->deliverToApp($app->name, $request->messageBody());
-            $this->rememberDeliveryActivity($app, $data);
+            $data = $this->delivery->deliverToInstance($instance, $request->messageBody());
+            $this->rememberDeliveryActivity($project, $data);
         } catch (GatewayApiException $e) {
-            $this->rememberFailureActivity($app, $e);
+            $this->rememberFailureActivity($project, $e);
 
             return $this->error(
                 code: $e->errorCode() ?? 'adapter_delivery_failed',
@@ -157,9 +193,10 @@ final class AgentIdeMessageController implements Loggable
             );
         }
 
-        $app = $workspace->app;
+        $project = $workspace->project;
+        $instance = $workspace->appInstance;
 
-        if (! $app instanceof App) {
+        if (! $project instanceof Project || ! $instance instanceof AppInstance) {
             return $this->error(
                 code: 'target_not_found',
                 message: "Workspace '{$workspaceSelector}' not found or not visible.",
@@ -174,9 +211,7 @@ final class AgentIdeMessageController implements Loggable
             return $this->workspaceUnsupportedForProduction($exception);
         }
 
-        $app->loadMissing('node');
-
-        $authorizationMeta = $this->messageAuthorizationMeta($caller, $app, $workspace);
+        $authorizationMeta = $this->messageAuthorizationMeta($caller, $instance, $workspace);
 
         if ($authorizationMeta !== null) {
             return $this->error(
@@ -209,20 +244,6 @@ final class AgentIdeMessageController implements Loggable
         ]);
     }
 
-    private function resolveApp(string $selector): ?App
-    {
-        return App::query()
-            ->with('node')
-            ->get()
-            ->first(
-                fn (App $app): bool => (
-                    $app->name === $selector
-                    || $app->domain === $selector
-                    || $app->url() === "https://{$selector}"
-                ),
-            );
-    }
-
     private function workspaceBoundaryForCaller(Node $caller): ?JsonResponse
     {
         try {
@@ -248,7 +269,7 @@ final class AgentIdeMessageController implements Loggable
     private function resolveWorkspace(string $selector): ?Workspace
     {
         $matches = Workspace::query()
-            ->with('app.node')
+            ->with(['project', 'appInstance'])
             ->where('name', $selector)
             ->get();
 
@@ -260,7 +281,7 @@ final class AgentIdeMessageController implements Loggable
         $normalizedPath = rtrim(realpath($path) ?: $path, '/');
 
         return Workspace::query()
-            ->with('app.node')
+            ->with(['project', 'appInstance'])
             ->get()
             ->first(function (Workspace $workspace) use ($normalizedPath): bool {
                 $workspacePath = rtrim(realpath($workspace->path) ?: $workspace->path, '/');
@@ -269,31 +290,23 @@ final class AgentIdeMessageController implements Loggable
             });
     }
 
-    private function resolveAppFromPath(string $path): ?App
-    {
-        $normalizedPath = rtrim(realpath($path) ?: $path, '/');
-
-        return App::query()
-            ->with('node')
-            ->get()
-            ->first(function (App $app) use ($normalizedPath): bool {
-                $appPath = rtrim(realpath($app->path) ?: $app->path, '/');
-
-                return $normalizedPath === $appPath || str_starts_with($normalizedPath, "{$appPath}/");
-            });
-    }
-
     /**
      * @return array<string, mixed>|null
      */
-    private function messageAuthorizationMeta(Node $caller, App $app, ?Workspace $workspace = null): ?array
-    {
-        $node = $app->node;
+    private function messageAuthorizationMeta(
+        Node $caller,
+        AppInstance $instance,
+        ?Workspace $workspace = null,
+    ): ?array {
+        $instance->loadMissing('project');
+        $project = $instance->project;
+        $node = $this->placement->nodeForInstance($instance);
 
         if (! $node instanceof Node) {
             return array_filter(
                 [
-                    'app' => $app->name,
+                    'project' => $project->name,
+                    'instance' => $instance->name,
                     'workspace' => $workspace?->name,
                     'reason' => 'serving_node_unresolved',
                     'missing_permission' => 'agent-ide:message',
@@ -310,7 +323,8 @@ final class AgentIdeMessageController implements Loggable
 
         return array_filter(
             [
-                'app' => $app->name,
+                'project' => $project->name,
+                'instance' => $instance->name,
                 'workspace' => $workspace?->name,
                 'reason' => $result->reason,
                 'missing_permission' => $result->missingPermission,
@@ -330,7 +344,8 @@ final class AgentIdeMessageController implements Loggable
 
         $this->activitySubject = $subject;
         $this->activityProperties = [
-            'target_app' => is_array($target) ? $target['app'] ?? null : null,
+            'target_project' => is_array($target) ? $target['project'] ?? null : null,
+            'target_instance' => is_array($target) ? $target['instance'] ?? null : null,
             'target_workspace' => is_array($target) ? $target['workspace'] ?? null : null,
             'adapter' => $agentIde['adapter'] ?? null,
             'source' => $agentIde['source'] ?? null,
@@ -344,7 +359,8 @@ final class AgentIdeMessageController implements Loggable
 
         $this->activitySubject = $subject;
         $this->activityProperties = [
-            'target_app' => $meta['app'] ?? null,
+            'target_project' => $meta['project'] ?? null,
+            'target_instance' => $meta['instance'] ?? null,
             'target_workspace' => $meta['workspace'] ?? null,
             'adapter' => $meta['adapter'] ?? null,
             'delivery_status' => 'failed',
@@ -429,17 +445,26 @@ final class AgentIdeMessageController implements Loggable
 
     public function description(): ?string
     {
-        $targetApp = $this->activityProperties['target_app'] ?? null;
+        $targetProject = $this->activityProperties['target_project'] ?? null;
+        $targetInstance = $this->activityProperties['target_instance'] ?? null;
         $targetWorkspace = $this->activityProperties['target_workspace'] ?? null;
         $adapter = $this->activityProperties['adapter'] ?? null;
 
-        if (! is_string($targetApp) || $targetApp === '' || ! is_string($adapter) || $adapter === '') {
+        if (
+            ! is_string($targetProject)
+            || $targetProject === ''
+            || ! is_string($targetInstance)
+            || $targetInstance === ''
+            || ! is_string($adapter)
+            || $adapter === ''
+        ) {
             return null;
         }
 
+        $instance = "{$targetProject}.{$targetInstance}";
         $target = is_string($targetWorkspace) && $targetWorkspace !== ''
-            ? "{$targetApp}/{$targetWorkspace}"
-            : $targetApp;
+            ? "{$instance}/{$targetWorkspace}"
+            : $instance;
 
         if (($this->activityProperties['delivery_status'] ?? null) === 'failed') {
             return "Agent IDE message failed for {$target} through {$adapter}";

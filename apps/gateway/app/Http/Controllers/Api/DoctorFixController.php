@@ -14,6 +14,7 @@ use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\Node;
 use App\Services\Doctor\DoctorAppInstanceTargetResolver;
 use App\Services\Doctor\DoctorProgressReportFactory;
+use App\Services\Doctor\DoctorPublicVocabulary;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Doctor\DoctorValidationFailure;
@@ -40,6 +41,7 @@ final class DoctorFixController implements Loggable
         DoctorReportRunner $runner,
         DoctorScopeValidator $validator,
         DoctorProgressReportFactory $progressReports,
+        DoctorPublicVocabulary $vocabulary,
         NodeAccessAuthorizer $authorizer,
         ProgressEventStreamResponseFactory $streams,
         DoctorAppInstanceTargetResolver $appTargets,
@@ -71,12 +73,12 @@ final class DoctorFixController implements Loggable
         }
 
         $this->activityMode = $mode;
-        $key = $this->key($request);
+        $key = $vocabulary->internalKey($this->key($request));
         $dryRun = $request->boolean('dry_run');
         $this->activityKey = $key;
         $this->activityDryRun = $dryRun;
 
-        $families = $this->families($request);
+        $families = $vocabulary->internalFamilies($this->families($request));
         $scopeFailure = $this->validateScope($request);
 
         if ($scopeFailure instanceof JsonResponse) {
@@ -85,7 +87,7 @@ final class DoctorFixController implements Loggable
 
         try {
             $appTarget = $appTargets->resolve(
-                $this->scopeValue($request, 'app'),
+                $this->scopeValue($request, 'instance'),
                 $caller,
                 $mode === 'adopt' ? 'doctor:adopt' : 'doctor:restore',
             );
@@ -109,10 +111,10 @@ final class DoctorFixController implements Loggable
             return response()->json([
                 'error' => [
                     'code' => 'validation_failed',
-                    'message' => "App instance '{$appTarget->app->name}.{$appTarget->instance->name}' is not placed on node '{$target->name}'.",
+                    'message' => "Instance '{$appTarget->app->name}.{$appTarget->instance->name}' is not placed on node '{$target->name}'.",
                     'meta' => [
                         'field' => 'node',
-                        'reason' => 'app_instance_node_mismatch',
+                        'reason' => 'instance_node_mismatch',
                         'node' => $target->name,
                         'serving_node' => $appTarget->node->name,
                     ],
@@ -129,7 +131,7 @@ final class DoctorFixController implements Loggable
         $scope = $appTarget instanceof DoctorAppInstanceTarget
             ? $appTarget->scope($this->scopeValue($request, 'workspace'))
             : DoctorTargetScope::from(
-                $this->scopeValue($request, 'app'),
+                $this->scopeValue($request, 'instance'),
                 $this->scopeValue($request, 'workspace'),
             );
 
@@ -156,13 +158,14 @@ final class DoctorFixController implements Loggable
             return $this->workspaceUnsupportedForProduction($exception);
         }
 
-        $issues = $this->issues($request);
+        $issues = $vocabulary->internalIssues($this->issues($request));
 
         if ($this->wantsEventStream($request)) {
             return $this->stream(
                 $streams,
                 $runner,
                 $progressReports,
+                $vocabulary,
                 $target,
                 $mode,
                 $families,
@@ -185,7 +188,7 @@ final class DoctorFixController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'doctor' => $doctor,
+                    'doctor' => $vocabulary->publicReport($doctor),
                 ],
             ],
         ]);
@@ -199,6 +202,7 @@ final class DoctorFixController implements Loggable
         ProgressEventStreamResponseFactory $streams,
         DoctorReportRunner $runner,
         DoctorProgressReportFactory $progressReports,
+        DoctorPublicVocabulary $vocabulary,
         Node $target,
         string $mode,
         array $families,
@@ -210,6 +214,7 @@ final class DoctorFixController implements Loggable
         return $streams->make(function (ProgressEventStreamEmitter $events) use (
             $runner,
             $progressReports,
+            $vocabulary,
             $target,
             $mode,
             $families,
@@ -222,7 +227,7 @@ final class DoctorFixController implements Loggable
             $familyStatuses = $progressReports->familyStatuses($renderedFamilies);
 
             $events->stepEvent('__doctor_panel', 'running', 'Doctor queued', [
-                'doctor' => $progressReports->report(
+                'doctor' => $vocabulary->publicReport($progressReports->report(
                     target: $target,
                     mode: $mode,
                     families: $renderedFamilies,
@@ -233,20 +238,21 @@ final class DoctorFixController implements Loggable
                     app: $scope->app,
                     workspace: $scope->workspace,
                     appInstance: $scope->appInstance,
-                ),
+                )),
             ]);
             $events->tree('Running Doctor', array_map(
                 fn (string $family): array => [
-                    'key' => $family,
-                    'label' => "{$mode} {$family}",
+                    'key' => $vocabulary->publicFamily($family),
+                    'label' => "{$mode} {$vocabulary->publicFamily($family)}",
                 ],
                 $renderedFamilies,
             ));
 
             foreach ($renderedFamilies as $family) {
                 $familyStatuses[$family] = $mode === 'adopt' ? 'adopting' : 'restoring';
-                $events->stepEvent($family, 'running', "{$mode} {$family}", [
-                    'doctor' => $progressReports->report(
+                $publicFamily = $vocabulary->publicFamily($family);
+                $events->stepEvent($publicFamily, 'running', "{$mode} {$publicFamily}", [
+                    'doctor' => $vocabulary->publicReport($progressReports->report(
                         target: $target,
                         mode: $mode,
                         families: $renderedFamilies,
@@ -257,7 +263,7 @@ final class DoctorFixController implements Loggable
                         app: $scope->app,
                         workspace: $scope->workspace,
                         appInstance: $scope->appInstance,
-                    ),
+                    )),
                 ]);
             }
 
@@ -281,11 +287,13 @@ final class DoctorFixController implements Loggable
                     $key,
                     $scope,
                 );
+            $doctor = $vocabulary->publicReport($doctor);
 
             foreach ($renderedFamilies as $family) {
                 $familyStatuses[$family] = 'done';
-                $events->stepEvent($family, 'done', "{$family} {$mode} complete", [
-                    'doctor' => $progressReports->report(
+                $publicFamily = $vocabulary->publicFamily($family);
+                $events->stepEvent($publicFamily, 'done', "{$publicFamily} {$mode} complete", [
+                    'doctor' => $vocabulary->publicReport($progressReports->report(
                         target: $target,
                         mode: $mode,
                         families: $renderedFamilies,
@@ -296,7 +304,7 @@ final class DoctorFixController implements Loggable
                         app: $scope->app,
                         workspace: $scope->workspace,
                         appInstance: $scope->appInstance,
-                    ),
+                    )),
                 ]);
             }
 
@@ -384,7 +392,7 @@ final class DoctorFixController implements Loggable
                     'meta' => $exception->meta,
                 ],
             ],
-            $exception->errorCode === 'app.not_found' ? 404 : 422,
+            $exception->errorCode === 'instance.not_found' ? 404 : 422,
         );
     }
 

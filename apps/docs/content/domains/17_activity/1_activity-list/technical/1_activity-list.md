@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit activity:list [--app=<app>] [--node=<node>] [--effect=<effect>] [--correlation=<uuid>] [--include-internal] [--limit=<count>] [--json]
+orbit activity:list [--node=<node>] [--project=<project>] [--effect=<effect>] [--correlation=<uuid>] [--include-internal] [--limit=<count>] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `--app` | Optional. | Never. | `null`. | Non-empty app key matched against recorded activity relationships. |
+| `app` | `--instance` | Optional. | Never. | `null`. | Non-empty app key matched against recorded activity relationships. |
 | `node` | `--node` | Optional. | Never. | `null`. | Non-empty node name matched against recorded activity relationships. |
 | `effect` | `--effect` | Optional. | Never. | `null`. | One of `read`, `write`, `destructive`. |
 | `correlation` | `--correlation` | Optional. | Never. | `null`. | UUID string. |

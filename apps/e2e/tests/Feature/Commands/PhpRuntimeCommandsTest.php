@@ -21,7 +21,7 @@ function phpRuntimeCommandsSeed(E2ETopologyHarness $topology): void
 
         \Spatie\Activitylog\Models\Activity::query()->delete();
         \Illuminate\Support\Facades\DB::table('workspaces')->delete();
-        \App\Models\App::query()->delete();
+        \App\Models\Project::query()->delete();
         \App\Models\NodeTool::query()->where('name', 'php')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
@@ -31,7 +31,7 @@ function phpRuntimeCommandsSeed(E2ETopologyHarness $topology): void
             'updated_at' => now(),
         ]);
 
-        $app = \App\Models\App::query()->create([
+        $app = \App\Models\Project::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'path' => '/home/orbit/apps/docs',
@@ -89,7 +89,7 @@ function phpRuntimeCommandsGatewayState(E2ETopologyHarness $topology): array
             ->first();
 
         echo json_encode([
-            'app_php_version' => \App\Models\App::query()->where('name', 'docs')->value('php_version'),
+            'app_php_version' => \App\Models\Project::query()->where('name', 'docs')->value('php_version'),
             'workspace_php_version' => \App\Models\Workspace::query()->where('name', 'feature-docs')->value('php_version'),
             'php_tool_count' => \App\Models\NodeTool::query()->where('name', 'php')->count(),
             'php_tool_config' => $tool?->config,
@@ -117,7 +117,7 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
         $list = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit php:list --app=docs --workspace=feature-docs --json',
+                'cd %s && orbit php:list --instance=docs --workspace=feature-docs --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -145,7 +145,7 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
         $appUse = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit php:use 8.5 --app=docs --json',
+                'cd %s && orbit php:use 8.5 --instance=docs --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,
@@ -155,7 +155,7 @@ it('reads and changes PHP runtime intent without installing runtimes', function 
         $workspaceUse = $topology->ssh(
             'gateway',
             sprintf(
-                'cd %s && orbit php:use 8.4 --app=docs --workspace=feature-docs --json',
+                'cd %s && orbit php:use 8.4 --instance=docs --workspace=feature-docs --json',
                 escapeshellarg($topology->checkout('gateway')),
             ),
             timeoutSeconds: 120,

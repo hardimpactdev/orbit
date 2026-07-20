@@ -22,9 +22,9 @@ class SendAgentIdeMessageApiRequest extends FormRequest
     {
         return [
             'message' => ['required', 'string', 'filled'],
-            'app' => ['required_without_all:workspace,path', 'string', 'filled', 'prohibits:workspace,path'],
-            'workspace' => ['required_without_all:app,path', 'string', 'filled', 'prohibits:path'],
-            'path' => ['required_without_all:app,workspace', 'string', 'filled'],
+            'instance' => ['required_without_all:workspace,path', 'string', 'filled', 'prohibits:workspace,path'],
+            'workspace' => ['required_without_all:instance,path', 'string', 'filled', 'prohibits:path'],
+            'path' => ['required_without_all:instance,workspace', 'string', 'filled'],
         ];
     }
 
@@ -36,12 +36,12 @@ class SendAgentIdeMessageApiRequest extends FormRequest
         return trim($message);
     }
 
-    public function appSelector(): string
+    public function instanceSelector(): string
     {
-        /** @var string $app */
-        $app = $this->validated('app');
+        /** @var string $instance */
+        $instance = $this->validated('instance');
 
-        return trim($app);
+        return trim($instance);
     }
 
     public function workspaceSelector(): ?string
@@ -64,7 +64,7 @@ class SendAgentIdeMessageApiRequest extends FormRequest
         $field = $validator->errors()->has('message') ? 'message' : 'target';
         $message = $field === 'message'
             ? 'Message is required.'
-            : 'App target is required.';
+            : 'Instance or workspace target is required.';
 
         throw new HttpResponseException(response()->json([
             'error' => [

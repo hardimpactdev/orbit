@@ -6,9 +6,9 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Php\PhpRuntimeCatalog;
@@ -54,10 +54,10 @@ function makePhpWorkspace(array $appOverrides = [], array $workspaceOverrides = 
 /**
  * @param  array<string, mixed>  $attributes
  */
-function makeWorkspaceRendererApp(Node $node, array $attributes): App
+function makeWorkspaceRendererApp(Node $node, array $attributes): Project
 {
-    $app = App::factory()->for($node, 'node')->create($attributes);
-    assert($app instanceof App, description: 'Workspace factory must return an App model.');
+    $app = Project::factory()->for($node, 'node')->create($attributes);
+    assert($app instanceof Project, description: 'Workspace factory must return an App model.');
 
     return $app;
 }
@@ -65,7 +65,7 @@ function makeWorkspaceRendererApp(Node $node, array $attributes): App
 /**
  * @param  array<string, mixed>  $attributes
  */
-function makeWorkspaceRendererWorkspace(App $app, array $attributes): Workspace
+function makeWorkspaceRendererWorkspace(Project $app, array $attributes): Workspace
 {
     $workspace = Workspace::factory()->for($app, 'app')->create($attributes);
     assert($workspace instanceof Workspace, description: 'Workspace factory must return a Workspace model.');
@@ -385,7 +385,7 @@ it('changes the spec hash when the app-dev packages mount policy changes', funct
     $withPackagesMount = $renderer->render($workspace)->specHash();
     $app = $workspace->app;
     assert(
-        $app instanceof App,
+        $app instanceof Project,
         description: 'Workspace must retain its app relation before packages mount hash coverage.',
     );
     $node = $app->node;

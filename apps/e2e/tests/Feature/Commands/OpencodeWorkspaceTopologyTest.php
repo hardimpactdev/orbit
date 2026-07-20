@@ -69,7 +69,7 @@ it('installs OpenCode Server and creates an accessible OpenCode-backed workspace
         $registration = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --root=public --php-version=8.5 --json',
+                'cd %s && orbit instance:register %s --node=app-dev-1 --path=%s --root=public --php-version=8.5 --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($appName),
                 escapeshellarg($appPath),
@@ -95,7 +95,7 @@ it('installs OpenCode Server and creates an accessible OpenCode-backed workspace
         $agentIde = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:agent-ide %s opencode --json',
+                'cd %s && orbit instance:agent-ide %s opencode --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($appName),
             ),
@@ -115,7 +115,7 @@ it('installs OpenCode Server and creates an accessible OpenCode-backed workspace
         $workspace = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit workspace:new %s --app=%s --json',
+                'cd %s && orbit workspace:new %s --instance=%s --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($workspaceName),
                 escapeshellarg($appName),
@@ -433,7 +433,7 @@ function opencodeWorkspaceGatewayState(E2ETopologyHarness $topology, string $app
     $script = <<<'PHP'
         $appName = __APP_NAME__;
         $workspaceName = __WORKSPACE_NAME__;
-        $app = \App\Models\App::query()->where('name', $appName)->firstOrFail();
+        $app = \App\Models\Project::query()->where('name', $appName)->firstOrFail();
         $workspace = \App\Models\Workspace::query()
             ->where('app_id', $app->id)
             ->where('name', $workspaceName)

@@ -14,7 +14,7 @@ final class AppAnalyticsShowCommand extends AppGatewayCommand
     use RendersAppAnalyticsBinding;
 
     #[\Override]
-    protected $name = 'app:analytics show';
+    protected $name = 'instance:analytics show';
 
     #[\Override]
     protected $description = 'Show analytics tracking proxy configuration for an app.';
@@ -24,20 +24,20 @@ final class AppAnalyticsShowCommand extends AppGatewayCommand
     {
         parent::configure();
 
-        $this->addArgument('app', InputArgument::OPTIONAL, 'App name or hostname');
+        $this->addArgument('instance', InputArgument::OPTIONAL, 'Instance selector (project.instance or hostname)');
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Output JSON');
     }
 
     public function handle(): int
     {
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('instance');
 
         if ($selector === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         try {
-            $response = $this->gatewayGet($this->apiAppPath($selector, '/analytics'));
+            $response = $this->gatewayGet($this->apiInstancePath($selector, '/analytics'));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }

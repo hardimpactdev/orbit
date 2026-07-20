@@ -7,8 +7,8 @@ namespace App\Concerns;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\PromptAborted;
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
@@ -29,7 +29,7 @@ trait PromptsForRegistryEntities
      * @throws PromptAborted
      */
     protected function promptForVisibleApp(
-        string $label = 'Select an app',
+        string $label = 'Select a project',
         ?string $node = null,
         ?string $environment = null,
     ): string|GatewayApiException {
@@ -40,14 +40,14 @@ trait PromptsForRegistryEntities
         }
 
         if ($apps === []) {
-            return new GatewayApiException('No apps found.', 'app.not_found', [
-                'field' => 'app',
+            return new GatewayApiException('No projects found.', 'project.not_found', [
+                'field' => 'project',
             ]);
         }
 
         return (string) $this->promptDataTable(
             label: $label,
-            headers: ['App', 'Host', 'Node', 'Repository'],
+            headers: ['Project', 'Host', 'Node', 'Repository'],
             rows: $this->appPromptRows($apps),
         );
     }
@@ -149,7 +149,7 @@ trait PromptsForRegistryEntities
     {
         $selected = (string) $this->promptDataTable(
             label: $label,
-            headers: ['Workspace', 'App', 'Node', 'URL', 'Status'],
+            headers: ['Workspace', 'Project', 'Node', 'URL', 'Status'],
             rows: $this->workspacePromptRows($workspaces),
         );
 
@@ -163,17 +163,22 @@ trait PromptsForRegistryEntities
         ?string $node = null,
         ?string $environment = null,
     ): array|GatewayApiException {
-        return App::query()
-            ->with('node')
-            ->when($node
-            !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where(
-                'name',
-                $node,
-            )))
-            ->when($environment !== null, fn (Builder $query): Builder => $query->where('environment', $environment))
+        /** @var Builder<Project> $query */
+        $query = Project::query()->with('node');
+
+        if ($node !== null) {
+            $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node));
+        }
+
+        if ($environment !== null) {
+            $query->where('environment', $environment);
+        }
+
+        /** @mago-expect analyzer:invalid-argument */
+        return $query
             ->orderBy('name')
             ->get()
-            ->map(fn (App $app): array => $this->appPromptPayload($app))
+            ->map(fn (Project $project): array => $this->appPromptPayload($project))
             ->values()
             ->all();
     }
@@ -513,7 +518,7 @@ trait PromptsForRegistryEntities
     /**
      * @return array<string, mixed>
      */
-    private function appPromptPayload(App $app): array
+    private function appPromptPayload(Project $app): array
     {
         return [
             'name' => $app->name,

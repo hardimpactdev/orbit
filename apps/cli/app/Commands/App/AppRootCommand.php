@@ -13,21 +13,21 @@ final class AppRootCommand extends AppGatewayCommand
     use WithStepTree;
 
     #[\Override]
-    protected $signature = 'app:root
-        {app? : App name or hostname}
-        {root? : Document root relative to app path}
+    protected $signature = 'instance:root
+        {instance? : Instance selector (project.instance or hostname)}
+        {root? : Document root relative to the instance path}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Change the document root for an app.';
+    protected $description = 'Change the document root for an instance.';
 
     public function handle(): int
     {
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('instance');
         $root = $this->stringArgument('root');
 
         if ($selector === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         if ($root === null) {
@@ -52,7 +52,7 @@ final class AppRootCommand extends AppGatewayCommand
         $response = [];
 
         $outcome = $this->runStepOperation(
-            'Updating App Root',
+            'Updating Instance Root',
             [
                 ['label' => 'Apply and verify root change', 'doneLabel' => 'Applied and verified root change'],
                 [
@@ -83,16 +83,16 @@ final class AppRootCommand extends AppGatewayCommand
      */
     private function footerFor(array $response): string
     {
-        $app = $this->appData($response);
-        $name = (string) ($app['name'] ?? '');
+        $instance = $this->instanceData($response);
+        $name = $this->instanceName($response, $instance);
 
         if ($this->driftIsPresent($response)) {
-            return "Document root for app '{$name}' updated with drift";
+            return "Document root for instance '{$name}' updated with drift";
         }
 
         return $this->changed($response)
-            ? "Document root for app '{$name}' updated"
-            : "Document root for app '{$name}' unchanged";
+            ? "Document root for instance '{$name}' updated"
+            : "Document root for instance '{$name}' unchanged";
     }
 
     /**
@@ -100,15 +100,15 @@ final class AppRootCommand extends AppGatewayCommand
      */
     private function renderRootNotes(array $response): void
     {
-        $app = $this->appData($response);
-        $name = (string) ($app['name'] ?? '');
-        $node = (string) ($app['node'] ?? '');
-        $root = (string) ($app['root'] ?? '');
+        $instance = $this->instanceData($response);
+        $name = $this->instanceName($response, $instance);
+        $node = (string) ($instance['node'] ?? '');
+        $root = (string) ($instance['root'] ?? '');
 
         $this->line(
             $this->changed($response)
-                ? "  Document root for app '{$name}' updated to '{$root}'."
-                : "  Document root for app '{$name}' is already '{$root}'.",
+                ? "  Document root for instance '{$name}' updated to '{$root}'."
+                : "  Document root for instance '{$name}' is already '{$root}'.",
         );
         $this->line("  Artifacts successfully re-applied on node '{$node}'.");
 
@@ -140,7 +140,7 @@ final class AppRootCommand extends AppGatewayCommand
      */
     private function updateRoot(string $selector, string $root): array
     {
-        return $this->gatewayPost($this->apiAppPath($selector, '/root'), [
+        return $this->gatewayPost($this->apiInstancePath($selector, '/root'), [
             'root' => $root,
         ]);
     }
@@ -178,11 +178,24 @@ final class AppRootCommand extends AppGatewayCommand
      * @param  array<string, mixed>  $response
      * @return array<string, mixed>
      */
-    private function appData(array $response): array
+    private function instanceData(array $response): array
     {
-        $app = $this->successData($response)['app'] ?? null;
+        $instance = $this->successData($response)['instance'] ?? null;
 
-        return is_array($app) ? $app : [];
+        return $this->associativeArray($instance) ?? [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @param  array<string, mixed>  $instance
+     */
+    private function instanceName(array $response, array $instance): string
+    {
+        $project = $this->successData($response)['project'] ?? null;
+        $projectName = is_array($project) && is_string($project['name'] ?? null) ? $project['name'] : '';
+        $instanceName = is_string($instance['name'] ?? null) ? $instance['name'] : '';
+
+        return $projectName !== '' && $instanceName !== '' ? "{$projectName}.{$instanceName}" : $instanceName;
     }
 
     /**

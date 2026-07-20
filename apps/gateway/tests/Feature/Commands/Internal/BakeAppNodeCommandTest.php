@@ -9,12 +9,12 @@ use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
@@ -234,7 +234,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             'host' => '10.6.0.5',
             'wireguard_address' => '10.6.0.5',
         ]);
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
         $instance = AppInstance::factory()->for($app)->create([
             'name' => 'development',
             'driver_config' => new OrbitAppInstanceDriverConfigData(

@@ -9,8 +9,8 @@ use Orbit\Core\Progress\ProgressEventType;
 final class AppSetupCommand extends AppGatewayCommand
 {
     #[\Override]
-    protected $signature = 'app:setup
-        {app? : App name or hostname}
+    protected $signature = 'instance:setup
+        {instance? : Instance selector (project.instance or hostname)}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';
 
@@ -19,14 +19,14 @@ final class AppSetupCommand extends AppGatewayCommand
 
     public function handle(): int
     {
-        $app = $this->stringArgument('app') ?? $this->appFromOrbitMarker();
+        $app = $this->stringArgument('instance') ?? $this->instanceFromOrbitMarker();
 
         if ($app === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         return $this->streamProgress(
-            $this->apiAppPath($app, '/setup'),
+            $this->apiInstancePath($app, '/setup'),
             [],
             fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
         );

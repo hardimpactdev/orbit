@@ -100,15 +100,15 @@ final class CloudflareController implements Loggable
     }
 
     #[RequiresPermission('cf:cache:rule:add', servingNode: ServingNode::Gateway)]
-    public function addCacheRule(string $app, Request $request, CloudflareManager $cloudflare): JsonResponse
+    public function addCacheRule(string $project, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
         $this->captureActivitySubject($request);
 
-        return $this->run(fn (): array => $cloudflare->addCacheRule($app));
+        return $this->run(fn (): array => $cloudflare->addCacheRule($project));
     }
 
     #[RequiresPermission('cf:cache:rule:remove', servingNode: ServingNode::Gateway)]
-    public function removeCacheRule(string $app, Request $request, CloudflareManager $cloudflare): JsonResponse
+    public function removeCacheRule(string $project, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
         $this->captureActivitySubject($request);
 
@@ -124,7 +124,7 @@ final class CloudflareController implements Loggable
             );
         }
 
-        return $this->run(fn (): array => $cloudflare->removeCacheRule($app));
+        return $this->run(fn (): array => $cloudflare->removeCacheRule($project));
     }
 
     #[RequiresPermission('cf:ssl:enable', servingNode: ServingNode::Gateway)]
@@ -241,7 +241,7 @@ final class CloudflareController implements Loggable
     {
         return [
             'zone' => $this->stringInput(request(), 'zone'),
-            'app' => request()->route('app'),
+            'project' => request()->route('project'),
         ];
     }
 

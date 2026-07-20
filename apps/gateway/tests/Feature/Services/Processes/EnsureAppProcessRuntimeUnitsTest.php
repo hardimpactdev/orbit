@@ -9,10 +9,10 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\SystemdUnitRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -36,7 +36,7 @@ it('renders and enacts systemd units for app process definitions', function (): 
         'status' => 'active',
     ]);
 
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/home/orbit/apps/docs',
@@ -93,7 +93,7 @@ it('reports process family warnings when systemd unit enactment fails after inte
         'status' => 'active',
     ]);
 
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'runtime' => AppRuntimeKind::Static,
@@ -151,7 +151,7 @@ it(
             'status' => 'active',
         ]);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'runtime' => AppRuntimeKind::Static,
@@ -202,7 +202,7 @@ it('does not enact runtime units when an app has no process definitions', functi
         'status' => 'active',
     ]);
 
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
     ]);
@@ -229,7 +229,7 @@ it('does not reenact workspace runtime units for app-prod targets', function ():
             'tld' => 'test',
             'status' => 'active',
         ]);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/home/orbit/apps/docs',
@@ -276,7 +276,7 @@ describe('runtime dispatcher', function (): void {
             'user' => 'orbit',
         ]);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'path' => '/home/orbit/apps/docs',
@@ -340,7 +340,7 @@ describe('runtime dispatcher', function (): void {
             'status' => 'active',
         ]);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'marketing',
             'node_id' => $node->id,
             'path' => '/home/orbit/apps/marketing',

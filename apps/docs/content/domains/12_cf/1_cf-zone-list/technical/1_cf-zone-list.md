@@ -55,7 +55,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 Cloudflare provider discovery is supplemental. `cf-zone:list` does not create a
 doctor issue, fix drift, or adopt provider state. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md)
-owns ingress route health and [`doctor --family=app`](../../../5_app/app-doctor.md)
+owns ingress route health and [`doctor --family=instance`](../../../5_project/instance-doctor.md)
 owns app-domain health.
 
 ## Test Mapping

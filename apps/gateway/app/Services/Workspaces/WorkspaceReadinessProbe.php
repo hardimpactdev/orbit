@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -57,7 +57,7 @@ final readonly class WorkspaceReadinessProbe
 
         $app = $workspace->app;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return ['reachable' => false, 'status' => 'no_app'];
         }
 

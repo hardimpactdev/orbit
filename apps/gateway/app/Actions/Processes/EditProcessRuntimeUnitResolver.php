@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
-use App\Models\App;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessOwnerContext;
 
@@ -35,7 +35,7 @@ final readonly class EditProcessRuntimeUnitResolver
      */
     public function runtimeWorkspaceForUnit(
         ProcessOwnerContext $context,
-        App $app,
+        Project $app,
         Process $process,
         array $runtimeUnit,
     ): ?Workspace {

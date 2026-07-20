@@ -15,7 +15,7 @@ final class ListWorkspaceStepsRequest extends WorkspaceStepRequest
 
     public function __construct(
         public readonly string $phase,
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $path = null,
     ) {}
 
@@ -31,7 +31,7 @@ final class ListWorkspaceStepsRequest extends WorkspaceStepRequest
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'path' => $this->path,
             ],
             fn (mixed $value): bool => is_scalar($value) && $value !== '',

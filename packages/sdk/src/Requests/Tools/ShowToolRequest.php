@@ -16,7 +16,7 @@ final class ShowToolRequest extends GatewayRequest
 
     public function __construct(
         public readonly string $tool,
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $node = null,
         public readonly bool $live = false,
     ) {}
@@ -33,7 +33,7 @@ final class ShowToolRequest extends GatewayRequest
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'node' => $this->node,
                 'live' => $this->live ? '1' : null,
             ],

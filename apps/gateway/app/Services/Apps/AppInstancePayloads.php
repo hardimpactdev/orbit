@@ -26,10 +26,10 @@ final readonly class AppInstancePayloads
      */
     public function instance(AppInstance $instance): array
     {
-        $instance->loadMissing(['app.node', 'runtimeMounts']);
+        $instance->loadMissing(['project.node', 'runtimeMounts']);
 
         return [
-            'app' => $instance->app->name,
+            'project' => $instance->project->name,
             ...$this->placement($instance),
             'driver_config' => $instance->driver_config?->toArray() ?? [],
             'runtime' => $this->runtime($instance),
@@ -46,7 +46,7 @@ final readonly class AppInstancePayloads
      */
     public function placement(AppInstance $instance): array
     {
-        $instance->loadMissing('app');
+        $instance->loadMissing('project');
         $config = $instance->driver_config;
         $domain = match (true) {
             $config instanceof OrbitAppInstanceDriverConfigData => $config->domain,
@@ -55,7 +55,7 @@ final readonly class AppInstancePayloads
         };
         $host = $config instanceof LaravelCloudAppInstanceDriverConfigData
             ? $domain
-            : $this->workspacePlacement->instanceUrlHost($instance, $instance->app);
+            : $this->workspacePlacement->instanceUrlHost($instance, $instance->project);
 
         return [
             'name' => $instance->name,
@@ -89,7 +89,7 @@ final readonly class AppInstancePayloads
      */
     private function runtime(AppInstance $instance): array
     {
-        $app = $instance->app;
+        $app = $instance->project;
         $image = null;
         $runtime = $app->runtimeKind();
 

@@ -12,22 +12,21 @@ use function Laravel\Prompts\text;
 final class AppSetupStepRemoveCommand extends AppGatewayCommand
 {
     #[\Override]
-    protected $signature = 'app-setup-step:remove
-        {app? : App name or hostname}
-        {--app= : App name or hostname}
+    protected $signature = 'instance-setup-step:remove
+        {instance? : Instance selector (project.instance or hostname)}
         {--step= : Setup step id}
         {--force : Skip confirmation}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Remove an app setup step.';
+    protected $description = 'Remove an instance setup step.';
 
     public function handle(): int
     {
-        $app = $this->resolveAppSelector();
+        $app = $this->resolveInstanceSelector();
 
         if ($app === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         $step = $this->resolveStepId();
@@ -47,7 +46,7 @@ final class AppSetupStepRemoveCommand extends AppGatewayCommand
         }
 
         try {
-            $response = $this->gatewayDelete($this->apiAppPath($app, "/setup-steps/{$step}"), [
+            $response = $this->gatewayDelete($this->apiInstancePath($app, "/setup-steps/{$step}"), [
                 'destructive_consent' => true,
                 'destructive_consent_source' => 'force',
             ]);
@@ -62,16 +61,9 @@ final class AppSetupStepRemoveCommand extends AppGatewayCommand
         return $this->renderStepRemoved($step, $response);
     }
 
-    private function resolveAppSelector(): ?string
+    private function resolveInstanceSelector(): ?string
     {
-        $argument = $this->stringArgument('app');
-        $option = $this->stringOption('app');
-
-        if ($argument !== null && $option !== null && $argument !== $option) {
-            return null;
-        }
-
-        return $argument ?? $option ?? $this->appFromOrbitMarker();
+        return $this->stringArgument('instance') ?? $this->instanceFromOrbitMarker();
     }
 
     private function resolveStepId(): ?int
@@ -99,7 +91,7 @@ final class AppSetupStepRemoveCommand extends AppGatewayCommand
             return false;
         }
 
-        return confirm(label: 'Remove this app setup step?', default: false);
+        return confirm(label: 'Remove this instance setup step?', default: false);
     }
 
     private function isInteractiveInput(): bool
@@ -115,12 +107,14 @@ final class AppSetupStepRemoveCommand extends AppGatewayCommand
         $data = $this->successData($response);
         $removed = is_array($data['step'] ?? null) ? $data['step'] : [];
         $stepId = is_int($removed['id'] ?? null) ? $removed['id'] : $step;
-        $app = is_string($removed['app'] ?? null) && $removed['app'] !== '' ? $removed['app'] : '';
+        $instance = is_string($removed['instance'] ?? null) && $removed['instance'] !== ''
+            ? $removed['instance']
+            : '';
 
-        $this->line("✓ Removed setup step {$stepId} from app '{$app}'.");
+        $this->line("✓ Removed setup step {$stepId} from instance '{$instance}'.");
 
         if ($this->remainingStepCount($response) === 0) {
-            $this->line("App '{$app}' now has no setup steps.");
+            $this->line("Instance '{$instance}' now has no setup steps.");
         } else {
             $this->line('Remaining steps renumbered.');
         }

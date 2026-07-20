@@ -19,7 +19,7 @@ describe('schedule:logs', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:logs', [
             'name' => 'laravel-scheduler',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--run' => 18,
             '--lines' => 10,
             '--json' => true,
@@ -33,7 +33,7 @@ describe('schedule:logs', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/schedules/laravel-scheduler/logs')
-                && str_contains($url, 'app=docs.production')
+                && str_contains($url, 'instance=docs.production')
                 && str_contains($url, 'run=18')
                 && str_contains($url, 'lines=10')
             );
@@ -57,7 +57,7 @@ describe('schedule:logs', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:logs', [
             'name' => 'laravel-scheduler',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
         ]);
 
         expect($exitCode)
@@ -87,8 +87,8 @@ describe('schedule:logs', function (): void {
                     'schedules' => [
                         [
                             'name' => 'laravel-scheduler',
-                            'scope' => 'app',
-                            'target' => ['type' => 'app', 'name' => 'docs.production', 'node' => 'app-1'],
+                            'scope' => 'instance',
+                            'target' => ['type' => 'instance', 'name' => 'docs.production', 'node' => 'app-1'],
                         ],
                     ],
                 ]));
@@ -97,7 +97,7 @@ describe('schedule:logs', function (): void {
             if (
                 $request->method() === 'GET'
                 && $path === '/api/schedules/laravel-scheduler/logs'
-                && ($parameters['app'] ?? null) === 'docs.production'
+                && ($parameters['instance'] ?? null) === 'docs.production'
                 && ($parameters['lines'] ?? null) === '100'
             ) {
                 return Http::response(fakeSuccessEnvelope([
@@ -143,7 +143,7 @@ describe('schedule:logs', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:logs', [
             'name' => 'laravel-scheduler',
-            '--app' => 'docs.production',
+            '--instance' => 'docs.production',
             '--node' => 'app-1',
             '--json' => true,
         ]);
@@ -157,7 +157,7 @@ describe('schedule:logs', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['fields'])
-            ->toBe(['app', 'node']);
+            ->toBe(['instance', 'node']);
     });
 
     it('fails validation before opening the gateway request when run is invalid', function (): void {

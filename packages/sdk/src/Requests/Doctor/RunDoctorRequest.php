@@ -25,7 +25,7 @@ final class RunDoctorRequest extends GatewayRequest implements HasBody
         public readonly array $families = [],
         public readonly ?string $node = null,
         public readonly bool $self = false,
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $workspace = null,
         public readonly ?string $key = null,
     ) {}
@@ -45,7 +45,7 @@ final class RunDoctorRequest extends GatewayRequest implements HasBody
                 'families' => $this->families,
                 'node' => $this->node,
                 'self' => $this->self,
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'workspace' => $this->workspace,
                 'key' => $this->key,
             ],

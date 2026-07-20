@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -40,7 +40,7 @@ it('stores concrete app instance ownership for process definitions and events', 
 it('derives an app process node from its concrete instance instead of legacy app placement', function (): void {
     $legacyNode = Node::factory()->create(['name' => 'legacy-app-node']);
     $instanceNode = Node::factory()->create(['name' => 'production-app-node']);
-    $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+    $app = Project::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
     $instance = AppInstance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $instanceNode->id),
@@ -59,7 +59,7 @@ it('derives an app process node from its concrete instance instead of legacy app
 it('rejects an app process node that contradicts its concrete instance placement', function (): void {
     $legacyNode = Node::factory()->create(['name' => 'legacy-app-node']);
     $instanceNode = Node::factory()->create(['name' => 'production-app-node']);
-    $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+    $app = Project::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
     $instance = AppInstance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $instanceNode->id),
@@ -77,7 +77,7 @@ it('rejects an app process node that contradicts its concrete instance placement
 
 it('rejects app process writes without concrete app instance ownership', function (): void {
     $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
+    $app = Project::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
 
     expect(fn (): Process => $app->processes()->create([
         'node_id' => $node->id,
@@ -85,12 +85,12 @@ it('rejects app process writes without concrete app instance ownership', functio
         'command' => 'php artisan queue:work',
         'sort_order' => 1,
     ]))
-        ->toThrow(InvalidArgumentException::class, 'requires concrete app instance ownership');
+        ->toThrow(InvalidArgumentException::class, 'requires concrete instance ownership');
 });
 
 it('rejects workspace process writes without concrete app instance ownership', function (): void {
     $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
+    $app = Project::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
     $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'redesign']);
 
     expect(fn (): Process => $workspace
@@ -101,7 +101,7 @@ it('rejects workspace process writes without concrete app instance ownership', f
             'command' => 'php artisan horizon',
             'sort_order' => 1,
         ]))
-        ->toThrow(InvalidArgumentException::class, 'requires concrete app instance ownership');
+        ->toThrow(InvalidArgumentException::class, 'requires concrete instance ownership');
 });
 
 it('stores node owned process runtime configuration', function (): void {
@@ -277,7 +277,7 @@ it('stores role owned process runtime configuration', function (): void {
 
 it('stores app owned process runtime configuration', function (): void {
     $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['node_id' => $node->id, 'name' => 'abc']);
+    $app = Project::factory()->create(['node_id' => $node->id, 'name' => 'abc']);
     $instance = AppInstance::factory()->for($app)->create([
         'driver_config' => new OrbitAppInstanceDriverConfigData(node_id: $node->id),
     ]);
@@ -296,7 +296,7 @@ it('stores app owned process runtime configuration', function (): void {
     ]);
 
     expect($process->refresh())
-        ->owner->toBeInstanceOf(App::class)
+        ->owner->toBeInstanceOf(Project::class)
         ->node_id->toBe($node->id)
         ->tool->toBe('php-cli')
         ->runtime_config->toBe([
@@ -306,7 +306,7 @@ it('stores app owned process runtime configuration', function (): void {
 
 it('stores workspace owned process runtime configuration', function (): void {
     $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['node_id' => $node->id, 'name' => 'abc']);
+    $app = Project::factory()->create(['node_id' => $node->id, 'name' => 'abc']);
     $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'redesign']);
 
     $process = $workspace
@@ -335,7 +335,7 @@ it('stores workspace owned process runtime configuration', function (): void {
 
 it('defaults app and workspace host command processes to systemd when runtime is omitted', function (): void {
     $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['node_id' => $node->id, 'name' => 'abc']);
+    $app = Project::factory()->create(['node_id' => $node->id, 'name' => 'abc']);
     $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'redesign']);
 
     $relationProcess = $app->processes()->create([

@@ -21,7 +21,7 @@ function appListSeed(E2ETopologyHarness $topology): void
             }
         }
 
-        \App\Models\App::query()->delete();
+        \App\Models\Project::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             [
@@ -38,14 +38,14 @@ function appListSeed(E2ETopologyHarness $topology): void
             ],
         ]);
 
-        \App\Models\App::query()->create([
+        \App\Models\Project::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'path' => '/srv/docs',
             'document_root' => 'public',
         ]);
 
-        \App\Models\App::query()->create([
+        \App\Models\Project::query()->create([
             'name' => 'site',
             'node_id' => $nodes->get('app-prod-1'),
             'domain' => 'site.example.com',
@@ -84,7 +84,7 @@ it('lists registered apps from a operator caller through the gateway api', funct
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:list --json',
+                'cd %s && orbit project:list --json',
                 escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,

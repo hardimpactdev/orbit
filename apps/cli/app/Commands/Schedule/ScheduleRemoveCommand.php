@@ -19,7 +19,7 @@ final class ScheduleRemoveCommand extends ScheduleGatewayCommand
     #[\Override]
     protected $signature = 'schedule:remove
         {name? : Schedule name}
-        {--app= : Filter by app instance (app.instance; bare app only when unambiguous)}
+        {--instance= : Filter by instance (project.instance; bare project only when unambiguous)}
         {--node= : Filter by node scope}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:show <tool> [--app=<app>] [--node=<node>] [--live] [--json]`
+# Technical Contract: `orbit tool:show <tool> [--instance=<project.instance>] [--node=<node>] [--live] [--json]`
 
 [Back to public `tool-show` documentation.](../tool-show.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:show <tool> [--app=<app>] [--node=<node>] [--live] [--json]
+orbit tool:show <tool> [--instance=<project.instance>] [--node=<node>] [--live] [--json]
 ```
 
 ## Input Contract
@@ -23,8 +23,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Tool name from Orbit's tool catalog.` |
-| `node` | `--node` | `Required when no `--app`, local `node:default`, or interactive target selection resolves a target.` | `Never.` | `node:default if set.` | Visible active non-gateway node slug; selected tool must support the node operating system. |
-| `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
+| `node` | `--node` | `Required when no `--instance`, local `node:default`, or interactive target selection resolves a target.` | `Never.` | `node:default if set.` | Visible active non-gateway node slug; selected tool must support the node operating system. |
+| `app` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `live` | `--live` | `Optional.` | `Never.` | `false` | `Request gateway live inspection.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
@@ -32,7 +32,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Tool configuration and apply rules
 
-- Resolves the target node from `--node`, `--app`, local `node:default`, or a
+- Resolves the target node from `--node`, `--instance`, local `node:default`, or a
   documented interactive selection. Non-interactive mode (`--json` or a
   non-TTY stdout) fails with `validation_failed` when none of those sources is
   available.

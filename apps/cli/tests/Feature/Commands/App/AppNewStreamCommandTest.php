@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 describe('AppNewStream command', function (): void {
-    it('renders gateway-authored app:new progress in human mode', function (): void {
+    it('renders gateway-authored project:new progress in human mode', function (): void {
         fakeGatewayProgressStream(
             gatewayProgressFrame('tree', [
                 'title' => 'Creating App',
@@ -25,7 +25,7 @@ describe('AppNewStream command', function (): void {
                 ]),
         );
 
-        [$exitCode, $output] = runCommand($this, 'app:new', [
+        [$exitCode, $output] = runCommand($this, 'project:new', [
             'name' => 'docs',
             '--node' => 'app-1',
             '--repo' => 'hardimpact/docs',
@@ -62,7 +62,7 @@ describe('AppNewStream command', function (): void {
                 .gatewayProgressFrame('complete', $complete),
         );
 
-        [$exitCode, $output] = runCommand($this, 'app:new', [
+        [$exitCode, $output] = runCommand($this, 'project:new', [
             'name' => 'docs',
             '--node' => 'app-1',
             '--repo' => 'hardimpact/docs',
@@ -73,7 +73,7 @@ describe('AppNewStream command', function (): void {
 
         assertGatewayStreamSent(
             fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps'
+            && $request->url() === 'https://gateway.test/api/projects'
             && $request->hasHeader('Accept', 'text/event-stream'),
         );
 
@@ -90,10 +90,10 @@ describe('AppNewStream command', function (): void {
 
     it('preserves AppNewStream gateway errors before a stream starts', function (): void {
         fakeGatewayProgressStream(json_encode(fakeErrorEnvelope('authorization_failed', 'Missing app permission.', [
-            'missing_permission' => 'app:new',
+            'missing_permission' => 'project:new',
         ]), JSON_THROW_ON_ERROR), 403);
 
-        [$exitCode, $output] = runCommand($this, 'app:new', [
+        [$exitCode, $output] = runCommand($this, 'project:new', [
             'name' => 'docs',
             '--node' => 'app-1',
             '--repo' => 'hardimpact/docs',
@@ -107,6 +107,6 @@ describe('AppNewStream command', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('authorization_failed')
             ->and($decoded['error']['meta']['missing_permission'])
-            ->toBe('app:new');
+            ->toBe('project:new');
     });
 });

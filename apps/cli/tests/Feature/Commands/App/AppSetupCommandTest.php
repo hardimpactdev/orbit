@@ -6,13 +6,13 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 describe('app setup commands', function (): void {
-    it('streams app:setup through the app setup endpoint', function (): void {
+    it('streams instance:setup through the app setup endpoint', function (): void {
         $complete = [
             'exit_code' => 0,
             'data' => [
                 'footer' => 'App ready and available at: https://docs.test',
                 'result' => [
-                    'app' => 'docs',
+                    'instance' => 'docs',
                     'node' => 'app-1',
                     'setup_steps' => ['status' => 'completed', 'count' => 1],
                 ],
@@ -25,8 +25,8 @@ describe('app setup commands', function (): void {
                 .gatewayProgressFrame('complete', $complete),
         );
 
-        [$exitCode, $output] = runCommand($this, 'app:setup', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:setup', [
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -34,7 +34,7 @@ describe('app setup commands', function (): void {
 
         assertGatewayStreamSent(
             fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps/docs/setup'
+            && $request->url() === 'https://gateway.test/api/instances/docs/setup'
             && $request->hasHeader('Accept', 'text/event-stream'),
         );
 
@@ -49,20 +49,20 @@ describe('app setup commands', function (): void {
             ->not->toContain('Running setup');
     });
 
-    it('posts app-setup-step:add payloads to the gateway', function (): void {
+    it('posts instance-setup-step:add payloads to the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'added'],
             'step' => [
                 'id' => 10,
-                'app' => 'docs',
+                'instance' => 'docs',
                 'order' => 1,
                 'command' => 'composer install',
                 'timeout_seconds' => 900,
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app-setup-step:add', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance-setup-step:add', [
+            'instance' => 'docs',
             '--command' => 'composer install',
             '--timeout' => '900',
             '--before' => '12',
@@ -74,7 +74,7 @@ describe('app setup commands', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/apps/docs/setup-steps'
+                && $request->url() === 'https://gateway.test/api/instances/docs/setup-steps'
                 && $request->data() === [
                     'command' => 'composer install',
                     'timeout' => 900,
@@ -91,7 +91,7 @@ describe('app setup commands', function (): void {
             'steps' => [
                 [
                     'id' => 10,
-                    'app' => 'docs',
+                    'instance' => 'docs',
                     'order' => 1,
                     'command' => 'composer install',
                     'timeout_seconds' => 600,
@@ -99,8 +99,8 @@ describe('app setup commands', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app-setup-step:list', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance-setup-step:list', [
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -109,7 +109,7 @@ describe('app setup commands', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'GET'
-                && $request->url() === 'https://gateway.test/api/apps/docs/setup-steps'
+                && $request->url() === 'https://gateway.test/api/instances/docs/setup-steps'
             ),
         );
 
@@ -121,7 +121,7 @@ describe('app setup commands', function (): void {
             'result' => ['action' => 'removed'],
             'step' => [
                 'id' => 10,
-                'app' => 'docs',
+                'instance' => 'docs',
                 'order' => 1,
                 'command' => 'composer install',
                 'timeout_seconds' => 600,
@@ -131,8 +131,8 @@ describe('app setup commands', function (): void {
             'new_step_count' => 0,
         ]));
 
-        [$exitCode] = runCommand($this, 'app-setup-step:remove', [
-            'app' => 'docs',
+        [$exitCode] = runCommand($this, 'instance-setup-step:remove', [
+            'instance' => 'docs',
             '--step' => '10',
             '--force' => true,
             '--json' => true,
@@ -141,7 +141,7 @@ describe('app setup commands', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'DELETE'
-                && $request->url() === 'https://gateway.test/api/apps/docs/setup-steps/10'
+                && $request->url() === 'https://gateway.test/api/instances/docs/setup-steps/10'
                 && $request->data() === [
                     'destructive_consent' => true,
                     'destructive_consent_source' => 'force',
@@ -175,15 +175,15 @@ describe('app setup commands', function (): void {
             ->and($decoded['error']['meta']['field'])
             ->toBe($field);
     })->with([
-        'setup missing app' => ['app:setup', [], 'app'],
-        'add missing app' => ['app-setup-step:add', ['--command' => 'composer install'], 'app'],
-        'add missing command' => ['app-setup-step:add', ['app' => 'docs'], 'command'],
+        'setup missing instance' => ['instance:setup', [], 'instance'],
+        'add missing instance' => ['instance-setup-step:add', ['--command' => 'composer install'], 'instance'],
+        'add missing command' => ['instance-setup-step:add', ['instance' => 'docs'], 'command'],
         'add bad timeout' => [
-            'app-setup-step:add',
-            ['app' => 'docs', '--command' => 'composer install', '--timeout' => '0'],
+            'instance-setup-step:add',
+            ['instance' => 'docs', '--command' => 'composer install', '--timeout' => '0'],
             'timeout',
         ],
-        'remove missing app' => ['app-setup-step:remove', ['--step' => '1', '--force' => true], 'app'],
-        'remove missing step' => ['app-setup-step:remove', ['app' => 'docs', '--force' => true], 'step'],
+        'remove missing instance' => ['instance-setup-step:remove', ['--step' => '1', '--force' => true], 'instance'],
+        'remove missing step' => ['instance-setup-step:remove', ['instance' => 'docs', '--force' => true], 'step'],
     ]);
 });

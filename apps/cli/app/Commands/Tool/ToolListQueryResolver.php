@@ -12,7 +12,7 @@ final readonly class ToolListQueryResolver
      * @param  Closure(string): array<string, mixed>  $gatewayGet
      */
     public function __construct(
-        private ?string $app,
+        private ?string $instance,
         private ?string $node,
         private ?string $defaultNode,
         private bool $all,
@@ -26,22 +26,22 @@ final readonly class ToolListQueryResolver
     {
         if ($this->all) {
             return $this->filledQuery([
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'node' => $this->node,
             ]);
         }
 
-        $node = $this->node ?? ($this->app === null ? $this->defaultNode : null);
+        $node = $this->node ?? ($this->instance === null ? $this->defaultNode : null);
 
         return $this->filledQuery([
-            'app' => $this->app,
+            'instance' => $this->instance,
             'node' => $this->usesCallerNodeFallback($node) ? $this->callerNodeName() : $node,
         ]);
     }
 
     private function usesCallerNodeFallback(?string $node): bool
     {
-        return $node === null && $this->app === null && $this->node === null;
+        return $node === null && $this->instance === null && $this->node === null;
     }
 
     private function callerNodeName(): ?string

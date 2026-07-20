@@ -6,9 +6,9 @@ namespace App\Services\Proxy;
 
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -22,9 +22,8 @@ class ProxyRouteQuery
 {
     public const array AllowedFilters = [
         'all',
-        'app',
-        'app-analytics',
-        'app-websocket',
+        'project',
+        'instance',
         'workspace',
         'gateway',
         'analytics',
@@ -101,6 +100,22 @@ class ProxyRouteQuery
             $proxyRoutes = $proxyRoutes
                 ->reject(fn (ProxyRoute $route): bool => ! $this->workspaceRouteIsSupported($route, $caller))
                 ->values();
+        }
+
+        if (in_array($filter, ['project', 'instance'], true)) {
+            foreach ($proxyRoutes as $index => $route) {
+                if (! $route instanceof ProxyRoute) {
+                    $proxyRoutes->forget($index);
+
+                    continue;
+                }
+
+                $hasInstance = $this->appRouteTargets->appInstanceForRoute($route) instanceof AppInstance;
+
+                if (($filter === 'instance') !== $hasInstance) {
+                    $proxyRoutes->forget($index);
+                }
+            }
         }
 
         /** @var list<ProxyRoute> $visibleRoutes */
@@ -250,11 +265,15 @@ class ProxyRouteQuery
         }
 
         if ($filter === 'websocket') {
-            return $query->where('domain', 'websocket.orbit');
+            return $query->where(function (Builder $query): void {
+                $query->where('domain', 'websocket.orbit')->orWhere('owner_type', 'app-websocket');
+            });
         }
 
         if ($filter === 'analytics') {
-            return $query->where('domain', 'analytics.orbit');
+            return $query->where(function (Builder $query): void {
+                $query->where('domain', 'analytics.orbit')->orWhere('owner_type', 'app-analytics');
+            });
         }
 
         if ($filter === 's3') {
@@ -264,7 +283,7 @@ class ProxyRouteQuery
             });
         }
 
-        return $query->where('owner_type', $filter);
+        return $query->where('owner_type', in_array($filter, ['project', 'instance'], true) ? 'app' : $filter);
     }
 
     /**
@@ -278,9 +297,9 @@ class ProxyRouteQuery
 
         $entity = [
             'domain' => $route->domain,
-            'kind' => $route->kind,
+            'kind' => $route->kind === 'app' ? $this->appRouteTargetType($route) : $route->kind,
             'owner' => [
-                'type' => $route->owner_type,
+                'type' => $this->ownerType($route),
                 'name' => $this->ownerName($route, $config),
             ],
             'node' => $route->node->name,
@@ -317,6 +336,16 @@ class ProxyRouteQuery
             'router' => $route->domain,
             'gateway', 'tool', 's3' => $this->stringConfig($config, ['owner_name', 'tool']),
             default => null,
+        };
+    }
+
+    private function ownerType(ProxyRoute $route): string
+    {
+        return match ($route->owner_type) {
+            'app' => $this->appRouteTargetType($route),
+            'app-analytics' => 'analytics',
+            'app-websocket' => 'websocket',
+            default => $route->owner_type,
         };
     }
 
@@ -364,7 +393,7 @@ class ProxyRouteQuery
 
     private function appRouteTargetType(ProxyRoute $route): string
     {
-        return $this->appRouteTargets->appInstanceForRoute($route) instanceof AppInstance ? 'app_instance' : 'app';
+        return $this->appRouteTargets->appInstanceForRoute($route) instanceof AppInstance ? 'instance' : 'project';
     }
 
     private function appRouteTargetValue(ProxyRoute $route): ?string
@@ -372,7 +401,7 @@ class ProxyRouteQuery
         $route->loadMissing('app.instances');
         $app = $route->app;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return null;
         }
 

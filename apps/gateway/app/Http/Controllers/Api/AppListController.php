@@ -8,9 +8,9 @@ use App\Contracts\Loggable;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\ActivityLogType;
 use App\Enums\Apps\AppInstanceDriver;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Apps\DependencyAudit\AppDependencyAuditAggregatePayload;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -34,8 +34,8 @@ final readonly class AppListController implements Loggable
 
     #[OpenApiResponse(
         status: 200,
-        description: 'The compact logical app inventory.',
-        type: 'array{success: array{data: array{apps: list<array{name: string, repository: string|null, dependency_audit_status: string, dependency_warning_count: int, dependency_danger_count: int, last_dependency_audit_at: string|null, instance_count: int, workspace_count: int}>}, meta: list<mixed>}}',
+        description: 'The compact project inventory.',
+        type: 'array{success: array{data: array{projects: list<array{name: string, repository: string|null, dependency_audit_status: string, dependency_warning_count: int, dependency_danger_count: int, last_dependency_audit_at: string|null, instance_count: int, workspace_count: int}>}, meta: list<mixed>}}',
     )]
     public function __invoke(Request $request): JsonResponse
     {
@@ -73,9 +73,9 @@ final readonly class AppListController implements Loggable
         $visibleNodeIds = $this->visibleAppNodeIds($caller, $callerIsGateway);
 
         if (! $callerIsGateway && $visibleNodeIds === []) {
-            return $this->authorizationFailed('This node is not authorized to read the app registry.', [
+            return $this->authorizationFailed('This node is not authorized to read the project registry.', [
                 'reason' => 'missing_permission',
-                'missing_permission' => 'app:read',
+                'missing_permission' => 'project:read',
             ]);
         }
 
@@ -95,7 +95,7 @@ final readonly class AppListController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'apps' => $payloads,
+                    'projects' => $payloads,
                 ],
                 'meta' => [],
             ],
@@ -120,7 +120,7 @@ final readonly class AppListController implements Loggable
         $authorizedNodeIds = [];
 
         foreach ($nodes as $node) {
-            if (! $this->authorizer->allows($caller, $node, 'app:read')) {
+            if (! $this->authorizer->allows($caller, $node, 'project:read')) {
                 continue;
             }
 
@@ -143,12 +143,12 @@ final readonly class AppListController implements Loggable
 
     /**
      * @param  list<int>  $visibleNodeIds
-     * @return Collection<int, App>
+     * @return Collection<int, Project>
      */
     private function fetchApps(bool $callerIsGateway, array $visibleNodeIds, ?string $environment): Collection
     {
-        /** @var Builder<App> $query */
-        $query = App::query();
+        /** @var Builder<Project> $query */
+        $query = Project::query();
         $query->with(['instances', 'workspaces.appInstance', 'dependencyAuditSummaries']);
 
         if (! $callerIsGateway) {
@@ -170,7 +170,7 @@ final readonly class AppListController implements Loggable
     }
 
     /**
-     * @param  Collection<int, App>  $apps
+     * @param Collection<int, Project> $apps
      * @param  list<int>  $visibleNodeIds
      * @param  list<int>  $workspaceNodeIds
      * @return list<array{
@@ -220,7 +220,7 @@ final readonly class AppListController implements Loggable
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function visibleInstanceCount(App $app, bool $callerIsGateway, array $visibleNodeIds): int
+    private function visibleInstanceCount(Project $app, bool $callerIsGateway, array $visibleNodeIds): int
     {
         if ($callerIsGateway) {
             return $app->instances->count();
@@ -241,7 +241,7 @@ final readonly class AppListController implements Loggable
      * @param  list<int>  $workspaceNodeIds
      */
     private function visibleWorkspaceCount(
-        App $app,
+        Project $app,
         bool $callerIsGateway,
         bool $callerMayInspectWorkspaces,
         array $visibleNodeIds,
@@ -303,7 +303,7 @@ final readonly class AppListController implements Loggable
 
     public function type(): string
     {
-        return 'api:GET /apps';
+        return 'api:GET /projects';
     }
 
     public function activityLogAction(): string

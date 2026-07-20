@@ -211,7 +211,8 @@ function readinessContext(): array
 {
     return [
         'binding' => [
-            'app' => 'docs',
+            'project' => 'docs',
+            'instance' => 'production',
             'enabled' => true,
             'site_domain' => 'docs.test',
             'public_hosts' => ['analytics.docs.test'],

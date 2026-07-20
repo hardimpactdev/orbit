@@ -29,7 +29,7 @@ it('reads schedule run logs from the operator node through the gateway api', fun
 
         $seedPhp = <<<PHP
             \$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-            \$app = \App\Models\App::query()->updateOrCreate(
+            \$app = \App\Models\Project::query()->updateOrCreate(
                 ['name' => '{$appName}'],
                 [
                     'node_id' => \$node->id,
@@ -79,7 +79,7 @@ it('reads schedule run logs from the operator node through the gateway api', fun
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit schedule:logs %s --app=%s --json',
+                'cd %s && orbit schedule:logs %s --instance=%s --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($scheduleName),
                 escapeshellarg($appName),

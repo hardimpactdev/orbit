@@ -50,12 +50,13 @@ describe('RoleSelfGrantMaterializer', function (): void {
 
         expect($permissions)
             ->toBe([
-                'app:read',
-                'app:register',
+                'instance:read',
+                'instance:register',
                 'process:add',
                 'process:read',
                 'process:remove',
                 'process:update',
+                'project:read',
                 'workspace:setup',
             ])
             ->and(roleSelfGrant($node))
@@ -76,14 +77,15 @@ describe('RoleSelfGrantMaterializer', function (): void {
             ->toBeNull()
             ->and($grant->permissions)
             ->toBe([
-                'app:read',
-                'app:register',
                 'doctor:verify',
+                'instance:read',
+                'instance:register',
                 'node:read',
                 'process:add',
                 'process:read',
                 'process:remove',
                 'process:update',
+                'project:read',
                 'tool:read',
                 'tool:update:agent-tools',
                 'workspace:setup',
@@ -102,7 +104,7 @@ describe('RoleSelfGrantMaterializer', function (): void {
         $development->delete();
         app(RoleSelfGrantMaterializer::class)->reconcileOnRoleRemoved($node, NodeRoleName::AppDevelopment);
 
-        expect(roleSelfGrant($node)?->permissions)->toBe(['app:read']);
+        expect(roleSelfGrant($node)?->permissions)->toBe(['instance:read', 'project:read']);
 
         $production->delete();
         app(RoleSelfGrantMaterializer::class)->reconcileOnRoleRemoved($node, NodeRoleName::AppProduction);
@@ -119,12 +121,13 @@ describe('RoleSelfGrantMaterializer', function (): void {
 
         expect(roleSelfGrant($node)?->permissions)
             ->toBe([
-                'app:read',
-                'app:register',
+                'instance:read',
+                'instance:register',
                 'process:add',
                 'process:read',
                 'process:remove',
                 'process:update',
+                'project:read',
             ]);
     });
 
@@ -136,7 +139,7 @@ describe('RoleSelfGrantMaterializer', function (): void {
         $incoming = NodeAccess::query()->create([
             'consumer_node_id' => $consumer->id,
             'serving_node_id' => $productionNode->id,
-            'permissions' => ['app:read', 'workspace:read'],
+            'permissions' => ['instance:read', 'workspace:read'],
             'custom_permissions' => ['workspace:read'],
         ]);
         $outgoing = NodeAccess::query()->create([
@@ -152,7 +155,7 @@ describe('RoleSelfGrantMaterializer', function (): void {
         );
 
         expect($incoming->fresh()?->permissions)
-            ->toBe(['app:read'])
+            ->toBe(['instance:read'])
             ->and($incoming->fresh()?->custom_permissions)
             ->toBe([])
             ->and($outgoing->fresh()?->permissions)
@@ -180,12 +183,13 @@ describe('RoleSelfGrantMaterializer', function (): void {
 
         expect(roleSelfGrant($node)?->permissions)
             ->toBe([
-                'app:read',
-                'app:register',
+                'instance:read',
+                'instance:register',
                 'process:add',
                 'process:read',
                 'process:remove',
                 'process:update',
+                'project:read',
                 'tool:read',
                 'workspace:setup',
             ])
@@ -242,12 +246,13 @@ describe('RoleSelfGrantMaterializer', function (): void {
         $materializer->materializeOnRoleApplied($node, NodeRoleName::AppDevelopment);
 
         expect(roleSelfGrant($node)?->permissions)->toBe([
-            'app:read',
-            'app:register',
+            'instance:read',
+            'instance:register',
             'process:add',
             'process:read',
             'process:remove',
             'process:update',
+            'project:read',
             'workspace:setup',
         ]);
     });

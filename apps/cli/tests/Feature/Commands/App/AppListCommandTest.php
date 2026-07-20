@@ -36,18 +36,18 @@ function strip_app_list_ansi(string $value): string
     return preg_replace(pattern: '/\e\[[0-9;?]*[a-zA-Z]/', replacement: '', subject: $value) ?? $value;
 }
 
-describe('app:list', function (): void {
+describe('project:list', function (): void {
     it('returns a canonical success envelope in JSON mode without node scope', function (): void {
         $store = create_app_list_config_store('tests/.tmp-app-list-config.json', defaultNode: 'default-app');
 
         try {
             fakeGateway(fakeSuccessEnvelope([
-                'apps' => [
+                'projects' => [
                     ['name' => 'orbit-docs', 'node' => 'app-1'],
                 ],
             ]));
 
-            [$exitCode, $output] = runCommand($this, 'app:list', [
+            [$exitCode, $output] = runCommand($this, 'project:list', [
                 '--json' => true,
             ]);
 
@@ -56,7 +56,7 @@ describe('app:list', function (): void {
             Http::assertSent(
                 fn (Request $request): bool => (
                     $request->method() === 'GET'
-                    && str_contains($request->url(), '/api/apps')
+                    && str_contains($request->url(), '/api/projects')
                     && ! str_contains($request->url(), 'node=')
                     && ! str_contains($request->url(), 'environment=')
                 ),
@@ -73,7 +73,7 @@ describe('app:list', function (): void {
                 ->and($decoded['success']['meta'])
                 ->toBeArray()
                 ->toBeEmpty()
-                ->and($decoded['success']['data']['apps'][0]['name'])
+                ->and($decoded['success']['data']['projects'][0]['name'])
                 ->toBe('orbit-docs');
         } finally {
             remove_app_list_config_store($store);
@@ -81,7 +81,7 @@ describe('app:list', function (): void {
     });
 
     it('does not expose node or environment filters', function (): void {
-        $command = app(Kernel::class)->all()['app:list'];
+        $command = app(Kernel::class)->all()['project:list'];
 
         expect($command->getDefinition()->hasOption('node'))
             ->toBeFalse()
@@ -89,7 +89,7 @@ describe('app:list', function (): void {
             ->toBeFalse();
     });
 
-    it('renders the Laravel Prompts datatable columns and opens the selected app', function (): void {
+    it('renders the Laravel Prompts datatable columns and opens the selected project', function (): void {
         config()->set('orbit.gateway.url', 'https://gateway.test');
         config()->set('orbit.gateway.timeout', 30);
         app()->forgetInstance(GatewayApiClient::class);
@@ -97,9 +97,9 @@ describe('app:list', function (): void {
         Http::fake(function (Request $request) {
             $path = parse_url($request->url(), PHP_URL_PATH);
 
-            if ($request->method() === 'GET' && $path === '/api/apps') {
+            if ($request->method() === 'GET' && $path === '/api/projects') {
                 return Http::response(fakeSuccessEnvelope([
-                    'apps' => [
+                    'projects' => [
                         [
                             'name' => 'docs',
                             'repository' => 'git@github.com:orbit/docs.git',
@@ -116,9 +116,9 @@ describe('app:list', function (): void {
                 ]));
             }
 
-            if ($request->method() === 'GET' && $path === '/api/apps/docs') {
+            if ($request->method() === 'GET' && $path === '/api/projects/docs') {
                 return Http::response(fakeSuccessEnvelope([
-                    'app' => [
+                    'project' => [
                         'name' => 'docs',
                         'repository' => 'git@github.com:orbit/docs.git',
                     ],
@@ -145,13 +145,13 @@ describe('app:list', function (): void {
 
         Prompt::fake([Key::ENTER]);
 
-        [$exitCode, $output] = runCommand($this, 'app:list');
+        [$exitCode, $output] = runCommand($this, 'project:list');
         $plain = strip_app_list_ansi($output);
 
         expect($exitCode)
             ->toBe(0)
             ->and($plain)
-            ->toContain('Select an app')
+            ->toContain('Select a project')
             ->and($plain)
             ->toContain('Name')
             ->and($plain)
@@ -167,7 +167,7 @@ describe('app:list', function (): void {
             ->and($plain)
             ->toContain('23')
             ->and($plain)
-            ->toContain('App: docs')
+            ->toContain('Project: docs')
             ->and($plain)
             ->toContain('development')
             ->and($plain)
@@ -176,43 +176,43 @@ describe('app:list', function (): void {
             ->not->toContain('Repository:')->and($plain)
             ->not->toContain('Instances:')->and($plain)
             ->not->toContain('Workspaces:')
-            ->not->toContain('apps: [')->and($output)
+            ->not->toContain('projects: [')->and($output)
             ->not->toContain('"lifecycle_status"');
 
         Http::assertSentCount(2);
     });
 
-    it('requires json mode when app selection is non-interactive', function (): void {
+    it('requires json mode when project selection is non-interactive', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'app:list', [
+        [$exitCode, $output] = runCommand($this, 'project:list', [
             '--no-interaction' => true,
         ]);
 
         expect($exitCode)
             ->toBe(1)
             ->and($output)
-            ->toContain('Interactive app selection requires a terminal.')
+            ->toContain('Interactive project selection requires a terminal.')
             ->and($output)
             ->toContain('Use --json for non-interactive output.');
 
         Http::assertNothingSent();
     });
 
-    it('renders human empty output when no apps are visible', function (): void {
+    it('renders human empty output when no projects are visible', function (): void {
         fakeGateway(fakeSuccessEnvelope([
-            'apps' => [],
+            'projects' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:list');
+        [$exitCode, $output] = runCommand($this, 'project:list');
 
-        expect($exitCode)->toBe(0)->and($output)->toBe('No apps found.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No projects found.');
     });
 
     it('surfaces gateway_unavailable on gateway HTTP errors', function (): void {
         fakeGateway(['message' => 'Bad gateway'], 502);
 
-        [$exitCode, $output] = runCommand($this, 'app:list', ['--json' => true]);
+        [$exitCode, $output] = runCommand($this, 'project:list', ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -220,11 +220,11 @@ describe('app:list', function (): void {
     });
 
     it('preserves structured gateway authorization failures', function (): void {
-        fakeGateway(fakeErrorEnvelope('authorization_failed', 'Missing app read permission.', [
-            'missing_permission' => 'app:read',
+        fakeGateway(fakeErrorEnvelope('authorization_failed', 'Missing project read permission.', [
+            'missing_permission' => 'project:read',
         ]), 403);
 
-        [$exitCode, $output] = runCommand($this, 'app:list', ['--json' => true]);
+        [$exitCode, $output] = runCommand($this, 'project:list', ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -233,13 +233,13 @@ describe('app:list', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('authorization_failed')
             ->and($decoded['error']['meta']['missing_permission'])
-            ->toBe('app:read');
+            ->toBe('project:read');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
         fakeGatewayDown('Operation timed out');
 
-        [$exitCode, $output] = runCommand($this, 'app:list', ['--json' => true]);
+        [$exitCode, $output] = runCommand($this, 'project:list', ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 

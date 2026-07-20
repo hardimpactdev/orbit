@@ -182,7 +182,7 @@ final class ToolInstallController implements Loggable
             return response()->json([
                 'error' => [
                     'code' => 'validation_failed',
-                    'message' => 'A node or app target is required.',
+                    'message' => 'A node or instance target is required.',
                     'meta' => [
                         'fields' => ['target'],
                     ],

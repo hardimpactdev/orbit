@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Data\Apps\AppSelection;
 use App\Enums\ActivityLogType;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\EnableAppWebSocketApiRequest;
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\AppWebSocketBinding;
+use App\Models\Project;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\WebSockets\WebSocketBindingService;
 use App\Services\WebSockets\WebSocketRouteRegistrar;
 use DomainException;
@@ -21,13 +25,17 @@ use RuntimeException;
 
 final class AppWebSocketController implements Loggable
 {
-    private ?App $activitySubject = null;
+    public function __construct(
+        private readonly AppSelectorResolver $appSelectorResolver,
+    ) {}
+
+    private ?Project $activitySubject = null;
 
     private ?string $activityTargetName = null;
 
     private ActivityLogType $activityEffect = ActivityLogType::Read;
 
-    private string $activityType = 'api:GET /apps/{app}/websocket/credentials';
+    private string $activityType = 'api:GET /instances/{instance}/websocket/credentials';
 
     private string $activityAction = 'credentials';
 
@@ -36,27 +44,27 @@ final class AppWebSocketController implements Loggable
      */
     private array $activityPublicHosts = [];
 
-    #[RequiresPermission('app:write', servingNode: ServingNode::AppOwning)]
+    #[RequiresPermission('instance:write', servingNode: ServingNode::AppOwning)]
     public function enable(
         EnableAppWebSocketApiRequest $request,
-        string $app,
+        string $instance,
         WebSocketBindingService $service,
     ): JsonResponse {
+        $app = $instance;
         $this->activityTargetName = $app;
         $this->activityEffect = ActivityLogType::Write;
-        $this->activityType = 'api:POST /apps/{app}/websocket/enable';
+        $this->activityType = 'api:POST /instances/{instance}/websocket/enable';
         $this->activityAction = 'enable';
 
-        $targetApp = $this->resolveApp($app);
+        $selection = $this->resolveInstance($app);
 
-        if (! $targetApp instanceof App) {
-            return $this->error(
-                code: 'app.not_found',
-                message: "App '{$app}' not found.",
-                meta: ['app' => $app],
-                status: 404,
-            );
+        if ($selection instanceof JsonResponse) {
+            return $selection;
         }
+
+        $targetApp = $selection->app;
+        $targetInstance = $selection->instance;
+        assert($targetInstance instanceof AppInstance);
 
         try {
             $binding = $service->enable($targetApp, $request->publicHosts());
@@ -71,7 +79,7 @@ final class AppWebSocketController implements Loggable
             return $this->error(
                 code: 'websocket.prerequisite_failed',
                 message: $exception->getMessage(),
-                meta: ['app' => $targetApp->name],
+                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }
@@ -82,30 +90,30 @@ final class AppWebSocketController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'binding' => $this->bindingPayload($binding),
+                    'binding' => $this->bindingPayload($binding, $targetInstance),
                 ],
             ],
         ]);
     }
 
-    #[RequiresPermission('app:credentials', servingNode: ServingNode::AppOwning)]
-    public function credentials(string $app, WebSocketBindingService $service): JsonResponse
+    #[RequiresPermission('instance:credentials', servingNode: ServingNode::AppOwning)]
+    public function credentials(string $instance, WebSocketBindingService $service): JsonResponse
     {
+        $app = $instance;
         $this->activityTargetName = $app;
         $this->activityEffect = ActivityLogType::Read;
-        $this->activityType = 'api:GET /apps/{app}/websocket/credentials';
+        $this->activityType = 'api:GET /instances/{instance}/websocket/credentials';
         $this->activityAction = 'credentials';
 
-        $targetApp = $this->resolveApp($app);
+        $selection = $this->resolveInstance($app);
 
-        if (! $targetApp instanceof App) {
-            return $this->error(
-                code: 'app.not_found',
-                message: "App '{$app}' not found.",
-                meta: ['app' => $app],
-                status: 404,
-            );
+        if ($selection instanceof JsonResponse) {
+            return $selection;
         }
+
+        $targetApp = $selection->app;
+        $targetInstance = $selection->instance;
+        assert($targetInstance instanceof AppInstance);
 
         try {
             $credentials = $service->credentials($targetApp);
@@ -113,7 +121,7 @@ final class AppWebSocketController implements Loggable
             return $this->error(
                 code: 'websocket.binding_missing',
                 message: $exception->getMessage(),
-                meta: ['app' => $targetApp->name],
+                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }
@@ -123,30 +131,33 @@ final class AppWebSocketController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'credentials' => $credentials->toArray(),
+                    'credentials' => [
+                        ...$credentials->toArray(),
+                        'instance' => $targetInstance->name,
+                    ],
                 ],
             ],
         ]);
     }
 
-    #[RequiresPermission('app:write', servingNode: ServingNode::AppOwning)]
-    public function disable(string $app, WebSocketBindingService $service): JsonResponse
+    #[RequiresPermission('instance:write', servingNode: ServingNode::AppOwning)]
+    public function disable(string $instance, WebSocketBindingService $service): JsonResponse
     {
+        $app = $instance;
         $this->activityTargetName = $app;
         $this->activityEffect = ActivityLogType::Write;
-        $this->activityType = 'api:POST /apps/{app}/websocket/disable';
+        $this->activityType = 'api:POST /instances/{instance}/websocket/disable';
         $this->activityAction = 'disable';
 
-        $targetApp = $this->resolveApp($app);
+        $selection = $this->resolveInstance($app);
 
-        if (! $targetApp instanceof App) {
-            return $this->error(
-                code: 'app.not_found',
-                message: "App '{$app}' not found.",
-                meta: ['app' => $app],
-                status: 404,
-            );
+        if ($selection instanceof JsonResponse) {
+            return $selection;
         }
+
+        $targetApp = $selection->app;
+        $targetInstance = $selection->instance;
+        assert($targetInstance instanceof AppInstance);
 
         try {
             $binding = $service->disable($targetApp);
@@ -154,7 +165,7 @@ final class AppWebSocketController implements Loggable
             return $this->error(
                 code: 'websocket.binding_missing',
                 message: $exception->getMessage(),
-                meta: ['app' => $targetApp->name],
+                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }
@@ -165,43 +176,53 @@ final class AppWebSocketController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'binding' => $this->bindingPayload($binding),
+                    'binding' => $this->bindingPayload($binding, $targetInstance),
                 ],
             ],
         ]);
     }
 
-    private function resolveApp(string $selector): ?App
+    private function resolveInstance(string $selector): AppSelection|JsonResponse
     {
-        return App::query()
-            ->with('node')
-            ->get()
-            ->filter(
-                fn (App $app): bool => (
-                    $app->name === $selector
-                    || $app->domain === $selector
-                    || $app->url() === "https://{$selector}"
-                    || $app->url() === $selector
-                ),
-            )
-            ->values()
-            ->first();
+        $selection = $this->appSelectorResolver->resolve($selector);
+
+        if (! $selection instanceof AppSelection) {
+            return $this->error(
+                code: 'instance.not_found',
+                message: "Instance '{$selector}' not found.",
+                meta: ['instance' => $selector],
+                status: 404,
+            );
+        }
+
+        try {
+            return $this->appSelectorResolver->requireInstance($selection);
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->error(
+                code: $exception->errorCode,
+                message: $exception->getMessage(),
+                meta: $exception->meta,
+                status: 422,
+            );
+        }
     }
 
     /**
      * @return array{
-     *     app: string,
+     *     project: string,
+     *     instance: string,
      *     internal_host: string,
      *     public_hosts: list<string>,
      *     allowed_origins: list<string>,
      * }
      */
-    private function bindingPayload(AppWebSocketBinding $binding): array
+    private function bindingPayload(AppWebSocketBinding $binding, AppInstance $instance): array
     {
         $binding->loadMissing('app');
 
         return [
-            'app' => $binding->app->name,
+            'project' => $binding->app->name,
+            'instance' => $instance->name,
             'internal_host' => WebSocketRouteRegistrar::ServiceDomain,
             'public_hosts' => $this->stringList($binding->public_hosts),
             'allowed_origins' => $this->stringList($binding->allowed_origins),
@@ -256,23 +277,23 @@ final class AppWebSocketController implements Loggable
     {
         return [
             'action' => $this->activityAction,
-            'target_app' => $this->activityTargetName ?? (string) request()->route('app'),
+            'target_instance' => $this->activityTargetName ?? (string) request()->route('instance'),
             'public_hosts' => $this->activityPublicHosts,
         ];
     }
 
     public function description(): ?string
     {
-        $target = $this->activityTargetName ?? (string) request()->route('app');
+        $target = $this->activityTargetName ?? (string) request()->route('instance');
 
         if ($target === '') {
             return null;
         }
 
         return match ($this->activityAction) {
-            'enable' => "App {$target} websocket enabled",
-            'disable' => "App {$target} websocket disabled",
-            default => "App {$target} websocket credentials viewed",
+            'enable' => "Instance {$target} websocket enabled",
+            'disable' => "Instance {$target} websocket disabled",
+            default => "Instance {$target} websocket credentials viewed",
         };
     }
 }

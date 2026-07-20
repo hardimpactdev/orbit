@@ -137,7 +137,7 @@ describe('workspace:log', function (): void {
         fakeGateway(fakeErrorEnvelope(
             'authorization_failed',
             "This caller is not authorized to read logs for workspace 'feature-docs'.",
-            ['workspace' => 'feature-docs', 'app' => 'docs'],
+            ['workspace' => 'feature-docs', 'project' => 'docs'],
         ), 403);
 
         [$exitCode, $output] = runCommand($this, 'workspace:log', [
@@ -153,7 +153,7 @@ describe('workspace:log', function (): void {
             ->toBe('authorization_failed')
             ->and($decoded['error']['meta']['workspace'])
             ->toBe('feature-docs')
-            ->and($decoded['error']['meta']['app'])
+            ->and($decoded['error']['meta']['project'])
             ->toBe('docs');
     });
 
@@ -180,7 +180,7 @@ function fakeWorkspaceLogEnvelope(): array
         'run' => [
             'id' => 12,
             'workspace' => 'feature-docs',
-            'app' => 'docs',
+            'project' => 'docs',
             'node' => 'app-1',
             'type' => 'setup',
             'status' => 'failed',

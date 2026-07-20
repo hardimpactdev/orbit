@@ -17,7 +17,7 @@ final class AppAnalyticsDisableCommand extends AppGatewayCommand
     use WithStepTree;
 
     #[\Override]
-    protected $name = 'app:analytics disable';
+    protected $name = 'instance:analytics disable';
 
     #[\Override]
     protected $description = 'Disable analytics tracking proxy support for an app.';
@@ -27,16 +27,16 @@ final class AppAnalyticsDisableCommand extends AppGatewayCommand
     {
         parent::configure();
 
-        $this->addArgument('app', InputArgument::OPTIONAL, 'App name or hostname');
+        $this->addArgument('instance', InputArgument::OPTIONAL, 'Instance selector (project.instance or hostname)');
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Output JSON');
     }
 
     public function handle(): int
     {
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('instance');
 
         if ($selector === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         if ($this->wantsJson()) {
@@ -51,9 +51,9 @@ final class AppAnalyticsDisableCommand extends AppGatewayCommand
 
         $response = [];
         $outcome = $this->runStepOperation(
-            'Disabling App Analytics',
+            'Disabling Instance Analytics',
             [
-                ['label' => 'Resolve app analytics binding'],
+                ['label' => 'Resolve instance analytics binding'],
                 ['label' => 'Remove ingress tracking routes'],
                 ['label' => 'Remove router tracking routes'],
                 ['label' => 'Disable analytics binding'],
@@ -68,7 +68,7 @@ final class AppAnalyticsDisableCommand extends AppGatewayCommand
                     );
                 }
             },
-            doneFooter: "Analytics disabled for app '{$selector}'",
+            doneFooter: "Analytics disabled for instance '{$selector}'",
         );
 
         if (! $outcome->isCompleted()) {
@@ -83,6 +83,6 @@ final class AppAnalyticsDisableCommand extends AppGatewayCommand
     /** @return array<string, mixed> */
     private function disableAnalytics(string $selector): array
     {
-        return $this->gatewayPost($this->apiAppPath($selector, '/analytics/disable'));
+        return $this->gatewayPost($this->apiInstancePath($selector, '/analytics/disable'));
     }
 }

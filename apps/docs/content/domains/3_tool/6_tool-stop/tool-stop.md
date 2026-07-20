@@ -7,7 +7,7 @@ Stop a lifecycle-capable tool on a target node.
 ```bash
 orbit tool:stop <tool> --node=<node>
 orbit tool:stop orbstack --node=<mac-node>
-orbit tool:stop opencode-cli --app=<app>
+orbit tool:stop opencode-cli --instance=<project.instance>
 orbit tool:stop orbstack --node=<mac-node> --json
 ```
 
@@ -25,7 +25,7 @@ fallback.
 ## Options
 
 - `--node=<node>` selects the target node.
-- `--app=<app>` resolves the target node from an app selector.
+- `--instance=<project.instance>` resolves the target node from an instance selector.
 - `--json` returns a single JSON envelope.
 - `--stream-json` streams progress frames.
 

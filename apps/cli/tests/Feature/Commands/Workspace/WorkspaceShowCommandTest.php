@@ -10,14 +10,14 @@ describe('workspace:show', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'workspace' => [
                 'name' => 'feature-docs',
-                'app' => 'docs',
+                'project' => 'docs',
                 'url' => 'https://feature-docs.docs.test',
             ],
         ], ['registry_only' => true]));
 
         [$exitCode, $output] = runCommand($this, 'workspace:show', [
             'name' => 'feature-docs',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -29,7 +29,7 @@ describe('workspace:show', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/workspaces/feature-docs')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'instance=docs')
             );
         });
 
@@ -47,11 +47,11 @@ describe('workspace:show', function (): void {
 
         try {
             fakeGateway(fakeSuccessEnvelope([
-                'workspace' => ['name' => 'feature-docs', 'app' => 'docs'],
+                'workspace' => ['name' => 'feature-docs', 'project' => 'docs'],
             ]));
 
             [$exitCode, $output] = runCommand($this, 'workspace:show', [
-                '--app' => 'docs',
+                '--instance' => 'docs',
                 '--json' => true,
             ]);
         } finally {
@@ -66,7 +66,7 @@ describe('workspace:show', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/workspaces/resolve-by-path')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'instance=docs')
                 && str_contains($url, 'path=/srv/docs/.worktrees/feature-docs')
             );
         });
@@ -78,7 +78,7 @@ describe('workspace:show', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'workspace' => [
                 'name' => 'feature-docs',
-                'app' => 'docs',
+                'project' => 'docs',
                 'node' => 'app-1',
                 'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
                 'url' => 'https://feature-docs.docs.test',

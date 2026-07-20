@@ -6,8 +6,8 @@ namespace App\Actions\Php;
 
 use App\Contracts\PhpRuntimeArtifactConverger;
 use App\Data\Php\PhpRuntimeOperation;
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Php\PhpRuntimeManager;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -23,7 +23,7 @@ final readonly class UsePhpRuntime
     /** @mago-expect lint:excessive-parameter-list */
     public function handle(
         ?string $version,
-        ?string $app = null,
+        ?string $instance = null,
         ?string $workspace = null,
         ?string $node = null,
         bool $inherit = false,
@@ -32,7 +32,7 @@ final readonly class UsePhpRuntime
     ): PhpRuntimeOperation {
         $operation = $this->runtime->use(
             version: $version,
-            app: $app,
+            instance: $instance,
             workspace: $workspace,
             node: $node,
             inherit: $inherit,
@@ -53,7 +53,7 @@ final readonly class UsePhpRuntime
         /** @var array<string, mixed> $result */
 
         $warnings = match ($result['target'] ?? null) {
-            'app' => $this->convergeApp($result),
+            'instance' => $this->convergeProject($result),
             'workspace' => $this->convergeWorkspace($result),
             'node_cli' => [],
             default => throw new RuntimeException('PHP runtime selection result has an invalid target.'),
@@ -72,13 +72,13 @@ final readonly class UsePhpRuntime
      * @param  array<string, mixed>  $result
      * @return list<array<string, string>>
      */
-    private function convergeApp(array $result): array
+    private function convergeProject(array $result): array
     {
-        $name = $this->requiredString($result, 'app');
-        $app = App::query()->with('node')->where('name', $name)->first();
+        $name = $this->requiredString($result, 'project');
+        $app = Project::query()->with('node')->where('name', $name)->first();
 
-        if (! $app instanceof App) {
-            throw new RuntimeException("PHP runtime target app '{$name}' disappeared before convergence.");
+        if (! $app instanceof Project) {
+            throw new RuntimeException("PHP runtime target project '{$name}' disappeared before convergence.");
         }
 
         return $this->artifacts->forApp($app);
@@ -91,7 +91,7 @@ final readonly class UsePhpRuntime
     private function convergeWorkspace(array $result): array
     {
         $workspaceName = $this->requiredString($result, 'workspace');
-        $appName = $this->requiredString($result, 'app');
+        $appName = $this->requiredString($result, 'project');
         $workspace = Workspace::query()
             ->with(['app', 'appInstance'])
             ->where('name', $workspaceName)

@@ -19,7 +19,7 @@ final class AddProcessRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::POST;
 
     public function __construct(
-        public readonly string $app,
+        public readonly string $instance,
         public readonly string $name,
         public readonly string $command,
         public readonly string $restartPolicy = 'never',
@@ -39,7 +39,7 @@ final class AddProcessRequest extends GatewayRequest implements HasBody
     protected function defaultBody(): array
     {
         $body = [
-            'app' => $this->app,
+            'instance' => $this->instance,
             'name' => $this->name,
             'command' => $this->command,
             'restart_policy' => $this->restartPolicy,

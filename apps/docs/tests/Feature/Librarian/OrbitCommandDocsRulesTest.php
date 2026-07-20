@@ -215,7 +215,7 @@ it('reports commands placed in the wrong non-operation family', function (): voi
             'path' => 'docs/domains/1_node/2_app-register',
             'severity' => 'error',
             'rule' => 'command_docs.family_command_prefix',
-            'message' => 'Command `app-register` does not belong in the `node` family; non-operation family commands must start with `node-`.',
+            'message' => 'Command `app-register` does not belong in the `node` family; non-operation family commands must use an allowed family prefix.',
         ]);
 });
 
@@ -903,7 +903,7 @@ it('reports command signatures with options before arguments', function (): void
             'line' => 10,
             'severity' => 'error',
             'rule' => 'command_docs.signature_argument_order',
-            'message' => 'Command signature arguments must come before flags. Required entries come before optional entries inside each group. Shared target flags use `--app`, `--workspace`, then `--node`; `--json` stays last. Expected signature: `orbit node:new {name} [--json]`.',
+            'message' => 'Command signature arguments must come before flags. Required entries come before optional entries inside each group. Shared target flags use `--instance`, `--workspace`, then `--node`; `--json` stays last. Expected signature: `orbit node:new {name} [--json]`.',
         ]);
 });
 
@@ -959,7 +959,7 @@ it('reports json examples that mix success and error envelopes', function (): vo
         ]);
 });
 
-it('requires a non-null app instance on canonical workspace json entities', function (): void {
+it('requires a non-null instance on canonical workspace json entities', function (): void {
     writeOrbitCommandDocsFamily($this->docsRoot, jsonRendererContract: <<<'MARKDOWN'
         # JSON Renderer
 
@@ -972,11 +972,11 @@ it('requires a non-null app instance on canonical workspace json entities', func
         Uses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.
 
         ```json
-        {"success":{"data":{"workspace":{"name":"feature","app":"docs","node":"beast","url":"https://feature.docs.beast"}}}}
+        {"success":{"data":{"workspace":{"name":"feature","project":"docs","node":"beast","url":"https://feature.docs.beast"}}}}
         ```
 
         ```json
-        {"success":{"data":{"workspace":{"name":"feature","app":"docs","app_instance":null,"node":"beast","url":"https://feature.docs.beast"}}}}
+        {"success":{"data":{"workspace":{"name":"feature","project":"docs","instance":null,"node":"beast","url":"https://feature.docs.beast"}}}}
         ```
         MARKDOWN);
 
@@ -992,16 +992,16 @@ it('requires a non-null app instance on canonical workspace json entities', func
         ->toBe(1)
         ->and(array_column($findings, 'message'))
         ->toContain(
-            'JSON example 1 success.data.workspace is missing required canonical workspace field `app_instance`.',
-            'JSON example 2 success.data.workspace.app_instance must be string, got null.',
+            'JSON example 1 success.data.workspace is missing required canonical workspace field `instance`.',
+            'JSON example 2 success.data.workspace.instance must be string, got null.',
         );
 });
 
-it('accepts the compact logical app list summary instead of the placement entity', function (): void {
+it('accepts the compact project list summary instead of the instance placement entity', function (): void {
     config()->set('librarian.rules', [JsonRendererExampleRule::class]);
     writeOrbitDocsFile(
         root: $this->docsRoot,
-        path: 'docs/domains/5_app/3_app-list/technical/6.2_app-list_output-render_json.md',
+        path: 'docs/domains/5_project/3_project-list/technical/6.2_project-list_output-render_json.md',
         contents: <<<'MARKDOWN'
             # JSON Renderer
 
@@ -1009,7 +1009,7 @@ it('accepts the compact logical app list summary instead of the placement entity
             {
               "success": {
                 "data": {
-                  "apps": [{
+                  "projects": [{
                     "name": "docs",
                     "repository": null,
                     "dependency_audit_status": "unknown",
@@ -1040,11 +1040,11 @@ it('accepts the compact logical app list summary instead of the placement entity
         ->toBeEmpty();
 });
 
-it('requires every compact logical app list summary field', function (): void {
+it('requires every compact project list summary field', function (): void {
     config()->set('librarian.rules', [JsonRendererExampleRule::class]);
     writeOrbitDocsFile(
         root: $this->docsRoot,
-        path: 'docs/domains/5_app/3_app-list/technical/6.2_app-list_output-render_json.md',
+        path: 'docs/domains/5_project/3_project-list/technical/6.2_project-list_output-render_json.md',
         contents: <<<'MARKDOWN'
             # JSON Renderer
 
@@ -1052,7 +1052,7 @@ it('requires every compact logical app list summary field', function (): void {
             {
               "success": {
                 "data": {
-                  "apps": [{
+                  "projects": [{
                     "name": "docs",
                     "repository": null,
                     "dependency_audit_status": "unknown",
@@ -1080,15 +1080,15 @@ it('requires every compact logical app list summary field', function (): void {
         ->toBe(1)
         ->and(array_column(findingsForRule($payload, 'command_docs.json_renderer_examples'), 'message'))
         ->toContain(
-            'JSON example 1 success.data.apps[0] is missing required canonical app field `workspace_count`.',
+            'JSON example 1 success.data.projects[0] is missing required canonical project field `workspace_count`.',
         );
 });
 
-it('accepts canonical logical app entities without instance placement', function (): void {
+it('accepts canonical project entities without instance placement', function (): void {
     config()->set('librarian.rules', [JsonRendererExampleRule::class]);
     writeOrbitDocsFile(
         root: $this->docsRoot,
-        path: 'docs/domains/5_app/4_app-show/technical/6.2_app-show_output-render_json.md',
+        path: 'docs/domains/5_project/4_project-show/technical/6.2_project-show_output-render_json.md',
         contents: <<<'MARKDOWN'
             # JSON Renderer
 
@@ -1096,7 +1096,7 @@ it('accepts canonical logical app entities without instance placement', function
             {
               "success": {
                 "data": {
-                  "app": {
+                  "project": {
                     "name": "docs",
                     "repository": null,
                     "runtime": "php",
@@ -1128,11 +1128,11 @@ it('accepts canonical logical app entities without instance placement', function
         ->toBeEmpty();
 });
 
-it('reports instance-owned placement and worker fields on canonical logical app entities', function (): void {
+it('reports instance-owned placement and worker fields on canonical project entities', function (): void {
     config()->set('librarian.rules', [JsonRendererExampleRule::class]);
     writeOrbitDocsFile(
         root: $this->docsRoot,
-        path: 'docs/domains/5_app/4_app-show/technical/6.2_app-show_output-render_json.md',
+        path: 'docs/domains/5_project/4_project-show/technical/6.2_project-show_output-render_json.md',
         contents: <<<'MARKDOWN'
             # JSON Renderer
 
@@ -1140,7 +1140,7 @@ it('reports instance-owned placement and worker fields on canonical logical app 
             {
               "success": {
                 "data": {
-                  "app": {
+                  "project": {
                     "name": "docs",
                     "repository": null,
                     "runtime": "frankenphp",
@@ -1177,13 +1177,13 @@ it('reports instance-owned placement and worker fields on canonical logical app 
         ->toBe(0)
         ->and(array_column(findingsForRule($payload, 'command_docs.json_renderer_examples'), 'message'))
         ->toContain(
-            'JSON example 1 success.data.app contains non-canonical app field `node`.',
-            'JSON example 1 success.data.app contains non-canonical app field `url`.',
-            'JSON example 1 success.data.app contains non-canonical app field `path`.',
-            'JSON example 1 success.data.app contains non-canonical app field `root`.',
-            'JSON example 1 success.data.app contains non-canonical app field `adopted`.',
-            'JSON example 1 success.data.app contains non-canonical app field `worker_enabled`.',
-            'JSON example 1 success.data.app contains non-canonical app field `worker_config`.',
+            'JSON example 1 success.data.project contains non-canonical project field `node`.',
+            'JSON example 1 success.data.project contains non-canonical project field `url`.',
+            'JSON example 1 success.data.project contains non-canonical project field `path`.',
+            'JSON example 1 success.data.project contains non-canonical project field `root`.',
+            'JSON example 1 success.data.project contains non-canonical project field `adopted`.',
+            'JSON example 1 success.data.project contains non-canonical project field `worker_enabled`.',
+            'JSON example 1 success.data.project contains non-canonical project field `worker_config`.',
         );
 });
 
@@ -1486,11 +1486,11 @@ it('reports json next command fields outside recovery metadata', function (): vo
         ]);
 });
 
-it('reports app docs that use the old php option contract', function (): void {
+it('reports project docs that use the old php option contract', function (): void {
     writeOrbitDocsFile(
         $this->docsRoot,
-        'docs/domains/5_app/README.md',
-        "# App Commands\n\nUse `--php` to select the runtime.\n",
+        'docs/domains/5_project/README.md',
+        "# Project Commands\n\nUse `--php` to select the runtime.\n",
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -1505,10 +1505,10 @@ it('reports app docs that use the old php option contract', function (): void {
         ->toBe(1)
         ->and($matchingFindings[0] ?? null)
         ->toMatchArray([
-            'path' => 'docs/domains/5_app/README.md',
+            'path' => 'docs/domains/5_project/README.md',
             'severity' => 'error',
             'rule' => 'command_docs.app_php_version_contract',
-            'message' => 'App command docs must use `--php-version`; `--php` is not part of the converted contract.',
+            'message' => 'Project and instance command docs must use `--php-version`; `--php` is not part of the converted contract.',
         ]);
 });
 
@@ -2255,7 +2255,7 @@ it('requires transitional wording in each operation section that mentions SSE tr
         ]);
 });
 
-it('reports bare app selectors and parent-app ownership in instance-required lifecycle companions', function (): void {
+it('reports bare project selectors and parent-project ownership in instance-required lifecycle companions', function (): void {
     config()->set('librarian.rules', [WorkspaceLifecycleInstanceScopeRule::class]);
     writeOrbitDocsFile($this->docsRoot, 'docs/domains/6_workspace/README.md', "# Workspace Commands\n");
     writeOrbitDocsFile(
@@ -2269,28 +2269,28 @@ it('reports bare app selectors and parent-app ownership in instance-required lif
             ## Signature
 
             ```text
-            orbit workspace-setup-step:add --command=<command> [--app=<app.instance>]
+            orbit workspace-setup-step:add --command=<command> [--instance=<project.instance>]
             ```
 
             ## Failure Semantics
 
-            Bare logical-app selectors fail with `error.meta.reason=app_instance_required`.
+            Bare project selectors fail with `error.meta.reason=instance_required`.
             MARKDOWN,
     );
     writeOrbitDocsFile(
         $this->docsRoot,
         'docs/domains/6_workspace/8_workspace-setup-step-add/workspace-setup-step-add.md',
-        "# `orbit workspace-setup-step:add`\n\n## Usage\n\n```bash\norbit workspace-setup-step:add --command=<command> [--app=<app>]\n```\n",
+        "# `orbit workspace-setup-step:add`\n\n## Usage\n\n```bash\norbit workspace-setup-step:add --command=<command> [--instance=<project>]\n```\n",
     );
     writeOrbitDocsFile(
         $this->docsRoot,
         'docs/domains/6_workspace/8_workspace-setup-step-add/technical/6.1_workspace-setup-step-add_output-render_human.md',
-        "# Human Renderer\n\nThe output reports parent app ownership.\n",
+        "# Human Renderer\n\nThe output reports parent project ownership.\n",
     );
     writeOrbitDocsFile(
         $this->docsRoot,
         'docs/domains/6_workspace/8_workspace-setup-step-add/technical/6.2_workspace-setup-step-add_output-render_json.md',
-        "# JSON Renderer\n\nThe payload reports the concrete app instance.\n",
+        "# JSON Renderer\n\nThe payload reports the concrete instance.\n",
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -2312,7 +2312,7 @@ it('reports bare app selectors and parent-app ownership in instance-required lif
         ]);
 });
 
-it('reports bare app selectors in instance-required lifecycle list companions', function (): void {
+it('reports bare project selectors in instance-required lifecycle list companions', function (): void {
     config()->set('librarian.rules', [WorkspaceLifecycleInstanceScopeRule::class]);
     writeOrbitDocsFile($this->docsRoot, 'docs/domains/6_workspace/README.md', "# Workspace Commands\n");
     writeOrbitDocsFile(
@@ -2326,23 +2326,23 @@ it('reports bare app selectors in instance-required lifecycle list companions', 
             ## Signature
 
             ```text
-            orbit workspace-setup-step:list [--app=<app.instance>]
+            orbit workspace-setup-step:list [--instance=<project.instance>]
             ```
 
             ## Failure Semantics
 
-            Bare logical-app selectors fail with `error.meta.reason=app_instance_required`.
+            Bare project selectors fail with `error.meta.reason=instance_required`.
             MARKDOWN,
     );
     writeOrbitDocsFile(
         $this->docsRoot,
         'docs/domains/6_workspace/9_workspace-setup-step-list/workspace-setup-step-list.md',
-        "# `orbit workspace-setup-step:list`\n\n## Usage\n\n```bash\norbit workspace-setup-step:list [--app=<app>]\n```\n",
+        "# `orbit workspace-setup-step:list`\n\n## Usage\n\n```bash\norbit workspace-setup-step:list [--instance=<project>]\n```\n",
     );
     writeOrbitDocsFile(
         $this->docsRoot,
         'docs/domains/6_workspace/9_workspace-setup-step-list/technical/6.1_workspace-setup-step-list_output-render_human.md',
-        "# Human Renderer\n\nThe output names the concrete app instance.\n",
+        "# Human Renderer\n\nThe output names the concrete instance.\n",
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -2361,7 +2361,7 @@ it('reports bare app selectors in instance-required lifecycle list companions', 
         ->toBe('docs/domains/6_workspace/9_workspace-setup-step-list/workspace-setup-step-list.md');
 });
 
-it('accepts concrete app-instance selectors in lifecycle list companions', function (): void {
+it('accepts concrete instance selectors in lifecycle list companions', function (): void {
     config()->set('librarian.rules', [WorkspaceLifecycleInstanceScopeRule::class]);
     writeOrbitDocsFile($this->docsRoot, 'docs/domains/6_workspace/README.md', "# Workspace Commands\n");
     writeOrbitDocsFile(
@@ -2375,28 +2375,28 @@ it('accepts concrete app-instance selectors in lifecycle list companions', funct
             ## Signature
 
             ```text
-            orbit workspace-setup-step:list [--app=<app.instance>]
+            orbit workspace-setup-step:list [--instance=<project.instance>]
             ```
 
             ## Failure Semantics
 
-            Bare logical-app selectors fail with `error.meta.reason=app_instance_required`.
+            Bare project selectors fail with `error.meta.reason=instance_required`.
             MARKDOWN,
     );
     writeOrbitDocsFile(
         $this->docsRoot,
         'docs/domains/6_workspace/9_workspace-setup-step-list/workspace-setup-step-list.md',
-        "# `orbit workspace-setup-step:list`\n\n## Usage\n\n```bash\norbit workspace-setup-step:list [--app=<app.instance>]\n```\n",
+        "# `orbit workspace-setup-step:list`\n\n## Usage\n\n```bash\norbit workspace-setup-step:list [--instance=<project.instance>]\n```\n",
     );
     writeOrbitDocsFile(
         $this->docsRoot,
         'docs/domains/6_workspace/9_workspace-setup-step-list/technical/6.1_workspace-setup-step-list_output-render_human.md',
-        "# Human Renderer\n\nPass `--app=<app.instance>` or use caller context that resolves one concrete app instance.\n",
+        "# Human Renderer\n\nPass `--instance=<project.instance>` or use caller context that resolves one concrete instance.\n",
     );
     writeOrbitDocsFile(
         $this->docsRoot,
         'docs/domains/6_workspace/9_workspace-setup-step-list/technical/6.2_workspace-setup-step-list_output-render_json.md',
-        "# JSON Renderer\n\nThe payload reports concrete app-instance ownership.\n",
+        "# JSON Renderer\n\nThe payload reports concrete instance ownership.\n",
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -2412,7 +2412,7 @@ it('accepts concrete app-instance selectors in lifecycle list companions', funct
         ->toBeEmpty();
 });
 
-it('reports bare app selectors in canonical and input-mode lifecycle contracts without sentinel prose', function (): void {
+it('reports bare project selectors in canonical and input-mode lifecycle contracts without sentinel prose', function (): void {
     config()->set('librarian.rules', [WorkspaceLifecycleInstanceScopeRule::class]);
     writeOrbitDocsFile($this->docsRoot, 'docs/domains/6_workspace/README.md', "# Workspace Commands\n");
     writeOrbitDocsFile(
@@ -2426,19 +2426,19 @@ it('reports bare app selectors in canonical and input-mode lifecycle contracts w
             ## Signature
 
             ```text
-            orbit workspace-setup-step:add --command=<command> [--app=<app>]
+            orbit workspace-setup-step:add --command=<command> [--instance=<project>]
             ```
             MARKDOWN,
     );
     writeOrbitDocsFile(
         $this->docsRoot,
         'docs/domains/6_workspace/8_workspace-setup-step-add/technical/5.1_workspace-setup-step-add_input-mode_interactive.md',
-        "# Interactive Input\n\nPass `--app=<app>` to select the owner.\n",
+        "# Interactive Input\n\nPass `--instance=<project>` to select the owner.\n",
     );
     writeOrbitDocsFile(
         $this->docsRoot,
         'docs/domains/6_workspace/8_workspace-setup-step-add/technical/5.2_workspace-setup-step-add_input-mode_non-interactive.md',
-        "# Non-interactive Input\n\nPass `--app=<app>` to select the owner.\n",
+        "# Non-interactive Input\n\nPass `--instance=<project>` to select the owner.\n",
     );
 
     $exitCode = Artisan::call('librarian:lint', [

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -57,9 +57,9 @@ function workspace_setup_step_runner_signing_key(): string
     return hash('sha256', WorkspaceSetupStepRunner::class);
 }
 
-function workspace_setup_step_runner_test_app(Node $node): App
+function workspace_setup_step_runner_test_app(Node $node): Project
 {
-    return App::factory()->create([
+    return Project::factory()->create([
         'name' => 'demo',
         'node_id' => $node->id,
         'path' => '/home/orbit/apps/demo',
@@ -203,7 +203,7 @@ it('routes workspace lifecycle commands through the selected node home when app 
             'status' => 'active',
         ]);
 
-    $app = new App([
+    $app = new Project([
         'name' => 'demo',
         'node_id' => $canonicalNode->id,
         'path' => '/home/nckrtl/apps/demo',
@@ -467,7 +467,7 @@ it('rejects legacy setup steps that directly consume the parent app env before e
         ->and($run->fresh()->status)
         ->toBe('failed')
         ->and($run->runSteps()->sole()->output)
-        ->toContain('parent app .env');
+        ->toContain('parent project .env');
 })->with([
     'quoted path' => 'cp "$ORBIT_APP_PATH/.env" .env',
     'quoted variable' => 'cp "$ORBIT_APP_PATH"/.env .env',

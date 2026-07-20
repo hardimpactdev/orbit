@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createDashboardSummary, createEndpointStatus } from './dashboard-data.ts';
 
-test('groups apps, processes, and tools by node', () => {
+test('groups project instances, processes, and tools by node', () => {
     const summary = createDashboardSummary(
         {
             nodes: {
@@ -24,11 +24,17 @@ test('groups apps, processes, and tools by node', () => {
                     ],
                 },
             },
-            apps: {
+            projects: {
                 data: {
-                    apps: [
-                        { name: 'orbit-docs', node_name: 'mini', environment: 'dev', status: 'ready' },
-                        { name: 'billing', node: { name: 'prod-1' }, environment: 'prod', status: 'deployed' },
+                    projects: [
+                        {
+                            name: 'orbit-docs',
+                            instances: [{ name: 'local', node: 'mini', environment: 'dev', status: 'ready' }],
+                        },
+                        {
+                            name: 'billing',
+                            instances: [{ name: 'production', node: { name: 'prod-1' }, environment: 'prod', status: 'deployed' }],
+                        },
                     ],
                 },
             },
@@ -38,7 +44,7 @@ test('groups apps, processes, and tools by node', () => {
                         {
                             name: 'queue',
                             node_name: 'mini',
-                            app_name: 'orbit-docs',
+                            project_name: 'orbit-docs',
                             runtime: 'launchd',
                             status: 'running',
                         },
@@ -58,7 +64,8 @@ test('groups apps, processes, and tools by node', () => {
     );
 
     assert.equal(summary.totals.nodes, 2);
-    assert.equal(summary.totals.apps, 2);
+    assert.equal(summary.totals.projects, 2);
+    assert.equal(summary.totals.instances, 2);
     assert.equal(summary.totals.databases, 1);
     assert.equal(summary.totals.processes, 1);
     assert.equal(summary.totals.tools, 2);
@@ -67,7 +74,8 @@ test('groups apps, processes, and tools by node', () => {
     assert.equal(summary.apiStatuses.every(status => status.status === 'loaded'), true);
 
     const mini = summary.nodeGroups.find(group => group.node.name === 'mini');
-    assert.equal(mini?.apps[0]?.name, 'orbit-docs');
+    assert.equal(mini?.instances[0]?.project, 'orbit-docs');
+    assert.equal(mini?.instances[0]?.name, 'local');
     assert.equal(mini?.databases[0]?.name, 'mini');
     assert.deepEqual(mini?.node.roles, ['app-dev', 'database']);
     assert.equal(mini?.processes[0]?.runtime, 'launchd');
@@ -75,7 +83,7 @@ test('groups apps, processes, and tools by node', () => {
     assert.equal(mini?.statusTone, 'healthy');
 
     const production = summary.nodeGroups.find(group => group.node.name === 'prod-1');
-    assert.equal(production?.apps[0]?.name, 'billing');
+    assert.equal(production?.instances[0]?.project, 'billing');
     assert.equal(production?.tools[0]?.status, 'missing');
     assert.equal(production?.statusTone, 'offline');
 });
@@ -83,7 +91,7 @@ test('groups apps, processes, and tools by node', () => {
 test('detects Valkey but not Redis as database inventory', () => {
     const summary = createDashboardSummary({
         nodes: { data: { nodes: [{ name: 'storage-1', status: 'active' }] } },
-        apps: { data: { apps: [] } },
+        projects: { data: { projects: [] } },
         processes: { data: { processes: [] } },
         tools: {
             data: {
@@ -115,7 +123,7 @@ test('reads Scramble node role payloads', () => {
                 },
             },
         },
-        apps: { success: { data: { apps: [] } } },
+        projects: { success: { data: { projects: [] } } },
         processes: { success: { data: { processes: [] } } },
         tools: { success: { data: { tools: [] } } },
     });
@@ -126,14 +134,14 @@ test('reads Scramble node role payloads', () => {
 test('preserves endpoint failures next to partial inventory', () => {
     const summary = createDashboardSummary({
         nodes: { data: { nodes: [{ name: 'mini', status: 'active' }] } },
-        apps: undefined,
+        projects: undefined,
         processes: { data: { processes: [{ name: 'queue', node_name: 'mini' }] } },
         tools: undefined,
         apiStatuses: [
             createEndpointStatus('nodes', 'loaded', 'Loaded'),
-            createEndpointStatus('apps', 'failed', 'A node, app, or workspace context is required.'),
+            createEndpointStatus('projects', 'failed', 'A node, project, instance, or workspace context is required.'),
             createEndpointStatus('processes', 'loaded', 'Loaded'),
-            createEndpointStatus('tools', 'failed', 'A node, app, or workspace context is required.'),
+            createEndpointStatus('tools', 'failed', 'A node, project, instance, or workspace context is required.'),
         ],
     });
 
@@ -145,13 +153,20 @@ test('preserves endpoint failures next to partial inventory', () => {
 test('keeps runtime records visible when the node list omits their node', () => {
     const summary = createDashboardSummary({
         nodes: { data: { nodes: [] } },
-        apps: { data: { apps: [{ name: 'orphan-app', node_name: 'missing-node' }] } },
+        projects: {
+            data: {
+                projects: [{
+                    name: 'orphan-project',
+                    instances: [{ name: 'production', node: 'missing-node' }],
+                }],
+            },
+        },
         processes: { data: { processes: [] } },
         tools: { data: { tools: [] } },
     });
 
     assert.equal(summary.nodeGroups.length, 1);
     assert.equal(summary.nodeGroups[0]?.node.name, 'missing-node');
-    assert.equal(summary.nodeGroups[0]?.apps[0]?.name, 'orphan-app');
+    assert.equal(summary.nodeGroups[0]?.instances[0]?.project, 'orphan-project');
     assert.equal(summary.nodeGroups[0]?.hasRuntimeInventory, true);
 });

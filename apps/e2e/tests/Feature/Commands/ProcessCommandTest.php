@@ -28,7 +28,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             'gateway',
             "cd {$checkout} && orbit process:add {$process} "
             .escapeshellarg('echo worker-ready; sleep 300')
-            .' --app='
+            .' --instance='
             .escapeshellarg($app)
             .' --json',
             timeoutSeconds: 180,
@@ -59,7 +59,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $update = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:update {$process} --app="
+            "cd {$checkout} && orbit process:update {$process} --instance="
             .escapeshellarg($app)
             .' --restart-policy=always --json',
             timeoutSeconds: 180,
@@ -73,7 +73,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $start = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:start {$process} --app=".escapeshellarg($app).' --json',
+            "cd {$checkout} && orbit process:start {$process} --instance=".escapeshellarg($app).' --json',
             timeoutSeconds: 120,
             allowFailure: true,
         );
@@ -104,7 +104,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $logs = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:logs {$process} --app=".escapeshellarg($app).' --lines=5 --json',
+            "cd {$checkout} && orbit process:logs {$process} --instance=".escapeshellarg($app).' --lines=5 --json',
             timeoutSeconds: 120,
         );
         $logsPayload = processCommandPayload($logs->output());
@@ -118,7 +118,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $restart = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:restart {$process} --app=".escapeshellarg($app).' --json',
+            "cd {$checkout} && orbit process:restart {$process} --instance=".escapeshellarg($app).' --json',
             timeoutSeconds: 120,
         );
         $restartPayload = processCommandPayload($restart->output());
@@ -137,7 +137,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $stop = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:stop {$process} --app=".escapeshellarg($app).' --json',
+            "cd {$checkout} && orbit process:stop {$process} --instance=".escapeshellarg($app).' --json',
             timeoutSeconds: 120,
         );
         $stopPayload = processCommandPayload($stop->output());
@@ -158,7 +158,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             'gateway',
             "cd {$checkout} && orbit process:add {$workspaceProcess} "
             .escapeshellarg('echo workspace-ready; sleep 300')
-            .' --app='
+            .' --instance='
             .escapeshellarg($app)
             .' --workspace='
             .escapeshellarg($workspace)
@@ -182,7 +182,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $workspaceStart = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:start {$workspaceProcess} --app="
+            "cd {$checkout} && orbit process:start {$workspaceProcess} --instance="
             .escapeshellarg($app)
             .' --workspace='
             .escapeshellarg($workspace)
@@ -217,7 +217,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $workspaceLogs = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:logs {$workspaceProcess} --app="
+            "cd {$checkout} && orbit process:logs {$workspaceProcess} --instance="
             .escapeshellarg($app)
             .' --workspace='
             .escapeshellarg($workspace)
@@ -241,7 +241,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $workspaceStop = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:stop {$workspaceProcess} --app="
+            "cd {$checkout} && orbit process:stop {$workspaceProcess} --instance="
             .escapeshellarg($app)
             .' --workspace='
             .escapeshellarg($workspace)
@@ -264,7 +264,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $workspaceRemove = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:remove {$workspaceProcess} --app="
+            "cd {$checkout} && orbit process:remove {$workspaceProcess} --instance="
             .escapeshellarg($app)
             .' --workspace='
             .escapeshellarg($workspace)
@@ -287,7 +287,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $remove = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:remove {$process} --app=".escapeshellarg($app).' --force --json',
+            "cd {$checkout} && orbit process:remove {$process} --instance=".escapeshellarg($app).' --force --json',
             timeoutSeconds: 180,
         );
         $removePayload = processCommandPayload($remove->output());
@@ -304,7 +304,7 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $registry = processCommandRunGatewayTinker(
             $topology,
-            "\$app = \\App\\Models\\App::query()->where('name', '{$app}')->first(); echo \$app instanceof \\App\\Models\\App && \\App\\Models\\Process::query()->where('name', '{$process}')->where('owner_type', \$app->getMorphClass())->where('owner_id', \$app->id)->exists() ? 'present' : 'absent';",
+            "\$app = \\App\\Models\\Project::query()->where('name', '{$app}')->first(); echo \$app instanceof \\App\\Models\\Project && \\App\\Models\\Process::query()->where('name', '{$process}')->where('owner_type', \$app->getMorphClass())->where('owner_id', \$app->id)->exists() ? 'present' : 'absent';",
         );
 
         expect(trim($registry->output()))->toBe('absent');
@@ -546,7 +546,7 @@ function processCommandSeedApp(E2ETopologyHarness $topology, string $app, string
         $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
         $node->update(['status' => 'active', 'platform' => 'ubuntu']);
 
-        \App\Models\App::query()->updateOrCreate(
+        \App\Models\Project::query()->updateOrCreate(
             ['name' => '__APP__'],
             [
                 'node_id' => $node->id,
@@ -578,7 +578,7 @@ function processCommandSeedWorkspace(E2ETopologyHarness $topology, string $app, 
     }
 
     $script = <<<'PHP'
-        $app = \App\Models\App::query()->where('name', '__APP__')->firstOrFail();
+        $app = \App\Models\Project::query()->where('name', '__APP__')->firstOrFail();
 
         \App\Models\Workspace::query()->updateOrCreate(
             ['app_id' => $app->id, 'name' => '__WORKSPACE__'],
@@ -612,7 +612,7 @@ function processCommandCleanup(
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit process:remove worker --app="
+        "cd {$checkout} && orbit process:remove worker --instance="
         .escapeshellarg($app)
         .' --force --json >/dev/null 2>&1 || true',
         timeoutSeconds: 180,
@@ -642,7 +642,7 @@ function processCommandCleanup(
         processCommandRemoveDockerHostPath($topology, $path);
     }
 
-    $script = "\\App\\Models\\Process::query()->whereIn('name', ['worker', 'frankenphp-worker'])->delete(); if (\$app = \\App\\Models\\App::query()->where('name', '{$app}')->first()) { \$app->delete(); }";
+    $script = "\\App\\Models\\Process::query()->whereIn('name', ['worker', 'frankenphp-worker'])->delete(); if (\$app = \\App\\Models\\Project::query()->where('name', '{$app}')->first()) { \$app->delete(); }";
 
     processCommandRunGatewayTinker($topology, $script, allowFailure: true);
 }

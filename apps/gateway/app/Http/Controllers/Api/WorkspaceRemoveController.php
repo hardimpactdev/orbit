@@ -52,7 +52,7 @@ final class WorkspaceRemoveController implements Loggable
             );
         }
 
-        $app = $this->stringQuery($request, 'app');
+        $app = $this->stringQuery($request, 'instance');
         $selection = null;
 
         if ($app !== null) {
@@ -62,7 +62,7 @@ final class WorkspaceRemoveController implements Loggable
                 return $this->error(
                     'workspace.not_found',
                     "Workspace '{$name}' not found in registry.",
-                    ['name' => $name, 'app' => $app],
+                    ['name' => $name, 'instance' => $app],
                     404,
                 );
             }
@@ -77,7 +77,7 @@ final class WorkspaceRemoveController implements Loggable
                 array_filter(
                     [
                         'name' => $name,
-                        'app' => $app,
+                        'instance' => $app,
                     ],
                     fn (?string $value): bool => $value !== null,
                 ),
@@ -88,7 +88,7 @@ final class WorkspaceRemoveController implements Loggable
         if ($app === null && $matches->count() > 1) {
             return $this->error(
                 'workspace.ambiguous_name',
-                "Workspace name '{$name}' matches multiple apps.",
+                "Workspace name '{$name}' matches multiple instances.",
                 [
                     'name' => $name,
                 ],
@@ -106,7 +106,8 @@ final class WorkspaceRemoveController implements Loggable
                 'Workspace owning node could not be resolved.',
                 [
                     'name' => $workspace->name,
-                    'app' => $workspace->app?->name,
+                    'project' => $workspace->app?->name,
+                    'instance' => $workspace->appInstance->name,
                 ],
                 403,
             );

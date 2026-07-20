@@ -102,7 +102,7 @@ final class ToolUpdateController implements Loggable
         }
 
         $requestedNode = $this->toolTargetString($request, 'node');
-        $requestedApp = $this->toolTargetString($request, 'app');
+        $requestedApp = $this->toolTargetString($request, 'instance');
 
         if ($requestedApp !== null) {
             return null;

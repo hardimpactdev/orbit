@@ -25,7 +25,7 @@ function appRemoveGrantAccess(E2ETopologyHarness $topology): void
             'consumer_node_id' => $nodes->get('operator-1'),
             'serving_node_id' => $nodes->get('app-dev-1'),
         ], [
-            'permissions' => json_encode(['app:new', 'app:remove'], JSON_THROW_ON_ERROR),
+            'permissions' => json_encode(['project:new', 'project:remove'], JSON_THROW_ON_ERROR),
             'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
             'created_at' => now(),
             'updated_at' => now(),
@@ -64,7 +64,7 @@ it('removes an app from a operator caller through the gateway api', function ():
         $create = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:new %s --node=app-dev-1 --repo=octocat/Hello-World --json',
+                'cd %s && orbit project:new %s --node=app-dev-1 --repo=octocat/Hello-World --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
@@ -79,7 +79,7 @@ it('removes an app from a operator caller through the gateway api', function ():
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:remove %s --force --json',
+                'cd %s && orbit project:remove %s --force --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
@@ -87,9 +87,9 @@ it('removes an app from a operator caller through the gateway api', function ():
         );
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $app = $payload['success']['data']['app'] ?? null;
+        $project = $payload['success']['data']['project'] ?? null;
 
-        expect($app)
+        expect($project)
             ->toBeArray()
             ->and($payload['success']['data']['result']['action'])
             ->toBe('removed')
@@ -97,18 +97,14 @@ it('removes an app from a operator caller through the gateway api', function ():
             ->toBe(1)
             ->and($payload['success']['data']['cleanup']['processes_removed'])
             ->toBe(1)
-            ->and($app['name'])
-            ->toBe($name)
-            ->and($app['node'])
-            ->toBe('app-dev-1')
-            ->and($app['path'])
-            ->toBe($path);
+            ->and($project['name'])
+            ->toBe($name);
 
         $gatewayRecord = $topology->ssh(
             'gateway',
             'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
                 .escapeshellarg("echo json_encode([
-                'app' => \\App\\Models\\App::query()->where('name', '{$name}')->exists(),
+                'project' => \\App\\Models\\Project::query()->where('name', '{$name}')->exists(),
                 'routes' => \\App\\Models\\ProxyRoute::query()->where('domain', '{$name}.test')->count(),
             ], JSON_THROW_ON_ERROR);"),
             timeoutSeconds: 120,
@@ -116,7 +112,7 @@ it('removes an app from a operator caller through the gateway api', function ():
         $state = json_decode(trim($gatewayRecord->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($state)->toMatchArray([
-            'app' => false,
+            'project' => false,
             'routes' => 0,
         ]);
 

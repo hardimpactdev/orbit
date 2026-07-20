@@ -7,9 +7,9 @@ namespace App\Actions\Apps;
 use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppOwningNodeResolver;
@@ -23,6 +23,7 @@ use App\Services\Proxy\ProxyRouteEnactment;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Closure;
 use RuntimeException;
+use Throwable;
 
 /**
  * @mago-expect lint:kan-defect
@@ -45,7 +46,7 @@ final readonly class EnsureAppProxyRoute
     /**
      * @return list<array<string, string>>
      */
-    public function handle(App $app): array
+    public function handle(Project $app): array
     {
         $owningNode = $this->appOwningNodeResolver->resolve($app);
 
@@ -158,7 +159,7 @@ final readonly class EnsureAppProxyRoute
      */
     private function enactProductionRoute(
         ProxyRoute $route,
-        App $app,
+        Project $app,
         Node $owningNode,
         Node $servingNode,
         string $domain,
@@ -286,7 +287,7 @@ final readonly class EnsureAppProxyRoute
 
         try {
             $successful = $callback();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             $successful = false;
         }
 
@@ -492,7 +493,7 @@ final readonly class EnsureAppProxyRoute
     /**
      * @return list<array<string, string>>
      */
-    private function productionActivationWarnings(App $app): array
+    private function productionActivationWarnings(Project $app): array
     {
         if (! is_string($app->domain) || $app->domain === '') {
             return [];
@@ -501,8 +502,8 @@ final readonly class EnsureAppProxyRoute
         return [[
             'code' => 'proxy.domain_inactive',
             'family' => 'proxy',
-            'message' => "Production domain '{$app->domain}' is not yet active. Retry with 'orbit app:register {$app->name} --domain={$app->domain}' once DNS has propagated.",
-            'next_command' => "app:register {$app->name} --domain={$app->domain}",
+            'message' => "Production domain '{$app->domain}' is not yet active. Retry with 'orbit instance:register {$app->name} --domain={$app->domain}' once DNS has propagated.",
+            'next_command' => "instance:register {$app->name} --domain={$app->domain}",
         ]];
     }
 
@@ -514,7 +515,7 @@ final readonly class EnsureAppProxyRoute
      *     tls: array{cert_path: string, key_path: string},
      * }  $config
      */
-    private function renderCaddySite(App $app, string $domain, array $config): string
+    private function renderCaddySite(Project $app, string $domain, array $config): string
     {
         $pathBlocking = $app->document_root === '.'
             ? 'import path_blocking_project_root'
@@ -601,7 +602,7 @@ final readonly class EnsureAppProxyRoute
         return $this->caddyHostPathResolver ?? app(CaddyContainerHostPathResolver::class);
     }
 
-    private function domain(App $app, Node $owningNode): string
+    private function domain(Project $app, Node $owningNode): string
     {
         if (is_string($app->domain) && $app->domain !== '') {
             return $app->domain;
@@ -619,7 +620,7 @@ final readonly class EnsureAppProxyRoute
     /**
      * @return array{0: Node, 1: array<string, mixed>, 2: string}
      */
-    private function routeArtifact(App $app, Node $owningNode, string $domain): array
+    private function routeArtifact(Project $app, Node $owningNode, string $domain): array
     {
         $isPhp = $app->runtimeKind() === AppRuntimeKind::Php;
         $instance = $this->routeInstance($app);
@@ -729,7 +730,7 @@ final readonly class EnsureAppProxyRoute
         return [$ingressNode, $config, $content];
     }
 
-    private function routeInstance(App $app): ?AppInstance
+    private function routeInstance(Project $app): ?AppInstance
     {
         $app->loadMissing('instances');
         $instance = $app->instances->first(
@@ -742,7 +743,7 @@ final readonly class EnsureAppProxyRoute
         return $instance instanceof AppInstance ? $instance : null;
     }
 
-    private function runtimeUpstream(App $app, ?AppInstance $instance): string
+    private function runtimeUpstream(Project $app, ?AppInstance $instance): string
     {
         if ($this->innerTlsPolicy->appliesToApp($app)) {
             return $this->appRouteRuntimeTargets->httpsRuntimeUpstream($app, $instance);

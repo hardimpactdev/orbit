@@ -70,6 +70,8 @@ return [
     'path' => base_path('content'),
 
     'generated_docs' => [
+        // Orbit owns richer generated indexes than Librarian's default templates.
+        'enforce' => false,
         'files' => [
             'README.md',
         ],
@@ -164,7 +166,7 @@ return [
             'terms' => ['app:exec', 'workspace:exec'],
             'decision' => '2026-06-03 Orbit has no command-exec surface',
             'replacement' => 'host `php`/`artisan`/`composer` directly on the app node source path',
-            'allow_paths' => ['domains/5_app/README.md'],
+            'allow_paths' => ['domains/5_project/README.md'],
         ],
         [
             'terms' => ['orbit:release-candidate:activate'],
@@ -188,6 +190,29 @@ return [
             'terms' => ['caller-role authorization'],
             'decision' => '2026-07-15 doctor drift is authoritative-state based, not caller-role visibility based',
             'replacement' => 'caller eligibility or explicit permission checks',
+            'allow_paths' => [],
+        ],
+        [
+            'terms' => [
+                'app:new',
+                'app:list',
+                'app:show',
+                'app:remove',
+                'app:register',
+                'app:root',
+                'app:prune',
+                'app:agent-ide',
+                'app:worker',
+                'app:websocket',
+                'app:mount',
+                'app:analytics',
+                'app:instance',
+                'app:env',
+                'app:setup',
+                'app-setup-step:',
+            ],
+            'decision' => '2026-07-20 public hierarchy is Project to Instance to Workspace',
+            'replacement' => 'project:* for project identity, instance:* for concrete instances',
             'allow_paths' => [],
         ],
     ],

@@ -9,15 +9,15 @@ describe('AppWebSocketDisableCommand', function (): void {
     it('requests app websocket disable through the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'binding' => [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'internal_host' => 'websocket.orbit',
                 'public_hosts' => [],
                 'allowed_origins' => ['https://docs.test'],
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:websocket disable', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:websocket disable', [
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -26,7 +26,7 @@ describe('AppWebSocketDisableCommand', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/apps/docs/websocket/disable'
+                && $request->url() === 'https://gateway.test/api/instances/docs/websocket/disable'
                 && $request->data() === []
             ),
         );
@@ -42,15 +42,15 @@ describe('AppWebSocketDisableCommand', function (): void {
     it('renders disable responses in human mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'binding' => [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'internal_host' => 'websocket.orbit',
                 'public_hosts' => [],
                 'allowed_origins' => ['https://docs.test'],
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:websocket disable', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:websocket disable', [
+            'instance' => 'docs',
         ]);
 
         expect($exitCode)
@@ -58,7 +58,7 @@ describe('AppWebSocketDisableCommand', function (): void {
             ->and($output)
             ->toContain('binding:')
             ->and($output)
-            ->toContain('  app: docs')
+            ->toContain('  instance: docs')
             ->and($output)
             ->toContain('  internal_host: websocket.orbit')
             ->and($output)
@@ -74,7 +74,7 @@ describe('AppWebSocketDisableCommand', function (): void {
     it('requires an app selector before sending gateway requests', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
-        [$exitCode, $output] = runCommand($this, 'app:websocket disable', [
+        [$exitCode, $output] = runCommand($this, 'instance:websocket disable', [
             '--json' => true,
         ]);
 
@@ -87,18 +87,18 @@ describe('AppWebSocketDisableCommand', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     });
 
     it('maps gateway failures into canonical CLI failures', function (): void {
         fakeGateway(fakeErrorEnvelope(
             'authorization_failed',
-            "This node is not authorized for 'app:write' on 'app-1'.",
-            ['missing_permission' => 'app:write', 'serving_node' => 'app-1'],
+            "This node is not authorized for 'instance:write' on 'app-1'.",
+            ['missing_permission' => 'instance:write', 'serving_node' => 'app-1'],
         ), 403);
 
-        [$exitCode, $output] = runCommand($this, 'app:websocket disable', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:websocket disable', [
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -109,6 +109,6 @@ describe('AppWebSocketDisableCommand', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('authorization_failed')
             ->and($decoded['error']['meta']['missing_permission'])
-            ->toBe('app:write');
+            ->toBe('instance:write');
     });
 });

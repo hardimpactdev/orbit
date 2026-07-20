@@ -3,11 +3,11 @@
 declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistry;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure;
@@ -19,7 +19,7 @@ uses(RefreshDatabase::class);
 
 describe('DatabaseConnectionRegistry', function (): void {
     it('lists and shows connections ordered by slug', function (): void {
-        $app = App::factory()->create();
+        $app = Project::factory()->create();
         $instance = AppInstance::factory()->for($app)->create(['name' => 'production']);
         $first = DatabaseConnection::factory()->create(['slug' => 'zebra']);
         $second = DatabaseConnection::factory()->create(['slug' => 'alpha']);
@@ -33,17 +33,17 @@ describe('DatabaseConnectionRegistry', function (): void {
 
         expect($registry->list()->modelKeys())
             ->toBe([$second->id, $first->id])
-            ->and($registry->list(app: $app)->modelKeys())
+            ->and($registry->list(instance: $instance)->modelKeys())
             ->toBe([$second->id])
             ->and($registry->show('alpha')?->is($second))
             ->toBeTrue();
     });
 
-    it('filters node listings by concrete app instance and workspace placement', function (): void {
+    it('filters node listings by concrete instance and workspace placement', function (): void {
         $logicalAppNode = Node::factory()->create(['name' => 'logical-app-node']);
         $instanceNode = Node::factory()->create(['name' => 'instance-node']);
         $unrelatedNode = Node::factory()->create(['name' => 'unrelated-node']);
-        $app = App::factory()->for($logicalAppNode, 'node')->create();
+        $app = Project::factory()->for($logicalAppNode, 'node')->create();
         $instance = AppInstance::factory()->for($app)->create([
             'driver_config' => new OrbitAppInstanceDriverConfigData(
                 node_id: $instanceNode->id,
@@ -285,8 +285,8 @@ describe('DatabaseConnectionRegistry', function (): void {
             ->toBe('slug');
     });
 
-    it('attaches and detaches workspace and app instance targets with conflict handling', function (): void {
-        $app = App::factory()->create();
+    it('attaches and detaches workspace and instance targets with conflict handling', function (): void {
+        $app = Project::factory()->create();
         $instance = AppInstance::factory()->for($app)->create(['name' => 'production']);
         $workspace = Workspace::factory()->create();
         $primary = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
@@ -353,7 +353,7 @@ describe('DatabaseConnectionRegistry', function (): void {
     });
 
     it('blocks remove when targets exist unless forced', function (): void {
-        $app = App::factory()->create();
+        $app = Project::factory()->create();
         $instance = AppInstance::factory()->for($app)->create(['name' => 'production']);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
         DatabaseConnectionTarget::query()->create([

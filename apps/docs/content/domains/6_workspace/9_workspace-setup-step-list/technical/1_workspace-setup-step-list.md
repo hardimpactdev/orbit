@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace-setup-step:list [--app=<app.instance>] [--json]
+orbit workspace-setup-step:list [--instance=<project.instance>] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `--app` | When no app instance can be inferred from the caller filesystem. | Never. | Cwd-inferred app instance. | Dotted app-instance selector such as `happie.nmbp`, present in the gateway registry and authorized for this caller. Single value only. |
+| `app` | `--instance` | When no instance can be inferred from the caller filesystem. | Never. | Cwd-inferred instance. | Dotted instance selector such as `happie.nmbp`, present in the gateway registry and authorized for this caller. Single value only. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 ## Visibility Behavior
@@ -35,7 +35,7 @@ instance's `phase=setup` policy, scoped to what the caller is authorized to read
 
 - An authorized caller for an app with no configured setup steps receives
   an empty list (`success.data.steps=[]` in JSON,
-  `No setup steps defined for [app].` in human output) with exit zero.
+  `No setup steps defined for [instance].` in human output) with exit zero.
 - A caller whose identity is not authorized to read the resolved app's
   policy receives `error.code=authorization_failed`.
 - Explicitly requested apps that do not exist receive
@@ -43,20 +43,20 @@ instance's `phase=setup` policy, scoped to what the caller is authorized to read
 
 ## Input Resolution
 
-1. **Resolve app instance.** Apply the precedence chain in order:
-   1. `--app=<app.instance>` flag, using a dotted app-instance selector such
+1. **Resolve instance.** Apply the precedence chain in order:
+   1. `--instance=<project.instance>` flag, using a dotted instance selector such
       as `happie.nmbp`.
    2. `.orbit/config` marker on the caller filesystem (installed by
-      `app:new` / `app:register` and any workspace-installed marker) that
-      names the owning app slug.
+      `project:new` / `instance:register` and any workspace-installed marker) that
+      names the owning project slug.
    3. Gateway path-ownership lookup keyed on
       `(caller node identity, absolute cwd)`.
    4. Resolution failure: in non-interactive mode, fail with
-      `error.code=validation_failed`, `error.meta.field=app`. The command
+      `error.code=validation_failed`, `error.meta.field=instance`. The command
       does not prompt because it has no required interactive inputs.
    - **Forbidden**: `workspace-setup-step:list` must not read
      `composer.json`, `package.json`, `.php-version`, or any other project
-     file content during app-instance inference. This matches the
+     file content during instance inference. This matches the
      `workspace:new` and `workspace-setup-step:add` contracts and the
      `architecture.md` "Workspaces" project-file inspection prohibition.
 2. **Validate resolved app.** Confirm the app exists in gateway configuration.
@@ -65,14 +65,14 @@ instance's `phase=setup` policy, scoped to what the caller is authorized to read
 3. **Select renderer.** Use the shared invocation model to select the output
    renderer.
 4. **Issue the registry read.** Query gateway-owned setup-step policy for
-   the resolved `(app_instance, phase=setup)` and pass the result to the renderer.
+   the resolved `(instance, phase=setup)` and pass the result to the renderer.
 
 ## Behavior Contract
 
 ### Setup Step Listing Rules
 
 1. **Query gateway registry.** Read the gateway-owned setup-step policy for
-   the resolved `(app_instance, phase=setup)` tuple. No host probing is performed.
+   the resolved `(instance, phase=setup)` tuple. No host probing is performed.
 2. **Sort results.** Steps are sorted by `order` ascending. Setup steps
    already encode an authoritative ordering field; insertions performed by
    [`workspace-setup-step:add`](../../8_workspace-setup-step-add/workspace-setup-step-add.md)
@@ -80,7 +80,7 @@ instance's `phase=setup` policy, scoped to what the caller is authorized to read
    so callers reading any output form see the same steps in the same relative
    order.
 3. **Project step record shape.** Every returned record uses the shared
-   step shape `{ id, app, app_instance, phase, order, command, timeout_seconds }` already
+   step shape `{ id, project, instance, phase, order, command, timeout_seconds }` already
    published by `workspace-setup-step:add`. `phase` is always `"setup"`.
    There is no `name`, no per-step `working_directory`, no `env_overrides`,
    and no per-step `on_failure` field.
@@ -108,8 +108,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| App not found | The resolved app slug does not exist in gateway configuration (`error.code=workspace.app_not_found`, `error.meta.app`). | Failure |
-| App instance required | The selector does not resolve a concrete app instance. | Failure (`error.code=validation_failed`, `error.meta.reason=app_instance_required`) |
+| App not found | The resolved project slug does not exist in gateway configuration (`error.code=workspace.app_not_found`, `error.meta.project`). | Failure |
+| Instance required | The selector does not resolve a concrete instance. | Failure (`error.code=validation_failed`, `error.meta.reason=instance_required`) |
 | Production app unsupported | The selected instance is served by an `app-prod` node. | Failure (`error.code=workspace.unsupported_for_production`) |
 | Unauthorized app | The caller is not authorized to read the resolved app's setup-step policy (`error.code=authorization_failed`). | Failure |
 

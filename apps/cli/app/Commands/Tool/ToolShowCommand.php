@@ -18,7 +18,7 @@ final class ToolShowCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'tool:show
         {tool? : Tool catalog name to inspect}
-        {--app= : Resolve target by app selector}
+        {--instance= : Resolve target by instance selector}
         {--node= : Resolve target by node}
         {--live : Request gateway live inspection}
         {--json}';
@@ -38,7 +38,7 @@ final class ToolShowCommand extends GatewayCommand
 
         try {
             $response = $this->gatewayGet('/api/tools/'.rawurlencode($tool), $this->filledQuery([
-                'app' => $this->stringOption('app'),
+                'instance' => $this->stringOption('instance'),
                 'node' => $this->targetNodeOptionOrDefault(),
                 'live' => $live ? '1' : null,
             ]));

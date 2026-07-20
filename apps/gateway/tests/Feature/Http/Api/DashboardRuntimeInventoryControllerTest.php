@@ -3,11 +3,11 @@
 declare(strict_types=1);
 
 use App\Enums\ProcessRestartPolicy;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -56,7 +56,7 @@ describe('DashboardRuntimeInventoryController', function (): void {
             'status' => 'active',
         ]);
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()
             ->forOwner($app)
             ->create([
@@ -80,11 +80,11 @@ describe('DashboardRuntimeInventoryController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.apps.0.name', 'docs')
-            ->assertJsonPath('success.data.apps.0.instances.0.node', 'app-1')
+            ->assertJsonPath('success.data.projects.0.name', 'docs')
+            ->assertJsonPath('success.data.projects.0.instances.0.node', 'app-1')
             ->assertJsonPath('success.data.processes.0.name', 'queue')
             ->assertJsonPath('success.data.processes.0.node', 'app-1')
-            ->assertJsonPath('success.data.processes.0.app', 'docs')
+            ->assertJsonPath('success.data.processes.0.project', 'docs')
             ->assertJsonPath('success.data.processes.0.status', 'managed')
             ->assertJsonPath('success.data.tools.0.name', 'composer')
             ->assertJsonPath('success.data.tools.0.node', 'app-1');
@@ -100,10 +100,10 @@ describe('DashboardRuntimeInventoryController', function (): void {
         $visibleNode = createTestAppHostNode(['name' => 'visible-node']);
         $hiddenNode = createTestAppHostNode(['name' => 'hidden-node']);
 
-        grant_dashboard_inventory_access($caller, $visibleNode, ['app:read', 'process:read', 'tool:read']);
+        grant_dashboard_inventory_access($caller, $visibleNode, ['project:read', 'process:read', 'tool:read']);
 
-        $visibleApp = App::factory()->create(['name' => 'visible-app', 'node_id' => $visibleNode->id]);
-        $hiddenApp = App::factory()->create(['name' => 'hidden-app', 'node_id' => $hiddenNode->id]);
+        $visibleApp = Project::factory()->create(['name' => 'visible-app', 'node_id' => $visibleNode->id]);
+        $hiddenApp = Project::factory()->create(['name' => 'hidden-app', 'node_id' => $hiddenNode->id]);
 
         Process::factory()->forOwner($visibleApp)->create(['name' => 'visible-process']);
         Process::factory()->forOwner($hiddenApp)->create(['name' => 'hidden-process']);
@@ -121,7 +121,7 @@ describe('DashboardRuntimeInventoryController', function (): void {
 
         $response->assertOk();
 
-        expect(array_column($response->json('success.data.apps'), 'name'))->toBe(['visible-app']);
+        expect(array_column($response->json('success.data.projects'), 'name'))->toBe(['visible-app']);
         expect(array_column($response->json('success.data.processes'), 'name'))->toBe(['visible-process']);
         expect(array_column($response->json('success.data.tools'), 'name'))->toBe(['visible-tool']);
     });

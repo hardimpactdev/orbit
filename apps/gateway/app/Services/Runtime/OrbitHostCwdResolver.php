@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Runtime;
 
-use App\Models\App;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Support\Collection;
 
@@ -13,9 +13,9 @@ final class OrbitHostCwdResolver
     /**
      * Resolve a host working directory to a managed app and optional workspace.
      *
-     * Workspace matches always win over the parent app match so a caller
+     * Workspace matches always win over the parent project match so a caller
      * working inside `apps/docs/.worktrees/docs-feature` resolves to the
-     * workspace, not the parent app. When the host cwd is unmanaged the
+     * workspace, not the parent project. When the host cwd is unmanaged the
      * resolver returns `null` instead of guessing.
      *
      * `$hostCwd` defaults to `getenv('ORBIT_HOST_CWD')` so callers running
@@ -35,7 +35,7 @@ final class OrbitHostCwdResolver
         if ($workspace instanceof Workspace) {
             $app = $workspace->app;
 
-            if ($app instanceof App) {
+            if ($app instanceof Project) {
                 return new OrbitHostCwdContext(
                     app: $app,
                     workspace: $workspace,
@@ -46,7 +46,7 @@ final class OrbitHostCwdResolver
 
         $app = $this->bestMatchingApp($cwd);
 
-        if ($app instanceof App) {
+        if ($app instanceof Project) {
             return new OrbitHostCwdContext(
                 app: $app,
                 workspace: null,
@@ -115,6 +115,7 @@ final class OrbitHostCwdResolver
 
     private function bestMatchingWorkspace(string $cwd): ?Workspace
     {
+        /** @var Collection<int, Workspace> $candidates */
         $candidates = Workspace::query()
             ->with('app.node')
             ->whereNotNull('path')
@@ -128,15 +129,16 @@ final class OrbitHostCwdResolver
         );
     }
 
-    private function bestMatchingApp(string $cwd): ?App
+    private function bestMatchingApp(string $cwd): ?Project
     {
-        $candidates = App::query()
+        /** @var Collection<int, Project> $candidates */
+        $candidates = Project::query()
             ->with('node')
             ->whereNotNull('path')
             ->where('path', '!=', '')
             ->get();
 
-        return $this->longestPathMatch($candidates, $cwd, fn (App $app): string => $app->path);
+        return $this->longestPathMatch($candidates, $cwd, fn (Project $app): string => $app->path);
     }
 
     /**

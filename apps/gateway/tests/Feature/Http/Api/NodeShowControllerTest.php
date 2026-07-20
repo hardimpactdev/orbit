@@ -370,7 +370,7 @@ describe('NodeShowController', function (): void {
             [
                 'consumer_node_id' => $app1Id,
                 'serving_node_id' => $control1Id,
-                'permissions' => json_encode(['app:read'], JSON_THROW_ON_ERROR),
+                'permissions' => json_encode(['instance:read'], JSON_THROW_ON_ERROR),
                 'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -386,7 +386,7 @@ describe('NodeShowController', function (): void {
                 ['name' => 'control-2', 'permissions' => ['tool:read']],
             ])
             ->assertJsonPath('success.data.node.grants.serving_nodes', [
-                ['name' => 'control-1', 'permissions' => ['app:read']],
+                ['name' => 'control-1', 'permissions' => ['instance:read']],
             ]);
     });
 

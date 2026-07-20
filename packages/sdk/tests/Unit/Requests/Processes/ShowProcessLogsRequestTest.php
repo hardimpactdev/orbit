@@ -15,7 +15,7 @@ use Saloon\Http\Faking\MockResponse;
 uses(TestCase::class);
 
 it('targets the process log endpoint with query filters', function (): void {
-    $request = new ShowProcessLogsRequest(name: 'vite', app: 'docs', workspace: 'feature-docs', lines: 50);
+    $request = new ShowProcessLogsRequest(name: 'vite', instance: 'docs', workspace: 'feature-docs', lines: 50);
 
     expect($request->getMethod())
         ->toBe(Method::GET)
@@ -23,7 +23,7 @@ it('targets the process log endpoint with query filters', function (): void {
         ->toBe('/api/processes/vite/log')
         ->and($request->query()->all())
         ->toBe([
-            'app' => 'docs',
+            'instance' => 'docs',
             'workspace' => 'feature-docs',
             'lines' => 50,
         ]);
@@ -36,7 +36,7 @@ it('returns a ProcessLogsResponse DTO with meta', function (): void {
                 'data' => [
                     'logs' => [
                         'process' => 'vite',
-                        'app' => 'docs',
+                        'instance' => 'docs',
                         'workspace' => null,
                         'runtime_unit' => 'orbit_docs_main_vite',
                         'lines' => [['timestamp' => null, 'message' => 'Vite ready']],
@@ -50,7 +50,7 @@ it('returns a ProcessLogsResponse DTO with meta', function (): void {
     $connector = new GatewayConnector(baseUrl: 'https://10.6.0.2', caPemPath: '/path/to/ca.pem');
     $connector->withMockClient($mock);
 
-    $dto = $connector->send(new ShowProcessLogsRequest(name: 'vite', app: 'docs', workspace: null))->dto();
+    $dto = $connector->send(new ShowProcessLogsRequest(name: 'vite', instance: 'docs', workspace: null))->dto();
 
     expect($dto)
         ->toBeInstanceOf(ProcessLogsResponse::class)

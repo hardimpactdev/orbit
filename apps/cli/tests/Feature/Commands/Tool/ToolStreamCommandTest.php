@@ -180,7 +180,7 @@ describe('ToolStream commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'tool:reconfigure', [
             'tool' => 'opencode-cli',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--password' => 'newpass',
             '--json' => true,
         ]);
@@ -193,7 +193,7 @@ describe('ToolStream commands', function (): void {
                 && $request->url() === 'https://gateway.test/api/tools/opencode-cli/reconfigure'
                 && $request->hasHeader('Accept', 'text/event-stream')
                 && $request->data() === [
-                    'app' => 'docs',
+                    'instance' => 'docs',
                     'password' => 'newpass',
                 ]
             ),

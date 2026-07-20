@@ -45,7 +45,7 @@ final class WorkspaceStoreController implements Loggable
 
         $validator = validator($request->all(), [
             'name' => ['required', 'string', 'regex:/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', 'max:63'],
-            'app' => ['required', 'string'],
+            'instance' => ['required', 'string'],
             'base' => ['nullable', 'string'],
             'php_version' => ['nullable', 'string'],
         ]);
@@ -60,7 +60,7 @@ final class WorkspaceStoreController implements Loggable
         $validated = $validator->validated();
 
         $name = (string) $validated['name'];
-        $appName = (string) $validated['app'];
+        $appName = (string) $validated['instance'];
         $base = is_string($validated['base'] ?? null) ? $validated['base'] : 'main';
         $phpVersion = is_string($validated['php_version'] ?? null) ? $validated['php_version'] : null;
 
@@ -83,7 +83,7 @@ final class WorkspaceStoreController implements Loggable
         $instance = $selection->instance;
 
         if (! $instance instanceof AppInstance) {
-            throw new LogicException('Resolved workspace app selection is missing its required app instance.');
+            throw new LogicException('Resolved workspace selection is missing its required instance.');
         }
 
         if ($phpVersion !== null && ! in_array($phpVersion, CreateWorkspace::SUPPORTED_PHP_VERSIONS, true)) {
@@ -106,11 +106,11 @@ final class WorkspaceStoreController implements Loggable
         if ($existing instanceof Workspace) {
             return $this->error(
                 'workspace.already_exists',
-                "Workspace '{$name}' already exists for app '{$appName}'.",
+                "Workspace '{$name}' already exists for instance '{$appName}'.",
                 [
                     'name' => $name,
-                    'app' => $app->name,
-                    'app_instance' => $instance->name,
+                    'project' => $app->name,
+                    'instance' => $instance->name,
                 ],
                 422,
             );
@@ -148,7 +148,7 @@ final class WorkspaceStoreController implements Loggable
     ): JsonResponse|StreamedResponse {
         $validator = validator($request->all(), [
             'name' => ['required', 'string', 'regex:/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', 'max:63'],
-            'app' => ['required', 'string'],
+            'instance' => ['required', 'string'],
             'base' => ['nullable', 'string'],
             'php_version' => ['nullable', 'string'],
         ]);
@@ -163,7 +163,7 @@ final class WorkspaceStoreController implements Loggable
         $validated = $validator->validated();
 
         $name = (string) $validated['name'];
-        $appName = (string) $validated['app'];
+        $appName = (string) $validated['instance'];
         $base = is_string($validated['base'] ?? null) ? $validated['base'] : 'main';
         $phpVersion = is_string($validated['php_version'] ?? null) ? $validated['php_version'] : null;
 
@@ -186,7 +186,7 @@ final class WorkspaceStoreController implements Loggable
         $instance = $selection->instance;
 
         if (! $instance instanceof AppInstance) {
-            throw new LogicException('Resolved workspace app selection is missing its required app instance.');
+            throw new LogicException('Resolved workspace selection is missing its required instance.');
         }
 
         if ($phpVersion !== null && ! in_array($phpVersion, CreateWorkspace::SUPPORTED_PHP_VERSIONS, true)) {
@@ -209,11 +209,11 @@ final class WorkspaceStoreController implements Loggable
         if ($existing instanceof Workspace) {
             return $this->error(
                 'workspace.already_exists',
-                "Workspace '{$name}' already exists for app '{$appName}'.",
+                "Workspace '{$name}' already exists for instance '{$appName}'.",
                 [
                     'name' => $name,
-                    'app' => $app->name,
-                    'app_instance' => $instance->name,
+                    'project' => $app->name,
+                    'instance' => $instance->name,
                 ],
                 422,
             );
@@ -287,7 +287,12 @@ final class WorkspaceStoreController implements Loggable
         }
 
         if (! $selection instanceof AppSelection) {
-            return $this->error('app.not_found', "App '{$appName}' not found.", ['app' => $appName], 404);
+            return $this->error(
+                'instance.not_found',
+                "Instance '{$appName}' not found.",
+                ['instance' => $appName],
+                404,
+            );
         }
 
         try {

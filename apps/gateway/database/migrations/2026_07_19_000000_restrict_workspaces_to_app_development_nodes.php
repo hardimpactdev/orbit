@@ -105,6 +105,7 @@ return new class extends Migration {
         foreach ($permissions as $permission) {
             if ($permission === '*') {
                 array_push($expanded, ...app(NodePermissionRegistry::class)->all());
+                array_push($expanded, ...$this->historicalAppPermissions());
 
                 continue;
             }
@@ -116,6 +117,38 @@ return new class extends Migration {
             $expanded,
             static fn (string $permission): bool => $permission !== '*' && ! str_starts_with($permission, 'workspace:'),
         )));
+    }
+
+    /**
+     * Preserve the permission snapshot that existed when this historical
+     * migration was authored. A later additive migration translates these
+     * compatibility tokens to project and instance permissions.
+     *
+     * @return list<string>
+     */
+    private function historicalAppPermissions(): array
+    {
+        return [
+            'app:*',
+            'app:credentials',
+            'app:list',
+            'app:show',
+            'app:read',
+            'app:write',
+            'app:register',
+            'app:remove',
+            'app:prune',
+            'app:setup',
+            'app-setup-step:add',
+            'app-setup-step:list',
+            'app-setup-step:remove',
+            'app:agent',
+            'app:root',
+            'app:update',
+            'app:new',
+            'app:worker',
+            'app:mount',
+        ];
     }
 
     /**

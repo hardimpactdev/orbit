@@ -13,7 +13,7 @@ $options = [
     '--adopt',
     '--after',
     '--after-id',
-    '--app',
+    '--instance',
     '--as-first-user',
     '--base',
     '--before',
@@ -59,6 +59,7 @@ $options = [
     '--php-version',
     '--port',
     '--process',
+    '--project',
     '--protocol',
     '--proxied',
     '--public-ipv4',
@@ -115,7 +116,7 @@ return [
         $options,
         [
             'allowed_contexts' => $contexts,
-            'allowed_command_families' => ['node', 'app', 'workspace', 'process'],
+            'allowed_command_families' => ['node', 'project', 'instance', 'workspace', 'process'],
         ],
     ),
 ];

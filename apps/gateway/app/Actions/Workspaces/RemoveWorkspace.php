@@ -7,8 +7,8 @@ namespace App\Actions\Workspaces;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\Workspaces\WorkspaceRuntimeArtifactRemovalOutcome;
-use App\Models\App;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Apps\AppCommandRouter;
@@ -39,8 +39,8 @@ final readonly class RemoveWorkspace
     /**
      * @return array{
      *     name: string,
-     *     app: string,
-     *     app_instance: string,
+     *     project: string,
+     *     instance: string,
      *     action: string,
      *     proxy_routes_removed: int,
      *     processes_removed: int,
@@ -66,7 +66,7 @@ final readonly class RemoveWorkspace
             ->all();
         $processCleanupScripts = $this->processCleanupScripts($workspace, $app);
         $workspace->loadMissing(['appInstance', 'app']);
-        assert($workspace->app instanceof App, 'Workspace removal requires a parent app.');
+        assert($workspace->app instanceof Project, 'Workspace removal requires a parent project.');
 
         $teardownSteps = $this->stepPolicy->stepsFor(
             $workspace->app,
@@ -150,8 +150,8 @@ final readonly class RemoveWorkspace
                     $warnings[] = [
                         'code' => 'workspace.teardown_step_unsafe',
                         'family' => 'workspace',
-                        'message' => "Workspace teardown step {$teardownStep->id} was skipped because it consumes the parent app .env file.",
-                        'next_command' => "workspace-teardown-step:list --app={$appName}.{$appInstanceName}",
+                        'message' => "Workspace teardown step {$teardownStep->id} was skipped because it consumes the parent project .env file.",
+                        'next_command' => "workspace-teardown-step:list --instance={$appName}.{$appInstanceName}",
                         'step_id' => (string) $teardownStep->id,
                     ];
 
@@ -159,7 +159,7 @@ final readonly class RemoveWorkspace
                 }
 
                 $teardownStepsRun++;
-                $command = $app instanceof App
+                $command = $app instanceof Project
                     ? app(AppCommandRouter::class)->routeLifecycleForNodePath(
                         $app,
                         $node,
@@ -205,8 +205,8 @@ final readonly class RemoveWorkspace
 
         return [
             'name' => $name,
-            'app' => $appName,
-            'app_instance' => $appInstanceName,
+            'project' => $appName,
+            'instance' => $appInstanceName,
             'action' => 'removed',
             'proxy_routes_removed' => count($proxyRouteIds),
             'processes_removed' => $processesRemoved,
@@ -220,9 +220,9 @@ final readonly class RemoveWorkspace
     /**
      * @return list<string>
      */
-    private function processCleanupScripts(Workspace $workspace, ?App $app): array
+    private function processCleanupScripts(Workspace $workspace, ?Project $app): array
     {
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return [];
         }
 
@@ -247,7 +247,7 @@ final readonly class RemoveWorkspace
         );
     }
 
-    private function processCleanupScript(App $app, Workspace $workspace, Process $process): string
+    private function processCleanupScript(Project $app, Workspace $workspace, Process $process): string
     {
         $driver = $this->runtimeDrivers->forProcess($process);
         $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
@@ -262,7 +262,7 @@ final readonly class RemoveWorkspace
         );
     }
 
-    private function hasWorkspaceRuntimeUnit(App $app, Workspace $workspace, Process $process): bool
+    private function hasWorkspaceRuntimeUnit(Project $app, Workspace $workspace, Process $process): bool
     {
         return collect(app(ProcessRuntimeUnitPayload::class)->forProcess($app, $process))
             ->contains(

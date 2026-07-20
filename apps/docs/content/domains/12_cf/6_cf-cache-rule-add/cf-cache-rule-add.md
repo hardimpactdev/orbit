@@ -5,7 +5,7 @@ Create the Cloudflare cache rule that Orbit manages for an app domain.
 ## Usage
 
 ```bash
-orbit cf-cache-rule:add <app> [--json]
+orbit cf-cache-rule:add <project> [--json]
 ```
 
 ## Examples
@@ -17,12 +17,12 @@ orbit cf-cache-rule:add docs --json
 
 ## Arguments and options
 
-- `app`: Orbit app name whose primary domain resolves to a Cloudflare zone.
+- `app`: Orbit project name whose primary domain resolves to a Cloudflare zone.
 - `--json`: Return the cache rule result in the JSON output.
 
 ## What Happens
 
-Run `orbit cf-cache-rule:add <app>` to create or converge the standard Cloudflare cache rule for the app.
+Run `orbit cf-cache-rule:add <project>` to create or converge the standard Cloudflare cache rule for the project.
 
 `cf-cache-rule:add` asks the gateway to create or converge the standard
 Cloudflare cache rule for an app's Cloudflare zone. The rule lets Cloudflare
@@ -51,5 +51,5 @@ Use these commands to remove a cache rule, flush cache, or inspect the app.
 
 - [`orbit cf-cache-rule:remove`](../7_cf-cache-rule-remove/cf-cache-rule-remove.md)
 - [`orbit cf-cache:flush`](../5_cf-cache-flush/cf-cache-flush.md)
-- [`orbit app:show`](../../5_app/4_app-show/app-show.md)
+- [`orbit project:show`](../../5_project/4_project-show/project-show.md)
 - [Technical contract](technical/1_cf-cache-rule-add.md)

@@ -8,7 +8,7 @@ final readonly class WorkspaceStepMutationResponse
 {
     /**
      * @param  array{action: string}  $result
-     * @param  array{id: int, app: string, app_instance: string, phase: string, order: int, command: string, timeout_seconds: int}  $step
+     * @param  array{id: int, project: string, instance: string, phase: string, order: int, command: string, timeout_seconds: int}  $step
      * @param  array<string, mixed>  $meta
      */
     public function __construct(

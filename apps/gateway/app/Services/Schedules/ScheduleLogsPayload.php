@@ -22,13 +22,13 @@ final readonly class ScheduleLogsPayload
      */
     public function forSchedule(
         string $name,
-        ?string $app,
+        ?string $instance,
         ?string $node,
         ?int $runId,
         int $lines,
         ?Node $caller = null,
     ): array {
-        $schedule = $this->schedules->find($name, $app, $node, $caller);
+        $schedule = $this->schedules->find($name, $instance, $node, $caller);
         $run = $this->resolveRun($schedule, $runId);
         [$stdout, $stdoutTruncated] = $this->limitLines($run->stdout ?? '', $lines);
         [$stderr, $stderrTruncated] = $this->limitLines($run->stderr ?? '', $lines);
@@ -39,9 +39,9 @@ final readonly class ScheduleLogsPayload
                 'run' => [
                     'id' => $run->id,
                     'schedule' => $schedule->name,
-                    'scope' => $schedule->scope,
+                    'scope' => $schedule->scope === 'app' ? 'instance' : $schedule->scope,
                     'target' => [
-                        'type' => $schedule->scope,
+                        'type' => $schedule->scope === 'app' ? 'instance' : $schedule->scope,
                         'name' => $schedule->target_name,
                         'node' => $targetNode?->name,
                     ],

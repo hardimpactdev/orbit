@@ -23,7 +23,7 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
         {--command= : Command to execute}
         {--script= : Managed script path to execute}
         {--interval= : Portable interval expression}
-        {--app= : Target app instance (app.instance; bare app only when unambiguous)}
+        {--instance= : Target instance (project.instance; bare project only when unambiguous)}
         {--node= : Target node scope}
         {--timezone=UTC : IANA timezone}
         {--timeout=900 : Maximum execution time in seconds}
@@ -82,7 +82,7 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
 
         $payload = $this->filledQuery([
             'name' => $name,
-            'app' => $target['app'],
+            'instance' => $target['instance'],
             'node' => $target['node'],
             'interval' => $interval,
             'timezone' => $timezone,
@@ -237,23 +237,23 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
     }
 
     /**
-     * @return array{app: ?string, node: ?string}|int
+     * @return array{instance: ?string, node: ?string}|int
      */
     private function resolveTarget(): array|int
     {
-        $app = $this->stringOption('app');
+        $instance = $this->stringOption('instance');
         $node = $this->stringOption('node');
 
-        if ($app !== null && $node !== null) {
+        if ($instance !== null && $node !== null) {
             return $this->failValidation('target', 'Exactly one schedule target is required.', ['fields' => [
-                'app',
+                'instance',
                 'node',
             ]]);
         }
 
-        if ($app !== null || $node !== null) {
+        if ($instance !== null || $node !== null) {
             return [
-                'app' => $app,
+                'instance' => $instance,
                 'node' => $node,
             ];
         }
@@ -266,33 +266,33 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
 
         if ($defaultNode !== null) {
             return [
-                'app' => null,
+                'instance' => null,
                 'node' => $defaultNode,
             ];
         }
 
         if (! $this->isInteractiveInput()) {
             return $this->failValidation('target', 'Exactly one schedule target is required.', ['fields' => [
-                'app',
+                'instance',
                 'node',
             ]]);
         }
 
         $targetType = (string) select(
             label: 'Scope',
-            options: ['app' => 'App', 'node' => 'Node'],
-            default: 'app',
+            options: ['instance' => 'Instance', 'node' => 'Node'],
+            default: 'instance',
         );
 
-        if ($targetType === 'app') {
+        if ($targetType === 'instance') {
             return [
-                'app' => trim(text(label: 'Target app', required: true)),
+                'instance' => trim(text(label: 'Target instance', required: true)),
                 'node' => null,
             ];
         }
 
         return [
-            'app' => null,
+            'instance' => null,
             'node' => trim(text(label: 'Target node', required: true)),
         ];
     }

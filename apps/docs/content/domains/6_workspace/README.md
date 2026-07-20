@@ -23,15 +23,15 @@ These rules govern all workspace family commands.
 - The gateway owns workspace configuration.
 - Workspace artifacts are applied through Agent push on the selected app-dev
   instance node. Every workspace belongs to exactly one app-dev instance.
-- Every workspace write resolves one concrete app instance before side effects.
-  A bare parent-app selector, parent app path, or parent-app marker is shorthand
-  only when the gateway can resolve it to exactly one registered app instance.
+- Every workspace write resolves one concrete instance before side effects.
+  A bare parent-project selector, parent project path, or parent-project marker is shorthand
+  only when the gateway can resolve it to exactly one registered instance.
   Zero or multiple matches fail with `error.code=validation_failed`,
-  `error.meta.field=app`, and
-  `error.meta.reason=app_instance_required`.
-- The gateway always persists a non-null `app_instance_id` column on the
+  `error.meta.field=instance`, and
+  `error.meta.reason=instance_required`.
+- The gateway always persists a non-null `instance_id` column on the
   workspace row. Workspace JSON renders the selected instance as the non-null
-  `workspace.app_instance` field; there is no parent-app-only workspace row.
+  `workspace.instance` field; there is no parent-project-only workspace row.
 - Workspace name is the canonical Orbit workspace identity. Source-control
   branch/ref metadata is optional and may be absent; when recorded, it is
   descriptive metadata rather than a separate workspace identity.
@@ -39,7 +39,7 @@ These rules govern all workspace family commands.
   only. They cannot start or end with a hyphen and are limited to 63
   characters.
 - Workspace PHP version is gateway-tracked configuration. A workspace inherits
-  the parent app PHP version unless a workspace override is stored on the
+  the parent project PHP version unless a workspace override is stored on the
   workspace row. The effective PHP version selects the workspace FrankenPHP
   runtime container image; it does not install host PHP or render a host
   FPM pool.
@@ -60,20 +60,20 @@ These rules govern all workspace family commands.
   artifact convergence belong to the `proxy` family.
 - A workspace hostname is the workspace slug prepended to the selected app
   instance's primary hostname. For a development app this yields
-  `{workspace}.{app}.{instance-tld}`.
-- Workspaces inherit the selected app instance's process definitions as
-  app-instance runtime units.
+  `{workspace}.{project}.{instance-tld}`.
+- Workspaces inherit the selected instance's process definitions as
+  instance runtime units.
   Each inherited runtime unit is owned
   by the process family and uses the selected process runtime backend. It has
   its own unit name, working directory, environment block, and log stream
-  distinct from the main app instance and from sibling workspaces.
-  The selected app instance's process definition supplies the shared fields (command,
+  distinct from the main instance and from sibling workspaces.
+  The selected instance's process definition supplies the shared fields (command,
   restart policy, crash notification policy). The workspace context supplies
   the per-instance fields (working directory, workspace-specific URL,
   Orbit-managed TLS material, and log paths scoped to the program name).
   Runtime unit convergence belongs to the `process` family.
 - Workspace setup and teardown step definitions are gateway-owned workspace
-  policy scoped to app instances. `workspace-setup-step:add` and
+  policy scoped to instances. `workspace-setup-step:add` and
   `workspace-teardown-step:add` require dotted selectors such as `hauser.nmbp`;
   list/remove and lifecycle execution use only rows owned by the selected app
   instance. Adding, listing, removing, and ordering those definitions are explicit
@@ -88,7 +88,7 @@ These rules govern all workspace family commands.
   instance root or a sibling workspace.
 - Workspace setup preserves an existing workspace `.env`. When it is missing,
   setup initializes it from the workspace's own `.env.example` when present,
-  then overlays the effective workspace env. It never copies the parent app
+  then overlays the effective workspace env. It never copies the parent project
   `.env`. Setup and teardown step definitions that directly consume
   `$ORBIT_APP_PATH/.env` are rejected. Upgrade migration removes existing
   unsafe rows, and teardown skips any unsafe row that bypassed normal writes.
@@ -112,9 +112,9 @@ returns the physical path that Orbit stores on the gateway workspace record.
   session id when session creation succeeds (stored on a best-effort basis).
 - **PolyScope driver:** used when the effective adapter is `polyscope`. It
   creates the workspace through the PolyScope SDK using the node's
-  PolyScope server identity and the parent app's PolyScope repository id.
+  PolyScope server identity and the parent project's PolyScope repository id.
   Orbit stores the PolyScope-returned path and workspace id. PolyScope paths
-  are allowed to live outside the parent app path, for example under
+  are allowed to live outside the parent project path, for example under
   `~/.polyscope/clones/...`.
 
 No workspace command may derive a physical path as `<app path>/<workspace>`.
@@ -146,7 +146,7 @@ result state, such as the git ref used by `workspace:new`, belongs beside the
 entity rather than inside it.
 
 List renderers are the one documented exception: `workspace:list` rows are
-summary rows carrying only `name`, `app`, `app_instance`, `node`, `url`, and
+summary rows carrying only `name`, `app`, `instance`, `node`, `url`, and
 `lifecycle_status`. Summary rows must be a strict subset of the canonical
 entity fields with identical meanings; they never add fields the canonical
 entity does not define.
@@ -154,8 +154,8 @@ entity does not define.
 ```json
 {
   "name": "feature-docs",
-  "app": "docs",
-  "app_instance": "development",
+  "project": "docs",
+  "instance": "development",
   "node": "app-1",
   "path": "/home/orbit/apps/docs/.worktrees/feature-docs",
   "url": "https://feature-docs.docs.test",
@@ -172,21 +172,21 @@ entity does not define.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `name` | string | Workspace identity slug. Unique within the parent app. |
-| `app` | string | Parent app slug. |
-| `app_instance` | string | Required selected app instance name. |
-| `node` | string | Effective workspace node slug resolved from the selected app instance. |
+| `name` | string | Workspace identity slug. Unique within the parent project. |
+| `app` | string | Parent project slug. |
+| `instance` | string | Required selected instance name. |
+| `node` | string | Effective workspace node slug resolved from the selected instance. |
 | `path` | string | Absolute workspace path on the owning node. |
 | `url` | string | Primary intended workspace URL. |
 | `php_version` | string | Effective PHP version for the workspace. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
-| `php_inherited` | boolean | `true` when the workspace row stores no PHP override and inherits the parent app PHP version; `false` when the workspace row stores an explicit override. |
+| `php_inherited` | boolean | `true` when the workspace row stores no PHP override and inherits the parent project PHP version; `false` when the workspace row stores an explicit override. |
 | `agent_ide` | object | Adapter metadata captured for the workspace source. `agent_ide.adapter` is `null` for generic worktrees; `agent_ide.workspace_id` stores the adapter-side workspace id when one exists. |
 | `adopted` | boolean | `true` once the workspace path was adopted through `workspace:setup`; `false` for workspace rows created by `workspace:new` or first set up without adoption. |
 | `lifecycle_status` | string | Registry configuration lifecycle, currently `expected` or `setup-pending`. This is not setup-run status and not a live readiness result. |
 
 Structural fields are always present. Use `null` only for structural fields
 whose value is inapplicable, such as generic worktrees without an adapter-side
-workspace id. `app_instance` is applicable to every workspace and is never
+workspace id. `instance` is applicable to every workspace and is never
 `null`.
 
 ## Terminology
@@ -217,7 +217,7 @@ gateway dispatches setup steps back to the same node through authenticated
 Agent push over WireGuard;
 the CLI never applies artifacts locally.
 
-Local context on the caller filesystem may resolve defaults (parent app,
+Local context on the caller filesystem may resolve defaults (parent project,
 workspace identity), but it is never used as authorization.
 
 ## Lifecycle Step Environment
@@ -232,8 +232,8 @@ instead of depending on command-string substitution.
 
 | Variable | Value | Why it is exposed |
 | --- | --- | --- |
-| `ORBIT_APP` | Parent app slug | Lets scripts identify the app that owns the workspace. |
-| `ORBIT_APP_PATH` | Parent app root path | Lets scripts inspect or copy files from the main app. |
+| `ORBIT_APP` | Parent project slug | Lets scripts identify the app that owns the workspace. |
+| `ORBIT_APP_PATH` | Parent project root path | Lets scripts inspect or copy files from the main app. |
 | `ORBIT_WORKSPACE_NAME` | Workspace slug | Lets scripts branch on workspace identity. |
 | `ORBIT_WORKSPACE_PATH` | Workspace path | Lets scripts use the workspace path without recomputing it. |
 | `ORBIT_URL` | Workspace HTTPS URL | Lets scripts write canonical URL config such as `.env` values. |
@@ -277,5 +277,5 @@ These commands manage the setup and teardown step policy that runs during worksp
 These doctor commands verify the families that workspace commands depend on.
 
 - [`doctor --family=workspace`](workspace-doctor.md)
-- [`doctor --family=app`](../5_app/app-doctor.md)
+- [`doctor --family=instance`](../5_project/instance-doctor.md)
 - [`doctor --family=node`](../1_node/node-doctor.md)

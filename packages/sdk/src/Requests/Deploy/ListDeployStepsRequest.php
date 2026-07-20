@@ -15,7 +15,7 @@ final class ListDeployStepsRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
-        public readonly string $app,
+        public readonly string $instance,
     ) {}
 
     public function resolveEndpoint(): string
@@ -25,7 +25,7 @@ final class ListDeployStepsRequest extends GatewayRequest
 
     protected function defaultQuery(): array
     {
-        return ['app' => $this->app];
+        return ['instance' => $this->instance];
     }
 
     public function createDtoFromResponse(Response $response): DeployResponse

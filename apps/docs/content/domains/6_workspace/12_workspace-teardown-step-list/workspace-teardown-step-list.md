@@ -3,25 +3,25 @@
 [Back to Workspace commands.](../README.md)
 
 List the ordered teardown steps Orbit will execute during workspace removal
-for one concrete app instance.
+for one concrete instance.
 
 ## Usage
 
 ```bash
-orbit workspace-teardown-step:list [--app=<app.instance>] [--json]
+orbit workspace-teardown-step:list [--instance=<project.instance>] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit workspace-teardown-step:list
-orbit workspace-teardown-step:list --app=my-app.development
+orbit workspace-teardown-step:list --instance=my-app.development
 orbit workspace-teardown-step:list --json
 ```
 
 ## Arguments and options
 
-- `--app=<app.instance>`: Concrete dotted app-instance selector, such as
+- `--instance=<project.instance>`: Concrete dotted instance selector, such as
   `my-app.development`. When omitted, Orbit may infer exactly one concrete
   instance
   using the same precedence chain as
@@ -30,8 +30,8 @@ orbit workspace-teardown-step:list --json
   lookup keyed on `(caller node identity, absolute cwd)`. Project files
   such as `composer.json`, `package.json`, and `.php-version` are never
   inspected. If one concrete instance still cannot be resolved, the command
-  returns an app-instance-required validation error; it does not widen the read
-  across every instance of a logical app. The exact error shape is defined by
+  returns an instance-required validation error; it does not widen the read
+  across every instance of a project. The exact error shape is defined by
   the [JSON renderer contract](technical/6.2_workspace-teardown-step-list_output-render_json.md).
 - `--json`: Output JSON.
 
@@ -40,12 +40,12 @@ orbit workspace-teardown-step:list --json
 Run `workspace-teardown-step:list` to view the teardown steps that will run during workspace removal.
 
 `workspace-teardown-step:list` reads the teardown-step policy owned by the gateway
-for the resolved app instance:
+for the resolved instance:
 
-1. Resolves one concrete app instance from `--app` or the shared cwd-inference
+1. Resolves one concrete instance from `--instance` or the shared cwd-inference
    chain.
-2. Validates that the resolved app instance exists in gateway configuration.
-3. Reads the ordered teardown-step policy for `(app_instance, phase=teardown)` from
+2. Validates that the resolved instance exists in gateway configuration.
+3. Reads the ordered teardown-step policy for `(instance, phase=teardown)` from
    the gateway database.
 4. Returns the steps in execution order with their durable IDs, commands,
    and timeouts.
@@ -64,13 +64,13 @@ Human output presents the steps as a table with `ID`, `ORDER`, `COMMAND`,
 and `TIMEOUT` columns. The `ID` column surfaces the durable identifier
 required by
 [`workspace-teardown-step:remove`](../13_workspace-teardown-step-remove/workspace-teardown-step-remove.md),
-matching the resolved list-exemplar precedent of `node:list`, `app:list`,
+matching the resolved list-exemplar precedent of `node:list`, `project:list`,
 and `workspace:list`.
 
 JSON output returns a flat machine-readable step list. Each step record uses the
 shared step shape published by
 [`workspace-teardown-step:add`](../11_workspace-teardown-step-add/workspace-teardown-step-add.md):
-`{ id, app, app_instance, phase, order, command, timeout_seconds }`. See the
+`{ id, project, instance, phase, order, command, timeout_seconds }`. See the
 [JSON renderer contract](technical/6.2_workspace-teardown-step-list_output-render_json.md)
 for the exact payload shape.
 
@@ -79,7 +79,7 @@ for the exact payload shape.
 - The CLI caller can reach the Orbit gateway.
 - The caller is authorized to read teardown-step policy on the resolved app
   instance's serving node.
-- The resolved app instance exists in gateway configuration.
+- The resolved instance exists in gateway configuration.
 
 ## Related Commands
 

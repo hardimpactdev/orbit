@@ -11,7 +11,7 @@ Each agent IDE product is referenced by three related identifiers:
 | Form | Where it appears | Example |
 |---|---|---|
 | Marketing name | Prose and product docs | PolyScope, OpenCode |
-| Adapter id | Command input (`node:agent-ide`, `app:agent-ide`), JSON output `agent_ide.adapter` | `polyscope`, `opencode` |
+| Adapter id | Command input (`node:agent-ide`, `instance:agent-ide`), JSON output `agent_ide.adapter` | `polyscope`, `opencode` |
 | Tool slug | Tool catalog entries (`tool:install <slug>`) | `polyscope-server`, `opencode-cli` |
 
 The adapter id is the stable string the gateway uses to identify the integration.
@@ -50,11 +50,11 @@ These terms define the adapter model that Agent IDE commands use to reach an act
   or workspace context. Messaging commands may deliver to it but do not create
   it.
 - **Workspace discovery capability:** Optional adapter capability that reports
-  adapter-known workspaces for an app. It informs app-scoped pruning but does
+  adapter-known workspaces for an app. It informs instance-scoped pruning but does
   not make the adapter the owner of Orbit workspace state.
 - **Workspace path resolution capability:** Optional adapter capability that
   reverse-maps an absolute filesystem path to an adapter-managed workspace
-  descriptor (workspace name, parent app slug, absolute path, adapter
+  descriptor (workspace name, parent project slug, absolute path, adapter
   workspace id). It enables CWD-driven adoption flows such as
   `workspace:setup` registering a PolyScope worktree on first run. The
   adapter is not the owner of Orbit workspace state; resolved descriptors
@@ -68,7 +68,7 @@ These terms define the inheritance chain used to resolve the effective adapter f
 - **Node Agent IDE default:** Node-owned gateway configuration set through
   `node:agent-ide`. It is the root of the current inheritance chain.
 - **App Agent IDE override:** App-owned gateway configuration set through
-  `app:agent-ide`. It may select an adapter, clear the app override with
+  `instance:agent-ide`. It may select an adapter, clear the app override with
   `inherit`, or explicitly disable Agent IDE resolution for the app and its
   workspaces with `none`.
 - **Effective Agent IDE adapter:** Adapter resolved for an app or workspace
@@ -78,7 +78,7 @@ These terms define the inheritance chain used to resolve the effective adapter f
 - **Agent IDE input token:** Reserved non-adapter input handled by the owning
   command. `inherit` is valid only at scopes with a parent setting; `none`
   clears the node default at node scope and stores an explicit no-adapter
-  override at app scope.
+  override at instance scope.
 
 ## Communication
 
@@ -127,7 +127,7 @@ The registry response contains:
 | `adapters[].label` | Human prompt label. Defaults to the adapter name when no extension label is registered. |
 | `adapters[].source` | `core` for built-in adapters or `extension` for extension-registered adapters. |
 | `adapters[].capabilities` | Capability flags such as `message_delivery` and `workspace_discovery`. |
-| `reserved_tokens[]` | Command-scope tokens supplied by the requesting command, such as `none` for node scope or `inherit`/`none` for app scope. Reserved tokens are not registry adapters. |
+| `reserved_tokens[]` | Command-scope tokens supplied by the requesting command, such as `none` for node scope or `inherit`/`none` for instance scope. Reserved tokens are not registry adapters. |
 
 The registry must:
 

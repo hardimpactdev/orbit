@@ -5,16 +5,9 @@ declare(strict_types=1);
 use App\Contracts\OpenCodeClientFactory;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\WorkspaceCreateFailed;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Services\ActivityLogCorrelation;
-use App\Services\ActivityLogger;
-use App\Services\Operations\OperationRunRecorder;
-use App\Services\Operations\OperationTokenFactory;
-use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
-use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Workspaces\OpenCodeWorkspaceDriver;
 use HardImpact\OpenCode\Data\Project as OpenCodeProject;
@@ -26,7 +19,6 @@ use HardImpact\OpenCode\Resources\SessionResource;
 use HardImpact\OpenCode\Resources\WorktreeResource;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Orbit\Core\Security\OperationTokenSigner;
 use Tests\Fakes\RemoteExecutorBackedInternalExecutor;
 use Tests\TestCase;
 
@@ -138,9 +130,9 @@ function openCodeWorkspaceDriver(
     );
 }
 
-function openCodeWorkspaceApp(): App
+function openCodeWorkspaceApp(): \App\Models\Project
 {
-    return new App()->forceFill([
+    return new \App\Models\Project()->forceFill([
         'name' => 'demo',
         'path' => '/srv/demo',
     ]);
@@ -243,7 +235,7 @@ final readonly class OpenCodeWorkspaceDriverTestClientFactory implements OpenCod
         private OpenCodeWorkspaceDriverTestClient $client,
     ) {}
 
-    public function forApp(App $app): OpenCode
+    public function forApp(\App\Models\Project $app): OpenCode
     {
         return $this->client;
     }

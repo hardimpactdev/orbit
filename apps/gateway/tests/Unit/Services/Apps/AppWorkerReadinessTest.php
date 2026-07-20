@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppWorkerReadiness;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -17,13 +19,13 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     app()->instance(
-        \App\Services\RemoteShell\RunsInternalCommands::class,
-        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+        RunsInternalCommands::class,
+        app(RemoteLocalExecutor::class),
     );
 });
 
 /**
- * @return array{app: App, instance: AppInstance}
+ * @return array{app: Project, instance: AppInstance}
  */
 function makeReadinessTarget(array $overrides = []): array
 {
@@ -35,7 +37,7 @@ function makeReadinessTarget(array $overrides = []): array
             'wireguard_address' => '10.6.0.61',
         ]);
 
-    $app = App::factory()->for($node, 'node')->create(array_merge([
+    $app = Project::factory()->for($node, 'node')->create(array_merge([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
@@ -112,14 +114,14 @@ describe('AppWorkerReadiness service', function (): void {
         expect($result->ready)
             ->toBeFalse()
             ->and($result->code)
-            ->toBe('app.worker_unsupported_runtime')
+            ->toBe('instance.worker_unsupported_runtime')
             ->and($result->missing)
             ->toBe(['runtime=php']);
     });
 
     it('returns app.worker_unknown_node when the app has no owning node relation', function (): void {
         // Build an App instance without saving so the node relation resolves to null.
-        $app = new App;
+        $app = new Project;
         $app->name = 'docs';
         $app->path = '/home/orbit/apps/docs';
         $app->document_root = 'public';
@@ -132,11 +134,11 @@ describe('AppWorkerReadiness service', function (): void {
         expect($result->ready)
             ->toBeFalse()
             ->and($result->code)
-            ->toBe('app.worker_unknown_node')
+            ->toBe('instance.worker_unknown_node')
             ->and($result->missing)
             ->toBe(['owning_node'])
             ->and($result->message)
-            ->toContain("App instance 'docs.development' has no owning node");
+            ->toContain("Instance 'docs.development' has no owning node");
     });
 
     it('returns app.worker_missing_path when the app has an empty source path', function (): void {
@@ -147,7 +149,7 @@ describe('AppWorkerReadiness service', function (): void {
         expect($result->ready)
             ->toBeFalse()
             ->and($result->code)
-            ->toBe('app.worker_missing_path')
+            ->toBe('instance.worker_missing_path')
             ->and($result->missing)
             ->toBe(['app_path']);
     });

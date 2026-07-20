@@ -72,6 +72,25 @@ abstract class GatewayCommand extends Command
         return $this->gateway()->delete($path, $payload);
     }
 
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function associativeArray(mixed $value): ?array
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+
+        foreach (array_keys($value) as $key) {
+            if (! is_string($key)) {
+                return null;
+            }
+        }
+
+        /** @var array<string, mixed> $value */
+        return $value;
+    }
+
     protected function renderGatewayFailure(GatewayApiException $exception): int
     {
         if ($exception->hasGatewayError()) {

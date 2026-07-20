@@ -9,12 +9,12 @@ This contract defines behavior when `workspace:setup` is invoked from a
 
 - **Typed API boundary**: The gateway caller submits the setup request through
   the same typed gateway HTTPS API as every other public CLI caller.
-- **Registry write**: The gateway writes the canonical app-instance-owned
+- **Registry write**: The gateway writes the canonical instance-owned
   workspace configuration after authorization succeeds.
-- **Path resolution**: Resolves the workspace path on the app instance's owning
+- **Path resolution**: Resolves the workspace path on the instance's owning
   node through Agent push, not on the gateway filesystem.
 - **Remote apply**: Applies runtime artifacts and setup steps through Agent
-  push to the app instance's owning node.
+  push to the instance's owning node.
 - **Target eligibility**: The owning node must be active and carry `app-dev`;
   the gateway and `app-prod` nodes are never valid workspace targets.
 

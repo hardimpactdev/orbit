@@ -10,7 +10,6 @@ use App\Enums\Nodes\NodeStatus;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
@@ -29,6 +28,7 @@ final readonly class ToolInstaller
         private ToolRegistry $registry,
         private ToolInstallPreflight $preflight,
         private ToolScriptDispatcher $toolScriptDispatcher,
+        private ToolAppNodeResolver $instanceNodes,
         private NodeRoleAssignments $nodeRoleAssignments,
         private RemoteSecretFile $remoteSecretFile,
         private GitHubTokenResolver $githubTokenResolver,
@@ -471,23 +471,17 @@ final readonly class ToolInstaller
         }
 
         if ($app !== null) {
-            $appModel = App::query()
-                ->with('node')
-                ->where(function ($query) use ($app): void {
-                    $query->where('name', $app)
-                        ->orWhere('domain', $app);
-                })
-                ->first();
+            $instanceNode = $this->instanceNodes->resolve($app);
 
-            if ($appModel instanceof App && $appModel->node instanceof Node) {
-                return $appModel->node;
+            if ($instanceNode instanceof Node) {
+                return $instanceNode;
             }
         }
 
         return ToolRegistryFailure::validation(
             'target',
             '',
-            'A node or app target is required.',
+            'A node or instance target is required.',
         );
     }
 

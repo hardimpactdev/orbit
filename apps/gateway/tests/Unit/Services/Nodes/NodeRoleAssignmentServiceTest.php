@@ -5,12 +5,12 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleStatus;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\ActivityLogCorrelation;
@@ -243,12 +243,13 @@ describe('node role assignment service', function (): void {
 
         expect($selfGrant?->permissions)
             ->toBe([
-                'app:read',
-                'app:register',
+                'instance:read',
+                'instance:register',
                 'process:add',
                 'process:read',
                 'process:remove',
                 'process:update',
+                'project:read',
                 'workspace:setup',
             ])
             ->and($selfGrant?->custom_permissions)
@@ -1088,7 +1089,7 @@ describe('node role assignment service', function (): void {
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        App::factory()->create([
+        Project::factory()->create([
             'node_id' => $node->id,
         ]);
 
@@ -1155,7 +1156,7 @@ describe('node role assignment service', function (): void {
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'node_id' => $node->id,
         ]);
         ProxyRoute::factory()
@@ -1167,7 +1168,7 @@ describe('node role assignment service', function (): void {
 
         app(NodeRoleAssignmentService::class)->remove($node, 'app-dev', force: true);
 
-        expect(App::query()->whereKey($app->id)->exists())
+        expect(Project::query()->whereKey($app->id)->exists())
             ->toBeFalse()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
             ->toBeFalse()
@@ -1214,7 +1215,7 @@ describe('node role assignment service', function (): void {
     it('blocks ingress removal while public proxy route records depend on it', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
         $backendNode = Node::factory()->create(['platform' => 'ubuntu']);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'node_id' => $backendNode->id,
             'environment' => 'production',
         ]);
@@ -1277,7 +1278,7 @@ describe('node role assignment service', function (): void {
     it('forces ingress removal by deleting Orbit-owned public proxy route records', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
         $backendNode = Node::factory()->create(['platform' => 'ubuntu']);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'node_id' => $backendNode->id,
             'environment' => 'production',
         ]);
@@ -1402,7 +1403,7 @@ describe('node role assignment service', function (): void {
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'node_id' => $node->id,
         ]);
         ProxyRoute::factory()
@@ -1414,7 +1415,7 @@ describe('node role assignment service', function (): void {
 
         app(NodeRoleAssignmentService::class)->remove($node, 'app-dev', force: true, purgeData: true);
 
-        expect(App::query()->whereKey($app->id)->exists())
+        expect(Project::query()->whereKey($app->id)->exists())
             ->toBeFalse()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
             ->toBeFalse()
@@ -1490,7 +1491,7 @@ describe('node role assignment service', function (): void {
             'status' => NodeRoleStatus::Active->value,
             'settings' => [],
         ]);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'node_id' => $node->id,
         ]);
         ProxyRoute::factory()
@@ -1541,7 +1542,7 @@ describe('node role assignment service', function (): void {
             ->toBe('Cleanup failed.')
             ->and($inspector->removed)
             ->toBeFalse()
-            ->and(App::query()->whereKey($app->id)->exists())
+            ->and(Project::query()->whereKey($app->id)->exists())
             ->toBeTrue()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
             ->toBeTrue();

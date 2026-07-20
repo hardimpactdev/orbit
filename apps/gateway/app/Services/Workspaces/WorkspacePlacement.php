@@ -6,9 +6,9 @@ namespace App\Services\Workspaces;
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 
 final class WorkspacePlacement
@@ -97,7 +97,7 @@ final class WorkspacePlacement
         $workspace->loadMissing('app.node');
         $app = $workspace->app;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return $workspace->name;
         }
 
@@ -110,7 +110,7 @@ final class WorkspacePlacement
         return "{$workspace->name}.{$host}";
     }
 
-    public function baseUrlHost(Workspace $workspace, App $app): string
+    public function baseUrlHost(Workspace $workspace, Project $app): string
     {
         $instance = $this->instanceForWorkspace($workspace);
 
@@ -125,7 +125,7 @@ final class WorkspacePlacement
         return '';
     }
 
-    public function instanceUrlHost(AppInstance $instance, App $app): string
+    public function instanceUrlHost(AppInstance $instance, Project $app): string
     {
         $config = $instance->driver_config;
 
@@ -147,7 +147,7 @@ final class WorkspacePlacement
         return "{$app->name}.{$tld}";
     }
 
-    public function matchingOrbitInstanceForPath(App $app, string $path): ?AppInstance
+    public function matchingOrbitInstanceForPath(Project $app, string $path): ?AppInstance
     {
         $path = rtrim($path, '/');
 
@@ -209,7 +209,7 @@ final class WorkspacePlacement
         AppInstance $instance,
         string $selector,
         ?string $fullSelector = null,
-        ?App $app = null,
+        ?Project $app = null,
     ): bool {
         $needle = mb_strtolower(trim($selector));
         $fullNeedle = $fullSelector !== null ? mb_strtolower(trim($fullSelector)) : null;
@@ -252,7 +252,7 @@ final class WorkspacePlacement
             }
         }
 
-        if ($app instanceof App && $fullNeedle !== null) {
+        if ($app instanceof Project && $fullNeedle !== null) {
             return mb_strtolower("{$app->name}.{$instance->name}") === $fullNeedle;
         }
 

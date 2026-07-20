@@ -25,7 +25,7 @@ final readonly class AppPhpVersionContractRule implements GroupedRule
         $findings = [];
 
         foreach ($this->docs->familyDirectories() as $familyDirectory) {
-            if (basename($familyDirectory) !== '5_app') {
+            if (basename($familyDirectory) !== '5_project') {
                 continue;
             }
 
@@ -47,7 +47,7 @@ final readonly class AppPhpVersionContractRule implements GroupedRule
         $violations = [];
 
         if (preg_match('/(?<![a-z0-9-])--php(?!-version)(?![a-z0-9-])/i', $contents) === 1) {
-            $violations[] = 'App command docs must use `--php-version`; `--php` is not part of the converted contract.';
+            $violations[] = 'Project and instance command docs must use `--php-version`; `--php` is not part of the converted contract.';
         }
 
         foreach (explode("\n", $contents) as $line) {
@@ -59,7 +59,7 @@ final readonly class AppPhpVersionContractRule implements GroupedRule
                 continue;
             }
 
-            $violations[] = 'App PHP version defaults must not be described as the node default; app PHP-FPM intent is separate from node CLI PHP defaults.';
+            $violations[] = 'Project PHP version defaults must not be described as the node default; project PHP-FPM intent is separate from node CLI PHP defaults.';
 
             break;
         }

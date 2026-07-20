@@ -7,10 +7,10 @@ namespace Tests\Unit\Actions\Php;
 use App\Actions\Php\UsePhpRuntime;
 use App\Contracts\PhpRuntimeArtifactConverger;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -18,7 +18,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-function place_use_php_runtime_app(App $app, Node $node): AppInstance
+function place_use_php_runtime_app(Project $app, Node $node): AppInstance
 {
     return AppInstance::factory()->for($app)->create([
         'driver_config' => new OrbitAppInstanceDriverConfigData(
@@ -37,7 +37,7 @@ final class RecordingPhpRuntimeArtifactConverger implements PhpRuntimeArtifactCo
     /** @var list<string> */
     public array $targets = [];
 
-    public function forApp(App $app): array
+    public function forApp(Project $app): array
     {
         $this->targets[] = "app:{$app->name}";
 
@@ -66,7 +66,7 @@ it('converges an app runtime after writing PHP selection intent', function (): v
             'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
         ],
     ]);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'php_version' => '8.4',
@@ -75,7 +75,7 @@ it('converges an app runtime after writing PHP selection intent', function (): v
     $converger = new RecordingPhpRuntimeArtifactConverger;
     app()->instance(PhpRuntimeArtifactConverger::class, $converger);
 
-    $result = app(UsePhpRuntime::class)->handle(version: '8.5', app: 'docs');
+    $result = app(UsePhpRuntime::class)->handle(version: '8.5', instance: 'docs');
 
     expect($result->failed())
         ->toBeFalse()
@@ -99,7 +99,7 @@ it('converges a workspace runtime on its owning node after selection', function 
             'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
         ],
     ]);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $legacyNode->id,
         'php_version' => '8.5',

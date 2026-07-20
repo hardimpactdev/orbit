@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Contracts;
 
 use App\Data\AgentIde\WorkspacePathResolution;
-use App\Models\App;
+use App\Models\Project;
 
 interface AgentIdeWorkspacePathResolver
 {
-    public function resolve(string $adapter, App $app, string $absolutePath): ?WorkspacePathResolution;
+    public function resolve(string $adapter, Project $app, string $absolutePath): ?WorkspacePathResolution;
 }

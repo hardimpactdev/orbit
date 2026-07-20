@@ -49,11 +49,11 @@ abstract class AbstractWorkspaceStepAddCommand extends WorkspaceGatewayCommand
             ]);
         }
 
-        $app = $this->stringOption('app') ?? $this->appFromOrbitMarker();
+        $app = $this->stringOption('instance') ?? $this->instanceFromOrbitMarker();
 
         try {
             $response = $this->gatewayPost("/api/workspaces/steps/{$this->phase()}", $this->filledQuery([
-                'app' => $app,
+                'instance' => $app,
                 'path' => $app === null ? $this->hostCwd() : null,
                 'command' => $command,
                 'timeout' => $timeout,
@@ -78,13 +78,13 @@ abstract class AbstractWorkspaceStepAddCommand extends WorkspaceGatewayCommand
     {
         $data = $this->successData($response);
         $step = is_array($data['step'] ?? null) ? $data['step'] : [];
-        $app = is_string($step['app'] ?? null) && $step['app'] !== '' ? $step['app'] : '';
-        $instance = is_string($step['app_instance'] ?? null) && $step['app_instance'] !== ''
-            ? $step['app_instance']
+        $app = is_string($step['project'] ?? null) && $step['project'] !== '' ? $step['project'] : '';
+        $instance = is_string($step['instance'] ?? null) && $step['instance'] !== ''
+            ? $step['instance']
             : '';
         $target = $instance === '' ? $app : "{$app}.{$instance}";
 
-        $this->line(ucfirst($this->phaseLabel())." step added for app instance '{$target}'.");
+        $this->line(ucfirst($this->phaseLabel())." step added for instance '{$target}'.");
         $this->line('ID: '.$this->scalarField($step, 'id'));
         $this->line('Command: '.$this->scalarField($step, 'command'));
         $this->line('Order: '.$this->scalarField($step, 'order'));

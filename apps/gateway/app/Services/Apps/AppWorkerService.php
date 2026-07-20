@@ -6,8 +6,8 @@ namespace App\Services\Apps;
 
 use App\Data\Apps\AppWorkerReadinessResult;
 use App\Data\Apps\PhpWorkerConfig;
-use App\Models\App;
 use App\Models\AppInstance;
+use App\Models\Project;
 
 final readonly class AppWorkerService
 {
@@ -23,7 +23,7 @@ final readonly class AppWorkerService
      *     changed: bool,
      * }
      */
-    public function enable(App $app, AppInstance $instance): array
+    public function enable(Project $app, AppInstance $instance): array
     {
         $readiness = $this->readiness->assess($app, $instance);
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AgentIde;
 
 use App\Contracts\OpenCodeClientFactory;
-use App\Models\App;
+use App\Models\Project;
 use HardImpact\OpenCode\OpenCode;
 
 final readonly class SdkOpenCodeClientFactory implements OpenCodeClientFactory
@@ -14,7 +14,7 @@ final readonly class SdkOpenCodeClientFactory implements OpenCodeClientFactory
         private OpenCodeServerConfigResolver $configResolver,
     ) {}
 
-    public function forApp(App $app): OpenCode
+    public function forApp(Project $app): OpenCode
     {
         $config = $this->configResolver->resolve($app);
 

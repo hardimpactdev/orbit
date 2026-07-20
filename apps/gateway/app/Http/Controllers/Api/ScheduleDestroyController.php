@@ -43,7 +43,7 @@ final readonly class ScheduleDestroyController implements Loggable
         try {
             $schedule = $this->payload->find(
                 $name,
-                $this->stringQuery($request, 'app'),
+                $this->stringQuery($request, 'instance'),
                 $this->stringQuery($request, 'node'),
                 $caller,
                 'schedule:remove',

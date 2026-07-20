@@ -9,7 +9,7 @@ describe('AppAnalyticsDisableCommand', function (): void {
     it('requests app analytics disable through the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'binding' => [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'enabled' => false,
                 'internal_host' => 'analytics.orbit',
                 'dashboard_url' => 'https://analytics.orbit',
@@ -18,8 +18,8 @@ describe('AppAnalyticsDisableCommand', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics disable', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:analytics disable', [
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -28,7 +28,7 @@ describe('AppAnalyticsDisableCommand', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/apps/docs/analytics/disable'
+                && $request->url() === 'https://gateway.test/api/instances/docs/analytics/disable'
                 && $request->data() === []
             ),
         );
@@ -44,7 +44,7 @@ describe('AppAnalyticsDisableCommand', function (): void {
     it('renders disable responses in human mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'binding' => [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'enabled' => false,
                 'internal_host' => 'analytics.orbit',
                 'dashboard_url' => 'https://analytics.orbit',
@@ -53,24 +53,24 @@ describe('AppAnalyticsDisableCommand', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics disable', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:analytics disable', [
+            'instance' => 'docs',
         ]);
 
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('Disabling App Analytics')
+            ->toContain('Disabling Instance Analytics')
             ->and($output)
             ->toContain('Remove ingress tracking routes')
             ->and($output)
             ->toContain('Remove router tracking routes')
             ->and($output)
-            ->toContain("Analytics disabled for app 'docs'")
+            ->toContain("Analytics disabled for instance 'docs'")
             ->and($output)
             ->toContain('binding:')
             ->and($output)
-            ->toContain('  app: docs')
+            ->toContain('  instance: docs')
             ->and($output)
             ->toContain('  enabled: false')
             ->and($output)
@@ -84,7 +84,7 @@ describe('AppAnalyticsDisableCommand', function (): void {
     it('requires an app selector before sending gateway requests', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics disable', [
+        [$exitCode, $output] = runCommand($this, 'instance:analytics disable', [
             '--json' => true,
         ]);
 
@@ -97,6 +97,6 @@ describe('AppAnalyticsDisableCommand', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     });
 });

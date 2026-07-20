@@ -97,7 +97,7 @@ it('serves a production app through a prepared ingress topology', function (): v
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:register %s --node=app-prod-1 --path=%s --domain=%s --root=public --php-version=8.5 --json',
+                'cd %s && orbit instance:register %s --node=app-prod-1 --path=%s --domain=%s --root=public --php-version=8.5 --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
                 escapeshellarg($path),

@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +16,7 @@ uses(RefreshDatabase::class);
 
 it('stores app instances as concrete runtime targets for a logical app', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'billing']);
+    $app = Project::factory()->for($node, 'node')->create(['name' => 'billing']);
 
     $instance = AppInstance::factory()->for($app)->create([
         'name' => 'development',
@@ -43,8 +43,8 @@ it('stores app instances as concrete runtime targets for a logical app', functio
 });
 
 it('keeps instance names unique per app only', function (): void {
-    $first = App::factory()->create(['name' => 'billing']);
-    $second = App::factory()->create(['name' => 'crm']);
+    $first = Project::factory()->create(['name' => 'billing']);
+    $second = Project::factory()->create(['name' => 'crm']);
 
     AppInstance::factory()->for($first)->create(['name' => 'production']);
     AppInstance::factory()->for($second)->create(['name' => 'production']);
@@ -54,7 +54,7 @@ it('keeps instance names unique per app only', function (): void {
 });
 
 it('hydrates driver_config through Laravel Data concrete classes', function (): void {
-    $app = App::factory()->create(['name' => 'billing']);
+    $app = Project::factory()->create(['name' => 'billing']);
 
     $instance = AppInstance::factory()
         ->for($app)

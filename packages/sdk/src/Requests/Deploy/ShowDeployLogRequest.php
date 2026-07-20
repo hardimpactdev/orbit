@@ -15,7 +15,7 @@ final class ShowDeployLogRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
-        public readonly string $app,
+        public readonly string $instance,
         public readonly int $run,
         public readonly ?int $step = null,
         public readonly int $lines = 500,
@@ -30,7 +30,7 @@ final class ShowDeployLogRequest extends GatewayRequest
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'step' => $this->step,
                 'lines' => $this->lines,
             ],

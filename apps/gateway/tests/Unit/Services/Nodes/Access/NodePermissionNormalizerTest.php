@@ -30,9 +30,9 @@ describe('node permission normalizer', function (): void {
     });
 
     it('does not remove app credentials under app read or write permissions', function (): void {
-        $result = $this->normalizer->normalize(['app:read', 'app:write', 'app:credentials']);
+        $result = $this->normalizer->normalize(['instance:read', 'instance:write', 'instance:credentials']);
 
-        expect($result->permissions)->toBe(['app:credentials', 'app:read', 'app:write']);
+        expect($result->permissions)->toBe(['instance:credentials', 'instance:read', 'instance:write']);
     });
 
     it('handles tool:update implying tool:update:agent-tools', function (): void {
@@ -93,7 +93,7 @@ describe('node permission normalizer', function (): void {
 
     it('does not remove unrelated permissions', function (): void {
         $result = $this->normalizer->normalize([
-            'app:read',
+            'instance:read',
             'database:read',
             'doctor:verify',
             'firewall_rule:read',
@@ -103,10 +103,10 @@ describe('node permission normalizer', function (): void {
         ]);
 
         expect($result->permissions)->toBe([
-            'app:read',
             'database:read',
             'doctor:verify',
             'firewall_rule:read',
+            'instance:read',
             'node:read',
             'tool:read',
             'tool:update',
@@ -120,13 +120,13 @@ describe('node permission normalizer', function (): void {
             'node:show',
             'tool:read',
             'tool:list',
-            'app:read',
-            'app:show',
+            'instance:read',
+            'instance:show',
         ]);
 
-        expect($result->permissions)->toBe(['app:read', 'node:read', 'tool:read']);
+        expect($result->permissions)->toBe(['instance:read', 'node:read', 'tool:read']);
         expect($result->removed)
-            ->toContain('app:show')
+            ->toContain('instance:show')
             ->and($result->removed)
             ->toContain('node:show')
             ->and($result->removed)

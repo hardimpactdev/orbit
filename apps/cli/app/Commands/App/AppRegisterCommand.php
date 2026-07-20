@@ -13,25 +13,25 @@ final class AppRegisterCommand extends AppGatewayCommand
     use WithStepTree;
 
     #[\Override]
-    protected $signature = 'app:register
-        {name? : App name}
-        {--node= : Target app node}
-        {--path= : Existing app path on the target node}
-        {--root=public : Document root relative to app path}
+    protected $signature = 'instance:register
+        {project? : Project name}
+        {--node= : Target instance node}
+        {--path= : Existing project path on the target node}
+        {--root=public : Document root relative to project path}
         {--php-version=8.5 : PHP version}
         {--domain= : Production domain}
         {--runtime-proxy-transport= : FrankenPHP inner proxy transport (http|https)}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Register or re-apply Orbit management for an app.';
+    protected $description = 'Register or re-apply Orbit management for a project instance.';
 
     public function handle(): int
     {
-        $name = $this->stringArgument('name');
+        $name = $this->stringArgument('project');
 
         if ($name === null) {
-            return $this->failValidation('name', 'App name is required.');
+            return $this->failValidation('project', 'Project name is required.');
         }
 
         if ($this->wantsJson()) {
@@ -52,15 +52,21 @@ final class AppRegisterCommand extends AppGatewayCommand
         $response = [];
 
         $outcome = $this->runStepOperation(
-            'Registering App',
+            'Registering Instance',
             [
-                ['label' => 'Resolve app configuration', 'doneLabel' => 'Resolved app configuration'],
+                ['label' => 'Resolve project configuration', 'doneLabel' => 'Resolved project configuration'],
                 [
-                    'label' => 'Register app record or adopt app path',
-                    'doneLabel' => 'Registered app record or adopted app path',
+                    'label' => 'Register project and instance or adopt project path',
+                    'doneLabel' => 'Registered project and instance or adopted project path',
                 ],
-                ['label' => 'Apply and verify app runtime', 'doneLabel' => 'Applied and verified app runtime'],
-                ['label' => 'Apply and verify app routing', 'doneLabel' => 'Applied and verified app routing'],
+                [
+                    'label' => 'Apply and verify instance runtime',
+                    'doneLabel' => 'Applied and verified instance runtime',
+                ],
+                [
+                    'label' => 'Apply and verify instance routing',
+                    'doneLabel' => 'Applied and verified instance routing',
+                ],
                 ['label' => 'Verify application', 'doneLabel' => 'Verified application'],
             ],
             work: function () use ($name, &$response): array {
@@ -86,10 +92,10 @@ final class AppRegisterCommand extends AppGatewayCommand
     private function footerFor(string $name, array $response): string
     {
         return match ($this->action($response)) {
-            'adopted' => "App '{$name}' adopted",
-            'converged' => "App '{$name}' converged",
-            'partial' => "App '{$name}' partially enacted",
-            default => "App '{$name}' registered",
+            'adopted' => "Instance for project '{$name}' adopted",
+            'converged' => "Instance for project '{$name}' converged",
+            'partial' => "Instance for project '{$name}' partially enacted",
+            default => "Instance for project '{$name}' registered",
         };
     }
 
@@ -122,16 +128,19 @@ final class AppRegisterCommand extends AppGatewayCommand
      */
     private function successLine(array $response): string
     {
-        $app = $this->appData($response);
-        $name = (string) ($app['name'] ?? '');
-        $node = (string) ($app['node'] ?? '');
-        $path = (string) ($app['path'] ?? '');
+        $project = $this->projectData($response);
+        $name = (string) ($project['name'] ?? '');
+        $instance = $this->instanceData($response);
+        $node = (string) ($instance['node'] ?? '');
+        $path = (string) ($instance['path'] ?? '');
 
         return match ($this->action($response)) {
-            'adopted' => "App '{$name}' successfully adopted from path '{$path}' on node '{$node}'.",
-            'converged' => "App '{$name}' is already converged on node '{$node}'. No changes were needed.",
-            'partial' => "App '{$name}' is registered on node '{$node}', but proxy enactment is incomplete.",
-            default => "App '{$name}' successfully registered on node '{$node}'.",
+            'adopted' => "Instance for project '{$name}' successfully adopted from path '{$path}' on node '{$node}'.",
+            'converged'
+                => "Instance for project '{$name}' is already converged on node '{$node}'. No changes were needed.",
+            'partial'
+                => "Instance for project '{$name}' is registered on node '{$node}', but proxy enactment is incomplete.",
+            default => "Instance for project '{$name}' successfully registered on node '{$node}'.",
         };
     }
 
@@ -155,7 +164,7 @@ final class AppRegisterCommand extends AppGatewayCommand
             $payload['runtime_proxy_transport'] = $runtimeProxyTransport;
         }
 
-        return $this->gatewayPost('/api/apps/register', $payload);
+        return $this->gatewayPost('/api/instances/register', $payload);
     }
 
     /**
@@ -195,11 +204,22 @@ final class AppRegisterCommand extends AppGatewayCommand
      * @param  array<string, mixed>  $response
      * @return array<string, mixed>
      */
-    private function appData(array $response): array
+    private function projectData(array $response): array
     {
-        $app = $this->successData($response)['app'] ?? null;
+        $project = $this->successData($response)['project'] ?? null;
 
-        return is_array($app) ? $app : [];
+        return $this->associativeArray($project) ?? [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    private function instanceData(array $response): array
+    {
+        $instance = $this->successData($response)['instance'] ?? null;
+
+        return $this->associativeArray($instance) ?? [];
     }
 
     /**

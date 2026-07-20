@@ -12,8 +12,8 @@ describe('workspace step read commands', function (): void {
             'steps' => [
                 [
                     'id' => 10,
-                    'app' => 'docs',
-                    'app_instance' => 'development',
+                    'project' => 'docs',
+                    'instance' => 'development',
                     'phase' => 'setup',
                     'order' => 1,
                     'command' => 'composer install',
@@ -23,7 +23,7 @@ describe('workspace step read commands', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'workspace-setup-step:list', [
-            '--app' => 'docs.development',
+            '--instance' => 'docs.development',
             '--json' => true,
         ]);
 
@@ -35,7 +35,7 @@ describe('workspace step read commands', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/workspaces/steps/setup')
-                && str_contains($url, 'app=docs.development')
+                && str_contains($url, 'instance=docs.development')
             );
         });
 
@@ -47,8 +47,8 @@ describe('workspace step read commands', function (): void {
             'steps' => [
                 [
                     'id' => 11,
-                    'app' => 'docs',
-                    'app_instance' => 'development',
+                    'project' => 'docs',
+                    'instance' => 'development',
                     'phase' => 'teardown',
                     'order' => 1,
                     'command' => 'dropdb docs',
@@ -58,7 +58,7 @@ describe('workspace step read commands', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'workspace-teardown-step:list', [
-            '--app' => 'docs.development',
+            '--instance' => 'docs.development',
             '--json' => true,
         ]);
 
@@ -70,19 +70,19 @@ describe('workspace step read commands', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/workspaces/steps/teardown')
-                && str_contains($url, 'app=docs.development')
+                && str_contains($url, 'instance=docs.development')
             );
         });
 
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['steps'][0]['phase'])->toBe('teardown');
     });
 
-    it('resolves the app from a local orbit marker before falling back to path lookup', function (): void {
+    it('resolves the instance from a local orbit marker before falling back to path lookup', function (): void {
         $root = base_path('tests/.tmp-workspace-step-marker');
         $workspacePath = "{$root}/worktrees/feature-docs";
         File::ensureDirectoryExists("{$root}/.orbit");
         File::ensureDirectoryExists($workspacePath);
-        File::put("{$root}/.orbit/config", json_encode(['app' => 'docs.development'], JSON_THROW_ON_ERROR));
+        File::put("{$root}/.orbit/config", json_encode(['instance' => 'docs.development'], JSON_THROW_ON_ERROR));
 
         $previousHostCwd = getenv('ORBIT_HOST_CWD');
         putenv("ORBIT_HOST_CWD={$workspacePath}");
@@ -102,7 +102,7 @@ describe('workspace step read commands', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/workspaces/steps/setup')
-                && str_contains($url, 'app=docs.development')
+                && str_contains($url, 'instance=docs.development')
                 && ! str_contains($url, 'path=')
             );
         });
@@ -140,8 +140,8 @@ describe('workspace step read commands', function (): void {
             'steps' => [
                 [
                     'id' => 12,
-                    'app' => 'docs',
-                    'app_instance' => 'development',
+                    'project' => 'docs',
+                    'instance' => 'development',
                     'phase' => 'setup',
                     'order' => 1,
                     'command' => 'composer install',
@@ -149,8 +149,8 @@ describe('workspace step read commands', function (): void {
                 ],
                 [
                     'id' => 13,
-                    'app' => 'docs',
-                    'app_instance' => 'development',
+                    'project' => 'docs',
+                    'instance' => 'development',
                     'phase' => 'setup',
                     'order' => 2,
                     'command' => 'npm install',
@@ -159,7 +159,7 @@ describe('workspace step read commands', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:list', ['--app' => 'docs.development']);
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:list', ['--instance' => 'docs.development']);
 
         expect($exitCode)
             ->toBe(0)
@@ -187,8 +187,8 @@ describe('workspace step read commands', function (): void {
             'steps' => [
                 [
                     'id' => 18,
-                    'app' => 'docs',
-                    'app_instance' => 'development',
+                    'project' => 'docs',
+                    'instance' => 'development',
                     'phase' => 'teardown',
                     'order' => 1,
                     'command' => 'dropdb docs_db',
@@ -197,7 +197,7 @@ describe('workspace step read commands', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'workspace-teardown-step:list', ['--app' => 'docs.development']);
+        [$exitCode, $output] = runCommand($this, 'workspace-teardown-step:list', ['--instance' => 'docs.development']);
 
         expect($exitCode)
             ->toBe(0)
@@ -225,8 +225,8 @@ describe('workspace step read commands', function (): void {
             'steps' => [
                 [
                     'id' => 12,
-                    'app' => 'docs',
-                    'app_instance' => 'development',
+                    'project' => 'docs',
+                    'instance' => 'development',
                     'phase' => 'setup',
                     'order' => 1,
                     'command' => 'composer install',
@@ -234,7 +234,7 @@ describe('workspace step read commands', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:list', ['--app' => 'docs.development']);
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:list', ['--instance' => 'docs.development']);
 
         expect($exitCode)->toBe(0)->and($output)->toContain('—');
     });
@@ -244,7 +244,7 @@ describe('workspace step read commands', function (): void {
             'steps' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:list', ['--app' => 'docs.development']);
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:list', ['--instance' => 'docs.development']);
 
         expect($exitCode)->toBe(0)->and($output)->toBe('No setup steps defined for docs.development.');
     });
@@ -254,7 +254,7 @@ describe('workspace step read commands', function (): void {
             'steps' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'workspace-teardown-step:list', ['--app' => 'docs.development']);
+        [$exitCode, $output] = runCommand($this, 'workspace-teardown-step:list', ['--instance' => 'docs.development']);
 
         expect($exitCode)->toBe(0)->and($output)->toBe('No teardown steps defined for docs.development.');
     });
@@ -263,7 +263,7 @@ describe('workspace step read commands', function (): void {
         fakeGatewayDown('No route to host');
 
         [$exitCode, $output] = runCommand($this, 'workspace-setup-step:list', [
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--json' => true,
         ]);
 

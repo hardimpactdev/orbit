@@ -25,14 +25,14 @@ final readonly class DeployController
     #[RequiresPermission('deploy:step', servingNode: ServingNode::AppInstanceOwning)]
     public function storeStep(Request $request): JsonResponse
     {
-        $app = $this->stringInput($request, 'app');
+        $instanceSelector = $this->stringInput($request, 'instance');
         $command = $this->stringInput($request, 'command');
 
-        if ($app === null || $command === null) {
+        if ($instanceSelector === null || $command === null) {
             return $this->error(
                 'validation_failed',
-                'App and command are required.',
-                ['field' => $app === null ? 'app' : 'command'],
+                'Instance and command are required.',
+                ['field' => $instanceSelector === null ? 'instance' : 'command'],
                 400,
             );
         }
@@ -54,7 +54,7 @@ final readonly class DeployController
 
         try {
             $result = $this->deploy->addStep(
-                $app,
+                $instanceSelector,
                 $command,
                 $this->stringInput($request, 'title'),
                 $order,
@@ -71,14 +71,14 @@ final readonly class DeployController
     #[RequiresPermission('deploy:read', servingNode: ServingNode::AppInstanceOwning)]
     public function listSteps(Request $request): JsonResponse
     {
-        $app = $this->stringInput($request, 'app');
+        $instanceSelector = $this->stringInput($request, 'instance');
 
-        if ($app === null) {
-            return $this->error('validation_failed', 'App is required.', ['field' => 'app'], 400);
+        if ($instanceSelector === null) {
+            return $this->error('validation_failed', 'Instance is required.', ['field' => 'instance'], 400);
         }
 
         try {
-            $result = $this->deploy->listSteps($app);
+            $result = $this->deploy->listSteps($instanceSelector);
 
             return $this->success(['steps' => $result['steps']], $result['meta']);
         } catch (GatewayApiException $exception) {
@@ -98,14 +98,14 @@ final readonly class DeployController
             );
         }
 
-        $app = $this->stringInput($request, 'app');
+        $instanceSelector = $this->stringInput($request, 'instance');
 
-        if ($app === null) {
-            return $this->error('validation_failed', 'App is required.', ['field' => 'app'], 400);
+        if ($instanceSelector === null) {
+            return $this->error('validation_failed', 'Instance is required.', ['field' => 'instance'], 400);
         }
 
         try {
-            $result = $this->deploy->removeStep($app, $step);
+            $result = $this->deploy->removeStep($instanceSelector, $step);
 
             return $this->success(['step' => $result['step']], $result['meta']);
         } catch (GatewayApiException $exception) {
@@ -116,10 +116,10 @@ final readonly class DeployController
     #[RequiresPermission('deploy:run', servingNode: ServingNode::AppInstanceOwning)]
     public function run(Request $request): JsonResponse
     {
-        $app = $this->stringInput($request, 'app');
+        $instanceSelector = $this->stringInput($request, 'instance');
 
-        if ($app === null) {
-            return $this->error('validation_failed', 'App is required.', ['field' => 'app'], 400);
+        if ($instanceSelector === null) {
+            return $this->error('validation_failed', 'Instance is required.', ['field' => 'instance'], 400);
         }
 
         $caller = $request->user();
@@ -129,11 +129,11 @@ final readonly class DeployController
         }
 
         try {
-            $operation = $this->deployOperations->start($app, $caller);
+            $operation = $this->deployOperations->start($instanceSelector, $caller);
 
-            app()->terminating(function () use ($operation, $app): void {
+            app()->terminating(function () use ($operation, $instanceSelector): void {
                 try {
-                    $this->deployOperations->execute($operation['uuid'], $app);
+                    $this->deployOperations->execute($operation['uuid'], $instanceSelector);
                 } catch (Throwable $throwable) {
                     report($throwable);
                 }
@@ -152,10 +152,10 @@ final readonly class DeployController
     #[RequiresPermission('deploy:read', servingNode: ServingNode::AppInstanceOwning)]
     public function history(Request $request): JsonResponse
     {
-        $app = $this->stringInput($request, 'app');
+        $instanceSelector = $this->stringInput($request, 'instance');
 
-        if ($app === null) {
-            return $this->error('validation_failed', 'App is required.', ['field' => 'app'], 400);
+        if ($instanceSelector === null) {
+            return $this->error('validation_failed', 'Instance is required.', ['field' => 'instance'], 400);
         }
 
         $limit = $this->positiveIntInput($request, 'limit', 50);
@@ -170,7 +170,7 @@ final readonly class DeployController
         }
 
         try {
-            $result = $this->deploy->history($app, $limit);
+            $result = $this->deploy->history($instanceSelector, $limit);
 
             return $this->success(['runs' => $result['runs']], $result['meta']);
         } catch (GatewayApiException $exception) {
@@ -181,13 +181,13 @@ final readonly class DeployController
     #[RequiresPermission('deploy:read', servingNode: ServingNode::AppInstanceOwning)]
     public function log(string $run, Request $request): JsonResponse
     {
-        $app = $this->stringInput($request, 'app');
+        $instanceSelector = $this->stringInput($request, 'instance');
 
-        if ($app === null || ! ctype_digit($run) || (int) $run < 1) {
+        if ($instanceSelector === null || ! ctype_digit($run) || (int) $run < 1) {
             return $this->error(
                 'validation_failed',
-                'App and positive run id are required.',
-                ['field' => $app === null ? 'app' : 'run'],
+                'Instance and positive run id are required.',
+                ['field' => $instanceSelector === null ? 'instance' : 'run'],
                 400,
             );
         }
@@ -207,7 +207,7 @@ final readonly class DeployController
         }
 
         try {
-            $result = $this->deploy->log($app, (int) $run, $step, $lines);
+            $result = $this->deploy->log($instanceSelector, (int) $run, $step, $lines);
 
             return $this->success([
                 'run' => $result['run'],
@@ -262,7 +262,7 @@ final readonly class DeployController
     private function exception(GatewayApiException $exception): JsonResponse
     {
         $status = match ($exception->errorCode()) {
-            'app.not_found', 'deploy.step_not_found', 'deploy.run_not_found' => 404,
+            'instance.not_found', 'deploy.step_not_found', 'deploy.run_not_found' => 404,
             'authorization_failed' => 403,
             default => 400,
         };

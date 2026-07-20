@@ -34,7 +34,7 @@ final readonly class ScheduleShowController implements Loggable
         try {
             $data = $this->payload->show(
                 name: $name,
-                app: $this->stringQuery($request, 'app'),
+                instance: $this->stringQuery($request, 'instance'),
                 node: $this->stringQuery($request, 'node'),
                 caller: $caller,
             );

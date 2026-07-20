@@ -60,7 +60,7 @@ function processCrashEventSeedIntent(E2ETopologyHarness $topology, string $app, 
         $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
         $node->update(['status' => 'active', 'platform' => 'ubuntu']);
 
-        $app = \App\Models\App::query()->updateOrCreate(
+        $app = \App\Models\Project::query()->updateOrCreate(
             ['name' => '__APP__'],
             [
                 'node_id' => $node->id,
@@ -169,7 +169,7 @@ function processCrashEventCleanup(E2ETopologyHarness $topology, string $app, str
     $script = <<<PHP
         \\App\\Models\\ProcessEvent::query()->where('event_id', {$eventIdValue})->delete();
 
-        if (\$app = \\App\\Models\\App::query()->where('name', {$appValue})->first()) {
+        if (\$app = \\App\\Models\\Project::query()->where('name', {$appValue})->first()) {
             \$app->processes()->delete();
             \$app->delete();
         }

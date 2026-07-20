@@ -8,10 +8,10 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\CaddyGlobalConfig;
@@ -143,7 +143,7 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
             'tld' => 'test',
             'wireguard_address' => '10.47.0.31',
         ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'document_root' => 'public',
         'runtime' => AppRuntimeKind::Php,
@@ -218,7 +218,7 @@ it('creates a static app proxy route with file_server', function (): void {
             'tld' => 'test',
             'wireguard_address' => '10.47.0.32',
         ]);
-    $app = App::factory()
+    $app = Project::factory()
         ->for($node, 'node')
         ->static()
         ->create([
@@ -282,7 +282,7 @@ it('installs app-dev runtime trust pool through the managed file agent path', fu
             'tld' => 'test',
             'wireguard_address' => '10.47.0.33',
         ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'api',
         'document_root' => 'public',
         'runtime' => AppRuntimeKind::Php,
@@ -347,7 +347,7 @@ it('installs app-dev runtime trust pool through the managed file agent path', fu
 
 it('removes stale app-owned proxy routes for the same app when its domain changes', function (): void {
     $node = Node::factory()->appDev(['tld' => 'nmbp'])->create(['tld' => 'nmbp']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'happie-nmbp',
         'document_root' => 'public',
         'domain' => 'happie.nmbp',
@@ -500,7 +500,7 @@ function ensure_app_proxy_route_agent_requests(string $wireguardAddress): array
 }
 
 /**
- * @return array{App, Node, Node, Node}
+ * @return array{Project, Node, Node, Node}
  */
 function ensure_app_proxy_route_production_topology(): array
 {
@@ -535,7 +535,7 @@ function ensure_app_proxy_route_production_topology(): array
         'status' => 'active',
         'settings' => ['ingress_node_id' => $ingress->id],
     ]);
-    $app = App::factory()->for($backend, 'node')->create([
+    $app = Project::factory()->for($backend, 'node')->create([
         'name' => 'hauzer',
         'domain' => 'hauzer.app',
         'environment' => 'production',

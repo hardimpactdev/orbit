@@ -11,7 +11,7 @@ final class ToolInstallCommand extends ToolGatewayCommand
     #[\Override]
     protected $signature = 'tool:install
         {tool? : Tool catalog name to install}
-        {--app= : Resolve target by app selector}
+        {--instance= : Resolve target by instance selector}
         {--node= : Resolve target by node}
         {--tool-version= : Version or version family to install}
         {--user=* : Additional OS user to install a user-scoped CLI tool for}

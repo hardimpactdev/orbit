@@ -15,7 +15,7 @@ final class WorkspaceLogHumanRenderer
     public function lines(array $run): array
     {
         $lines = [
-            "Workspace Log Run #{$run['id']}  ({$run['app']}/{$run['workspace']} on {$run['node']})",
+            "Workspace Log Run #{$run['id']}  ({$run['project']}/{$run['workspace']} on {$run['node']})",
         ];
 
         $steps = is_array($run['steps'] ?? null) ? $run['steps'] : [];

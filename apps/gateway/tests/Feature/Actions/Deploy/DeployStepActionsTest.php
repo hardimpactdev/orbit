@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 use App\Actions\Deploy\AddDeployStep;
 use App\Actions\Deploy\RemoveDeployStep;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DeployStep;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
 it('inserts deploy steps at the requested order and compacts after removal', function (): void {
-    $app = App::factory()->create();
+    $app = Project::factory()->create();
     $instance = AppInstance::factory()->create(['app_id' => $app->id]);
     $addStep = app(AddDeployStep::class);
     $removeStep = app(RemoveDeployStep::class);

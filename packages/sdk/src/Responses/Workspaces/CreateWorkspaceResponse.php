@@ -8,7 +8,8 @@ final readonly class CreateWorkspaceResponse
 {
     public function __construct(
         public string $name,
-        public string $app,
+        public string $project,
+        public string $instance,
         public ?string $node,
         public ?string $path,
         public ?string $url,

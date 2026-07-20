@@ -12,13 +12,14 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\PromptAborted;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Support\GatewayActionResult;
+use InvalidArgumentException;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
 use function Laravel\Prompts\confirm;
@@ -63,7 +64,7 @@ final class AppRegistrar
             return $input;
         }
 
-        $existingApp = App::query()
+        $existingApp = Project::query()
             ->with('node')
             ->where('name', $input['name'])
             ->first();
@@ -97,30 +98,30 @@ final class AppRegistrar
         }
 
         if (
-            ! $existingApp instanceof App
+            ! $existingApp instanceof Project
             && $this->isInteractiveInput()
-            && ! confirm('Adopt existing app path?', default: true)
+            && ! confirm('Adopt existing project path?', default: true)
         ) {
-            return $this->failValidation('path', 'App path adoption was cancelled.');
+            return $this->failValidation('path', 'Project path adoption was cancelled.');
         }
 
         if (! $this->sourcePathProbe->exists($node, $path)) {
             return $this->failValidation('path', "Path '{$path}' does not exist on node '{$node->name}'.");
         }
 
-        $pathOwner = App::query()
+        $pathOwner = Project::query()
             ->where('node_id', $node->id)
             ->where('path', $path)
             ->where('name', '!=', $input['name'])
             ->first();
 
-        if ($pathOwner instanceof App) {
+        if ($pathOwner instanceof Project) {
             return $this->failCommand(
-                code: 'app.path_collision',
-                message: "Path '{$path}' on node '{$node->name}' is already owned by app '{$pathOwner->name}'.",
+                code: 'project.path_collision',
+                message: "Path '{$path}' on node '{$node->name}' is already owned by project '{$pathOwner->name}'.",
                 meta: [
                     'path' => $path,
-                    'existing_app' => $pathOwner->name,
+                    'existing_project' => $pathOwner->name,
                     'node' => $node->name,
                 ],
             );
@@ -128,25 +129,25 @@ final class AppRegistrar
 
         $explicitMove = $this->isExplicitMove($input, $path, $node, $existingApp);
 
-        if ($existingApp instanceof App && $existingApp->node_id !== $node->id && ! $explicitMove) {
+        if ($existingApp instanceof Project && $existingApp->node_id !== $node->id && ! $explicitMove) {
             return $this->failCommand(
-                code: 'app.path_collision',
-                message: "App '{$input['name']}' is already registered on node '{$existingApp->node?->name}'.",
+                code: 'project.path_collision',
+                message: "Project '{$input['name']}' is already registered on node '{$existingApp->node?->name}'.",
                 meta: [
                     'path' => $existingApp->path,
-                    'existing_app' => $existingApp->name,
+                    'existing_project' => $existingApp->name,
                     'node' => $existingApp->node?->name,
                 ],
             );
         }
 
-        if ($existingApp instanceof App && $existingApp->path !== $path && ! $explicitMove) {
+        if ($existingApp instanceof Project && $existingApp->path !== $path && ! $explicitMove) {
             return $this->failCommand(
-                code: 'app.path_collision',
-                message: "App '{$input['name']}' is already registered at '{$existingApp->path}'.",
+                code: 'project.path_collision',
+                message: "Project '{$input['name']}' is already registered at '{$existingApp->path}'.",
                 meta: [
                     'path' => $path,
-                    'existing_app' => $existingApp->name,
+                    'existing_project' => $existingApp->name,
                     'node' => $node->name,
                 ],
             );
@@ -178,7 +179,7 @@ final class AppRegistrar
         return $this->successCommand(
             [
                 'result' => ['action' => $action],
-                'app' => $this->appPayload($app),
+                'project' => $this->appPayload($app),
                 'instance' => $this->instancePayload($app),
             ],
             $warnings,
@@ -193,7 +194,7 @@ final class AppRegistrar
         array $input,
         Node $node,
         string $path,
-        ?App $existingApp,
+        ?Project $existingApp,
         EnactAppRuntime $enactAppRuntime,
     ): int {
         $action = $this->registrationAction(
@@ -208,7 +209,7 @@ final class AppRegistrar
         return $this->successCommand(
             [
                 'result' => ['action' => $action],
-                'app' => $this->appPayload($app),
+                'project' => $this->appPayload($app),
                 'instance' => $this->instancePayload($app),
             ],
             $warnings,
@@ -219,9 +220,9 @@ final class AppRegistrar
     /**
      * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}  $input
      */
-    private function isExplicitMove(array $input, string $path, Node $node, ?App $existingApp): bool
+    private function isExplicitMove(array $input, string $path, Node $node, ?Project $existingApp): bool
     {
-        if (! $existingApp instanceof App) {
+        if (! $existingApp instanceof Project) {
             return false;
         }
 
@@ -232,9 +233,9 @@ final class AppRegistrar
         return $existingApp->node_id !== $node->id || $existingApp->path !== $path;
     }
 
-    private function registrationAction(?App $existingApp, bool $explicitMove): string
+    private function registrationAction(?Project $existingApp, bool $explicitMove): string
     {
-        if (! $existingApp instanceof App) {
+        if (! $existingApp instanceof Project) {
             return 'adopted';
         }
 
@@ -248,9 +249,9 @@ final class AppRegistrar
         array $input,
         Node $node,
         string $path,
-        ?App $existingApp,
+        ?Project $existingApp,
         string $environment,
-    ): App {
+    ): Project {
         $attributes = [
             'node_id' => $node->id,
             'environment' => $environment,
@@ -259,14 +260,14 @@ final class AppRegistrar
             'document_root' => $input['root'],
             'repository' => $existingApp?->repository,
             'php_version' => $input['php_version'],
-            'adopted' => $existingApp instanceof App ? $existingApp->adopted : true,
+            'adopted' => $existingApp instanceof Project ? $existingApp->adopted : true,
         ];
 
         if ($input['runtime_proxy_transport'] !== null) {
             $attributes['runtime_config'] = $this->runtimeConfigForStorage($input['runtime_proxy_transport']);
         }
 
-        $app = App::query()->updateOrCreate(
+        $app = Project::query()->updateOrCreate(
             ['name' => $input['name']],
             $attributes,
         );
@@ -277,7 +278,7 @@ final class AppRegistrar
         return $app;
     }
 
-    private function ensureDefaultInstance(App $app, Node $node): void
+    private function ensureDefaultInstance(Project $app, Node $node): void
     {
         $app->instances()->updateOrCreate(
             ['name' => $app->environment],
@@ -302,15 +303,15 @@ final class AppRegistrar
     {
         $name = $this->stringArgument('name');
         if ($name === null && $this->isInteractiveInput()) {
-            $name = trim(text(label: 'App name', required: true));
+            $name = trim(text(label: 'Project name', required: true));
         }
 
         if ($name === null) {
-            return $this->failValidation('name', 'App name is required.');
+            return $this->failValidation('name', 'Project name is required.');
         }
 
         if (! preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $name) || mb_strlen($name) > 40) {
-            return $this->failValidation('name', 'App name must be a slug of 40 characters or fewer.');
+            return $this->failValidation('name', 'Project name must be a slug of 40 characters or fewer.');
         }
 
         $path = $this->stringOption('path');
@@ -340,7 +341,7 @@ final class AppRegistrar
         if ($runtimeProxyTransport !== null) {
             try {
                 AppRuntimeConfig::fromProxyTransportOption($runtimeProxyTransport);
-            } catch (\InvalidArgumentException) {
+            } catch (InvalidArgumentException) {
                 return $this->failValidation(
                     'runtime_proxy_transport',
                     "Runtime proxy transport must be 'http' or 'https'.",
@@ -377,9 +378,9 @@ final class AppRegistrar
         return $config->toArray();
     }
 
-    private function resolveTargetNode(?string $nodeName, ?App $existingApp): Node|int
+    private function resolveTargetNode(?string $nodeName, ?Project $existingApp): Node|int
     {
-        if ($nodeName === null && $existingApp instanceof App) {
+        if ($nodeName === null && $existingApp instanceof Project) {
             $existingApp->loadMissing('node');
             $node = $existingApp->node;
 
@@ -445,7 +446,7 @@ final class AppRegistrar
         }
 
         return $this->failCommand(
-            code: 'app.ineligible_node',
+            code: 'project.ineligible_node',
             message: "Node '{$node->name}' is not an active app node.",
             meta: [
                 'node' => $node->name,
@@ -482,10 +483,12 @@ final class AppRegistrar
     /**
      * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}  $input
      */
-    private function routeConflict(array $input, Node $node, ?App $existingApp): ?ProxyRoute
+    private function routeConflict(array $input, Node $node, ?Project $existingApp): ?ProxyRoute
     {
         $domain =
-            $input['domain'] ?? ($existingApp instanceof App ? $existingApp->domain : null) ?? $this->developmentDomain(
+            $input['domain'] ?? (
+                $existingApp instanceof Project ? $existingApp->domain : null
+            ) ?? $this->developmentDomain(
                 $input['name'],
                 $node,
             );
@@ -496,7 +499,7 @@ final class AppRegistrar
             return null;
         }
 
-        if ($existingApp instanceof App && $route->app_id === $existingApp->id) {
+        if ($existingApp instanceof Project && $route->app_id === $existingApp->id) {
             return null;
         }
 
@@ -569,7 +572,7 @@ final class AppRegistrar
     /**
      * @return array<string, mixed>
      */
-    private function appPayload(App $app): array
+    private function appPayload(Project $app): array
     {
         return app(AppResponsePayload::class)->forApp($app);
     }
@@ -577,7 +580,7 @@ final class AppRegistrar
     /**
      * @return array<string, mixed>
      */
-    private function instancePayload(App $app): array
+    private function instancePayload(Project $app): array
     {
         $instance = AppInstance::query()
             ->where('app_id', $app->id)
@@ -594,13 +597,13 @@ final class AppRegistrar
     private function successCommand(array $data, array $warnings, string $nodeName): int
     {
         if (! $this->wantsJson()) {
-            /** @var array{name?: string} $app */
-            $app = is_array($data['app'] ?? null) ? $data['app'] : [];
+            /** @var array{name?: string} $project */
+            $project = is_array($data['project'] ?? null) ? $data['project'] : [];
             /** @var array{url?: string} $instance */
             $instance = is_array($data['instance'] ?? null) ? $data['instance'] : [];
             $action = (string) ($data['result']['action'] ?? '');
 
-            $this->line($this->successLine($action, $app));
+            $this->line($this->successLine($action, $project));
             $this->line('URL: '.($instance['url'] ?? ''));
 
             if ($warnings !== []) {
@@ -641,9 +644,10 @@ final class AppRegistrar
         $path = (string) ($app['path'] ?? '');
 
         return match ($action) {
-            'adopted' => "App '{$name}' successfully adopted from path '{$path}' on node '{$node}'.",
-            'converged' => "App '{$name}' is already converged on node '{$node}'. No changes were needed.",
-            default => "App '{$name}' successfully registered on node '{$node}'.",
+            'adopted' => "Instance for project '{$name}' successfully adopted from path '{$path}' on node '{$node}'.",
+            'converged'
+                => "Instance for project '{$name}' is already converged on node '{$node}'. No changes were needed.",
+            default => "Instance for project '{$name}' successfully registered on node '{$node}'.",
         };
     }
 

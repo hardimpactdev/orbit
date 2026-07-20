@@ -7,8 +7,8 @@ return [
         'name' => 'string',
     ],
     'optional' => [
-        'app' => 'string|null',
-        'app_instance' => 'string|null',
+        'project' => 'string|null',
+        'instance' => 'string|null',
         'command' => 'string',
         'crash_notification' => 'string',
         'last_event' => 'object|null',

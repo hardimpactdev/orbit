@@ -31,7 +31,7 @@ final readonly class ProcessListController implements Loggable
         try {
             $data = $this->payload->forContext(
                 nodeName: $this->stringQuery($request, 'node'),
-                appName: $this->stringQuery($request, 'app'),
+                appName: $this->stringQuery($request, 'instance'),
                 workspaceName: $this->stringQuery($request, 'workspace'),
                 caller: $caller,
             );

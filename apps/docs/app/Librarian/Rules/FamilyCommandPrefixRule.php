@@ -63,6 +63,10 @@ final readonly class FamilyCommandPrefixRule implements GroupedRule
 
     private function startsWithFamilyPrefix(string $commandSlug, string $familySlug): bool
     {
+        if ($familySlug === 'project' && ($commandSlug === 'instance' || str_starts_with($commandSlug, 'instance-'))) {
+            return true;
+        }
+
         return $commandSlug === $familySlug || str_starts_with($commandSlug, "{$familySlug}-");
     }
 
@@ -73,7 +77,7 @@ final readonly class FamilyCommandPrefixRule implements GroupedRule
             line: null,
             severity: FindingSeverity::Error,
             rule: 'command_docs.family_command_prefix',
-            message: "Command `{$commandSlug}` does not belong in the `{$familySlug}` family; non-operation family commands must start with `{$familySlug}-`.",
+            message: "Command `{$commandSlug}` does not belong in the `{$familySlug}` family; non-operation family commands must use an allowed family prefix.",
         );
     }
 }

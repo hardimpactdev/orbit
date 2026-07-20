@@ -8,9 +8,9 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\WorkspaceLifecycleStatus;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -32,7 +32,7 @@ beforeEach(function (): void {
         'wireguard_address' => '10.6.0.7',
     ]);
 
-    $app = App::factory()->for($appNode, 'node')->create([
+    $app = Project::factory()->for($appNode, 'node')->create([
         'name' => 'demo',
         'domain' => 'demo.beast',
         'path' => '/home/nckrtl/apps/demo',
@@ -57,7 +57,7 @@ it('creates a workspace for an authorized gateway caller', function (): void {
         '/api/workspaces',
         [
             'name' => 'feature-a',
-            'app' => 'demo',
+            'instance' => 'demo',
             'base' => 'main',
         ],
         [],
@@ -67,7 +67,7 @@ it('creates a workspace for an authorized gateway caller', function (): void {
 
     $response->assertCreated();
     $response->assertJsonPath('success.data.workspace.name', 'feature-a');
-    $response->assertJsonPath('success.data.workspace.app', 'demo');
+    $response->assertJsonPath('success.data.workspace.project', 'demo');
     $response->assertJsonPath('success.data.workspace.path', '/home/nckrtl/apps/demo/.worktrees/feature-a');
     $response->assertJsonPath('success.data.workspace.lifecycle_status', 'active');
     $response->assertJsonPath('success.data.result.action', 'created');
@@ -95,7 +95,7 @@ it('creates a workspace on the selected app instance node', function (): void {
         'wireguard_address' => '10.6.0.18',
         'tld' => 'nmbp',
     ]);
-    $app = App::factory()->for($canonicalNode, 'node')->create([
+    $app = Project::factory()->for($canonicalNode, 'node')->create([
         'name' => 'happie',
         'domain' => 'happie.test',
         'path' => '/home/nckrtl/apps/happie',
@@ -118,7 +118,7 @@ it('creates a workspace on the selected app instance node', function (): void {
         '/api/workspaces',
         [
             'name' => 'recipes',
-            'app' => 'happie.nmbp',
+            'instance' => 'happie.nmbp',
             'base' => 'main',
         ],
         [],
@@ -128,8 +128,8 @@ it('creates a workspace on the selected app instance node', function (): void {
 
     $response->assertCreated();
     $response->assertJsonPath('success.data.workspace.name', 'recipes');
-    $response->assertJsonPath('success.data.workspace.app', 'happie');
-    $response->assertJsonPath('success.data.workspace.app_instance', 'nmbp');
+    $response->assertJsonPath('success.data.workspace.project', 'happie');
+    $response->assertJsonPath('success.data.workspace.instance', 'nmbp');
     $response->assertJsonPath('success.data.workspace.node', 'NMBP');
     $response->assertJsonPath('success.data.workspace.path', '/Users/nckrtl/apps/happie/.worktrees/recipes');
     $response->assertJsonPath('success.data.workspace.url', 'https://recipes.happie.nmbp');
@@ -169,7 +169,7 @@ it('rejects callers without workspace creation permission', function (): void {
         '/api/workspaces',
         [
             'name' => 'feature-a',
-            'app' => 'demo',
+            'instance' => 'demo',
         ],
         [],
         [],
@@ -188,7 +188,7 @@ it('rejects reserved name main', function (): void {
         '/api/workspaces',
         [
             'name' => 'main',
-            'app' => 'demo',
+            'instance' => 'demo',
         ],
         [],
         [],
@@ -206,7 +206,7 @@ it('rejects invalid workspace names', function (): void {
         '/api/workspaces',
         [
             'name' => 'Feature_A',
-            'app' => 'demo',
+            'instance' => 'demo',
         ],
         [],
         [],
@@ -230,7 +230,7 @@ it('rejects duplicate workspace names per app', function (): void {
         '/api/workspaces',
         [
             'name' => 'feature-a',
-            'app' => 'demo',
+            'instance' => 'demo',
         ],
         [],
         [],
@@ -247,7 +247,7 @@ it('rejects workspace creation for production app nodes', function (): void {
         'host' => 'prod-1',
         'wireguard_address' => '10.6.0.8',
     ], role: 'app-prod');
-    $app = App::factory()
+    $app = Project::factory()
         ->for($node, 'node')
         ->create([
             'name' => 'prod',
@@ -269,7 +269,7 @@ it('rejects workspace creation for production app nodes', function (): void {
         '/api/workspaces',
         [
             'name' => 'feature-a',
-            'app' => 'prod',
+            'instance' => 'prod',
         ],
         [],
         [],
@@ -279,7 +279,7 @@ it('rejects workspace creation for production app nodes', function (): void {
     $response->assertStatus(422);
     $response->assertJsonPath('error.code', 'workspace.unsupported_for_production');
     expect(
-        Workspace::query()->where('app_id', App::query()->where('name', 'prod')->value('id'))->exists(),
+        Workspace::query()->where('app_id', Project::query()->where('name', 'prod')->value('id'))->exists(),
     )->toBeFalse();
 });
 
@@ -289,7 +289,7 @@ it('creates workspace with supported custom php version', function (): void {
         '/api/workspaces',
         [
             'name' => 'feature-php',
-            'app' => 'demo',
+            'instance' => 'demo',
             'php_version' => '8.4',
         ],
         [],
@@ -313,7 +313,7 @@ it('rejects unsupported php version', function (): void {
         '/api/workspaces',
         [
             'name' => 'feature-php',
-            'app' => 'demo',
+            'instance' => 'demo',
             'php_version' => '8.2',
         ],
         [],
@@ -335,7 +335,7 @@ it('creates php workspace source without converging runtime containers during cr
         '/api/workspaces',
         [
             'name' => 'feature-runtime',
-            'app' => 'demo',
+            'instance' => 'demo',
             'base' => 'main',
         ],
         [],
@@ -358,7 +358,7 @@ it('creates php workspace source without converging runtime containers during cr
 });
 
 it('skips runtime container convergence for static workspaces during create (runtime)', function (): void {
-    App::query()
+    Project::query()
         ->where('name', 'demo')
         ->update([
             'runtime' => AppRuntimeKind::Static->value,
@@ -372,7 +372,7 @@ it('skips runtime container convergence for static workspaces during create (run
         '/api/workspaces',
         [
             'name' => 'feature-static',
-            'app' => 'demo',
+            'instance' => 'demo',
             'base' => 'main',
         ],
         [],
@@ -394,19 +394,19 @@ it('rejects unauthenticated requests', function (): void {
     $this
         ->call('POST', '/api/workspaces', [
             'name' => 'feature-a',
-            'app' => 'demo',
+            'instance' => 'demo',
         ])
         ->assertStatus(403)
         ->assertJsonPath('error.code', 'authorization_failed');
 });
 
-it('rejects missing app', function (): void {
+it('rejects missing instance', function (): void {
     $response = $this->call(
         'POST',
         '/api/workspaces',
         [
             'name' => 'feature-a',
-            'app' => 'nonexistent',
+            'instance' => 'nonexistent',
         ],
         [],
         [],
@@ -414,7 +414,7 @@ it('rejects missing app', function (): void {
     );
 
     $response->assertStatus(404);
-    $response->assertJsonPath('error.code', 'app.not_found');
+    $response->assertJsonPath('error.code', 'instance.not_found');
 });
 
 final class WorkspaceStoreTestShell implements RemoteShell

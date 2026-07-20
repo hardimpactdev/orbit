@@ -28,7 +28,7 @@ type DashboardState =
 
 type DashboardSummaryStatus = 'connected' | 'partial' | 'empty';
 type NavigationView = 'dashboard' | 'nodes' | 'settings';
-type NodeDetailTab = 'roles' | 'apps' | 'databases' | 'processes' | 'tools';
+type NodeDetailTab = 'roles' | 'instances' | 'databases' | 'processes' | 'tools';
 
 type GatewayRequestResult = {
     endpoint: ApiEndpointKey;
@@ -54,7 +54,7 @@ const viewState: {
     selectedNodeName: string | null;
     view: NavigationView;
 } = {
-    detailTab: 'apps',
+    detailTab: 'instances',
     selectedNodeName: null,
     view: 'dashboard',
 };
@@ -104,7 +104,7 @@ async function fetchDashboardSummary(baseUrl: string): Promise<DashboardSummary>
     if (result.status.status === 'loaded') {
         return createDashboardSummary({
             nodes: result.payload,
-            apps: result.payload,
+            projects: result.payload,
             processes: result.payload,
             tools: result.payload,
             apiStatuses: [result.status],
@@ -118,16 +118,16 @@ async function fetchLegacyDashboardSummary(
     client: ReturnType<typeof createOrbitGatewayClient>,
     runtimeInventoryStatus: ReturnType<typeof createEndpointStatus>,
 ): Promise<DashboardSummary> {
-    const [nodesResult, appsResult, processesResult, toolsResult] = await Promise.all([
+    const [nodesResult, projectsResult, processesResult, toolsResult] = await Promise.all([
         gatewayRequest('nodes', () => client.GET('/nodes')),
-        gatewayRequest('apps', () => client.GET('/apps')),
+        gatewayRequest('projects', () => client.GET('/projects')),
         gatewayRequest('processes', () => client.GET('/processes')),
         gatewayRequest('tools', () => client.GET('/tools')),
     ]);
     const results = [
         runtimeInventoryStatus,
         nodesResult.status,
-        appsResult.status,
+        projectsResult.status,
         processesResult.status,
         toolsResult.status,
     ];
@@ -139,7 +139,7 @@ async function fetchLegacyDashboardSummary(
 
     return createDashboardSummary({
         nodes: nodesResult.payload,
-        apps: appsResult.payload,
+        projects: projectsResult.payload,
         processes: processesResult.payload,
         tools: toolsResult.payload,
         apiStatuses: results,
@@ -290,20 +290,20 @@ function dashboardTemplate(summary: DashboardSummary): string {
     return `
         <section class="metric-strip is-compact" aria-label="Fleet summary">
             ${metricTemplate('Nodes', summary.totals.nodes)}
-            ${metricTemplate('Apps', summary.totals.apps)}
+            ${metricTemplate('Projects', summary.totals.projects)}
             ${metricTemplate('Databases', summary.totals.databases)}
         </section>
         <section class="dashboard-lists">
             ${summaryList('Nodes', summary.nodeGroups.map(group => listRow({
                 title: group.node.name,
                 meta: group.node.roles.join(', '),
-                value: `${group.apps.length} apps`,
+                value: `${group.instances.length} instances`,
                 action: `data-node="${escapeAttribute(group.node.name)}"`,
             })))}
-            ${summaryList('Apps', summary.apps.map(app => listRow({
-                title: app.name,
-                meta: app.node,
-                value: app.status,
+            ${summaryList('Projects', summary.projects.map(project => listRow({
+                title: project.name,
+                meta: `${project.instances.length} instances`,
+                value: project.status,
             })))}
             ${summaryList('Databases', summary.databases.map(database => listRow({
                 title: database.name,
@@ -325,7 +325,7 @@ function nodesTemplate(summary: DashboardSummary): string {
         <tr data-node="${escapeAttribute(group.node.name)}">
             <td><button type="button" class="text-link" data-node="${escapeAttribute(group.node.name)}">${escapeHtml(group.node.name)}</button></td>
             <td>${escapeHtml(group.node.roles.join(', '))}</td>
-            <td>${group.apps.length}</td>
+            <td>${group.instances.length}</td>
             <td>${group.databases.length}</td>
             <td>${group.tools.length}</td>
             <td>${group.processes.length}</td>
@@ -337,9 +337,9 @@ function nodesTemplate(summary: DashboardSummary): string {
         <section class="table-panel">
             <header>
                 <h2>Nodes</h2>
-                <p>${summary.totals.nodes} nodes across ${summary.totals.apps} apps and ${summary.totals.databases} databases.</p>
+                <p>${summary.totals.nodes} nodes across ${summary.totals.projects} projects, ${summary.totals.instances} instances, and ${summary.totals.databases} databases.</p>
             </header>
-            ${tableTemplate(['Node', 'Roles', 'Apps', 'Databases', 'Tools', 'Processes', 'Status'], rows)}
+            ${tableTemplate(['Node', 'Roles', 'Instances', 'Databases', 'Tools', 'Processes', 'Status'], rows)}
         </section>
     `;
 }
@@ -357,8 +357,8 @@ function nodeDetailTemplate(group: NodeRuntimeGroup): string {
                     <dd>${escapeHtml(group.node.address)}</dd>
                 </div>
                 <div>
-                    <dt>Apps</dt>
-                    <dd>${group.apps.length}</dd>
+                    <dt>Instances</dt>
+                    <dd>${group.instances.length}</dd>
                 </div>
                 <div>
                     <dt>Databases</dt>
@@ -376,7 +376,7 @@ function nodeDetailTemplate(group: NodeRuntimeGroup): string {
             <section class="detail-grid">
                 <nav class="detail-tabs" aria-label="Node inventory categories">
                     ${detailTabButton('roles', `Roles ${group.node.roles.length}`)}
-                    ${detailTabButton('apps', `Apps ${group.apps.length}`)}
+                    ${detailTabButton('instances', `Instances ${group.instances.length}`)}
                     ${detailTabButton('databases', `Databases ${group.databases.length}`)}
                     ${detailTabButton('processes', `Processes ${group.processes.length}`)}
                     ${detailTabButton('tools', `Tools ${group.tools.length}`)}
@@ -415,11 +415,11 @@ function nodeDetailTable(group: NodeRuntimeGroup): string {
 
     if (viewState.detailTab === 'processes') {
         return tableTemplate(
-            ['Process', 'App', 'Runtime', 'Status'],
+            ['Process', 'Project', 'Runtime', 'Status'],
             group.processes.map(process => `
                 <tr>
                     <td>${escapeHtml(process.name)}</td>
-                    <td>${escapeHtml(process.app)}</td>
+                    <td>${escapeHtml(process.project)}</td>
                     <td>${escapeHtml(process.runtime)}</td>
                     <td>${escapeHtml(process.status)}</td>
                 </tr>
@@ -441,12 +441,13 @@ function nodeDetailTable(group: NodeRuntimeGroup): string {
     }
 
     return tableTemplate(
-        ['App', 'Environment', 'Status'],
-        group.apps.map(appSummary => `
+        ['Project', 'Instance', 'Environment', 'Status'],
+        group.instances.map(instance => `
             <tr>
-                <td>${escapeHtml(appSummary.name)}</td>
-                <td>${escapeHtml(appSummary.environment)}</td>
-                <td>${escapeHtml(appSummary.status)}</td>
+                <td>${escapeHtml(instance.project)}</td>
+                <td>${escapeHtml(instance.name)}</td>
+                <td>${escapeHtml(instance.environment)}</td>
+                <td>${escapeHtml(instance.status)}</td>
             </tr>
         `).join(''),
     );
@@ -637,7 +638,7 @@ function bindShellActions(): void {
             if (nodeName !== undefined && nodeName !== '') {
                 viewState.view = 'nodes';
                 viewState.selectedNodeName = nodeName;
-                viewState.detailTab = 'apps';
+                viewState.detailTab = 'instances';
                 rerenderLastState();
             }
         });
@@ -704,7 +705,7 @@ function pageSubtitle(summary: DashboardSummary): string | null {
 
 function isNodeDetailTab(value: string | undefined): value is NodeDetailTab {
     return value === 'roles'
-        || value === 'apps'
+        || value === 'instances'
         || value === 'databases'
         || value === 'processes'
         || value === 'tools';

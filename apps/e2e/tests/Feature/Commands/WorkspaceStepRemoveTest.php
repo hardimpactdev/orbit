@@ -25,7 +25,7 @@ function workspaceStepRemoveSeed(E2ETopologyHarness $topology): void
         \Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
         \Illuminate\Support\Facades\DB::table('workspace_steps')->delete();
         \Illuminate\Support\Facades\DB::table('workspaces')->delete();
-        \App\Models\App::query()->delete();
+        \App\Models\Project::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             'consumer_node_id' => $nodes->get('operator-1'),
@@ -36,7 +36,7 @@ function workspaceStepRemoveSeed(E2ETopologyHarness $topology): void
             'updated_at' => now(),
         ]);
 
-        $app = \App\Models\App::query()->create([
+        $app = \App\Models\Project::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'path' => '/srv/docs',
@@ -96,7 +96,7 @@ it('removes workspace setup and teardown steps from a non-gateway caller through
         $checkout = escapeshellarg($topology->checkout('operator'));
         $setupListResult = $topology->ssh(
             'operator',
-            "cd {$checkout} && orbit workspace-setup-step:list --app=docs --json",
+            "cd {$checkout} && orbit workspace-setup-step:list --instance=docs --json",
             timeoutSeconds: 120,
         );
         $setupListPayload = json_decode(
@@ -109,7 +109,7 @@ it('removes workspace setup and teardown steps from a non-gateway caller through
 
         $removeSetupResult = $topology->ssh(
             'operator',
-            "cd {$checkout} && orbit workspace-setup-step:remove --app=docs --step={$setupRemoveId} --force --json",
+            "cd {$checkout} && orbit workspace-setup-step:remove --instance=docs --step={$setupRemoveId} --force --json",
             timeoutSeconds: 120,
         );
         $removeSetupPayload = json_decode(
@@ -120,7 +120,7 @@ it('removes workspace setup and teardown steps from a non-gateway caller through
 
         $teardownListBeforeResult = $topology->ssh(
             'operator',
-            "cd {$checkout} && orbit workspace-teardown-step:list --app=docs --json",
+            "cd {$checkout} && orbit workspace-teardown-step:list --instance=docs --json",
             timeoutSeconds: 120,
         );
         $teardownListBeforePayload = json_decode(
@@ -132,7 +132,7 @@ it('removes workspace setup and teardown steps from a non-gateway caller through
 
         $removeTeardownResult = $topology->ssh(
             'operator',
-            "cd {$checkout} && orbit workspace-teardown-step:remove --app=docs --step={$teardownRemoveId} --force --json",
+            "cd {$checkout} && orbit workspace-teardown-step:remove --instance=docs --step={$teardownRemoveId} --force --json",
             timeoutSeconds: 120,
         );
         $removeTeardownPayload = json_decode(
@@ -143,7 +143,7 @@ it('removes workspace setup and teardown steps from a non-gateway caller through
 
         $teardownListResult = $topology->ssh(
             'operator',
-            "cd {$checkout} && orbit workspace-teardown-step:list --app=docs --json",
+            "cd {$checkout} && orbit workspace-teardown-step:list --instance=docs --json",
             timeoutSeconds: 120,
         );
         $teardownListPayload = json_decode(

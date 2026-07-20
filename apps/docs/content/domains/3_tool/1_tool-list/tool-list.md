@@ -13,7 +13,7 @@ unless a future command contract adds an explicit live inspection option.
 ## Usage
 
 ```bash
-orbit tool:list [--app=<app>] [--node=<node>] [--all] [--json]
+orbit tool:list [--instance=<project.instance>] [--node=<node>] [--all] [--json]
 ```
 
 ## Examples
@@ -22,14 +22,14 @@ orbit tool:list [--app=<app>] [--node=<node>] [--all] [--json]
 orbit tool:list
 orbit tool:list --node=app-1
 orbit tool:list --all
-orbit tool:list --app=docs
+orbit tool:list --instance=docs
 orbit tool:list --json
 ```
 
 ## Arguments and options
 
 - `--node`: Limit results to one visible node.
-- `--app`: Resolve the owning node from an app and limit results to that
+- `--instance`: Resolve the owning node from an app and limit results to that
   node.
 - `--all`: Show visible tools across all nodes instead of defaulting to the
   local default node or current caller node.

@@ -14,11 +14,11 @@ final class CfCacheRuleAddCommand extends CloudflareGatewayCommand
 
     #[\Override]
     protected $signature = 'cf-cache-rule:add
-        {app? : Orbit app name}
+        {project? : Orbit project name}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Add or converge a Cloudflare cache rule for an app through the gateway.';
+    protected $description = 'Add or converge a Cloudflare cache rule for a project through the gateway.';
 
     public function handle(): int
     {
@@ -26,15 +26,15 @@ final class CfCacheRuleAddCommand extends CloudflareGatewayCommand
             return $failure;
         }
 
-        $app = $this->requiredArgument('app', 'app', 'An app name is required.');
+        $project = $this->requiredArgument('project', 'project', 'A project name is required.');
 
-        if (is_int($app)) {
-            return $app;
+        if (is_int($project)) {
+            return $project;
         }
 
         if ($this->wantsJson()) {
             try {
-                $response = $this->addRule($app);
+                $response = $this->addRule($project);
             } catch (GatewayApiException $exception) {
                 return $this->renderGatewayFailure($exception);
             }
@@ -42,28 +42,30 @@ final class CfCacheRuleAddCommand extends CloudflareGatewayCommand
             return $this->renderSuccess($response);
         }
 
-        return $this->renderAddTree($app);
+        return $this->renderAddTree($project);
     }
 
-    private function renderAddTree(string $app): int
+    private function renderAddTree(string $project): int
     {
         $response = [];
 
         $outcome = $this->runStepOperation(
             'Adding Cloudflare cache rule',
             [
-                ['label' => 'Resolve app domain'],
+                ['label' => 'Resolve project domain'],
                 ['label' => 'Resolve Cloudflare zone'],
                 ['label' => 'Write cache rule'],
             ],
-            work: function () use ($app, &$response): array {
-                return $response = $this->addRuleForHuman($app);
+            work: function () use ($project, &$response): array {
+                return $response = $this->addRuleForHuman($project);
             },
-            doneFooter: function () use ($app, &$response): string {
-                $resolvedApp = $this->successData($response)['app'] ?? null;
-                $displayApp = is_string($resolvedApp) && $resolvedApp !== '' ? $resolvedApp : $app;
+            doneFooter: function () use ($project, &$response): string {
+                $resolvedProject = $this->successData($response)['project'] ?? null;
+                $displayProject = is_string($resolvedProject) && $resolvedProject !== ''
+                    ? $resolvedProject
+                    : $project;
 
-                return "Cloudflare cache rule ready for {$displayApp}: respect origin Cache-Control";
+                return "Cloudflare cache rule ready for {$displayProject}: respect origin Cache-Control";
             },
         );
 
@@ -73,18 +75,18 @@ final class CfCacheRuleAddCommand extends CloudflareGatewayCommand
     /**
      * @return array<string, mixed>
      */
-    private function addRule(string $app): array
+    private function addRule(string $project): array
     {
-        return $this->gatewayPost('/api/cloudflare/cache-rules/'.rawurlencode($app));
+        return $this->gatewayPost('/api/cloudflare/cache-rules/'.rawurlencode($project));
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function addRuleForHuman(string $app): array
+    private function addRuleForHuman(string $project): array
     {
         try {
-            return $this->addRule($app);
+            return $this->addRule($project);
         } catch (GatewayApiException $exception) {
             throw new RuntimeException(
                 $exception->gatewayErrorMessage() ?? $exception->getMessage(),

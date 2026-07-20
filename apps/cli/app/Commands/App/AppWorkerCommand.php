@@ -9,18 +9,18 @@ use App\Exceptions\GatewayApiException;
 final class AppWorkerCommand extends AppGatewayCommand
 {
     #[\Override]
-    protected $signature = 'app:worker
+    protected $signature = 'instance:worker
         {action? : Action to perform (show|enable|disable)}
-        {app? : App name or hostname}
+        {instance? : Instance selector (project.instance or hostname)}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Inspect or change FrankenPHP worker mode for an app.';
+    protected $description = 'Inspect or change FrankenPHP worker mode for an instance.';
 
     public function handle(): int
     {
         $action = $this->stringArgument('action');
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('instance');
 
         if (! in_array($action, ['show', 'enable', 'disable'], true)) {
             return $this->renderFailure(
@@ -31,13 +31,13 @@ final class AppWorkerCommand extends AppGatewayCommand
         }
 
         if ($selector === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         try {
             $response = $action === 'show'
-                ? $this->gatewayGet($this->apiAppPath($selector, '/worker'))
-                : $this->gatewayPost($this->apiAppPath($selector, "/worker/{$action}"));
+                ? $this->gatewayGet($this->apiInstancePath($selector, '/worker'))
+                : $this->gatewayPost($this->apiInstancePath($selector, "/worker/{$action}"));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -55,11 +55,11 @@ final class AppWorkerCommand extends AppGatewayCommand
     private function renderWorker(string $action, string $selector, array $response): int
     {
         $data = $this->successData($response);
-        $app = is_string($data['app'] ?? null) && $data['app'] !== '' ? $data['app'] : $selector;
-        $instance = is_string($data['app_instance'] ?? null) && $data['app_instance'] !== ''
-            ? $data['app_instance']
+        $project = is_string($data['project'] ?? null) && $data['project'] !== '' ? $data['project'] : $selector;
+        $instance = is_string($data['instance'] ?? null) && $data['instance'] !== ''
+            ? $data['instance']
             : null;
-        $target = $instance !== null ? "{$app}.{$instance}" : $selector;
+        $target = $instance !== null ? "{$project}.{$instance}" : $selector;
         $enabled = ($data['worker_enabled'] ?? null) === true;
         $changed = ($data['changed'] ?? null) === true;
 
@@ -72,21 +72,21 @@ final class AppWorkerCommand extends AppGatewayCommand
         return self::SUCCESS;
     }
 
-    private function statusLine(string $action, string $app, bool $enabled, bool $changed): string
+    private function statusLine(string $action, string $instance, bool $enabled, bool $changed): string
     {
         if ($action === 'show') {
             $state = $enabled ? 'enabled' : 'disabled';
 
-            return "App instance '{$app}' worker mode is {$state}.";
+            return "Instance '{$instance}' worker mode is {$state}.";
         }
 
         $verb = $action === 'enable' ? 'enabled' : 'disabled';
 
         if ($changed) {
-            return "App instance '{$app}' worker mode {$verb}.";
+            return "Instance '{$instance}' worker mode {$verb}.";
         }
 
-        return "App instance '{$app}' worker mode already {$verb}.";
+        return "Instance '{$instance}' worker mode already {$verb}.";
     }
 
     /**

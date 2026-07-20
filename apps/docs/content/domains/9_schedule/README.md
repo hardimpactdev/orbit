@@ -34,24 +34,24 @@ These rules describe what the schedule command family owns and where each kind o
 
 #### Schedule scope and target
 
-Schedules may target one concrete app instance, a node, or Orbit-owned
+Schedules may target one concrete instance, a node, or Orbit-owned
 maintenance work. The scope determines which node physically runs the command;
 the gateway always dispatches.
 
-- App-scoped schedules belong to exactly one app instance and execute on that
+- Instance-scoped schedules belong to exactly one instance and execute on that
   instance's serving node and path using its host PHP toolchain (the same
   placement contract deploy steps use).
 - Node-scoped schedules execute on the selected node.
 - Orbit-scoped maintenance schedules execute inside the gateway container
   boundary by default. A command may override that default by documenting
   another serving node explicitly.
-- A Laravel scheduler is a normal app-scoped schedule that runs `php artisan schedule:run` every minute.
+- A Laravel scheduler is a normal instance-scoped schedule that runs `php artisan schedule:run` every minute.
 
-App selectors use `app.instance`, such as `docs.production`. A bare logical app
+App selectors use `app.instance`, such as `docs.production`. A bare project
 name is shorthand only when exactly one eligible instance is visible to the
 caller for the requested schedule permission. Ambiguity fails before reads,
 writes, dispatch, or destructive side effects. Schedule names are unique within
-the concrete target, so two instances of one logical app may own schedules with
+the concrete target, so two instances of one project may own schedules with
 the same name.
 
 When the target is not the gateway itself, the gateway dispatches the run through `internal:schedule:run` over agent-push. The scheduled command executes on the target node, but the gateway records every result centrally.
@@ -103,7 +103,7 @@ gateway/schedule recovery explicitly.
 ### Permissions
 
 Schedule API requests are authorized against the schedule target node.
-App-scoped schedules use the selected app instance's serving node, node-scoped
+Instance-scoped schedules use the selected instance's serving node, node-scoped
 schedules use the selected node, and Orbit-scoped schedules use the gateway
 node.
 
@@ -120,7 +120,7 @@ These checks apply to user-facing add, list, show, remove, logs, and manual run
 requests. Once a request is accepted—or a recurring schedule becomes
 due—the gateway dispatches under gateway implicit authority. Internal
 gateway-to-node authentication protects transport; it is not a second user
-permission check. Moving an app instance changes the serving node resolved at
+permission check. Moving an instance changes the serving node resolved at
 execution time and does not reauthorize each stored schedule.
 
 ## Schedule JSON Entity
@@ -191,5 +191,5 @@ Use these commands to manage schedules across the full lifecycle.
 These references cover schedule diagnostics and the neighboring command families that schedules interact with.
 
 - [`doctor --family=schedule`](schedule-doctor.md)
-- [`orbit app:*`](../5_app/README.md)
+- [`orbit app:*`](../5_project/README.md)
 - [`orbit node:*`](../1_node/README.md)

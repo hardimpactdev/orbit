@@ -15,7 +15,10 @@ return [
         'validation_failed',
     ],
     'products' => [
-        'app' => [
+        'project' => [
+            'not_found',
+        ],
+        'instance' => [
             'exec_command_not_executable',
             'exec_command_not_found',
             'exec_container_not_running',

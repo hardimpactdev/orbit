@@ -5,12 +5,14 @@ declare(strict_types=1);
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerSwarmProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -20,8 +22,8 @@ uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function (): void {
     app()->instance(
-        \App\Services\RemoteShell\RunsInternalCommands::class,
-        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+        RunsInternalCommands::class,
+        app(RemoteLocalExecutor::class),
     );
 });
 
@@ -35,7 +37,7 @@ it('runs docker process lifecycle through the docker runtime driver', function (
             'name' => 'app-dev-1',
             'wireguard_address' => '10.44.0.71',
         ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($app)
         ->create([
@@ -74,7 +76,7 @@ it('applies, removes, and cleans up docker process runtime units through the doc
             'user' => 'orbit',
             'wireguard_address' => '10.44.0.71',
         ]);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/srv/docs',
@@ -126,7 +128,7 @@ it('applies node owned docker service processes from runtime config', function (
             'name' => 'database-1',
             'wireguard_address' => '10.44.0.72',
         ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -194,7 +196,7 @@ it('publishes managed service ports when applying node owned docker processes', 
             'name' => 'beast',
             'wireguard_address' => '10.6.0.7',
         ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -234,7 +236,7 @@ it('renders managed service data paths as docker named volumes for node owned do
             'name' => 'database-1',
             'wireguard_address' => '10.44.0.72',
         ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -298,7 +300,7 @@ it('runs docker swarm process lifecycle through the docker swarm runtime driver'
             'name' => 'database-1',
             'wireguard_address' => '10.44.0.72',
         ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -340,7 +342,7 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
             'name' => 'database-1',
             'wireguard_address' => '10.44.0.72',
         ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -446,7 +448,7 @@ it('does not exit early from docker swarm apply scripts when the service spec al
             'name' => 'metrics-1',
             'wireguard_address' => '10.44.0.72',
         ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -481,7 +483,7 @@ it('uses the image entrypoint for docker swarm service processes configured for 
             'name' => 'metrics-1',
             'wireguard_address' => '10.44.0.72',
         ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -519,7 +521,7 @@ it('runs systemd process lifecycle through the systemd runtime driver', function
             'orbit_path' => '/home/orbit/orbit',
             'wireguard_address' => '10.44.0.71',
         ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([
@@ -561,7 +563,7 @@ it('applies, removes, and cleans up systemd process runtime units through the sy
             'orbit_path' => '/home/orbit/orbit',
             'wireguard_address' => '10.44.0.71',
         ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
         ->create([

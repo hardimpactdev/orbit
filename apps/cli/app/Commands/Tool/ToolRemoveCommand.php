@@ -11,7 +11,7 @@ final class ToolRemoveCommand extends ToolGatewayCommand
     #[\Override]
     protected $signature = 'tool:remove
         {tool? : Tool catalog name to remove}
-        {--app= : Resolve target by app selector}
+        {--instance= : Resolve target by instance selector}
         {--node= : Resolve target by node}
         {--force : Confirm destructive removal}
         {--json : Output JSON}';

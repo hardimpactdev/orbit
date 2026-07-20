@@ -22,7 +22,7 @@ describe('process:logs', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:logs', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--workspace' => 'feature-docs',
             '--lines' => 5,
             '--json' => true,
@@ -36,7 +36,7 @@ describe('process:logs', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/processes/vite/log')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'instance=docs')
                 && str_contains($url, 'workspace=feature-docs')
                 && str_contains($url, 'lines=5')
             );
@@ -63,7 +63,7 @@ describe('process:logs', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:logs', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
         ]);
 
         expect($exitCode)
@@ -133,7 +133,7 @@ describe('process:logs', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:logs', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--follow' => true,
             '--lines' => 5,
         ]);
@@ -144,7 +144,7 @@ describe('process:logs', function (): void {
             return (
                 $request->method() === 'POST'
                 && str_contains($url, '/api/processes/vite/log-stream')
-                && $request['app'] === 'docs'
+                && $request['instance'] === 'docs'
                 && $request['lines'] === 5
             );
         });
@@ -157,7 +157,7 @@ describe('process:logs', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:logs', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--follow' => true,
             '--json' => true,
         ]);
@@ -196,7 +196,7 @@ describe('process:logs', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:logs', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--lines' => 0,
             '--json' => true,
         ]);
@@ -218,7 +218,7 @@ describe('process:logs', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:logs', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--json' => true,
         ]);
 

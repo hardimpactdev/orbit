@@ -18,7 +18,7 @@ describe('database:list', function (): void {
         ], ['count' => 1]));
 
         [$exitCode, $output] = runCommand($this, 'database:list', [
-            '--app' => 'docs',
+            '--instance' => 'docs.production',
             '--json' => true,
         ]);
 
@@ -30,7 +30,7 @@ describe('database:list', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/database-connections')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'instance=docs.production')
             );
         });
 
@@ -42,11 +42,11 @@ describe('database:list', function (): void {
             ->toBe(1);
     });
 
-    it('rejects combined app and workspace scope before calling the gateway', function (): void {
+    it('rejects combined instance and workspace scope before calling the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope(['connections' => []]));
 
         [$exitCode, $output] = runCommand($this, 'database:list', [
-            '--app' => 'docs',
+            '--instance' => 'docs.production',
             '--workspace' => 'feature-docs',
             '--json' => true,
         ]);
@@ -247,8 +247,8 @@ describe('database:show', function (): void {
                 'node' => 'beast',
                 'targets' => [
                     [
-                        'type' => 'app_instance',
-                        'app' => 'ditis-hr',
+                        'type' => 'instance',
+                        'project' => 'ditis-hr',
                         'instance' => 'development',
                         'env_prefix' => 'DB',
                     ],

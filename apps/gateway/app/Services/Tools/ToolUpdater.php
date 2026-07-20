@@ -6,7 +6,6 @@ namespace App\Services\Tools;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeStatus;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
@@ -19,6 +18,7 @@ final readonly class ToolUpdater
         private ToolCatalog $catalog,
         private ToolRegistry $registry,
         private ToolScriptDispatcher $toolScriptDispatcher,
+        private ToolAppNodeResolver $instanceNodes,
         private NodeRoleAssignments $nodeRoleAssignments,
         private RemoteSecretFile $remoteSecretFile,
         private GitHubTokenResolver $githubTokenResolver,
@@ -114,16 +114,10 @@ final readonly class ToolUpdater
         }
 
         if ($app !== null) {
-            $appModel = App::query()
-                ->with('node')
-                ->where(function ($query) use ($app): void {
-                    $query->where('name', $app)
-                        ->orWhere('domain', $app);
-                })
-                ->first();
+            $instanceNode = $this->instanceNodes->resolve($app);
 
-            if ($appModel instanceof App && $appModel->node instanceof Node) {
-                $query->where('node_id', $appModel->node->id);
+            if ($instanceNode instanceof Node) {
+                $query->where('node_id', $instanceNode->id);
             }
         }
 

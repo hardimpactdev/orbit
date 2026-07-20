@@ -7,9 +7,9 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Apps\AppWorkerService;
 use App\Services\Nodes\Access\AuthorizationResult;
@@ -31,19 +31,25 @@ final class AppWorkerController implements Loggable
         private readonly NodeAccessAuthorizer $authorizer,
     ) {}
 
-    public function show(string $app, Request $request, AppWorkerService $service): JsonResponse
+    public function show(string $instance, Request $request, AppWorkerService $service): JsonResponse
     {
-        return $this->dispatch('show', 'app:read', $app, $request, $service);
+        $app = $instance;
+
+        return $this->dispatch('show', 'instance:read', $app, $request, $service);
     }
 
-    public function enable(string $app, Request $request, AppWorkerService $service): JsonResponse
+    public function enable(string $instance, Request $request, AppWorkerService $service): JsonResponse
     {
-        return $this->dispatch('enable', 'app:worker', $app, $request, $service);
+        $app = $instance;
+
+        return $this->dispatch('enable', 'instance:worker', $app, $request, $service);
     }
 
-    public function disable(string $app, Request $request, AppWorkerService $service): JsonResponse
+    public function disable(string $instance, Request $request, AppWorkerService $service): JsonResponse
     {
-        return $this->dispatch('disable', 'app:worker', $app, $request, $service);
+        $app = $instance;
+
+        return $this->dispatch('disable', 'instance:worker', $app, $request, $service);
     }
 
     private function dispatch(
@@ -72,7 +78,12 @@ final class AppWorkerController implements Loggable
             $selection = $this->selectorResolver->resolve($selector, $instanceIsVisible);
 
             if ($selection === null) {
-                return $this->error('app.not_found', "App '{$selector}' not found.", ['app' => $selector], 404);
+                return $this->error(
+                    'instance.not_found',
+                    "Instance '{$selector}' not found.",
+                    ['instance' => $selector],
+                    404,
+                );
             }
 
             $selection = $this->selectorResolver->requireInstance(
@@ -114,12 +125,12 @@ final class AppWorkerController implements Loggable
                 $readiness = $result['readiness'];
 
                 return $this->error(
-                    $readiness->code ?? 'app.worker_readiness_failed',
+                    $readiness->code ?? 'instance.worker_readiness_failed',
                     $readiness->message
-                    ?? "App instance '{$selection->app->name}.{$instance->name}' is not ready for worker mode.",
+                    ?? "Instance '{$selection->app->name}.{$instance->name}' is not ready for worker mode.",
                     array_merge([
-                        'app' => $selection->app->name,
-                        'app_instance' => $instance->name,
+                        'project' => $selection->app->name,
+                        'instance' => $instance->name,
                         'missing' => $readiness->missing,
                     ], $readiness->meta),
                 );
@@ -148,28 +159,28 @@ final class AppWorkerController implements Loggable
     }
 
     /**
-     * @return array{app: string, app_instance: string, worker_enabled: bool, worker_config: array<string, mixed>|null}
+     * @return array{project: string, instance: string, worker_enabled: bool, worker_config: array<string, mixed>|null}
      */
-    private function workerPayload(App $app, AppInstance $instance): array
+    private function workerPayload(Project $app, AppInstance $instance): array
     {
         return [
-            'app' => $app->name,
-            'app_instance' => $instance->name,
+            'project' => $app->name,
+            'instance' => $instance->name,
             'worker_enabled' => $instance->worker_enabled,
             'worker_config' => is_array($instance->worker_config) ? $instance->worker_config : null,
         ];
     }
 
-    private function instanceUnavailable(App $app, ?AppInstance $instance): JsonResponse
+    private function instanceUnavailable(Project $app, ?AppInstance $instance): JsonResponse
     {
         return $this->error(
             'validation_failed',
-            "App instance '{$app->name}.{$instance?->name}' does not resolve an Orbit serving node.",
+            "Instance '{$app->name}.{$instance?->name}' does not resolve an Orbit serving node.",
             [
-                'field' => 'app',
-                'reason' => 'app_instance_unavailable',
-                'app' => $app->name,
-                'app_instance' => $instance?->name,
+                'field' => 'instance',
+                'reason' => 'instance_unavailable',
+                'project' => $app->name,
+                'instance' => $instance?->name,
             ],
         );
     }
@@ -215,9 +226,9 @@ final class AppWorkerController implements Loggable
     public function type(): string
     {
         return match ($this->currentAction) {
-            'enable' => 'api:POST /apps/{app}/worker/enable',
-            'disable' => 'api:POST /apps/{app}/worker/disable',
-            default => 'api:GET /apps/{app}/worker',
+            'enable' => 'api:POST /instances/{instance}/worker/enable',
+            'disable' => 'api:POST /instances/{instance}/worker/disable',
+            default => 'api:GET /instances/{instance}/worker',
         };
     }
 

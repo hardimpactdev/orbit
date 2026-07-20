@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Php\PhpRuntimeCatalog;
@@ -20,7 +20,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-function makePhpApp(array $overrides = []): App
+function makePhpApp(array $overrides = []): Project
 {
     $node = createTestAppHostNode(['user' => 'orbit']);
 
@@ -36,10 +36,10 @@ function makePhpApp(array $overrides = []): App
 /**
  * @param  array<string, mixed>  $attributes
  */
-function makeRuntimeRendererApp(Node $node, array $attributes): App
+function makeRuntimeRendererApp(Node $node, array $attributes): Project
 {
-    $app = App::factory()->for($node, 'node')->create($attributes);
-    assert($app instanceof App);
+    $app = Project::factory()->for($node, 'node')->create($attributes);
+    assert($app instanceof Project);
 
     return $app;
 }
@@ -55,7 +55,7 @@ function rendererForTest(): AppRuntimeContainerRenderer
 /**
  * @param  array<string, mixed>  $overrides
  */
-function workerRuntimeInstance(App $app, array $overrides = []): AppInstance
+function workerRuntimeInstance(Project $app, array $overrides = []): AppInstance
 {
     $app->loadMissing('node');
 

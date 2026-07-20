@@ -10,21 +10,21 @@ final class DeployLogCommand extends DeployGatewayCommand
 {
     #[\Override]
     protected $signature = 'deploy:log
-        {app? : Production app-instance selector}
+        {instance? : Instance selector (project.instance)}
         {run? : Deployment run id}
         {--step= : Deployment run step id}
         {--lines=500 : Lines per captured stream}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Show stored deployment output for a production app instance run.';
+    protected $description = 'Show stored deployment output for an instance run.';
 
     public function handle(): int
     {
-        $app = $this->requiredArgument('app', 'app', 'App is required.');
+        $instanceSelector = $this->requiredArgument('instance', 'instance', 'Instance is required.');
 
-        if (is_int($app)) {
-            return $app;
+        if (is_int($instanceSelector)) {
+            return $instanceSelector;
         }
 
         $run = $this->positiveIntArgument('run', 'Run');
@@ -44,7 +44,7 @@ final class DeployLogCommand extends DeployGatewayCommand
 
         try {
             $response = $this->gatewayGet('/api/deploy/log/'.$run, $this->filledQuery([
-                'app' => $app,
+                'instance' => $instanceSelector,
                 'step' => $step,
                 'lines' => $lines,
             ]));

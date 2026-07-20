@@ -31,15 +31,15 @@ These terms describe the analytics role and the routes around it.
   converges its route and TLS after Plausible is healthy; removal deletes the
   route and its rendered artifacts.
 - **Public app analytics host:** Public hostname such as
-  `analytics.example.com` attached to one selected concrete app instance. It
+  `analytics.example.com` attached to one selected concrete instance. It
   proxies Plausible script and event-ingest paths only. The default is
   `analytics.<instance-domain>`, so the selected instance must have a public
   domain before analytics can be enabled. Its serving node is the placement
   and authorization boundary even though ingress and router serve the route.
 - **App analytics binding:** App-owned state that may keep shared
-  non-placement analytics policy on the logical app, while every public domain,
+  non-placement analytics policy on the project, while every public domain,
   tracking host, route target, and serving-node authorization reference belongs
-  to one selected app instance. Enabling a binding converges router and ingress
+  to one selected instance. Enabling a binding converges router and ingress
   artifacts before success; disabling or replacing hosts removes obsolete
   artifacts before clearing their intent.
 

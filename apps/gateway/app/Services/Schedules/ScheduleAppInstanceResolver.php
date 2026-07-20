@@ -7,9 +7,9 @@ namespace App\Services\Schedules;
 use App\Data\Apps\AppSelection;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Schedule;
 use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -61,23 +61,23 @@ final readonly class ScheduleAppInstanceResolver
 
         if ($visible === [] && $eligible !== []) {
             throw new GatewayApiException(
-                'This node is not authorized to manage schedules for the selected app.',
+                'This node is not authorized to manage schedules for the selected project.',
                 'authorization_failed',
                 [
                     'reason' => 'missing_permission',
                     'missing_permission' => $permission,
-                    'app' => $selection->app->name,
+                    'project' => $selection->app->name,
                 ],
             );
         }
 
         throw new GatewayApiException(
-            "App '{$selection->app->name}' requires a concrete app instance selector.",
+            "Project '{$selection->app->name}' requires a concrete instance selector.",
             'validation_failed',
             [
-                'field' => 'app',
-                'reason' => 'app_instance_required',
-                'app' => $selection->app->name,
+                'field' => 'instance',
+                'reason' => 'instance_required',
+                'project' => $selection->app->name,
                 'instances' => array_map(
                     static fn (AppInstance $instance): string => $instance->name,
                     $visible,
@@ -134,12 +134,12 @@ final readonly class ScheduleAppInstanceResolver
 
         if (! $instance instanceof AppInstance) {
             throw new GatewayApiException(
-                "App instance '{$selection->selector}' cannot run schedules.",
+                "Instance '{$selection->selector}' cannot run schedules.",
                 'validation_failed',
                 [
-                    'field' => 'app',
-                    'reason' => 'app_instance_unavailable',
-                    'app' => $selection->app->name,
+                    'field' => 'instance',
+                    'reason' => 'instance_unavailable',
+                    'project' => $selection->app->name,
                     'instance' => $instance?->name,
                 ],
             );
@@ -149,11 +149,11 @@ final readonly class ScheduleAppInstanceResolver
 
         if (! $canAccess && ! $this->nodeRoleAssignments->nodeIsGateway($caller)) {
             throw new GatewayApiException(
-                "App instance '{$selection->selector}' not found.",
+                "Instance '{$selection->selector}' not found.",
                 'validation_failed',
                 [
-                    'field' => 'app',
-                    'app' => $selection->app->name,
+                    'field' => 'instance',
+                    'project' => $selection->app->name,
                     'instance' => $selection->instanceSelector,
                 ],
             );
@@ -161,12 +161,12 @@ final readonly class ScheduleAppInstanceResolver
 
         if (! $this->isEligible($instance)) {
             throw new GatewayApiException(
-                "App instance '{$selection->selector}' cannot run schedules.",
+                "Instance '{$selection->selector}' cannot run schedules.",
                 'validation_failed',
                 [
-                    'field' => 'app',
-                    'reason' => 'app_instance_unavailable',
-                    'app' => $selection->app->name,
+                    'field' => 'instance',
+                    'reason' => 'instance_unavailable',
+                    'project' => $selection->app->name,
                     'instance' => $instance->name,
                 ],
             );
@@ -179,7 +179,7 @@ final readonly class ScheduleAppInstanceResolver
         $node = $this->targetNode($instance);
 
         throw new GatewayApiException(
-            'This node is not authorized to manage schedules for the selected app instance.',
+            'This node is not authorized to manage schedules for the selected instance.',
             'authorization_failed',
             [
                 'reason' => 'missing_permission',
@@ -192,7 +192,7 @@ final readonly class ScheduleAppInstanceResolver
     /**
      * @return list<AppInstance>
      */
-    private function eligibleInstances(App $app): array
+    private function eligibleInstances(Project $app): array
     {
         $app->loadMissing('instances');
 

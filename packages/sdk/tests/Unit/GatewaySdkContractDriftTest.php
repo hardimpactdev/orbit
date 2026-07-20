@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Laravel\Tests\Unit;
 
 use Orbit\Sdk\Laravel\GatewayRequest;
-use Orbit\Sdk\Laravel\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Laravel\Requests\Dashboard\ShowRuntimeInventoryRequest;
 use Orbit\Sdk\Laravel\Requests\Database\DetachDatabaseConnectionTargetRequest;
 use Orbit\Sdk\Laravel\Requests\Database\ListDatabaseConnectionsRequest;
@@ -17,6 +16,7 @@ use Orbit\Sdk\Laravel\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Laravel\Requests\Nodes\RemoveNodeRequest;
 use Orbit\Sdk\Laravel\Requests\Php\ShowPhpRuntimeRequest;
 use Orbit\Sdk\Laravel\Requests\Processes\ListProcessesRequest;
+use Orbit\Sdk\Laravel\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Laravel\Requests\Tools\ListToolsRequest;
 use Orbit\Sdk\Laravel\Requests\Workspaces\RemoveWorkspaceRequest;
 use Orbit\Sdk\Laravel\Tests\TestCase;
@@ -62,21 +62,21 @@ function core_dashboard_request_contracts(): array
 {
     return [
         [
-            'name' => 'GET /apps',
-            'request' => ListAppsRequest::class,
+            'name' => 'GET /projects',
+            'request' => ListProjectsRequest::class,
             'arguments' => ['environment' => 'production'],
             'method' => Method::GET,
-            'endpoint' => '/api/apps',
+            'endpoint' => '/api/projects',
             'query' => ['environment' => 'production'],
             'body' => [],
         ],
         [
             'name' => 'GET /database-connections',
             'request' => ListDatabaseConnectionsRequest::class,
-            'arguments' => ['app' => 'docs', 'workspace' => 'feature-docs', 'node' => 'app-1'],
+            'arguments' => ['instance' => 'docs', 'workspace' => 'feature-docs', 'node' => 'app-1'],
             'method' => Method::GET,
             'endpoint' => '/api/database-connections',
-            'query' => ['app' => 'docs', 'workspace' => 'feature-docs', 'node' => 'app-1'],
+            'query' => ['instance' => 'docs', 'workspace' => 'feature-docs', 'node' => 'app-1'],
             'body' => [],
         ],
         [
@@ -85,15 +85,14 @@ function core_dashboard_request_contracts(): array
             'arguments' => [
                 'connection' => 'main',
                 'payload' => [
-                    'app' => 'docs',
-                    'instance' => 'development',
+                    'instance' => 'docs.development',
                     'env_prefix' => 'APP_DB',
                 ],
             ],
             'method' => Method::DELETE,
             'endpoint' => '/api/database-connections/main/targets',
             'query' => [],
-            'body' => ['app' => 'docs', 'instance' => 'development', 'env_prefix' => 'APP_DB'],
+            'body' => ['instance' => 'docs.development', 'env_prefix' => 'APP_DB'],
         ],
         [
             'name' => 'GET /dashboard/runtime-inventory',
@@ -107,28 +106,28 @@ function core_dashboard_request_contracts(): array
         [
             'name' => 'GET /deploy/history',
             'request' => ListDeployHistoryRequest::class,
-            'arguments' => ['app' => 'docs', 'limit' => 25],
+            'arguments' => ['instance' => 'docs', 'limit' => 25],
             'method' => Method::GET,
             'endpoint' => '/api/deploy/history',
-            'query' => ['app' => 'docs', 'limit' => 25],
+            'query' => ['instance' => 'docs', 'limit' => 25],
             'body' => [],
         ],
         [
             'name' => 'GET /deploy/steps',
             'request' => ListDeployStepsRequest::class,
-            'arguments' => ['app' => 'docs'],
+            'arguments' => ['instance' => 'docs'],
             'method' => Method::GET,
             'endpoint' => '/api/deploy/steps',
-            'query' => ['app' => 'docs'],
+            'query' => ['instance' => 'docs'],
             'body' => [],
         ],
         [
             'name' => 'DELETE /deploy/steps/{step}',
             'request' => RemoveDeployStepRequest::class,
-            'arguments' => ['app' => 'docs', 'step' => 'build'],
+            'arguments' => ['instance' => 'docs', 'step' => 'build'],
             'method' => Method::DELETE,
             'endpoint' => '/api/deploy/steps/build',
-            'query' => ['app' => 'docs', 'destructive_consent' => true],
+            'query' => ['instance' => 'docs', 'destructive_consent' => true],
             'body' => [],
         ],
         [
@@ -161,37 +160,37 @@ function core_dashboard_request_contracts(): array
         [
             'name' => 'GET /php/runtime',
             'request' => ShowPhpRuntimeRequest::class,
-            'arguments' => ['app' => 'docs', 'workspace' => 'feature-docs', 'node' => 'app-1', 'live' => true],
+            'arguments' => ['instance' => 'docs', 'workspace' => 'feature-docs', 'node' => 'app-1', 'live' => true],
             'method' => Method::GET,
             'endpoint' => '/api/php/runtime',
-            'query' => ['app' => 'docs', 'workspace' => 'feature-docs', 'node' => 'app-1', 'live' => true],
+            'query' => ['instance' => 'docs', 'workspace' => 'feature-docs', 'node' => 'app-1', 'live' => true],
             'body' => [],
         ],
         [
             'name' => 'GET /processes',
             'request' => ListProcessesRequest::class,
-            'arguments' => ['node' => 'app-1', 'app' => 'docs', 'workspace' => 'feature-docs'],
+            'arguments' => ['node' => 'app-1', 'instance' => 'docs', 'workspace' => 'feature-docs'],
             'method' => Method::GET,
             'endpoint' => '/api/processes',
-            'query' => ['node' => 'app-1', 'app' => 'docs', 'workspace' => 'feature-docs'],
+            'query' => ['node' => 'app-1', 'instance' => 'docs', 'workspace' => 'feature-docs'],
             'body' => [],
         ],
         [
             'name' => 'GET /tools',
             'request' => ListToolsRequest::class,
-            'arguments' => ['app' => 'docs', 'node' => 'app-1', 'self' => true],
+            'arguments' => ['instance' => 'docs', 'node' => 'app-1', 'self' => true],
             'method' => Method::GET,
             'endpoint' => '/api/tools',
-            'query' => ['app' => 'docs', 'node' => 'app-1', 'self' => true],
+            'query' => ['instance' => 'docs', 'node' => 'app-1', 'self' => true],
             'body' => [],
         ],
         [
             'name' => 'DELETE /workspaces/{name}',
             'request' => RemoveWorkspaceRequest::class,
-            'arguments' => ['name' => 'feature-docs', 'app' => 'docs', 'keepFiles' => true],
+            'arguments' => ['name' => 'feature-docs', 'instance' => 'docs', 'keepFiles' => true],
             'method' => Method::DELETE,
             'endpoint' => '/api/workspaces/feature-docs',
-            'query' => ['app' => 'docs'],
+            'query' => ['instance' => 'docs'],
             'body' => ['keep_files' => true, 'destructive_consent' => true, 'destructive_consent_source' => 'force'],
         ],
     ];

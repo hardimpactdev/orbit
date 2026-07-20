@@ -35,8 +35,8 @@ owning family concept document.
 - **Analytics role** — private workload role that runs Plausible CE, binds only to WireGuard, and receives dashboard and tracking traffic through router-owned analytics routes. See [Node Concepts](domains/1_node/node-concepts.md) and [Analytics Concepts](domains/21_analytics/analytics-concepts.md).
 - **Gateway-coupled infrastructure role** — role assignment stored separately from `gateway` but coupled to it in v1, so first gateway bootstrap assigns it together with `gateway` and normal `node role:*` commands cannot manage it independently. See [Node Concepts](domains/1_node/node-concepts.md).
 - **Production public HTTP traffic** — traffic that enters the fleet through an active `ingress` role. `app-prod` nodes are production runtime backends: they own app files, FrankenPHP app runtime policy, process-backed runtime units, and a private `orbit-caddy` listener, but they do not own public route exposure unless they also carry `ingress`. See [Architecture: Node roles](architecture.md#node-roles).
-- **App WebSocket binding** — gateway-owned app configuration that enables one app to use the fleet websocket service, including per-app Reverb credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [App Concepts](domains/5_app/app-concepts.md).
-- **Reverb app credentials** — per-app Reverb application id, key, and secret material owned by an app WebSocket binding. See [App Concepts](domains/5_app/app-concepts.md).
+- **App WebSocket binding** — gateway-owned app configuration that enables one app to use the fleet websocket service, including per-app Reverb credentials, allowed origins, public WebSocket hosts, and private `websocket.orbit` publishing configuration. See [App Concepts](domains/5_project/project-concepts.md).
+- **Reverb app credentials** — per-app Reverb application id, key, and secret material owned by an app WebSocket binding. See [App Concepts](domains/5_project/project-concepts.md).
 - **WebSocket backend pool** — router-owned ordered set of websocket role backends behind `websocket.orbit`. See [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **S3 service endpoint** — stable router-owned private HTTPS endpoint `https://s3.orbit` for Orbit-managed S3-compatible object storage. See [S3 Concepts](domains/19_s3/s3-concepts.md).
 - **SeaweedFS backend** — the SeaweedFS runtime behind the `s3` role, reached by router through the S3 backend pool. See [S3 Concepts](domains/19_s3/s3-concepts.md).
@@ -57,10 +57,10 @@ owning family concept document.
 - **Local executor** — hidden internal CLI command surface used by `RemoteLocalExecutor`; it validates a gateway-issued operation token before reading or mutating node-local state and is not a normal user command surface. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Operation token** — gateway-issued token attached to a recorded operation and validated by local executor commands before side effects. See [Architecture: Trust And Transport](architecture.md#trust-and-transport).
 - **Orbit Caddy container** — standalone `orbit-caddy` fleet proxy container; one per node when that node needs HTTP routing. See [Node Concepts](domains/1_node/node-concepts.md).
-- **App runtime container** — dedicated Docker container for one PHP app or workspace runtime, represented as a process-backed runtime unit. See [App Concepts](domains/5_app/app-concepts.md).
-- **FrankenPHP app runtime** — the PHP web runtime used by app and workspace containers. Classic mode is the default; worker mode is opt-in. See [App Concepts](domains/5_app/app-concepts.md).
-- **Worker mode** — opt-in FrankenPHP mode that keeps a validated Laravel app in memory. See [App Concepts](domains/5_app/app-concepts.md).
-- **Worker config** — gateway-tracked worker settings stored separately from the enabled flag. See [App Concepts](domains/5_app/app-concepts.md).
+- **App runtime container** — dedicated Docker container for one PHP app or workspace runtime, represented as a process-backed runtime unit. See [App Concepts](domains/5_project/project-concepts.md).
+- **FrankenPHP app runtime** — the PHP web runtime used by app and workspace containers. Classic mode is the default; worker mode is opt-in. See [App Concepts](domains/5_project/project-concepts.md).
+- **Worker mode** — opt-in FrankenPHP mode that keeps a validated Laravel app in memory. See [App Concepts](domains/5_project/project-concepts.md).
+- **Worker config** — gateway-tracked worker settings stored separately from the enabled flag. See [App Concepts](domains/5_project/project-concepts.md).
 - **Process runtime** — backend selection for process units scoped to a node, app, or workspace; supported runtime families are `systemd`, `launchd`, `docker`, and `docker-swarm`, with owner-scope restrictions documented in [Process Concepts](domains/7_process/process-concepts.md).
 - **Docker process runtime** — Docker backend for containerized processes such as databases, caches, and FrankenPHP app or workspace web runtimes. See [Process Concepts](domains/7_process/process-concepts.md).
 - **Systemd process runtime** — Linux service backend for host-command process units scoped to nodes, apps, or workspaces; `systemctl` is only the command adapter. See [Process Concepts](domains/7_process/process-concepts.md).
@@ -202,27 +202,27 @@ Source: [Gateway Concepts](domains/2_gateway/gateway-concepts.md).
 - **Gateway-domain boundaries**
 <!-- /concept-index -->
 
-## App Concepts
+## Project and Instance Concepts
 
-Source: [App Concepts](domains/5_app/app-concepts.md).
+Source: [Project and Instance Concepts](domains/5_project/project-concepts.md).
 
-<!-- concept-index:domains/5_app/app-concepts.md -->
-- **App**
-- **App instance**
-- **App instance driver**
+<!-- concept-index:domains/5_project/project-concepts.md -->
+- **Project**
+- **Instance**
+- **Instance driver**
 - **Driver config**
-- **Initial app instance**
-- **App identity slug**
-- **App name argument**
-- **App selector argument**
+- **Initial instance**
+- **Project identity slug**
+- **Project name argument**
+- **Instance selector argument**
 - **Orbit instance serving node**
-- **Development app instance**
-- **Production app instance**
-- **App PHP version**
-- **App runtime kind**
+- **Development instance**
+- **Production instance**
+- **Project PHP version**
+- **Project runtime kind**
 - **App runtime container**
 - **Development packages mount**
-- **App runtime mount**
+- **Instance runtime mount**
 - **Production app runtime container**
 - **Production app runtime user**
 - **Production release mount boundary**
@@ -230,24 +230,24 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **Worker mode**
 - **Worker config**
 - **Required PHP extensions**
-- **App instance env**
-- **App instance database target**
-- **App WebSocket binding**
-- **App analytics binding**
+- **Instance env**
+- **Instance database target**
+- **Instance WebSocket binding**
+- **Instance analytics binding**
 - **Reverb app credentials**
-- **App instance agent IDE adapter**
-- **App dependency audit posture**
+- **Instance agent IDE adapter**
+- **Project dependency audit posture**
 - **Dependency audit manager**
 - **Dependency audit status**
 - **Dependency audit severity bands**
-- **App registration**
-- **App-instance adoption**
-- **App-instance adoption flag**
-- **App pruning**
-- **App setup pipeline**
-- **App setup run**
-- **App-instance-owned route**
-- **App-family boundaries**
+- **Instance registration**
+- **Instance adoption**
+- **Instance adoption flag**
+- **Instance pruning**
+- **Instance setup pipeline**
+- **Instance setup run**
+- **Instance-owned route**
+- **Project and instance boundaries**
 - **Setup boundary**
 <!-- /concept-index -->
 
@@ -257,7 +257,7 @@ Source: [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 
 <!-- concept-index:domains/6_workspace/workspace-concepts.md -->
 - **Workspace**
-- **Concrete app-instance ownership**
+- **Concrete instance ownership**
 - **Workspace identity slug**
 - **Workspace hostname**
 - **Workspace path**
@@ -288,8 +288,8 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Process definition**
 - **Process identity slug**
 - **Process scope**
-- **App-instance selector**
-- **Canonical app identity**
+- **Instance selector**
+- **Canonical project identity**
 - **Process tool dependency**
 - **External macOS runtime provider**
 - **Managed service**
@@ -363,7 +363,7 @@ Source: [Schedule Concepts](domains/9_schedule/schedule-concepts.md).
 <!-- concept-index:domains/9_schedule/schedule-concepts.md -->
 - **Schedule**
 - **Schedule scope**
-- **App-scoped schedule**
+- **Instance-scoped schedule**
 - **Schedule app selector**
 - **Node-scoped schedule**
 - **Orbit-scoped schedule**
@@ -459,7 +459,7 @@ Source: [Deploy Concepts](domains/10_deploy/deploy-concepts.md).
 
 <!-- concept-index:domains/10_deploy/deploy-concepts.md -->
 - **Deploy command domain**
-- **Production app deployment**
+- **Production project deployment**
 - **Deployment policy**
 - **Deployment pipeline**
 - **Deployment step definition**

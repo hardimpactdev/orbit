@@ -18,7 +18,7 @@ orbit cf-cache:flush --zone=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --json
 
 ## Arguments and options
 
-- `--zone=<zone>`: Cloudflare zone ID, zone domain name, or Orbit app name with
+- `--zone=<zone>`: Cloudflare zone ID, zone domain name, or Orbit project name with
   a configured Cloudflare zone.
 - `--json`: Return the flush result in the JSON output.
 

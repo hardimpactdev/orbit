@@ -8,8 +8,8 @@ use App\Contracts\OpenCodeClientFactory;
 use App\Contracts\WorkspaceSourceDriver;
 use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Exceptions\WorkspaceCreateFailed;
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\RemoteShell\RunsInternalCommands;
 use HardImpact\OpenCode\Data\Worktree as OpenCodeWorktree;
 use HardImpact\OpenCode\OpenCode;
@@ -22,7 +22,7 @@ final readonly class OpenCodeWorkspaceDriver implements WorkspaceSourceDriver
         private RunsInternalCommands $localExecutor,
     ) {}
 
-    public function create(App $app, Node $node, string $name, string $base): WorkspaceProvisionResult
+    public function create(Project $app, Node $node, string $name, string $base): WorkspaceProvisionResult
     {
         $client = $this->clientFactory->forApp($app);
         $this->currentProject($client, $app, $node);
@@ -85,7 +85,7 @@ final readonly class OpenCodeWorkspaceDriver implements WorkspaceSourceDriver
         }
     }
 
-    private function currentProject(OpenCode $client, App $app, Node $node): void
+    private function currentProject(OpenCode $client, Project $app, Node $node): void
     {
         try {
             $client->projects()->current(directory: $app->path);

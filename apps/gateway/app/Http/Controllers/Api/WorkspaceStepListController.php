@@ -49,11 +49,11 @@ final readonly class WorkspaceStepListController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $appSlug = $this->stringQuery($request, 'app');
+        $appSlug = $this->stringQuery($request, 'instance');
         $path = $this->stringQuery($request, 'path');
 
         if ($appSlug === null && $path === null) {
-            return $this->validationFailed('app', null, 'Could not resolve parent app.');
+            return $this->validationFailed('instance', null, 'Could not resolve an instance.');
         }
 
         try {
@@ -73,10 +73,10 @@ final readonly class WorkspaceStepListController implements Loggable
 
         if (! $instance instanceof AppInstance) {
             return $this->validationFailed(
-                'app',
+                'instance',
                 $app->name,
-                'Workspace steps require a concrete app instance. Use a dotted selector such as hauser.nmbp.',
-                'app_instance_required',
+                'Workspace steps require a concrete instance. Use a dotted selector such as hauser.nmbp.',
+                'instance_required',
             );
         }
 
@@ -89,8 +89,8 @@ final readonly class WorkspaceStepListController implements Loggable
         }
 
         if (! $servingNode instanceof Node) {
-            return $this->authorizationFailed("Could not resolve owning node for app '{$app->name}'.", [
-                'app' => $app->name,
+            return $this->authorizationFailed("Could not resolve owning node for project '{$app->name}'.", [
+                'project' => $app->name,
             ]);
         }
 
@@ -145,7 +145,7 @@ final readonly class WorkspaceStepListController implements Loggable
                     [
                         'field' => $field,
                         'value' => $value,
-                        'reason' => $reason ?? ($field === 'app' ? 'missing_required_input' : null),
+                        'reason' => $reason ?? ($field === 'instance' ? 'missing_required_input' : null),
                     ],
                     fn (mixed $item): bool => $item !== null,
                 ),
@@ -153,14 +153,14 @@ final readonly class WorkspaceStepListController implements Loggable
         ], 400);
     }
 
-    private function appNotFound(string $app): JsonResponse
+    private function appNotFound(string $instance): JsonResponse
     {
         return response()->json([
             'error' => [
-                'code' => 'workspace.app_not_found',
-                'message' => "App '{$app}' not found.",
+                'code' => 'workspace.instance_not_found',
+                'message' => "Instance '{$instance}' not found.",
                 'meta' => [
-                    'app' => $app,
+                    'instance' => $instance,
                 ],
             ],
         ], 404);

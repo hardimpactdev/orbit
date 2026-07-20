@@ -18,7 +18,7 @@ final class ToolCredentialsCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'tool:credentials
         {tool? : Tool catalog name to read credentials for}
-        {--app= : Resolve target by app selector}
+        {--instance= : Resolve target by instance selector}
         {--node= : Resolve target by node}
         {--json}';
 
@@ -35,7 +35,7 @@ final class ToolCredentialsCommand extends GatewayCommand
 
         try {
             $response = $this->gatewayGet('/api/tools/'.rawurlencode($tool).'/credentials', $this->filledQuery([
-                'app' => $this->stringOption('app'),
+                'instance' => $this->stringOption('instance'),
                 'node' => $this->resolvedToolNode(),
             ]));
         } catch (OrbitConfigStoreException $exception) {
@@ -67,7 +67,7 @@ final class ToolCredentialsCommand extends GatewayCommand
 
         try {
             $response = $this->gatewayGet('/api/tools', $this->filledQuery([
-                'app' => $this->stringOption('app'),
+                'instance' => $this->stringOption('instance'),
                 'node' => $this->targetNodeOptionOrDefault(),
             ]));
         } catch (OrbitConfigStoreException $exception) {

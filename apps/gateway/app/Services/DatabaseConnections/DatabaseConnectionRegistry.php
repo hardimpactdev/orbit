@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -27,7 +26,7 @@ final readonly class DatabaseConnectionRegistry
     /**
      * @return Collection<int, DatabaseConnection>
      */
-    public function list(?App $app = null, ?Workspace $workspace = null, ?Node $node = null): Collection
+    public function list(?AppInstance $instance = null, ?Workspace $workspace = null, ?Node $node = null): Collection
     {
         /** @var Collection<int, DatabaseConnection> $connections */
         $connections = DatabaseConnection::all();
@@ -41,7 +40,7 @@ final readonly class DatabaseConnectionRegistry
         $matchingConnections = [];
 
         foreach ($connections as $connection) {
-            if (! $this->connectionMatchesFilters($connection, $app, $workspace, $node)) {
+            if (! $this->connectionMatchesFilters($connection, $instance, $workspace, $node)) {
                 continue;
             }
 
@@ -64,14 +63,14 @@ final readonly class DatabaseConnectionRegistry
 
     private function connectionMatchesFilters(
         DatabaseConnection $connection,
-        ?App $app,
+        ?AppInstance $instance,
         ?Workspace $workspace,
         ?Node $node,
     ): bool {
         if (
-            $app instanceof App
+            $instance instanceof AppInstance
             && ! $connection->targets->contains(
-                fn (DatabaseConnectionTarget $target): bool => $target->appInstance?->app_id === $app->id,
+                fn (DatabaseConnectionTarget $target): bool => $target->app_instance_id === $instance->id,
             )
         ) {
             return false;

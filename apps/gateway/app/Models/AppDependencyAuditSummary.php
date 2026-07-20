@@ -10,6 +10,8 @@ use Database\Factories\AppDependencyAuditSummaryFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * @property int $id
@@ -20,22 +22,22 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $warning_count
  * @property array<string, int>|null $severity_counts
  * @property list<array<string, mixed>>|null $advisory_summary
- * @property \Illuminate\Support\Carbon|null $audited_at
- * @property \Illuminate\Support\Carbon|null $failed_at
+ * @property Carbon|null $audited_at
+ * @property Carbon|null $failed_at
  * @property string|null $error_code
  * @property string|null $error_message
  * @property array<string, mixed>|null $diagnostics
- * @property-read App $app
+ * @property-read Project $app
  */
 class AppDependencyAuditSummary extends Model
 {
     /** @use HasFactory<AppDependencyAuditSummaryFactory> */
     use HasFactory;
 
-    #[\Override]
+    #[Override]
     protected $table = 'app_dependency_audit_summaries';
 
-    #[\Override]
+    #[Override]
     protected $fillable = [
         'app_id',
         'manager',
@@ -51,7 +53,7 @@ class AppDependencyAuditSummary extends Model
         'diagnostics',
     ];
 
-    #[\Override]
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -68,10 +70,18 @@ class AppDependencyAuditSummary extends Model
     }
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return BelongsTo<Project, $this>
+     */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class, 'app_id');
+    }
+
+    /**
+     * @return BelongsTo<Project, $this>
      */
     public function app(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->project();
     }
 }

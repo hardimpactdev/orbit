@@ -13,24 +13,24 @@ use function Laravel\Prompts\datatable;
 final class AppListCommand extends GatewayCommand
 {
     #[\Override]
-    protected $signature = 'app:list
+    protected $signature = 'project:list
         {--json}';
 
     #[\Override]
-    protected $description = 'List apps registered in the gateway registry.';
+    protected $description = 'List projects registered in the gateway registry.';
 
     public function handle(): int
     {
         if (! $this->wantsJson() && ! $this->input->isInteractive()) {
             return $this->renderFailure(
                 'validation_failed',
-                'Interactive app selection requires a terminal. Use --json for non-interactive output.',
-                ['field' => 'app'],
+                'Interactive project selection requires a terminal. Use --json for non-interactive output.',
+                ['field' => 'project'],
             );
         }
 
         try {
-            $response = $this->gatewayGet('/api/apps');
+            $response = $this->gatewayGet('/api/projects');
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -39,48 +39,48 @@ final class AppListCommand extends GatewayCommand
             return $this->renderSuccess($response);
         }
 
-        $apps = $this->appsFromGatewayResponse($response);
+        $projects = $this->projectsFromGatewayResponse($response);
 
-        if ($apps === []) {
-            $this->line('No apps found.');
+        if ($projects === []) {
+            $this->line('No projects found.');
 
             return self::SUCCESS;
         }
 
-        $rows = $this->dataTableRows($apps);
+        $rows = $this->dataTableRows($projects);
 
         try {
             $selected = datatable(
                 headers: ['Name', 'Repository', 'Instances', 'Workspaces'],
                 rows: $rows,
-                label: 'Select an app',
+                label: 'Select a project',
                 hint: 'Press / to search',
                 required: true,
             );
         } catch (Throwable) {
-            return $this->renderFailure('validation_failed', 'Operation cancelled.', ['field' => 'app']);
+            return $this->renderFailure('validation_failed', 'Operation cancelled.', ['field' => 'project']);
         }
 
         if (! is_string($selected) || ! array_key_exists($selected, $rows)) {
-            return $this->renderFailure('validation_failed', 'Operation cancelled.', ['field' => 'app']);
+            return $this->renderFailure('validation_failed', 'Operation cancelled.', ['field' => 'project']);
         }
 
-        return $this->call('app:show', ['app' => $selected]);
+        return $this->call('project:show', ['project' => $selected]);
     }
 
     /**
      * @param  array<string, mixed>  $response
      * @return list<array<array-key, mixed>>
      */
-    private function appsFromGatewayResponse(array $response): array
+    private function projectsFromGatewayResponse(array $response): array
     {
-        $apps = $response['success']['data']['apps'] ?? null;
+        $projects = $response['success']['data']['projects'] ?? null;
 
-        if (! is_array($apps)) {
+        if (! is_array($projects)) {
             return [];
         }
 
-        return array_values(array_filter($apps, is_array(...)));
+        return array_values(array_filter($projects, is_array(...)));
     }
 
     /**

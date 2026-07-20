@@ -42,8 +42,8 @@ final class DatabaseConnectionAttachController extends DatabaseConnectionApiCont
         }
 
         if ($owner instanceof AppInstance) {
-            $targetType = 'app_instance';
-            $targetName = $owner->app->name.':'.$owner->name;
+            $targetType = 'instance';
+            $targetName = $owner->app->name.'.'.$owner->name;
             $result = $this->registry->attachToAppInstance($connection, $owner, $envPrefix);
         } elseif ($owner instanceof Workspace) {
             $targetType = 'workspace';

@@ -27,7 +27,7 @@ function appPruneGrantAccess(E2ETopologyHarness $topology): void
             'consumer_node_id' => $nodes->get('operator-1'),
             'serving_node_id' => $nodes->get('app-dev-1'),
         ], [
-            'permissions' => json_encode(['app:register', 'app:agent', 'app:prune'], JSON_THROW_ON_ERROR),
+            'permissions' => json_encode(['instance:register', 'instance:agent', 'instance:prune'], JSON_THROW_ON_ERROR),
             'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
             'created_at' => now(),
             'updated_at' => now(),
@@ -73,7 +73,7 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
         $registration = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --json',
+                'cd %s && orbit instance:register %s --node=app-dev-1 --path=%s --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
                 escapeshellarg($path),
@@ -93,7 +93,7 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
         $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:agent-ide %s opencode --json',
+                'cd %s && orbit instance:agent-ide %s opencode --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
@@ -103,7 +103,7 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:prune %s --dry-run --json',
+                'cd %s && orbit instance:prune %s --dry-run --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
@@ -157,7 +157,7 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
         $registration = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --json',
+                'cd %s && orbit instance:register %s --node=app-dev-1 --path=%s --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
                 escapeshellarg($path),
@@ -176,7 +176,7 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
         $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:agent-ide %s opencode --json',
+                'cd %s && orbit instance:agent-ide %s opencode --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
@@ -186,7 +186,7 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:prune %s --force --json',
+                'cd %s && orbit instance:prune %s --force --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),

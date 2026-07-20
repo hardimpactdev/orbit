@@ -46,7 +46,7 @@ final class ProcessLogStreamStartController implements Loggable
         try {
             $context = $this->contexts->resolve(
                 nodeName: $this->optionalString($request, 'node'),
-                appName: $this->optionalString($request, 'app'),
+                appName: $this->optionalString($request, 'instance'),
                 workspaceName: $this->optionalString($request, 'workspace'),
             );
         } catch (GatewayApiException $exception) {
@@ -226,7 +226,7 @@ final class ProcessLogStreamStartController implements Loggable
     {
         return [
             'node' => $this->optionalString(request(), 'node'),
-            'app' => $this->optionalString(request(), 'app'),
+            'instance' => $this->optionalString(request(), 'instance'),
             'workspace' => $this->optionalString(request(), 'workspace'),
         ];
     }

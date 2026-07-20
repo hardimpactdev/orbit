@@ -27,7 +27,7 @@ final class ProcessListCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'process:list
         {--node= : Owning node name}
-        {--app= : App or app-instance selector}
+        {--instance= : Instance selector}
         {--workspace= : Workspace name}
         {--json}';
 
@@ -37,17 +37,19 @@ final class ProcessListCommand extends GatewayCommand
     public function handle(): int
     {
         $node = $this->stringOption('node');
-        $app = $node === null ? $this->stringOption('app') ?? $this->appFromOrbitMarker() : $this->stringOption('app');
+        $app = $node === null
+            ? $this->stringOption('instance') ?? $this->instanceFromOrbitMarker()
+            : $this->stringOption('instance');
         $workspace = $this->stringOption('workspace');
 
         if ($node !== null && ($app !== null || $workspace !== null)) {
             return $this->renderFailure(
                 'validation_failed',
-                'A node context cannot be combined with app or workspace context.',
+                'A node context cannot be combined with instance or workspace context.',
                 [
                     'field' => 'context',
                     'node' => $node,
-                    'app' => $app,
+                    'instance' => $app,
                     'workspace' => $workspace,
                 ],
             );
@@ -56,7 +58,7 @@ final class ProcessListCommand extends GatewayCommand
         try {
             $response = $this->gatewayGet('/api/processes', $this->filledQuery([
                 'node' => $node,
-                'app' => $app,
+                'instance' => $app,
                 'workspace' => $workspace,
             ]));
         } catch (GatewayApiException $exception) {
@@ -125,8 +127,8 @@ final class ProcessListCommand extends GatewayCommand
             return null;
         }
 
-        $app = $context['app'] ?? null;
-        $appInstance = $context['app_instance'] ?? null;
+        $app = $context['project'] ?? null;
+        $appInstance = $context['instance'] ?? null;
         $workspace = $context['workspace'] ?? null;
         $appLabel = is_scalar($app) && (string) $app !== ''
             ? (string) $app

@@ -3,11 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Project;
 use App\Services\Tools\ToolPayloadMapper;
 use App\Services\Tools\ToolRegistry;
 use App\Services\Tools\ToolRegistryFailure;
@@ -24,6 +26,24 @@ function assignToolContractAppHostRole(Node $node, string $role = 'app-dev', arr
         'role' => $role,
         'status' => 'active',
         'settings' => $settings,
+    ]);
+}
+
+function createToolContractInstance(
+    Project $project,
+    Node $node,
+    string $name = 'development',
+    ?string $domain = null,
+): AppInstance {
+    return AppInstance::factory()->for($project, 'app')->create([
+        'name' => $name,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: "/srv/{$project->name}-{$name}",
+            document_root: 'public',
+            domain: $domain,
+        ),
     ]);
 }
 
@@ -127,11 +147,12 @@ describe('tool command shared contract', function (): void {
         assignToolContractAppHostRole($secondNode, 'app-prod', []);
         assignToolContractAppHostRole($inactiveNode);
 
-        App::factory()->create([
+        $project = Project::factory()->create([
             'name' => 'docs-contract',
             'domain' => 'docs-contract.test',
             'node_id' => $secondNode->id,
         ]);
+        createToolContractInstance($project, $secondNode, 'production', 'docs-contract.test');
 
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $firstNode->id]);
         NodeTool::factory()->create(['name' => 'caddy', 'node_id' => $firstNode->id]);
@@ -155,7 +176,7 @@ describe('tool command shared contract', function (): void {
             ])
             ->and($registry->list(node: 'app-contract-a')->pluck('name')->all())
             ->toBe(['caddy', 'php'])
-            ->and($registry->list(app: 'docs-contract')->pluck('name')->all())
+            ->and($registry->list(app: 'docs-contract.production')->pluck('name')->all())
             ->toBe(['composer'])
             ->and($registry->list(app: 'docs-contract.test')->pluck('name')->all())
             ->toBe(['composer']);
@@ -168,22 +189,26 @@ describe('tool command shared contract', function (): void {
         assignToolContractAppHostRole($firstNode);
         assignToolContractAppHostRole($secondNode, 'app-prod', []);
 
-        App::factory()->create([
+        $project = Project::factory()->create([
             'name' => 'docs-contract',
             'node_id' => $secondNode->id,
         ]);
+        createToolContractInstance($project, $secondNode, 'production');
 
         $registry = app(ToolRegistry::class);
 
         expect($registry->validateFilters(node: $firstNode->name))
             ->toBeNull()
-            ->and($registry->validateFilters(app: 'docs-contract'))
+            ->and($registry->validateFilters(app: 'docs-contract.production'))
             ->toBeNull();
 
         $invalidNode = $registry->validateFilters(node: 'missing-node');
         $unassignedNodeFilter = $registry->validateFilters(node: $unassignedNode->name);
         $invalidApp = $registry->validateFilters(app: 'missing-app');
-        $conflictingApp = $registry->validateFilters(node: $firstNode->name, app: 'docs-contract');
+        $conflictingApp = $registry->validateFilters(
+            node: $firstNode->name,
+            app: 'docs-contract.production',
+        );
 
         expect($invalidNode)
             ->toBeInstanceOf(ToolRegistryFailure::class)
@@ -198,13 +223,13 @@ describe('tool command shared contract', function (): void {
             ->and($invalidApp->code)
             ->toBe('validation_failed')
             ->and($invalidApp->meta)
-            ->toMatchArray(['field' => 'app', 'value' => 'missing-app'])
+            ->toMatchArray(['field' => 'instance', 'value' => 'missing-app'])
             ->and($conflictingApp)
             ->toBeInstanceOf(ToolRegistryFailure::class)
             ->and($conflictingApp->code)
             ->toBe('validation_failed')
             ->and($conflictingApp->meta)
-            ->toMatchArray(['field' => 'app', 'value' => 'docs-contract']);
+            ->toMatchArray(['field' => 'instance', 'value' => 'docs-contract.production']);
     });
 
     it('resolves shared tool targets by app slug domain combined selector and matching node rules', function (): void {
@@ -213,25 +238,36 @@ describe('tool command shared contract', function (): void {
         assignToolContractAppHostRole($firstNode, settings: ['tld' => 'dev1']);
         assignToolContractAppHostRole($secondNode, 'app-prod', []);
 
-        App::factory()->create([
+        $docsProject = Project::factory()->create([
             'name' => 'docs-contract',
             'domain' => 'docs-contract.example.test',
             'node_id' => $firstNode->id,
         ]);
-        App::factory()->create([
+        createToolContractInstance(
+            $docsProject,
+            $firstNode,
+            'development',
+            'docs-contract.example.test',
+        );
+        $apiProject = Project::factory()->create([
             'name' => 'api-contract',
             'node_id' => $secondNode->id,
         ]);
+        createToolContractInstance($apiProject, $secondNode);
 
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $firstNode->id]);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $secondNode->id]);
 
         $registry = app(ToolRegistry::class);
 
-        $slugResult = $registry->show('php', app: 'docs-contract');
+        $slugResult = $registry->show('php', app: 'docs-contract.development');
         $domainResult = $registry->show('php', app: 'docs-contract.example.test');
         $combinedResult = $registry->show('php', app: 'docs-contract.dev1');
-        $matchingResult = $registry->show('php', node: $firstNode->name, app: 'docs-contract');
+        $matchingResult = $registry->show(
+            'php',
+            node: $firstNode->name,
+            app: 'docs-contract.development',
+        );
 
         expect($slugResult)
             ->toBeInstanceOf(NodeTool::class)

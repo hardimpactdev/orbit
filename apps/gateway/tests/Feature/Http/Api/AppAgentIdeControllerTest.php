@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Contracts\AgentIdeMessageAdapter;
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -44,7 +46,7 @@ function createAppAgentIdeCallerNode(array $overrides = [], ?string $role = null
 /**
  * @param  list<string>  $permissions
  */
-function grantAppAgentIdeAccess(Node $caller, Node $appNode, array $permissions = ['app:agent']): void
+function grantAppAgentIdeAccess(Node $caller, Node $appNode, array $permissions = ['instance:agent']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -53,6 +55,20 @@ function grantAppAgentIdeAccess(Node $caller, Node $appNode, array $permissions 
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
+    ]);
+}
+
+function createAppAgentIdeInstance(Project $project, Node $node, ?array $agentIdeConfig = null): AppInstance
+{
+    return AppInstance::factory()->for($project)->create([
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $project->path,
+            document_root: $project->document_root,
+            domain: $project->domain,
+        ),
+        'agent_ide_config' => $agentIdeConfig,
     ]);
 }
 
@@ -97,13 +113,14 @@ describe('AppAgentIdeController', function (): void {
             ]);
         grantAppAgentIdeAccess($caller, $appNode);
 
-        App::factory()->create([
+        $project = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
         ]);
+        $instance = createAppAgentIdeInstance($project, $appNode);
 
         $response = postAppAgentIdeJson(
-            '/api/apps/docs/agent-ide',
+            '/api/instances/docs/agent-ide',
             [
                 'agent_ide' => 'opencode',
             ],
@@ -112,14 +129,18 @@ describe('AppAgentIdeController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.app.name', 'docs')
+            ->assertJsonPath('success.data.instance.project', 'docs')
+            ->assertJsonPath('success.data.instance.name', 'development')
             ->assertJsonPath('success.data.agent_ide.adapter', 'opencode')
-            ->assertJsonPath('success.data.agent_ide.source', 'app')
+            ->assertJsonPath('success.data.agent_ide.source', 'instance')
             ->assertJsonPath('success.data.agent_ide.effective_adapter', 'opencode')
             ->assertJsonPath('success.data.cleanup.workspaces_removed', [])
             ->assertJsonPath('success.data.action', 'set');
 
-        expect(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBe(['adapter' => 'opencode']);
+        expect($instance->refresh()->agent_ide_config)
+            ->toBe(['adapter' => 'opencode'])
+            ->and($project->refresh()->agent_ide_config)
+            ->toBeNull();
     });
 
     it('clears an app override with inherit and reports the node effective adapter', function (): void {
@@ -131,14 +152,14 @@ describe('AppAgentIdeController', function (): void {
                 'agent_ide_config' => ['adapter' => 'polyscope'],
             ]);
 
-        App::factory()->create([
+        $project = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
-            'agent_ide_config' => ['adapter' => 'opencode'],
         ]);
+        $instance = createAppAgentIdeInstance($project, $appNode, ['adapter' => 'opencode']);
 
         $response = postAppAgentIdeJson(
-            '/api/apps/docs/agent-ide',
+            '/api/instances/docs/agent-ide',
             [
                 'agent_ide' => 'inherit',
             ],
@@ -151,7 +172,7 @@ describe('AppAgentIdeController', function (): void {
             ->assertJsonPath('success.data.agent_ide.source', 'node')
             ->assertJsonPath('success.data.agent_ide.effective_adapter', 'polyscope');
 
-        expect(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBeNull();
+        expect($instance->refresh()->agent_ide_config)->toBeNull();
     });
 
     it('logs activity for a successful app agent IDE write', function (): void {
@@ -163,13 +184,14 @@ describe('AppAgentIdeController', function (): void {
             ]);
         grantAppAgentIdeAccess($caller, $appNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
         ]);
+        $instance = createAppAgentIdeInstance($app, $appNode);
 
         $response = postAppAgentIdeJson(
-            '/api/apps/docs/agent-ide',
+            '/api/instances/docs/agent-ide',
             [
                 'agent_ide' => 'opencode',
             ],
@@ -181,32 +203,33 @@ describe('AppAgentIdeController', function (): void {
         $entry = Activity::query()->first();
 
         expect($entry)->not->toBeNull();
-        expect($entry->event)->toBe('api:POST /apps/{app}/agent-ide');
-        expect($entry->subject_type)->toBe(App::class);
-        expect($entry->subject_id)->toBe($app->id);
-        expect($entry->description)->toBe('App docs agent IDE set to opencode');
+        expect($entry->event)->toBe('api:POST /instances/{instance}/agent-ide');
+        expect($entry->subject_type)->toBe('App\\Models\\AppInstance');
+        expect($entry->subject_id)->toBe($instance->id);
+        expect($entry->description)->toBe('Instance docs.development agent IDE set to opencode');
         expect($entry->properties->get('type'))->toBe('write');
-        expect($entry->properties->get('target_app'))->toBe('docs');
+        expect($entry->properties->get('target_instance'))->toBe('docs.development');
         expect($entry->properties->get('agent_ide'))->toBe('opencode');
         expect($entry->properties->get('action'))->toBe('set');
     });
 
-    it('rejects callers without app:agent before mutation', function (): void {
+    it('rejects callers without instance:agent before mutation', function (): void {
         $caller = createAppAgentIdeCallerNode();
         $appNode = Node::factory()
             ->appDev()
             ->create([
                 'name' => 'app-1',
             ]);
-        grantAppAgentIdeAccess($caller, $appNode, ['app:read']);
+        grantAppAgentIdeAccess($caller, $appNode, ['instance:read']);
 
-        App::factory()->create([
+        $project = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
         ]);
+        $instance = createAppAgentIdeInstance($project, $appNode);
 
         $response = postAppAgentIdeJson(
-            '/api/apps/docs/agent-ide',
+            '/api/instances/docs/agent-ide',
             [
                 'agent_ide' => 'opencode',
             ],
@@ -216,25 +239,25 @@ describe('AppAgentIdeController', function (): void {
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:agent')
+            ->assertJsonPath('error.meta.missing_permission', 'instance:agent')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
-        expect(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBeNull();
+        expect($instance->refresh()->agent_ide_config)->toBeNull();
     });
 
     it('rejects app production callers before agent IDE workspace cleanup can run', function (): void {
         $caller = createAppAgentIdeCallerNode(role: 'app-prod');
         $developmentNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
         grantAppAgentIdeAccess($caller, $developmentNode);
-        App::factory()->for($developmentNode, 'node')->create([
+        $project = Project::factory()->for($developmentNode, 'node')->create([
             'name' => 'docs',
-            'agent_ide_config' => ['adapter' => 'opencode'],
         ]);
+        $instance = createAppAgentIdeInstance($project, $developmentNode, ['adapter' => 'opencode']);
         $adapter = new PruneAppActionTestAdapter;
         app()->instance(AgentIdeMessageAdapter::class, $adapter);
 
         $response = postAppAgentIdeJson(
-            '/api/apps/docs/agent-ide',
+            '/api/instances/docs/agent-ide',
             ['agent_ide' => 'polyscope', 'force' => true],
             ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP],
         );
@@ -243,7 +266,7 @@ describe('AppAgentIdeController', function (): void {
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'workspace.unsupported_for_production');
 
-        expect(App::query()->where('name', 'docs')->value('agent_ide_config'))
+        expect($instance->refresh()->agent_ide_config)
             ->toBe(['adapter' => 'opencode'])
             ->and($adapter->workspaceCalls)
             ->toBe(0);
@@ -255,11 +278,12 @@ describe('AppAgentIdeController', function (): void {
         string $field,
     ): void {
         createAppAgentIdeCallerNode(role: 'gateway');
-        App::factory()->create([
+        $project = Project::factory()->create([
             'name' => 'docs',
         ]);
+        createAppAgentIdeInstance($project, $project->node);
 
-        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', $data, [
+        $response = postAppAgentIdeJson('/api/instances/docs/agent-ide', $data, [
             'REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP,
         ]);
 
@@ -269,19 +293,20 @@ describe('AppAgentIdeController', function (): void {
             ->assertJsonPath("error.meta.{$field}", $data['agent_ide'] ?? 'agent_ide');
     })->with([
         'missing adapter' => [[], 'validation_failed', 'field'],
-        'unsupported adapter' => [['agent_ide' => 'unknown-ide'], 'app.unsupported_adapter', 'adapter'],
+        'unsupported adapter' => [['agent_ide' => 'unknown-ide'], 'instance.unsupported_adapter', 'adapter'],
     ]);
 
     it('requires consent for destructive workspace cleanup without force', function (): void {
         createAppAgentIdeCallerNode(role: 'gateway');
         $appNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = Project::factory()->for($appNode, 'node')->create([
             'name' => 'docs',
-            'agent_ide_config' => ['adapter' => 'opencode'],
         ]);
+        $instance = createAppAgentIdeInstance($app, $appNode, ['adapter' => 'opencode']);
 
         Workspace::factory()->create([
             'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
             'name' => 'stale-ws',
             'path' => '/home/orbit/apps/docs/stale-ws',
         ]);
@@ -289,7 +314,7 @@ describe('AppAgentIdeController', function (): void {
         app()->instance(AgentIdeMessageAdapter::class, new PruneAppActionTestAdapter);
 
         $response = postAppAgentIdeJson(
-            '/api/apps/docs/agent-ide',
+            '/api/instances/docs/agent-ide',
             [
                 'agent_ide' => 'polyscope',
             ],
@@ -302,19 +327,20 @@ describe('AppAgentIdeController', function (): void {
             ->assertJsonPath('error.meta.previous_adapter', 'opencode')
             ->assertJsonPath('error.meta.stale_workspaces', ['stale-ws']);
 
-        expect(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBe(['adapter' => 'polyscope']);
+        expect($instance->refresh()->agent_ide_config)->toBe(['adapter' => 'polyscope']);
     });
 
     it('prunes stale workspaces when force is true', function (): void {
         createAppAgentIdeCallerNode(role: 'gateway');
         $appNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = Project::factory()->for($appNode, 'node')->create([
             'name' => 'docs',
-            'agent_ide_config' => ['adapter' => 'opencode'],
         ]);
+        $instance = createAppAgentIdeInstance($app, $appNode, ['adapter' => 'opencode']);
 
         Workspace::factory()->create([
             'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
             'name' => 'stale-ws',
             'path' => '/home/orbit/apps/docs/stale-ws',
         ]);
@@ -322,7 +348,7 @@ describe('AppAgentIdeController', function (): void {
         app()->instance(AgentIdeMessageAdapter::class, new PruneAppActionTestAdapter);
 
         $response = postAppAgentIdeJson(
-            '/api/apps/docs/agent-ide',
+            '/api/instances/docs/agent-ide',
             [
                 'agent_ide' => 'polyscope',
                 'force' => true,

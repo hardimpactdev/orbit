@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -28,7 +28,7 @@ function createAppRuntimeMountCaller(array $overrides = []): Node
 /**
  * @param  list<string>  $permissions
  */
-function grantAppRuntimeMountAccess(Node $caller, Node $appNode, array $permissions = ['app:mount']): void
+function grantAppRuntimeMountAccess(Node $caller, Node $appNode, array $permissions = ['instance:mount']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -80,7 +80,7 @@ function deleteAppRuntimeMountJson(string $uri, array $data): TestResponse
     );
 }
 
-function create_app_runtime_mount_instance(App $app, Node $node, string $name = 'development'): void
+function create_app_runtime_mount_instance(Project $app, Node $node, string $name = 'development'): void
 {
     $app->instances()->create([
         'name' => $name,
@@ -99,15 +99,15 @@ describe('AppRuntimeMountController', function (): void {
     it('rejects app-level runtime mount reads and mutations', function (): void {
         $caller = createAppRuntimeMountCaller();
         $appNode = Node::factory()->appDev()->create(['name' => 'beast', 'user' => 'nckrtl']);
-        grantAppRuntimeMountAccess($caller, $appNode, ['app:read', 'app:mount']);
-        App::factory()->for($appNode, 'node')->create([
+        grantAppRuntimeMountAccess($caller, $appNode, ['instance:read', 'instance:mount']);
+        Project::factory()->for($appNode, 'node')->create([
             'name' => 'nckrtl',
             'path' => '/home/nckrtl/apps/nckrtl',
             'runtime' => AppRuntimeKind::Php,
         ]);
         $list = $this->call(
             'GET',
-            '/api/apps/nckrtl/mounts',
+            '/api/instances/nckrtl/mounts',
             [],
             [],
             [],
@@ -120,22 +120,22 @@ describe('AppRuntimeMountController', function (): void {
         $list
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.reason', 'app_instance_required');
+            ->assertJsonPath('error.meta.reason', 'instance_required');
 
-        postAppRuntimeMountJson('/api/apps/nckrtl/mounts', [
+        postAppRuntimeMountJson('/api/instances/nckrtl/mounts', [
             'source' => '/home/nckrtl/packages',
             'target' => '/home/nckrtl/packages',
         ])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.reason', 'app_instance_required');
+            ->assertJsonPath('error.meta.reason', 'instance_required');
 
-        deleteAppRuntimeMountJson('/api/apps/nckrtl/mounts', [
+        deleteAppRuntimeMountJson('/api/instances/nckrtl/mounts', [
             'target' => '/home/nckrtl/packages',
         ])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.reason', 'app_instance_required');
+            ->assertJsonPath('error.meta.reason', 'instance_required');
 
         expect(Schema::hasTable('app_runtime_mounts'))->toBeFalse();
     });
@@ -143,10 +143,10 @@ describe('AppRuntimeMountController', function (): void {
     it('rejects mount mutations without app mount permission', function (): void {
         $caller = createAppRuntimeMountCaller();
         $appNode = Node::factory()->appDev()->create(['name' => 'beast', 'user' => 'nckrtl']);
-        grantAppRuntimeMountAccess($caller, $appNode, ['app:read']);
-        App::factory()->for($appNode, 'node')->create(['name' => 'nckrtl']);
+        grantAppRuntimeMountAccess($caller, $appNode, ['instance:read']);
+        Project::factory()->for($appNode, 'node')->create(['name' => 'nckrtl']);
 
-        $response = postAppRuntimeMountJson('/api/apps/nckrtl/mounts', [
+        $response = postAppRuntimeMountJson('/api/instances/nckrtl/mounts', [
             'source' => '/home/nckrtl/packages',
             'target' => '/home/nckrtl/packages',
         ]);
@@ -154,21 +154,21 @@ describe('AppRuntimeMountController', function (): void {
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:mount');
+            ->assertJsonPath('error.meta.missing_permission', 'instance:mount');
     });
 
     it('rejects unsafe runtime mount intent before persistence', function (array $payload, string $reason): void {
         $caller = createAppRuntimeMountCaller();
         $appNode = Node::factory()->appDev()->create(['name' => 'beast', 'user' => 'nckrtl']);
         grantAppRuntimeMountAccess($caller, $appNode);
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = Project::factory()->for($appNode, 'node')->create([
             'name' => 'nckrtl',
             'path' => '/home/nckrtl/apps/nckrtl',
             'runtime' => AppRuntimeKind::Php,
         ]);
         create_app_runtime_mount_instance($app, $appNode);
 
-        $response = postAppRuntimeMountJson('/api/apps/nckrtl.development/mounts', $payload);
+        $response = postAppRuntimeMountJson('/api/instances/nckrtl.development/mounts', $payload);
 
         $response
             ->assertUnprocessable()
@@ -224,9 +224,9 @@ describe('AppRuntimeMountController', function (): void {
     it('stores runtime mounts on an app instance', function (): void {
         $caller = createAppRuntimeMountCaller();
         $appNode = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
-        grantAppRuntimeMountAccess($caller, $appNode, ['app:read', 'app:mount']);
+        grantAppRuntimeMountAccess($caller, $appNode, ['instance:read', 'instance:mount']);
 
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = Project::factory()->for($appNode, 'node')->create([
             'name' => 'hauser',
             'path' => '/Users/nckrtl/apps/hauser',
             'document_root' => 'public',
@@ -244,7 +244,7 @@ describe('AppRuntimeMountController', function (): void {
             ),
         ]);
 
-        postAppRuntimeMountJson('/api/apps/hauser.nmbp/mounts', [
+        postAppRuntimeMountJson('/api/instances/hauser.nmbp/mounts', [
             'source' => '/Users/nckrtl/projects',
             'target' => '/projects',
             'read_only' => true,
@@ -259,9 +259,9 @@ describe('AppRuntimeMountController', function (): void {
     it('returns app instance target metadata and validates source against the instance node home', function (): void {
         $caller = createAppRuntimeMountCaller();
         $appNode = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
-        grantAppRuntimeMountAccess($caller, $appNode, ['app:read', 'app:mount']);
+        grantAppRuntimeMountAccess($caller, $appNode, ['instance:read', 'instance:mount']);
 
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = Project::factory()->for($appNode, 'node')->create([
             'name' => 'hauser',
             'path' => '/Users/nckrtl/apps/hauser',
             'document_root' => 'public',
@@ -279,17 +279,17 @@ describe('AppRuntimeMountController', function (): void {
             ),
         ]);
 
-        postAppRuntimeMountJson('/api/apps/hauser.nmbp/mounts', [
+        postAppRuntimeMountJson('/api/instances/hauser.nmbp/mounts', [
             'source' => '/Users/nckrtl/projects',
             'target' => '/projects',
         ])
             ->assertOk()
-            ->assertJsonPath('success.data.target.type', 'app_instance')
-            ->assertJsonPath('success.data.target.app', 'hauser')
+            ->assertJsonPath('success.data.target.type', 'instance')
+            ->assertJsonPath('success.data.target.project', 'hauser')
             ->assertJsonPath('success.data.target.instance', 'nmbp')
             ->assertJsonPath('success.data.mount.source', '/Users/nckrtl/projects');
 
-        postAppRuntimeMountJson('/api/apps/hauser.nmbp/mounts', [
+        postAppRuntimeMountJson('/api/instances/hauser.nmbp/mounts', [
             'source' => '/home/nckrtl/projects',
             'target' => '/projects',
         ])
@@ -306,17 +306,17 @@ describe('AppRuntimeMountController', function (): void {
             'user' => 'nckrtl',
         ]);
         $instanceNode = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
-        grantAppRuntimeMountAccess($caller, $domainAppNode, ['app:read', 'app:mount']);
-        grantAppRuntimeMountAccess($caller, $instanceNode, ['app:read', 'app:mount']);
+        grantAppRuntimeMountAccess($caller, $domainAppNode, ['instance:read', 'instance:mount']);
+        grantAppRuntimeMountAccess($caller, $instanceNode, ['instance:read', 'instance:mount']);
 
-        App::factory()->for($domainAppNode, 'node')->create([
+        Project::factory()->for($domainAppNode, 'node')->create([
             'name' => 'domain-app',
             'domain' => 'hauser.nmbp',
             'path' => '/home/nckrtl/apps/domain-app',
             'runtime' => AppRuntimeKind::Php,
         ]);
 
-        $hauser = App::factory()->for($instanceNode, 'node')->create([
+        $hauser = Project::factory()->for($instanceNode, 'node')->create([
             'name' => 'hauser',
             'path' => '/Users/nckrtl/apps/hauser',
             'runtime' => AppRuntimeKind::Php,
@@ -335,13 +335,13 @@ describe('AppRuntimeMountController', function (): void {
                 ),
             ]);
 
-        postAppRuntimeMountJson('/api/apps/hauser.nmbp/mounts', [
+        postAppRuntimeMountJson('/api/instances/hauser.nmbp/mounts', [
             'source' => '/home/nckrtl/projects',
             'target' => '/projects',
         ])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.reason', 'app_instance_required');
+            ->assertJsonPath('error.meta.reason', 'instance_required');
 
         expect($hauser->instances()->first()?->runtimeMounts()->count())
             ->toBe(0);
@@ -357,13 +357,13 @@ describe('AppRuntimeMountController', function (): void {
             ->{$nodeState['role']}()
             ->create(['name' => 'app-node', 'user' => 'orbit']);
         grantAppRuntimeMountAccess($caller, $appNode);
-        $app = App::factory()->for($appNode, 'node')->create(array_merge([
+        $app = Project::factory()->for($appNode, 'node')->create(array_merge([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
         ], $appState));
         create_app_runtime_mount_instance($app, $appNode);
 
-        $response = postAppRuntimeMountJson('/api/apps/docs.development/mounts', [
+        $response = postAppRuntimeMountJson('/api/instances/docs.development/mounts', [
             'source' => '/home/orbit/packages',
             'target' => '/home/orbit/packages',
         ]);
@@ -373,7 +373,7 @@ describe('AppRuntimeMountController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', $reason);
     })->with([
-        'static app' => [['role' => 'appDev'], ['runtime' => AppRuntimeKind::Static], 'app_runtime_not_php'],
-        'app-prod app' => [['role' => 'appProd'], ['environment' => 'production'], 'app_mounts_app_dev_only'],
+        'static app' => [['role' => 'appDev'], ['runtime' => AppRuntimeKind::Static], 'instance_runtime_not_php'],
+        'app-prod app' => [['role' => 'appProd'], ['environment' => 'production'], 'instance_mounts_app_dev_only'],
     ]);
 });

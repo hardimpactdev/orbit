@@ -11,7 +11,7 @@ use Symfony\Component\Console\Input\InputOption;
 final class AppWebSocketEnableCommand extends AppGatewayCommand
 {
     #[\Override]
-    protected $name = 'app:websocket enable';
+    protected $name = 'instance:websocket enable';
 
     #[\Override]
     protected $description = 'Enable WebSocket support for an app.';
@@ -21,7 +21,7 @@ final class AppWebSocketEnableCommand extends AppGatewayCommand
     {
         parent::configure();
 
-        $this->addArgument('app', InputArgument::OPTIONAL, 'App name or hostname');
+        $this->addArgument('instance', InputArgument::OPTIONAL, 'Instance selector (project.instance or hostname)');
         $this->addOption(
             'host',
             null,
@@ -33,14 +33,14 @@ final class AppWebSocketEnableCommand extends AppGatewayCommand
 
     public function handle(): int
     {
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('instance');
 
         if ($selector === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         try {
-            $response = $this->gatewayPost($this->apiAppPath($selector, '/websocket/enable'), [
+            $response = $this->gatewayPost($this->apiInstancePath($selector, '/websocket/enable'), [
                 'public_hosts' => $this->publicHosts(),
             ]);
         } catch (GatewayApiException $exception) {
@@ -54,7 +54,7 @@ final class AppWebSocketEnableCommand extends AppGatewayCommand
         $binding = $this->bindingData($response);
 
         $this->line('binding:');
-        $this->line('  app: '.$this->stringField($binding, 'app'));
+        $this->line('  instance: '.$this->stringField($binding, 'instance'));
         $this->line('  internal_host: '.$this->stringField($binding, 'internal_host'));
         $this->renderList('public_hosts', $this->listField($binding, 'public_hosts'));
         $this->renderList('allowed_origins', $this->listField($binding, 'allowed_origins'));

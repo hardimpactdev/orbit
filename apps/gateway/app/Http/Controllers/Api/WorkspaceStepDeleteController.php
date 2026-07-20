@@ -67,11 +67,11 @@ final class WorkspaceStepDeleteController implements Loggable
             return $this->validationFailed('force', 'Use --force to remove this workspace step.');
         }
 
-        $appSlug = $this->stringValue($request, 'app');
+        $appSlug = $this->stringValue($request, 'instance');
         $path = $this->stringValue($request, 'path');
 
         if ($appSlug === null && $path === null) {
-            return $this->validationFailed('app', 'Could not resolve parent app.', [
+            return $this->validationFailed('instance', 'Could not resolve an instance.', [
                 'reason' => 'missing_required_input',
             ]);
         }
@@ -98,8 +98,8 @@ final class WorkspaceStepDeleteController implements Loggable
         }
 
         if (! $servingNode instanceof Node) {
-            return $this->authorizationFailed("Could not resolve owning node for app '{$app->name}'.", [
-                'app' => $app->name,
+            return $this->authorizationFailed("Could not resolve owning node for project '{$app->name}'.", [
+                'project' => $app->name,
             ]);
         }
 
@@ -167,9 +167,9 @@ final class WorkspaceStepDeleteController implements Loggable
     private function appInstanceRequired(): JsonResponse
     {
         return $this->validationFailed(
-            'app',
-            'Workspace steps can only be changed on app instances. Use a dotted selector such as hauser.nmbp.',
-            ['reason' => 'app_instance_required'],
+            'instance',
+            'Workspace steps can only be changed on instances. Use a dotted selector such as hauser.nmbp.',
+            ['reason' => 'instance_required'],
         );
     }
 
@@ -191,24 +191,24 @@ final class WorkspaceStepDeleteController implements Loggable
         return response()->json([
             'error' => [
                 'code' => 'workspace.step_not_found',
-                'message' => "{$label} step '{$id}' not found for app '{$app}' in phase '{$phase->value}'.",
+                'message' => "{$label} step '{$id}' not found for project '{$app}' in phase '{$phase->value}'.",
                 'meta' => [
                     'step_id' => $id,
-                    'app' => $app,
+                    'project' => $app,
                     'phase' => $phase->value,
                 ],
             ],
         ], 404);
     }
 
-    private function appNotFound(string $app): JsonResponse
+    private function appNotFound(string $instance): JsonResponse
     {
         return response()->json([
             'error' => [
-                'code' => 'workspace.app_not_found',
-                'message' => "App '{$app}' not found.",
+                'code' => 'workspace.instance_not_found',
+                'message' => "Instance '{$instance}' not found.",
                 'meta' => [
-                    'app' => $app,
+                    'instance' => $instance,
                 ],
             ],
         ], 404);

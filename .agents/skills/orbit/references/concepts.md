@@ -71,23 +71,25 @@ Standing configuration is tracked as **state families**. Each family is a gatewa
 | Family key | Tracks |
 |---|---|
 | `node` | Fleet membership, roles, gateway identity, node reachability |
-| `app` | App registry and app-owned runtime intent |
+| `instance` | Concrete project-instance placement and runtime intent |
 | `workspace` | Per-workspace route, setup policy, PHP override, and runtime intent |
-| `process` | Runtime units for app, workspace, and node processes |
-| `proxy` | HTTP ingress for apps, workspaces, custom routes, tool routes, redirects, gateway API |
+| `process` | Runtime units for instances, workspaces, and node processes |
+| `proxy` | HTTP ingress for instances, workspaces, custom routes, tool routes, redirects, gateway API |
 | `firewall_rule` | Expected UFW policy on each node |
 | `tool` | Expected node capabilities, versions, credentials, and tool-owned endpoints |
 | `schedule` | `schedule:add` recurring tasks (Orbit Scheduler daemon) |
-| `database_connection` | Reusable database connections and app/workspace target mappings |
+| `database_connection` | Reusable database connections and instance/workspace target mappings |
 
 Doctor modes:
 
 - **verify** (default): probe and report drift, no writes.
 - **`--fix`**: enter interactive resolution mode.
 - **`--restore`**: re-enact gateway intent on the node.
-- **`--adopt`**: pull node reality into gateway intent (DR or fleet adoption). For `app`, filesystem presence counts as intent  -  clean an app's directory before adopting if you don't want it re-created.
+- **`--adopt`**: pull node reality into gateway intent (DR or fleet adoption).
+  For `instance`, filesystem presence counts as intent; clean an instance's
+  directory before adopting if you do not want it re-created.
 
-Scope flags: `--node`, `--self`, `--all`, `--app`, `--workspace`, `--family=<key>` (repeatable). Without scope flags, doctor targets the configured local default node, then falls back to the caller identity. Use `--all` for fleet verification.
+Scope flags: `--node`, `--self`, `--all`, `--instance`, `--workspace`, `--family=<key>` (repeatable). Without scope flags, doctor targets the configured local default node, then falls back to the caller identity. Use `--all` for fleet verification.
 
 ## Node execution and where commands run
 
@@ -100,7 +102,9 @@ push or gateway-local execution and fails clearly when that lane is unavailable.
 `node:new --user` is a bootstrap credential only; the steady-state user is
 created during provisioning and stored on the node record.
 
-App nodes do not orchestrate other nodes. They can run the CLI locally as gateway clients (e.g. inferring app/workspace context from cwd), but they don't own state.
+App-role nodes do not orchestrate other nodes. They can run the CLI locally as
+gateway clients, including inferring instance/workspace context from cwd, but
+they do not own gateway state.
 
 ## Identity slugs
 
@@ -108,23 +112,26 @@ App nodes do not orchestrate other nodes. They can run the CLI locally as gatewa
 ^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$
 ```
 
-Length limits: app <=40, node <=63, workspace <=63, process <=64.
+Length limits: project <=40, instance <=63, node <=63, workspace <=63,
+process <=64.
 
 Hostnames:
 
-- Development app: `{app}.{node-tld}` (e.g. `myapp.beast`).
-- Workspace: `{workspace}.{app}.{tld}` (e.g. `feature.myapp.beast`).
-- Production app: the value of `--domain` (globally unique across the fleet).
+- Development instance: `{project}.{node-tld}` (e.g. `myapp.beast`).
+- Workspace: `{workspace}.{project}.{tld}` (e.g. `feature.myapp.beast`).
+- Production instance: the value of `--domain` (globally unique across the fleet).
 
-Process runtime unit name: `orbit_<app>_<workspace|main>_<process>`.
+Process runtime unit name:
+`orbit_<project>_<instance>_<workspace|main>_<process>`.
 Launchd-backed units use label `dev.hardimpact.orbit.<runtimeUnit>`.
 
 ## Target resolution order
 
-For commands that accept `--node`, `--app`, or `--workspace`:
+For commands that accept `--node`, `--instance`, or `--workspace`:
 
 1. Explicit flag (`--node=beast`).
-2. App or workspace ownership (e.g. `--app=myapp` resolves the owning node).
+2. Instance or workspace ownership (for example,
+   `--instance=myapp.development` resolves the serving node).
 3. Local `node:default` value.
 4. Interactive prompt  -  or non-interactive failure when stdin is unavailable / `-n` is set.
 
@@ -151,7 +158,7 @@ transitional transport only for commands that have not yet migrated.
 
 For LLM agents, prefer `--stream-json` when the command offers it so progress
 arrives as newline-delimited JSON frames during slow gateway work. Current
-agent-facing stream JSON commands include `doctor`, `app:new`, `app:setup`,
+agent-facing stream JSON commands include `doctor`, `project:new`, `instance:setup`,
 `workspace:new`, `workspace:setup`, gateway-streamed `node:new`, `deploy:run`,
 `tool:install`, `tool:update`, `tool:reconfigure`, `s3:publish`, `s3:unpublish`,
 and `update:all`. `--stream-json` and `--json` are mutually exclusive; use
@@ -167,7 +174,8 @@ orbit node:default            # show current
 orbit node:default --clear    # clear
 ```
 
-This avoids passing `--node` on every dev-flavored command. App nodes don't need this.
+This avoids passing `--node` on every dev-flavored command. App-role nodes do
+not need this.
 
 ## What Orbit doesn't do
 
@@ -175,7 +183,7 @@ This avoids passing `--node` on every dev-flavored command. App nodes don't need
 - It doesn't infer or store public IPv4/IPv6 from `--host`. Use `node:update --public-ipv4=... --public-ipv6=...`.
 - It doesn't keep a separate "sync" command per family  -  adoption is `doctor --adopt --family=<key>`.
 - It doesn't expose a separate web UI today. Future UI builds on the typed API.
-- It doesn't use PHP-FPM or Supervisor for app/workspace web runtimes.
-- It doesn't proxy git credentials. `app:new --repo=...` clones through Agent
+- It doesn't use PHP-FPM or Supervisor for instance/workspace web runtimes.
+- It doesn't proxy git credentials. `project:new --repo=...` clones through Agent
   push as the target node's Orbit runtime user, using credentials already
   available on that node.

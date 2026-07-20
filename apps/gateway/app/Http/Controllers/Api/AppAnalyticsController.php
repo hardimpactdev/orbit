@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Data\Apps\AppSelection;
 use App\Enums\ActivityLogType;
 use App\Exceptions\AnalyticsOperationFailed;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\App;
+use App\Models\AppInstance;
+use App\Models\Project;
 use App\Services\Analytics\AppAnalyticsBindingService;
 use App\Services\Analytics\AppAnalyticsPayloadFactory;
 use App\Services\Apps\AppSelectorResolver;
@@ -27,13 +30,13 @@ final class AppAnalyticsController implements Loggable
         private readonly AppAnalyticsPayloadFactory $payloads,
     ) {}
 
-    private ?App $activitySubject = null;
+    private ?Project $activitySubject = null;
 
     private ?string $activityTargetName = null;
 
     private ActivityLogType $activityEffect = ActivityLogType::Read;
 
-    private string $activityType = 'api:GET /apps/{app}/analytics';
+    private string $activityType = 'api:GET /instances/{instance}/analytics';
 
     private string $activityAction = 'show';
 
@@ -42,24 +45,24 @@ final class AppAnalyticsController implements Loggable
      */
     private array $activityPublicHosts = [];
 
-    #[RequiresPermission('app:write', servingNode: ServingNode::AppOwning)]
-    public function enable(Request $request, string $app, AppAnalyticsBindingService $service): JsonResponse
+    #[RequiresPermission('instance:write', servingNode: ServingNode::AppOwning)]
+    public function enable(Request $request, string $instance, AppAnalyticsBindingService $service): JsonResponse
     {
+        $app = $instance;
         $this->activityTargetName = $app;
         $this->activityEffect = ActivityLogType::Write;
-        $this->activityType = 'api:POST /apps/{app}/analytics/enable';
+        $this->activityType = 'api:POST /instances/{instance}/analytics/enable';
         $this->activityAction = 'enable';
 
-        $targetApp = $this->resolveApp($app);
+        $selection = $this->resolveInstance($app);
 
-        if (! $targetApp instanceof App) {
-            return $this->error(
-                code: 'app.not_found',
-                message: "App '{$app}' not found.",
-                meta: ['app' => $app],
-                status: 404,
-            );
+        if ($selection instanceof JsonResponse) {
+            return $selection;
         }
+
+        $targetApp = $selection->app;
+        $targetInstance = $selection->instance;
+        assert($targetInstance instanceof AppInstance);
 
         $publicHosts = $request->input('public_hosts', []);
 
@@ -78,7 +81,7 @@ final class AppAnalyticsController implements Loggable
             return $this->error(
                 code: $exception->errorCode(),
                 message: $exception->getMessage(),
-                meta: ['app' => $targetApp->name],
+                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         } catch (InvalidArgumentException $exception) {
@@ -92,7 +95,7 @@ final class AppAnalyticsController implements Loggable
             return $this->error(
                 code: 'analytics.prerequisite_failed',
                 message: $exception->getMessage(),
-                meta: ['app' => $targetApp->name],
+                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }
@@ -103,30 +106,30 @@ final class AppAnalyticsController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    ...$this->payloads->enableResult($binding),
+                    ...$this->payloads->enableResult($binding, $targetInstance),
                 ],
             ],
         ]);
     }
 
-    #[RequiresPermission('app:write', servingNode: ServingNode::AppOwning)]
-    public function disable(string $app, AppAnalyticsBindingService $service): JsonResponse
+    #[RequiresPermission('instance:write', servingNode: ServingNode::AppOwning)]
+    public function disable(string $instance, AppAnalyticsBindingService $service): JsonResponse
     {
+        $app = $instance;
         $this->activityTargetName = $app;
         $this->activityEffect = ActivityLogType::Write;
-        $this->activityType = 'api:POST /apps/{app}/analytics/disable';
+        $this->activityType = 'api:POST /instances/{instance}/analytics/disable';
         $this->activityAction = 'disable';
 
-        $targetApp = $this->resolveApp($app);
+        $selection = $this->resolveInstance($app);
 
-        if (! $targetApp instanceof App) {
-            return $this->error(
-                code: 'app.not_found',
-                message: "App '{$app}' not found.",
-                meta: ['app' => $app],
-                status: 404,
-            );
+        if ($selection instanceof JsonResponse) {
+            return $selection;
         }
+
+        $targetApp = $selection->app;
+        $targetInstance = $selection->instance;
+        assert($targetInstance instanceof AppInstance);
 
         try {
             $binding = $service->disable($targetApp);
@@ -134,14 +137,14 @@ final class AppAnalyticsController implements Loggable
             return $this->error(
                 code: $exception->errorCode(),
                 message: $exception->getMessage(),
-                meta: ['app' => $targetApp->name],
+                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         } catch (RuntimeException $exception) {
             return $this->error(
                 code: 'analytics.binding_missing',
                 message: $exception->getMessage(),
-                meta: ['app' => $targetApp->name],
+                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }
@@ -152,30 +155,30 @@ final class AppAnalyticsController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'binding' => $this->payloads->binding($binding),
+                    'binding' => $this->payloads->binding($binding, $targetInstance),
                 ],
             ],
         ]);
     }
 
-    #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
-    public function show(string $app, AppAnalyticsBindingService $service): JsonResponse
+    #[RequiresPermission('instance:read', servingNode: ServingNode::AppOwning)]
+    public function show(string $instance, AppAnalyticsBindingService $service): JsonResponse
     {
+        $app = $instance;
         $this->activityTargetName = $app;
         $this->activityEffect = ActivityLogType::Read;
-        $this->activityType = 'api:GET /apps/{app}/analytics';
+        $this->activityType = 'api:GET /instances/{instance}/analytics';
         $this->activityAction = 'show';
 
-        $targetApp = $this->resolveApp($app);
+        $selection = $this->resolveInstance($app);
 
-        if (! $targetApp instanceof App) {
-            return $this->error(
-                code: 'app.not_found',
-                message: "App '{$app}' not found.",
-                meta: ['app' => $app],
-                status: 404,
-            );
+        if ($selection instanceof JsonResponse) {
+            return $selection;
         }
+
+        $targetApp = $selection->app;
+        $targetInstance = $selection->instance;
+        assert($targetInstance instanceof AppInstance);
 
         try {
             $binding = $service->show($targetApp);
@@ -183,7 +186,7 @@ final class AppAnalyticsController implements Loggable
             return $this->error(
                 code: 'analytics.binding_missing',
                 message: $exception->getMessage(),
-                meta: ['app' => $targetApp->name],
+                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }
@@ -194,30 +197,30 @@ final class AppAnalyticsController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'binding' => $this->payloads->binding($binding),
+                    'binding' => $this->payloads->binding($binding, $targetInstance),
                 ],
             ],
         ]);
     }
 
-    #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
-    public function verify(string $app, AppAnalyticsBindingService $service): JsonResponse
+    #[RequiresPermission('instance:read', servingNode: ServingNode::AppOwning)]
+    public function verify(string $instance, AppAnalyticsBindingService $service): JsonResponse
     {
+        $app = $instance;
         $this->activityTargetName = $app;
         $this->activityEffect = ActivityLogType::Read;
-        $this->activityType = 'api:GET /apps/{app}/analytics/verify';
+        $this->activityType = 'api:GET /instances/{instance}/analytics/verify';
         $this->activityAction = 'verify';
 
-        $targetApp = $this->resolveApp($app);
+        $selection = $this->resolveInstance($app);
 
-        if (! $targetApp instanceof App) {
-            return $this->error(
-                code: 'app.not_found',
-                message: "App '{$app}' not found.",
-                meta: ['app' => $app],
-                status: 404,
-            );
+        if ($selection instanceof JsonResponse) {
+            return $selection;
         }
+
+        $targetApp = $selection->app;
+        $targetInstance = $selection->instance;
+        assert($targetInstance instanceof AppInstance);
 
         try {
             $binding = $service->show($targetApp);
@@ -225,7 +228,7 @@ final class AppAnalyticsController implements Loggable
             return $this->error(
                 code: 'analytics.binding_missing',
                 message: $exception->getMessage(),
-                meta: ['app' => $targetApp->name],
+                meta: ['project' => $targetApp->name, 'instance' => $targetInstance->name],
                 status: 422,
             );
         }
@@ -236,15 +239,37 @@ final class AppAnalyticsController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'verification_context' => $this->payloads->verificationContext($binding),
+                    'verification_context' => $this->payloads->verificationContext($binding, $targetInstance),
                 ],
             ],
         ]);
     }
 
-    private function resolveApp(string $selector): ?App
+    private function resolveInstance(string $selector): AppSelection|JsonResponse
     {
-        return $this->appSelectorResolver->resolve($selector)?->app;
+        $selection = $this->appSelectorResolver->resolve($selector);
+
+        if (! $selection instanceof AppSelection) {
+            return $this->error(
+                code: 'instance.not_found',
+                message: "Instance '{$selector}' not found.",
+                meta: ['instance' => $selector],
+                status: 404,
+            );
+        }
+
+        try {
+            $selection = $this->appSelectorResolver->requireInstance($selection);
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->error(
+                code: $exception->errorCode,
+                message: $exception->getMessage(),
+                meta: $exception->meta,
+                status: 422,
+            );
+        }
+
+        return $selection;
     }
 
     /**
@@ -295,14 +320,14 @@ final class AppAnalyticsController implements Loggable
     {
         return [
             'action' => $this->activityAction,
-            'target_app' => $this->activityTargetName ?? (string) request()->route('app'),
+            'target_instance' => $this->activityTargetName ?? (string) request()->route('instance'),
             'public_hosts' => $this->activityPublicHosts,
         ];
     }
 
     public function description(): ?string
     {
-        $target = $this->activityTargetName ?? (string) request()->route('app');
+        $target = $this->activityTargetName ?? (string) request()->route('instance');
 
         if ($target === '') {
             return null;

@@ -1,10 +1,10 @@
-# `orbit deploy:run [app]`
+# `orbit deploy:run [instance]`
 
 [Back to Deploy commands.](../README.md)
 
-Run the deployment pipeline for a concrete production app instance.
+Run the deployment pipeline for a concrete production instance.
 
-Use `deploy:run` when the app instance already has deployment steps configured through
+Use `deploy:run` when the instance already has deployment steps configured through
 [`deploy:step-add`](../1_deploy-step-add/deploy-step-add.md). The command
 creates durable deployment history on the gateway, executes each step on the
 instance's owning node through Agent push, and records captured output.
@@ -12,7 +12,7 @@ instance's owning node through Agent push, and records captured output.
 ## Usage
 
 ```bash
-orbit deploy:run [app] [--detach] [--json|--stream-json]
+orbit deploy:run [instance] [--detach] [--json|--stream-json]
 ```
 
 ## Examples
@@ -26,7 +26,7 @@ orbit deploy:run docs.production --stream-json
 
 ## Arguments and options
 
-- `app`: dotted production app-instance selector. A bare app name or domain is
+- `instance`: dotted production instance selector. A bare project name or domain is
   valid only when the app has exactly one instance.
 - `--detach`: start the deployment under gateway control and return after the
   durable operation has been created.
@@ -37,7 +37,7 @@ orbit deploy:run docs.production --stream-json
 ## What Happens
 
 Use `deploy:run` when you want to execute the configured deployment pipeline
-for one production app instance. It resolves the concrete instance, reads its ordered deployment steps,
+for one production instance. It resolves the concrete instance, reads its ordered deployment steps,
 creates a gateway deployment run with a reusable run context, renders
 `{{ ... }}` placeholders in each step, and executes the configured shell
 scripts on the instance's owning node through the gateway. It stops at the first
@@ -56,7 +56,7 @@ Available run context includes `release`, `app_path`, `releases_path`,
 also exported as `ORBIT_DEPLOY_*` environment variables.
 
 Release-aware steps may create or prune versioned release directories and move
-`live_path` within the app-instance-owned release boundary. The production runtime
+`live_path` within the instance-owned release boundary. The production runtime
 service may bind mount only the app source or active release path plus
 explicitly managed shared paths; `live_path`, document root, storage, and
 database symlinks must not escape that boundary.
@@ -76,8 +76,8 @@ the queued operation descriptor.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The caller has `deploy:run` on the production app instance's owning node.
-- The app instance uses the Orbit driver with a concrete source path and an
+- The caller has `deploy:run` on the production instance's owning node.
+- The instance uses the Orbit driver with a concrete source path and an
   active Agent-eligible owning node.
 
 ## Related
@@ -85,7 +85,7 @@ the queued operation descriptor.
 - [`orbit deploy:step-list`](../2_deploy-step-list/deploy-step-list.md)
 - [`orbit deploy:history`](../5_deploy-history/deploy-history.md)
 - [`orbit deploy:log`](../6_deploy-log/deploy-log.md)
-- [`doctor --family=app`](../../5_app/app-doctor.md)
+- [`doctor --family=instance`](../../5_project/instance-doctor.md)
 
 ## Technical Contract
 

@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Enums\ProcessRestartPolicy;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
+use App\Models\Project;
 use App\Services\Processes\LaunchdPlistRenderer;
 use Database\Factories\ProcessFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -23,12 +23,12 @@ it('renders user LaunchAgent plist content with Orbit labels logs and escaped va
         throw new RuntimeException('Node factory did not return a Node.');
     }
 
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/Users/nckrtl/apps/docs & api',
     ]);
-    if (! $app instanceof App) {
+    if (! $app instanceof Project) {
         throw new RuntimeException('App factory did not return an App.');
     }
 
@@ -86,13 +86,13 @@ it('renders Vite launch agents with dynamic host and certificate environment', f
         throw new RuntimeException('Node factory did not return a Node.');
     }
 
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'happie-nmbp',
         'domain' => 'happie.nmbp',
         'node_id' => $node->id,
         'path' => '/Users/nckrtl/apps/happie',
     ]);
-    if (! $app instanceof App) {
+    if (! $app instanceof Project) {
         throw new RuntimeException('App factory did not return an App.');
     }
 

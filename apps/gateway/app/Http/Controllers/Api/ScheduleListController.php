@@ -25,7 +25,7 @@ final readonly class ScheduleListController implements Loggable
     #[OpenApiResponse(
         status: 200,
         description: 'The visible schedule inventory with concrete instance targets.',
-        type: 'array{success: array{data: array{schedules: list<array{name: string, scope: string, target: array{type: string, name: string, node: string|null}, interval: string, timezone: string, execution: array{type: string, value: string}, enabled: bool, status: string, scheduler: array{node: string|null, heartbeat_at: string|null, registry_synced_at: string|null}, last_run: array{id: int, status: string, exit_code: int|null, started_at: string, finished_at: string|null}|null}>}, meta: array{app: string|null, node: string|null, count: int}}}',
+        type: 'array{success: array{data: array{schedules: list<array{name: string, scope: string, target: array{type: string, name: string, node: string|null}, interval: string, timezone: string, execution: array{type: string, value: string}, enabled: bool, status: string, scheduler: array{node: string|null, heartbeat_at: string|null, registry_synced_at: string|null}, last_run: array{id: int, status: string, exit_code: int|null, started_at: string, finished_at: string|null}|null}>}, meta: array{instance: string|null, node: string|null, count: int}}}',
     )]
     public function __invoke(Request $request): JsonResponse
     {
@@ -38,7 +38,7 @@ final readonly class ScheduleListController implements Loggable
 
         try {
             $data = $this->payload->list(
-                app: $this->stringQuery($request, 'app'),
+                instance: $this->stringQuery($request, 'instance'),
                 node: $this->stringQuery($request, 'node'),
                 caller: $caller,
             );

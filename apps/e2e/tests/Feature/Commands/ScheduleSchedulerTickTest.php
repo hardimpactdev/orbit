@@ -54,7 +54,7 @@ function scheduleSchedulerSeedGatewayIntent($topology, string $scheduleName, str
 
     $php = <<<PHP
         \$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-        \$app = \\App\\Models\\App::query()->updateOrCreate(
+        \$app = \\App\\Models\\Project::query()->updateOrCreate(
             ['name' => 'e2e-scheduler'],
             [
                 'node_id' => \$node->id,

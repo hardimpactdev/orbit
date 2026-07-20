@@ -8,8 +8,8 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
@@ -956,15 +956,15 @@ final readonly class ProxyRouteProbe
     {
         $route->loadMissing(['app', 'workspace']);
 
-        if ($route->owner_type === 'app' && ! $route->app instanceof App) {
+        if ($route->owner_type === 'app' && ! $route->app instanceof Project) {
             return [$this->ownerInvalid($route, 'app')];
         }
 
-        if ($route->owner_type === 'app-analytics' && ! $route->app instanceof App) {
+        if ($route->owner_type === 'app-analytics' && ! $route->app instanceof Project) {
             return [$this->ownerInvalid($route, 'app-analytics')];
         }
 
-        if ($route->owner_type === 'app-websocket' && ! $route->app instanceof App) {
+        if ($route->owner_type === 'app-websocket' && ! $route->app instanceof Project) {
             return [$this->ownerInvalid($route, 'app-websocket')];
         }
 
@@ -1056,11 +1056,11 @@ final readonly class ProxyRouteProbe
             return [];
         }
 
-        $app = App::query()
+        $app = Project::query()
             ->where('domain', $route->domain)
             ->first();
 
-        if ($app instanceof App) {
+        if ($app instanceof Project) {
             return [
                 new DriftEntry(
                     family: $this->key(),

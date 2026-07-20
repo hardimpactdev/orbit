@@ -2,10 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
 use App\Models\LocalGatewaySettings;
 use App\Models\Process;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 
@@ -78,18 +79,18 @@ describe('ProcessLogStreamStartController', function (): void {
 /**
  * @param  array<string, mixed>  $attributes
  */
-function process_log_stream_create_app(array $attributes): App
+function process_log_stream_create_app(array $attributes): Project
 {
-    $app = App::factory()->create($attributes);
+    $app = Project::factory()->create($attributes);
 
-    if (! $app instanceof App) {
+    if (! $app instanceof Project) {
         throw new RuntimeException('Expected app factory to create an app model.');
     }
 
     return $app;
 }
 
-function process_log_stream_create_process(App $app, string $name): Process
+function process_log_stream_create_process(Project $app, string $name): Process
 {
     $process = Process::factory()
         ->forOwner($app)
@@ -108,7 +109,7 @@ function process_log_stream_start_api_call(): TestResponse
         method: 'POST',
         uri: '/api/processes/vite/log-stream',
         parameters: [
-            'app' => 'docs',
+            'instance' => 'docs',
             'lines' => 5,
         ],
         cookies: [],
@@ -119,12 +120,12 @@ function process_log_stream_start_api_call(): TestResponse
     );
 }
 
-function process_log_stream_first_agent_push_request(): ?Illuminate\Http\Client\Request
+function process_log_stream_first_agent_push_request(): ?Request
 {
     foreach (Http::recorded() as $record) {
         $request = $record[0] ?? null;
 
-        if (! $request instanceof Illuminate\Http\Client\Request) {
+        if (! $request instanceof Request) {
             continue;
         }
 
@@ -139,9 +140,9 @@ function process_log_stream_first_agent_push_request(): ?Illuminate\Http\Client\
 /**
  * @return array<string, mixed>
  */
-function process_log_stream_operation_payload(?Illuminate\Http\Client\Request $request): array
+function process_log_stream_operation_payload(?Request $request): array
 {
-    if (! $request instanceof Illuminate\Http\Client\Request) {
+    if (! $request instanceof Request) {
         return [];
     }
 

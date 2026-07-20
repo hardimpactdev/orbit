@@ -37,7 +37,7 @@ describe('LogStream commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:logs', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--workspace' => 'feature-docs',
             '--lines' => 5,
             '--follow' => true,
@@ -49,7 +49,7 @@ describe('LogStream commands', function (): void {
             return (
                 $request->method() === 'POST'
                 && str_contains($url, '/api/processes/vite/log-stream')
-                && $request['app'] === 'docs'
+                && $request['instance'] === 'docs'
                 && $request['workspace'] === 'feature-docs'
                 && $request['lines'] === 5
             );
@@ -68,7 +68,7 @@ describe('LogStream commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:logs', [
             'name' => 'vite',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--follow' => true,
             '--json' => true,
         ]);
@@ -99,10 +99,10 @@ describe('LogStream commands', function (): void {
                     ],
                 ],
             ],
-        ], ['app' => 'docs']));
+        ], ['project' => 'docs', 'instance' => 'development']));
 
         [$exitCode, $output] = runCommand($this, 'deploy:log', [
-            'app' => 'docs',
+            'instance' => 'docs',
             'run' => '42',
             '--step' => '13',
             '--lines' => '20',
@@ -114,7 +114,7 @@ describe('LogStream commands', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/deploy/log/42')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'instance=docs')
                 && str_contains($url, 'step=13')
                 && str_contains($url, 'lines=20')
             );
@@ -142,7 +142,7 @@ describe('LogStream commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:logs', [
             'name' => 'laravel-scheduler',
-            '--app' => 'docs',
+            '--instance' => 'docs',
         ]);
 
         expect($exitCode)

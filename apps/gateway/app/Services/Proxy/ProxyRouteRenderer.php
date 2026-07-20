@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Proxy;
 
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
@@ -103,7 +103,11 @@ final readonly class ProxyRouteRenderer
         $workspace = $route->workspace;
         $app = $workspace?->app;
 
-        if (! $workspace instanceof Workspace || ! $app instanceof App || $app->runtimeKind() !== AppRuntimeKind::Php) {
+        if (
+            ! $workspace instanceof Workspace
+            || ! $app instanceof Project
+            || $app->runtimeKind() !== AppRuntimeKind::Php
+        ) {
             return;
         }
 
@@ -138,7 +142,7 @@ final readonly class ProxyRouteRenderer
     {
         $app = $route->app;
 
-        if (! $app instanceof App || $app->runtimeKind() !== AppRuntimeKind::Php) {
+        if (! $app instanceof Project || $app->runtimeKind() !== AppRuntimeKind::Php) {
             return;
         }
 
@@ -881,14 +885,14 @@ final readonly class ProxyRouteRenderer
         $node = $this->appRouteTargets->nodeForRoute($route, $instance);
 
         if (
-            $route->app instanceof App
+            $route->app instanceof Project
             && $node instanceof Node
             && $this->innerTlsPolicy->appliesToAppOnNode($route->app, $node)
         ) {
             return $this->appRouteRuntimeTargets->httpsRuntimeUpstream($route->app, $instance);
         }
 
-        return $route->app instanceof App
+        return $route->app instanceof Project
             ? $this->appRouteRuntimeTargets->httpRuntimeUpstream($route->app, $instance)
             : "http://orbit-app-{$slug}:".AppRuntimeContainerRenderer::InternalPort;
     }
@@ -904,7 +908,7 @@ final readonly class ProxyRouteRenderer
                     $route->workspace->loadMissing('app');
                     $app = $route->workspace?->app;
 
-                    if ($app instanceof App && is_string($app->name) && $app->name !== '') {
+                    if ($app instanceof Project && is_string($app->name) && $app->name !== '') {
                         return (
                             "https://orbit-ws-{$app->name}-{$route->workspace?->name}:"
                             .AppDevelopmentInnerTlsPolicy::InternalTlsPort
@@ -917,7 +921,7 @@ final readonly class ProxyRouteRenderer
 
             $app = $route->app;
 
-            if ($app instanceof App) {
+            if ($app instanceof Project) {
                 $instance = $this->appRouteTargets->appInstanceForRoute($route);
                 $node = $this->appRouteTargets->nodeForRoute($route, $instance);
 
@@ -968,7 +972,7 @@ final readonly class ProxyRouteRenderer
 
             $app = $workspace->app;
 
-            if (! $app instanceof App) {
+            if (! $app instanceof Project) {
                 return null;
             }
 
@@ -986,7 +990,7 @@ final readonly class ProxyRouteRenderer
 
         $app = $route->app;
 
-        if ($app instanceof App) {
+        if ($app instanceof Project) {
             $instance = $this->appRouteTargets->appInstanceForRoute($route);
             $node = $this->appRouteTargets->nodeForRoute($route, $instance);
 

@@ -23,12 +23,12 @@ abstract class ScheduleGatewayCommand extends GatewayCommand
 
     protected function validateScopeFilters(): ?int
     {
-        if (! $this->hasMutuallyExclusiveOptions('app', 'node')) {
+        if (! $this->hasMutuallyExclusiveOptions('instance', 'node')) {
             return null;
         }
 
         return $this->renderFailure('validation_failed', 'The schedule filters are mutually exclusive.', [
-            'fields' => ['app', 'node'],
+            'fields' => ['instance', 'node'],
         ]);
     }
 
@@ -40,7 +40,7 @@ abstract class ScheduleGatewayCommand extends GatewayCommand
     protected function scheduleScopePath(string $path): string
     {
         $query = $this->filledQuery([
-            'app' => $this->resolvedScheduleApp(),
+            'instance' => $this->resolvedScheduleInstance(),
             'node' => $this->resolvedScheduleNode(),
         ]);
 
@@ -51,9 +51,9 @@ abstract class ScheduleGatewayCommand extends GatewayCommand
         return $path.'?'.http_build_query($query, '', '&', PHP_QUERY_RFC3986);
     }
 
-    protected function resolvedScheduleApp(): ?string
+    protected function resolvedScheduleInstance(): ?string
     {
-        return $this->stringOption('app');
+        return $this->stringOption('instance');
     }
 
     protected function resolvedScheduleNode(): ?string

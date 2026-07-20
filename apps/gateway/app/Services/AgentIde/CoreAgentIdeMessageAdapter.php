@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Services\AgentIde;
 
 use App\Contracts\AgentIdeMessageAdapter;
-use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\NodeTool;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -101,16 +102,16 @@ final class CoreAgentIdeMessageAdapter implements AgentIdeMessageAdapter
 
     /**
      * @param  array{app: string, workspace: string|null, node: string}  $target
-     * @return array{app: App, workspace: Workspace, session_id: string, directory: string}|null
+     * @return array{app: Project, workspace: Workspace, session_id: string, directory: string}|null
      */
     private function resolveOpenCodeContext(array $target, ?string $sessionId = null): ?array
     {
-        $app = App::query()
+        $app = Project::query()
             ->with('node')
             ->where('name', $target['app'])
             ->first();
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return null;
         }
 
@@ -152,7 +153,7 @@ final class CoreAgentIdeMessageAdapter implements AgentIdeMessageAdapter
     /**
      * @return array{url: string, username: string|null, password: string|null}
      */
-    private function openCodeServerConfig(App $app): array
+    private function openCodeServerConfig(Project $app): array
     {
         $app->loadMissing('node');
 
@@ -249,16 +250,28 @@ final class CoreAgentIdeMessageAdapter implements AgentIdeMessageAdapter
             return [];
         }
 
-        $app = App::query()
+        $app = Project::query()
             ->where('name', $target['app'])
             ->first();
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return [];
         }
 
-        return Workspace::query()
-            ->where('app_id', $app->id)
+        $instance = is_string($target['instance'] ?? null)
+            ? AppInstance::query()
+                ->where('app_id', $app->id)
+                ->where('name', $target['instance'])
+                ->first()
+            : null;
+
+        $query = Workspace::query()->where('app_id', $app->id);
+
+        if ($instance instanceof AppInstance) {
+            $query->where('app_instance_id', $instance->id);
+        }
+
+        return $query
             ->whereNotNull('agent_ide_workspace_id')
             ->pluck('name')
             ->all();

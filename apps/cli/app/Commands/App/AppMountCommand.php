@@ -9,9 +9,9 @@ use App\Exceptions\GatewayApiException;
 final class AppMountCommand extends AppGatewayCommand
 {
     #[\Override]
-    protected $signature = 'app:mount
+    protected $signature = 'instance:mount
         {action? : Action to perform (list|add|remove)}
-        {app? : App name, hostname, or dotted app instance selector}
+        {instance? : Instance selector (project.instance or hostname)}
         {source? : Host source path for add}
         {target? : Container target path}
         {--read-only : Mount read-only (default)}
@@ -19,12 +19,12 @@ final class AppMountCommand extends AppGatewayCommand
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'List or change additional Docker runtime mounts for an app instance.';
+    protected $description = 'List or change additional Docker runtime mounts for an instance.';
 
     public function handle(): int
     {
         $action = $this->stringArgument('action');
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('instance');
 
         if ($action === null) {
             return $this->failValidation('action', 'Action is required.');
@@ -39,7 +39,7 @@ final class AppMountCommand extends AppGatewayCommand
         }
 
         if ($selector === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         return match ($action) {
@@ -52,7 +52,7 @@ final class AppMountCommand extends AppGatewayCommand
     private function listMounts(string $selector): int
     {
         try {
-            $response = $this->gatewayGet($this->apiAppPath($selector, '/mounts'));
+            $response = $this->gatewayGet($this->apiInstancePath($selector, '/mounts'));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -63,7 +63,7 @@ final class AppMountCommand extends AppGatewayCommand
     private function addMount(string $selector): int
     {
         if (! $this->hasInstanceSelector($selector)) {
-            return $this->appInstanceRequired();
+            return $this->dottedInstanceRequired();
         }
 
         $source = $this->stringArgument('source');
@@ -86,7 +86,7 @@ final class AppMountCommand extends AppGatewayCommand
         }
 
         try {
-            $response = $this->gatewayPost($this->apiAppPath($selector, '/mounts'), [
+            $response = $this->gatewayPost($this->apiInstancePath($selector, '/mounts'), [
                 'source' => $source,
                 'target' => $target,
                 'read_only' => ! (bool) $this->option('read-write'),
@@ -101,7 +101,7 @@ final class AppMountCommand extends AppGatewayCommand
     private function removeMount(string $selector): int
     {
         if (! $this->hasInstanceSelector($selector)) {
-            return $this->appInstanceRequired();
+            return $this->dottedInstanceRequired();
         }
 
         $target = $this->stringArgument('target') ?? $this->stringArgument('source');
@@ -111,7 +111,7 @@ final class AppMountCommand extends AppGatewayCommand
         }
 
         try {
-            $response = $this->gatewayDelete($this->apiAppPath($selector, '/mounts'), [
+            $response = $this->gatewayDelete($this->apiInstancePath($selector, '/mounts'), [
                 'target' => $target,
             ]);
         } catch (GatewayApiException $exception) {
@@ -126,12 +126,12 @@ final class AppMountCommand extends AppGatewayCommand
         return substr_count(haystack: $selector, needle: '.') === 1;
     }
 
-    private function appInstanceRequired(): int
+    private function dottedInstanceRequired(): int
     {
         return $this->renderFailure(
             'validation_failed',
-            'Runtime mounts can only be changed on app instances. Use a dotted app instance selector such as hauser.nmbp.',
-            ['field' => 'app', 'reason' => 'app_instance_required'],
+            'Runtime mounts can only be changed with a dotted instance selector such as hauser.nmbp.',
+            ['field' => 'instance', 'reason' => 'dotted_instance_required'],
         );
     }
 }

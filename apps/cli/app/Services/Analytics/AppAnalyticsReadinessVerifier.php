@@ -19,7 +19,8 @@ final readonly class AppAnalyticsReadinessVerifier implements AnalyticsReadiness
     public function verify(array $context): array
     {
         $binding = $this->arrayField($context, 'binding');
-        $app = $this->stringField($binding, 'app');
+        $project = $this->stringField($binding, 'project');
+        $instance = $this->stringField($binding, 'instance');
         $enabled = ($binding['enabled'] ?? false) === true;
         $hosts = $this->stringList($binding['public_hosts'] ?? []);
         $routes = $this->routesByHost($this->arrayList($context['routes'] ?? []));
@@ -32,7 +33,8 @@ final readonly class AppAnalyticsReadinessVerifier implements AnalyticsReadiness
         }
 
         return [
-            'app' => $app,
+            'project' => $project,
+            'instance' => $instance,
             'ready' => $enabled
                 && $results !== []
                 && ! in_array(

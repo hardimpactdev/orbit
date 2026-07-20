@@ -17,7 +17,7 @@ final class AppAnalyticsEnableCommand extends AppGatewayCommand
     use RendersAppAnalyticsBinding;
 
     #[\Override]
-    protected $name = 'app:analytics enable';
+    protected $name = 'instance:analytics enable';
 
     #[\Override]
     protected $description = 'Enable analytics tracking proxy support for an app.';
@@ -27,7 +27,7 @@ final class AppAnalyticsEnableCommand extends AppGatewayCommand
     {
         parent::configure();
 
-        $this->addArgument('app', InputArgument::OPTIONAL, 'App name or hostname');
+        $this->addArgument('instance', InputArgument::OPTIONAL, 'Instance selector (project.instance or hostname)');
         $this->addOption(
             'host',
             null,
@@ -39,10 +39,10 @@ final class AppAnalyticsEnableCommand extends AppGatewayCommand
 
     public function handle(): int
     {
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('instance');
 
         if ($selector === null) {
-            return $this->failValidation('app', 'App is required.');
+            return $this->failValidation('instance', 'Instance is required.');
         }
 
         $payload = ['public_hosts' => $this->publicHosts()];
@@ -59,9 +59,9 @@ final class AppAnalyticsEnableCommand extends AppGatewayCommand
 
         $response = [];
         $outcome = $this->runStepOperation(
-            'Enabling App Analytics',
+            'Enabling Instance Analytics',
             [
-                ['label' => 'Validate app and analytics prerequisites'],
+                ['label' => 'Validate instance and analytics prerequisites'],
                 ['label' => 'Register public tracking routes'],
                 ['label' => 'Apply router tracking routes'],
                 ['label' => 'Apply ingress TLS and tracking routes'],
@@ -76,7 +76,7 @@ final class AppAnalyticsEnableCommand extends AppGatewayCommand
                     );
                 }
             },
-            doneFooter: "Analytics enabled for app '{$selector}'",
+            doneFooter: "Analytics enabled for instance '{$selector}'",
         );
 
         if (! $outcome->isCompleted()) {
@@ -95,7 +95,7 @@ final class AppAnalyticsEnableCommand extends AppGatewayCommand
      */
     private function enableAnalytics(string $selector, array $payload): array
     {
-        return $this->gatewayPost($this->apiAppPath($selector, '/analytics/enable'), $payload);
+        return $this->gatewayPost($this->apiInstancePath($selector, '/analytics/enable'), $payload);
     }
 
     /**

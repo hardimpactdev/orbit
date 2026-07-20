@@ -15,7 +15,7 @@ use Saloon\Http\Faking\MockResponse;
 uses(TestCase::class);
 
 it('targets the process start gateway endpoint with optional filters', function (): void {
-    $request = new StartProcessesRequest(app: 'docs', workspace: 'feature-docs', name: 'vite');
+    $request = new StartProcessesRequest(instance: 'docs', workspace: 'feature-docs', name: 'vite');
 
     expect($request->getMethod())
         ->toBe(Method::POST)
@@ -23,16 +23,16 @@ it('targets the process start gateway endpoint with optional filters', function 
         ->toBe('/api/processes/start')
         ->and($request->body()->all())
         ->toBe([
-            'app' => 'docs',
+            'instance' => 'docs',
             'workspace' => 'feature-docs',
             'name' => 'vite',
         ]);
 });
 
 it('omits null request body values', function (): void {
-    $request = new StartProcessesRequest(app: 'docs', workspace: null, name: null);
+    $request = new StartProcessesRequest(instance: 'docs', workspace: null, name: null);
 
-    expect($request->body()->all())->toBe(['app' => 'docs']);
+    expect($request->body()->all())->toBe(['instance' => 'docs']);
 });
 
 it('returns a ProcessStartResponse DTO', function (): void {
@@ -43,7 +43,7 @@ it('returns a ProcessStartResponse DTO', function (): void {
                     'runtimes' => [
                         [
                             'process' => 'vite',
-                            'app' => 'docs',
+                            'instance' => 'docs',
                             'workspace' => null,
                             'runtime_unit' => 'orbit_docs_main_vite',
                             'state' => 'running',
@@ -59,7 +59,7 @@ it('returns a ProcessStartResponse DTO', function (): void {
     $connector = new GatewayConnector(baseUrl: 'https://10.6.0.2', caPemPath: '/path/to/ca.pem');
     $connector->withMockClient($mock);
 
-    $dto = $connector->send(new StartProcessesRequest(app: 'docs', workspace: null, name: 'vite'))->dto();
+    $dto = $connector->send(new StartProcessesRequest(instance: 'docs', workspace: null, name: 'vite'))->dto();
 
     expect($dto)
         ->toBeInstanceOf(ProcessStartResponse::class)

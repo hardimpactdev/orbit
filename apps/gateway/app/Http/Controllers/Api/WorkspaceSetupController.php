@@ -51,7 +51,7 @@ final class WorkspaceSetupController implements Loggable
 
         $validator = validator($request->all(), [
             'name' => ['nullable', 'string'],
-            'app' => ['nullable', 'string'],
+            'instance' => ['nullable', 'string'],
             'path' => ['nullable', 'string', 'starts_with:/'],
             'caller_cwd' => ['nullable', 'string', 'starts_with:/'],
         ]);
@@ -66,7 +66,7 @@ final class WorkspaceSetupController implements Loggable
         $validated = $validator->validated();
 
         $name = $validated['name'] ?? null;
-        $appName = $validated['app'] ?? null;
+        $appName = $validated['instance'] ?? null;
         $path = $validated['path'] ?? null;
         $callerCwd = $validated['caller_cwd'] ?? null;
 
@@ -115,8 +115,8 @@ final class WorkspaceSetupController implements Loggable
         }
 
         $data = [
-            'app' => $result['app'],
-            'app_instance' => $result['app_instance'],
+            'project' => $result['project'],
+            'instance' => $result['instance'],
             'workspace' => $result['workspace'],
             'node' => $result['node'],
             'url' => $result['url'],
@@ -154,7 +154,7 @@ final class WorkspaceSetupController implements Loggable
 
         $validator = validator($request->all(), [
             'name' => ['nullable', 'string'],
-            'app' => ['nullable', 'string'],
+            'instance' => ['nullable', 'string'],
             'path' => ['nullable', 'string', 'starts_with:/'],
             'caller_cwd' => ['nullable', 'string', 'starts_with:/'],
         ]);
@@ -169,7 +169,7 @@ final class WorkspaceSetupController implements Loggable
         $validated = $validator->validated();
 
         $name = $validated['name'] ?? null;
-        $appName = $validated['app'] ?? null;
+        $appName = $validated['instance'] ?? null;
         $path = $validated['path'] ?? null;
         $callerCwd = $validated['caller_cwd'] ?? null;
 
@@ -241,8 +241,8 @@ final class WorkspaceSetupController implements Loggable
 
     private function resolveErrorField(string $message): string
     {
-        if (str_contains($message, 'App')) {
-            return 'app';
+        if (str_contains($message, 'Instance') || str_contains($message, 'Project')) {
+            return 'instance';
         }
 
         if (str_starts_with($message, 'Path ')) {
@@ -254,7 +254,7 @@ final class WorkspaceSetupController implements Loggable
 
     private function resolveErrorCode(string $message, string $field): string
     {
-        return $field === 'app' ? 'validation_failed' : 'workspace.not_found';
+        return $field === 'instance' ? 'validation_failed' : 'workspace.not_found';
     }
 
     private function error(string $code, string $message, array $meta = [], int $status = 422): JsonResponse

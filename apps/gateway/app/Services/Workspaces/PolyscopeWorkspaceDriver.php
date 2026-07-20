@@ -8,8 +8,8 @@ use App\Contracts\WorkspaceSourceDriver;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Exceptions\WorkspaceCreateFailed;
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 use Polyscope\Laravel\Polyscope;
@@ -39,7 +39,7 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
         private RunsInternalCommands $localExecutor,
     ) {}
 
-    public function create(App $app, Node $node, string $name, string $base): WorkspaceProvisionResult
+    public function create(Project $app, Node $node, string $name, string $base): WorkspaceProvisionResult
     {
         $config = $this->resolveConfig($app, $node);
         $client = new Polyscope($config['api_token'], baseUrl: $config['base_url']);
@@ -105,7 +105,7 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
     /**
      * @return array{api_token: string, server_id: string, repository_id: string, base_url: string|null}
      */
-    private function resolveConfig(App $app, Node $node): array
+    private function resolveConfig(Project $app, Node $node): array
     {
         $nodeConfig = is_array($node->agent_ide_config) ? $node->agent_ide_config : [];
         $appConfig = is_array($app->agent_ide_config) ? $app->agent_ide_config : [];
@@ -158,7 +158,7 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
     /**
      * @return array{api_token: string|null, server_id: string|null, repository_id: string|null, base_url: string|null}
      */
-    private function readRemoteConfig(App $app, Node $node): array
+    private function readRemoteConfig(Project $app, Node $node): array
     {
         $result = $this->localExecutor->runInternal(
             node: $node,
@@ -189,7 +189,7 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
     /**
      * @return array<string, mixed>
      */
-    private function configLookupPayload(RemoteShellResult $result, App $app, Node $node): array
+    private function configLookupPayload(RemoteShellResult $result, Project $app, Node $node): array
     {
         $envelope = $this->configLookupEnvelope($result, $app, $node);
 
@@ -207,7 +207,7 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
     /**
      * @return array<string, mixed>
      */
-    private function configLookupEnvelope(RemoteShellResult $result, App $app, Node $node): array
+    private function configLookupEnvelope(RemoteShellResult $result, Project $app, Node $node): array
     {
         try {
             $decoded = json_decode(trim($result->stdout), true, flags: JSON_THROW_ON_ERROR);
@@ -225,7 +225,7 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
     /**
      * @param  array<string, mixed>  $envelope
      */
-    private function configLookupFailure(array $envelope, App $app, Node $node): WorkspaceCreateFailed
+    private function configLookupFailure(array $envelope, Project $app, Node $node): WorkspaceCreateFailed
     {
         $error = is_array($envelope['error'] ?? null) ? $envelope['error'] : [];
         $meta = [
@@ -258,7 +258,7 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
         return in_array($code, self::SAFE_CONFIG_LOOKUP_ERROR_CODES, true) ? $code : null;
     }
 
-    private function unparseableConfigLookup(App $app, Node $node): WorkspaceCreateFailed
+    private function unparseableConfigLookup(Project $app, Node $node): WorkspaceCreateFailed
     {
         return new WorkspaceCreateFailed(
             'workspace.agent_ide_not_configured',

@@ -25,7 +25,7 @@ function workspaceStepAddSeed(E2ETopologyHarness $topology): void
         \Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
         \Illuminate\Support\Facades\DB::table('workspace_steps')->delete();
         \Illuminate\Support\Facades\DB::table('workspaces')->delete();
-        \App\Models\App::query()->delete();
+        \App\Models\Project::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             'consumer_node_id' => $nodes->get('operator-1'),
@@ -36,7 +36,7 @@ function workspaceStepAddSeed(E2ETopologyHarness $topology): void
             'updated_at' => now(),
         ]);
 
-        \App\Models\App::query()->create([
+        \App\Models\Project::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'path' => '/srv/docs',
@@ -75,7 +75,7 @@ it('adds workspace setup and teardown steps from a non-gateway caller through th
 
         $composerResult = $topology->ssh(
             'operator',
-            "cd {$checkout} && orbit workspace-setup-step:add --app=docs --command='composer install' --timeout=600 --json",
+            "cd {$checkout} && orbit workspace-setup-step:add --instance=docs --command='composer install' --timeout=600 --json",
             timeoutSeconds: 120,
         );
         $composerPayload = json_decode(trim($composerResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -83,20 +83,20 @@ it('adds workspace setup and teardown steps from a non-gateway caller through th
 
         $topology->ssh(
             'operator',
-            "cd {$checkout} && orbit workspace-setup-step:add --app=docs --command='npm install' --timeout=300 --after={$composerStep['id']} --json",
+            "cd {$checkout} && orbit workspace-setup-step:add --instance=docs --command='npm install' --timeout=300 --after={$composerStep['id']} --json",
             timeoutSeconds: 120,
         );
 
         $teardownResult = $topology->ssh(
             'operator',
-            "cd {$checkout} && orbit workspace-teardown-step:add --app=docs --command='dropdb docs' --timeout=60 --json",
+            "cd {$checkout} && orbit workspace-teardown-step:add --instance=docs --command='dropdb docs' --timeout=60 --json",
             timeoutSeconds: 120,
         );
         $teardownPayload = json_decode(trim($teardownResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $setupListResult = $topology->ssh(
             'operator',
-            "cd {$checkout} && orbit workspace-setup-step:list --app=docs --json",
+            "cd {$checkout} && orbit workspace-setup-step:list --instance=docs --json",
             timeoutSeconds: 120,
         );
         $setupListPayload = json_decode(

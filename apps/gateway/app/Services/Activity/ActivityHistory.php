@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Activity;
 
-use App\Models\App;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -31,11 +31,11 @@ final class ActivityHistory
     ];
 
     /**
-     * @param  array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool, limit: int}  $filters
+     * @param  array{project: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool, limit: int}  $filters
      * @return array{
      *     activities: list<array<string, mixed>>,
      *     meta: array{
-     *         filters: array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool},
+     *         filters: array{project: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool},
      *         limit: int,
      *         count: int,
      *         has_more: bool
@@ -75,8 +75,8 @@ final class ActivityHistory
             $query = $this->applyNodeFilter($query, $filters['node']);
         }
 
-        if ($filters['app'] !== null) {
-            $query = $this->applyAppFilter($query, $filters['app']);
+        if ($filters['project'] !== null) {
+            $query = $this->applyProjectFilter($query, $filters['project']);
         }
 
         $query->orderByDesc('id');
@@ -94,7 +94,7 @@ final class ActivityHistory
             'activities' => $this->activityPayloads($activities),
             'meta' => [
                 'filters' => [
-                    'app' => $filters['app'],
+                    'project' => $filters['project'],
                     'node' => $filters['node'],
                     'effect' => $filters['effect'],
                     'correlation' => $filters['correlation'],
@@ -204,13 +204,18 @@ final class ActivityHistory
      * @param  Builder<Activity>  $query
      * @return Builder<Activity>
      */
-    private function applyAppFilter(Builder $query, string $app): Builder
+    private function applyProjectFilter(Builder $query, string $project): Builder
     {
-        return $query->where(function (Builder $query) use ($app): void {
+        return $query->where(function (Builder $query) use ($project): void {
             $query
-                ->whereHasMorph('subject', [App::class], fn (Builder $query): Builder => $query->where('name', $app))
-                ->orWhere('properties->app', $app)
-                ->orWhere('properties->app_name', $app);
+                ->whereHasMorph('subject', [Project::class], fn (Builder $query): Builder => $query->where(
+                    'name',
+                    $project,
+                ))
+                ->orWhere('properties->project', $project)
+                ->orWhere('properties->project_name', $project)
+                ->orWhere('properties->app', $project)
+                ->orWhere('properties->app_name', $project);
         });
     }
 
@@ -255,9 +260,9 @@ final class ActivityHistory
      */
     private function subjectPayload(?Model $subject): ?array
     {
-        if ($subject instanceof App) {
+        if ($subject instanceof Project) {
             return [
-                'type' => 'app',
+                'type' => 'project',
                 'name' => $subject->name,
             ];
         }

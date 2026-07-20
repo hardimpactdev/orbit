@@ -7,9 +7,9 @@ namespace App\Services\Tools;
 use App\Actions\Processes\RestartProcesses;
 use App\Actions\Processes\StartProcesses;
 use App\Actions\Processes\StopProcesses;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessOwnerContextResolver;
@@ -98,7 +98,7 @@ final readonly class ProcessToolLifecycleRunner
             return $this->processContexts->resolve($process->owner->name, null, null);
         }
 
-        if ($process->owner instanceof App) {
+        if ($process->owner instanceof Project) {
             return $this->processContexts->resolve(null, $process->owner->name, null);
         }
 

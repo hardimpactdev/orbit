@@ -6,11 +6,11 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -61,7 +61,7 @@ describe('WorkspaceShowController', function (): void {
         ]);
         assignWorkspaceShowRole($node);
         grantWorkspaceShowAccess($caller, $node);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
             'domain' => null,
@@ -87,7 +87,7 @@ describe('WorkspaceShowController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/feature-docs?app=docs',
+            '/api/workspaces/feature-docs?instance=docs',
             [],
             [],
             [],
@@ -99,7 +99,7 @@ describe('WorkspaceShowController', function (): void {
             ->assertJsonPath('success.meta.registry_only', true)
             // canonical workspace entity
             ->assertJsonPath('success.data.workspace.name', 'feature-docs')
-            ->assertJsonPath('success.data.workspace.app', 'docs')
+            ->assertJsonPath('success.data.workspace.project', 'docs')
             ->assertJsonPath('success.data.workspace.node', 'app-1')
             ->assertJsonPath('success.data.workspace.path', '/home/orbit/apps/docs/.worktrees/feature-docs')
             ->assertJsonPath('success.data.workspace.php_version', '8.5')
@@ -131,8 +131,8 @@ describe('WorkspaceShowController', function (): void {
         $secondNode = Node::factory()->create(['name' => 'app-2']);
         assignWorkspaceShowRole($firstNode);
         assignWorkspaceShowRole($secondNode);
-        $docs = App::factory()->create(['name' => 'docs', 'node_id' => $firstNode->id]);
-        $api = App::factory()->create(['name' => 'api', 'node_id' => $secondNode->id]);
+        $docs = Project::factory()->create(['name' => 'docs', 'node_id' => $firstNode->id]);
+        $api = Project::factory()->create(['name' => 'api', 'node_id' => $secondNode->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $docs->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $api->id]);
 
@@ -149,7 +149,7 @@ describe('WorkspaceShowController', function (): void {
             ->assertStatus(400)
             ->assertJsonPath('error.code', 'workspace.ambiguous_name')
             ->assertJsonPath('error.meta.name', 'feature-docs')
-            ->assertJsonPath('error.meta.apps', ['docs', 'api']);
+            ->assertJsonPath('error.meta.instances', ['docs.development', 'api.development']);
     });
 
     it('returns instance-bound workspace details for app instance selectors', function (): void {
@@ -160,7 +160,7 @@ describe('WorkspaceShowController', function (): void {
         assignWorkspaceShowRole($localNode);
         grantWorkspaceShowAccess($caller, $localNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'happie',
             'node_id' => $canonicalNode->id,
             'domain' => 'happie.test',
@@ -188,7 +188,7 @@ describe('WorkspaceShowController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/recipes?app=happie.nmbp',
+            '/api/workspaces/recipes?instance=happie.nmbp',
             [],
             [],
             [],
@@ -198,8 +198,8 @@ describe('WorkspaceShowController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.workspace.name', 'recipes')
-            ->assertJsonPath('success.data.workspace.app', 'happie')
-            ->assertJsonPath('success.data.workspace.app_instance', 'nmbp')
+            ->assertJsonPath('success.data.workspace.project', 'happie')
+            ->assertJsonPath('success.data.workspace.instance', 'nmbp')
             ->assertJsonPath('success.data.workspace.node', 'NMBP')
             ->assertJsonPath('success.data.workspace.url', 'https://recipes.happie.nmbp')
             ->assertJsonPath('success.data.node.name', 'NMBP')
@@ -211,13 +211,13 @@ describe('WorkspaceShowController', function (): void {
         assignWorkspaceShowRole($gateway, 'gateway');
         $node = Node::factory()->create(['name' => 'app-1']);
         assignWorkspaceShowRole($node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         AppInstance::factory()->for($app)->create(['name' => 'production']);
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/feature-docs?app=docs',
+            '/api/workspaces/feature-docs?instance=docs',
             [],
             [],
             [],
@@ -227,9 +227,9 @@ describe('WorkspaceShowController', function (): void {
         $response
             ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.field', 'app')
-            ->assertJsonPath('error.meta.reason', 'app_instance_required')
-            ->assertJsonPath('error.meta.app', 'docs');
+            ->assertJsonPath('error.meta.field', 'instance')
+            ->assertJsonPath('error.meta.reason', 'instance_required')
+            ->assertJsonPath('error.meta.project', 'docs');
         expect($response->json('error.meta'))->not->toHaveKey('instances');
     });
 
@@ -238,7 +238,7 @@ describe('WorkspaceShowController', function (): void {
         assignWorkspaceShowRole($gateway, 'gateway');
         $node = Node::factory()->create(['name' => 'app-1']);
         assignWorkspaceShowRole($node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
@@ -248,7 +248,7 @@ describe('WorkspaceShowController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app&app=docs',
+            '/api/workspaces/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app&instance=docs',
             [],
             [],
             [],
@@ -258,9 +258,9 @@ describe('WorkspaceShowController', function (): void {
         $response
             ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.field', 'app')
-            ->assertJsonPath('error.meta.reason', 'app_instance_required')
-            ->assertJsonPath('error.meta.app', 'docs');
+            ->assertJsonPath('error.meta.field', 'instance')
+            ->assertJsonPath('error.meta.reason', 'instance_required')
+            ->assertJsonPath('error.meta.project', 'docs');
         expect($response->json('error.meta'))->not->toHaveKey('instances');
     });
 
@@ -271,13 +271,13 @@ describe('WorkspaceShowController', function (): void {
         assignWorkspaceShowRole($visibleNode);
         assignWorkspaceShowRole($hiddenNode);
         grantWorkspaceShowAccess($caller, $visibleNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $hiddenNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $hiddenNode->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
         AppInstance::factory()->for($app)->create(['name' => 'production']);
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/feature-docs?app=docs',
+            '/api/workspaces/feature-docs?instance=docs',
             [],
             [],
             [],
@@ -297,7 +297,7 @@ describe('WorkspaceShowController', function (): void {
         assignWorkspaceShowRole($visibleNode);
         assignWorkspaceShowRole($hiddenNode);
         grantWorkspaceShowAccess($caller, $visibleNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $hiddenNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $hiddenNode->id]);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
@@ -307,7 +307,7 @@ describe('WorkspaceShowController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app&app=docs',
+            '/api/workspaces/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app&instance=docs',
             [],
             [],
             [],
@@ -325,7 +325,7 @@ describe('WorkspaceShowController', function (): void {
         assignWorkspaceShowRole($gateway, 'gateway');
         $node = Node::factory()->create(['name' => 'app-1']);
         assignWorkspaceShowRole($node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
@@ -335,7 +335,7 @@ describe('WorkspaceShowController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app&app=docs.development',
+            '/api/workspaces/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app&instance=docs.development',
             [],
             [],
             [],
@@ -345,8 +345,8 @@ describe('WorkspaceShowController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.workspace.name', 'feature-docs')
-            ->assertJsonPath('success.data.workspace.app', 'docs')
-            ->assertJsonPath('success.data.workspace.app_instance', $workspace->appInstance?->name);
+            ->assertJsonPath('success.data.workspace.project', 'docs')
+            ->assertJsonPath('success.data.workspace.instance', $workspace->appInstance?->name);
     });
 
     it('resolves a visible workspace by path prefix', function (): void {
@@ -354,7 +354,7 @@ describe('WorkspaceShowController', function (): void {
         $node = Node::factory()->create(['name' => 'app-1']);
         assignWorkspaceShowRole($node);
         grantWorkspaceShowAccess($caller, $node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
@@ -380,7 +380,7 @@ describe('WorkspaceShowController', function (): void {
         createWorkspaceShowCallerNode();
         $node = Node::factory()->create();
         assignWorkspaceShowRole($node);
-        $app = App::factory()->create(['node_id' => $node->id]);
+        $app = Project::factory()->create(['node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'hidden', 'app_id' => $app->id]);
 
         $response = $this->call(
@@ -400,7 +400,7 @@ describe('WorkspaceShowController', function (): void {
         createWorkspaceShowCallerNode();
         $node = Node::factory()->create();
         assignWorkspaceShowRole($node);
-        $app = App::factory()->create(['node_id' => $node->id]);
+        $app = Project::factory()->create(['node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'hidden', 'app_id' => $app->id]);
 
         $response = $this->call(

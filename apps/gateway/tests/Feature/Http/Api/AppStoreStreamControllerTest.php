@@ -5,10 +5,10 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\OperationRun;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -41,7 +41,7 @@ function grantAppStoreStreamAccess(Node $caller, Node $appNode): void
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
-        'permissions' => json_encode(['app:new'], JSON_THROW_ON_ERROR),
+        'permissions' => json_encode(['project:new'], JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
@@ -64,7 +64,7 @@ it('streams app creation from an operation_run source', function (): void {
 
     $response = $this->call(
         'POST',
-        '/api/apps',
+        '/api/projects',
         [
             'name' => 'docs',
             'node' => 'app-1',
@@ -85,7 +85,7 @@ it('streams app creation from an operation_run source', function (): void {
     $response->assertOk();
 
     $content = $response->streamedContent();
-    $operationRun = OperationRun::query()->where('operation_type', 'app:new')->firstOrFail();
+    $operationRun = OperationRun::query()->where('operation_type', 'project:new')->firstOrFail();
     $sourceScript = collect($remoteShell->scripts)
         ->first(
             fn (string $script): bool => str_contains($script, 'internal:app-source:create'),
@@ -94,9 +94,9 @@ it('streams app creation from an operation_run source', function (): void {
     expect($content)
         ->toContain('event: tree')
         ->and($content)
-        ->toContain('Prepare app creation')
+        ->toContain('Prepare project creation')
         ->and($content)
-        ->toContain('Create app source')
+        ->toContain('Create project source')
         ->and($content)
         ->toContain('event: complete')
         ->and($content)
@@ -107,15 +107,15 @@ it('streams app creation from an operation_run source', function (): void {
         ->toBe($caller->id)
         ->and($operationRun->target_node_id)
         ->toBe($targetNode->id)
-        ->and($operationRun->result['app']['name'])
+        ->and($operationRun->result['project']['name'])
         ->toBe('docs')
-        ->and($operationRun->result['app']['runtime_config']['proxy_transport'])
+        ->and($operationRun->result['project']['runtime_config']['proxy_transport'])
         ->toBe('https')
-        ->and($operationRun->result['app']['repository'])
+        ->and($operationRun->result['project']['repository'])
         ->toBe('git@github.com:hardimpact/docs.git')
-        ->and(App::query()->where('name', 'docs')->firstOrFail()->runtime_config)
+        ->and(Project::query()->where('name', 'docs')->firstOrFail()->runtime_config)
         ->toBe(['proxy_transport' => 'https'])
-        ->and(App::query()->where('name', 'docs')->firstOrFail()->repository)
+        ->and(Project::query()->where('name', 'docs')->firstOrFail()->repository)
         ->toBe('git@github.com:hardimpact/docs.git')
         ->and($sourceScript)
         ->toBeString()

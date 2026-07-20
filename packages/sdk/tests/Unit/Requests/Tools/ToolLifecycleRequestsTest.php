@@ -20,7 +20,7 @@ use Saloon\Http\Faking\MockResponse;
 uses(TestCase::class);
 
 it('builds typed tool lifecycle requests', function (string $requestClass, string $action): void {
-    $request = new $requestClass(tool: 'openclaw', app: 'docs', node: 'app-1');
+    $request = new $requestClass(tool: 'openclaw', instance: 'docs', node: 'app-1');
 
     expect($request->resolveEndpoint())
         ->toBe("/api/tools/openclaw/{$action}")
@@ -28,7 +28,7 @@ it('builds typed tool lifecycle requests', function (string $requestClass, strin
         ->toBe(Method::POST)
         ->and($request->body()->all())
         ->toBe([
-            'app' => 'docs',
+            'instance' => 'docs',
             'node' => 'app-1',
         ]);
 
@@ -64,7 +64,7 @@ it('builds typed tool lifecycle requests', function (string $requestClass, strin
 ]);
 
 it('builds the typed tool logs request and response', function (): void {
-    $request = new LogsToolRequest(tool: 'dns', app: 'docs', node: 'gateway-1', lines: 25);
+    $request = new LogsToolRequest(tool: 'dns', instance: 'docs', node: 'gateway-1', lines: 25);
 
     expect($request->resolveEndpoint())
         ->toBe('/api/tools/dns/logs')
@@ -72,7 +72,7 @@ it('builds the typed tool logs request and response', function (): void {
         ->toBe(Method::GET)
         ->and($request->query()->all())
         ->toBe([
-            'app' => 'docs',
+            'instance' => 'docs',
             'node' => 'gateway-1',
             'lines' => 25,
         ]);

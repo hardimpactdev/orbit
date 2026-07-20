@@ -11,12 +11,12 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleStatus;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
@@ -363,7 +363,7 @@ it('does not reactivate an app production role while the node owns a workspace',
         'last_error' => 'baseline failed',
         'converged_at' => null,
     ]);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
     $instance = AppInstance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitAppInstanceDriverConfigData(

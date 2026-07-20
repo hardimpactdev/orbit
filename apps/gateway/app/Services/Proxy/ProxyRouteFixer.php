@@ -9,9 +9,9 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Ca\OrbitCaService;
@@ -22,6 +22,7 @@ use App\Services\Nodes\NodeContainerScope;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitContainerNames;
 use Closure;
+use RuntimeException;
 
 final readonly class ProxyRouteFixer
 {
@@ -186,7 +187,7 @@ final readonly class ProxyRouteFixer
         $route->loadMissing(['node', 'app']);
         $app = $route->app;
 
-        if (! $app instanceof App) {
+        if (! $app instanceof Project) {
             return null;
         }
 
@@ -196,7 +197,7 @@ final readonly class ProxyRouteFixer
         $config = is_array($route->config) ? $route->config : [];
 
         if (ProxyRouteEnactment::status($config) !== ProxyRouteEnactment::CONVERGED) {
-            throw new \RuntimeException($this->enactmentFailureMessage($route, $config));
+            throw new RuntimeException($this->enactmentFailureMessage($route, $config));
         }
 
         return [
@@ -213,7 +214,7 @@ final readonly class ProxyRouteFixer
         ];
     }
 
-    private function executeAppRouteEnactment(App $app): void
+    private function executeAppRouteEnactment(Project $app): void
     {
         if ($this->appRouteEnactor instanceof Closure) {
             ($this->appRouteEnactor)($app);
@@ -502,7 +503,7 @@ final readonly class ProxyRouteFixer
         $result = $file->apply($node, $plan);
 
         if (! $result->successful()) {
-            throw new \RuntimeException($result->summary);
+            throw new RuntimeException($result->summary);
         }
     }
 
@@ -775,7 +776,7 @@ final readonly class ProxyRouteFixer
         $content = $this->caddyConfig()->readGlobal($node);
 
         if ($content === null) {
-            throw new \RuntimeException("Failed to read global orbit-caddy config on {$node->name}");
+            throw new RuntimeException("Failed to read global orbit-caddy config on {$node->name}");
         }
 
         $updated = new CaddyGlobalConfig()->ensure($content);
@@ -867,13 +868,13 @@ final readonly class ProxyRouteFixer
 
         $output = trim($result->stderr.' '.$result->stdout);
 
-        throw new \RuntimeException($output !== '' ? "{$summary}: {$output}" : $summary);
+        throw new RuntimeException($output !== '' ? "{$summary}: {$output}" : $summary);
     }
 
     private function validatedAbsolutePath(ProxyRoute $route, string $value, string $suffix): string
     {
         if (preg_match('/[\x00-\x1F\x7F\s]/', $value) === 1 || ! str_starts_with($value, '/')) {
-            throw new \RuntimeException("Proxy route '{$route->domain}' {$suffix}");
+            throw new RuntimeException("Proxy route '{$route->domain}' {$suffix}");
         }
 
         return $value;

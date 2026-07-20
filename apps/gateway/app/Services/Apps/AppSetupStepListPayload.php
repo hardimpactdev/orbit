@@ -35,12 +35,12 @@ final class AppSetupStepListPayload
      */
     public function forStep(AppSetupStep $step): array
     {
-        $step->loadMissing('appInstance.app');
+        $step->loadMissing('appInstance.project');
 
         return [
             'id' => $step->id,
-            'app' => $step->appInstance?->app?->name,
-            'app_instance' => $step->appInstance?->name,
+            'project' => $step->appInstance?->project?->name,
+            'instance' => $step->appInstance?->name,
             'order' => $step->sort_order,
             'command' => $step->command,
             'timeout_seconds' => $step->timeoutSeconds(),

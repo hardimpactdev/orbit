@@ -47,7 +47,7 @@ final readonly class SignatureArgumentOrderRule implements GroupedRule
                     line: $signature['lineNumber'],
                     severity: FindingSeverity::Error,
                     rule: 'command_docs.signature_argument_order',
-                    message: 'Command signature arguments must come before flags. Required entries come before optional entries inside each group. Shared target flags use `--app`, `--workspace`, then `--node`; `--json` stays last. Expected signature: `'
+                    message: 'Command signature arguments must come before flags. Required entries come before optional entries inside each group. Shared target flags use `--instance`, `--workspace`, then `--node`; `--json` stays last. Expected signature: `'
                     .$expected
                     .'`.',
                 );
@@ -193,7 +193,7 @@ final readonly class SignatureArgumentOrderRule implements GroupedRule
     private function optionRank(string $name): int
     {
         return match ($name) {
-            'app' => 10,
+            'instance' => 10,
             'workspace' => 20,
             'node', 'self' => 30,
             'json' => 1000,

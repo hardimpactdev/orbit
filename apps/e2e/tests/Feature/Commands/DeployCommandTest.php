@@ -10,7 +10,7 @@ function deployCommandSeedProductionApp(E2ETopologyHarness $topology, string $pa
     $script = <<<'PHP'
         $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-        \App\Models\App::query()->updateOrCreate(
+        \App\Models\Project::query()->updateOrCreate(
             ['name' => 'docs'],
             [
                 'node_id' => $node->id,

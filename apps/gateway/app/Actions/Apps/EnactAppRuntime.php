@@ -7,9 +7,9 @@ namespace App\Actions\Apps;
 use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerApplyException;
 use App\Services\Apps\AppRuntimeContainerManager;
@@ -37,12 +37,12 @@ final readonly class EnactAppRuntime
     /**
      * @return list<array<string, string>>
      */
-    public function handle(App $app): array
+    public function handle(Project $app): array
     {
         $app->loadMissing('instances');
 
         if ($app->instances->isEmpty()) {
-            throw new RuntimeException("App '{$app->name}' has no concrete app instance.");
+            throw new RuntimeException("App '{$app->name}' has no concrete instance.");
         }
 
         $warnings = [];
@@ -55,7 +55,7 @@ final readonly class EnactAppRuntime
             $node = $this->placement->nodeForInstance($instance);
 
             if (! $node instanceof Node) {
-                throw new RuntimeException("App instance '{$app->name}.{$instance->name}' has no owning node.");
+                throw new RuntimeException("Instance '{$app->name}.{$instance->name}' has no owning node.");
             }
 
             $runtimeApp = $this->appRuntimeContainerRenderer->runtimeAppForInstance($app, $instance);
@@ -95,9 +95,9 @@ final readonly class EnactAppRuntime
         // process units, even when the runtime container apply hit a
         // retryable warning (image-unavailable, container apply failure).
         // Without this, the warning tells the user to run
-        // `doctor --family=app --restore` but app doctor cannot create
+        // `doctor --family=instance --restore` but instance doctor cannot create
         // a missing proxy route — proxy/process is the gateway's
-        // responsibility, not app doctor's. Static apps skip the runtime
+        // responsibility, not instance doctor's. Static projects skip the runtime
         // container apply path entirely; their file_server-only route is
         // still recorded here.
         return [
@@ -106,7 +106,7 @@ final readonly class EnactAppRuntime
         ];
     }
 
-    private function ensureRuntimeTlsMaterial(App $app, Node $owningNode): void
+    private function ensureRuntimeTlsMaterial(Project $app, Node $owningNode): void
     {
         if (! $this->innerTlsPolicy->appliesToApp($app)) {
             return;
@@ -121,7 +121,7 @@ final readonly class EnactAppRuntime
     /**
      * @return array<string, string>
      */
-    private function runtimeContainerWarning(App $app, bool $hadExistingContainer, Throwable $exception): array
+    private function runtimeContainerWarning(Project $app, bool $hadExistingContainer, Throwable $exception): array
     {
         $code = $hadExistingContainer
             ? 'process.runtime_unit_mismatch'
@@ -140,26 +140,26 @@ final readonly class EnactAppRuntime
     /**
      * @return array<string, string>
      */
-    private function phpVersionUnavailableWarning(App $app, AppRuntimeImageUnavailableException $exception): array
+    private function phpVersionUnavailableWarning(Project $app, AppRuntimeImageUnavailableException $exception): array
     {
         return [
-            'code' => 'app.php_version_unavailable',
-            'family' => 'app',
+            'code' => 'instance.php_version_unavailable',
+            'family' => 'instance',
             'message' => "PHP {$app->php_version} runtime image '{$exception->image}' is not available on node '{$app->node?->name}'. Make the image available, then run doctor.",
-            'next_command' => 'doctor --family=app --restore',
+            'next_command' => 'doctor --family=instance --restore',
         ];
     }
 
     /**
      * @return array<string, string>
      */
-    private function runtimeUserUnavailableWarning(App $app, AppRuntimeUserUnavailableException $exception): array
+    private function runtimeUserUnavailableWarning(Project $app, AppRuntimeUserUnavailableException $exception): array
     {
         return [
-            'code' => 'app.security.system_user',
-            'family' => 'app',
-            'message' => "Production runtime user '{$exception->runtimeUser}' for app '{$app->name}' is missing on '{$app->node?->name}': {$exception->getMessage()}",
-            'next_command' => 'doctor --family=app --restore',
+            'code' => 'instance.security.system_user',
+            'family' => 'instance',
+            'message' => "Production runtime user '{$exception->runtimeUser}' for instance '{$app->name}' is missing on '{$app->node?->name}': {$exception->getMessage()}",
+            'next_command' => 'doctor --family=instance --restore',
         ];
     }
 }

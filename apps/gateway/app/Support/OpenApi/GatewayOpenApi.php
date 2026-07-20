@@ -147,7 +147,7 @@ final class GatewayOpenApi
 
                 $operation->addParameters([
                     self::stringQueryParameter('node', 'Filter processes by node name.'),
-                    self::stringQueryParameter('app', 'Filter processes by app name.'),
+                    self::stringQueryParameter('instance', 'Filter processes by project.instance selector.'),
                     self::stringQueryParameter('workspace', 'Filter processes by workspace name.'),
                 ]);
             }

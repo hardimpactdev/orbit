@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\AppSetupStep;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -39,7 +39,7 @@ function grantAppSetupStepAccess(Node $caller, Node $appNode, array $permissions
 function createAppSetupStepTarget(): array
 {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
     ]);
@@ -61,12 +61,12 @@ describe('AppSetupStepController', function (): void {
     it('includes the selected instance when permission is denied', function (): void {
         [$node] = createAppSetupStepTarget();
         $caller = createAppSetupStepCallerNode();
-        grantAppSetupStepAccess($caller, $node, ['app:read']);
+        grantAppSetupStepAccess($caller, $node, ['instance:read']);
 
         $this
             ->call(
                 'POST',
-                '/api/apps/docs.development/setup-steps',
+                '/api/instances/docs.development/setup-steps',
                 ['command' => 'composer install'],
                 [],
                 [],
@@ -76,18 +76,18 @@ describe('AppSetupStepController', function (): void {
                 ],
             )
             ->assertForbidden()
-            ->assertJsonPath('error.meta.missing_permission', 'app:write')
-            ->assertJsonPath('error.meta.app_instance', 'development');
+            ->assertJsonPath('error.meta.missing_permission', 'instance:write')
+            ->assertJsonPath('error.meta.instance', 'development');
     });
 
-    it('creates app setup steps for authorized callers', function (): void {
+    it('creates instance setup steps for authorized callers', function (): void {
         [$node] = createAppSetupStepTarget();
         $caller = createAppSetupStepCallerNode();
-        grantAppSetupStepAccess($caller, $node, ['app:write']);
+        grantAppSetupStepAccess($caller, $node, ['instance:write']);
 
         $response = $this->call(
             'POST',
-            '/api/apps/docs/setup-steps',
+            '/api/instances/docs/setup-steps',
             [],
             [],
             [],
@@ -104,16 +104,16 @@ describe('AppSetupStepController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.result.action', 'added')
-            ->assertJsonPath('success.data.step.app', 'docs')
-            ->assertJsonPath('success.data.step.app_instance', 'development')
+            ->assertJsonPath('success.data.step.project', 'docs')
+            ->assertJsonPath('success.data.step.instance', 'development')
             ->assertJsonPath('success.data.step.order', 1)
             ->assertJsonPath('success.data.step.timeout_seconds', 900);
     });
 
-    it('lists setup steps with app read permission', function (): void {
+    it('lists setup steps with instance read permission', function (): void {
         [$node, $app, $instance] = createAppSetupStepTarget();
         $caller = createAppSetupStepCallerNode();
-        grantAppSetupStepAccess($caller, $node, ['app:read']);
+        grantAppSetupStepAccess($caller, $node, ['instance:read']);
         AppSetupStep::factory()->create([
             'app_instance_id' => $instance->id,
             'command' => 'php artisan migrate',
@@ -122,7 +122,7 @@ describe('AppSetupStepController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/apps/docs/setup-steps',
+            '/api/instances/docs/setup-steps',
             [],
             [],
             [],
@@ -133,15 +133,15 @@ describe('AppSetupStepController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.steps.0.app', 'docs')
-            ->assertJsonPath('success.data.steps.0.app_instance', 'development')
+            ->assertJsonPath('success.data.steps.0.project', 'docs')
+            ->assertJsonPath('success.data.steps.0.instance', 'development')
             ->assertJsonPath('success.data.steps.0.command', 'php artisan migrate');
     });
 
     it('removes setup steps with destructive consent', function (): void {
         [$node, $app, $instance] = createAppSetupStepTarget();
         $caller = createAppSetupStepCallerNode();
-        grantAppSetupStepAccess($caller, $node, ['app:write']);
+        grantAppSetupStepAccess($caller, $node, ['instance:write']);
         $step = AppSetupStep::factory()->create([
             'app_instance_id' => $instance->id,
             'sort_order' => 1,
@@ -149,7 +149,7 @@ describe('AppSetupStepController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            "/api/apps/docs/setup-steps/{$step->id}",
+            "/api/instances/docs/setup-steps/{$step->id}",
             [],
             [],
             [],
@@ -170,7 +170,7 @@ describe('AppSetupStepController', function (): void {
         expect(AppSetupStep::query()->whereKey($step->id)->exists())->toBeFalse();
     });
 
-    it('keeps setup steps isolated between app instances', function (): void {
+    it('keeps setup steps isolated between instances', function (): void {
         [$node, $app, $development] = createAppSetupStepTarget();
         $production = AppInstance::factory()->for($app)->create([
             'name' => 'production',
@@ -191,11 +191,11 @@ describe('AppSetupStepController', function (): void {
             'command' => 'php artisan migrate --force',
         ]);
         $caller = createAppSetupStepCallerNode();
-        grantAppSetupStepAccess($caller, $node, ['app:read']);
+        grantAppSetupStepAccess($caller, $node, ['instance:read']);
 
         $response = $this->call(
             'GET',
-            '/api/apps/docs.production/setup-steps',
+            '/api/instances/docs.production/setup-steps',
             [],
             [],
             [],
@@ -205,7 +205,7 @@ describe('AppSetupStepController', function (): void {
         $response
             ->assertOk()
             ->assertJsonCount(1, 'success.data.steps')
-            ->assertJsonPath('success.data.steps.0.app_instance', 'production')
+            ->assertJsonPath('success.data.steps.0.instance', 'production')
             ->assertJsonPath('success.data.steps.0.command', 'php artisan migrate --force');
     });
 
@@ -231,11 +231,11 @@ describe('AppSetupStepController', function (): void {
             'command' => 'php artisan migrate --force',
         ]);
         $caller = createAppSetupStepCallerNode();
-        grantAppSetupStepAccess($caller, $visibleNode, ['app:read']);
+        grantAppSetupStepAccess($caller, $visibleNode, ['instance:read']);
 
         $response = $this->call(
             'GET',
-            '/api/apps/docs/setup-steps',
+            '/api/instances/docs/setup-steps',
             [],
             [],
             [],
@@ -245,7 +245,7 @@ describe('AppSetupStepController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.reason', 'app_instance_required');
+            ->assertJsonPath('error.meta.reason', 'instance_required');
 
         expect($response->json('error.meta'))
             ->not->toHaveKey('instances')->and($response->content())
@@ -266,11 +266,11 @@ describe('AppSetupStepController', function (): void {
             ),
         ]);
         $caller = createAppSetupStepCallerNode();
-        grantAppSetupStepAccess($caller, $visibleNode, ['app:read']);
+        grantAppSetupStepAccess($caller, $visibleNode, ['instance:read']);
 
         $hidden = $this->call(
             'GET',
-            '/api/apps/docs.production/setup-steps',
+            '/api/instances/docs.production/setup-steps',
             [],
             [],
             [],
@@ -278,7 +278,7 @@ describe('AppSetupStepController', function (): void {
         );
         $missing = $this->call(
             'GET',
-            '/api/apps/docs.does-not-exist/setup-steps',
+            '/api/instances/docs.does-not-exist/setup-steps',
             [],
             [],
             [],

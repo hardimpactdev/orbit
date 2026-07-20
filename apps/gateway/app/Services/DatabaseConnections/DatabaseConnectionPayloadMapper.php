@@ -61,8 +61,8 @@ final readonly class DatabaseConnectionPayloadMapper
     {
         if ($target->appInstance instanceof AppInstance) {
             return [
-                'type' => 'app_instance',
-                'app' => $target->appInstance->app->name,
+                'type' => 'instance',
+                'project' => $target->appInstance->app->name,
                 'instance' => $target->appInstance->name,
                 'env_prefix' => $target->env_prefix,
             ];
@@ -76,7 +76,7 @@ final readonly class DatabaseConnectionPayloadMapper
             ];
         }
 
-        throw new LogicException('Database connection target must belong to an app instance or workspace.');
+        throw new LogicException('Database connection target must belong to an instance or workspace.');
     }
 
     /**
@@ -93,7 +93,7 @@ final readonly class DatabaseConnectionPayloadMapper
     {
         return implode(':', [
             $target['type'],
-            $target['name'] ?? $target['app'] ?? '',
+            $target['name'] ?? $target['project'] ?? '',
             $target['instance'] ?? '',
             $target['env_prefix'],
         ]);

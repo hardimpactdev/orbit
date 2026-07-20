@@ -9,7 +9,7 @@ describe('AppAnalyticsShowCommand', function (): void {
     it('requests app analytics binding state from the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'binding' => [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'enabled' => true,
                 'site_domain' => 'docs.test',
                 'internal_host' => 'analytics.orbit',
@@ -27,8 +27,8 @@ describe('AppAnalyticsShowCommand', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics show', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:analytics show', [
+            'instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -37,7 +37,7 @@ describe('AppAnalyticsShowCommand', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'GET'
-                && $request->url() === 'https://gateway.test/api/apps/docs/analytics'
+                && $request->url() === 'https://gateway.test/api/instances/docs/analytics'
                 && $request->data() === []
             ),
         );
@@ -53,7 +53,7 @@ describe('AppAnalyticsShowCommand', function (): void {
     it('renders show responses in human mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'binding' => [
-                'app' => 'docs',
+                'instance' => 'docs',
                 'enabled' => true,
                 'site_domain' => 'docs.test',
                 'internal_host' => 'analytics.orbit',
@@ -71,13 +71,13 @@ describe('AppAnalyticsShowCommand', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics show', [
-            'app' => 'docs',
+        [$exitCode, $output] = runCommand($this, 'instance:analytics show', [
+            'instance' => 'docs',
         ]);
 
         $expectedBinding = implode(PHP_EOL, [
             'binding:',
-            '  app: docs',
+            '  instance: docs',
             '  enabled: true',
             '  site_domain: docs.test',
             '  internal_host: analytics.orbit',
@@ -104,7 +104,7 @@ describe('AppAnalyticsShowCommand', function (): void {
     it('requires an app selector before sending gateway requests', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
-        [$exitCode, $output] = runCommand($this, 'app:analytics show', [
+        [$exitCode, $output] = runCommand($this, 'instance:analytics show', [
             '--json' => true,
         ]);
 
@@ -117,6 +117,6 @@ describe('AppAnalyticsShowCommand', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('instance');
     });
 });

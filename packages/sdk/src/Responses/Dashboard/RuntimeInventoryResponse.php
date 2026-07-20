@@ -8,13 +8,13 @@ final readonly class RuntimeInventoryResponse
 {
     /**
      * @param  list<array<string, mixed>>  $nodes
-     * @param  list<array<string, mixed>>  $apps
+     * @param  list<array<string, mixed>>  $projects
      * @param  list<array<string, mixed>>  $processes
      * @param  list<array<string, mixed>>  $tools
      */
     public function __construct(
         public array $nodes,
-        public array $apps,
+        public array $projects,
         public array $processes,
         public array $tools,
     ) {}

@@ -12,20 +12,22 @@ function strip_php_use_ansi(string $value): string
 }
 
 describe('php:use', function (): void {
-    it('posts app PHP runtime selections to the gateway and returns the canonical envelope', function (): void {
+    it('posts instance PHP runtime selections to the gateway and returns the canonical envelope', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'php' => [
                 'node' => 'app-1',
                 'supported' => ['8.5', '8.4', '8.3'],
                 'available_images' => ['8.5'],
                 'cli' => '8.5',
-                'app' => ['name' => 'docs', 'php_version' => '8.5'],
+                'project' => ['name' => 'docs', 'php_version' => '8.5'],
+                'instance' => ['name' => 'development', 'project' => 'docs'],
                 'workspace' => null,
             ],
             'result' => [
-                'target' => 'app',
+                'target' => 'instance',
                 'node' => 'app-1',
-                'app' => 'docs',
+                'project' => 'docs',
+                'instance' => 'development',
                 'workspace' => null,
                 'previous' => '8.4',
                 'version' => '8.5',
@@ -35,7 +37,7 @@ describe('php:use', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'php:use', [
             'version' => '8.5',
-            '--app' => 'docs',
+            '--instance' => 'docs.development',
             '--json' => true,
         ]);
 
@@ -47,7 +49,7 @@ describe('php:use', function (): void {
                 && str_contains($request->url(), '/api/php/use')
                 && $request->data() === [
                     'version' => '8.5',
-                    'app' => 'docs',
+                    'instance' => 'docs.development',
                     'inherit' => false,
                     'cli' => false,
                 ]
@@ -57,7 +59,7 @@ describe('php:use', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($decoded['success']['data']['result']['target'])
-            ->toBe('app')
+            ->toBe('instance')
             ->and($decoded['success']['meta']['warnings'])
             ->toBe([]);
     });
@@ -66,19 +68,19 @@ describe('php:use', function (): void {
         $previousHostCwd = getenv('ORBIT_HOST_CWD');
         $markerDir = sys_get_temp_dir().'/orbit-php-use-'.uniqid('', true);
         mkdir($markerDir.'/.orbit', 0777, true);
-        file_put_contents($markerDir.'/.orbit/config', json_encode(['app' => 'docs'], JSON_THROW_ON_ERROR));
+        file_put_contents($markerDir.'/.orbit/config', json_encode(['instance' => 'docs'], JSON_THROW_ON_ERROR));
         putenv("ORBIT_HOST_CWD={$markerDir}");
 
         fakeGateway(fakeSuccessEnvelope([
             'php' => ['node' => 'app-1'],
-            'result' => ['target' => 'app', 'app' => 'docs', 'version' => '8.5'],
+            'result' => ['target' => 'instance', 'project' => 'docs', 'instance' => 'development', 'version' => '8.5'],
         ], ['warnings' => []]));
 
         try {
             [$exitCode] = runCommand($this, 'php:use', ['version' => '8.5', '--json' => true]);
 
             Http::assertSent(function (Request $request): bool {
-                return $request->data()['app'] === 'docs';
+                return $request->data()['instance'] === 'docs';
             });
 
             expect($exitCode)->toBe(0);
@@ -95,7 +97,7 @@ describe('php:use', function (): void {
             'php' => ['node' => 'app-1'],
             'result' => [
                 'target' => 'workspace',
-                'app' => 'docs',
+                'project' => 'docs',
                 'workspace' => 'feature-docs',
                 'version' => '8.5',
                 'inherits' => true,
@@ -103,7 +105,7 @@ describe('php:use', function (): void {
         ], ['warnings' => []]));
 
         [$exitCode] = runCommand($this, 'php:use', [
-            '--app' => 'docs',
+            '--instance' => 'docs.development',
             '--workspace' => 'feature-docs',
             '--inherit' => true,
             '--json' => true,
@@ -116,7 +118,7 @@ describe('php:use', function (): void {
                 $request->method() === 'POST'
                 && str_contains($request->url(), '/api/php/use')
                 && ! array_key_exists('version', $payload)
-                && $payload['app'] === 'docs'
+                && $payload['instance'] === 'docs.development'
                 && $payload['workspace'] === 'feature-docs'
                 && $payload['inherit'] === true
                 && $payload['cli'] === false
@@ -162,23 +164,23 @@ describe('php:use', function (): void {
     it('prompts for version in interactive mode when version is missing', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'php' => ['node' => 'app-1'],
-            'result' => ['target' => 'app', 'app' => 'docs', 'version' => '8.5'],
+            'result' => ['target' => 'instance', 'project' => 'docs', 'instance' => 'development', 'version' => '8.5'],
         ], ['warnings' => []]));
 
         $this
-            ->artisan('php:use', ['--app' => 'docs'])
+            ->artisan('php:use', ['--instance' => 'docs.development'])
             ->expectsChoice('PHP version', '8.5', ['8.5', '8.4', '8.3'])
             ->assertSuccessful();
 
         Http::assertSent(function (Request $request): bool {
-            return $request->data()['version'] === '8.5' && $request->data()['app'] === 'docs';
+            return $request->data()['version'] === '8.5' && $request->data()['instance'] === 'docs.development';
         });
     });
 
     it('returns validation_failed in JSON mode when version is missing before contacting the gateway', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'php:use', ['--app' => 'docs', '--json' => true]);
+        [$exitCode, $output] = runCommand($this, 'php:use', ['--instance' => 'docs.development', '--json' => true]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertNothingSent();

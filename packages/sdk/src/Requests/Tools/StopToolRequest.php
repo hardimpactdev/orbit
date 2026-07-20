@@ -6,8 +6,8 @@ namespace Orbit\Sdk\Laravel\Requests\Tools;
 
 final class StopToolRequest extends ToolLifecycleRequest
 {
-    public function __construct(string $tool, ?string $app = null, ?string $node = null)
+    public function __construct(string $tool, ?string $instance = null, ?string $node = null)
     {
-        parent::__construct($tool, 'stop', $app, $node);
+        parent::__construct($tool, 'stop', $instance, $node);
     }
 }

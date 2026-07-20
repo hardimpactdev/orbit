@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
-use App\Models\App;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\WebSockets\WebSocketProxyDoctorProbe;
 use App\Services\WebSockets\WebSocketRouteRegistrar;
@@ -175,7 +175,7 @@ it('limits app-scoped public websocket drift to the selected app', function (): 
         ['name' => 'hauzer-production', 'host' => 'ws.hauzer.app'],
         ['name' => 'mealou-production', 'host' => 'ws.mealou.app'],
     ] as $definition) {
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => $definition['name'],
             'node_id' => $appNode->id,
         ]);

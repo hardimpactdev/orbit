@@ -46,7 +46,7 @@ describe('codex:app', function (): void {
 
         fakeGateway(fakeSuccessEnvelope([
             'codex_project' => [
-                'app' => 'docs',
+                'project' => 'docs',
                 'node' => 'mini',
                 'label' => 'docs',
                 'remote_path' => '/home/orbit/apps/docs',
@@ -57,7 +57,7 @@ describe('codex:app', function (): void {
 
         [$exitCode, $output] = runCommand($this, command: 'codex:app', params: [
             'action' => 'add',
-            'app' => 'docs',
+            'project' => 'docs',
             '--node' => 'mini',
             '--json' => true,
         ]);
@@ -80,7 +80,7 @@ describe('codex:app', function (): void {
 
         fakeGateway(fakeSuccessEnvelope([
             'codex_project' => [
-                'app' => 'docs',
+                'project' => 'docs',
                 'node' => 'mini',
                 'removed' => true,
             ],
@@ -88,7 +88,7 @@ describe('codex:app', function (): void {
 
         [$exitCode] = runCommand($this, command: 'codex:app', params: [
             'action' => 'remove',
-            'app' => 'docs',
+            'project' => 'docs',
             '--node' => 'mini',
             '--json' => true,
         ]);
@@ -110,7 +110,7 @@ describe('codex:app', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'codex_projects' => [
                 [
-                    'app' => 'docs',
+                    'project' => 'docs',
                     'label' => 'docs',
                     'remote_path' => '/home/orbit/apps/docs',
                     'ssh_alias' => 'app-node',
@@ -133,7 +133,7 @@ describe('codex:app', function (): void {
             ),
         );
 
-        expect($exitCode)->toBe(0)->and($decoded['success']['data']['codex_projects'][0]['app'])->toBe('docs');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['codex_projects'][0]['project'])->toBe('docs');
     });
 
     it('rejects app selectors when listing target-node Codex App projects', function (): void {
@@ -142,7 +142,7 @@ describe('codex:app', function (): void {
 
         [$exitCode, $output] = runCommand($this, command: 'codex:app', params: [
             'action' => 'list',
-            'app' => 'docs',
+            'project' => 'docs',
             '--node' => 'mini',
             '--json' => true,
         ]);
@@ -156,7 +156,7 @@ describe('codex:app', function (): void {
             ->and($decoded['error']['code'])
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
-            ->toBe('app');
+            ->toBe('project');
     });
 
     it('fails before gateway IO when required non-interactive input is missing', function (): void {
@@ -165,7 +165,7 @@ describe('codex:app', function (): void {
 
         [$exitCode, $output] = runCommand($this, command: 'codex:app', params: [
             'action' => 'add',
-            'app' => 'docs',
+            'project' => 'docs',
             '--json' => true,
         ]);
 

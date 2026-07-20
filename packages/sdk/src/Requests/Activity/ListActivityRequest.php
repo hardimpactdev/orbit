@@ -15,7 +15,7 @@ final class ListActivityRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
-        public readonly ?string $app = null,
+        public readonly ?string $project = null,
         public readonly ?string $node = null,
         public readonly ?string $effect = null,
         public readonly ?string $correlation = null,
@@ -43,7 +43,7 @@ final class ListActivityRequest extends GatewayRequest
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'project' => $this->project,
                 'node' => $this->node,
                 'effect' => $this->effect,
                 'correlation' => $this->correlation,

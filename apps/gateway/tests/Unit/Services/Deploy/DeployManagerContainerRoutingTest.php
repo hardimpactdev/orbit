@@ -5,11 +5,11 @@ declare(strict_types=1);
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DeploymentRun;
 use App\Models\DeployStep;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Deploy\DeployManager;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -79,7 +79,7 @@ final class DeployManagerRecordingShell implements RunsInternalCommands
     }
 }
 
-function createDeployManagerTestApp(array $overrides = []): App
+function createDeployManagerTestApp(array $overrides = []): Project
 {
     $node = Node::factory()
         ->appProd()
@@ -98,7 +98,7 @@ function createDeployManagerTestApp(array $overrides = []): App
     $warmupPaths = $attributes['deploy_warmup_paths'] ?? null;
     unset($attributes['deploy_warmup_paths']);
 
-    $app = App::factory()->create($attributes);
+    $app = Project::factory()->create($attributes);
     AppInstance::factory()->create([
         'app_id' => $app->id,
         'name' => 'production',
@@ -115,7 +115,7 @@ function createDeployManagerTestApp(array $overrides = []): App
     return $app;
 }
 
-function createDeployManagerTestStep(App $app, string $command, string $title = 'Test step'): DeployStep
+function createDeployManagerTestStep(Project $app, string $command, string $title = 'Test step'): DeployStep
 {
     $instance = AppInstance::query()->where('app_id', $app->id)->sole();
 
@@ -136,10 +136,10 @@ it('requires a concrete deployment instance when a logical app has multiple inst
     ]);
 
     expect(fn () => app(DeployManager::class)->listSteps('docs'))
-        ->toThrow(GatewayApiException::class, 'requires a concrete app instance selector');
+        ->toThrow(GatewayApiException::class, 'requires a concrete instance selector');
 });
 
-it('scopes deployment policy to the selected app instance', function (): void {
+it('scopes deployment policy to the selected instance', function (): void {
     $app = createDeployManagerTestApp();
     $production = AppInstance::query()->where('app_id', $app->id)->sole();
     $canary = AppInstance::factory()->create([
@@ -165,8 +165,8 @@ it('scopes deployment policy to the selected app instance', function (): void {
 
     expect($result['step'])
         ->toMatchArray([
-            'app' => 'docs',
-            'app_instance' => 'production',
+            'project' => 'docs',
+            'instance' => 'production',
             'title' => 'Production only',
         ])
         ->and(DeployStep::query()->where('app_instance_id', $production->id)->count())
@@ -198,7 +198,7 @@ it('executes and records a deployment against the concrete instance target', fun
         ->toBeTrue()
         ->and($shell->runs[0]['options']['cwd'])
         ->toBe('/home/billing/releases')
-        ->and($result['run']['app_instance'])
+        ->and($result['run']['instance'])
         ->toBe('production')
         ->and($instance->refresh()->latest_deployment_status)
         ->toBe('completed')
@@ -256,7 +256,7 @@ it('routes php commands through the host php toolchain for php apps', function (
         ->toContain('php artisan migrate --force');
 });
 
-it('runs routed php deploy commands as the path-derived production app user', function (): void {
+it('runs routed php deploy commands as the path-derived production project user', function (): void {
     $app = createDeployManagerTestApp([
         'path' => '/home/docs/app',
     ]);
@@ -354,7 +354,7 @@ it('runs all commands on the host for static apps', function (): void {
 
 it('does not transform host paths to container paths when routing through host', function (): void {
     $app = createDeployManagerTestApp();
-    createDeployManagerTestStep($app, 'cd "{{ app_path }}" && php artisan migrate');
+    createDeployManagerTestStep($app, 'cd "{{ project_path }}" && php artisan migrate');
 
     $shell = new DeployManagerRecordingShell;
 
@@ -385,9 +385,9 @@ it('passes deploy environment variables to the host command', function (): void 
 
     $script = $shell->runs[0]['script'];
     expect($script)
-        ->toContain('ORBIT_DEPLOY_APP_NAME=')
+        ->toContain('ORBIT_DEPLOY_PROJECT_NAME=')
         ->toContain('docs')
-        ->not->toContain("'ORBIT_DEPLOY_APP_NAME=docs'");
+        ->not->toContain("'ORBIT_DEPLOY_PROJECT_NAME=docs'");
 });
 
 it('sets the working directory to the app source path for host commands', function (): void {

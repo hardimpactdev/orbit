@@ -6,15 +6,15 @@ the current app or workspace PHP selection.
 ## Usage
 
 ```bash
-orbit php:list [--app=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]
+orbit php:list [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit php:list
-orbit php:list --app=docs.development
-orbit php:list --app=docs.development --workspace=feature-docs
+orbit php:list --instance=docs.development
+orbit php:list --instance=docs.development --workspace=feature-docs
 orbit php:list --node=app-1 --live
 orbit php:list --node=app-1 --json
 ```
@@ -22,10 +22,10 @@ orbit php:list --node=app-1 --json
 ## Arguments and options
 
 - `--node=<node>`: Target node for available-image inspection.
-- `--app=<app.instance>`: Concrete dotted app-instance context for app PHP
-  version and serving-node image reporting. A bare logical app is not accepted.
+- `--instance=<project.instance>`: Concrete dotted instance context for app PHP
+  version and serving-node image reporting. A bare project is not accepted.
 - `--workspace=<workspace>`: Workspace context for effective PHP version
-  reporting. Requires `--app` unless the current directory resolves the parent
+  reporting. Requires `--instance` unless the current directory resolves the parent
   app.
 - `--live`: Inspect the target node for available PHP images during this
   command instead of using gateway-tracked runtime facts.
@@ -35,9 +35,9 @@ orbit php:list --node=app-1 --json
 
 Run this command to inspect PHP image support and selection for a node, app, or workspace.
 
-`php:list` resolves one node, concrete app instance, or workspace context from
+`php:list` resolves one node, concrete instance, or workspace context from
 explicit options, caller context, concrete instance placement, or local
-`node:default`. It never chooses one instance to represent a logical app. It
+`node:default`. It never chooses one instance to represent a project. It
 reads the shared app PHP policy and the PHP image facts tracked for the selected
 instance serving node.
 

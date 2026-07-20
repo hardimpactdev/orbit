@@ -11,14 +11,14 @@ inspect current node reality.
 ## Usage
 
 ```bash
-orbit tool:show <tool> [--app=<app>] [--node=<node>] [--live] [--json]
+orbit tool:show <tool> [--instance=<project.instance>] [--node=<node>] [--live] [--json]
 ```
 
 ## Examples
 
 ```bash
 orbit tool:show composer --node=app-1
-orbit tool:show opencode-cli --app=docs
+orbit tool:show opencode-cli --instance=docs
 orbit tool:show composer --node=app-1 --live
 orbit tool:show composer --node=app-1 --json
 ```
@@ -27,13 +27,13 @@ orbit tool:show composer --node=app-1 --json
 
 - `tool`: Tool name from Orbit's tool catalog.
 - `--node`: Target node. Defaults to local `node:default` when configured.
-- `--app`: Resolve the target node from an app.
+- `--instance`: Resolve the target node from an app.
 - `--live`: Include live node status through gateway-initiated Agent push.
   Without this flag, the
   command reads the gateway registry only and performs no node transport.
 - `--json`: Output JSON.
 
-Target context is required. Provide `--node`, `--app`, or configure local
+Target context is required. Provide `--node`, `--instance`, or configure local
 `node:default`; non-interactive use fails with `validation_failed` when no
 target source is available.
 

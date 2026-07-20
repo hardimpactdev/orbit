@@ -7,10 +7,10 @@ namespace App\Http\Controllers\Api\DatabaseConnections;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseAuditPayload;
 use App\Services\DatabaseConnections\DatabaseConnectionExecutor;
@@ -102,10 +102,14 @@ abstract class DatabaseConnectionApiController implements Loggable
         return $caller;
     }
 
-    protected function authorizeListScope(Node $caller, ?App $app, ?Workspace $workspace, ?Node $node): ?JsonResponse
-    {
-        if ($app instanceof App) {
-            return $this->authorizeNodePermission($caller, $this->ownerNode($app), 'database:read');
+    protected function authorizeListScope(
+        Node $caller,
+        ?AppInstance $instance,
+        ?Workspace $workspace,
+        ?Node $node,
+    ): ?JsonResponse {
+        if ($instance instanceof AppInstance) {
+            return $this->authorizeNodePermission($caller, $this->ownerNode($instance), 'database:read');
         }
 
         if ($workspace instanceof Workspace) {
@@ -266,13 +270,13 @@ abstract class DatabaseConnectionApiController implements Loggable
         return null;
     }
 
-    protected function ownerNode(App|Workspace|AppInstance $owner): ?Node
+    protected function ownerNode(Project|Workspace|AppInstance $owner): ?Node
     {
         if ($owner instanceof AppInstance) {
             return $this->workspacePlacement->nodeForInstance($owner);
         }
 
-        if ($owner instanceof App) {
+        if ($owner instanceof Project) {
             $owner->loadMissing('node');
 
             return $owner->node;
@@ -365,8 +369,7 @@ abstract class DatabaseConnectionApiController implements Loggable
      */
     protected function resolveTargetScope(Request $request, string $envPrefix, Node $caller): array|JsonResponse
     {
-        $app = $this->stringValue($request->input('app'));
-        $instance = $this->stringValue($request->input('instance'));
+        $instanceSelector = $this->stringValue($request->input('instance'));
         $workspace = $this->stringValue($request->input('workspace'));
         $workspaceModel = null;
 
@@ -378,19 +381,15 @@ abstract class DatabaseConnectionApiController implements Loggable
             }
         }
 
-        if ($instance !== null && $app === null) {
-            return $this->validationFailed(
-                'app',
-                'The --app option is required when --instance is used.',
-                ['field' => 'app'],
-                422,
-            );
-        }
-
-        if ($app === null && $workspace === null || $app !== null && $workspace !== null) {
+        if (
+            $instanceSelector === null
+            && $workspace === null
+            || $instanceSelector !== null
+            && $workspace !== null
+        ) {
             return $this->validationFailed(
                 'scope',
-                'Exactly one of app or workspace is required.',
+                'Exactly one of instance or workspace is required.',
                 ['field' => 'scope'],
                 422,
             );
@@ -408,37 +407,16 @@ abstract class DatabaseConnectionApiController implements Loggable
             );
         }
 
-        if ($app !== null) {
-            $appModel = $this->resolver->resolveApp($app);
-
-            if ($appModel === null) {
-                return $this->validationFailed(
-                    'app',
-                    "Invalid value for --app: '{$app}'.",
-                    ['field' => 'app', 'value' => $app],
-                    422,
-                );
-            }
-
-            if ($instance === null) {
-                return $this->validationFailed(
-                    'instance',
-                    'The --instance option is required for app database targets.',
-                    ['field' => 'instance', 'reason' => 'app_instance_required'],
-                    422,
-                );
-            }
-
-            $instanceModel = $this->resolver->resolveAppInstance($appModel, $instance);
+        if ($instanceSelector !== null) {
+            $instanceModel = $this->resolver->resolveAppInstanceSelector($instanceSelector);
 
             if (! $instanceModel instanceof AppInstance) {
                 return $this->validationFailed(
                     'instance',
-                    "Invalid value for --instance: '{$instance}'.",
+                    "Invalid value for --instance: '{$instanceSelector}'.",
                     [
                         'field' => 'instance',
-                        'app' => $appModel->name,
-                        'value' => $instance,
+                        'value' => $instanceSelector,
                     ],
                     422,
                 );

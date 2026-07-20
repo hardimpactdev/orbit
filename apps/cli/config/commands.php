@@ -12,7 +12,6 @@ use App\Commands\App\AppAnalyticsEnableCommand;
 use App\Commands\App\AppAnalyticsShowCommand;
 use App\Commands\App\AppAnalyticsVerifyCommand;
 use App\Commands\App\AppEnvCommand;
-use App\Commands\App\AppInstanceCommand;
 use App\Commands\App\AppListCommand;
 use App\Commands\App\AppMountCommand;
 use App\Commands\App\AppNewCommand;
@@ -29,6 +28,10 @@ use App\Commands\App\AppWebSocketCredentialsCommand;
 use App\Commands\App\AppWebSocketDisableCommand;
 use App\Commands\App\AppWebSocketEnableCommand;
 use App\Commands\App\AppWorkerCommand;
+use App\Commands\App\InstanceAddCommand;
+use App\Commands\App\InstanceListCommand;
+use App\Commands\App\InstanceRemoveCommand;
+use App\Commands\App\InstanceShowCommand;
 use App\Commands\Cloudflare\CfCacheFlushCommand;
 use App\Commands\Cloudflare\CfCacheRuleAddCommand;
 use App\Commands\Cloudflare\CfCacheRuleRemoveCommand;
@@ -236,7 +239,10 @@ return [
         AppAnalyticsShowCommand::class,
         AppAnalyticsVerifyCommand::class,
         AppEnvCommand::class,
-        AppInstanceCommand::class,
+        InstanceListCommand::class,
+        InstanceShowCommand::class,
+        InstanceAddCommand::class,
+        InstanceRemoveCommand::class,
         AppListCommand::class,
         AppMountCommand::class,
         AppNewCommand::class,

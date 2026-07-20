@@ -8,10 +8,10 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Processes\ProcessRuntime;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -34,7 +34,7 @@ function createAppRemoveCallerNode(array $overrides = []): Node
 /**
  * @param  list<string>  $permissions
  */
-function grantAppRemoveAccess(Node $caller, Node $appNode, array $permissions = ['app:remove']): void
+function grantAppRemoveAccess(Node $caller, Node $appNode, array $permissions = ['project:remove']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -63,7 +63,7 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $targetNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
             'path' => '/home/orbit/apps/docs',
@@ -112,7 +112,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/apps/docs',
+            '/api/projects/docs',
             [
                 'destructive_consent' => true,
             ],
@@ -123,11 +123,11 @@ describe('AppRemoveController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.app.name', 'docs')
+            ->assertJsonPath('success.data.project.name', 'docs')
             ->assertJsonPath('success.data.result.action', 'removed')
             ->assertJsonPath('success.data.cleanup.proxy_routes_removed', 1);
 
-        expect(App::query()->where('name', 'docs')->exists())
+        expect(Project::query()->where('name', 'docs')->exists())
             ->toBeFalse()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
             ->toBeFalse()
@@ -150,7 +150,7 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $targetNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
             'path' => '/home/orbit/apps/docs',
@@ -172,7 +172,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/apps/docs',
+            '/api/projects/docs',
             [
                 'destructive_consent' => true,
             ],
@@ -183,12 +183,12 @@ describe('AppRemoveController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.app.name', 'docs')
+            ->assertJsonPath('success.data.project.name', 'docs')
             ->assertJsonPath('success.data.result.action', 'removed')
             ->assertJsonPath('success.data.cleanup.proxy_routes_removed', 1)
             ->assertJsonMissingPath('success.meta.warnings');
 
-        expect(App::query()->whereKey($app->id)->exists())
+        expect(Project::query()->whereKey($app->id)->exists())
             ->toBeFalse()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
             ->toBeFalse()
@@ -204,7 +204,7 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $legacyNode);
 
-        $app = App::factory()
+        $app = Project::factory()
             ->static()
             ->create([
                 'name' => 'docs',
@@ -226,7 +226,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/apps/docs',
+            '/api/projects/docs',
             ['destructive_consent' => true],
             [],
             [],
@@ -248,7 +248,7 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $legacyNode);
 
-        $app = App::factory()
+        $app = Project::factory()
             ->static()
             ->create([
                 'name' => 'docs',
@@ -270,7 +270,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/apps/docs',
+            '/api/projects/docs',
             ['destructive_consent' => true],
             [],
             [],
@@ -279,9 +279,9 @@ describe('AppRemoveController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.meta.warnings.0.code', 'app.cleanup_failed')
-            ->assertJsonPath('success.meta.warnings.0.family', 'app')
-            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=app --restore')
+            ->assertJsonPath('success.meta.warnings.0.code', 'instance.cleanup_failed')
+            ->assertJsonPath('success.meta.warnings.0.family', 'instance')
+            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=instance --restore')
             ->assertJsonCount(1, 'success.meta.warnings');
 
         expect($shell->scripts)->toBeEmpty();
@@ -299,7 +299,7 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $legacyNode);
 
-        $app = App::factory()
+        $app = Project::factory()
             ->static()
             ->create([
                 'name' => 'docs',
@@ -338,7 +338,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/apps/docs',
+            '/api/projects/docs',
             ['destructive_consent' => true],
             [],
             [],
@@ -347,13 +347,13 @@ describe('AppRemoveController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.meta.warnings.0.code', 'app.cleanup_failed')
-            ->assertJsonPath('success.meta.warnings.0.family', 'app')
+            ->assertJsonPath('success.meta.warnings.0.code', 'instance.cleanup_failed')
+            ->assertJsonPath('success.meta.warnings.0.family', 'instance')
             ->assertJsonPath(
                 'success.meta.warnings.0.message',
-                'Local cleanup was skipped for Orbit app instances with unresolved node placement: docs.production, docs.staging.',
+                'Local cleanup was skipped for Orbit instances with unresolved node placement: docs.production, docs.staging.',
             )
-            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=app --restore')
+            ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=instance --restore')
             ->assertJsonCount(1, 'success.meta.warnings');
 
         expect($shell->scriptsForNode($resolvedNode))
@@ -381,7 +381,7 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $developmentNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $developmentNode->id,
             'runtime' => 'static',
@@ -430,7 +430,7 @@ describe('AppRemoveController', function (): void {
 
         $this->call(
             'DELETE',
-            '/api/apps/docs',
+            '/api/projects/docs',
             ['destructive_consent' => true],
             [],
             [],
@@ -470,7 +470,7 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $developmentNode);
 
-        $app = App::factory()
+        $app = Project::factory()
             ->static()
             ->create([
                 'name' => 'docs',
@@ -493,7 +493,7 @@ describe('AppRemoveController', function (): void {
             ),
         ]);
 
-        $otherApp = App::factory()
+        $otherApp = Project::factory()
             ->static()
             ->create([
                 'name' => 'admin',
@@ -514,7 +514,7 @@ describe('AppRemoveController', function (): void {
 
         $this->call(
             'DELETE',
-            '/api/apps/docs',
+            '/api/projects/docs',
             ['destructive_consent' => true],
             [],
             [],
@@ -546,7 +546,7 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $targetNode);
 
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
             'path' => '/home/orbit/apps/docs',
@@ -573,7 +573,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/apps/docs',
+            '/api/projects/docs',
             [
                 'destructive_consent' => true,
             ],
@@ -588,9 +588,9 @@ describe('AppRemoveController', function (): void {
             ->assertJsonPath('success.meta.warnings.0.code', 'process.runtime_unit_extra')
             ->assertJsonPath('success.meta.warnings.0.family', 'process')
             ->assertJsonPath('success.meta.warnings.0.next_command', 'doctor --family=process --restore')
-            ->assertJsonPath('success.meta.warnings.1.code', 'app.runtime_config_extra')
-            ->assertJsonPath('success.meta.warnings.1.family', 'app')
-            ->assertJsonPath('success.meta.warnings.1.next_command', 'doctor --family=app --restore')
+            ->assertJsonPath('success.meta.warnings.1.code', 'instance.runtime_config_extra')
+            ->assertJsonPath('success.meta.warnings.1.family', 'instance')
+            ->assertJsonPath('success.meta.warnings.1.next_command', 'doctor --family=instance --restore')
             ->assertJsonCount(2, 'success.meta.warnings');
 
         expect(Schedule::query()->where('app_id', $app->id)->exists())->toBeFalse();
@@ -603,32 +603,32 @@ describe('AppRemoveController', function (): void {
             'status' => 'active',
         ]);
         grantAppRemoveAccess($caller, $targetNode);
-        $app = App::factory()->create([
+        $app = Project::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
         ]);
 
         app()->instance(RemoteShell::class, new AppRemoveApiSequencedRemoteShell([]));
 
-        $response = $this->call('DELETE', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP]);
+        $response = $this->call('DELETE', '/api/projects/docs', [], [], [], ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP]);
 
         $response
             ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'force');
 
-        expect(App::query()->whereKey($app->id)->exists())->toBeTrue();
+        expect(Project::query()->whereKey($app->id)->exists())->toBeTrue();
     });
 
-    it('rejects app removal when the caller lacks app:remove on the app node', function (): void {
+    it('rejects app removal when the caller lacks project:remove on the app node', function (): void {
         $caller = createAppRemoveCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
             'status' => 'active',
         ]);
-        grantAppRemoveAccess($caller, $targetNode, ['app:read']);
+        grantAppRemoveAccess($caller, $targetNode, ['project:read']);
 
-        App::factory()->create([
+        Project::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
         ]);
@@ -637,7 +637,7 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call(
             'DELETE',
-            '/api/apps/docs',
+            '/api/projects/docs',
             [
                 'destructive_consent' => true,
             ],
@@ -649,10 +649,10 @@ describe('AppRemoveController', function (): void {
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'app:remove')
+            ->assertJsonPath('error.meta.missing_permission', 'project:remove')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
-        expect(App::query()->where('name', 'docs')->exists())->toBeTrue();
+        expect(Project::query()->where('name', 'docs')->exists())->toBeTrue();
     });
 });
 

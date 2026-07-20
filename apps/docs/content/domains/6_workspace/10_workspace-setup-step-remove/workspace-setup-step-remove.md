@@ -1,17 +1,17 @@
 # `orbit workspace-setup-step:remove`
 
-Remove a workspace setup step from a concrete app instance.
+Remove a workspace setup step from a concrete instance.
 
 ## Usage
 
 ```bash
-orbit workspace-setup-step:remove --step=<id> --app=<app.instance> [--force] [--json]
+orbit workspace-setup-step:remove --step=<id> --instance=<project.instance> [--force] [--json]
 ```
 
 ## Description
 
 The `workspace-setup-step:remove` command deletes a setup step definition from
-an app instance's workspace lifecycle policy. Removing the step excludes it from
+an instance's workspace lifecycle policy. Removing the step excludes it from
 future workspace creation and setup runs.
 
 Removing a step definition does not undo side effects (such as installed files
@@ -21,9 +21,9 @@ used for future executions.
 ## Arguments
 
 - `--step=<id>`: The ID of the setup step to remove. Required.
-- `--app=<app.instance>`: Concrete dotted app-instance selector, such as
+- `--instance=<project.instance>`: Concrete dotted instance selector, such as
   `my-app.development`. A caller context may supply the same concrete instance,
-  but a bare logical-app slug is rejected with an app-instance-required
+  but a bare project slug is rejected with an instance-required
   validation error before side effects. The exact error shape is defined by the
   [JSON renderer contract](technical/6.2_workspace-setup-step-remove_output-render_json.md).
 - `--force`: Skip interactive confirmation.
@@ -37,7 +37,7 @@ The following rules govern how the step is removed.
   it permanently deletes a policy definition. Use `--force` to bypass the
   confirmation prompt.
 - **Order Compaction**: After a step is removed, Orbit renumbers the remaining
-  steps for the selected app instance to maintain a continuous, gap-free
+  steps for the selected instance to maintain a continuous, gap-free
   execution order.
 - **History Preservation**: Removal does not mutate existing workspace run
   history. Past executions of the removed step remain visible in
@@ -52,7 +52,7 @@ The following rules govern how the step is removed.
 This prompts before removing the step.
 
 ```bash
-orbit workspace-setup-step:remove --step=12 --app=my-app.development
+orbit workspace-setup-step:remove --step=12 --instance=my-app.development
 ```
 
 ### Force remove a step without prompting
@@ -60,7 +60,7 @@ orbit workspace-setup-step:remove --step=12 --app=my-app.development
 Use `--force` to skip the confirmation prompt.
 
 ```bash
-orbit workspace-setup-step:remove --step=12 --app=my-app.development --force
+orbit workspace-setup-step:remove --step=12 --instance=my-app.development --force
 ```
 
 ## Requirements
@@ -68,7 +68,7 @@ orbit workspace-setup-step:remove --step=12 --app=my-app.development --force
 - The CLI caller can reach the Orbit gateway.
 - The caller is authorized to manage workspace policy on the selected app
   instance's serving node.
-- The target app instance exists.
+- The target instance exists.
 
 ## Related
 

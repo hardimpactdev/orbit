@@ -12,7 +12,7 @@ describe('workspace:history', function (): void {
                 [
                     'id' => 12,
                     'workspace' => 'feature-docs',
-                    'app' => 'docs',
+                    'project' => 'docs',
                     'action' => 'setup',
                     'status' => 'completed',
                 ],
@@ -29,7 +29,7 @@ describe('workspace:history', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:history', [
             'name' => 'feature-docs',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--limit' => '20',
             '--since' => '2026-05-01T00:00:00+00:00',
             '--until' => '2026-05-02T00:00:00+00:00',
@@ -44,7 +44,7 @@ describe('workspace:history', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/workspaces/feature-docs/history')
-                && str_contains($url, 'app=docs')
+                && str_contains($url, 'instance=docs')
                 && str_contains($url, 'limit=20')
                 && str_contains($url, 'since=2026-05-01T00:00:00+00:00')
                 && str_contains($url, 'until=2026-05-02T00:00:00+00:00')
@@ -96,7 +96,7 @@ describe('workspace:history', function (): void {
                 [
                     'id' => 12,
                     'workspace' => 'feature-docs',
-                    'app' => 'ohdear',
+                    'project' => 'ohdear',
                     'action' => 'setup',
                     'status' => 'completed',
                     'started_at' => $completedRunStartedAt->toIso8601String(),
@@ -105,7 +105,7 @@ describe('workspace:history', function (): void {
                 [
                     'id' => 11,
                     'workspace' => 'feature-docs',
-                    'app' => 'ohdear',
+                    'project' => 'ohdear',
                     'action' => 'setup',
                     'status' => 'running',
                     'started_at' => now()->subMinute()->toIso8601String(),

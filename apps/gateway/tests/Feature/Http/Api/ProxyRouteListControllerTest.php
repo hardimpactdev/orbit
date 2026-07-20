@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
+use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -46,7 +46,7 @@ function assignProxyRouteListRole(Node $node, string $role = 'gateway'): void
 
 function proxy_route_list_workspace_on_node(Node $node): Workspace
 {
-    $app = App::factory()->for($node, 'node')->create([
+    $app = Project::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'domain' => 'docs.test',
     ]);
@@ -84,7 +84,7 @@ describe('ProxyRouteListController', function (): void {
         $visibleNode = Node::factory()->create(['name' => 'app-1']);
         $hiddenNode = Node::factory()->create(['name' => 'app-2']);
         grantProxyRouteListAccess($caller, $visibleNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $visibleNode->id]);
+        $app = Project::factory()->create(['name' => 'docs', 'node_id' => $visibleNode->id]);
 
         ProxyRoute::factory()->create([
             'node_id' => $visibleNode->id,
@@ -100,7 +100,7 @@ describe('ProxyRouteListController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/proxy-routes?filter=app',
+            '/api/proxy-routes?filter=project',
             [],
             [],
             [],
@@ -111,7 +111,7 @@ describe('ProxyRouteListController', function (): void {
             ->assertOk()
             ->assertJsonCount(1, 'success.data.routes')
             ->assertJsonPath('success.data.routes.0.domain', 'docs.test')
-            ->assertJsonPath('success.meta.filter', 'app')
+            ->assertJsonPath('success.meta.filter', 'project')
             ->assertJsonPath('success.meta.node', null)
             ->assertJsonPath('success.meta.count', 1);
     });

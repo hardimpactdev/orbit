@@ -197,8 +197,30 @@ final readonly class JsonRendererExampleRule implements GroupedRule
     private function entityPaths(): array
     {
         return [
-            ['entity' => 'app', 'path' => ['success', 'data', 'app'], 'label' => 'success.data.app', 'list' => false],
-            ['entity' => 'app', 'path' => ['success', 'data', 'apps'], 'label' => 'success.data.apps', 'list' => true],
+            [
+                'entity' => 'project',
+                'path' => ['success', 'data', 'project'],
+                'label' => 'success.data.project',
+                'list' => false,
+            ],
+            [
+                'entity' => 'project',
+                'path' => ['success', 'data', 'projects'],
+                'label' => 'success.data.projects',
+                'list' => true,
+            ],
+            [
+                'entity' => 'instance',
+                'path' => ['success', 'data', 'instance'],
+                'label' => 'success.data.instance',
+                'list' => false,
+            ],
+            [
+                'entity' => 'instance',
+                'path' => ['success', 'data', 'instances'],
+                'label' => 'success.data.instances',
+                'list' => true,
+            ],
             [
                 'entity' => 'workspace',
                 'path' => ['success', 'data', 'workspace'],
@@ -357,9 +379,9 @@ final readonly class JsonRendererExampleRule implements GroupedRule
     private function commandSpecificEntitySchema(string $path, string $entity, string $label): ?array
     {
         if (
-            $path === 'docs/domains/5_app/3_app-list/technical/6.2_app-list_output-render_json.md'
-            && $entity === 'app'
-            && str_starts_with($label, 'success.data.apps[')
+            $path === 'docs/domains/5_project/3_project-list/technical/6.2_project-list_output-render_json.md'
+            && $entity === 'project'
+            && str_starts_with($label, 'success.data.projects[')
         ) {
             return [
                 'required' => [

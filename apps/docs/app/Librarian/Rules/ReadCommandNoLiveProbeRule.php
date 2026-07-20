@@ -18,7 +18,7 @@ final readonly class ReadCommandNoLiveProbeRule implements GroupedRule
         '/"checks"\s*:/' => 'Read commands must not document a checks JSON field unless live inspection is explicit.',
         '/\bchecks\[\]/i' => 'Read commands must not document checks[] unless live inspection is explicit.',
         '/\bnode\.reachable\b/i' => 'Read commands must not document node.reachable unless live inspection is explicit.',
-        '/\bapp\.status\b/i' => 'Read commands must not document app.status unless live inspection is explicit.',
+        '/\binstance\.status\b/i' => 'Read commands must not document instance.status unless live inspection is explicit.',
         '/render(?:s)? the complete progress tree/i' => 'Read-only commands must not render a progress tree unless live inspection is explicit.',
     ];
 

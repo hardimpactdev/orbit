@@ -23,7 +23,7 @@ function processListSeed(E2ETopologyHarness $topology): void
         \Illuminate\Support\Facades\DB::table('process_events')->delete();
         \Illuminate\Support\Facades\DB::table('processes')->delete();
         \Illuminate\Support\Facades\DB::table('workspaces')->delete();
-        \App\Models\App::query()->delete();
+        \App\Models\Project::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->insert([
             [
@@ -69,7 +69,7 @@ function processListSeed(E2ETopologyHarness $topology): void
             'sort_order' => 1,
         ]);
 
-        $app = \App\Models\App::query()->create([
+        $app = \App\Models\Project::query()->create([
             'name' => 'docs',
             'node_id' => $nodes->get('app-dev-1'),
             'path' => '/srv/docs',
@@ -155,7 +155,7 @@ it('lists app processes from a operator caller through the gateway api', functio
         $humanResult = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit process:list --app=docs',
+                'cd %s && orbit process:list --instance=docs',
                 escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,
@@ -174,7 +174,7 @@ it('lists app processes from a operator caller through the gateway api', functio
         $jsonResult = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit process:list --app=docs --json',
+                'cd %s && orbit process:list --instance=docs --json',
                 escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,
@@ -213,7 +213,7 @@ it('lists app processes from a operator caller through the gateway api', functio
         $workspaceResult = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit process:list --app=docs --workspace=feature-docs --json',
+                'cd %s && orbit process:list --instance=docs --workspace=feature-docs --json',
                 escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,
@@ -265,7 +265,7 @@ it('lists app processes from a operator caller through the gateway api', functio
         $emptyListResult = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit process:list --app=docs --json',
+                'cd %s && orbit process:list --instance=docs --json',
                 escapeshellarg($topology->checkout('operator')),
             ),
             timeoutSeconds: 120,

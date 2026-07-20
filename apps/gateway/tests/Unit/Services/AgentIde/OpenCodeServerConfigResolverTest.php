@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\Project;
 use App\Services\AgentIde\OpenCodeServerConfigResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -17,7 +17,7 @@ it('resolves remote local-bind tool config through the node wireguard address', 
         'host' => 'beast.local',
         'wireguard_address' => '10.6.0.7',
     ]);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'demo',
         'node_id' => $node->id,
     ]);
@@ -50,7 +50,7 @@ it('resolves remote local-bind tool config through the node wireguard address', 
 
 it('prefers explicit opencode credentials url and auth fields', function (): void {
     $node = Node::factory()->create(['name' => 'beast']);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'demo',
         'node_id' => $node->id,
     ]);
@@ -88,7 +88,7 @@ it('resolves remote credential host and port through the node wireguard address'
         'host' => 'beast.local',
         'wireguard_address' => '10.6.0.7',
     ]);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'demo',
         'node_id' => $node->id,
     ]);

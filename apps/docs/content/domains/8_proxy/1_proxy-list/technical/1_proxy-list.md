@@ -36,10 +36,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Applies `--node` as a serving-node filter.
 - Does not synchronously SSH to nodes, probe proxy reality, or verify TLS
   material.
-- App-owned primary routes always report a concrete app-instance target.
-  `owner.name` remains the logical app slug, `target.type` is `app_instance`,
-  `target.value` is the dotted app-instance selector, and `node` is that
-  instance's serving node. A logical app target is invalid.
+- App-owned primary routes always report a concrete instance target.
+  `owner.name` remains the project slug, `target.type` is `instance`,
+  `target.value` is the dotted instance selector, and `node` is that
+  instance's serving node. A project target is invalid.
 
 ### Filter Rules
 

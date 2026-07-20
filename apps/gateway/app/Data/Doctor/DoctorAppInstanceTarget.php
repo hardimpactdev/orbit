@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Data\Doctor;
 
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Project;
 
 final readonly class DoctorAppInstanceTarget
 {
     public function __construct(
-        public App $app,
+        public Project $app,
         public AppInstance $instance,
         public Node $node,
     ) {}

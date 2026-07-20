@@ -31,7 +31,7 @@ abstract class ProcessGatewayCommand extends GatewayCommand
 
     protected function appContext(): ?string
     {
-        return $this->stringOption('app') ?? $this->appFromOrbitMarker();
+        return $this->stringOption('instance') ?? $this->instanceFromOrbitMarker();
     }
 
     protected function nodeContext(): ?string
@@ -131,7 +131,7 @@ abstract class ProcessGatewayCommand extends GatewayCommand
 
     /**
      * Resolve the operator-facing owner label for progress-tree footers,
-     * mirroring the gateway's resolution order: workspace, then app, then node.
+     * mirroring the gateway's resolution order: workspace, then instance, then node.
      */
     protected function contextLabel(?string $node, ?string $app, ?string $workspace): string
     {
@@ -140,9 +140,7 @@ abstract class ProcessGatewayCommand extends GatewayCommand
         }
 
         if ($app !== null) {
-            return str_contains($app, '.')
-                ? "app instance '{$app}'"
-                : "app '{$app}'";
+            return "instance '{$app}'";
         }
 
         return "node '{$node}'";

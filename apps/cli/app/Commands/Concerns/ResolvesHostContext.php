@@ -35,7 +35,10 @@ trait ResolvesHostContext
             return $node;
         }
 
-        if ($this->stringOption('app') !== null) {
+        if (
+            $this->getDefinition()->hasOption('instance')
+            && $this->stringOption('instance') !== null
+        ) {
             return null;
         }
 
@@ -55,7 +58,7 @@ trait ResolvesHostContext
         return is_string($cwd) && trim($cwd) !== '' ? trim($cwd) : null;
     }
 
-    protected function appFromOrbitMarker(): ?string
+    protected function instanceFromOrbitMarker(): ?string
     {
         $cwd = $this->hostCwd();
 
@@ -69,8 +72,8 @@ trait ResolvesHostContext
             if (is_file($candidate)) {
                 $data = json_decode((string) file_get_contents($candidate), associative: true);
 
-                if (is_array($data) && is_string($data['app'] ?? null) && trim($data['app']) !== '') {
-                    return trim($data['app']);
+                if (is_array($data) && is_string($data['instance'] ?? null) && trim($data['instance']) !== '') {
+                    return trim($data['instance']);
                 }
             }
 

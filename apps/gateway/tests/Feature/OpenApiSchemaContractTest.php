@@ -54,15 +54,15 @@ test('gateway openapi export includes stable contract metadata', function (): vo
         $processParameterNames[] = $processParameter['name'] ?? null;
     }
 
-    Assert::assertSame(['node', 'app', 'workspace'], $processParameterNames);
+    Assert::assertSame(['node', 'instance', 'workspace'], $processParameterNames);
 
-    /** @var array<string, mixed>|null $appListItem */
-    $appListItem = data_get(
+    /** @var array<string, mixed>|null $projectListItem */
+    $projectListItem = data_get(
         target: $schema,
-        key: 'paths./apps.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.apps.items',
+        key: 'paths./projects.get.responses.200.content.application/json.schema.properties.success.properties.data.properties.projects.items',
     );
 
-    Assert::assertIsArray($appListItem);
+    Assert::assertIsArray($projectListItem);
     Assert::assertSame([
         'name',
         'repository',
@@ -72,7 +72,7 @@ test('gateway openapi export includes stable contract metadata', function (): vo
         'last_dependency_audit_at',
         'instance_count',
         'workspace_count',
-    ], array_keys($appListItem['properties'] ?? []));
+    ], array_keys($projectListItem['properties'] ?? []));
     Assert::assertSame([
         'name',
         'repository',
@@ -82,63 +82,63 @@ test('gateway openapi export includes stable contract metadata', function (): vo
         'last_dependency_audit_at',
         'instance_count',
         'workspace_count',
-    ], $appListItem['required'] ?? null);
-    Assert::assertSame('string', data_get($appListItem, 'properties.name.type'));
-    Assert::assertSame(['string', 'null'], data_get($appListItem, 'properties.repository.type'));
-    Assert::assertSame('string', data_get($appListItem, 'properties.dependency_audit_status.type'));
-    Assert::assertSame('integer', data_get($appListItem, 'properties.dependency_warning_count.type'));
-    Assert::assertSame('integer', data_get($appListItem, 'properties.dependency_danger_count.type'));
-    Assert::assertSame(['string', 'null'], data_get($appListItem, 'properties.last_dependency_audit_at.type'));
-    Assert::assertSame('integer', data_get($appListItem, 'properties.instance_count.type'));
-    Assert::assertSame('integer', data_get($appListItem, 'properties.workspace_count.type'));
-    $appListResponseStatuses = array_map(
+    ], $projectListItem['required'] ?? null);
+    Assert::assertSame('string', data_get($projectListItem, 'properties.name.type'));
+    Assert::assertSame(['string', 'null'], data_get($projectListItem, 'properties.repository.type'));
+    Assert::assertSame('string', data_get($projectListItem, 'properties.dependency_audit_status.type'));
+    Assert::assertSame('integer', data_get($projectListItem, 'properties.dependency_warning_count.type'));
+    Assert::assertSame('integer', data_get($projectListItem, 'properties.dependency_danger_count.type'));
+    Assert::assertSame(['string', 'null'], data_get($projectListItem, 'properties.last_dependency_audit_at.type'));
+    Assert::assertSame('integer', data_get($projectListItem, 'properties.instance_count.type'));
+    Assert::assertSame('integer', data_get($projectListItem, 'properties.workspace_count.type'));
+    $projectListResponseStatuses = array_map(
         static fn (int|string $status): string => (string) $status,
-        array_keys(data_get($schema, 'paths./apps.get.responses', [])),
+        array_keys(data_get($schema, 'paths./projects.get.responses', [])),
     );
-    sort($appListResponseStatuses);
+    sort($projectListResponseStatuses);
 
-    Assert::assertSame(['200', '400', '403'], $appListResponseStatuses);
+    Assert::assertSame(['200', '400', '403'], $projectListResponseStatuses);
     Assert::assertSame('array', data_get(
         $schema,
-        'paths./apps.get.responses.200.content.application/json.schema.properties.success.properties.meta.type',
+        'paths./projects.get.responses.200.content.application/json.schema.properties.success.properties.meta.type',
     ));
 
-    /** @var array<string, mixed>|null $appSetupResponses */
-    $appSetupResponses = data_get(target: $schema, key: 'paths./apps/{app}/setup.post.responses');
+    /** @var array<string, mixed>|null $instanceSetupResponses */
+    $instanceSetupResponses = data_get(target: $schema, key: 'paths./instances/{instance}/setup.post.responses');
 
-    Assert::assertIsArray($appSetupResponses);
+    Assert::assertIsArray($instanceSetupResponses);
     Assert::assertSame(
         [],
         array_values(array_diff(
             ['200', '403', '404', '422'],
-            array_keys($appSetupResponses),
+            array_keys($instanceSetupResponses),
         )),
     );
 
-    /** @var array<string, mixed>|null $appSetupData */
-    $appSetupData = data_get(
-        target: $appSetupResponses,
+    /** @var array<string, mixed>|null $instanceSetupData */
+    $instanceSetupData = data_get(
+        target: $instanceSetupResponses,
         key: '200.content.application/json.schema.properties.success.properties.data',
     );
 
-    Assert::assertIsArray($appSetupData);
+    Assert::assertIsArray($instanceSetupData);
     Assert::assertSame([
-        'app',
-        'app_instance',
+        'project',
+        'instance',
         'node',
         'path',
         'url',
         'action',
         'setup_steps',
-    ], array_keys($appSetupData['properties'] ?? []));
+    ], array_keys($instanceSetupData['properties'] ?? []));
     Assert::assertSame('array', data_get(
-        $appSetupResponses,
+        $instanceSetupResponses,
         '200.content.application/json.schema.properties.success.properties.meta.type',
     ));
 
     foreach (['403', '404', '422'] as $status) {
         Assert::assertIsArray(data_get(
-            $appSetupResponses,
+            $instanceSetupResponses,
             "{$status}.content.application/json.schema.properties.error",
         ));
     }

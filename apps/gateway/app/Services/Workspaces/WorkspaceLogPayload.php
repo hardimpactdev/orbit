@@ -31,7 +31,7 @@ class WorkspaceLogPayload
         return [
             'id' => $run->id,
             'workspace' => $workspace?->name,
-            'app' => $app?->name,
+            'project' => $app?->name,
             'node' => $node?->name,
             'type' => $run->phase->value,
             'status' => $run->status,

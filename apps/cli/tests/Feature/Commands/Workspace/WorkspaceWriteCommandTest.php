@@ -9,13 +9,13 @@ describe('workspace write commands', function (): void {
     it('posts workspace:new payloads to the gateway workspaces endpoint', function (): void {
         fakeGatewayProgressStream(
             "event: complete\n"
-            .'data: {"exit_code":0,"data":{"result":{"result":{"action":"created"},"workspace":{"name":"feature-docs","app":"docs"}}}}'
+            .'data: {"exit_code":0,"data":{"result":{"result":{"action":"created"},"workspace":{"name":"feature-docs","project":"docs","instance":"development"}}}}'
             ."\n\n",
         );
 
         [$exitCode, $output] = runCommand($this, 'workspace:new', [
             'name' => 'feature-docs',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--base' => 'main',
             '--php-version' => '8.5',
             '--json' => true,
@@ -29,7 +29,7 @@ describe('workspace write commands', function (): void {
                 && $request->url() === 'https://gateway.test/api/workspaces'
                 && $request->data() === [
                     'name' => 'feature-docs',
-                    'app' => 'docs',
+                    'instance' => 'docs',
                     'base' => 'main',
                     'php_version' => '8.5',
                 ]
@@ -49,7 +49,7 @@ describe('workspace write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:new', [
             'name' => 'main',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--json' => true,
         ]);
 
@@ -72,13 +72,13 @@ describe('workspace write commands', function (): void {
         try {
             fakeGatewayProgressStream(
                 "event: complete\n"
-                .'data: {"exit_code":0,"data":{"result":{"workspace":"feature-docs","app":"docs","action":"set_up"}}}'
+                .'data: {"exit_code":0,"data":{"result":{"workspace":"feature-docs","project":"docs","instance":"development","action":"set_up"}}}'
                 ."\n\n",
             );
 
             [$exitCode] = runCommand($this, 'workspace:setup', [
                 'name' => 'feature-docs',
-                '--app' => 'docs',
+                '--instance' => 'docs',
                 '--path' => '/Users/nckrtl/Sites/docs/.worktrees/feature-docs',
                 '--json' => true,
             ]);
@@ -93,7 +93,7 @@ describe('workspace write commands', function (): void {
                 && ! $request->hasHeader('X-Orbit-Node-Transport-Preference')
                 && $request->data() === [
                     'name' => 'feature-docs',
-                    'app' => 'docs',
+                    'instance' => 'docs',
                     'path' => '/Users/nckrtl/Sites/docs/.worktrees/feature-docs',
                     'caller_cwd' => '/Users/nckrtl/Sites/docs/.worktrees/feature-docs',
                 ]
@@ -118,7 +118,7 @@ describe('workspace write commands', function (): void {
             fakeGatewayProgressStream("event: complete\ndata: {\"exit_code\":0}\n\n");
 
             [$exitCode] = runCommand($this, 'workspace:setup', [
-                '--app' => 'happie.nmbp',
+                '--instance' => 'happie.nmbp',
                 '--path' => $path,
                 '--json' => true,
             ]);
@@ -129,7 +129,7 @@ describe('workspace write commands', function (): void {
         assertGatewayStreamSent(
             fn (FakeGatewayStreamRequest $request): bool => $request->data() === [
                 'name' => 'codex-auto-env-happie-194238',
-                'app' => 'happie.nmbp',
+                'instance' => 'happie.nmbp',
                 'path' => $path,
                 'caller_cwd' => getcwd(),
             ],
@@ -154,7 +154,7 @@ describe('workspace write commands', function (): void {
             fakeGatewayProgressStream("event: complete\ndata: {\"exit_code\":0}\n\n");
 
             [$exitCode] = runCommand($this, 'workspace:setup', [
-                '--app' => 'happie.nmbp',
+                '--instance' => 'happie.nmbp',
                 '--path' => $path,
                 '--json' => true,
             ]);
@@ -165,7 +165,7 @@ describe('workspace write commands', function (): void {
         assertGatewayStreamSent(
             fn (FakeGatewayStreamRequest $request): bool => $request->data() === [
                 'name' => 'codex-09dd',
-                'app' => 'happie.nmbp',
+                'instance' => 'happie.nmbp',
                 'path' => $path,
                 'caller_cwd' => getcwd(),
             ],
@@ -191,7 +191,7 @@ describe('workspace write commands', function (): void {
             fakeGatewayProgressStream("event: complete\ndata: {\"exit_code\":0}\n\n");
 
             [$exitCode] = runCommand($this, 'workspace:setup', [
-                '--app' => 'happie.nmbp',
+                '--instance' => 'happie.nmbp',
                 '--path' => $path,
                 '--json' => true,
             ]);
@@ -202,7 +202,7 @@ describe('workspace write commands', function (): void {
         assertGatewayStreamSent(
             fn (FakeGatewayStreamRequest $request): bool => $request->data() === [
                 'name' => 'codex-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-0738f769',
-                'app' => 'happie.nmbp',
+                'instance' => 'happie.nmbp',
                 'path' => $path,
                 'caller_cwd' => getcwd(),
             ],
@@ -234,7 +234,8 @@ describe('workspace write commands', function (): void {
     it('deletes workspace:remove targets with destructive consent when forced', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'name' => 'feature-docs',
-            'app' => 'docs',
+            'project' => 'docs',
+            'instance' => 'development',
             'action' => 'removed',
         ], [
             'kept_files' => true,
@@ -242,7 +243,7 @@ describe('workspace write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:remove', [
             'name' => 'feature-docs',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--keep-files' => true,
             '--force' => true,
             '--json' => true,
@@ -255,7 +256,7 @@ describe('workspace write commands', function (): void {
 
             return (
                 $request->method() === 'DELETE'
-                && $url === 'https://gateway.test/api/workspaces/feature-docs?app=docs'
+                && $url === 'https://gateway.test/api/workspaces/feature-docs?instance=docs'
                 && ! $request->hasHeader('X-Orbit-Node-Transport-Preference')
                 && $request->data() === [
                     'keep_files' => true,
@@ -271,12 +272,13 @@ describe('workspace write commands', function (): void {
     it('prompts for workspace:remove name and confirmation in interactive mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'name' => 'feature-docs',
-            'app' => 'docs',
+            'project' => 'docs',
+            'instance' => 'development',
             'action' => 'removed',
         ]));
 
         $this
-            ->artisan('workspace:remove', ['--app' => 'docs'])
+            ->artisan('workspace:remove', ['--instance' => 'docs'])
             ->expectsQuestion('Workspace name', 'feature-docs')
             ->expectsConfirmation("Remove workspace 'feature-docs'?", 'yes')
             ->expectsOutputToContain('removed')
@@ -287,7 +289,7 @@ describe('workspace write commands', function (): void {
 
             return (
                 $request->method() === 'DELETE'
-                && $url === 'https://gateway.test/api/workspaces/feature-docs?app=docs'
+                && $url === 'https://gateway.test/api/workspaces/feature-docs?instance=docs'
                 && $request->data() === [
                     'keep_files' => false,
                     'destructive_consent' => true,
@@ -300,7 +302,8 @@ describe('workspace write commands', function (): void {
     it('renders workspace:remove human output as a progress tree with a success footer', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'name' => 'feature-api',
-            'app' => 'my-app',
+            'project' => 'my-app',
+            'instance' => 'development',
             'action' => 'removed',
             'worktree_removed' => true,
         ], [
@@ -309,7 +312,7 @@ describe('workspace write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:remove', [
             'name' => 'feature-api',
-            '--app' => 'my-app',
+            '--instance' => 'my-app',
             '--force' => true,
         ]);
 
@@ -331,7 +334,8 @@ describe('workspace write commands', function (): void {
     it('renders workspace:remove drift warnings after the tree', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'name' => 'feature-api',
-            'app' => 'my-app',
+            'project' => 'my-app',
+            'instance' => 'development',
             'action' => 'removed',
             'worktree_removed' => false,
         ], [
@@ -346,7 +350,7 @@ describe('workspace write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:remove', [
             'name' => 'feature-api',
-            '--app' => 'my-app',
+            '--instance' => 'my-app',
             '--force' => true,
         ]);
 
@@ -369,7 +373,7 @@ describe('workspace write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:remove', [
             'name' => 'feature-api',
-            '--app' => 'my-app',
+            '--instance' => 'my-app',
             '--force' => true,
         ]);
 
@@ -386,7 +390,7 @@ describe('workspace write commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:setup', [
             'name' => 'feature-docs',
-            '--app' => 'docs',
+            '--instance' => 'docs',
             '--path' => 'relative/path',
             '--json' => true,
         ]);

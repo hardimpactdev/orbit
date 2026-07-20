@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Apps;
 
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupStep;
 use App\Models\Node;
+use App\Models\Project;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppSetupStepRunner;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
@@ -23,8 +23,8 @@ final readonly class SetupApp
 
     /**
      * @return array{
-     *     app: string,
-     *     app_instance: string,
+     *     project: string,
+     *     instance: string,
      *     node: string,
      *     path: string,
      *     url: string,
@@ -32,15 +32,15 @@ final readonly class SetupApp
      *     setup_steps: array{status: string, count: int, message: string},
      * }
      */
-    public function handle(App $app, AppInstance $instance, Node $node): array
+    public function handle(Project $app, AppInstance $instance, Node $node): array
     {
         $runtimeApp = $this->runtimeRenderer->runtimeAppForInstance($app, $instance);
 
         $setupResult = $this->runSetupSteps($runtimeApp, $instance, $node);
 
         return [
-            'app' => $app->name,
-            'app_instance' => $instance->name,
+            'project' => $app->name,
+            'instance' => $instance->name,
             'node' => $node->name,
             'path' => $runtimeApp->path,
             'url' => $runtimeApp->url(),
@@ -54,7 +54,7 @@ final readonly class SetupApp
      * @return array{status: string, message: string, count: int}
      */
     public function runSetupSteps(
-        App $app,
+        Project $app,
         AppInstance $instance,
         Node $node,
         ?callable $onStepProgress = null,
@@ -110,7 +110,7 @@ final readonly class SetupApp
                 ->orderByDesc('id')
                 ->first();
 
-            $message = 'App setup failed.';
+            $message = 'Instance setup failed.';
             if ($failedStep !== null) {
                 $message = "Setup step failed: {$failedStep->command}";
                 if ($failedStep->output !== null && $failedStep->output !== '') {
@@ -150,7 +150,7 @@ final readonly class SetupApp
     /**
      * @return array<string, string>
      */
-    private function appEnv(App $app, AppInstance $instance, Node $node): array
+    private function appEnv(Project $app, AppInstance $instance, Node $node): array
     {
         return (
             [

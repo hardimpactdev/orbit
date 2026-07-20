@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DeployStep;
 use App\Models\Node;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
+use App\Models\Project;
 use App\Services\Deploy\DeployOperationRunner;
 use App\Services\Operations\OperationStreamFrameBroadcaster;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -20,7 +20,7 @@ uses(RefreshDatabase::class);
 
 it('persists deploy progress frames before WebSocket publication and supports journal replay', function (): void {
     $node = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
-    $app = App::factory()->create([
+    $app = Project::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
         'environment' => 'production',

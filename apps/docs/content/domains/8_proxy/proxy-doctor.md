@@ -13,7 +13,7 @@ owner markers, workspace domains, or workspace TLS expectations into route or sh
 global-config comparison. Supported app and node proxy drift remains visible.
 Explicit workspace scope is rejected before this probe runs.
 
-When Doctor is scoped with `--app` or `--workspace`, route-specific probing,
+When Doctor is scoped with `--instance` or `--workspace`, route-specific probing,
 planning, and restore/adopt actions are limited to that owner. Shared
 node-level Caddy container and global-config checks still run because those
 artifacts are prerequisites for the selected route, but unrelated app,
@@ -70,7 +70,7 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
    ingress baseline: document-root policy, PHP runtime target, security
    headers, sensitive path blocking, profiling timing markers, and immutable
    cache headers for versioned build assets. Every app primary route must keep
-   its logical app owner while targeting one concrete app instance, that
+   its project owner while targeting one concrete instance, that
    instance's serving node, runtime upstream, and inner-TLS server name.
 8. **TLS material:** the TLS material that Orbit manages exists and matches the
    route's policy. For DNS hostname routes, this includes the app-role
@@ -136,7 +136,7 @@ the matching route still has drift, with the node, verification operation, and
 observed mismatch retained in the action details. Doctor reports convergence
 only when that readback is clean.
 
-For an app primary route, restoring a mismatch also persists its logical app
+For an app primary route, restoring a mismatch also persists its project
 owner, concrete instance target, serving node, runtime upstream, and inner-TLS
 server name before rendering.
 

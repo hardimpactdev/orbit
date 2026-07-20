@@ -55,58 +55,10 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 6
 
 [[issues]]
-file = "app/Commands/App/AppAnalyticsDisableCommand.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Commands\App\AppAnalyticsDisableCommand::bindingData`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppAnalyticsDisableCommand.php"
+file = "app/Commands/App/AppAnalyticsVerifyCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 3
-
-[[issues]]
-file = "app/Commands/App/AppAnalyticsDisableCommand.php"
-code = "mixed-operand"
-message = "Casting `mixed` to `bool`."
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppAnalyticsEnableCommand.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Commands\App\AppAnalyticsEnableCommand::bindingData`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppAnalyticsEnableCommand.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 3
-
-[[issues]]
-file = "app/Commands/App/AppAnalyticsEnableCommand.php"
-code = "mixed-operand"
-message = "Casting `mixed` to `bool`."
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppAnalyticsShowCommand.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Commands\App\AppAnalyticsShowCommand::bindingData`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppAnalyticsShowCommand.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 3
-
-[[issues]]
-file = "app/Commands/App/AppAnalyticsShowCommand.php"
-code = "mixed-operand"
-message = "Casting `mixed` to `bool`."
-count = 1
+count = 6
 
 [[issues]]
 file = "app/Commands/App/AppEnvCommand.php"
@@ -133,36 +85,6 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 1
 
 [[issues]]
-file = "app/Commands/App/AppInstanceCommand.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>|null` is less specific than the declared return type `array<string, mixed>|null` for function `App\Commands\App\AppInstanceCommand::instanceFromGatewayResponse`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppInstanceCommand.php"
-code = "less-specific-return-statement"
-message = 'Returned type `list<array<array-key, mixed>>` is less specific than the declared return type `list<array<string, mixed>>` for function `App\Commands\App\AppInstanceCommand::instancesFromGatewayResponse`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppInstanceCommand.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 6
-
-[[issues]]
-file = "app/Commands/App/AppListCommand.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #1 of `App\Commands\App\AppListCommand::appString`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 3
-
-[[issues]]
-file = "app/Commands/App/AppListCommand.php"
-code = "less-specific-return-statement"
-message = 'Returned type `list<array<array-key, mixed>>` is less specific than the declared return type `list<array<string, mixed>>` for function `App\Commands\App\AppListCommand::appsFromGatewayResponse`.'
-count = 1
-
-[[issues]]
 file = "app/Commands/App/AppListCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
@@ -177,12 +99,6 @@ count = 4
 [[issues]]
 file = "app/Commands/App/AppRegisterCommand.php"
 code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Commands\App\AppRegisterCommand::appData`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppRegisterCommand.php"
-code = "less-specific-return-statement"
 message = 'Returned type `array{}|list<array<array-key, mixed>>` is less specific than the declared return type `list<array<string, mixed>>` for function `App\Commands\App\AppRegisterCommand::warnings`.'
 count = 1
 
@@ -190,19 +106,13 @@ count = 1
 file = "app/Commands/App/AppRegisterCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 5
+count = 6
 
 [[issues]]
 file = "app/Commands/App/AppRemoveCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 2
-
-[[issues]]
-file = "app/Commands/App/AppRootCommand.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Commands\App\AppRootCommand::appData`.'
-count = 1
 
 [[issues]]
 file = "app/Commands/App/AppRootCommand.php"
@@ -214,7 +124,7 @@ count = 1
 file = "app/Commands/App/AppRootCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 6
+count = 7
 
 [[issues]]
 file = "app/Commands/App/AppSetupStepAddCommand.php"
@@ -248,18 +158,6 @@ count = 2
 
 [[issues]]
 file = "app/Commands/App/AppShowCommand.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Commands\App\AppShowCommand::detailsFromGatewayResponse`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppShowCommand.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>|null` is less specific than the declared return type `array<string, mixed>|null` for function `App\Commands\App\AppShowCommand::appFromGatewayResponse`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppShowCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 3
@@ -268,18 +166,6 @@ count = 3
 file = "app/Commands/App/AppShowCommand.php"
 code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppShowCommand.php"
-code = "redundant-comparison"
-message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
-count = 1
-
-[[issues]]
-file = "app/Commands/App/AppShowCommand.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
 count = 1
 
 [[issues]]
@@ -320,6 +206,36 @@ count = 3
 
 [[issues]]
 file = "app/Commands/App/AppWorkerCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Commands/App/Concerns/RendersAppAnalyticsBinding.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 14
+
+[[issues]]
+file = "app/Commands/App/InstanceCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 6
+
+[[issues]]
+file = "app/Commands/App/InstanceCommand.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "app/Commands/App/InstanceCommand.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "app/Commands/App/InstanceRemoveCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
@@ -573,13 +489,13 @@ count = 2
 [[issues]]
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
 code = "mixed-return-statement"
-message = 'Could not infer a precise return type for function `App\Commands\Concerns\PromptsForGatewayRegistryEntities::promptForVisibleApp`. Saw type `mixed`.'
+message = 'Could not infer a precise return type for function `App\Commands\Concerns\PromptsForGatewayRegistryEntities::promptForVisibleNode`. Saw type `mixed`.'
 count = 2
 
 [[issues]]
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
 code = "mixed-return-statement"
-message = 'Could not infer a precise return type for function `App\Commands\Concerns\PromptsForGatewayRegistryEntities::promptForVisibleNode`. Saw type `mixed`.'
+message = 'Could not infer a precise return type for function `App\Commands\Concerns\PromptsForGatewayRegistryEntities::promptForVisibleProject`. Saw type `mixed`.'
 count = 2
 
 [[issues]]
@@ -604,7 +520,7 @@ count = 2
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
 code = "non-existent-method"
 message = 'Method `filledquery` does not exist on type `App\Commands\Concerns\PromptsForGatewayRegistryEntities`.'
-count = 4
+count = 3
 
 [[issues]]
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
@@ -686,8 +602,26 @@ count = 3
 
 [[issues]]
 file = "app/Commands/Concerns/ResolvesHostContext.php"
+code = "mixed-method-access"
+message = "Attempting to access a method on a non-object type (`mixed`)."
+count = 1
+
+[[issues]]
+file = "app/Commands/Concerns/ResolvesHostContext.php"
+code = "mixed-operand"
+message = "Left operand in `&&` operation has `mixed` type."
+count = 1
+
+[[issues]]
+file = "app/Commands/Concerns/ResolvesHostContext.php"
 code = "non-existent-method"
 message = 'Method `argument` does not exist on type `App\Commands\Concerns\ResolvesHostContext`.'
+count = 1
+
+[[issues]]
+file = "app/Commands/Concerns/ResolvesHostContext.php"
+code = "non-existent-method"
+message = 'Method `getdefinition` does not exist on type `App\Commands\Concerns\ResolvesHostContext`.'
 count = 1
 
 [[issues]]
@@ -729,18 +663,6 @@ count = 2
 [[issues]]
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
 code = "less-specific-argument"
-message = 'Argument type mismatch for argument #2 of `App\Commands\Concerns\StreamsGatewayProgress::renderProgressFrame`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 2
-
-[[issues]]
-file = "app/Commands/Concerns/StreamsGatewayProgress.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #2 of `App\Commands\Concerns\StreamsGatewayProgress::renderStreamJsonProgressFrame`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Commands/Concerns/StreamsGatewayProgress.php"
-code = "less-specific-argument"
 message = 'Argument type mismatch for argument #2 of `Orbit\Core\Progress\StreamedStepTree::tree`: expected `list<array<string, mixed>>`, but provided type `list<array<array-key, mixed>>` is less specific.'
 count = 1
 
@@ -771,12 +693,6 @@ count = 1
 [[issues]]
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
 code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\Services\GatewayStreamClient::withNodeTransportPreference`: expected `null|string`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/Concerns/StreamsGatewayProgress.php"
-code = "mixed-argument"
 message = 'Invalid argument type for argument #1 of `Orbit\Core\Progress\StreamedStepTree::__construct`: expected `Symfony\Component\Console\Output\OutputInterface`, but found `mixed`.'
 count = 1
 
@@ -784,42 +700,18 @@ count = 1
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 13
-
-[[issues]]
-file = "app/Commands/Concerns/StreamsGatewayProgress.php"
-code = "mixed-method-access"
-message = "Attempting to access a method on a non-object type (`mixed`)."
-count = 2
-
-[[issues]]
-file = "app/Commands/Concerns/StreamsGatewayProgress.php"
-code = "mixed-operand"
-message = "Left operand in `&&` operation has `mixed` type."
-count = 2
-
-[[issues]]
-file = "app/Commands/Concerns/StreamsGatewayProgress.php"
-code = "mixed-operand"
-message = "Right operand in `&&` operation has `mixed` type."
-count = 1
+count = 7
 
 [[issues]]
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
 code = "mixed-return-statement"
 message = 'Could not infer a precise return type for function `App\Commands\Concerns\StreamsGatewayProgress::captureProgressTerminalFrame`. Saw type `mixed`.'
-count = 2
-
-[[issues]]
-file = "app/Commands/Concerns/StreamsGatewayProgress.php"
-code = "mixed-return-statement"
-message = 'Could not infer a precise return type for function `App\Commands\Concerns\StreamsGatewayProgress::followOperationProgress`. Saw type `mixed`.'
 count = 1
 
 [[issues]]
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
 code = "mixed-return-statement"
-message = 'Could not infer a precise return type for function `App\Commands\Concerns\StreamsGatewayProgress::renderProgressErrorFrame`. Saw type `mixed`.'
+message = 'Could not infer a precise return type for function `App\Commands\Concerns\StreamsGatewayProgress::followOperationProgress`. Saw type `mixed`.'
 count = 1
 
 [[issues]]
@@ -832,7 +724,7 @@ count = 1
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
 code = "mixed-return-statement"
 message = 'Could not infer a precise return type for function `App\Commands\Concerns\StreamsGatewayProgress::streamProgress`. Saw type `mixed`.'
-count = 3
+count = 1
 
 [[issues]]
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
@@ -867,19 +759,7 @@ count = 1
 [[issues]]
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
 code = "non-existent-method"
-message = 'Method `nodetransportpreference` does not exist on type `App\Commands\Concerns\StreamsGatewayProgress`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/Concerns/StreamsGatewayProgress.php"
-code = "non-existent-method"
 message = 'Method `outputjsonline` does not exist on type `App\Commands\Concerns\StreamsGatewayProgress`.'
-count = 4
-
-[[issues]]
-file = "app/Commands/Concerns/StreamsGatewayProgress.php"
-code = "non-existent-method"
-message = 'Method `renderfailure` does not exist on type `App\Commands\Concerns\StreamsGatewayProgress`.'
 count = 4
 
 [[issues]]
@@ -893,18 +773,6 @@ file = "app/Commands/Concerns/StreamsGatewayProgress.php"
 code = "non-existent-method"
 message = 'Method `rendersuccess` does not exist on type `App\Commands\Concerns\StreamsGatewayProgress`.'
 count = 1
-
-[[issues]]
-file = "app/Commands/Concerns/StreamsGatewayProgress.php"
-code = "non-existent-method"
-message = 'Method `wantsjson` does not exist on type `App\Commands\Concerns\StreamsGatewayProgress`.'
-count = 4
-
-[[issues]]
-file = "app/Commands/Concerns/StreamsGatewayProgress.php"
-code = "non-existent-method"
-message = 'Method `wantsstreamingjson` does not exist on type `App\Commands\Concerns\StreamsGatewayProgress`.'
-count = 2
 
 [[issues]]
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
@@ -1123,6 +991,12 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 3
 
 [[issues]]
+file = "app/Commands/Deploy/DeployRunCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 6
+
+[[issues]]
 file = "app/Commands/Deploy/DeployStepAddCommand.php"
 code = "less-specific-return-statement"
 message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Commands\Deploy\DeployStepAddCommand::stepData`.'
@@ -1282,12 +1156,6 @@ count = 2
 file = "app/Commands/Gateway/GatewayUseCommand.php"
 code = "redundant-comparison"
 message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
-count = 1
-
-[[issues]]
-file = "app/Commands/GatewayStatusCommand.php"
-code = "deprecated-class"
-message = 'Use of deprecated class `App\Commands\OrbitCommand` in `extends` clause'
 count = 1
 
 [[issues]]
@@ -1516,7 +1384,7 @@ count = 1
 file = "app/Commands/Node/NodeManageCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Commands/Node/NodeManageCommand.php"
@@ -1535,12 +1403,6 @@ file = "app/Commands/Node/NodeNewCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 2
-
-[[issues]]
-file = "app/Commands/Node/NodeNewCommand.php"
-code = "unused-method"
-message = "Method `rendergatewayfailure()` is never used."
-count = 1
 
 [[issues]]
 file = "app/Commands/Node/NodePermissionsCommand.php"
@@ -1601,6 +1463,12 @@ file = "app/Commands/Node/NodeRoleRemoveCommand.php"
 code = "array-to-string-conversion"
 message = "Potentially casting `array` to `string`."
 count = 2
+
+[[issues]]
+file = "app/Commands/Node/NodeRoleRemoveCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
 
 [[issues]]
 file = "app/Commands/Node/NodeShowCommand.php"
@@ -1731,12 +1599,6 @@ count = 1
 [[issues]]
 file = "app/Commands/Operation/ProfileCommand.php"
 code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Commands\Operation\ProfileCommand::profileData`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/Operation/ProfileCommand.php"
-code = "less-specific-return-statement"
 message = 'Returned type `array<array-key, mixed>|null` is less specific than the declared return type `array<string, mixed>|null` for function `App\Commands\Operation\ProfileCommand::extractToolbarSummary`.'
 count = 1
 
@@ -1744,7 +1606,7 @@ count = 1
 file = "app/Commands/Operation/ProfileCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 8
+count = 5
 
 [[issues]]
 file = "app/Commands/Operation/ProfileCommand.php"
@@ -1790,21 +1652,9 @@ count = 2
 
 [[issues]]
 file = "app/Commands/Php/PhpListCommand.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #1 of `App\Commands\Php\PhpListCommand::runtimeString`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 4
-
-[[issues]]
-file = "app/Commands/Php/PhpListCommand.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Commands\Php\PhpListCommand::runtimeFromGatewayResponse`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/Php/PhpListCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 5
+count = 6
 
 [[issues]]
 file = "app/Commands/Php/PhpUseCommand.php"
@@ -1858,7 +1708,7 @@ count = 1
 file = "app/Commands/Process/ProcessListCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 8
+count = 15
 
 [[issues]]
 file = "app/Commands/Process/ProcessListCommand.php"
@@ -1876,7 +1726,7 @@ count = 1
 file = "app/Commands/Process/ProcessLogsCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
+count = 4
 
 [[issues]]
 file = "app/Commands/Process/ProcessRuntimeActionCommand.php"
@@ -1976,32 +1826,14 @@ count = 1
 
 [[issues]]
 file = "app/Commands/Schedule/Concerns/ResolvesScheduleSelection.php"
-code = "mixed-array-access"
-message = "Unsafe array access on type `mixed`."
-count = 3
-
-[[issues]]
-file = "app/Commands/Schedule/Concerns/ResolvesScheduleSelection.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
+count = 3
 
 [[issues]]
 file = "app/Commands/Schedule/Concerns/ResolvesScheduleSelection.php"
 code = "mixed-method-access"
 message = "Attempting to access a method on a non-object type (`mixed`)."
-count = 1
-
-[[issues]]
-file = "app/Commands/Schedule/Concerns/ResolvesScheduleSelection.php"
-code = "mixed-property-type-coercion"
-message = "A value with a less specific type `mixed` is being assigned to property `$$resolvedScheduleApp` (null|string)."
-count = 1
-
-[[issues]]
-file = "app/Commands/Schedule/Concerns/ResolvesScheduleSelection.php"
-code = "mixed-property-type-coercion"
-message = "A value with a less specific type `mixed` is being assigned to property `$$resolvedScheduleNode` (null|string)."
 count = 1
 
 [[issues]]
@@ -2014,12 +1846,6 @@ count = 2
 file = "app/Commands/Schedule/Concerns/ResolvesScheduleSelection.php"
 code = "mixed-return-statement"
 message = 'Could not infer a precise return type for function `App\Commands\Schedule\Concerns\ResolvesScheduleSelection::resolveScheduleName`. Saw type `nonnull`.'
-count = 1
-
-[[issues]]
-file = "app/Commands/Schedule/Concerns/ResolvesScheduleSelection.php"
-code = "mixed-return-statement"
-message = 'Could not infer a precise return type for function `App\Commands\Schedule\Concerns\ResolvesScheduleSelection::resolvedScheduleApp`. Saw type `mixed`.'
 count = 1
 
 [[issues]]
@@ -2127,12 +1953,6 @@ count = 1
 [[issues]]
 file = "app/Commands/Schedule/ScheduleRemoveCommand.php"
 code = "less-specific-argument"
-message = 'Argument type mismatch for argument #1 of `App\Commands\Schedule\ScheduleRemoveCommand::stringField`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Commands/Schedule/ScheduleRemoveCommand.php"
-code = "less-specific-argument"
 message = 'Argument type mismatch for argument #1 of `App\Commands\Schedule\ScheduleRemoveCommand::stringField`: expected `array<string, mixed>`, but provided type `non-empty-array<array-key, mixed>` is less specific.'
 count = 2
 
@@ -2212,6 +2032,12 @@ count = 1
 file = "app/Commands/Solo/SoloExtensionPlaceholderCommand.php"
 code = "write-only-property"
 message = "Property `$signature` is written to but never read."
+count = 1
+
+[[issues]]
+file = "app/Commands/Solo/SoloMutatingCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]
@@ -2321,6 +2147,12 @@ file = "app/Commands/Tool/ToolListQueryResolver.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 3
+
+[[issues]]
+file = "app/Commands/Tool/ToolLogsCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
 
 [[issues]]
 file = "app/Commands/Tool/ToolShowCommand.php"
@@ -2552,6 +2384,24 @@ count = 2
 
 [[issues]]
 file = "app/Providers/GatewayApiServiceProvider.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
+file = "app/Services/Analytics/AppAnalyticsReadinessVerifier.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "app/Services/Analytics/CurlHttpsProbe.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Services/Analytics/NativePublicDnsResolver.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 3
@@ -2953,6 +2803,18 @@ message = "Possible argument type mismatch for argument #1 of `usleep`: expected
 count = 1
 
 [[issues]]
+file = "app/Services/GatewayOperationStreamSubscriber.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 8
+
+[[issues]]
+file = "app/Services/GatewayOperationStreamSubscriber.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
 file = "app/Services/GatewayStreamClient.php"
 code = "avoid-catching-error"
 message = "Avoid catching 'Error' class instances."
@@ -2986,7 +2848,7 @@ count = 1
 file = "app/Services/Node/NodeNewPayloadBuilder.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 5
+count = 6
 
 [[issues]]
 file = "app/Services/Node/NodeNewPayloadBuilder.php"
@@ -2995,9 +2857,21 @@ message = "Assigning `nonnull` type to a variable may lead to unexpected behavio
 count = 1
 
 [[issues]]
+file = "app/Services/Operations/RawOperationStreamWebSocketTransport.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
 file = "app/Services/OrbitConfigStore.php"
 code = "impossible-condition"
 message = "This condition (type `false`) will always evaluate to false."
+count = 1
+
+[[issues]]
+file = "app/Services/OrbitConfigStore.php"
+code = "impossible-null-type-comparison"
+message = "Impossible condition: variable `$perms` (type `int<0, 511>`) will always be `null`."
 count = 1
 
 [[issues]]
@@ -3014,8 +2888,26 @@ count = 1
 
 [[issues]]
 file = "app/Services/OrbitConfigStore.php"
+code = "redundant-comparison"
+message = "Redundant `===` comparison: left-hand side is never identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "app/Services/OrbitConfigStore.php"
+code = "redundant-condition"
+message = "Redundant ternary operator: condition is always truthy."
+count = 1
+
+[[issues]]
+file = "app/Services/OrbitConfigStore.php"
 code = "redundant-logical-operation"
 message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
+count = 1
+
+[[issues]]
+file = "app/Services/OrbitConfigStore.php"
+code = "redundant-logical-operation"
+message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
 count = 1
 
 [[issues]]
@@ -3028,7 +2920,7 @@ count = 2
 file = "app/Services/OrbitConfigStore.php"
 code = "redundant-type-comparison"
 message = "Redundant type assertion: `$mode` is already `int`."
-count = 1
+count = 2
 
 [[issues]]
 file = "app/Services/OrbitConfigStoreImporter.php"
@@ -3115,30 +3007,6 @@ message = "Redundant `&&` operation: left operand is evaluated and right operand
 count = 1
 
 [[issues]]
-file = "app/Services/Profile/ProfileAppSelector.php"
-code = "less-specific-return-statement"
-message = 'Returned type `list<array<array-key, mixed>>` is less specific than the declared return type `list<array<string, mixed>>` for function `App\Services\Profile\ProfileAppSelector::appsFromResponse`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Profile/ProfileAppSelector.php"
-code = "mixed-assignment"
-message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Services/Profile/ProfileAppSelector.php"
-code = "redundant-comparison"
-message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
-count = 1
-
-[[issues]]
-file = "app/Services/Profile/ProfileAppSelector.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
-count = 1
-
-[[issues]]
 file = "app/Services/Profile/ProfileHumanRenderer.php"
 code = "less-specific-argument"
 message = 'Argument type mismatch for argument #1 of `App\Services\Profile\ProfileHumanRenderer::headerFloat`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
@@ -3193,18 +3061,6 @@ message = "Possible argument type mismatch for argument #2 of `str_repeat`: expe
 count = 1
 
 [[issues]]
-file = "app/Services/Profile/ProfileInput.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Services\Profile\ProfileInput::query`: expected `array<string, string>`, but found `array<string('auth_mode')|string('node')|string('target')|string('uri')|string('user'), null|string>`.'''
-count = 1
-
-[[issues]]
-file = "app/Services/Profile/ProfileInputResolver.php"
-code = "redundant-comparison"
-message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
-count = 2
-
-[[issues]]
 file = "app/Services/Profile/ProfileInputResolver.php"
 code = "redundant-comparison"
 message = "Redundant `===` comparison: left-hand side is never identical to right-hand side."
@@ -3213,26 +3069,20 @@ count = 1
 [[issues]]
 file = "app/Services/Profile/ProfileInputResolver.php"
 code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
-count = 2
-
-[[issues]]
-file = "app/Services/Profile/ProfileInputResolver.php"
-code = "redundant-logical-operation"
 message = "Redundant `||` operation: left operand is evaluated and right operand is always falsy."
 count = 1
-
-[[issues]]
-file = "app/Services/Profile/ProfileInputResolver.php"
-code = "redundant-type-comparison"
-message = "Redundant condition: variable `$parts['host']` (type `non-empty-string`) is already known to be `string`."
-count = 2
 
 [[issues]]
 file = "app/Services/StreamJsonIdleStepWriter.php"
 code = "redundant-logical-operation"
 message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
 count = 2
+
+[[issues]]
+file = "app/Services/Tools/LocalToolRunScriptPayload.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 3
 
 [[issues]]
 file = "app/Services/Updates/GatewayVersionProbe.php"
@@ -3340,6 +3190,24 @@ count = 1
 file = "app/Services/Version/VersionInfoResolver.php"
 code = "possibly-null-array-access"
 message = "Cannot perform array access on possibly `null` value."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeAction.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 6
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeContainerSpec.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Services/Workspaces/CodexWorktreeNameResolver.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]

@@ -305,7 +305,7 @@ function grantAuthorizationE2eResetGatewayState(E2ETopologyHarness $topology): v
         \Illuminate\Support\Facades\DB::table('processes')->delete();
         \Illuminate\Support\Facades\DB::table('proxy_routes')->delete();
         \Illuminate\Support\Facades\DB::table('workspaces')->delete();
-        \App\Models\App::query()->delete();
+        \App\Models\Project::query()->delete();
         \Illuminate\Support\Facades\DB::table('node_access')->delete();
         \Illuminate\Support\Facades\DB::table('activity_log')->delete();
 
@@ -382,7 +382,7 @@ function grantAuthorizationE2eSeedWorkspaceApp(E2ETopologyHarness $topology, str
     grantAuthorizationE2eTinker($topology, <<<PHP
         \$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-        \\App\\Models\\App::query()->updateOrCreate([
+        \\App\\Models\\Project::query()->updateOrCreate([
             'name' => 'grant-docs',
         ], [
             'node_id' => \$node->id,

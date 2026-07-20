@@ -32,7 +32,7 @@ if (! function_exists('workspaceLifecycleSeed')) {
             \\Illuminate\\Support\\Facades\\DB::table('workspace_steps')->delete();
             \\Illuminate\\Support\\Facades\\DB::table('proxy_routes')->delete();
             \\Illuminate\\Support\\Facades\\DB::table('workspaces')->delete();
-            \\App\\Models\\App::query()->delete();
+            \\App\\Models\\Project::query()->delete();
             \\Illuminate\\Support\\Facades\\DB::table('node_access')->delete();
             \\Illuminate\\Support\\Facades\\DB::table('node_access')->insert([
                 'consumer_node_id' => \$nodes->get('operator-1'),
@@ -43,7 +43,7 @@ if (! function_exists('workspaceLifecycleSeed')) {
                 'updated_at' => now(),
             ]);
 
-            \\App\\Models\\App::query()->create([
+            \\App\\Models\\Project::query()->create([
                 'name' => 'docs',
                 'node_id' => \$nodes->get('app-dev-1'),
                 'path' => {$appPathValue},
@@ -103,7 +103,7 @@ it('creates and sets up a workspace from a non-gateway caller through the gatewa
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit workspace:new %s --app=docs --json',
+                'cd %s && orbit workspace:new %s --instance=docs --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($workspaceName),
             ),

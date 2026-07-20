@@ -64,7 +64,7 @@ class WorkspaceHistoryPayload
         return [
             'id' => $run->id,
             'workspace' => $workspace?->name,
-            'app' => $workspace?->app?->name,
+            'project' => $workspace?->app?->name,
             'action' => $run->phase->value,
             'status' => $run->status,
             'triggered_by' => 'unknown',

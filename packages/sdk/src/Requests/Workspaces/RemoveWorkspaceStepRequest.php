@@ -20,7 +20,7 @@ final class RemoveWorkspaceStepRequest extends WorkspaceStepRequest implements H
     public function __construct(
         public readonly string $phase,
         public readonly int $step,
-        public readonly ?string $app = null,
+        public readonly ?string $instance = null,
         public readonly ?string $path = null,
     ) {}
 
@@ -36,7 +36,7 @@ final class RemoveWorkspaceStepRequest extends WorkspaceStepRequest implements H
     {
         return array_filter(
             [
-                'app' => $this->app,
+                'instance' => $this->instance,
                 'path' => $this->path,
             ],
             fn (mixed $value): bool => $value !== null && $value !== '',

@@ -3,7 +3,7 @@
 [Back to `codex:app` technical contract.](1_codex-app.md)
 
 `codex:app` is a gateway-mediated command. The CLI sends the selected action,
-concrete app-instance selector, and target node to the gateway. For `add` and
+concrete instance selector, and target node to the gateway. For `add` and
 `remove`, the gateway resolves the instance's Orbit serving node and source
 path, authorizes that serving node plus the Codex App target node, and applies
 the config file through an authenticated Agent-push command.
@@ -16,7 +16,7 @@ The CLI never writes the target node's Codex App config file directly.
 | --- | --- |
 | Configured CLI with `codex:app` on the selected instance serving node and target node | Forward the selected action to the gateway and render the gateway result. |
 | Configured CLI without `codex:app` on either required node | Gateway rejects before reading or writing Codex App config. |
-| Bare logical app or external-driver app instance | Gateway rejects before it invents source placement, reads config, or dispatches to the target node. |
+| Bare project or external-driver instance | Gateway rejects before it invents source placement, reads config, or dispatches to the target node. |
 | Target node is inactive, hidden, gateway, unmanaged, or not macOS | Gateway rejects before Agent dispatch. |
 | No configured gateway | CLI fails before prompts and side effects. |
 

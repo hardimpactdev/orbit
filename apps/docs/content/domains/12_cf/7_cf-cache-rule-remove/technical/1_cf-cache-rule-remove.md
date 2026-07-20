@@ -1,4 +1,4 @@
-# Technical Contract: `orbit cf-cache-rule:remove <app> [--force] [--json]`
+# Technical Contract: `orbit cf-cache-rule:remove <project> [--force] [--json]`
 
 [Back to public `cf-cache-rule:remove` documentation.](../cf-cache-rule-remove.md)
 
@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit cf-cache-rule:remove <app> [--force] [--json]
+orbit cf-cache-rule:remove <project> [--force] [--json]
 ```
 
 ## Input Contract
@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | Argument `app` | `Always.` | `Never.` | `None.` | Existing Orbit app name with a Cloudflare-backed real domain. |
+| `app` | Argument `app` | `Always.` | `Never.` | `None.` | Existing Orbit project name with a Cloudflare-backed real domain. |
 | `force` | `--force` | Required in non-interactive input mode. | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode. |
 
@@ -73,7 +73,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `cf-cache-rule:remove` may affect app performance policy, but it does not create
 a Cloudflare doctor family. App-domain and deployment health remain owned by
-[`doctor --family=app`](../../../5_app/app-doctor.md). Ingress route health
+[`doctor --family=instance`](../../../5_project/instance-doctor.md). Ingress route health
 remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
 ## Test Mapping

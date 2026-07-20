@@ -6,8 +6,8 @@ namespace Orbit\Sdk\Laravel\Requests\Tools;
 
 final class RestartToolRequest extends ToolLifecycleRequest
 {
-    public function __construct(string $tool, ?string $app = null, ?string $node = null)
+    public function __construct(string $tool, ?string $instance = null, ?string $node = null)
     {
-        parent::__construct($tool, 'restart', $app, $node);
+        parent::__construct($tool, 'restart', $instance, $node);
     }
 }
