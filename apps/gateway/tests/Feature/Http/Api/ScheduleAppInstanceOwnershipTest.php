@@ -94,6 +94,9 @@ it('rejects schedule execution timeouts outside the supported range', function (
     'zero' => 0,
     'above one day' => 86_401,
     'not numeric' => 'slow',
+    'decimal' => 1.5,
+    'boolean' => true,
+    'mixed numeric string' => '7200oops',
 ]);
 
 it('accepts a bare app selector when exactly one eligible instance is visible', function (): void {

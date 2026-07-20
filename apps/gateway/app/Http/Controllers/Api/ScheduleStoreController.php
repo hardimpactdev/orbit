@@ -149,7 +149,9 @@ final readonly class ScheduleStoreController implements Loggable
             );
         }
 
-        if ($timeout < 1 || $timeout > 86_400) {
+        $timeoutIsMalformed = $request->exists('timeout') && ! is_int($request->input('timeout'));
+
+        if ($timeoutIsMalformed || $timeout < 1 || $timeout > 86_400) {
             return $this->error(
                 'validation_failed',
                 'The schedule timeout must be between 1 and 86400 seconds.',
