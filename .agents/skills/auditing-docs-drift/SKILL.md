@@ -13,6 +13,13 @@ touching any docs or code. This skill is the structured form of the audit we
 ran on 2026-05-20. Run it when the user asks to scan docs for drift, check
 consistency, find contradictions, or align documentation.
 
+**User-facing output contract:** Always present the complete final finding list.
+Every item must have a plain-language **Drift** explanation and a plain-language
+**Fix**. Counts, severity tallies, scratchpad links, and fix-only bullets are
+supporting context; they are not the finding list. This applies to the first
+audit result, the post-review synthesis, the approval handoff, and the final
+completion report.
+
 ## Authority Order
 
 `PRODUCT_DECISIONS.md` is the dated **intent ledger** and sits above this chain
@@ -137,15 +144,16 @@ For each finding, use this exact shape:
 **Severity:** A | B | C
 **Files:** path:line-range, path:line-range, ...
 
-**The drift (what's wrong with the current docs):**
-What the authority docs say (with line references), what the downstream doc
-says, and where they diverge.
+**Drift:**
+In 1–3 short sentences, say what the authority docs say, what the other docs
+say, and why both statements cannot be true. Use simple writing before giving
+line references or internal terminology.
 
 **Why it matters:**
 What a reader does wrong, what a maintainer has to relitigate, or what risk
 the silent inconsistency creates. One paragraph.
 
-**Recommended fix:**
+**Fix:**
 First `grep PRODUCT_DECISIONS.md` for the finding's topic noun. If a dated
 decision exists, the latest entry is current intent: the fix is to align the
 contradicting (stale) doc to that decision — state it directly rather than as an
@@ -197,20 +205,49 @@ named `docs-audit-final` with tag `["docs-audit", "final"]`. The synthesis must:
 
 - Apply every Codex downgrade or correction (e.g. A→B, mislabeled file path).
 - Keep every Codex addition as a numbered new finding under the right severity.
+- Keep a plain-language `Drift` and `Fix` for every final finding. These fields
+  are the source for the complete user-facing list.
 - Group findings by severity (A, B, C).
 - Include a "Codex downgrades / additions applied" section so the diff between
   the two reviews is visible.
 - End with a recommended execution order naming the 3–4 highest-leverage fixes.
 
-### 8. Walk through each finding with the user
+### 8. Present the full list, then walk through each finding
 
-Present findings one at a time in this exact shape (matches step 5 plus an
-explicit "Why it matters" framing):
+Before asking for any approval, present every final finding together using this
+compact shape:
+
+```markdown
+## Full drift list
+
+### <id> — <short title>
+
+**Drift:** <1–3 short sentences explaining the conflicting statements and why they disagree.>
+
+**Fix:** <1–3 short sentences stating the recommended change.>
+```
+
+Repeat the item for every A, B, and C finding in order. A request to “keep it
+short” means making each `Drift` and `Fix` concise; it does not remove items or
+either field. If the complete list cannot fit in one response, split it into
+clearly numbered parts and continue until every item has been shown.
+
+Use simple writing:
+
+- Put the current problem in `Drift` and the action to take in `Fix`.
+- Name the two conflicting claims directly instead of relying on internal
+  shorthand.
+- Use short sentences and explain uncommon terms once.
+- Keep evidence, file paths, severity, and `Why it matters` after the plain
+  explanation so the reader understands the issue first.
+
+After the complete list is visible, walk through findings one at a time for
+approval using this detailed shape:
 
 ```markdown
 ## <id> — <title>
 
-**The drift (what's wrong with the current docs):**
+**Drift:**
 <authority quote with line refs> ... <downstream quote with line refs> ... <where they diverge>
 
 **Why it matters:**
@@ -219,7 +256,7 @@ explicit "Why it matters" framing):
 **Files affected:**
 - <path:line-range>
 
-**Recommended fix:**
+**Fix:**
 1. <concrete edit>
 2. <concrete edit>
 ...
@@ -233,9 +270,8 @@ defer. The fix shape can change radically (e.g. C3 inverted from "add row" to
 
 Skill discipline:
 
-- Start each finding with the intro (drift + why-it-matters). Skipping this
-  forces the user to reconstruct context — they correctly objected during the
-  2026-05-20 audit and we adopted this format thereafter.
+- Start the handoff with the complete plain-language list, then start each
+  detailed finding with `Drift` and `Why it matters`.
 - When the user proposes a different fix direction, restate the drift in their
   preferred frame, then present the revised fix. Don't argue the original.
 - Track approvals in a task list so the walkthrough state is recoverable.
@@ -308,10 +344,18 @@ Scratchpads:
 - Reviewer findings: docs-audit-review-codex (id N2)
 - Synthesized final: docs-audit-final (id N3)
 
-Findings resolved:
-- A-tier (count): <list>
-- B-tier (count): <list>
-- C-tier (count): <list>
+Full findings (<total count>):
+
+### <id> — <short title>
+**Drift:** <plain explanation of what conflicts>
+**Fix:** <plain explanation of what should change>
+
+<repeat for every final finding in A, B, C order>
+
+Severity tally:
+- A-tier: <count>
+- B-tier: <count>
+- C-tier: <count>
 
 Coherence score (Codex): N/10
 Biggest blocker: <one line>
