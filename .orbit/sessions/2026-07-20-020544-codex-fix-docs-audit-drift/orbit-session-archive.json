@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-20T00:05:44+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-docs-audit-drift/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-20-020544-codex-fix-docs-audit-drift",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-20T000454Z-126d021bcd96.json"
+    ],
+    "entry_digests": {
+        "feedback.jsonl": "b2f4ac283938c8d85abcac54d6658ee7b07f65736e4c52c69a1b1b9135fa5924",
+        "loop.md": "7ced0f6cd118cf0c4b17ee7952c003ab93aeb5c4b12855c16e5b2022b0a13a33",
+        "quality-gates/quality-check-2026-07-20T000454Z-126d021bcd96.json": "7c3ca9bd9869955e00818e9bd98b0f7465abd4bb68081426715ca932ea94e289"
+    },
+    "branch": "codex/fix-docs-audit-drift",
+    "candidate_commit": "9671e41258243390c7b3dbc0ffdc94eb77a4e967",
+    "accepted_feature_tip": "9671e41258243390c7b3dbc0ffdc94eb77a4e967",
+    "accepted_main_tip": "5ab595ef681b30a3148aeeab0c95473483dbd1fa",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
