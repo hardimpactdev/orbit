@@ -1,0 +1,51 @@
+Orbit runtime proof
+===================
+
+Feature tip: 194994db38159c917898bafa2492eb899200f27f
+Release candidate: 20260720T041005Z-194994db3 (Orbit 0.1.190)
+Fleet rollout: update:all completed for the gateway, scheduler, nine workload CLIs, and agents. Gateway, scheduler, CLI artifacts, Agent artifacts, and required role images all verified.
+Fleet health comparison: the pre- and post-update doctor runs both reported the same 133 pre-existing issues; no release-caused regression was introduced.
+
+Environment attachment restoration
+----------------------------------
+- mealou-production.production: reader and writer database attachments converged into the managed production .env.
+- mealou.development: reader database attachment converged into the managed Linux development .env.
+- mealou.nmbp: reader database attachment converged into the managed macOS development .env.
+- The reader is attached to production and both development instances; the writer is attached only to production.
+- Read-only catalogue credentials can SELECT and cannot INSERT, UPDATE, or DELETE. Writer credentials can SELECT, INSERT, UPDATE, and DELETE.
+
+Database runtime
+----------------
+- database1 continues to run PostgreSQL 16 as process postgres on port 5432 for Plausible.
+- database1 simultaneously runs PostgreSQL 18 as process postgres-food on port 5433 for Mealou.
+- A reader query reported PostgreSQL 18.4 for the Mealou catalogue connection.
+
+Mealou deployment and development
+---------------------------------
+- Production deployment 155 completed at Mealou commit a9686c15a5ddc8bfbff7252f13ed7dbd8785881b.
+- mealou.development was safely fast-forwarded to the same commit, dependencies and migrations completed, caches were cleared, and the app returned HTTP 200.
+- A final origin refresh showed a clean tracking state: ## main...origin/main.
+- Development read the shared catalogue and counted 86,288 products.
+
+Catalogue synchronization
+-------------------------
+- Permanent schedule mealou-food-catalog-sync is enabled for Monday 02:30 Europe/Amsterdam with command php artisan food-catalog:sync --json and timeout 7,200 seconds.
+- Successful run 019f7d91-c8bd-7009-93e9-29f490bfb25d processed a 12,497,481,113-byte Open Food Facts export.
+- It scanned 4,627,960 rows, observed 105,066 Dutch source rows, retained 86,288 unique products, classified 1,127 as eligible and 85,161 as incomplete, and left zero malformed or staged rows.
+- Peak importer memory was 113,770,496 bytes. Oversized source rows and promotion batches are independently bounded.
+- The exact temporary export storage/app/private/food-catalog/openfoodfacts-20260720-021450-a4ca517c.jsonl.gz was deleted after the successful run. The temporary cleanup and recovery schedules were removed.
+- The gateway now rejects decimal, boolean, mixed-string, zero, and above-limit timeout inputs before schedule creation; the focused API test passes 17 tests and 84 assertions.
+
+Catalogue database integrity
+----------------------------
+- catalog_products: 86,288 total and 86,288 distinct barcodes; zero withdrawn.
+- official_food_variants: 1,127 active rows, matching eligible products.
+- catalog_product_stage_rows: zero rows after promotion.
+- Sample barcode 11746478 is Hummus Pikant by Albert Heijn, package 200 g, serving 10 g, 180 kcal/5 g protein/11 g carbohydrates/12 g fat per 100 g, Nutri-Score C, NOVA 4, complete Dutch ingredients/categories, and a working 400 px front image.
+
+Production browser proof
+------------------------
+- An authenticated production browser manually entered barcode 11746478 and received Hummus Pikant with brand, package, serving, macros, Nutri-Score C, NOVA 4, Open Food Facts attribution, and a loaded 400 px image.
+- The product was selected into a recipe as 100 g, saved, listed as 180 kcal total and 90 kcal per serving, reopened, and displayed as Hummus Pikant in the ingredient list.
+- The browser reported no console errors.
+- The disposable validation account and its recipe were deleted after proof, leaving no test household data.

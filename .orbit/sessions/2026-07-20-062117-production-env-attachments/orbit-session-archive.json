@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-20T04:21:17+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-production-env-attachments/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-20-062117-production-env-attachments",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-20T040918Z-ae1a40bbb7bd.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "395c66100b98c4d69d724a6b9b2830624ebb83b80da10232a8d107856c5000be",
+        "loop.md": "25c24e737226b4effb0e2a882295c8181a7f4eb94ed84e73346b47c9d0bb3772",
+        "quality-gates/quality-check-2026-07-20T040918Z-ae1a40bbb7bd.json": "29a84309a58d50d583acb1f7c24495fd27ad4ef2f7ecb0315b5a690e41202be2"
+    },
+    "branch": "codex/production-env-attachments",
+    "candidate_commit": "194994db38159c917898bafa2492eb899200f27f",
+    "accepted_feature_tip": "194994db38159c917898bafa2492eb899200f27f",
+    "accepted_main_tip": "194994db38159c917898bafa2492eb899200f27f",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
