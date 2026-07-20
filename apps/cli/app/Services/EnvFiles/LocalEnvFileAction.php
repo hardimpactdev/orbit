@@ -14,6 +14,8 @@ final readonly class LocalEnvFileAction
         '/var/www/',
     ];
 
+    private const string ProductionAppEnvPattern = '#\A/home/[a-z_][a-z0-9_-]*/app/\.env\z#';
+
     /**
      * @param  array<string, mixed>  $payload
      * @return array{data: array<string, mixed>, meta: array<string, mixed>}
@@ -115,6 +117,10 @@ final readonly class LocalEnvFileAction
 
         if (! str_starts_with($value, '/') || ! str_ends_with($value, '/.env')) {
             throw $this->invalidPath();
+        }
+
+        if (preg_match(self::ProductionAppEnvPattern, $value) === 1) {
+            return $value;
         }
 
         foreach (self::AllowedRootPrefixes as $prefix) {

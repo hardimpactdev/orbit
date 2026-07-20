@@ -64,6 +64,50 @@ describe('internal env-file command', function (): void {
             ->and($payload['error']['message'] ?? null)
             ->toBe('Env file path is invalid.');
     });
+
+    it('accepts Orbit-managed production app env paths', function (): void {
+        [$exitCode, $output] = runInternalEnvFileCommand(
+            [
+                '--operation-token' => envFileSignedOperationToken(),
+                '--json' => true,
+            ],
+            json_encode([
+                'action' => 'read',
+                'path' => '/home/mealou-production/app/.env',
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('env_file.not_found');
+    });
+
+    it('keeps production env access bounded to the exact app root', function (string $path): void {
+        [$exitCode, $output] = runInternalEnvFileCommand(
+            [
+                '--operation-token' => envFileSignedOperationToken(),
+                '--json' => true,
+            ],
+            json_encode([
+                'action' => 'read',
+                'path' => $path,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('validation_failed');
+    })->with([
+        '/home/mealou-production/.env',
+        '/home/mealou-production/app/config/.env',
+        '/home/mealou-production/app/../.env',
+    ]);
 });
 
 function configureEnvFileOperationTokenGuard(): void
