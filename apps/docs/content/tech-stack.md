@@ -409,7 +409,9 @@ The canonical `orbit-caddy`, app, workspace, and WebSocket runtime container
 specs use Docker's `always` restart policy. The node boot convergence service
 provides a second recovery edge after Docker and WireGuard are ready, including
 the case where an early Docker restart attempt raced a temporary physical-link
-loss.
+loss. When Docker leaves `orbit-caddy` detached after that failure, the service
+reconnects the container to its configured Docker network before restarting it.
+Docker then restores the published ports retained in the container host config.
 
 #### Caddy include boundaries
 

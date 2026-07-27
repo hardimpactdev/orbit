@@ -32,7 +32,11 @@ describe(NodeSystemdServiceRenderer::class, function (): void {
             ->toContain('managed_container_ids caddy')
             ->toContain('app-runtime workspace-runtime websocket-runtime')
             ->toContain('{{.HostConfig.RestartPolicy.Name}}')
+            ->toContain('{{.HostConfig.NetworkMode}}')
+            ->toContain('.NetworkSettings.Networks')
             ->toContain('[ "$restart_policy" = "always" ]')
+            ->toContain('docker network connect "$network" "$container"')
+            ->toContain('reconnect_configured_network "$container"')
             ->toContain('docker restart')
             ->toContain('docker start')
             ->not

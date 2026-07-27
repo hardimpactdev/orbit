@@ -64,10 +64,26 @@ final readonly class NodeSystemdServiceRenderer
                     "$1"
             }
 
+            reconnect_configured_network() {
+                container="$1"
+                network="$(docker container inspect --format '{{.HostConfig.NetworkMode}}' "$container")"
+
+                case "$network" in
+                    ""|default|host|none) return ;;
+                esac
+
+                if ! docker container inspect \
+                    --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}' \
+                    "$container" | grep -Fx "$network" >/dev/null; then
+                    docker network connect "$network" "$container"
+                fi
+            }
+
             for container in $(managed_container_ids caddy); do
                 restart_policy="$(restart_policy_for "$container")"
 
                 if [ "$restart_policy" = "always" ]; then
+                    reconnect_configured_network "$container"
                     docker restart "$container"
                 fi
             done
