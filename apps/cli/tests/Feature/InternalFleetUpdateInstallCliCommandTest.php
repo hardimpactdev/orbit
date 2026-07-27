@@ -313,13 +313,13 @@ describe('internal fleet update install cli command', function (): void {
             ->and($unit)
             ->toContain("ExecStart={$workspace}/bin/orbit-agent")
             ->toContain("Environment=ORBIT_AGENT_CONFIG={$agentConfigPath}")
-            ->toContain('After=network-online.target wg-quick@wg-orbit.service')
-            ->and($runtimeBootScript)
-            ->toContain('managed_container_ids caddy')
-            ->toContain('app-runtime workspace-runtime websocket-runtime')
-            ->and($runtimeBootUnit)
-            ->toContain('After=docker.service network-online.target wg-quick@wg-orbit.service')
-            ->toContain('Restart=on-failure');
+            ->toContain('After=network-online.target')
+            ->not->toContain('wg-quick@')->and($runtimeBootScript)->toContain('managed_container_ids caddy')->toContain(
+                'app-runtime workspace-runtime websocket-runtime',
+            )->and($runtimeBootUnit)->toContain('After=docker.service network-online.target')->toContain(
+                'Restart=on-failure',
+            )
+            ->not->toContain('wg-quick@');
     });
 
     it('restarts an unmanaged Orbit Agent listener when no service unit is present', function (): void {

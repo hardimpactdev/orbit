@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Orbit\Core\Nodes\NodeSystemdServiceRenderer;
 
 describe(NodeSystemdServiceRenderer::class, function (): void {
-    it('renders the agent behind both network-online and the Orbit WireGuard interface', function (): void {
+    it('renders the agent behind network-online without requiring one WireGuard unit name', function (): void {
         $renderer = new NodeSystemdServiceRenderer;
 
         $unit = $renderer->agentUnit(
@@ -17,10 +17,11 @@ describe(NodeSystemdServiceRenderer::class, function (): void {
         );
 
         expect($unit)
-            ->toContain('After=network-online.target wg-quick@wg-orbit.service')
-            ->toContain('Requires=wg-quick@wg-orbit.service')
+            ->toContain('After=network-online.target')
+            ->toContain('Wants=network-online.target')
             ->toContain('Environment=ORBIT_AGENT_ORBIT_BINARY=/home/orbit/.local/bin/orbit')
-            ->toContain('Restart=always');
+            ->toContain('Restart=always')
+            ->not->toContain('wg-quick@');
     });
 
     it('renders a boot reconciler that retries Caddy and starts only managed always-on runtime kinds', function (): void {
@@ -39,14 +40,11 @@ describe(NodeSystemdServiceRenderer::class, function (): void {
             ->toContain('reconnect_configured_network "$container"')
             ->toContain('docker restart')
             ->toContain('docker start')
-            ->not
-            ->toContain('unless-stopped')
-            ->and($renderer->runtimeBootUnit())
-            ->toContain('After=docker.service network-online.target wg-quick@wg-orbit.service')
-            ->toContain('Requires=docker.service wg-quick@wg-orbit.service')
-            ->toContain('Restart=on-failure')
-            ->toContain('RestartSec=5')
-            ->toContain('StartLimitIntervalSec=0')
-            ->toContain('WantedBy=multi-user.target');
+            ->not->toContain('unless-stopped')->and($renderer->runtimeBootUnit())->toContain(
+                'After=docker.service network-online.target',
+            )->toContain('Requires=docker.service')->toContain('Restart=on-failure')->toContain(
+                'RestartSec=5',
+            )->toContain('StartLimitIntervalSec=0')->toContain('WantedBy=multi-user.target')
+            ->not->toContain('wg-quick@');
     });
 });

@@ -22,9 +22,8 @@ final readonly class NodeSystemdServiceRenderer
         return <<<UNIT
             [Unit]
             Description=Orbit Agent
-            After=network-online.target wg-quick@wg-orbit.service
+            After=network-online.target
             Wants=network-online.target
-            Requires=wg-quick@wg-orbit.service
 
             [Service]
             Type=simple
@@ -111,9 +110,9 @@ final readonly class NodeSystemdServiceRenderer
         return <<<'UNIT'
             [Unit]
             Description=Converge Orbit runtimes after node boot
-            After=docker.service network-online.target wg-quick@wg-orbit.service
+            After=docker.service network-online.target
             Wants=network-online.target
-            Requires=docker.service wg-quick@wg-orbit.service
+            Requires=docker.service
             StartLimitIntervalSec=0
 
             [Service]

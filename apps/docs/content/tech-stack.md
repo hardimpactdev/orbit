@@ -388,13 +388,16 @@ Gateway-pushed commands are limited to Agent-eligible nodes. The `agent` workloa
 supplies derived intent like every other workload role; it is not a duplicated
 capability flag.
 
-On Linux nodes, the Agent systemd unit is ordered after Docker, WireGuard, and
-network-online. Bootstrap and fleet updates also install a retrying boot
-convergence service. After those prerequisites become available, it restarts
-the current Orbit-managed Caddy container and starts current managed app,
-workspace, and WebSocket runtime containers only when their Docker restart
-policy is `always`. It never revives containers configured as `never` or
-`unless-stopped`, so stale and intentionally stopped runtimes remain stopped.
+On Linux nodes, the Agent systemd unit is ordered after `network-online` and
+restarts until its configured address is bindable. It does not hard-require a
+specific `wg-quick` unit name because fleet nodes may expose the Orbit network
+through different WireGuard interface names. Bootstrap and fleet updates also
+install a retrying boot convergence service ordered after Docker and
+`network-online`. It restarts the current Orbit-managed Caddy container and
+starts current managed app, workspace, and WebSocket runtime containers only
+when their Docker restart policy is `always`. It never revives containers
+configured as `never` or `unless-stopped`, so stale and intentionally stopped
+runtimes remain stopped.
 
 ### Proxy
 
@@ -407,11 +410,12 @@ and certificate state, through Orbit-owned host paths under
 
 The canonical `orbit-caddy`, app, workspace, and WebSocket runtime container
 specs use Docker's `always` restart policy. The node boot convergence service
-provides a second recovery edge after Docker and WireGuard are ready, including
-the case where an early Docker restart attempt raced a temporary physical-link
-loss. When Docker leaves `orbit-caddy` detached after that failure, the service
-reconnects the container to its configured Docker network before restarting it.
-Docker then restores the published ports retained in the container host config.
+provides a second recovery edge after Docker and keeps retrying until the node's
+configured addresses are ready, including the case where an early Docker
+restart attempt raced a temporary physical-link loss. When Docker leaves
+`orbit-caddy` detached after that failure, the service reconnects the container
+to its configured Docker network before restarting it. Docker then restores the
+published ports retained in the container host config.
 
 #### Caddy include boundaries
 
