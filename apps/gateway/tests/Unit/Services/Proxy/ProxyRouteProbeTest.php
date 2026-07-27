@@ -2090,9 +2090,9 @@ describe('orbit-caddy container readiness', function (): void {
 
         $drift = new ProxyRouteProbe()->diffCaddyContainer($node, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.caddy_container_detached')?->kind)
+        expect(proxyProbeIssue($drift, key: 'proxy.caddy_container_detached')?->kind)
             ->toBe(DriftKind::Divergent)
-            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_detached')?->detail)
+            ->and(proxyProbeIssue($drift, key: 'proxy.caddy_container_detached')?->detail)
             ->toMatchArray([
                 'container' => 'orbit-caddy',
                 'node' => $node->name,

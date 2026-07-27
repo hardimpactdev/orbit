@@ -944,9 +944,9 @@ describe('docker runtime probe scope', function (): void {
             ],
         ]));
 
-        expect(issue($drift, 'process.runtime_unit_down')?->kind)
+        expect(issue($drift, key: 'process.runtime_unit_down')?->kind)
             ->toBe(DriftKind::Divergent)
-            ->and(issue($drift, 'process.runtime_unit_down')?->detail)
+            ->and(issue($drift, key: 'process.runtime_unit_down')?->detail)
             ->toMatchArray([
                 'process' => 'queue',
                 'runtime_unit' => $runtimeUnit,
@@ -978,7 +978,7 @@ describe('docker runtime probe scope', function (): void {
             ],
         ]));
 
-        expect(issue($drift, 'process.runtime_unit_down'))->toBeNull();
+        expect(issue($drift, key: 'process.runtime_unit_down'))->toBeNull();
     });
 
     it('matches process-backed app runtime rows against the managed app runtime container label', function (): void {

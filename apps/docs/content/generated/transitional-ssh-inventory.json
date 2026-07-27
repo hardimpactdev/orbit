@@ -29,8 +29,8 @@
     "provisioning_ssh": [
         {
             "path": "apps/gateway/app/Services/Operations/ProvisioningAgentInstaller.php",
-            "call_line": 45,
-            "marker_line": 44,
+            "call_line": 47,
+            "marker_line": 46,
             "edge": "remote-executor.run"
         },
         {

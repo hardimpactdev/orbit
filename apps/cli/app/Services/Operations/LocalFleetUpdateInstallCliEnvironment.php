@@ -7,6 +7,7 @@ namespace App\Services\Operations;
 use JsonException;
 use Orbit\Core\Nodes\NodeSystemdServiceRenderer;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class LocalFleetUpdateInstallCliEnvironment
 {
     public function __construct(

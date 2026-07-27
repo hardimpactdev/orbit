@@ -8,6 +8,7 @@ use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\NodeBootstrapBundleBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Orbit\Core\Nodes\NodeSystemdServiceRenderer;
 
 uses(RefreshDatabase::class);
 
@@ -68,6 +69,14 @@ it('renders an idempotent minimal WireGuard CLI and Agent bootstrap bundle', fun
             Endpoint = gateway.example.com:51820
             WG,
     );
+    $systemdServices = app(NodeSystemdServiceRenderer::class);
+    $agentUnit = $systemdServices->agentUnit(
+        user: 'orbit',
+        agentBinary: '/home/orbit/.local/bin/orbit-agent',
+        orbitBinary: '/home/orbit/.local/bin/orbit',
+        configPath: '/home/orbit/.config/orbit/agent.toml',
+        httpBind: '10.6.0.4:9477',
+    );
 
     expect($script)
         ->toContain('set -euo pipefail')
@@ -89,9 +98,9 @@ it('renders an idempotent minimal WireGuard CLI and Agent bootstrap bundle', fun
         ->toContain('https://artifacts.orbit.test/orbit-agent-linux-x64')
         ->toContain(str_repeat('d', 64))
         ->toContain('/home/orbit/.local/bin/orbit-agent')
-        ->toContain('ORBIT_AGENT_ORBIT_BINARY=/home/orbit/.local/bin/orbit')
-        ->toContain('ORBIT_AGENT_HTTP_BIND=10.6.0.4:9477')
-        ->toContain('After=network-online.target wg-quick@wg-orbit.service')
+        ->toContain(base64_encode($agentUnit))
+        ->toContain(base64_encode($systemdServices->runtimeBootScript()))
+        ->toContain(base64_encode($systemdServices->runtimeBootUnit()))
         ->toContain('/usr/local/libexec/orbit-runtime-boot-converge')
         ->toContain('/etc/systemd/system/orbit-runtime-boot-converge.service')
         ->toContain("systemctl enable 'orbit-runtime-boot-converge.service'")

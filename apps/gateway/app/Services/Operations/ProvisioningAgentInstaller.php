@@ -83,15 +83,15 @@ class ProvisioningAgentInstaller
         $unitName = escapeshellarg($service['unit_name'].'.service');
         $unitPath = escapeshellarg('/etc/systemd/system/'.$service['unit_name'].'.service');
         $systemdServices = $this->systemdServices ?? new NodeSystemdServiceRenderer;
-        $agentUnit = $systemdServices->agentUnit(
+        $agentUnitBase64 = escapeshellarg(base64_encode($systemdServices->agentUnit(
             user: $service['user'],
             agentBinary: $service['exec_start'],
             orbitBinary: dirname($service['exec_start']).'/orbit',
             configPath: $service['config_path'],
             httpBind: $service['http_bind'],
-        );
-        $runtimeBootScript = $systemdServices->runtimeBootScript();
-        $runtimeBootUnitContent = $systemdServices->runtimeBootUnit();
+        )));
+        $runtimeBootScriptBase64 = escapeshellarg(base64_encode($systemdServices->runtimeBootScript()));
+        $runtimeBootUnitBase64 = escapeshellarg(base64_encode($systemdServices->runtimeBootUnit()));
         $runtimeBootScriptPath = escapeshellarg(NodeSystemdServiceRenderer::RuntimeBootScriptPath);
         $runtimeBootUnit = escapeshellarg(NodeSystemdServiceRenderer::RuntimeBootUnitName);
         $runtimeBootUnitPath = escapeshellarg(NodeSystemdServiceRenderer::RuntimeBootUnitPath);
@@ -118,12 +118,9 @@ class ProvisioningAgentInstaller
             sudo install -m 0600 -o {$serviceUser} -g {$serviceUser} "\$tmp/agent.toml" {$configPath}
             sudo install -m 0644 -o {$serviceUser} -g {$serviceUser} "\$tmp/root.crt" {$caPath}
 
-            cat > "\$tmp/orbit-agent.service" <<'UNIT'
-            {$agentUnit}UNIT
-            cat > "\$tmp/orbit-runtime-boot-converge" <<'BASH'
-            {$runtimeBootScript}BASH
-            cat > "\$tmp/orbit-runtime-boot-converge.service" <<'UNIT'
-            {$runtimeBootUnitContent}UNIT
+            printf '%s' {$agentUnitBase64} | base64 --decode > "\$tmp/orbit-agent.service"
+            printf '%s' {$runtimeBootScriptBase64} | base64 --decode > "\$tmp/orbit-runtime-boot-converge"
+            printf '%s' {$runtimeBootUnitBase64} | base64 --decode > "\$tmp/orbit-runtime-boot-converge.service"
             sudo install -d -m 0755 "\$(dirname {$runtimeBootScriptPath})"
             sudo install -m 0755 "\$tmp/orbit-runtime-boot-converge" {$runtimeBootScriptPath}
             sudo install -m 0644 "\$tmp/orbit-runtime-boot-converge.service" {$runtimeBootUnitPath}

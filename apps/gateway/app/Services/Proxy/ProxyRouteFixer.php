@@ -682,7 +682,7 @@ final readonly class ProxyRouteFixer
         if (in_array(
             $entry->key,
             ['proxy.caddy_container_missing', 'proxy.caddy_container_detached'],
-            true,
+            strict: true,
         )) {
             $spec = $this->managedCaddyContainerSpec($node);
 

@@ -228,7 +228,7 @@ final readonly class LocalCaddyConfigAction
     }
 
     /**
-     * @param  array<string, mixed>|null  $inspection
+     * @param  array<array-key, mixed>|null  $inspection
      */
     private function containerUsesNetwork(?array $inspection, string $network): bool
     {

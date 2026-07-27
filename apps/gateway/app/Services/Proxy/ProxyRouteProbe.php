@@ -404,7 +404,7 @@ final readonly class ProxyRouteProbe
         );
 
         $result = $this->scripts()->run($node, 'orbit-proxy', 'probe', $script);
-        $parts = explode("\t", trim($result->stdout), 4);
+        $parts = explode("\t", trim($result->stdout), limit: 4);
         $runtimeStatus = ($parts[0] ?? '') !== '' ? $parts[0] : 'unknown';
 
         return new ProbeSnapshot([
