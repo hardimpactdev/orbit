@@ -44,7 +44,7 @@ describe('node role caddy baseline convergence', function (): void {
             ->and($container['image'] ?? null)
             ->toBe('caddy:2-alpine')
             ->and($container['restart_policy'] ?? null)
-            ->toBe('unless-stopped')
+            ->toBe('always')
             ->and($container['network'] ?? null)
             ->toBe('orbit-network')
             ->and($container['published_ports'] ?? null)

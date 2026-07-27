@@ -178,6 +178,7 @@ Each code below identifies a specific process-family drift condition that the pr
 | `process.runtime_unit_missing` | An expected Orbit-owned runtime unit has no corresponding backend artifact, or an active instance of a managed PHP app lacks its canonical FrankenPHP process row. |
 | `process.runtime_unit_extra` | An Orbit-owned backend artifact exists without matching active app, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | The runtime artifact command, working directory, user, or unit name differs from gateway process configuration. |
+| `process.runtime_unit_down` | A Docker runtime unit whose configured restart policy is `always` exists but is not running. Units configured as `never` are intentionally excluded. |
 | `process.runtime_unit_unloaded` | A launchd-backed runtime unit that is expected to be running has an Orbit-owned plist but its label is not loaded in the current user GUI domain. |
 | `process.restart_policy_mismatch` | The rendered backend restart policy differs from the process definition. |
 | `process.runtime_environment_mismatch` | The rendered runtime environment differs from the runtime unit environment contract. |
@@ -196,6 +197,7 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `process.runtime_unit_missing` | Re-render and reload the missing backend artifact from gateway instance, workspace, and process configuration. For a managed PHP instance missing its canonical FrankenPHP process row, recreate that derived row first and then restore its container. |
 | `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in active gateway instance, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | Rewrite the backend artifact from gateway instance, workspace, and process configuration. |
+| `process.runtime_unit_down` | Start the exact current Orbit-owned Docker runtime unit when its configured restart policy is `always`. |
 | `process.runtime_unit_unloaded` | Re-run launchd lifecycle actions for the Orbit-owned label when the process should be running. |
 | `process.restart_policy_mismatch` | Rewrite the backend restart policy from the process definition. |
 | `process.runtime_environment_mismatch` | Rewrite the runtime environment from the runtime unit environment contract. |

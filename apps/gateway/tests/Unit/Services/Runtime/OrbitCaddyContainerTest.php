@@ -17,7 +17,7 @@ describe('orbit caddy container', function (): void {
             ->and($container->image())
             ->toBe('caddy:2-alpine')
             ->and($container->restartPolicy())
-            ->toBe('unless-stopped')
+            ->toBe('always')
             ->and($container->network())
             ->toBe('orbit-network')
             ->and($container->publishedPorts())
@@ -47,7 +47,7 @@ describe('orbit caddy container', function (): void {
                 'name' => 'orbit-caddy',
                 'image' => 'caddy:2-alpine',
                 'network' => 'orbit-network',
-                'restart_policy' => 'unless-stopped',
+                'restart_policy' => 'always',
                 'published_ports' => [],
                 'mounts' => [
                     ['source' => '/var/lib/orbit/caddy/data', 'target' => '/data/caddy', 'read_only' => false],

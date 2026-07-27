@@ -527,7 +527,9 @@ describe('tool catalog definitions', function (): void {
             ->not->toContain('/var/lib/caddy/.config/caddy')->toContain(
                 '--add-host '.escapeshellarg('host.docker.internal:host-gateway'),
             )->toContain('orbit.caddy.spec_hash')->toContain('actual_hash=')->toContain('expected_hash=')->toContain(
-                'if [ "$actual_hash" != "$expected_hash" ]; then',
+                '.NetworkSettings.Networks',
+            )->toContain(
+                'if [ "$actual_hash" != "$expected_hash" ] || [ "$network_attached" != "true" ]; then',
             )->toContain('docker rm -f')->toContain('docker run -d')->toContain(
                 '--pull '.escapeshellarg('never'),
             )->toContain('docker start')

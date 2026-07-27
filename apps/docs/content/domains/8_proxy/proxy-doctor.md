@@ -40,7 +40,7 @@ The proxy family owns these facts:
 
 Instance health belongs to `instance`, workspace health belongs to `workspace`, gateway service readiness belongs to `node`, tool capability readiness belongs to `tool`, and process runtime readiness belongs to `process`. The proxy family verifies ingress artifacts, not the health of the service behind the route.
 
-`orbit-caddy` is the Docker container that mounts and serves proxy route artifacts. Proxy doctor probes its container readiness on each serving node because routes cannot be served when the container is missing or stopped. Container spec drift and image capability drift remain owned by the [`tool` family](../3_tool/catalog/caddy.md) until Caddy is fully represented as a process-backed runtime unit.
+`orbit-caddy` is the Docker container that mounts and serves proxy route artifacts. Proxy doctor probes its container readiness and managed-network attachment on each serving node because routes cannot be served when the container is missing, stopped, or detached from `orbit-network`. Container spec drift and image capability drift remain owned by the [`tool` family](../3_tool/catalog/caddy.md) until Caddy is fully represented as a process-backed runtime unit.
 
 Proxy doctor never probes a host `caddy.service`. Host Caddy is not part of the steady-state runtime.
 
@@ -59,9 +59,10 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
 4. **Conflict boundary:** custom routes do not claim domains owned by app, app
    WebSocket binding, workspace, gateway, router service, S3 publication, or
    tool routes.
-5. **Caddy container readiness:** the `orbit-caddy` container exists and is
-   running on each serving node. Route artifacts mounted into `orbit-caddy` are
-   only effective when the container is up.
+5. **Caddy container readiness:** the `orbit-caddy` container exists, is
+   running, and is attached to the managed Docker network on each serving node.
+   Route artifacts mounted into `orbit-caddy` are only effective when the
+   container is reachable by managed runtimes.
 6. **Backend presence:** the expected proxy backend route exists when gateway
    configuration says it should exist.
 7. **Backend shape:** the observed backend route matches the expected owner,
@@ -106,6 +107,7 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.docker_runtime_unavailable` | The serving node's Docker CLI is missing or the Docker daemon is unreachable, so `orbit-caddy` container readiness cannot be probed. Repair the Docker tool baseline through `doctor --family=tool --restore` first. |
 | `proxy.caddy_container_missing` | The `orbit-caddy` container is absent on a serving node that still owns proxy routes. |
 | `proxy.caddy_container_down` | The `orbit-caddy` container exists on the serving node but is not running. Mounted route artifacts are not served. |
+| `proxy.caddy_container_detached` | The running `orbit-caddy` container is not attached to the serving node's managed Docker network. |
 | `proxy.agent_tool_route_missing` | An installed agent tool expects an internal route under its node TLD, but the gateway proxy route row is absent. |
 | `proxy.agent_tool_route_mismatch` | The expected agent-tool route row exists for the same tool but its serving node, kind, upstream, owner shape, or source hash differs from canonical proxy intent. |
 | `proxy.agent_tool_route_conflict` | The expected agent-tool domain is occupied by a custom route or a different tool. Proxy doctor reports the conflict but does not overwrite the other owner. |
@@ -144,6 +146,7 @@ server name before rendering.
 | --- | --- |
 | `proxy.caddy_container_missing` | Reconcile the `orbit-caddy` container on the serving node from its managed spec, then re-render the mounted Caddy config. |
 | `proxy.caddy_container_down` | Start the existing `orbit-caddy` container so mounted route artifacts are served again. |
+| `proxy.caddy_container_detached` | Reconcile the `orbit-caddy` container from its managed spec so the container is recreated on the managed Docker network. |
 | `proxy.agent_tool_route_missing` | Recreate the expected tool-owned route row from the installed agent tool and node TLD, then render its Caddy artifact and TLS material. |
 | `proxy.agent_tool_route_mismatch` | Rewrite a same-tool route row to canonical proxy intent, then re-render its Caddy artifact and TLS material. |
 | `proxy.route_missing` | Recreate the backend route from gateway configuration when the node is reachable and eligible. |

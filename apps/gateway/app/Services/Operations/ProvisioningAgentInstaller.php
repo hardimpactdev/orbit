@@ -7,6 +7,7 @@ namespace App\Services\Operations;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\RemoteShell\RemoteExecutor;
+use Orbit\Core\Nodes\NodeSystemdServiceRenderer;
 use RuntimeException;
 
 class ProvisioningAgentInstaller
@@ -16,6 +17,7 @@ class ProvisioningAgentInstaller
         private readonly ReleaseManifestResolver $manifests,
         private readonly NodeAgentServicePayloadBuilder $agentServices,
         private readonly FleetUpdateTargetSelector $targets,
+        private readonly ?NodeSystemdServiceRenderer $systemdServices = null,
     ) {}
 
     public function install(Node $node): RemoteShellResult
@@ -80,6 +82,19 @@ class ProvisioningAgentInstaller
         $commandUrl = escapeshellarg('http://'.$service['http_bind'].'/v1/commands');
         $unitName = escapeshellarg($service['unit_name'].'.service');
         $unitPath = escapeshellarg('/etc/systemd/system/'.$service['unit_name'].'.service');
+        $systemdServices = $this->systemdServices ?? new NodeSystemdServiceRenderer;
+        $agentUnit = $systemdServices->agentUnit(
+            user: $service['user'],
+            agentBinary: $service['exec_start'],
+            orbitBinary: dirname($service['exec_start']).'/orbit',
+            configPath: $service['config_path'],
+            httpBind: $service['http_bind'],
+        );
+        $runtimeBootScript = $systemdServices->runtimeBootScript();
+        $runtimeBootUnitContent = $systemdServices->runtimeBootUnit();
+        $runtimeBootScriptPath = escapeshellarg(NodeSystemdServiceRenderer::RuntimeBootScriptPath);
+        $runtimeBootUnit = escapeshellarg(NodeSystemdServiceRenderer::RuntimeBootUnitName);
+        $runtimeBootUnitPath = escapeshellarg(NodeSystemdServiceRenderer::RuntimeBootUnitPath);
 
         return <<<BASH
             set -euo pipefail
@@ -104,26 +119,17 @@ class ProvisioningAgentInstaller
             sudo install -m 0644 -o {$serviceUser} -g {$serviceUser} "\$tmp/root.crt" {$caPath}
 
             cat > "\$tmp/orbit-agent.service" <<'UNIT'
-            [Unit]
-            Description=Orbit Agent
-            After=network-online.target
-            Wants=network-online.target
-
-            [Service]
-            Type=simple
-            User={$service['user']}
-            Environment=ORBIT_AGENT_CONFIG={$service['config_path']}
-            Environment=ORBIT_AGENT_HTTP_BIND={$service['http_bind']}
-            ExecStart={$service['exec_start']}
-            Restart=always
-            RestartSec=3
-
-            [Install]
-            WantedBy=multi-user.target
-            UNIT
-
+            {$agentUnit}UNIT
+            cat > "\$tmp/orbit-runtime-boot-converge" <<'BASH'
+            {$runtimeBootScript}BASH
+            cat > "\$tmp/orbit-runtime-boot-converge.service" <<'UNIT'
+            {$runtimeBootUnitContent}UNIT
+            sudo install -d -m 0755 "\$(dirname {$runtimeBootScriptPath})"
+            sudo install -m 0755 "\$tmp/orbit-runtime-boot-converge" {$runtimeBootScriptPath}
+            sudo install -m 0644 "\$tmp/orbit-runtime-boot-converge.service" {$runtimeBootUnitPath}
             sudo install -m 0644 "\$tmp/orbit-agent.service" {$unitPath}
             sudo systemctl daemon-reload
+            sudo systemctl enable {$runtimeBootUnit}
             sudo systemctl enable {$unitName}
             sudo systemctl restart {$unitName}
 

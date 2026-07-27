@@ -423,6 +423,41 @@ describe('internal caddy config command', function (): void {
             ->toContain('docker run -d --pull never --name orbit-caddy');
     });
 
+    it('recreates a matching running Caddy container that lost its managed Docker network', function (): void {
+        $bin = install_caddy_config_fake_bin();
+        $expectedHash = str_repeat(string: 'a', times: 64);
+        caddy_config_fake_container_inspect($bin, [
+            'State' => ['Status' => 'running', 'Running' => true],
+            'Config' => [
+                'Labels' => ['orbit.caddy.spec_hash' => $expectedHash],
+            ],
+            'NetworkSettings' => ['Networks' => []],
+        ]);
+
+        [$exitCode, $output] = run_internal_caddy_config_command(
+            [
+                'action' => 'apply-container',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.apply-container'),
+                '--json' => true,
+            ],
+            json_encode([
+                'container' => caddy_config_container_spec($expectedHash),
+                'global_config' => "import /etc/caddy/sites/*.caddy\n",
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['outcome'] ?? null)
+            ->toBe('recreated')
+            ->and($calls)
+            ->toContain('docker rm -f orbit-caddy')
+            ->toContain('docker run -d --pull never --name orbit-caddy');
+    });
+
     it('treats an existing Docker network as converged while applying the Caddy container', function (): void {
         $bin = install_caddy_config_fake_bin(networkAlreadyExists: true);
         $expectedHash = str_repeat(string: 'f', times: 64);

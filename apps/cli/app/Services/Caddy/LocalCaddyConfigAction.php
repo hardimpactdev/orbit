@@ -196,7 +196,11 @@ final readonly class LocalCaddyConfigAction
         $changed = false;
         $outcome = 'unchanged';
 
-        if ($hadExistingContainer && ! hash_equals($spec['expected_hash'], $observedHash ?? '')) {
+        if (
+            $hadExistingContainer
+            && (! hash_equals($spec['expected_hash'], $observedHash ?? '')
+            || ! $this->containerUsesNetwork($inspection, $spec['network']))
+        ) {
             $this->mustRun(['docker', 'rm', '-f', $spec['name']], 'caddy_container.remove_failed');
             $inspection = null;
             $changed = true;
@@ -221,6 +225,16 @@ final readonly class LocalCaddyConfigAction
             'changed' => $changed,
             'expected_hash' => $spec['expected_hash'],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $inspection
+     */
+    private function containerUsesNetwork(?array $inspection, string $network): bool
+    {
+        $networks = $inspection['NetworkSettings']['Networks'] ?? null;
+
+        return is_array($networks) && array_key_exists($network, $networks);
     }
 
     /**

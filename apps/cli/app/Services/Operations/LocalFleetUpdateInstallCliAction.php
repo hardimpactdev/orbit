@@ -238,7 +238,7 @@ final readonly class LocalFleetUpdateInstallCliAction
 
                 if [ "$status_rc" -eq 0 ] || [ "$enabled_rc" -eq 0 ]; then
                     if agent_systemd_service_payload_present; then
-                        converge_agent_systemd_service "$systemctl_bin" "$agent_bin_path"
+                        converge_agent_systemd_service "$systemctl_bin"
                         echo converge_agent_unit
                     fi
 
@@ -308,16 +308,14 @@ final readonly class LocalFleetUpdateInstallCliAction
 
             converge_agent_systemd_service() {
                 systemctl_bin="$1"
-                agent_bin_path="$2"
                 unit_name="${ORBIT_AGENT_SERVICE_UNIT_NAME:-}"
-                exec_start="${ORBIT_AGENT_SERVICE_EXEC_START:-$agent_bin_path}"
                 config_path="${ORBIT_AGENT_SERVICE_CONFIG_PATH:-}"
-                http_bind="${ORBIT_AGENT_SERVICE_HTTP_BIND:-}"
-                service_user="${ORBIT_AGENT_SERVICE_USER:-}"
-
-                if [ -z "$service_user" ]; then
-                    service_user="$(id -un)"
-                fi
+                agent_unit_base64="${ORBIT_AGENT_SYSTEMD_UNIT_BASE64:-}"
+                runtime_boot_script_base64="${ORBIT_RUNTIME_BOOT_SCRIPT_BASE64:-}"
+                runtime_boot_unit_base64="${ORBIT_RUNTIME_BOOT_UNIT_BASE64:-}"
+                runtime_boot_script_path="${ORBIT_RUNTIME_BOOT_SCRIPT_PATH:-}"
+                runtime_boot_unit_name="${ORBIT_RUNTIME_BOOT_UNIT_NAME:-}"
+                runtime_boot_unit_path="${ORBIT_RUNTIME_BOOT_UNIT_PATH:-}"
 
                 case "$unit_name" in
                     *.service) service="$unit_name" ;;
@@ -330,27 +328,16 @@ final readonly class LocalFleetUpdateInstallCliAction
                 fi
 
                 unit_path="$tmp/$service"
-                {
-                    printf '%s\n' '[Unit]'
-                    printf '%s\n' 'Description=Orbit Agent'
-                    printf '%s\n' 'After=network-online.target'
-                    printf '%s\n' 'Wants=network-online.target'
-                    printf '%s\n' ''
-                    printf '%s\n' '[Service]'
-                    printf '%s\n' 'Type=simple'
-                    printf 'User=%s\n' "$service_user"
-                    printf 'Environment=ORBIT_AGENT_CONFIG=%s\n' "$config_path"
-                    printf 'Environment=ORBIT_AGENT_HTTP_BIND=%s\n' "$http_bind"
-                    printf 'ExecStart=%s\n' "$exec_start"
-                    printf '%s\n' 'Restart=always'
-                    printf '%s\n' 'RestartSec=3'
-                    printf '%s\n' ''
-                    printf '%s\n' '[Install]'
-                    printf '%s\n' 'WantedBy=multi-user.target'
-                } > "$unit_path"
+                printf '%s' "$agent_unit_base64" | base64 --decode > "$unit_path"
+                printf '%s' "$runtime_boot_script_base64" | base64 --decode > "$tmp/orbit-runtime-boot-converge"
+                printf '%s' "$runtime_boot_unit_base64" | base64 --decode > "$tmp/orbit-runtime-boot-converge.service"
 
+                run_privileged install -d -m 0755 "$(dirname "$runtime_boot_script_path")"
+                run_privileged install -m 0755 "$tmp/orbit-runtime-boot-converge" "$runtime_boot_script_path"
+                run_privileged install -m 0644 "$tmp/orbit-runtime-boot-converge.service" "$runtime_boot_unit_path"
                 run_privileged install -m 0644 "$unit_path" "/etc/systemd/system/$service"
                 run_privileged "$systemctl_bin" daemon-reload
+                run_privileged "$systemctl_bin" enable "$runtime_boot_unit_name"
                 run_privileged "$systemctl_bin" enable "$service"
             }
 

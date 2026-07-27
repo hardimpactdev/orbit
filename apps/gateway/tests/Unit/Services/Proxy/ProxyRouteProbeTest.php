@@ -2077,6 +2077,29 @@ describe('orbit-caddy container readiness', function (): void {
         expect($drift)->toBe([]);
     });
 
+    it('reports a running orbit-caddy container that is detached from its managed network', function (): void {
+        $node = createTestAppHostNode();
+        $snapshot = new ProbeSnapshot([
+            'orbit-caddy' => [
+                'runtime_status' => 'available',
+                'container_exists' => true,
+                'container_running' => true,
+                'container_network_attached' => false,
+            ],
+        ]);
+
+        $drift = new ProxyRouteProbe()->diffCaddyContainer($node, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.caddy_container_detached')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_detached')?->detail)
+            ->toMatchArray([
+                'container' => 'orbit-caddy',
+                'node' => $node->name,
+                'network' => 'orbit-network',
+            ]);
+    });
+
     it('reports proxy.docker_runtime_unavailable (not container_missing) when docker CLI is absent on the node', function (): void {
         $node = createTestAppHostNode();
         $snapshot = new ProbeSnapshot([
@@ -2560,6 +2583,7 @@ final class ProxyProbeCaddyContainerShell implements RemoteShell
         private readonly string $runtimeOutput,
         private readonly string $existsOutput,
         private readonly string $runningOutput,
+        private readonly string $networkAttachedOutput = 'true',
     ) {}
 
     /**
@@ -2572,7 +2596,14 @@ final class ProxyProbeCaddyContainerShell implements RemoteShell
 
         return new RemoteShellResult(
             exitCode: 0,
-            stdout: $this->runtimeOutput."\t".$this->existsOutput."\t".$this->runningOutput."\n",
+            stdout: $this->runtimeOutput
+            ."\t"
+            .$this->existsOutput
+            ."\t"
+            .$this->runningOutput
+            ."\t"
+            .$this->networkAttachedOutput
+            ."\n",
             stderr: '',
             durationMs: 1,
         );

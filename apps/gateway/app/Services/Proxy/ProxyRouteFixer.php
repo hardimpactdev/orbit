@@ -647,10 +647,9 @@ final readonly class ProxyRouteFixer
 
     /**
      * Restore the orbit-caddy container on a serving node when proxy probing
-     * reports the container is missing or stopped. `proxy.caddy_container_down`
-     * starts the existing container; `proxy.caddy_container_missing` reconciles
-     * the container from its managed spec so mounted route artifacts are
-     * served again.
+     * reports the container is missing, stopped, or detached from its managed
+     * network. A stopped container is started, while missing and detached
+     * containers are reconciled from the managed spec.
      *
      * @return array<string, mixed>|null
      */
@@ -680,7 +679,11 @@ final readonly class ProxyRouteFixer
             ];
         }
 
-        if ($entry->key === 'proxy.caddy_container_missing') {
+        if (in_array(
+            $entry->key,
+            ['proxy.caddy_container_missing', 'proxy.caddy_container_detached'],
+            true,
+        )) {
             $spec = $this->managedCaddyContainerSpec($node);
 
             if ($spec === null) {

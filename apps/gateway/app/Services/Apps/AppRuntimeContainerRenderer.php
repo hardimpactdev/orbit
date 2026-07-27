@@ -145,7 +145,7 @@ final readonly class AppRuntimeContainerRenderer
             name: $this->containerNameForSlug($runtimeSlug),
             image: $policy->image,
             network: $this->names->network(),
-            restartPolicy: 'unless-stopped',
+            restartPolicy: 'always',
             appSlug: $runtimeSlug,
             runtimeUser: $this->appRuntimeUser->containerUserForApp($app),
             environment: array_merge(

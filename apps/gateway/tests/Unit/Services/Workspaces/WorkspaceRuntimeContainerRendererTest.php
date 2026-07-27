@@ -116,7 +116,7 @@ it(
             ->and($container->network())
             ->toBe('orbit-network')
             ->and($container->restartPolicy())
-            ->toBe('unless-stopped')
+            ->toBe('always')
             ->and($container->networkAliases())
             ->toContain('orbit-ws-demo-feature-a')
             ->and($container->networkAliases())

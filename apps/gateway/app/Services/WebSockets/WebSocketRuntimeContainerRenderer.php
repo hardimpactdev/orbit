@@ -38,7 +38,7 @@ class WebSocketRuntimeContainerRenderer
             name: $this->containerName($node),
             image: $image,
             network: $this->names->network(),
-            restartPolicy: 'unless-stopped',
+            restartPolicy: 'always',
             backendName: $backendName,
             valkeyNodeId: $settings->valkeyNodeId,
             workingDirectory: WebSocketRuntimeContainer::SourceTarget,

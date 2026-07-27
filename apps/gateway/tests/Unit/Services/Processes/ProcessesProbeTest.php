@@ -920,6 +920,67 @@ describe('runtime context expansion', function (): void {
 });
 
 describe('docker runtime probe scope', function (): void {
+    it('reports an always-on Docker runtime unit that is not running', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, [
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Docker,
+            'restart_policy' => ProcessRestartPolicy::Always,
+        ]);
+        $runtimeUnit = app(ProcessDockerContainerRenderer::class)->render($app, $process)->name();
+
+        $drift = $this->probe->diff($process, new ProbeSnapshot([
+            'queue' => [
+                'runtime_backend_available' => true,
+                'runtime_unit_renderable' => true,
+                'runtime_units' => [
+                    $runtimeUnit => [
+                        'config_exists' => true,
+                        'config_matches' => true,
+                        'container_state' => 'exited',
+                    ],
+                ],
+                'runtime_unit_extras' => [],
+            ],
+        ]));
+
+        expect(issue($drift, 'process.runtime_unit_down')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(issue($drift, 'process.runtime_unit_down')?->detail)
+            ->toMatchArray([
+                'process' => 'queue',
+                'runtime_unit' => $runtimeUnit,
+                'observed_state' => 'exited',
+            ]);
+    });
+
+    it('does not start Docker runtime intent whose restart policy is never', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, [
+            'name' => 'vite',
+            'runtime' => ProcessRuntime::Docker,
+            'restart_policy' => ProcessRestartPolicy::Never,
+        ]);
+        $runtimeUnit = app(ProcessDockerContainerRenderer::class)->render($app, $process)->name();
+
+        $drift = $this->probe->diff($process, new ProbeSnapshot([
+            'vite' => [
+                'runtime_backend_available' => true,
+                'runtime_unit_renderable' => true,
+                'runtime_units' => [
+                    $runtimeUnit => [
+                        'config_exists' => true,
+                        'config_matches' => true,
+                        'container_state' => 'exited',
+                    ],
+                ],
+                'runtime_unit_extras' => [],
+            ],
+        ]));
+
+        expect(issue($drift, 'process.runtime_unit_down'))->toBeNull();
+    });
+
     it('matches process-backed app runtime rows against the managed app runtime container label', function (): void {
         $app = processableApp([
             'name' => 'docs',

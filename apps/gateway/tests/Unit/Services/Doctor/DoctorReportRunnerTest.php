@@ -40,6 +40,8 @@ use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
+use App\Services\Processes\ProcessDockerContainer;
+use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessEventNotifierRenderer;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
@@ -641,6 +643,71 @@ describe('DoctorReportRunner', function (): void {
                         str_contains($script, 'internal:process-systemd-service')
                         && str_contains($script, 'orbit_docs_development_main_vite.service')
                     ),
+                ))
+            ->toBeTrue();
+    });
+
+    it('starts a stopped always-on Docker process runtime through restore mode family dispatch', function (): void {
+        $node = createDoctorRunnerAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        $app = Project::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+            'php_version' => '8.5',
+        ]);
+        $process = OrbitProcess::factory()
+            ->forOwner($app)
+            ->create([
+                'name' => 'queue',
+                'command' => 'php artisan queue:work',
+                'runtime' => ProcessRuntime::Docker,
+                'restart_policy' => 'always',
+                'crash_notification' => 'none',
+                'sort_order' => 1,
+            ]);
+        $container = app(ProcessDockerContainerRenderer::class)->render($app, $process);
+        $inspection = static fn (string $state): string => json_encode([
+            'State' => ['Status' => $state],
+            'Config' => ['Labels' => [ProcessDockerContainer::SpecHashLabel => $container->specHash()]],
+        ], JSON_THROW_ON_ERROR);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: $inspection('exited'), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: $container->name()."\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: $inspection('running'), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: $container->name()."\n", stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
+
+        expect($report['healthy'])
+            ->toBeTrue()
+            ->and($report['summary'])
+            ->toMatchArray([
+                'issues' => 0,
+                'fixed' => 1,
+                'skipped' => 0,
+            ])
+            ->and($report['actions'][0])
+            ->toMatchArray([
+                'family' => 'process',
+                'node' => 'app-1',
+                'key' => 'process.runtime_unit_down',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => [
+                    'node' => 'app-1',
+                    'process' => 'queue',
+                    'runtime_unit' => $container->name(),
+                ],
+            ])
+            ->and(collect($shell->scripts)
+                ->contains(
+                    fn (string $script): bool => str_contains($script, 'internal:process-docker-container'),
                 ))
             ->toBeTrue();
     });
@@ -3809,7 +3876,12 @@ final class DoctorReportRunnerThrowingRemoteShell implements RemoteShell
         }
 
         if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
-            return new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\ttrue\n", stderr: '', durationMs: 1);
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: "available\ttrue\ttrue\ttrue\n",
+                stderr: '',
+                durationMs: 1,
+            );
         }
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
@@ -3890,7 +3962,7 @@ final class DoctorProductionProxyObservedRemoteShell implements RemoteShell
         $this->scripts[] = $script;
 
         if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
-            return new RemoteShellResult(0, "available\ttrue\ttrue\n", '', 1);
+            return new RemoteShellResult(0, "available\ttrue\ttrue\ttrue\n", '', 1);
         }
 
         if (str_contains($script, 'for f in /etc/caddy/sites/*.caddy')) {
@@ -3950,7 +4022,7 @@ final class DoctorProductionProxyAdoptRemoteShell implements RemoteShell
         }
 
         if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
-            return new RemoteShellResult(0, "available\ttrue\ttrue\n", '', 1);
+            return new RemoteShellResult(0, "available\ttrue\ttrue\ttrue\n", '', 1);
         }
 
         if (str_contains($script, 'path="/etc/caddy/Caddyfile"')) {
@@ -3970,7 +4042,7 @@ final class DoctorReportRunnerAgentToolProxyRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
-            return $this->success("available\ttrue\ttrue\n");
+            return $this->success("available\ttrue\ttrue\ttrue\n");
         }
 
         if (str_contains($script, 'export ORBIT_PROXY_DOMAIN=')) {

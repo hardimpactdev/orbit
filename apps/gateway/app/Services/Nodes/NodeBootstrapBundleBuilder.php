@@ -9,6 +9,7 @@ use App\Models\WireGuardPeer;
 use App\Services\Operations\CliArtifactPlatform;
 use App\Services\Operations\NodeAgentServicePayloadBuilder;
 use App\Services\Operations\ReleaseManifestResolver;
+use Orbit\Core\Nodes\NodeSystemdServiceRenderer;
 use RuntimeException;
 use SensitiveParameter;
 
@@ -17,6 +18,7 @@ final readonly class NodeBootstrapBundleBuilder
     public function __construct(
         private ReleaseManifestResolver $manifests,
         private NodeAgentServicePayloadBuilder $agentServices,
+        private NodeSystemdServiceRenderer $systemdServices,
     ) {}
 
     public function build(
@@ -85,6 +87,18 @@ final readonly class NodeBootstrapBundleBuilder
         $wireguardBase64 = escapeshellarg(base64_encode($wireguardConfig));
         $agentConfigBase64 = escapeshellarg(base64_encode($service['config']));
         $agentCaBase64 = escapeshellarg(base64_encode($service['ca_pem']));
+        $agentUnitContent = $this->systemdServices->agentUnit(
+            user: $service['user'],
+            agentBinary: $service['exec_start'],
+            orbitBinary: $cliPath,
+            configPath: $service['config_path'],
+            httpBind: $service['http_bind'],
+        );
+        $runtimeBootScript = $this->systemdServices->runtimeBootScript();
+        $runtimeBootUnitContent = $this->systemdServices->runtimeBootUnit();
+        $runtimeBootScriptPath = escapeshellarg(NodeSystemdServiceRenderer::RuntimeBootScriptPath);
+        $runtimeBootUnit = escapeshellarg(NodeSystemdServiceRenderer::RuntimeBootUnitName);
+        $runtimeBootUnitPath = escapeshellarg(NodeSystemdServiceRenderer::RuntimeBootUnitPath);
 
         return <<<BASH
             #!/usr/bin/env bash
@@ -164,30 +178,19 @@ final readonly class NodeBootstrapBundleBuilder
             sudo install -m 0644 -o {$agentUser} -g {$agentUser} "\$tmp/root.crt" {$agentCaPath}
 
             cat > "\$tmp/orbit-agent.service" <<'UNIT'
-            [Unit]
-            Description=Orbit Agent
-            After=network-online.target wg-quick@wg-orbit.service
-            Wants=network-online.target
-            Requires=wg-quick@wg-orbit.service
-
-            [Service]
-            Type=simple
-            User={$service['user']}
-            Environment=ORBIT_AGENT_CONFIG={$service['config_path']}
-            Environment=ORBIT_AGENT_HTTP_BIND={$service['http_bind']}
-            Environment=ORBIT_AGENT_ORBIT_BINARY={$cliPath}
-            ExecStart={$service['exec_start']}
-            Restart=always
-            RestartSec=3
-
-            [Install]
-            WantedBy=multi-user.target
-            UNIT
-
+            {$agentUnitContent}UNIT
+            cat > "\$tmp/orbit-runtime-boot-converge" <<'BASH'
+            {$runtimeBootScript}BASH
+            cat > "\$tmp/orbit-runtime-boot-converge.service" <<'UNIT'
+            {$runtimeBootUnitContent}UNIT
+            sudo install -d -m 0755 "\$(dirname {$runtimeBootScriptPath})"
+            sudo install -m 0755 "\$tmp/orbit-runtime-boot-converge" {$runtimeBootScriptPath}
+            sudo install -m 0644 "\$tmp/orbit-runtime-boot-converge.service" {$runtimeBootUnitPath}
             sudo install -m 0644 "\$tmp/orbit-agent.service" {$agentUnitPath}
             sudo systemctl daemon-reload
             sudo systemctl enable wg-quick@wg-orbit >/dev/null
             sudo systemctl restart wg-quick@wg-orbit
+            sudo systemctl enable {$runtimeBootUnit} >/dev/null
             sudo systemctl enable {$agentUnit} >/dev/null
             sudo systemctl restart {$agentUnit}
             BASH;

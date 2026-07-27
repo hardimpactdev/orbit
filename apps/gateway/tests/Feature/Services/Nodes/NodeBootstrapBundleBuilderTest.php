@@ -92,6 +92,11 @@ it('renders an idempotent minimal WireGuard CLI and Agent bootstrap bundle', fun
         ->toContain('ORBIT_AGENT_ORBIT_BINARY=/home/orbit/.local/bin/orbit')
         ->toContain('ORBIT_AGENT_HTTP_BIND=10.6.0.4:9477')
         ->toContain('After=network-online.target wg-quick@wg-orbit.service')
+        ->toContain('/usr/local/libexec/orbit-runtime-boot-converge')
+        ->toContain('/etc/systemd/system/orbit-runtime-boot-converge.service')
+        ->toContain("systemctl enable 'orbit-runtime-boot-converge.service'")
+        ->toContain("systemctl enable 'orbit-agent.service'")
+        ->toContain("systemctl restart 'orbit-agent.service'")
         ->not->toContain('ssh ')
         ->not->toContain('scp ');
 });

@@ -146,7 +146,7 @@ class OrbitCaddyContainer
             name: $names->caddy(),
             image: self::Image,
             network: $names->network(),
-            restartPolicy: 'unless-stopped',
+            restartPolicy: 'always',
             publishedPorts: $publishedPorts,
             networkAliases: [$names->caddy()],
             extraHosts: self::defaultExtraHosts(),

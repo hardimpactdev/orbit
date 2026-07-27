@@ -1717,7 +1717,12 @@ final readonly class DoctorRunFleetRemoteShell implements RemoteShell
         }
 
         if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
-            return new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\ttrue\n", stderr: '', durationMs: 1);
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: "available\ttrue\ttrue\ttrue\n",
+                stderr: '',
+                durationMs: 1,
+            );
         }
 
         if (str_contains($script, '/etc/caddy/Caddyfile')) {
@@ -1778,7 +1783,12 @@ final class DoctorRunRemoteShell implements RemoteShell
 
         if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
             // Default: orbit-caddy container is healthy on serving nodes.
-            return new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\ttrue\n", stderr: '', durationMs: 1);
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: "available\ttrue\ttrue\ttrue\n",
+                stderr: '',
+                durationMs: 1,
+            );
         }
 
         if (str_contains($script, '/etc/caddy/Caddyfile')) {

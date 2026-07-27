@@ -117,7 +117,15 @@ final class CaddyTool extends BaseTool
                 escapeshellarg('{{ index .Config.Labels "'.OrbitCaddyContainer::SpecHashLabel.'" }}'),
                 $containerName,
             ),
-            'if [ "$actual_hash" != "$expected_hash" ]; then',
+            sprintf(
+                'network_attached="$(docker container inspect --format %s %s 2>/dev/null || true)"',
+                escapeshellarg(sprintf(
+                    '{{if index .NetworkSettings.Networks %s}}true{{else}}false{{end}}',
+                    json_encode($container->network(), JSON_THROW_ON_ERROR),
+                )),
+                $containerName,
+            ),
+            'if [ "$actual_hash" != "$expected_hash" ] || [ "$network_attached" != "true" ]; then',
             '    '.$commands->containerRemove($container->name()),
             '    '.$commands->runDetached($container),
             'fi',

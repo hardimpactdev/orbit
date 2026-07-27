@@ -762,10 +762,63 @@ final readonly class ProcessesProbe
         $drift = array_merge($drift, $this->checkRuntimeBackend($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeUnitRenderability($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeUnits($process, $snapshot));
+        $drift = array_merge($drift, $this->checkRuntimeUnitLiveness($process, $snapshot));
         $drift = array_merge($drift, $this->checkRestartPolicy($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeEnvironment($process, $snapshot));
         $drift = array_merge($drift, $this->checkEventNotifier($process, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeUnitExtras($process, $snapshot));
+
+        return $drift;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkRuntimeUnitLiveness(Process $process, ProbeSnapshot $snapshot): array
+    {
+        if (
+            $this->runtimeFor($process) !== ProcessRuntime::Docker
+            || $process->restart_policy !== ProcessRestartPolicy::Always
+        ) {
+            return [];
+        }
+
+        $observed = $snapshot->get($process->name);
+
+        if (
+            ! is_array($observed)
+            || ($observed['runtime_backend_available'] ?? null) === false
+            || ($observed['runtime_unit_renderable'] ?? null) === false
+            || ! is_array($observed['runtime_units'] ?? null)
+        ) {
+            return [];
+        }
+
+        $drift = [];
+
+        foreach ($this->expectedRuntimeUnitSpecs($process) as $unit) {
+            $runtimeUnit = $observed['runtime_units'][$unit['name']] ?? null;
+
+            if (
+                ! is_array($runtimeUnit)
+                || ($runtimeUnit['config_exists'] ?? null) !== true
+                || ! is_string($runtimeUnit['container_state'] ?? null)
+                || $runtimeUnit['container_state'] === 'running'
+            ) {
+                continue;
+            }
+
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'process.runtime_unit_down',
+                kind: DriftKind::Divergent,
+                summary: "Always-on process runtime unit {$unit['name']} is not running.",
+                detail: [
+                    ...$this->runtimeUnitDetail($process, $unit),
+                    'observed_state' => $runtimeUnit['container_state'],
+                ],
+            );
+        }
 
         return $drift;
     }

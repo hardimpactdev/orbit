@@ -124,7 +124,7 @@ it('renders a deterministic WebSocket runtime container', function (): void {
         ->and($container->network())
         ->toBe('orbit-network')
         ->and($container->restartPolicy())
-        ->toBe('unless-stopped')
+        ->toBe('always')
         ->and($container->backendName())
         ->toBe('10.6.0.44')
         ->and($container->valkeyNodeId())

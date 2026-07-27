@@ -295,6 +295,8 @@ describe('internal fleet update install cli command', function (): void {
         $data = fleet_update_install_cli_success_data($output);
         $calls = file_get_contents("{$workspace}/systemd-calls.log");
         $unit = file_get_contents("{$workspace}/converged-orbit-agent.service");
+        $runtimeBootScript = file_get_contents("{$workspace}/orbit-runtime-boot-converge");
+        $runtimeBootUnit = file_get_contents("{$workspace}/orbit-runtime-boot-converge.service");
 
         expect($exitCode)
             ->toBe(0)
@@ -307,9 +309,17 @@ describe('internal fleet update install cli command', function (): void {
             ->toContain('--on-active=5s')
             ->toContain('systemctl restart orbit-agent')
             ->toContain('systemctl daemon-reload')
+            ->toContain('systemctl enable orbit-runtime-boot-converge.service')
             ->and($unit)
             ->toContain("ExecStart={$workspace}/bin/orbit-agent")
-            ->toContain("Environment=ORBIT_AGENT_CONFIG={$agentConfigPath}");
+            ->toContain("Environment=ORBIT_AGENT_CONFIG={$agentConfigPath}")
+            ->toContain('After=network-online.target wg-quick@wg-orbit.service')
+            ->and($runtimeBootScript)
+            ->toContain('managed_container_ids caddy')
+            ->toContain('app-runtime workspace-runtime websocket-runtime')
+            ->and($runtimeBootUnit)
+            ->toContain('After=docker.service network-online.target wg-quick@wg-orbit.service')
+            ->toContain('Restart=on-failure');
     });
 
     it('restarts an unmanaged Orbit Agent listener when no service unit is present', function (): void {
@@ -1159,6 +1169,8 @@ function make_fleet_update_install_cli_fake_systemd_bin(string $workspace): stri
     $bin = "{$workspace}/systemd-bin";
     $log = "{$workspace}/systemd-calls.log";
     $unit = "{$workspace}/converged-orbit-agent.service";
+    $runtimeBootScript = "{$workspace}/orbit-runtime-boot-converge";
+    $runtimeBootUnit = "{$workspace}/orbit-runtime-boot-converge.service";
     $realInstall = trim((string) shell_exec('command -v install'));
 
     mkdir($bin, recursive: true);
@@ -1183,6 +1195,17 @@ function make_fleet_update_install_cli_fake_systemd_bin(string $workspace): stri
         done
         if [ "\$last" = "/etc/systemd/system/orbit-agent.service" ]; then
           cp "\$3" {$unit}
+          exit 0
+        fi
+        if [ "\$last" = "/usr/local/libexec" ]; then
+          exit 0
+        fi
+        if [ "\$last" = "/usr/local/libexec/orbit-runtime-boot-converge" ]; then
+          cp "\$3" {$runtimeBootScript}
+          exit 0
+        fi
+        if [ "\$last" = "/etc/systemd/system/orbit-runtime-boot-converge.service" ]; then
+          cp "\$3" {$runtimeBootUnit}
           exit 0
         fi
         exec {$realInstall} "\$@"

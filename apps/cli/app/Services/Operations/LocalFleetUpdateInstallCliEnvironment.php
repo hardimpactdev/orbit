@@ -5,9 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Operations;
 
 use JsonException;
+use Orbit\Core\Nodes\NodeSystemdServiceRenderer;
 
 final readonly class LocalFleetUpdateInstallCliEnvironment
 {
+    public function __construct(
+        private NodeSystemdServiceRenderer $systemdServices,
+    ) {}
+
     /**
      * @return array<string, string>
      *
@@ -17,6 +22,15 @@ final readonly class LocalFleetUpdateInstallCliEnvironment
     {
         $agentArtifact = $payload->agentArtifact;
         $agentService = $payload->agentService;
+        $agentUnit = $agentService instanceof LocalFleetUpdateInstallAgentServicePayload
+            ? $this->systemdServices->agentUnit(
+                user: $agentService->user,
+                agentBinary: $agentService->execStart,
+                orbitBinary: $payload->binPath,
+                configPath: $agentService->configPath,
+                httpBind: $agentService->httpBind,
+            )
+            : '';
 
         return [
             'PATH' => is_string($path) ? $path : '',
@@ -42,6 +56,12 @@ final readonly class LocalFleetUpdateInstallCliEnvironment
                 : '',
             'ORBIT_AGENT_SERVICE_HTTP_BIND' => $agentService->httpBind ?? '',
             'ORBIT_AGENT_SERVICE_USER' => $agentService->user ?? '',
+            'ORBIT_AGENT_SYSTEMD_UNIT_BASE64' => $agentUnit === '' ? '' : base64_encode($agentUnit),
+            'ORBIT_RUNTIME_BOOT_SCRIPT_BASE64' => base64_encode($this->systemdServices->runtimeBootScript()),
+            'ORBIT_RUNTIME_BOOT_UNIT_BASE64' => base64_encode($this->systemdServices->runtimeBootUnit()),
+            'ORBIT_RUNTIME_BOOT_SCRIPT_PATH' => NodeSystemdServiceRenderer::RuntimeBootScriptPath,
+            'ORBIT_RUNTIME_BOOT_UNIT_NAME' => NodeSystemdServiceRenderer::RuntimeBootUnitName,
+            'ORBIT_RUNTIME_BOOT_UNIT_PATH' => NodeSystemdServiceRenderer::RuntimeBootUnitPath,
             'ORBIT_ROLE_IMAGES_JSON' => json_encode($payload->roleImages, JSON_THROW_ON_ERROR),
             'ORBIT_ROLE_IMAGE_ARTIFACTS_JSON' => json_encode(
                 array_map(

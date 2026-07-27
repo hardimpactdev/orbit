@@ -2992,7 +2992,11 @@ final readonly class DoctorReportRunner
             return $this->restoreProcessEventNotifierIssue($node, $key);
         }
 
-        if (! in_array($key, ['process.runtime_unit_missing', 'process.runtime_unit_mismatch'], true)) {
+        if (! in_array(
+            $key,
+            ['process.runtime_unit_missing', 'process.runtime_unit_mismatch', 'process.runtime_unit_down'],
+            true,
+        )) {
             return null;
         }
 
@@ -3010,6 +3014,10 @@ final readonly class DoctorReportRunner
 
         if ($managedRuntimeAction !== null) {
             return $managedRuntimeAction;
+        }
+
+        if ($key === 'process.runtime_unit_down') {
+            return $this->startAlwaysOnProcessRuntime($node, $key, $process);
         }
 
         $app = $process->ownerApp();
@@ -3070,6 +3078,41 @@ final readonly class DoctorReportRunner
                 'app' => $app->name,
                 'app_instance' => $appInstance->name,
                 'process' => $process->name,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function startAlwaysOnProcessRuntime(Node $node, string $key, Process $process): ?array
+    {
+        $context = $this->processOwnerContext($node, $process);
+
+        if (! $context instanceof ProcessOwnerContext) {
+            return null;
+        }
+
+        $runtimeApp = $context->runtimeApp();
+        $workspace = $context->runtimeWorkspaceFor($process);
+        $driver = $this->processRuntimeDrivers->forProcess($process);
+        $runtimeUnit = $driver->runtimeUnitName($runtimeApp, $process, $workspace);
+        $started = $driver->start($node, $runtimeUnit);
+
+        return [
+            'family' => 'process',
+            'node' => $node->name,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => $started ? 'completed' : 'failed',
+            'summary' => $started
+                ? "Started always-on process runtime unit {$runtimeUnit}."
+                : "Failed to start always-on process runtime unit {$runtimeUnit}.",
+            'details' => [
+                'node' => $node->name,
+                'process' => $process->name,
+                'runtime_unit' => $runtimeUnit,
             ],
         ];
     }
@@ -4014,7 +4057,11 @@ final readonly class DoctorReportRunner
             ));
         }
 
-        if (in_array($key, ['proxy.caddy_container_missing', 'proxy.caddy_container_down'], true)) {
+        if (in_array(
+            $key,
+            ['proxy.caddy_container_missing', 'proxy.caddy_container_down', 'proxy.caddy_container_detached'],
+            true,
+        )) {
             return $this->handleProxyCaddyContainerAction($mode, $node, $this->driftEntryFromIssue($issue));
         }
 
@@ -4542,6 +4589,7 @@ final readonly class DoctorReportRunner
             'proxy.enactment_incomplete',
             'proxy.caddy_container_missing',
             'proxy.caddy_container_down',
+            'proxy.caddy_container_detached',
             'proxy.global_config_missing',
             'proxy.global_config_mismatch',
             'proxy.dns_mapping_mismatch',
@@ -4567,6 +4615,7 @@ final readonly class DoctorReportRunner
             'firewall_rule.rule_mismatch',
             'process.runtime_unit_missing',
             'process.runtime_unit_mismatch',
+            'process.runtime_unit_down',
             'process.runtime_unit_extra',
             'process.runtime_unit_unrenderable',
             'process.event_notifier_missing',

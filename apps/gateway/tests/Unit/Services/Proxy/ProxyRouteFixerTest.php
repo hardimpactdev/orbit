@@ -1188,6 +1188,47 @@ describe('ProxyRouteFixer', function (): void {
             ->not->toContain('caddy.service');
     });
 
+    it('recreates a detached orbit-caddy container from its managed per-node spec', function (): void {
+        $node = createTestAppHostNode([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.21',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'config' => ['container' => OrbitCaddyContainer::forPrivateNode('10.6.0.21')->spec()],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fixCaddyContainer(
+            $node,
+            new DriftEntry(
+                family: 'proxy',
+                key: 'proxy.caddy_container_detached',
+                kind: DriftKind::Divergent,
+                summary: 'orbit-caddy lost its managed network',
+                detail: ['container' => 'orbit-caddy', 'node' => 'app-1'],
+            ),
+        );
+
+        expect($action)
+            ->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'app-1',
+                'key' => 'proxy.caddy_container_detached',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[0])
+            ->toContain('internal:caddy-config')
+            ->toContain('apply-container')
+            ->toContain('10.6.0.21:80:80');
+    });
+
     it(
         'reconciles the orbit-caddy container on the serving node using the per-node managed spec when proxy.caddy_container_missing is reported',
         function (): void {

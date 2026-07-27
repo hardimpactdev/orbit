@@ -388,6 +388,14 @@ Gateway-pushed commands are limited to Agent-eligible nodes. The `agent` workloa
 supplies derived intent like every other workload role; it is not a duplicated
 capability flag.
 
+On Linux nodes, the Agent systemd unit is ordered after Docker, WireGuard, and
+network-online. Bootstrap and fleet updates also install a retrying boot
+convergence service. After those prerequisites become available, it restarts
+the current Orbit-managed Caddy container and starts current managed app,
+workspace, and WebSocket runtime containers only when their Docker restart
+policy is `always`. It never revives containers configured as `never` or
+`unless-stopped`, so stale and intentionally stopped runtimes remain stopped.
+
 ### Proxy
 
 `orbit-caddy` is the standalone fleet proxy container on every node that needs HTTP routing. It terminates TLS for managed routes, fronts the gateway API only in `router-colocated` mode, serves public ingress routes on `ingress` nodes, serves private router/backend routes, and serves app and workspace routes on nodes with application roles. Orbit-managed route leaf certificates are issued by the Orbit root CA for 397 days, so nodes serve HTTPS without ever holding the root CA private key or any general signing authority.
@@ -396,6 +404,12 @@ capability flag.
 and certificate state, through Orbit-owned host paths under
 `/var/lib/orbit/caddy`. It must not bind host Caddy service directories under
 `/var/lib/caddy` into the managed container.
+
+The canonical `orbit-caddy`, app, workspace, and WebSocket runtime container
+specs use Docker's `always` restart policy. The node boot convergence service
+provides a second recovery edge after Docker and WireGuard are ready, including
+the case where an early Docker restart attempt raced a temporary physical-link
+loss.
 
 #### Caddy include boundaries
 

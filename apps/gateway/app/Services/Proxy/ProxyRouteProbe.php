@@ -368,15 +368,18 @@ final readonly class ProxyRouteProbe
      */
     public function introspectCaddyContainer(Node $node): ProbeSnapshot
     {
-        $caddyName = OrbitContainerNames::forNodeScope(NodeContainerScope::forNode($node))->caddy();
+        $containerNames = OrbitContainerNames::forNodeScope(NodeContainerScope::forNode($node));
+        $caddyName = $containerNames->caddy();
 
         $script = sprintf(
             <<<'BASH'
                 # orbit-proxy-doctor:caddy-container-probe
                 container=%s
+                network=%s
                 runtime="available"
                 exists="false"
                 running="false"
+                network_attached="false"
 
                 if ! command -v docker >/dev/null 2>&1; then
                     runtime="no_docker"
@@ -389,15 +392,19 @@ final readonly class ProxyRouteProbe
                         if [ "$state" = "running" ]; then
                             running="true"
                         fi
+                        if docker container inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}' "$container" 2>/dev/null | grep -Fx "$network" >/dev/null; then
+                            network_attached="true"
+                        fi
                     fi
                 fi
-                printf '%%s\t%%s\t%%s\n' "$runtime" "$exists" "$running"
+                printf '%%s\t%%s\t%%s\t%%s\n' "$runtime" "$exists" "$running" "$network_attached"
                 BASH,
             escapeshellarg($caddyName),
+            escapeshellarg($containerNames->network()),
         );
 
         $result = $this->scripts()->run($node, 'orbit-proxy', 'probe', $script);
-        $parts = explode("\t", trim($result->stdout), 3);
+        $parts = explode("\t", trim($result->stdout), 4);
         $runtimeStatus = ($parts[0] ?? '') !== '' ? $parts[0] : 'unknown';
 
         return new ProbeSnapshot([
@@ -405,6 +412,7 @@ final readonly class ProxyRouteProbe
                 'runtime_status' => $runtimeStatus,
                 'container_exists' => ($parts[1] ?? '') === 'true',
                 'container_running' => ($parts[2] ?? '') === 'true',
+                'container_network_attached' => ($parts[3] ?? '') === 'true',
             ],
         ]);
     }
@@ -472,6 +480,24 @@ final readonly class ProxyRouteProbe
                     detail: [
                         'container' => $caddyName,
                         'node' => $node->name,
+                    ],
+                ),
+            ];
+        }
+
+        if (($observed['container_network_attached'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.caddy_container_detached',
+                    kind: DriftKind::Divergent,
+                    summary: "Proxy runtime container {$caddyName} is detached from its managed Docker network.",
+                    detail: [
+                        'container' => $caddyName,
+                        'node' => $node->name,
+                        'network' => OrbitContainerNames::forNodeScope(
+                            NodeContainerScope::forNode($node),
+                        )->network(),
                     ],
                 ),
             ];

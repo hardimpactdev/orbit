@@ -85,7 +85,7 @@ it('renders a FrankenPHP app runtime container for a PHP app with deterministic 
         ->and($container->network())
         ->toBe('orbit-network')
         ->and($container->restartPolicy())
-        ->toBe('unless-stopped')
+        ->toBe('always')
         ->and($container->networkAliases())
         ->toContain('orbit-app-docs')
         ->and($container->networkAliases())
