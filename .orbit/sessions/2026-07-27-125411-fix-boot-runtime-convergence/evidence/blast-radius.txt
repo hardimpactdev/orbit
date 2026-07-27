@@ -1,0 +1,10 @@
+tip=2368a57f5c29
+
+search=rg -n "orbit-agent.service|After=network-online.target|unless-stopped|restartPolicy: 'unless-stopped'" apps/gateway/app apps/cli/app packages/core/src --glob '*.php'
+result=Agent systemd rendering is centralized in packages/core/src/Nodes/NodeSystemdServiceRenderer.php and consumed by bootstrap, provisioning, and fleet update. Remaining unless-stopped uses belong to the gateway/DNS/WireGuard service contracts or accepted input validators, outside the app/proxy runtime scope.
+
+search=rg -n "proxy\.caddy_container_detached|process\.runtime_unit_down" apps/gateway apps/docs/content --glob '*.php' --glob '*.md'
+result=Both new issue codes are present in probe, restore dispatch, restorable annotation, focused tests, and product documentation.
+
+search=rg -n "restartPolicy: 'always'" apps/gateway/app/Services/{Apps,Runtime,WebSockets,Workspaces}
+result=The current Caddy, app, workspace, and WebSocket runtime renderers all emit the canonical always restart policy.

@@ -1,0 +1,35 @@
+target=live Beast node
+node=beast
+platform=ubuntu_24-04
+pre_reboot_boot_id=46f20369-be1c-4875-81df-8ff3a50db125
+post_reboot_boot_id=e17bc98a-a759-412e-8142-8a787cb3f7b8
+post_reboot_started_at=2026-07-27 11:43:18 CEST
+
+first_result=failed
+first_observation=orbit-runtime-boot-converge.service completed successfully, all six current always-on app/workspace/Caddy containers ran, but orbit-caddy had zero runtime networks and zero published ports. HostConfig retained NetworkMode=orbit-network and every expected host port binding.
+feedback=Restarting a detached Caddy container is insufficient. Docker must reconnect the configured network before restart so it can restore retained port bindings.
+
+corrective_probe=passed
+corrective_action=Disconnected running orbit-caddy from orbit-network, then ran the revised boot convergence script.
+before={"networks":[],"ports":{}}
+after={"networks":["orbit-network"],"ports":{"80/tcp":"10.6.0.7,192.168.6.20","443/tcp":"10.6.0.7,192.168.6.20","443/udp":"10.6.0.7,192.168.6.20","8081/tcp":"10.6.0.7"},"state":"running"}
+urls=dutchlaravelfoundation.test=200,hauzer.test=200,mealou.test=200,nckrtl.test=200
+stale_result=stopped app/workspace containers retained unless-stopped and were not revived
+
+final_reboot=required after the corrective tip is committed, quality-gated, and independently reviewed
+
+final_tip=f7279bed80ec1657747b22c89cf8b3dc39ba5a63
+final_script_sha256=442f77bc299b3c537eafa2037a8257db17f47841bb2ff62f81d3240cc6f8c3be
+final_pre_reboot_boot_id=e17bc98a-a759-412e-8142-8a787cb3f7b8
+final_post_reboot_boot_id=b2cf81e9-6d75-4bde-a998-1e1680d028e6
+final_post_reboot_started_at=2026-07-27 11:54:32 CEST
+final_first_attempt=failed as expected while 192.168.6.20 was not yet bindable
+final_retry=passed after systemd restarted the convergence unit five seconds later
+final_agent=active
+final_convergence=active exited success
+final_caddy_network=orbit-network
+final_caddy_ports=80/tcp and 443/tcp+udp on 10.6.0.7 and 192.168.6.20; 8081/tcp on 10.6.0.7
+final_current_runtimes=orbit-caddy plus four app runtimes and one workspace runtime running with restart policy always
+final_stale_runtimes=all stopped app/workspace containers retained unless-stopped and remained stopped
+final_urls=dutchlaravelfoundation.test=200,hauzer.test=200,mealou.test=200,nckrtl.test=200
+final_result=passed

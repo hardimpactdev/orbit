@@ -1,0 +1,64 @@
+target=live Orbit topology
+candidate_build_id=20260727T095821Z-f7279bed8
+candidate_commit=f7279bed80ec1657747b22c89cf8b3dc39ba5a63
+candidate_gateway_digest=sha256:3bd2a8ec740801bdb6c11d9f48591b4a4cabacfe99ecd986da466f41e2b8046c
+candidate_reverb_digest=sha256:20abc9193508ec550dc96d5503c578e12363e0b52ca04f28bf2911087e6274aa
+
+first_update_run=87001c29-73e3-4b2c-b5db-f0f94f6800f1
+first_update_result=CLI and Agent artifacts verified across all workload nodes; final role-image verification found the candidate Reverb image missing on services1.
+
+second_update_run=6a951599-8f64-485f-ab80-67c7df8cb94c
+second_update_result=services1 loaded and verified the exact candidate Reverb digest; final readiness found node agent inactive.
+agent_feedback=node agent uses WireGuard interface wg0, so hard-requiring wg-quick@wg-orbit failed the systemd dependency even though 10.6.0.11 remained configured on wg0.
+
+corrective_tip=2368a57f5c29f69ddfedacf564e9497e19612643
+corrective_action=Removed the hard dependency on one WireGuard systemd unit name. Agent restarts until its configured address is bindable; runtime convergence retries until Docker host bindings can be restored.
+corrective_live_probe=Installed the exact corrected Agent and runtime convergence units on node agent, reset the failed dependency, and started orbit-agent.service.
+corrective_live_result=orbit-agent.service active; both Agent and runtime convergence services enabled; command endpoint reachable again on 10.6.0.11:9477.
+
+replacement_candidate_build_id=20260727T102544Z-2368a57f5
+replacement_candidate_commit=2368a57f5c29f69ddfedacf564e9497e19612643
+replacement_candidate_version=0.1.190
+replacement_candidate_manifest=https://s3.hardimpact.dev/orbit/channels/live-test/orbit-release-manifest.json
+replacement_candidate_gateway_image=ghcr.io/hardimpactdev/orbit-gateway:0.1.190-candidate-20260727T102544Z-2368a57f5
+replacement_candidate_gateway_digest=sha256:5ca93716dd10c5e1ccd7fbe64e9920af9995e51491a003b73e784e993757a3aa
+replacement_candidate_reverb_image=ghcr.io/hardimpactdev/orbit-reverb:0.1.190-candidate-20260727T102544Z-2368a57f5
+replacement_candidate_reverb_digest=sha256:43127dab85eab837e8cee5104e1c203a15223fc7b2b9a64e85548670d9f006a2
+replacement_candidate_linux_cli_sha256=74c0a1c45eb27d66f9154da0c4307e1362e28e13ab527de3c4bcf444d773cedc
+replacement_candidate_darwin_cli_sha256=035917e643a97d399602906361bca340f9ab4310aeb49debf8ec69cfa68a7591
+replacement_candidate_linux_agent_sha256=d33cb301468e274797f3c8c4e30bfb82aaa623dc6dde7b18f452d2658b21a5de
+replacement_candidate_darwin_agent_sha256=d5cc02ac7d9ee609c7bd9a8110bc4a67506726c2d6a20d5c372f98dc98e4fbae
+github_release_created=no
+github_tag_created=no
+
+replacement_transition_note=The first replacement passes were executed by old in-memory CLI processes. Those processes installed the corrected CLI artifact but still rendered the previous WireGuard-specific unit during that invocation. Re-running after recovery allowed the installed corrected CLI to render the corrected units.
+replacement_transition_failed_runs=af1f2601-64e1-4255-9ac6-16016fa9552e,615d5ce4-159a-4712-873b-cc6923e6bee7,cb7318c3-9f55-4a6b-b638-593060a5a13d
+replacement_successful_update_run=ceece7d0-4a5c-4b39-b710-9a85fac36726
+replacement_successful_activity_id=258325
+replacement_successful_completed_at=2026-07-27T10:43:09+00:00
+replacement_successful_result=update:all completed; topology-candidate manifest version 0.1.190; workload CLI and Agent artifacts, gateway, scheduler, and role images all verified.
+
+fleet_nodes=agent:10.6.0.11,beast:10.6.0.7,database1:10.6.0.4,ingress1:10.6.0.10,main1:10.6.0.13,services1:10.6.0.14
+fleet_agent_state=orbit-agent.service active and enabled on all six applicable Linux workload nodes.
+fleet_boot_convergence_state=orbit-runtime-boot-converge.service enabled on all six applicable Linux workload nodes.
+fleet_wireguard_unit_check=zero wg-quick@ references in the installed Agent and boot-convergence units on all six nodes.
+fleet_boot_script_sha256=442f77bc299b3c537eafa2037a8257db17f47841bb2ff62f81d3240cc6f8c3be
+fleet_boot_script_result=exact hash matched on all six nodes.
+fleet_gateway_result=Gateway and scheduler Swarm services run the exact replacement gateway digest sha256:5ca93716dd10c5e1ccd7fbe64e9920af9995e51491a003b73e784e993757a3aa.
+fleet_reverb_result=services1 runs the exact replacement Reverb RepoDigest sha256:43127dab85eab837e8cee5104e1c203a15223fc7b2b9a64e85548670d9f006a2.
+fleet_gateway_status=version 0.1.190.
+
+beast_old_boot_id=e17bc98a-a759-412e-8142-8a787cb3f7b8
+beast_new_boot_id=b2cf81e9-6d75-4bde-a998-1e1680d028e6
+beast_booted_at=2026-07-27 11:54:32 CEST
+beast_retry_result=The first convergence attempt could not bind 192.168.6.20:80; systemd retried after five seconds and convergence succeeded.
+beast_current_runtime_result=Orbit Caddy plus the DLF, Hauzer, Mealou, nckrtl, and filament-only workspace runtimes are running with restart policy always.
+beast_stale_runtime_result=Representative stale application and workspace containers remain stopped with restart policy unless-stopped.
+beast_caddy_result=orbit-network attached; ports 80/tcp, 443/tcp, and 443/udp restored on 10.6.0.7 and 192.168.6.20; port 8081/tcp restored on 10.6.0.7.
+beast_url_dlf=https://dutchlaravelfoundation.test/ HTTP 200
+beast_url_hauzer=https://hauzer.test/ HTTP 200
+beast_url_mealou=https://mealou.test/ HTTP 200
+beast_url_nckrtl=https://nckrtl.test/ HTTP 200
+
+doctor_scope_note=Focused Beast Doctor still reports 90 pre-existing or stale inventory findings, including role baseline and DNS drift, old process intent, extra runtime units, proxy metadata, and unverifiable database state. This does not represent a failure of reboot recovery; the exact services, restart policies, network attachment, ports, and consumer URLs above were verified independently. Broad inventory cleanup was intentionally not performed.
+production_dlf_scope_note=The separate production Dutch Laravel Foundation deployment on main1 was not changed.
