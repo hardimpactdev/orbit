@@ -4291,9 +4291,9 @@
             "legacy": null
         },
         {
-            "archive": "2026-07-27-125411-fix-boot-runtime-convergence",
-            "slug": "fix-boot-runtime-convergence",
-            "timestamp": "2026-07-27-125411",
+            "archive": "2026-07-27-125630-codex-fix-boot-runtime-convergence",
+            "slug": "codex-fix-boot-runtime-convergence",
+            "timestamp": "2026-07-27-125630",
             "schema": "compact-v1",
             "archive_mode": "compact",
             "state": "land",
