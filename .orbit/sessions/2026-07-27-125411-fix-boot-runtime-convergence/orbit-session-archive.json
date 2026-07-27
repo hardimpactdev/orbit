@@ -1,6 +1,6 @@
 {
     "schema_version": 2,
-    "generated_at": "2026-07-27T10:54:12+00:00",
+    "generated_at": "2026-07-27T10:56:00+00:00",
     "mode": "created",
     "archive_mode": "compact",
     "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-boot-runtime-convergence/.orbit",
@@ -17,13 +17,13 @@
         "evidence/beast-reboot-proof.txt": "ca7bfe5c94002755f0e92a216b5cb649485eba2ab4d6e4ff83c223716d6f58cc",
         "evidence/blast-radius.txt": "d90bae25c96c6628ae98a0a5831b1ca3a07210402920fd6e1910b61efe5173f1",
         "evidence/live-rc-fleet-proof.txt": "cbcefcff08f0e0dd0db530a5cfb2afb71717dfa565871ac10523af20d71084f7",
-        "loop.md": "69a733ac72038122f887efeef498415605f1f3a6c75fb846c942de57383a8764",
+        "loop.md": "f57c84df7d05119d9f959c219b6ed639831af3fdb7d969081eb4845bbb9020ae",
         "quality-gates/quality-check-2026-07-27T102403Z-d569b8764291.json": "2a69b7452ea1a6b3fe3a482da185081bbdabd1fc040309bfe492a2d1962a54ba"
     },
     "branch": "codex/fix-boot-runtime-convergence",
     "candidate_commit": "2368a57f5c29f69ddfedacf564e9497e19612643",
     "accepted_feature_tip": "2368a57f5c29f69ddfedacf564e9497e19612643",
-    "accepted_main_tip": "2368a57f5c29f69ddfedacf564e9497e19612643",
+    "accepted_main_tip": "f7279bed80ec1657747b22c89cf8b3dc39ba5a63",
     "discovered_solo_process_ids": [],
     "agent_results": []
 }

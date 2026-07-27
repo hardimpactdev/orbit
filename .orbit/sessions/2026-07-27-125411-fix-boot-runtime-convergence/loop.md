@@ -38,7 +38,7 @@ Doctor detects and repairs stopped or detached current runtime containers.
 - Acceptance venue: retained-incus
 - Acceptance: accepted - automated - reviewer-confirmed no-human-judgment
 - Accepted feature tip: 2368a57f5c29f69ddfedacf564e9497e19612643
-- Accepted main tip: 2368a57f5c29f69ddfedacf564e9497e19612643
+- Accepted main tip: f7279bed80ec1657747b22c89cf8b3dc39ba5a63
 
 ## Status
 
