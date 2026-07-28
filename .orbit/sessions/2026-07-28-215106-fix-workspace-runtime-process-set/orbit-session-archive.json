@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-28T19:51:07+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-workspace-runtime-process-set/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-28-215106-fix-workspace-runtime-process-set",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "7a5bc7e92cd7cd51084e2768b08d2af38ff05ce565cd99fb6154ab761aa0de5e",
+        "loop.md": "59ae448b541afe60de3efd5c6264b15a8e112fa3c813b36495e3254789d71cbb"
+    },
+    "branch": "codex/fix-workspace-runtime-process-set",
+    "candidate_commit": "cff90788235753657fb1a88ca1fda911e653df1d",
+    "accepted_feature_tip": "cff90788235753657fb1a88ca1fda911e653df1d",
+    "accepted_main_tip": "139edabf5a01486fc3afb9a5553c22e5cad81755",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
