@@ -1,0 +1,80 @@
+Retained runtime proof
+
+Topology
+- id: dev-293f42
+- kind: operator_gateway_app-dev
+- provider: incus
+- host: beast
+- operator: orbit-e2e-dev-293f42-operator
+- gateway: orbit-e2e-dev-293f42-gateway
+- gateway API: http://10.6.0.2
+- dev: orbit-e2e-dev-293f42-dev
+- candidate checkout: /home/orbit/orbit-run
+- candidate commit: 435685aba325be2c25bca85227728e16ff583f50
+- Solo terminal: 1121 (hibernation-swarm-proof)
+
+Candidate identity
+
+The command file had the same SHA-256 digest locally, in the retained source
+checkout, and inside the running hibernator container:
+
+bd51320b9025911c91fd77dd1d8cad7b1d6f3b60cea84833ea611b4c259d41da
+
+The proof image was assembled from the topology's cached gateway image by
+overlaying the exact candidate hibernation command, configuration, and runtime
+hibernation services. Its image id was:
+
+sha256:c9aa46db1379a08be70617096277ed097a7aa31b766d41267ea2da5113e9189f
+
+This avoided treating the topology's older cached `orbit-gateway:current`
+image as candidate proof. Running `artisan help orbit-runtime-hibernator`
+inside the proof image confirmed the command before deployment.
+
+Deployed Swarm proof
+
+The candidate `GatewaySwarmStackRenderer` rendered and deployed the `orbit`
+stack. Both independent daemon services converged on the gateway role node:
+
+orbit_orbit-runtime-hibernator 1/1 orbit-gateway:hibernation-proof
+orbit_orbit-scheduler 1/1 orbit-gateway:hibernation-proof
+
+Service inspection:
+
+orbit_orbit-scheduler|args=["php","artisan","orbit-scheduler"]|image=orbit-gateway:hibernation-proof|replicas=1|constraint=node.labels.orbit.role.gateway == true|order=stop-first
+orbit_orbit-runtime-hibernator|args=["php","artisan","orbit-runtime-hibernator"]|image=orbit-gateway:hibernation-proof|replicas=1|constraint=node.labels.orbit.role.gateway == true|order=stop-first
+
+Running tasks:
+
+orbit_orbit-runtime-hibernator.1|Running about a minute ago|orbit-gateway:hibernation-proof
+orbit_orbit-scheduler.1|Running about a minute ago|orbit-gateway:hibernation-proof
+
+The first successful deployed hibernator sweep and independent scheduler tick
+were both observed at 2026-07-28T14:49:29+00:00:
+
+Runtime hibernation sweep completed at 2026-07-28T14:49:29+00:00
+Orbit Scheduler tick completed at 2026-07-28T14:49:29+00:00; due=0 executed=0
+
+Configuration observed inside the running hibernator:
+
+- idle_seconds: 3600
+- sweep_interval_minutes: 10
+
+This proves the one-hour threshold is unchanged, the hibernator uses the
+ten-minute default, and ordinary minute scheduling remains a separate resident
+Swarm task.
+
+Automated proof
+
+The deployed runtime candidate was followed only by Doctor convergence and
+class-size lint corrections; none changed the command, configuration, stack
+renderer, scheduler, or runtime hibernation services proven above.
+
+Final exact candidate: 85c4a670d02d9a1b8e372cc46251002181851017
+
+The final exact candidate passed:
+
+- expanded focused gateway coverage: 181 tests, 1442 assertions
+- final affected Doctor coverage: 26 tests, 138 assertions
+- full `composer quality-check`: gateway 5214 tests, 30454 assertions
+- gateway Pest receipt:
+  `.orbit/quality-gates/profiles/2026-07-28T15-00-39Z-85c4a670d02d/gateway_pest.junit.xml`

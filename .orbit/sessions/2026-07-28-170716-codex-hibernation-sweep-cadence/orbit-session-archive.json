@@ -1,0 +1,27 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-28T15:07:16+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-hibernation-sweep-cadence/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-28-170716-codex-hibernation-sweep-cadence",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/blast-radius.txt",
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/profiles/2026-07-28T15-00-39Z-85c4a670d02d/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/blast-radius.txt": "626f6fb0d106e838a483a5d8274c667ec1e4454e887b713607e04ab5ba84b031",
+        "evidence/runtime-proof.txt": "5585bea8a3cc6a0d9929bab506cd1e12bcca4f4243cb8d5c23159b2e3b0b0f99",
+        "loop.md": "5a17975bc2e3ac732f927b14b6ed6147c87355ce71b152e39bb6d14dfddb27b7",
+        "quality-gates/profiles/2026-07-28T15-00-39Z-85c4a670d02d/gateway_pest.junit.xml": "4c58a60a4aefe4063f3e7ae0ff9334320e6005fcfaf896b30f5ab4950e176cba"
+    },
+    "branch": "codex/hibernation-sweep-cadence",
+    "candidate_commit": "85c4a670d02d9a1b8e372cc46251002181851017",
+    "accepted_feature_tip": "85c4a670d02d9a1b8e372cc46251002181851017",
+    "accepted_main_tip": "89d11fb7948b91a56d275e778591771271204fd3",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

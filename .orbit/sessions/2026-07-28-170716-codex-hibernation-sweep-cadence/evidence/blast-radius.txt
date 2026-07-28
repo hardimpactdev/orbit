@@ -1,0 +1,38 @@
+Runtime hibernator blast-radius inventory
+
+Candidate
+- base: 89d11fb79
+- head: 85c4a670d02d9a1b8e372cc46251002181851017
+- changed files: 26
+- diff: 993 insertions, 268 deletions
+
+Repository-wide scoped search
+
+`rg -n "orbit-runtime-hibernator|RUNTIME_HIBERNATOR|RuntimeHibernator|sweep_interval_minutes" apps/gateway/app apps/gateway/config apps/gateway/tests apps/docs/content`
+
+Inventoried consumers
+
+- Runtime ownership: `RuntimeHibernatorCommand` and
+  `orbit.runtime_hibernation.sweep_interval_minutes`.
+- Scheduling isolation: `OrbitScheduler` no longer invokes runtime
+  hibernation; its existing minute loop remains independently tested.
+- Deployment: `GatewaySwarmStackRenderer` declares a singleton,
+  gateway-constrained, stop-first `orbit-runtime-hibernator` service.
+- Updates: `GatewayUpdateDaemonLifecycle`, `GatewayServiceUpdater`, and
+  `FleetUpdateVerifier` stop, migrate, update, restore, and verify both gateway
+  daemons, including upgrades from releases without a hibernator service.
+- Doctor: `SchedulesProbe` and `SchedulesFixer` cover missing, stopped, image
+  mismatch, and replica mismatch states for the hibernator.
+- Command surface: the hibernator remains an internal hidden gateway command.
+- Documentation: architecture, tech stack, process, proxy, schedule doctor,
+  update, and update-all contracts describe the separate daemon and cadence.
+- Coverage: focused command, runtime, stack, installer, updater, verifier,
+  doctor runner, schedule probe/fixer, scheduler, and command visibility tests.
+
+Result
+
+No unowned runtime, update, recovery, doctor, command-visibility, or
+documentation consumer was found. The expanded focused suite passed 181 tests
+and 1442 assertions, the final affected Doctor suite passed 26 tests and 138
+assertions, docs lint passed, and the full monorepo quality gate passed at
+exact candidate 85c4a670d02d9a1b8e372cc46251002181851017.
