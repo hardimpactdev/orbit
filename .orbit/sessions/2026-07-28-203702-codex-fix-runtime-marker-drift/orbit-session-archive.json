@@ -1,0 +1,27 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-28T18:37:02+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-runtime-marker-drift/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-28-203702-codex-fix-runtime-marker-drift",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/horizon-demo-cold-wake-pre-rc.txt",
+        "evidence/quality-check.txt",
+        "feedback.jsonl",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/horizon-demo-cold-wake-pre-rc.txt": "2564ec373edf618d3dc35b81ba50c339a4293ebaa8973e0d74ee58ad0342d0e2",
+        "evidence/quality-check.txt": "0983107ad14a63a81824b04f42d7809db3dce580ea736e047053cd999c55fb93",
+        "feedback.jsonl": "5d4906866118c67e71e2ca5662f266ef85813ac0f0f9e7d864e0802e4f51afc7",
+        "loop.md": "2a5c88837066ff8851a582bfbcee470f7f18cf60c22fd5456903f76c58ee9133"
+    },
+    "branch": "codex/fix-runtime-marker-drift",
+    "candidate_commit": "7474cf173eef854a2060331d4bb173e5e199bfbb",
+    "accepted_feature_tip": "7474cf173eef854a2060331d4bb173e5e199bfbb",
+    "accepted_main_tip": "bf660de08c302c8beaf95319437466f6fff176a8",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
