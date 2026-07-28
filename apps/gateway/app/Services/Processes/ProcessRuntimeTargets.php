@@ -15,7 +15,7 @@ final readonly class ProcessRuntimeTargets
     ) {}
 
     /**
-     * @return list<array{process: Process, driver: ProcessRuntimeDriver, runtime_unit: string}>
+     * @return array<int, array{process: Process, driver: ProcessRuntimeDriver, runtime_unit: string}>
      */
     public function for(ProcessOwnerContext $context, ?string $name): array
     {

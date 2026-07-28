@@ -122,12 +122,11 @@ final readonly class ProcessLifecycle
         $lockWaitSeconds = (int) config('orbit.runtime_hibernation.lock_wait_seconds', default: 90);
 
         try {
+            /** @var array{data: array<string, mixed>, failed: bool, meta: array<string, mixed>, message: string}|null $result */
             $result = Cache::lock($scope->lockKey(), $lockSeconds)
                 ->block($lockWaitSeconds, $callback);
 
-            return is_array($result)
-                ? $result
-                : $this->failure($pastTense, "none_{$pastTense}", 'runtime_lock_failed');
+            return $result ?? $this->failure($pastTense, "none_{$pastTense}", 'runtime_lock_failed');
         } catch (LockTimeoutException) {
             return $this->failure($pastTense, "none_{$pastTense}", 'runtime_lock_timeout');
         }

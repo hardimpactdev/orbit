@@ -121,19 +121,13 @@ These terms define per-process behavioral rules that apply to every derived runt
   hibernation.
 - **Development hibernation policy:** App-instance and workspace process groups
   on `app-dev` nodes are installed without host-boot start intent. The first
-  ordinary HTTP request to any owned route wakes the full owning lifecycle
-  group. One hour without HTTP route activity makes the group eligible for an
-  automatic stop during the gateway runtime hibernator's next ten-minute
-  sweep. The hibernator runs independently from the Orbit Scheduler, which
-  still evaluates ordinary schedules every minute. All routes for one instance
-  or workspace share its marker, activity state, and serialization lock.
-  Node-owned processes and all `app-prod` processes remain boot-persistent and
-  are outside this policy.
-- **Bulk lifecycle hibernation coordination:** Bulk `process:start`,
-  `process:stop`, and `process:restart` actions for a development instance or
-  workspace use its hibernation lock. They keep the marker aligned with the
-  resulting group state. Named process actions remain independent and do not
-  change the group-level marker.
+  HTTP request wakes the full owning group. One hour without route activity
+  makes it eligible for an automatic stop during the next ten-minute sweep.
+  The hibernator runs independently from the Orbit Scheduler. Routes for one
+  scope share its marker, activity state, and lock. Bulk lifecycle actions use
+  that lock and align the marker with the group state; named actions do not
+  change it. Node-owned and `app-prod` processes remain boot-persistent and are
+  outside this policy.
 - **Crash notification policy:** Process-definition opt-in for crash event
   delivery. When the policy is enabled, `crashed` events resolve the effective
   agent IDE and notify the active session when one is available. Units that use
