@@ -1,0 +1,34 @@
+Retained Incus deploy-context proof
+candidate: d3c13a15185c6e701836dcac787ec677d5e7c974
+topology: dev-86e248 (operator_gateway_app-dev_app-prod)
+solo process: deploy-context-runtime-proof (1123)
+operator cwd: /home/orbit/orbit-run
+operator launcher: /home/orbit/orbit-run/bin/orbit
+
+Source identity:
+- Local DeployManager.php sha256:
+  c2eac65997be4821d933ea2f578fdeb779d36ab5387dd991c870f7d217bd017c
+- Source-mounted gateway DeployManager.php sha256:
+  c2eac65997be4821d933ea2f578fdeb779d36ab5387dd991c870f7d217bd017c
+
+Runtime observation through the source-mounted operator CLI:
+- A production deploy step containing
+  mkdir -p "{{ app_path }}/database"
+  was accepted by the candidate gateway.
+- deploy:history returned:
+  app_path=/home/orbit/deploy-context-proof
+  project_path=/home/orbit/deploy-context-proof
+  app_user=orbit
+  project_user=orbit
+  app.name=deploy-context-proof
+  app.instance=production
+  app.path=/home/orbit/deploy-context-proof
+- The stored rendered step command was:
+  mkdir -p "/home/orbit/deploy-context-proof/database" && printf "context-ok\n" > "/home/orbit/deploy-context-proof/context-proof.txt"
+- The production node did not contain /database, proving the legacy placeholder
+  no longer collapsed to a root-owned absolute path.
+
+The downstream prepared-topology Agent response was invalid, so the disposable
+step itself recorded exit 1. That failure occurred after context construction
+and command rendering, and is outside this feature's rendering outcome. The
+candidate gateway persisted and returned the exact safe absolute command above.

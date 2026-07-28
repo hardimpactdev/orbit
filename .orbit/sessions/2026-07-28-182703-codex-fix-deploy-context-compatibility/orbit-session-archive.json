@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-28T16:27:03+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-deploy-context-compatibility/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-28-182703-codex-fix-deploy-context-compatibility",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-28T162235Z-80519e44af33.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "26fe48f68fbaeffb12b1d78daf9bb96068fde52c14fc5ddf2cded1d1bfeef536",
+        "loop.md": "dfb62b566abcdbb05eaa667054d18010c9613fe4f200482cbc108605172ad399",
+        "quality-gates/quality-check-2026-07-28T162235Z-80519e44af33.json": "617494d803246c3024cdff72080c4e541b31794d1626597ac48ecc10a6ee7c12"
+    },
+    "branch": "codex/fix-deploy-context-compatibility",
+    "candidate_commit": "d3c13a15185c6e701836dcac787ec677d5e7c974",
+    "accepted_feature_tip": "d3c13a15185c6e701836dcac787ec677d5e7c974",
+    "accepted_main_tip": "fcd592446ea9a24a176e083ed9d42e327bd3d8f4",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
