@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-28T16:13:19+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-release-candidate-hibernation/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-28-181319-codex-release-candidate-hibernation",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-28T160704Z-9e74bd7c8a96.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "a611384088de9c99cf2a05eeab316d633c4af79e4ea508904a68cb7f5e149ce7",
+        "loop.md": "c2b47d9937b291add8c22de5541bf0a156b493b337c7de875ed13bbc70bd55e1",
+        "quality-gates/quality-check-2026-07-28T160704Z-9e74bd7c8a96.json": "c8a0d9b8c6fdf20405ae8baeaa16faff7c2ba4686e3371013cc433044e515f28"
+    },
+    "branch": "codex/release-candidate-hibernation",
+    "candidate_commit": "6dd315f91f9cdbc6ca30e76beb7fe7bef0d6dcb7",
+    "accepted_feature_tip": "6dd315f91f9cdbc6ca30e76beb7fe7bef0d6dcb7",
+    "accepted_main_tip": "c78a2837ba2d6fd89a17e1519c374ddf0c13b1a4",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
