@@ -268,10 +268,12 @@ The expected target shape per calling context:
   exits successfully.
 - When an Orbit Agent artifact is selected, the remote update verifies the
   installed owner-user local `orbit-agent` hash and restarts a managed
-  `orbit-agent` service when one is present. If no systemd or launchd service is
-  present but an unmanaged listener is running from the installed binary path,
-  the update replaces that listener with the new binary and preserves the
-  configured Agent endpoint.
+  `orbit-agent` service when one is present, but only after required role image
+  archives and registry fallbacks have finished so the self-restart cannot
+  interrupt those side effects. If no systemd or launchd service is present but
+  an unmanaged listener is running from the installed binary path, the update
+  replaces that listener with the new binary and preserves the configured Agent
+  endpoint.
 - Agent-role nodes may expose an `agent` Unix user for tools. That user is a
   consumer user, not a second Orbit owner. Provisioning converges a shim such as
   `/home/agent/.local/bin/orbit` that executes the owner user's CLI with

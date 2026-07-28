@@ -245,19 +245,29 @@ describe('internal fleet update install cli command', function (): void {
             ->toBe($sha256);
     });
 
-    it('schedules a deferred Orbit Agent restart through systemd-run when available', function (): void {
+    it('installs required role images before scheduling a deferred Orbit Agent restart', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $systemdBin = make_fleet_update_install_cli_fake_systemd_bin($workspace);
+        $dockerLog = "{$workspace}/docker.log";
+        $dockerBin = make_fleet_update_install_cli_fake_docker_bin($workspace, $dockerLog);
         $artifactPath = "{$workspace}/artifact/orbit";
         $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
+        $roleImageArchive = "{$workspace}/artifact/orbit-reverb.tar";
         $agentConfigPath = "{$workspace}/agent.toml";
         $agentCaPath = "{$workspace}/ca/root.crt";
         $agentCaPem = "-----BEGIN CERTIFICATE-----\ndGVzdA==\n-----END CERTIFICATE-----\n";
         file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
+        file_put_contents(filename: $roleImageArchive, data: 'verified role image archive');
         chmod(filename: $agentArtifactPath, permissions: 0o755);
         $sha256 = fleet_update_install_cli_sha256($artifactPath);
         $agentSha256 = fleet_update_install_cli_sha256($agentArtifactPath);
-        $path = $systemdBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+        $roleImage = 'ghcr.io/hardimpactdev/orbit-reverb:9.9.9@sha256:'.str_repeat('a', times: 64);
+        $path =
+            $systemdBin
+            .PATH_SEPARATOR
+            .$dockerBin
+            .PATH_SEPARATOR
+            .($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
 
         putenv("PATH={$path}");
         $_ENV['PATH'] = $path;
@@ -289,10 +299,16 @@ describe('internal fleet update install cli command', function (): void {
                     'http_bind' => '10.6.0.2:9477',
                     'user' => 'orbit',
                 ],
-                'role_images' => [],
+                'role_images' => [$roleImage],
+                'role_image_artifacts' => [[
+                    'image' => $roleImage,
+                    'url' => "file://{$roleImageArchive}",
+                    'sha256' => hash_file('sha256', $roleImageArchive),
+                ]],
             ], JSON_THROW_ON_ERROR),
         );
         $data = fleet_update_install_cli_success_data($output);
+        $stdout = is_string($data['stdout'] ?? null) ? $data['stdout'] : '';
         $calls = file_get_contents("{$workspace}/systemd-calls.log");
         $unit = file_get_contents("{$workspace}/converged-orbit-agent.service");
         $runtimeBootScript = file_get_contents("{$workspace}/orbit-runtime-boot-converge");
@@ -300,10 +316,13 @@ describe('internal fleet update install cli command', function (): void {
 
         expect($exitCode)
             ->toBe(0)
-            ->and($data['stdout'] ?? '')
+            ->and($stdout)
             ->toContain('probe_agent_unit')
             ->toContain('converge_agent_unit')
+            ->toContain('load_required_image_artifacts')
             ->toContain('schedule_agent_restart')
+            ->and(strpos($stdout, 'load_required_image_artifacts'))
+            ->toBeLessThan(strpos($stdout, 'schedule_agent_restart'))
             ->and($calls)
             ->toContain('systemd-run')
             ->toContain('--on-active=5s')

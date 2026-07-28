@@ -485,7 +485,6 @@ final readonly class LocalFleetUpdateInstallCliAction
                 echo verify_agent
                 resolved_agent_binary="$(readlink -f "$agent_bin_path" 2>/dev/null || printf %s "$agent_bin_path")"
                 check_sha256 "$ORBIT_AGENT_SHA256" "$resolved_agent_binary"
-                restart_agent_service_if_present
             fi
 
             role_images_json="${ORBIT_ROLE_IMAGES_JSON:-[]}"
@@ -526,6 +525,10 @@ final readonly class LocalFleetUpdateInstallCliAction
                         fi
                     done
                 fi
+            fi
+
+            if [ -n "${ORBIT_AGENT_ARTIFACT_URL:-}" ]; then
+                restart_agent_service_if_present
             fi
 
             echo verify
