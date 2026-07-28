@@ -23,7 +23,6 @@ it('renders the orbit scheduler as a singleton Swarm service from the gateway im
         ->toContain('      replicas: 1')
         ->toContain('        order: stop-first')
         ->toContain('orbit-scheduler')
-        ->not->toContain('orbit'.'-runtime')
         ->not->toContain('supervisor')
         ->not->toContain('/etc/supervisor');
 });

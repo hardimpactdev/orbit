@@ -15,6 +15,8 @@ final readonly class GatewaySwarmStackRenderer
 
     public const string SchedulerService = 'orbit-scheduler';
 
+    public const string RUNTIME_HIBERNATOR_SERVICE = 'orbit-runtime-hibernator';
+
     public const string OPERATIONS_REVERB_SERVICE = 'orbit-operations-reverb';
 
     public const string DEFAULT_OPERATIONS_REVERB_IMAGE = 'orbit-reverb:current';
@@ -39,6 +41,7 @@ final readonly class GatewaySwarmStackRenderer
             'services:',
             ...$this->gatewayService($image, $exposureMode, $configRoot, $configRootExpression, $installRootExpression),
             ...$this->schedulerService($image, $configRoot, $configRootExpression, $installRootExpression),
+            ...$this->runtimeHibernatorService($image, $configRoot, $configRootExpression, $installRootExpression),
             ...$this->operationsReverbService($operationsReverbImage, $configRootExpression),
             'networks:',
             '  '.self::Network.':',
@@ -151,10 +154,54 @@ final readonly class GatewaySwarmStackRenderer
         string $configRootExpression,
         string $installRootExpression,
     ): array {
+        return $this->gatewayDaemonService(
+            [
+                'service' => self::SchedulerService,
+                'command' => 'orbit-scheduler',
+            ],
+            $image,
+            $configRoot,
+            $configRootExpression,
+            $installRootExpression,
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function runtimeHibernatorService(
+        GatewayImageReference $image,
+        string $configRoot,
+        string $configRootExpression,
+        string $installRootExpression,
+    ): array {
+        return $this->gatewayDaemonService(
+            [
+                'service' => self::RUNTIME_HIBERNATOR_SERVICE,
+                'command' => 'orbit-runtime-hibernator',
+            ],
+            $image,
+            $configRoot,
+            $configRootExpression,
+            $installRootExpression,
+        );
+    }
+
+    /**
+     * @param  array{service: string, command: string}  $daemon
+     * @return list<string>
+     */
+    private function gatewayDaemonService(
+        array $daemon,
+        GatewayImageReference $image,
+        string $configRoot,
+        string $configRootExpression,
+        string $installRootExpression,
+    ): array {
         return [
-            '  '.self::SchedulerService.':',
+            '  '.$daemon['service'].':',
             '    image: '.$this->quoted($image->canonical()),
-            '    command: ["php", "artisan", "orbit-scheduler"]',
+            '    command: ["php", "artisan", "'.$daemon['command'].'"]',
             '    networks: ['.self::Network.']',
             '    environment:',
             '      APP_ENV: production',
@@ -176,7 +223,7 @@ final readonly class GatewaySwarmStackRenderer
             '      replicas: 1',
             '      labels:',
             '        orbit.managed: "true"',
-            '        orbit.service: '.self::SchedulerService,
+            '        orbit.service: '.$daemon['service'],
             '      placement:',
             '        constraints:',
             '          - node.labels.orbit.role.gateway == true',

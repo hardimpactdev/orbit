@@ -25,6 +25,8 @@ class GatewayServiceUpdater
 
     private const string SchedulerService = 'orbit_orbit-scheduler';
 
+    private const string RUNTIME_HIBERNATOR_SERVICE = 'orbit_orbit-runtime-hibernator';
+
     private const string OPERATIONS_REVERB_SERVICE = 'orbit_orbit-operations-reverb';
 
     private const int GatewayHealthCheckAttempts = 90;
@@ -262,6 +264,7 @@ class GatewayServiceUpdater
         $this->swarm()->deployStack($stackPath);
         $this->waitForGatewayHealth($targetImage);
         $this->waitForServiceReplica(self::SchedulerService);
+        $this->waitForServiceReplica(self::RUNTIME_HIBERNATOR_SERVICE);
         $this->waitForServiceReplica(self::OPERATIONS_REVERB_SERVICE);
 
         return null;

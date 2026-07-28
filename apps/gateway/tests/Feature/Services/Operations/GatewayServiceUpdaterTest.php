@@ -79,6 +79,7 @@ it('updates gateway and scheduler services to the plan image after target image 
             gateway_service_updater_stack_deploy_command(),
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
             "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'",
+            "docker service ls --filter 'name=orbit_orbit-runtime-hibernator' --format '{{.Replicas}}'",
             "docker service ls --filter 'name=orbit_orbit-operations-reverb' --format '{{.Replicas}}'",
         ])
         ->and(array_values(array_filter(
@@ -501,6 +502,7 @@ it('treats a same-image gateway service update with no Docker update status as h
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'",
         "docker service ls --filter 'name=orbit_orbit-gateway' --format '{{.Replicas}}'",
         "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'",
+        "docker service ls --filter 'name=orbit_orbit-runtime-hibernator' --format '{{.Replicas}}'",
         "docker service ls --filter 'name=orbit_orbit-operations-reverb' --format '{{.Replicas}}'",
     ]);
 
@@ -744,6 +746,9 @@ function gateway_service_updater_common_process_result(
         'bash -s' => Process::result(),
         gateway_service_updater_stack_deploy_command() => Process::result(),
         "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(
+            output: "1/1\n",
+        ),
+        "docker service ls --filter 'name=orbit_orbit-runtime-hibernator' --format '{{.Replicas}}'" => Process::result(
             output: "1/1\n",
         ),
         "docker service ls --filter 'name=orbit_orbit-operations-reverb' --format '{{.Replicas}}'" => Process::result(

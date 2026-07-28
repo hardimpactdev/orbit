@@ -82,7 +82,7 @@ The sections below walk through each layer of the stack in the same order as the
 |---|---|
 | Application | Laravel 13 gateway application bundled into `ghcr.io/hardimpactdev/orbit-gateway:<version>` |
 | Runtime language | PHP 8.5 inside Orbit-managed containers |
-| Persistent state | Gateway SQLite at `ORBIT_CONFIG_ROOT/gateway.sqlite`, mounted into `orbit-gateway` and `orbit-scheduler` |
+| Persistent state | Gateway SQLite at `ORBIT_CONFIG_ROOT/gateway.sqlite`, mounted into `orbit-gateway`, `orbit-scheduler`, and `orbit-runtime-hibernator` |
 | Gateway API | `router-colocated`: router-owned `orbit-caddy` to `orbit-gateway` over `orbit-network`; `gateway-direct`: `orbit-gateway` publishes HTTPS directly; both are restricted to Orbit/WireGuard access |
 | Gateway to node | Managed execution converges on `gateway-only` for gateway-owned reads/writes and `agent-push` for node-local execution. `agent-push` is gateway-authenticated HTTP to the node's Agent listener over Orbit/WireGuard for Agent-eligible nodes. Intent is derived from active workload roles or explicit `managed` opt-in on a roleless non-gateway operator; eligibility also requires an active supported platform and valid WireGuard identity. Gateway nodes are never Agent targets. Agent execution is a gateway-built `binary + argv` request with gateway-issued operation tokens and a node-local binary allowlist; no arbitrary shell-over-HTTP. Reachable Agent nodes use gateway push only; the gateway is the sole initiator and the Agent runs no background retrieval loop. Break-glass SSH is operator-owned super-admin recovery outside normal Orbit command execution. |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node; HTTPS listener intent publishes TCP/443 and UDP/443 where Orbit exposes HTTP ingress |
@@ -90,6 +90,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; systemd for Linux host command process units; launchd for macOS host command process units |
 | Process manager | Process runtime backends: systemd for Linux host command process units, launchd for macOS host command process units, Docker for containerized process units, Docker Swarm for selected node-owned service processes |
 | Scheduler | One-replica `orbit-scheduler` Swarm service using the Orbit gateway image |
+| Runtime hibernator | One-replica `orbit-runtime-hibernator` Swarm service using the Orbit gateway image and checking development runtime idleness every ten minutes |
 | Process logs | Runtime-backend log capture for process units; journald for systemd-backed host command processes, Orbit-owned stdout/stderr files for launchd-backed host command processes, and Docker logs for containerized processes |
 | Service containers | Docker for Orbit runtime containers and backing services |
 | Node provisioning and host prerequisites | A configured client first observes Ubuntu version and CPU architecture over client-local SSH, then streams a gateway-authored bootstrap bundle through that SSH edge to establish the managed user, WireGuard identity, node-local Orbit config, and architecture-matched CLI/Agent entry points on a new managed Ubuntu node. After Agent readiness, the gateway converges service-address routing, host prerequisites, and the full node security baseline through Agent push. Those are topology infrastructure, not app, process, tool, or database runtime prerequisites. Production gateway-only nodes additionally require Docker Engine/CLI, Docker Swarm, gateway config root, and the native Orbit CLI binary. `app-dev` and `app-prod` nodes additionally require host PHP and Composer for app-source workflows; the Laravel installer is required on `app-dev` only. Git and `gh` are required where cloning/deployment needs repository access, not for no-source gateway-only production. Source-dev topologies may bind-mount or copy the worktree and point `/usr/local/bin/orbit` at `<source>/apps/cli/orbit`; artifact-prod topologies use built CLI binaries and production images. |
@@ -114,12 +115,13 @@ Laravel is Orbit's application framework, while command behavior remains documen
 ### Application
 
 Orbit's gateway application is Laravel 13 and runs inside the
-`orbit-gateway` image. On the gateway, Swarm keeps two services:
-`orbit-gateway` serves the typed HTTPS API and `orbit-scheduler` runs the
-gateway-local Orbit Scheduler. Both services mount the gateway config root
-(`ORBIT_CONFIG_ROOT`) for `.env`, `gateway.sqlite`, and Orbit CA/certificate
-material. Workload nodes run the public Orbit CLI as a gateway client and run
-workloads in role-specific runtime containers.
+`orbit-gateway` image. On the gateway, Swarm keeps three gateway-image
+services: `orbit-gateway` serves the typed HTTPS API, `orbit-scheduler` runs the
+gateway-local Orbit Scheduler, and `orbit-runtime-hibernator` runs development
+runtime idle sweeps independently. All three services mount the gateway config
+root (`ORBIT_CONFIG_ROOT`) for `.env`, `gateway.sqlite`, and Orbit
+CA/certificate material. Workload nodes run the public Orbit CLI as a gateway
+client and run workloads in role-specific runtime containers.
 
 The gateway config root and its credential-bearing files are owner-only. Its
 directories use mode `0700`; `.env`, `gateway.sqlite`, operations WebSocket app
@@ -707,12 +709,13 @@ owner; a catalog-declared `tool:start`, `tool:stop`, `tool:restart`, or
 value matches the selected tool.
 
 Swarm is a per-artifact production backend, not a node-wide execution mode.
-Gateway API and scheduler lifecycles are Swarm services (`orbit-gateway` and
-`orbit-scheduler`). Other artifacts choose their own backend by product
-contract: `orbit-caddy`, app/workspace web runtimes, role services, and
-Docker-backed process units are Docker-managed containers or services;
-configured Linux host command processes are systemd services, and configured
-macOS host command processes are launchd user LaunchAgents.
+Gateway API, scheduler, and runtime hibernation lifecycles are Swarm services
+(`orbit-gateway`, `orbit-scheduler`, and `orbit-runtime-hibernator`). Other
+artifacts choose their own backend by product contract: `orbit-caddy`,
+app/workspace web runtimes, role services, and Docker-backed process units are
+Docker-managed containers or services; configured Linux host command processes
+are systemd services, and configured macOS host command processes are launchd
+user LaunchAgents.
 
 ### Scheduler
 
@@ -756,12 +759,23 @@ The daemon's per-tick logic is shared with the `orbit schedule:run` command. The
 
 This centralizes observability: every scheduled run's result lands in the gateway database, including dispatch failures (agent-push unavailable, target down, command non-zero exit). The trade-off is that the gateway is a single point of failure for scheduling — but in v1 the active gateway-coupled `vpn` role is co-located on the same node, so the network is unusable when that node is down regardless.
 
+### Runtime hibernator
+
+The one-replica `orbit-runtime-hibernator` Swarm service uses the gateway image
+and shared gateway state, but runs independently from `orbit-scheduler`. It
+performs one development-runtime idle sweep, waits ten minutes after that sweep
+finishes, and repeats. This elapsed-time loop avoids skipped wall-clock
+boundaries and prevents slow node scans from delaying minute-level schedule
+evaluation. `ORBIT_RUNTIME_HIBERNATION_SWEEP_INTERVAL_MINUTES` overrides the
+default ten-minute interval; the one-hour idle threshold remains controlled by
+`ORBIT_RUNTIME_HIBERNATION_IDLE_SECONDS`.
+
 ### Service containers
 
 Docker is the baseline substrate for Orbit runtime containers and backing
 services. Orbit uses Docker for `orbit-gateway`, `orbit-scheduler`,
-`orbit-caddy`, FrankenPHP app/workspace containers, databases, caches, mail
-servers, Laravel Reverb containers for the
+`orbit-runtime-hibernator`, `orbit-caddy`, FrankenPHP app/workspace containers,
+databases, caches, mail servers, Laravel Reverb containers for the
 `websocket` role, SeaweedFS containers for the `s3` role, Prometheus and
 Grafana Swarm services for the `metrics` role, and similar backing
 infrastructure. Docker E2E topologies use sibling containers through the host

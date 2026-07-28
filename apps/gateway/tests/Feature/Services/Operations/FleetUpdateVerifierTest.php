@@ -654,6 +654,9 @@ function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
         "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(
             output: "1/1\n",
         ),
+        "docker service ls --filter 'name=orbit_orbit-runtime-hibernator' --format '{{.Replicas}}'" => Process::result(
+            output: "1/1\n",
+        ),
         "docker service ls --filter 'name=orbit_orbit-operations-reverb' --format '{{.Replicas}}'" => Process::result(
             output: "1/1\n",
         ),

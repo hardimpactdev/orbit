@@ -9,10 +9,12 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Workspace;
+use App\Services\Processes\RuntimeIdleHibernation;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Schedules\OrbitScheduler;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Sleep;
 
 uses(RefreshDatabase::class);
 
@@ -150,7 +152,7 @@ it('hibernates an awake app instance after the configured HTTP idle interval', f
     $executor = new RuntimeHibernationRecordingExecutor(lastActivityAt: 1_767_268_799);
     app()->instance(RunsInternalCommands::class, $executor);
 
-    app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:00:00Z'));
+    app(RuntimeIdleHibernation::class)->hibernate(CarbonImmutable::parse('2026-01-01T13:00:00Z'));
 
     expect($executor->actions())
         ->toBe([
@@ -160,7 +162,7 @@ it('hibernates an awake app instance after the configured HTTP idle interval', f
         ]);
 });
 
-it('checks idle runtimes only on the default ten-minute boundaries', function (): void {
+it('checks idle runtimes in a dedicated ten-minute daemon instead of the minute scheduler', function (): void {
     createTestGatewayNode([
         'name' => 'gateway-1',
         'wireguard_address' => '10.6.0.1',
@@ -173,11 +175,16 @@ it('checks idle runtimes only on the default ten-minute boundaries', function ()
 
     expect(config('orbit.runtime_hibernation.sweep_interval_minutes'))->toBe(10);
 
-    app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:01:00Z'));
+    app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:10:00Z'));
 
     expect($executor->actions())->toBeEmpty();
 
-    app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:10:00Z'));
+    CarbonImmutable::setTestNow('2026-01-01T13:10:00Z');
+
+    $this
+        ->artisan('orbit-runtime-hibernator --once')
+        ->expectsOutputToContain('Runtime hibernation sweep completed')
+        ->assertSuccessful();
 
     expect($executor->actions())
         ->toBe([
@@ -185,6 +192,24 @@ it('checks idle runtimes only on the default ten-minute boundaries', function ()
             'internal:caddy-config:runtime-asleep',
             'internal:process-systemd-service:stop',
         ]);
+
+    CarbonImmutable::setTestNow();
+});
+
+it('waits ten minutes after a completed hibernation sweep', function (): void {
+    Sleep::fake();
+
+    expect(config('orbit.runtime_hibernation.sweep_interval_minutes'))->toBe(10);
+
+    $this
+        ->artisan('orbit-runtime-hibernator --max-sweeps=2')
+        ->expectsOutputToContain('Runtime hibernation sweep completed')
+        ->assertSuccessful();
+
+    Sleep::assertSlept(
+        fn ($duration): bool => $duration->totalSeconds === 600.0,
+    );
+    Sleep::assertSleptTimes(1);
 });
 
 it('leaves recently active scopes awake', function (): void {
@@ -200,7 +225,7 @@ it('leaves recently active scopes awake', function (): void {
     );
     app()->instance(RunsInternalCommands::class, $executor);
 
-    app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:00:00Z'));
+    app(RuntimeIdleHibernation::class)->hibernate(CarbonImmutable::parse('2026-01-01T13:00:00Z'));
 
     expect($executor->actions())
         ->toBe(['internal:caddy-config:runtime-states']);
@@ -219,7 +244,7 @@ it('hibernates an uninitialized scope after the Caddy marker directory is reset'
     );
     app()->instance(RunsInternalCommands::class, $executor);
 
-    app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:00:00Z'));
+    app(RuntimeIdleHibernation::class)->hibernate(CarbonImmutable::parse('2026-01-01T13:00:00Z'));
 
     expect($executor->actions())
         ->toBe([
@@ -239,7 +264,7 @@ it('does not repeatedly stop a scope that is already marked hibernated', functio
     $executor = new RuntimeHibernationRecordingExecutor(hibernated: true);
     app()->instance(RunsInternalCommands::class, $executor);
 
-    app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:00:00Z'));
+    app(RuntimeIdleHibernation::class)->hibernate(CarbonImmutable::parse('2026-01-01T13:00:00Z'));
 
     expect($executor->actions())
         ->toBe(['internal:caddy-config:runtime-states']);
@@ -259,7 +284,7 @@ it('restores the awake marker when an idle process group cannot be stopped', fun
     );
     app()->instance(RunsInternalCommands::class, $executor);
 
-    app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:00:00Z'));
+    app(RuntimeIdleHibernation::class)->hibernate(CarbonImmutable::parse('2026-01-01T13:00:00Z'));
 
     expect($executor->actions())
         ->toBe([
@@ -286,7 +311,7 @@ it('leaves a partially stopped process group asleep so the next request reconcil
     );
     app()->instance(RunsInternalCommands::class, $executor);
 
-    app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:00:00Z'));
+    app(RuntimeIdleHibernation::class)->hibernate(CarbonImmutable::parse('2026-01-01T13:00:00Z'));
 
     expect($executor->actions())
         ->toBe([

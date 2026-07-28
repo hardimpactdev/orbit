@@ -47,7 +47,7 @@ function gatewayApplicationCommands(): array
 
 function gatewayAllowedArtisanCommandName(string $name): bool
 {
-    if ($name === 'orbit-scheduler') {
+    if (in_array($name, ['orbit-runtime-hibernator', 'orbit-scheduler'], strict: true)) {
         return true;
     }
 

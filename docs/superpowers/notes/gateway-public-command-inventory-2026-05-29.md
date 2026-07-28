@@ -5,9 +5,9 @@ Source for Solo todo #543 / ORBIT-PRE-S3-02. This note inventories the currently
 ## Scope
 
 - Inventory source: `Artisan::all()` in `apps/gateway`, filtered to `App\Console\Commands\*` command classes. Abstract base classes, traits, and support classes are not invokable and are omitted.
-- Invokable command rows covered: 15 total, including 1 gateway-owned runtime row (orbit-scheduler), 12 internal `App\Console\Commands\Internal\*` rows kept explicit for the allowed `orbit:internal:*` category, `orbit:internal:node-register`, and the hidden update runner. E2E runner commands (e2e:*) were extracted to apps/e2e in #9H and are no longer registered in gateway Artisan.
+- Invokable command rows covered: 16 total, including 2 gateway-owned runtime rows (`orbit-scheduler` and `orbit-runtime-hibernator`), 12 internal `App\Console\Commands\Internal\*` rows kept explicit for the allowed `orbit:internal:*` category, `orbit:internal:node-register`, and the hidden update runner. E2E runner commands (e2e:*) were extracted to apps/e2e in #9H and are no longer registered in gateway Artisan.
 - Gateway command visibility is final for public product commands: gateway Artisan no longer registers CLI-owned public product commands. #542 removed the app, node, DNS/local, gateway-local, PHP, update, profile, and doctor command family after CLI coverage and API extraction. #546 removed the database, workspace, process, and schedule command families after extracting `workspace:exec` behind the gateway API. #548 removed the tool, proxy, firewall, Cloudflare, VPN, deploy, activity, and agent-ide command families after #544 recorded CLI owner coverage.
-- Product authority after #540: public operator commands are owned by `apps/cli/orbit`; gateway Artisan is for gateway maintenance, `orbit:internal:*`, E2E runner wrappers, `orbit-scheduler`, and intentional docs/librarian/dev commands.
+- Product authority after #540: public operator commands are owned by `apps/cli/orbit`; gateway Artisan is for gateway maintenance, `orbit:internal:*`, E2E runner wrappers, gateway-owned runtime daemons, and intentional docs/librarian/dev commands.
 - Do not move gateway business logic to `packages/core` as part of command removal.
 
 ## Gateway direct call-site sweep
@@ -31,6 +31,7 @@ rg -n "Artisan::call\(|\$this->call\(" apps/gateway/app/Http apps/gateway/app/Se
 
 | command name | gateway command class | CLI owner | gateway internal call sites | classification | removal todo | required tests |
 | --- | --- | --- | --- | --- | --- | --- |
+| `orbit-runtime-hibernator` | `App\Console\Commands\RuntimeHibernatorCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | none; gateway-owned runtime/internal command | apps/gateway/tests/Feature/Services/Processes/RuntimeHibernationTest.php |
 | `orbit-scheduler` | `App\Console\Commands\OrbitSchedulerCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | none; gateway-owned runtime/internal command | apps/gateway/tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php |
 | `orbit:internal:agent-push-proof` | `App\Console\Commands\Internal\AgentPushProofCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | none; hidden live agent-push proof command | apps/gateway/tests/Feature/Commands/Internal/AgentPushProofCommandTest.php |
 | `orbit:internal:bake-agent-node` | `App\Console\Commands\Internal\BakeAgentNodeCommand` | `gateway-owned` | none in required app call-site sweep | `keep` | none; gateway-owned runtime/internal command | apps/gateway/tests/Feature/Commands/Internal or E2E support coverage |
