@@ -33,7 +33,6 @@ final readonly class ProxyRouteFixer
         private SiteCertificateInstaller $siteCertificateInstaller,
         private ?RemoteCaddyConfig $caddyConfig = null,
         private ?Closure $appRouteEnactor = null,
-        private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
     ) {}
 
     /**
@@ -474,7 +473,7 @@ final readonly class ProxyRouteFixer
         $config = is_array($route->config) ? $route->config : [];
         $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
         $appInstance = $config['app_instance'] ?? null;
-        $isDevelopmentRuntimeRoute = $node->hasActiveRole('app-dev') && $this->nodeRoleAssignments
+        $isDevelopmentRuntimeRoute = $node->hasActiveRole('app-dev') && app(NodeRoleAssignments::class)
             ->activeGatewayNodeQuery()
             ->whereNotNull('wireguard_address')
             ->exists() && ($route->kind === 'workspace' || $route->kind === 'app' && is_array($appInstance) && is_int($appInstance['id'] ?? null));
