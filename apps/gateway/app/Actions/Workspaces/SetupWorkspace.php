@@ -17,6 +17,7 @@ use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
+use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
 use App\Services\Workspaces\WorkspaceEnvInitializer;
@@ -318,11 +319,15 @@ final readonly class SetupWorkspace
      */
     public function startProcesses(Project $app, Workspace $workspace, Node $node): array
     {
-        $appProcesses = $app
-            ->processes()
-            ->where('app_instance_id', $workspace->app_instance_id)
-            ->orderBy('sort_order')
-            ->get();
+        $context = new ProcessOwnerContext(
+            node: $node,
+            app: $app,
+            workspace: $workspace,
+            owner: $workspace,
+            appInstance: $workspace->appInstance,
+        );
+
+        $appProcesses = $context->effectiveWorkspaceProcessesWithoutRuntime();
 
         if ($appProcesses->isEmpty()) {
             return ['success' => true, 'message' => 'No processes', 'count' => 0, 'names' => []];
@@ -349,9 +354,10 @@ final readonly class SetupWorkspace
             }
 
             $driver = $this->runtimeDrivers->forProcess($process);
-            $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
+            $runtimeWorkspace = $context->runtimeWorkspaceFor($process);
+            $runtimeUnit = $driver->runtimeUnitName($app, $process, $runtimeWorkspace);
 
-            if (! $driver->apply($node, $app, $process, $workspace)) {
+            if (! $driver->apply($node, $app, $process, $runtimeWorkspace)) {
                 return [
                     'success' => false,
                     'message' => "Failed to start process '{$process->name}'. Run doctor to converge process runtime units.",

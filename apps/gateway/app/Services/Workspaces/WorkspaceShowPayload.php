@@ -6,6 +6,7 @@ namespace App\Services\Workspaces;
 
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Processes\ProcessOwnerContext;
 
 class WorkspaceShowPayload
 {
@@ -45,8 +46,18 @@ class WorkspaceShowPayload
             'lifecycle_status' => $workspace->lifecycle_status->value,
         ];
 
-        $inheritedProcesses = array_values($app
-            ?->processes
+        $context =
+            $app !== null && $node !== null && $workspace->appInstance !== null
+                ? new ProcessOwnerContext(
+                    node: $node,
+                    app: $app,
+                    workspace: $workspace,
+                    owner: $workspace,
+                    appInstance: $workspace->appInstance,
+                ) : null;
+
+        $inheritedProcesses = array_values($context
+            ?->effectiveWorkspaceProcesses()
             ->map(fn (Process $process): array => [
                 'name' => $process->name,
             ])

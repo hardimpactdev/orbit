@@ -173,33 +173,7 @@ final readonly class ProcessOwnerContext
     public function lifecycleProcesses(?string $name): Collection
     {
         if ($this->workspace instanceof Workspace && $this->app instanceof Project) {
-            /** @var Collection<int, Process> $appProcesses */
-            $appProcesses = $this->app
-                ->processes()
-                ->where('app_instance_id', $this->appInstance?->id)
-                ->when($name !== null, fn ($query) => $query->where('name', $name))
-                ->get();
-
-            /** @var Collection<int, Process> $workspaceProcesses */
-            $workspaceProcesses = $this->workspace
-                ->processes()
-                ->where('app_instance_id', $this->appInstance?->id)
-                ->when($name !== null, fn ($query) => $query->where('name', $name))
-                ->get();
-
-            /** @var Collection<int, Process> $processes */
-            $processes = new Collection(
-                $appProcesses
-                    ->concat($workspaceProcesses)
-                    ->sortBy([
-                        ['sort_order', 'asc'],
-                        ['id', 'asc'],
-                    ])
-                    ->values()
-                    ->all(),
-            );
-
-            return $processes;
+            return $this->effectiveWorkspaceProcesses($name);
         }
 
         /** @var Collection<int, Process> $processes */
@@ -213,13 +187,83 @@ final readonly class ProcessOwnerContext
         return $processes;
     }
 
+    /**
+     * @return Collection<int, Process>
+     */
+    public function effectiveWorkspaceProcesses(?string $name = null): Collection
+    {
+        return $this->workspaceProcessesForLifecycle($name);
+    }
+
+    /**
+     * @return Collection<int, Process>
+     */
+    public function effectiveWorkspaceProcessesWithoutRuntime(?string $name = null): Collection
+    {
+        return $this->workspaceProcessesForLifecycleWithoutRuntime($name);
+    }
+
+    /**
+     * @return Collection<int, Process>
+     */
+    private function workspaceProcessesForLifecycle(?string $name): Collection
+    {
+        if (! $this->workspace instanceof Workspace || ! $this->app instanceof Project) {
+            /** @var Collection<int, Process> */
+            return new Collection;
+        }
+
+        /** @var Collection<int, Process> $workspaceProcesses */
+        $workspaceProcesses = $this->workspace
+            ->processes()
+            ->where('app_instance_id', $this->appInstance?->id)
+            ->when($name !== null, fn ($query) => $query->where('name', $name))
+            ->get();
+
+        /** @var Collection<int, Process> $appProcesses */
+        $appProcesses = $this->app
+            ->processes()
+            ->where('app_instance_id', $this->appInstance?->id)
+            ->when($name !== null, fn ($query) => $query->where('name', $name))
+            ->get();
+
+        $appProcesses = $appProcesses
+            ->reject(static fn (Process $process): bool => $process->runtime === ProcessRuntime::Docker)
+            ->values();
+
+        /** @var Collection<int, Process> $processes */
+        $processes = new Collection(
+            $appProcesses
+                ->concat($workspaceProcesses)
+                ->sortBy([
+                    ['sort_order', 'asc'],
+                    ['id', 'asc'],
+                ])
+                ->values()
+                ->all(),
+        );
+
+        return $processes;
+    }
+
+    /**
+     * @return Collection<int, Process>
+     */
+    private function workspaceProcessesForLifecycleWithoutRuntime(?string $name): Collection
+    {
+        return $this
+            ->effectiveWorkspaceProcesses($name)
+            ->reject(static fn (Process $process): bool => $process->runtime === ProcessRuntime::Docker)
+            ->values();
+    }
+
     public function runtimeWorkspaceFor(Process $process): ?Workspace
     {
         if (! $this->workspace instanceof Workspace) {
             return null;
         }
 
-        return $this->workspace;
+        return $process->owner instanceof Workspace ? $this->workspace : $this->workspace;
     }
 
     public function eventApp(): ?Project
@@ -274,7 +318,7 @@ final readonly class ProcessOwnerContext
                 'workspace' => $this->workspace?->name,
                 'name' => $name,
             ],
-            fn (mixed $value): bool => $value !== null,
+            static fn (mixed $value): bool => $value !== null,
         );
     }
 

@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
@@ -79,7 +82,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/feature-docs?instance=docs',
+            '/api/workspaces/feature-docs?instance=docs.development',
             [],
             [],
             [],
@@ -145,14 +148,76 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         wsShowJsonGrantAccess($caller, $node);
 
         $app = Project::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+                domain: 'docs.test',
+            ),
+        ]);
+        $workspace = Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+        ]);
 
-        Process::factory()->forOwner($app)->create(['name' => 'vite', 'sort_order' => 1]);
-        Process::factory()->forOwner($app)->create(['name' => 'queue', 'sort_order' => 2]);
+        Process::factory()
+            ->forOwner($app, $node)
+            ->create([
+                'app_instance_id' => $instance->id,
+                'name' => 'frankenphp-docs',
+                'runtime' => \App\Enums\Processes\ProcessRuntime::Docker,
+                'sort_order' => 0,
+            ]);
+        Process::factory()
+            ->forOwner($app, $node)
+            ->create([
+                'app_instance_id' => $instance->id,
+                'name' => 'vite',
+                'sort_order' => 1,
+            ]);
+        Process::factory()
+            ->forOwner($app, $node)
+            ->create([
+                'app_instance_id' => $instance->id,
+                'name' => 'queue',
+                'sort_order' => 2,
+            ]);
+        Process::factory()
+            ->forOwner($workspace, $node)
+            ->create([
+                'app_instance_id' => $instance->id,
+                'name' => 'frankenphp-docs-feature-docs',
+                'runtime' => \App\Enums\Processes\ProcessRuntime::Docker,
+                'sort_order' => 0,
+            ]);
+
+        $otherInstance = AppInstance::factory()->for($app)->create([
+            'name' => 'staging',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/home/orbit/apps/docs-staging',
+                document_root: 'public',
+                domain: 'staging.docs.test',
+            ),
+        ]);
+        Process::factory()
+            ->forOwner($app, $node)
+            ->create([
+                'app_instance_id' => $otherInstance->id,
+                'name' => 'worker',
+                'sort_order' => 1,
+            ]);
 
         $response = $this->call(
             'GET',
-            '/api/workspaces/feature-docs?instance=docs',
+            '/api/workspaces/feature-docs?instance=docs.development',
             [],
             [],
             [],
@@ -166,10 +231,12 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         expect($processes)
             ->toBeArray()
             ->and($processes)
-            ->toHaveCount(2)
+            ->toHaveCount(3)
             ->and($processes[0])
-            ->toBe(['name' => 'vite'])
+            ->toBe(['name' => 'frankenphp-docs-feature-docs'])
             ->and($processes[1])
+            ->toBe(['name' => 'vite'])
+            ->and($processes[2])
             ->toBe(['name' => 'queue']);
     });
 

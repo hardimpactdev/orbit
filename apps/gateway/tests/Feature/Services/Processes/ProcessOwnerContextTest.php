@@ -1,0 +1,94 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
+use App\Enums\Processes\ProcessRuntime;
+use App\Models\AppInstance;
+use App\Models\Process;
+use App\Models\Project;
+use App\Models\Workspace;
+use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
+use App\Services\Processes\ProcessOwnerContext;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
+
+it('uses the workspace managed frankenphp runtime and keeps inherited non-web processes in workspace lifecycle order', function (): void {
+    $node = createTestAppHostNode([
+        'name' => 'app-dev-1',
+        'platform' => 'ubuntu_24-04',
+        'tld' => 'test',
+    ]);
+
+    $app = Project::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'domain' => 'docs.test',
+    ]);
+
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
+
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'app_instance_id' => $instance->id,
+        'name' => 'feature-docs',
+    ]);
+
+    Process::factory()
+        ->forOwner($app, $node)
+        ->create([
+            'app_instance_id' => $instance->id,
+            'name' => 'frankenphp-docs',
+            'runtime' => ProcessRuntime::Docker,
+            'sort_order' => 0,
+        ]);
+    Process::factory()
+        ->forOwner($app, $node)
+        ->create([
+            'app_instance_id' => $instance->id,
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Systemd,
+            'sort_order' => 10,
+        ]);
+    Process::factory()
+        ->forOwner($app, $node)
+        ->create([
+            'app_instance_id' => $instance->id,
+            'name' => 'vite',
+            'runtime' => ProcessRuntime::Systemd,
+            'sort_order' => 20,
+        ]);
+
+    $workspaceRuntime = app(EnsureFrankenPhpRuntimeProcess::class)->forWorkspace($workspace);
+
+    $context = new ProcessOwnerContext(
+        node: $node,
+        app: $app,
+        workspace: $workspace,
+        owner: $workspace,
+        appInstance: $instance,
+    );
+
+    $processes = $context->lifecycleProcesses(null);
+
+    expect($processes->pluck('name')->all())
+        ->toBe([
+            $workspaceRuntime->name,
+            'queue',
+            'vite',
+        ])
+        ->and($processes->firstWhere('name', $workspaceRuntime->name)?->owner?->is($workspace))
+        ->toBeTrue()
+        ->and($processes->contains(fn (Process $process): bool => $process->name === 'frankenphp-docs'))
+        ->toBeFalse();
+});

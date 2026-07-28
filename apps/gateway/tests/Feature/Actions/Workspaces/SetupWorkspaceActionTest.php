@@ -1092,6 +1092,57 @@ it('passes lifecycle environment into host-routed setup steps', function (): voi
     ]);
 });
 
+it(
+    'applies and starts inherited non-web definitions as workspace-specific units and never starts the parent frankenphp container',
+    function (): void {
+        $workspace = Workspace::create([
+            'app_id' => 1,
+            'app_instance_id' => 1,
+            'name' => 'feature-a',
+            'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+            'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+        ]);
+
+        $app = Project::query()->with('node')->firstOrFail();
+
+        OrbitProcess::factory()
+            ->forOwner($app)
+            ->create([
+                'app_instance_id' => 1,
+                'name' => 'frankenphp-demo',
+                'command' => 'frankenphp',
+                'runtime' => ProcessRuntime::Docker,
+                'sort_order' => 0,
+            ]);
+        OrbitProcess::factory()
+            ->forOwner($app)
+            ->create([
+                'app_instance_id' => 1,
+                'name' => 'queue',
+                'command' => 'php artisan queue:work',
+                'runtime' => ProcessRuntime::Systemd,
+                'sort_order' => 10,
+            ]);
+
+        $node = $app->node;
+        $shell = new SetupWorkspaceActionTestShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $result = app(SetupWorkspace::class)->handle($app, $workspace, $node);
+
+        expect($result['processes']['names'])->toBe(['queue']);
+
+        $joinedScripts = implode("\n", $shell->scripts);
+
+        expect($joinedScripts)
+            ->toContain('orbit_demo_development_feature-a_queue.service')
+            ->toContain("internal:process-systemd-service 'start'")
+            ->not->toContain('frankenphp-demo.service')
+            ->not->toContain('docker start')
+            ->not->toContain('docker restart');
+    },
+);
+
 it('skips setup steps when hash matches previous successful run', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
