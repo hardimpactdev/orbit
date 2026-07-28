@@ -1,0 +1,28 @@
+Feature tip: 3e9cfed3fe77f323a50a9a39a24862d665432bbc
+Topology kind: host-macos
+Host: nick.local
+OS: macOS 27.0 (26A5388g)
+Runtime unit: dev.hardimpact.orbit.orbit_laravel-toolbar_development_main_inertia-ssr
+
+Candidate command:
+php -r 'require "vendor/autoload.php"; $action = new App\Services\Processes\LocalLaunchdServiceAction(osFamily: "Darwin"); echo json_encode($action->run("start", $argv[1], null), JSON_THROW_ON_ERROR), PHP_EOL;' "$orbit_label"
+
+Cold-start precondition:
+{"action":"stop","label":"dev.hardimpact.orbit.orbit_laravel-toolbar_development_main_inertia-ssr","changed":true}
+after-stop=unloaded attempt=2
+
+Candidate result:
+{"action":"start","label":"dev.hardimpact.orbit.orbit_laravel-toolbar_development_main_inertia-ssr","changed":true}
+real 0.11
+user 0.03
+sys 0.01
+
+Post-start launchctl state:
+path = /Users/nckrtl/Library/LaunchAgents/dev.hardimpact.orbit.orbit_laravel-toolbar_development_main_inertia-ssr.plist
+state = running
+program = /bin/bash
+minimum runtime = 10
+pid = 70810
+
+Result: passed. The source candidate started an actually unloaded Orbit-owned
+LaunchAgent in 0.11 seconds and launchctl immediately reported it running.

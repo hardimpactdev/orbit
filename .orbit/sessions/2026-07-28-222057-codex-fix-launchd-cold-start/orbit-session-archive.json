@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-28T20:20:57+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-launchd-cold-start/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-28-222057-codex-fix-launchd-cold-start",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/host-macos-launchd-cold-start.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/host-macos-launchd-cold-start.txt": "78a61703fbdb9bcaf943e1a6938009d5e2f0f87d21e508be474d7fd63b43e075",
+        "loop.md": "6a1fcd77d22dff7f02a2bfd0370ae30789b82e2de7e621c8b6c9b4a0aaec6318"
+    },
+    "branch": "codex/fix-launchd-cold-start",
+    "candidate_commit": "3e9cfed3fe77f323a50a9a39a24862d665432bbc",
+    "accepted_feature_tip": "3e9cfed3fe77f323a50a9a39a24862d665432bbc",
+    "accepted_main_tip": "06a4f298f0d58a9833214ba5158a49a93e8892a0",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
