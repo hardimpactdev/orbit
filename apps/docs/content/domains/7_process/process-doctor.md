@@ -112,6 +112,14 @@ loaded in the current user GUI domain. Log paths are reported separately from
 configuration drift. `doctor --restore` may rewrite the plist and run lifecycle
 actions only for launchd labels that Orbit owns.
 
+For app-development Docker runtime units, the probe also reads the exact
+Caddy-side hibernation marker that owns request-driven wake-up. A stopped unit
+is expected while its instance or workspace scope is explicitly marked
+hibernated. If that marker cannot be read, Doctor keeps reporting the stopped
+unit as drift rather than assuming it is asleep. Node-owned processes,
+production runtimes, missing artifacts, and runtime-unit shape remain subject
+to their ordinary checks regardless of hibernation state.
+
 ### Runtime-unit identity
 
 Each instance/workspace runtime context maps to exactly one runtime unit name that
@@ -178,7 +186,7 @@ Each code below identifies a specific process-family drift condition that the pr
 | `process.runtime_unit_missing` | An expected Orbit-owned runtime unit has no corresponding backend artifact, or an active instance of a managed PHP app lacks its canonical FrankenPHP process row. |
 | `process.runtime_unit_extra` | An Orbit-owned backend artifact exists without matching active app, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | The runtime artifact command, working directory, user, or unit name differs from gateway process configuration. |
-| `process.runtime_unit_down` | A Docker runtime unit whose configured restart policy is `always` exists but is not running. Units configured as `never` are intentionally excluded. |
+| `process.runtime_unit_down` | A Docker runtime unit whose configured restart policy is `always` exists but is not running, unless its app-development instance or workspace scope is explicitly marked hibernated. Units configured as `never` are intentionally excluded. |
 | `process.runtime_unit_unloaded` | A launchd-backed runtime unit that is expected to be running has an Orbit-owned plist but its label is not loaded in the current user GUI domain. |
 | `process.restart_policy_mismatch` | The rendered backend restart policy differs from the process definition. |
 | `process.runtime_environment_mismatch` | The rendered runtime environment differs from the runtime unit environment contract. |
@@ -260,7 +268,8 @@ No current E2E test is mapped for process-family doctor coverage.
 reporting, and the `process.runtime_backend_unavailable` short-circuit.
 
 `ProcessesProbeTest` covers registry configuration, node/instance/workspace
-owner validation, same-instance workspace expansion, and process manager availability.
+owner validation, same-instance workspace expansion, process manager
+availability, and hibernation-aware Docker runtime liveness.
 It also covers runtime-unit identity, canonical FrankenPHP and SeaweedFS
 process rows, and Docker/Docker Swarm managed service metadata.
 WireGuard self-route diagnostics, missing/extra/drifted runtime artifacts,

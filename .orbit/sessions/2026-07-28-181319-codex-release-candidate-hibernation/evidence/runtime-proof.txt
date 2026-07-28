@@ -1,0 +1,39 @@
+Retained topology proof
+Date: 2026-07-28
+Candidate: 6dd315f91f9cdbc6ca30e76beb7fe7bef0d6dcb7
+Topology: dev-4b040b
+Kind: operator_gateway_app-dev
+Provider: Incus
+Host: beast
+Solo terminal: hibernation-rc-proof (process 1122)
+Runtime checkout: /home/orbit/orbit-run
+Launcher: /home/orbit/orbit-run/apps/cli/orbit
+
+The committed worktree was synchronized with:
+  composer e2e:incus -- --sync --id=dev-4b040b
+
+The app-dev VM contained a stopped Docker process unit with the exact rendered
+spec hash:
+  /orbit_doctor-hibernate-proof_development_main_queue created 38605b4abfb5f94b6defbd090437bf34719f0082da4137e4acdfe6a60f4c1f13
+
+Before the hibernation marker was present:
+  ./apps/cli/orbit doctor --node=app-dev-1 --family=process --stream-json
+  result: drift_detected
+  issue: process.runtime_unit_down
+  runtime unit: orbit_doctor-hibernate-proof_development_main_queue
+  observed state: created
+
+The exact app-instance marker was then set inside the retained node's existing
+orbit-caddy container:
+  /dev/shm/orbit/hibernation/app-instance-1.asleep
+
+With the same stopped container and the explicit hibernation marker:
+  ./apps/cli/orbit doctor --node=app-dev-1 --family=process --stream-json
+  result: complete
+  exit_code: 0
+  healthy: true
+  issues: 0
+
+This proves that the source-mounted candidate continues to report a stopped
+active runtime, then suppresses only that liveness issue after the owning
+app-development scope is explicitly marked hibernated.
