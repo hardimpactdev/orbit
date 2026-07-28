@@ -25,7 +25,13 @@ final readonly class RuntimeActivationFence
         RuntimeHibernationScope $scope,
         Closure $effect,
     ): bool {
-        return $this->runWithKey($run, $scope, $scope->dependencyFenceKey(), $effect);
+        return $this->runWithKey(
+            $run,
+            $scope,
+            $scope->dependencyFenceKey(),
+            $scope->activationFenceSeconds(),
+            $effect,
+        );
     }
 
     /**
@@ -36,7 +42,13 @@ final readonly class RuntimeActivationFence
         RuntimeHibernationScope $scope,
         Closure $effect,
     ): bool {
-        return $this->runWithKey($run, $scope, $scope->activationFenceKey(), $effect);
+        return $this->runWithKey(
+            $run,
+            $scope,
+            $scope->activationFenceKey(),
+            (int) config('orbit.runtime_hibernation.activation_fence_wait_seconds', default: 10),
+            $effect,
+        );
     }
 
     /**
@@ -79,6 +91,7 @@ final readonly class RuntimeActivationFence
         OperationRun $run,
         RuntimeHibernationScope $scope,
         string $key,
+        int $waitSeconds,
         Closure $effect,
     ): bool {
         $lock = Cache::lock(
@@ -88,7 +101,7 @@ final readonly class RuntimeActivationFence
 
         try {
             $result = $lock->block(
-                (int) config('orbit.runtime_hibernation.activation_fence_wait_seconds', default: 10),
+                $waitSeconds,
                 function () use ($run, $effect): bool {
                     $this->heartbeat($run);
                     $successful = $effect();

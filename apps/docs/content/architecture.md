@@ -200,7 +200,10 @@ partially completed prune remains cold. Each detached runner atomically claims
 its operation once and heartbeats the operation journal while it works.
 Dependency restores use a node-and-source-path fence and re-inspect inside that
 fence, so sibling scopes that planned the same missing family install it only
-once. Process activation and cold-marker transitions remain fenced per scope.
+once. A dependency waiter uses the full bounded activation-fence duration
+rather than the short scope-transition wait, so an ordinary long install can
+finish before the sibling re-inspects. Process activation and cold-marker
+transitions remain fenced per scope.
 Stale takeover acquires both fences before replacing a runner, and each scope
 clears only its own cold marker after dependency restoration and process
 startup succeed. Failures therefore keep that scope's progress page and retry

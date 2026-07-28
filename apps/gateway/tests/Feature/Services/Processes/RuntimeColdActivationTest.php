@@ -11,8 +11,11 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Operations\OperationRunRecorder;
+use App\Services\Processes\RuntimeActivationFence;
 use App\Services\Processes\RuntimeActivationRunner;
 use App\Services\Processes\RuntimeActivationRunnerLauncher;
+use App\Services\Processes\RuntimeHibernationScope;
+use App\Services\Processes\RuntimeHibernationScopes;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -272,6 +275,57 @@ it('does not take over a stale activation while its runner holds the side effect
         ->toBe(OperationStatus::Running)
         ->and(OperationRun::query()->where('operation_type', 'runtime-activation')->count())
         ->toBe(1);
+});
+
+it('waits through a contended dependency fence for the full bounded activation window', function (): void {
+    [, , $instance] = create_cold_runtime_instance();
+    $scope = app(RuntimeHibernationScopes::class)->resolve('app-instance', $instance->id);
+
+    expect($scope)->toBeInstanceOf(RuntimeHibernationScope::class);
+
+    $run = app(OperationRunRecorder::class)->queued(
+        operationId: "runtime-activation:app-instance-{$instance->id}",
+        lane: 'gateway',
+        operationType: 'runtime-activation',
+    );
+    $lock = Mockery::mock(\Illuminate\Contracts\Cache\Lock::class);
+    $contended = true;
+    $lock
+        ->shouldReceive('block')
+        ->once()
+        ->with($scope->activationFenceSeconds(), Mockery::type(\Closure::class))
+        ->andReturnUsing(function (int $waitSeconds, \Closure $effect) use (&$contended, $scope): bool {
+            expect($waitSeconds)
+                ->toBe($scope->activationFenceSeconds())
+                ->and($contended)
+                ->toBeTrue();
+
+            $contended = false;
+
+            return $effect();
+        });
+    Cache::shouldReceive('lock')
+        ->once()
+        ->with($scope->dependencyFenceKey(), $scope->activationFenceSeconds())
+        ->andReturn($lock);
+    $effectRan = false;
+
+    $result = app(RuntimeActivationFence::class)->runDependency(
+        $run,
+        $scope,
+        function () use (&$effectRan): bool {
+            $effectRan = true;
+
+            return true;
+        },
+    );
+
+    expect($result)
+        ->toBeTrue()
+        ->and($contended)
+        ->toBeFalse()
+        ->and($effectRan)
+        ->toBeTrue();
 });
 
 it('keeps following a running activation while its heartbeat is current', function (): void {
