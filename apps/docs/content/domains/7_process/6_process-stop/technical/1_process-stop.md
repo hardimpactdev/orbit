@@ -43,10 +43,17 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    - when `[name]` is supplied, select exactly that process definition;
    - when `[name]` is omitted, select every process definition for the resolved context in process order.
 3. Send the request to the gateway, which validates the authenticated peer's authorization.
-4. Derive runtime-unit identities for the selected context.
-5. Stop each runtime unit through the gateway on the resolved node or instance serving node.
-6. Record and publish a durable `stopped` process event after each successful stop.
-7. Render the selected output.
+4. Derive and validate every runtime-unit identity for the selected context
+   before runtime or hibernation side effects begin.
+5. When `[name]` is omitted for an `app-dev` instance or workspace, acquire
+   the scope's hibernation lock and mark the group asleep before stopping it.
+6. Stop each runtime unit through the gateway on the resolved node or instance serving node.
+7. Record and publish a durable `stopped` process event after each successful stop.
+8. Keep the group asleep after a successful or partial bulk development stop
+   so its next HTTP request runs activation. Restore the awake marker only when
+   no runtime unit was stopped. Named, node-owned, and `app-prod` actions do not
+   change a group-level hibernation marker.
+9. Render the selected output.
 
 `process:stop` does not change process configuration and does not remove the runtime unit artifact. In bulk mode, successful stops are not rolled back when a later process fails; the failure renderer reports partial runtime results.
 

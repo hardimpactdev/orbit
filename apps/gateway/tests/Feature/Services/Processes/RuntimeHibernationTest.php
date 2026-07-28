@@ -9,6 +9,8 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Workspace;
+use App\Services\Processes\ProcessLifecycle;
+use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\RuntimeIdleHibernation;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Schedules\OrbitScheduler;
@@ -17,6 +19,152 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Sleep;
 
 uses(RefreshDatabase::class);
+
+it('marks a development app instance asleep before a bulk process stop', function (): void {
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    $executor = new RuntimeHibernationRecordingExecutor;
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    app(ProcessLifecycle::class)->stop(
+        runtime_hibernation_context($node, $app, $instance),
+        null,
+    );
+
+    expect($executor->actions())
+        ->toBe([
+            'internal:caddy-config:runtime-asleep',
+            'internal:process-systemd-service:stop',
+        ])
+        ->and($executor->runtimeMarkerKeys())
+        ->toBe(["app-instance-{$instance->id}"]);
+});
+
+it('keeps named process stops independent from the development hibernation marker', function (): void {
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    $executor = new RuntimeHibernationRecordingExecutor;
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    app(ProcessLifecycle::class)->stop(
+        runtime_hibernation_context($node, $app, $instance),
+        'queue',
+    );
+
+    expect($executor->actions())
+        ->toBe(['internal:process-systemd-service:stop'])
+        ->and($executor->runtimeMarkerKeys())
+        ->toBeEmpty();
+});
+
+it('does not stop a development process group when its asleep marker cannot be written', function (): void {
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    $executor = new RuntimeHibernationRecordingExecutor(
+        failingAction: 'internal:caddy-config:runtime-asleep',
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $result = app(ProcessLifecycle::class)->stop(
+        runtime_hibernation_context($node, $app, $instance),
+        null,
+    );
+
+    expect($result['failed'])
+        ->toBeTrue()
+        ->and($result['meta']['runtime_state'])
+        ->toBe('runtime_asleep_marker_failed')
+        ->and($executor->actions())
+        ->toBe(['internal:caddy-config:runtime-asleep']);
+});
+
+it('keeps production process groups outside development hibernation markers', function (): void {
+    $node = createTestAppHostNode([
+        'name' => 'app-prod-1',
+    ], role: 'app-prod');
+    $app = Project::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: 'docs.example.com',
+        ),
+    ]);
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    $executor = new RuntimeHibernationRecordingExecutor;
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    app(ProcessLifecycle::class)->stop(
+        runtime_hibernation_context($node, $app, $instance),
+        null,
+    );
+
+    expect($executor->actions())
+        ->toBe(['internal:process-systemd-service:stop'])
+        ->and($executor->runtimeMarkerKeys())
+        ->toBeEmpty();
+});
+
+it('marks a development app instance awake after a successful bulk process start', function (): void {
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    $executor = new RuntimeHibernationRecordingExecutor;
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    app(ProcessLifecycle::class)->start(
+        runtime_hibernation_context($node, $app, $instance),
+        null,
+    );
+
+    expect($executor->actions())
+        ->toBe([
+            'internal:caddy-config:runtime-asleep',
+            'internal:process-systemd-service:start',
+            'internal:caddy-config:runtime-awake',
+        ])
+        ->and($executor->runtimeMarkerKeys())
+        ->toBe([
+            "app-instance-{$instance->id}",
+            "app-instance-{$instance->id}",
+        ]);
+});
+
+it('brackets a development workspace bulk restart with its asleep and awake markers', function (): void {
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'app_instance_id' => $instance->id,
+        'name' => 'feature-a',
+    ]);
+    Process::factory()->forOwner($workspace, $node)->create(['name' => 'vite']);
+    $executor = new RuntimeHibernationRecordingExecutor;
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    app(ProcessLifecycle::class)->restart(
+        new ProcessOwnerContext(
+            node: $node,
+            app: $app,
+            workspace: $workspace,
+            owner: $workspace,
+            appInstance: $instance,
+        ),
+        null,
+    );
+
+    expect($executor->actions())
+        ->toBe([
+            'internal:caddy-config:runtime-asleep',
+            'internal:process-systemd-service:restart',
+            'internal:caddy-config:runtime-awake',
+        ])
+        ->and($executor->runtimeMarkerKeys())
+        ->toBe([
+            "workspace-{$workspace->id}",
+            "workspace-{$workspace->id}",
+        ]);
+});
 
 it('wakes an app instance on an exact serving-node request and marks it awake after startup', function (): void {
     createTestGatewayNode([
@@ -349,12 +497,24 @@ function create_runtime_hibernation_instance(): array
     return [$node, $app, $instance];
 }
 
+function runtime_hibernation_context(Node $node, Project $app, AppInstance $instance): ProcessOwnerContext
+{
+    return new ProcessOwnerContext(
+        node: $node,
+        app: $app,
+        workspace: null,
+        owner: $app,
+        appInstance: $instance,
+    );
+}
+
 /**
  * @mago-expect lint:file-name
+ * @mago-expect lint:cyclomatic-complexity
  */
 final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
 {
-    /** @var list<array{command: string, action: string}> */
+    /** @var list<array{command: string, action: string, input: string|null}> */
     private array $calls = [];
 
     private int $failingActionCalls = 0;
@@ -375,7 +535,8 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
         array $transportOptions = [],
     ): RemoteShellResult {
         $action = is_string($arguments[0] ?? null) ? $arguments[0] : '';
-        $this->calls[] = ['command' => $commandName, 'action' => $action];
+        $input = is_string($transportOptions['input'] ?? null) ? $transportOptions['input'] : null;
+        $this->calls[] = ['command' => $commandName, 'action' => $action, 'input' => $input];
         $call = "{$commandName}:{$action}";
         $shouldFail = false;
 
@@ -433,5 +594,29 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
             static fn (array $call): string => "{$call['command']}:{$call['action']}",
             $this->calls,
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function runtimeMarkerKeys(): array
+    {
+        return array_values(array_filter(array_map(
+            static function (array $call): ?string {
+                if (
+                    $call['command'] !== 'internal:caddy-config'
+                    || ! in_array($call['action'], ['runtime-asleep', 'runtime-awake'], strict: true)
+                    || ! is_string($call['input'])
+                ) {
+                    return null;
+                }
+
+                $payload = json_decode($call['input'], associative: true, flags: JSON_THROW_ON_ERROR);
+                $key = is_array($payload) ? $payload['key'] ?? null : null;
+
+                return is_string($key) ? $key : null;
+            },
+            $this->calls,
+        )));
     }
 }

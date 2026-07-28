@@ -81,6 +81,7 @@ describe('ProcessStopController', function (): void {
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'sort_order' => 20]);
         app()->instance(RemoteShell::class, new ProcessStopApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'failed', durationMs: 1),
         ]));
 

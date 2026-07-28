@@ -43,10 +43,17 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    - when `[name]` is supplied, select exactly that process definition;
    - when `[name]` is omitted, select every process definition for the resolved context in process order.
 3. Send the request to the gateway, which validates the authenticated peer's authorization.
-4. Derive runtime-unit identities for the selected context.
-5. Restart each runtime unit through the gateway on the resolved node or instance serving node.
-6. Record and publish lifecycle events for each successful stopped and started runtime transition.
-7. Render the selected output.
+4. Derive and validate every runtime-unit identity for the selected context
+   before runtime or hibernation side effects begin.
+5. When `[name]` is omitted for an `app-dev` instance or workspace, acquire
+   the scope's hibernation lock and mark the group asleep while it restarts.
+6. Restart each runtime unit through the gateway on the resolved node or instance serving node.
+7. Record and publish lifecycle events for each successful stopped and started runtime transition.
+8. After a successful bulk development restart, mark the group awake before
+   releasing the hibernation lock. A partially restarted group remains asleep
+   so its next HTTP request reconciles the group. Named, node-owned, and
+   `app-prod` actions do not change a group-level hibernation marker.
+9. Render the selected output.
 
 `process:restart` does not change process configuration and does not repair divergent runtime-unit files. In bulk mode, successful restarts are not rolled back when a later process fails; the failure renderer reports partial runtime results.
 

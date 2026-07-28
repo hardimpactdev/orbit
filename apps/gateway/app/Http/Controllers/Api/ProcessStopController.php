@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Processes\StopProcesses;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Processes\ProcessLifecycle;
 use App\Services\Processes\ProcessOwnerContextResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -27,7 +27,7 @@ final class ProcessStopController implements Loggable
         private readonly ProcessOwnerContextResolver $contexts,
     ) {}
 
-    public function __invoke(Request $request, StopProcesses $stopProcesses): JsonResponse
+    public function __invoke(Request $request, ProcessLifecycle $processLifecycle): JsonResponse
     {
         /** @var mixed $caller */
         $caller = $request->user();
@@ -61,7 +61,7 @@ final class ProcessStopController implements Loggable
         $name = $this->optionalString($request, 'name');
 
         try {
-            $result = $stopProcesses->handle($context, $name);
+            $result = $processLifecycle->stop($context, $name);
         } catch (GatewayApiException $e) {
             return $this->error(
                 $e->errorCode() ?? 'validation_failed',

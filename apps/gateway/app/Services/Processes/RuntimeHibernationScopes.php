@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspacePlacement;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class RuntimeHibernationScopes
 {
     public function __construct(
@@ -25,6 +26,19 @@ final readonly class RuntimeHibernationScopes
             'workspace' => $this->resolveWorkspace($id),
             default => null,
         };
+    }
+
+    public function forContext(ProcessOwnerContext $context): ?RuntimeHibernationScope
+    {
+        if ($context->workspace instanceof Workspace) {
+            return $this->resolveWorkspace($context->workspace->id);
+        }
+
+        if ($context->appInstance instanceof AppInstance) {
+            return $this->resolveAppInstance($context->appInstance->id);
+        }
+
+        return null;
     }
 
     public function isDevelopmentNode(Node $node): bool

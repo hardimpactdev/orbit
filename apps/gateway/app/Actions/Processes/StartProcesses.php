@@ -5,17 +5,13 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Enums\ProcessEventType;
-use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
-use App\Services\Processes\ProcessRuntimeDriverRegistry;
-use App\Services\Processes\ProcessRuntimeDrivers\ProcessRuntimeDriver;
-use Illuminate\Database\Eloquent\Collection;
-use Orbit\Sdk\Laravel\GatewayApiException;
+use App\Services\Processes\ProcessRuntimeTargets;
 
 final readonly class StartProcesses
 {
     public function __construct(
-        private ProcessRuntimeDriverRegistry $runtimeDrivers,
+        private ProcessRuntimeTargets $runtimeTargets,
         private RecordProcessEvent $recordProcessEvent,
     ) {}
 
@@ -24,29 +20,11 @@ final readonly class StartProcesses
      */
     public function handle(ProcessOwnerContext $context, ?string $name): array
     {
-        $processes = $context->lifecycleProcesses($name);
-
-        if ($processes->isEmpty()) {
-            if ($name !== null) {
-                throw new GatewayApiException(
-                    "Process '{$name}' not found for {$context->label()}.",
-                    'process.not_found',
-                    $context->errorMeta($name),
-                );
-            }
-
-            throw new GatewayApiException(
-                "{$context->label()} has no configured processes.",
-                'process.none_configured',
-                $context->errorMeta(),
-            );
-        }
-
         $runtimes = [];
         $failed = false;
         $started = 0;
 
-        foreach ($this->runtimeTargets($context, $processes) as $target) {
+        foreach ($this->runtimeTargets->for($context, $name) as $target) {
             $process = $target['process'];
             $runtimeUnit = $target['runtime_unit'];
             $workspace = $context->runtimeWorkspaceFor($process);
@@ -93,28 +71,5 @@ final readonly class StartProcesses
                 'partial_state' => $started === 0 ? 'none_started' : 'partially_started',
             ],
         ];
-    }
-
-    /**
-     * @param  Collection<int, Process>  $processes
-     * @return list<array{process: Process, driver: ProcessRuntimeDriver, runtime_unit: string}>
-     */
-    private function runtimeTargets(ProcessOwnerContext $context, Collection $processes): array
-    {
-        $app = $context->runtimeApp();
-
-        return $processes
-            ->map(function (Process $process) use ($context, $app): array {
-                $driver = $this->runtimeDrivers->forProcess($process);
-                $workspace = $context->runtimeWorkspaceFor($process);
-
-                return [
-                    'process' => $process,
-                    'driver' => $driver,
-                    'runtime_unit' => $driver->runtimeUnitName($app, $process, $workspace),
-                ];
-            })
-            ->values()
-            ->all();
     }
 }

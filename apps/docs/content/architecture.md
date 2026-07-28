@@ -174,7 +174,10 @@ schedules every minute without waiting for hibernation scans. Wake and sleep
 share one scope lock: after the hibernator removes the awake marker, later
 requests wait for the sleep transition instead of overtaking it. Node-owned
 services and every `app-prod` process remain persistent and do not participate
-in this development hibernation policy.
+in this development hibernation policy. Bulk process lifecycle commands for a
+development instance or workspace use the same lock and marker transition, so
+a manual group stop cannot leave Caddy bypassing request-driven activation.
+Named process lifecycle commands do not change the group marker.
 Gateway Laravel/artisan/PDO work runs inside the gateway container or the
 durable update runner. Packaged node-local helpers that need host file access
 and PHP/PDO use the token-gated local executor lane. See [Runtime Execution

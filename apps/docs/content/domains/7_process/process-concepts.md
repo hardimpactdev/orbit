@@ -129,6 +129,11 @@ These terms define per-process behavioral rules that apply to every derived runt
   or workspace share its marker, activity state, and serialization lock.
   Node-owned processes and all `app-prod` processes remain boot-persistent and
   are outside this policy.
+- **Bulk lifecycle hibernation coordination:** Bulk `process:start`,
+  `process:stop`, and `process:restart` actions for a development instance or
+  workspace use its hibernation lock. They keep the marker aligned with the
+  resulting group state. Named process actions remain independent and do not
+  change the group-level marker.
 - **Crash notification policy:** Process-definition opt-in for crash event
   delivery. When the policy is enabled, `crashed` events resolve the effective
   agent IDE and notify the active session when one is available. Units that use
