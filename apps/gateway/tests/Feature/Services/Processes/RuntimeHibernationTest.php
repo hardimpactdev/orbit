@@ -160,6 +160,33 @@ it('hibernates an awake app instance after the configured HTTP idle interval', f
         ]);
 });
 
+it('checks idle runtimes only on the default ten-minute boundaries', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    [$node, $app] = create_runtime_hibernation_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    config()->set('orbit.runtime_hibernation.idle_seconds', 3600);
+    $executor = new RuntimeHibernationRecordingExecutor(lastActivityAt: 1_767_268_799);
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    expect(config('orbit.runtime_hibernation.sweep_interval_minutes'))->toBe(10);
+
+    app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:01:00Z'));
+
+    expect($executor->actions())->toBe([]);
+
+    app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:10:00Z'));
+
+    expect($executor->actions())
+        ->toBe([
+            'internal:caddy-config:runtime-states',
+            'internal:caddy-config:runtime-asleep',
+            'internal:process-systemd-service:stop',
+        ]);
+});
+
 it('leaves recently active scopes awake', function (): void {
     createTestGatewayNode([
         'name' => 'gateway-1',

@@ -22,6 +22,11 @@ final readonly class RuntimeIdleHibernation
     public function hibernate(?CarbonImmutable $now = null): void
     {
         $now ??= CarbonImmutable::now();
+
+        if (! $this->isSweepDue($now)) {
+            return;
+        }
+
         $idleSeconds = (int) config('orbit.runtime_hibernation.idle_seconds', default: 3600);
         $cutoff = $now->subSeconds($idleSeconds)->getTimestamp();
 
@@ -34,6 +39,16 @@ final readonly class RuntimeIdleHibernation
                 }
             }
         }
+    }
+
+    private function isSweepDue(CarbonImmutable $now): bool
+    {
+        $intervalMinutes = max(
+            1,
+            (int) config('orbit.runtime_hibernation.sweep_interval_minutes', default: 10),
+        );
+
+        return (intdiv($now->getTimestamp(), 60) % $intervalMinutes) === 0;
     }
 
     /**

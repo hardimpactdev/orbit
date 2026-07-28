@@ -166,12 +166,14 @@ process units, while containerized app and workspace runtimes use Docker-backed
 process units. Host PHP-FPM is not an app or workspace runtime fallback.
 On `app-dev`, instance and workspace process groups are installed without
 boot-start intent. The always-on stock Caddy route wakes the exact owning group
-through the gateway on its first ordinary HTTP request, and the gateway
-scheduler stops it after one hour without HTTP route activity. Wake and sleep
-share one scope lock: after the scheduler removes the awake marker, later
-requests wait for the sleep transition instead of overtaking it. Node-owned
-services and every `app-prod` process remain persistent and do not participate
-in this development hibernation policy.
+through the gateway on its first ordinary HTTP request. The gateway scheduler
+continues to evaluate ordinary schedules every minute, but checks development
+runtime idleness only every ten minutes and stops an eligible group once it has
+had at least one hour without HTTP route activity. Wake and sleep share one
+scope lock: after the scheduler removes the awake marker, later requests wait
+for the sleep transition instead of overtaking it. Node-owned services and
+every `app-prod` process remain persistent and do not participate in this
+development hibernation policy.
 Gateway Laravel/artisan/PDO work runs inside the gateway container or the
 durable update runner. Packaged node-local helpers that need host file access
 and PHP/PDO use the token-gated local executor lane. See [Runtime Execution

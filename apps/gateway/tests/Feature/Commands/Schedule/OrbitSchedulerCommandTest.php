@@ -113,7 +113,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
     ]);
     app()->instance(RunsInternalCommands::class, $localExecutor);
 
-    $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
+    $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:30:00Z'));
 
     $run = ScheduleRun::query()->firstOrFail();
     $state = SchedulerState::query()->firstOrFail();
@@ -152,7 +152,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
         ->and($state->node_id)
         ->toBe($gateway->id)
         ->and($state->heartbeat_at?->toIso8601String())
-        ->toBe('2026-05-06T12:34:00+00:00')
+        ->toBe('2026-05-06T12:30:00+00:00')
         ->and(ScheduleLock::query()->count())
         ->toBe(0);
 });
@@ -184,7 +184,7 @@ it('dispatches remote schedules through the internal schedule command without tr
         ->and($result->executedSchedules)
         ->toBe(1)
         ->and($localExecutor->commands)
-        ->toBe([InternalCommand::ScheduleRun->value, 'internal:caddy-config'])
+        ->toBe([InternalCommand::ScheduleRun->value])
         ->and($run->node_id)
         ->toBe($appNode->id)
         ->and($run->status)
@@ -273,9 +273,6 @@ it('dispatches multiple remote schedules through the internal schedule command',
             InternalCommand::ScheduleRun->value,
             InternalCommand::ScheduleRun->value,
             InternalCommand::ScheduleRun->value,
-            'internal:caddy-config',
-            'internal:caddy-config',
-            'internal:caddy-config',
         ])
         ->and(array_map(
             static fn (array $payload): array => [

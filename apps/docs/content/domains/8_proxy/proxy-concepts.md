@@ -163,8 +163,8 @@ These terms define the ingress behavior applied to app and workspace routes.
   mount, while awake and hibernated markers are ephemeral. Multiple domains
   share the same scope identity.
   Background HTTP polling counts as activity; a WebSocket reconnect by itself
-  is not a wake signal. The process family consumes this state to enforce the
-  one-hour idle policy.
+  is not a wake signal. The process family consumes this state in a ten-minute
+  sweep to enforce the one-hour idle policy.
 
 ## Boundaries
 
