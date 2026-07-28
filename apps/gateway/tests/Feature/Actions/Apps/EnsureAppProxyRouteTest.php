@@ -156,6 +156,16 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
     Http::preventStrayRequests();
     Http::fake([
         'http://10.47.0.31:9477/v1/commands' => Http::sequence()
+            ->push(ensure_app_proxy_route_agent_response('managed-file.probe', [
+                'exists' => false,
+                'hash' => null,
+                'mode' => null,
+            ]))
+            ->push(ensure_app_proxy_route_agent_response('managed-file.write', [
+                'path' => '/etc/orbit/ca/root.crt',
+                'hash' => hash(algo: 'sha256', data: 'fake-root-ca'),
+                'mode' => '0644',
+            ]))
             ->push(ensure_app_proxy_route_agent_response('caddy-config.read-global', [
                 'content' => new CaddyGlobalConfig()->fresh(),
             ]))
@@ -171,7 +181,12 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
 
     $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
     $requests = ensure_app_proxy_route_agent_requests('10.47.0.31');
-    $sitePayload = json_decode((string) ($requests[1]['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+    $managedFilePayload = json_decode(
+        (string) ($requests[1]['input'] ?? ''),
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $sitePayload = json_decode((string) ($requests[3]['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
     $caddySite = (string) ($sitePayload['content'] ?? '');
 
     expect($route->domain)
@@ -197,16 +212,25 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
         ->not->toContain('php_fastcgi')->and($caddySite)
         ->not->toContain('file_server');
     expect($requests)
-        ->toHaveCount(3)
+        ->toHaveCount(5)
         ->and($requests[0]['argv'][0] ?? null)
-        ->toBe('internal:caddy-config')
+        ->toBe('internal:managed-file')
         ->and($requests[0]['argv'][1] ?? null)
-        ->toBe('read-global')
+        ->toBe('probe')
         ->and($requests[1]['argv'][1] ?? null)
+        ->toBe('write')
+        ->and($managedFilePayload)
+        ->toMatchArray([
+            'path' => '/etc/orbit/ca/root.crt',
+            'content' => 'fake-root-ca',
+            'mode' => '0644',
+            'directory_mode' => '0755',
+        ])
+        ->and($requests[3]['argv'][1] ?? null)
         ->toBe('write-site')
         ->and($sitePayload)
         ->toMatchArray(['domain' => 'docs.test'])
-        ->and($requests[2]['argv'][1] ?? null)
+        ->and($requests[4]['argv'][1] ?? null)
         ->toBe('reload');
 });
 
@@ -233,6 +257,16 @@ it('creates a static app proxy route with file_server', function (): void {
     Http::preventStrayRequests();
     Http::fake([
         'http://10.47.0.32:9477/v1/commands' => Http::sequence()
+            ->push(ensure_app_proxy_route_agent_response('managed-file.probe', [
+                'exists' => false,
+                'hash' => null,
+                'mode' => null,
+            ]))
+            ->push(ensure_app_proxy_route_agent_response('managed-file.write', [
+                'path' => '/etc/orbit/ca/root.crt',
+                'hash' => hash(algo: 'sha256', data: 'fake-root-ca'),
+                'mode' => '0644',
+            ]))
             ->push(ensure_app_proxy_route_agent_response('caddy-config.read-global', [
                 'content' => new CaddyGlobalConfig()->fresh(),
             ]))
@@ -248,7 +282,7 @@ it('creates a static app proxy route with file_server', function (): void {
 
     $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
     $requests = ensure_app_proxy_route_agent_requests('10.47.0.32');
-    $sitePayload = json_decode((string) ($requests[1]['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+    $sitePayload = json_decode((string) ($requests[3]['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
     $caddySite = (string) ($sitePayload['content'] ?? '');
 
     expect($route->domain)
@@ -265,10 +299,10 @@ it('creates a static app proxy route with file_server', function (): void {
         ->not->toContain('php_fastcgi')->and($caddySite)
         ->not->toContain('reverse_proxy');
     expect($requests)
-        ->toHaveCount(3)
-        ->and($requests[1]['argv'][0] ?? null)
+        ->toHaveCount(5)
+        ->and($requests[3]['argv'][0] ?? null)
         ->toBe('internal:caddy-config')
-        ->and($requests[1]['argv'][1] ?? null)
+        ->and($requests[3]['argv'][1] ?? null)
         ->toBe('write-site')
         ->and($sitePayload)
         ->toMatchArray(['domain' => 'marketing.test']);

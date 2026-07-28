@@ -165,13 +165,20 @@ final readonly class EnsureWorkspaceProxyRoute
     {
         $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
 
-        if (! is_array($runtimeUpstreamTls) || ($runtimeUpstreamTls['trusted_by_gateway_ca'] ?? null) !== true) {
+        if (
+            ! $node->hasActiveRole('app-dev')
+            && (! is_array($runtimeUpstreamTls)
+            || ($runtimeUpstreamTls['trusted_by_gateway_ca'] ?? null) !== true)
+        ) {
             return;
         }
 
-        $caPath = is_string($runtimeUpstreamTls['ca_path'] ?? null) && $runtimeUpstreamTls['ca_path'] !== ''
-            ? $runtimeUpstreamTls['ca_path']
-            : AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath;
+        $caPath =
+            is_array($runtimeUpstreamTls)
+            && is_string($runtimeUpstreamTls['ca_path'] ?? null)
+            && $runtimeUpstreamTls['ca_path'] !== ''
+                ? $runtimeUpstreamTls['ca_path']
+                : AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath;
 
         $file = new ManagedFile(
             path: $this->caddyHostPathResolver()->resolve($node, $caPath),

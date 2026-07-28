@@ -472,13 +472,21 @@ final readonly class ProxyRouteFixer
         $config = is_array($route->config) ? $route->config : [];
         $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
 
-        if (! is_array($runtimeUpstreamTls) || ($runtimeUpstreamTls['trusted_by_gateway_ca'] ?? null) !== true) {
+        if (
+            ! (in_array($route->kind, ['app', 'workspace'], true)
+            && $node->hasActiveRole('app-dev'))
+            && (! is_array($runtimeUpstreamTls)
+            || ($runtimeUpstreamTls['trusted_by_gateway_ca'] ?? null) !== true)
+        ) {
             return;
         }
 
-        $caPath = is_string($runtimeUpstreamTls['ca_path'] ?? null) && $runtimeUpstreamTls['ca_path'] !== ''
-            ? $runtimeUpstreamTls['ca_path']
-            : AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath;
+        $caPath =
+            is_array($runtimeUpstreamTls)
+            && is_string($runtimeUpstreamTls['ca_path'] ?? null)
+            && $runtimeUpstreamTls['ca_path'] !== ''
+                ? $runtimeUpstreamTls['ca_path']
+                : AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath;
 
         $this->installTrustPool($node, $route, $caPath);
     }

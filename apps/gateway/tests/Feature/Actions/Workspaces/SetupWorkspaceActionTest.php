@@ -281,6 +281,16 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
     Http::preventStrayRequests();
     Http::fake([
         'http://10.47.0.41:9477/v1/commands' => Http::sequence()
+            ->push(setup_workspace_agent_response('managed-file.probe', [
+                'exists' => false,
+                'hash' => null,
+                'mode' => null,
+            ]))
+            ->push(setup_workspace_agent_response('managed-file.write', [
+                'path' => '/etc/orbit/ca/root.crt',
+                'hash' => hash(algo: 'sha256', data: 'fake-root-ca'),
+                'mode' => '0644',
+            ]))
             ->push(setup_workspace_agent_response('caddy-config.read-global', [
                 'content' => new CaddyGlobalConfig()->fresh(),
             ]))
@@ -314,10 +324,10 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
         ->not->toContain('tls_server_name feature-a.demo.beast')->and($caddySite)
         ->not->toContain('php_fastcgi')->and($route?->config['runtime_upstream'])->toBe(
             'http://orbit-ws-demo-feature-a',
-        )->and($requests)->toHaveCount(3)->and($requests[0]['argv'][1] ?? null)->toBe('read-global')->and(
-            $requests[1]['argv'][1] ?? null,
+        )->and($requests)->toHaveCount(5)->and($requests[0]['argv'][1] ?? null)->toBe('probe')->and(
+            $requests[3]['argv'][1] ?? null,
         )->toBe('write-site')->and($sitePayload)->toMatchArray(['domain' => 'feature-a.demo.beast'])->and(
-            $requests[2]['argv'][1] ?? null,
+            $requests[4]['argv'][1] ?? null,
         )->toBe('reload')->and($route?->config['runtime_upstream_tls'] ?? null)->toBeNull()->and(
             $route?->config['php_socket'],
         )->toBeNull()->and($route?->config['tls'])->toBe([

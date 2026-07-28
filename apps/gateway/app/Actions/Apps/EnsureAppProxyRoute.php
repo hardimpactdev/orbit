@@ -336,7 +336,7 @@ final readonly class EnsureAppProxyRoute
      */
     private function runtimeTrustOperation(Node $node, array $config, string $layer): array
     {
-        if (! $this->requiresRuntimeTrustPool($config)) {
+        if (! $this->requiresRuntimeTrustPool($node, $config)) {
             return [];
         }
 
@@ -355,8 +355,12 @@ final readonly class EnsureAppProxyRoute
     /**
      * @param  array<string, mixed>  $config
      */
-    private function requiresRuntimeTrustPool(array $config): bool
+    private function requiresRuntimeTrustPool(Node $node, array $config): bool
     {
+        if ($node->hasActiveRole('app-dev')) {
+            return true;
+        }
+
         $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
 
         return is_array($runtimeUpstreamTls) && ($runtimeUpstreamTls['trusted_by_gateway_ca'] ?? null) === true;
@@ -374,7 +378,11 @@ final readonly class EnsureAppProxyRoute
                 layer: 'route',
                 operations: [
                     'site_certificate.ensure',
-                    ...($this->requiresRuntimeTrustPool($config) ? ['runtime_trust_pool.ensure'] : []),
+                    ...(
+                        $this->requiresRuntimeTrustPool($servingNode, $config)
+                            ? ['runtime_trust_pool.ensure']
+                            : []
+                    ),
                     'caddy.global.ensure',
                     'caddy.route.install',
                 ],
@@ -389,7 +397,11 @@ final readonly class EnsureAppProxyRoute
                 layer: 'backend',
                 operations: [
                     'caddy.global.ensure',
-                    ...($this->requiresRuntimeTrustPool($config) ? ['runtime_trust_pool.ensure'] : []),
+                    ...(
+                        $this->requiresRuntimeTrustPool($owningNode, $config)
+                            ? ['runtime_trust_pool.ensure']
+                            : []
+                    ),
                     'caddy.backend.install',
                 ],
             ),
@@ -403,7 +415,11 @@ final readonly class EnsureAppProxyRoute
                 layer: 'ingress',
                 operations: [
                     'site_certificate.ensure',
-                    ...($this->requiresRuntimeTrustPool($config) ? ['runtime_trust_pool.ensure'] : []),
+                    ...(
+                        $this->requiresRuntimeTrustPool($servingNode, $config)
+                            ? ['runtime_trust_pool.ensure']
+                            : []
+                    ),
                     'caddy.global.ensure',
                     'caddy.ingress.install',
                 ],
@@ -575,13 +591,16 @@ final readonly class EnsureAppProxyRoute
     {
         $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
 
-        if (! is_array($runtimeUpstreamTls) || ($runtimeUpstreamTls['trusted_by_gateway_ca'] ?? null) !== true) {
+        if (! $this->requiresRuntimeTrustPool($node, $config)) {
             return;
         }
 
-        $caPath = is_string($runtimeUpstreamTls['ca_path'] ?? null) && $runtimeUpstreamTls['ca_path'] !== ''
-            ? $runtimeUpstreamTls['ca_path']
-            : AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath;
+        $caPath =
+            is_array($runtimeUpstreamTls)
+            && is_string($runtimeUpstreamTls['ca_path'] ?? null)
+            && $runtimeUpstreamTls['ca_path'] !== ''
+                ? $runtimeUpstreamTls['ca_path']
+                : AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath;
 
         $file = new ManagedFile(
             path: $this->caddyHostPathResolver()->resolve($node, $caPath),
