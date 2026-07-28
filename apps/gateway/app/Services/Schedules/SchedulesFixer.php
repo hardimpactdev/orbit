@@ -59,9 +59,21 @@ final readonly class SchedulesFixer
             return $this->action($gatewayNode, $entry, $schedule);
         }
 
+        if ($entry->key === 'schedule.scheduler_missing') {
+            $this->restoreMissingGatewayDaemon($this->schedulerStackService());
+
+            return $this->action($gatewayNode, $entry, $schedule);
+        }
+
+        if ($entry->key === 'schedule.runtime_hibernator_missing') {
+            $this->restoreMissingGatewayDaemon($this->runtimeHibernatorStackService());
+
+            return $this->action($gatewayNode, $entry, $schedule);
+        }
+
         if (in_array(
             $entry->key,
-            ['schedule.scheduler_missing', 'schedule.scheduler_stopped', 'schedule.scheduler_replicas_mismatch'],
+            ['schedule.scheduler_stopped', 'schedule.scheduler_replicas_mismatch'],
             strict: true,
         )) {
             $this->restoreGatewayDaemon($this->schedulerStackService(), 'scheduler');
@@ -72,7 +84,6 @@ final readonly class SchedulesFixer
         if (in_array(
             $entry->key,
             [
-                'schedule.runtime_hibernator_missing',
                 'schedule.runtime_hibernator_stopped',
                 'schedule.runtime_hibernator_replicas_mismatch',
             ],
@@ -84,6 +95,31 @@ final readonly class SchedulesFixer
         }
 
         return null;
+    }
+
+    private function restoreMissingGatewayDaemon(string $service): void
+    {
+        if ($this->swarm->serviceImage($service) !== null) {
+            $this->swarm->scaleService($service, 1);
+
+            return;
+        }
+
+        $this->convergeGatewayStack();
+    }
+
+    private function convergeGatewayStack(): void
+    {
+        $configRoot = config('orbit.paths.config_root');
+
+        if (! is_string($configRoot) || trim($configRoot) === '') {
+            throw new RuntimeException('Orbit config root is unavailable for gateway stack convergence.');
+        }
+
+        $this->swarm->deployStack(
+            rtrim($configRoot, '/').'/swarm/'.GatewaySwarmManager::StackFile,
+            self::Stack,
+        );
     }
 
     private function restoreGatewayDaemon(string $service, string $label): void

@@ -38,6 +38,35 @@ function createSchedulesFixerGatewayNode(): Node
 }
 
 describe('SchedulesFixer', function (): void {
+    it('converges the gateway stack when the runtime hibernator service is missing', function (): void {
+        $gateway = createSchedulesFixerGatewayNode();
+        $stackPath = config('orbit.paths.config_root').'/swarm/orbit-gateway-stack.yml';
+        Process::fake([
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'" => Process::result(
+                exitCode: 1,
+                errorOutput: "no such service: orbit_orbit-runtime-hibernator\n",
+            ),
+            'docker stack deploy -c '.escapeshellarg($stackPath)." 'orbit'" => Process::result(),
+        ]);
+
+        $action = new SchedulesFixer()->fixGateway($gateway, new DriftEntry(
+            family: 'schedule',
+            key: 'schedule.runtime_hibernator_missing',
+            kind: DriftKind::Missing,
+            summary: 'Runtime hibernator service is missing.',
+        ));
+
+        expect($action)->toMatchArray([
+            'key' => 'schedule.runtime_hibernator_missing',
+            'status' => 'completed',
+        ]);
+        Process::assertRan(
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'",
+        );
+        Process::assertRan('docker stack deploy -c '.escapeshellarg($stackPath)." 'orbit'");
+        Process::assertNotRan("docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'");
+    });
+
     it('scales the runtime hibernator Swarm service when it is stopped', function (): void {
         $gateway = createSchedulesFixerGatewayNode();
         Process::fake([
@@ -87,14 +116,16 @@ describe('SchedulesFixer', function (): void {
         );
     });
 
-    it('scales the gateway orbit-scheduler Swarm service when scheduler configuration is missing', function (): void {
+    it('converges the gateway stack when the orbit-scheduler Swarm service is missing', function (): void {
         $gateway = createSchedulesFixerGatewayNode();
         $shell = new SchedulesFixerRemoteShell;
+        $stackPath = config('orbit.paths.config_root').'/swarm/orbit-gateway-stack.yml';
         Process::fake([
             "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
-                output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+                exitCode: 1,
+                errorOutput: "no such service: orbit_orbit-scheduler\n",
             ),
-            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
+            'docker stack deploy -c '.escapeshellarg($stackPath)." 'orbit'" => Process::result(),
         ]);
 
         $action = new SchedulesFixer()->fixGateway($gateway, new DriftEntry(
@@ -118,7 +149,8 @@ describe('SchedulesFixer', function (): void {
         Process::assertRan(
             "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'",
         );
-        Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
+        Process::assertRan('docker stack deploy -c '.escapeshellarg($stackPath)." 'orbit'");
+        Process::assertNotRan("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
         Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'orbit'.'-runtime'));
     });
 

@@ -86,11 +86,11 @@ The table below lists what `doctor --restore` does for each issue code.
 | Code | `doctor --restore` behavior |
 | --- | --- |
 | `schedule.runtime_backend_unavailable` | No `doctor --restore` action. Gateway service recovery belongs to node operations. |
-| `schedule.scheduler_missing` | Scale `orbit_orbit-scheduler` to one replica. |
+| `schedule.scheduler_missing` | Redeploy the gateway Swarm stack so the missing `orbit_orbit-scheduler` service is recreated. |
 | `schedule.scheduler_stopped` | Scale `orbit_orbit-scheduler` to one replica. |
 | `schedule.scheduler_image_mismatch` | Update `orbit_orbit-scheduler` to the configured gateway image with stop-first order, then scale it to one replica. |
 | `schedule.scheduler_replicas_mismatch` | Scale `orbit_orbit-scheduler` back to one replica. |
-| `schedule.runtime_hibernator_missing` | Scale `orbit_orbit-runtime-hibernator` to one replica. |
+| `schedule.runtime_hibernator_missing` | Redeploy the gateway Swarm stack so the missing `orbit_orbit-runtime-hibernator` service is recreated. |
 | `schedule.runtime_hibernator_stopped` | Scale `orbit_orbit-runtime-hibernator` to one replica. |
 | `schedule.runtime_hibernator_image_mismatch` | Update `orbit_orbit-runtime-hibernator` to the configured gateway image with stop-first order, then scale it to one replica. |
 | `schedule.runtime_hibernator_replicas_mismatch` | Scale `orbit_orbit-runtime-hibernator` back to one replica. |
