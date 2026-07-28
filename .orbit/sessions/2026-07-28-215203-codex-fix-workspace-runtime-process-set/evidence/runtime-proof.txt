@@ -1,0 +1,39 @@
+Orbit workspace-effective runtime proof
+Date: 2026-07-28
+Feature tip: 3c04a0c62492ee41427f5c033f64c5a97c52eec2
+Topology: retained Incus dev-5c8676, operator_gateway_app-dev
+Checkout roles: operator,gateway,dev
+
+Setup:
+  instance:register runtime-proof --node=app-dev-1 --path=/home/orbit/apps/runtime-proof
+  result: adopted, instance runtime-proof.development, URL https://runtime-proof.test
+
+  workspace:setup runtime-proof-feature --instance=runtime-proof.development --path=/home/orbit/workspaces/runtime-proof-feature
+  result: exit 0, workspace ready, URL https://runtime-proof-feature.runtime-proof.test
+  inherited setup processes: count 0
+
+Effective process inventory:
+  process:list --workspace=runtime-proof-feature --instance=runtime-proof.development
+  result: exactly one workspace process:
+    name=frankenphp-runtime-proof-runtime-proof-feature
+    runtime_unit=orbit-ws-runtime-proof-runtime-proof-feature
+    workspace=runtime-proof-feature
+
+  process:list --instance=runtime-proof.development
+  result: exactly one parent instance process:
+    name=frankenphp-runtime-proof
+    runtime_unit=orbit-app-runtime-proof-development
+    workspace=null
+
+Runtime state on app-dev:
+  /orbit-ws-runtime-proof-runtime-proof-feature status=running health=healthy
+  /orbit-app-runtime-proof-development status=running health=healthy
+
+Exact workspace URL through the retained gateway:
+  curl --resolve runtime-proof-feature.runtime-proof.test:443:10.6.0.2 https://runtime-proof-feature.runtime-proof.test/
+  result: HTTP 200
+
+Conclusion:
+  Workspace setup converged and kept the dedicated workspace runtime healthy.
+  Workspace-scoped listing contains the workspace runtime only and does not leak
+  or substitute the parent instance FrankenPHP process.
