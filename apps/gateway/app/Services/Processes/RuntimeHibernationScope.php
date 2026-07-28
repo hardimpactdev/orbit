@@ -29,6 +29,25 @@ final readonly class RuntimeHibernationScope
         return "runtime-hibernation:{$this->key()}";
     }
 
+    public function activationFenceKey(): string
+    {
+        return "runtime-activation-fence:{$this->key()}";
+    }
+
+    public function activationFenceSeconds(): int
+    {
+        $runningTimeout = (int) config(
+            'orbit.runtime_hibernation.activation_running_timeout_seconds',
+            default: 1200,
+        );
+        $configuredFence = (int) config(
+            'orbit.runtime_hibernation.activation_fence_seconds',
+            default: 1260,
+        );
+
+        return max($configuredFence, $runningTimeout + 60);
+    }
+
     public function sourcePath(): ?string
     {
         if ($this->context->workspace instanceof Workspace) {

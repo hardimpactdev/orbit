@@ -778,8 +778,10 @@ detached gateway runner and the existing operation journal; the stock Caddy
 pre-check renders the journal as a small server-generated HTML response until
 the original request may proceed. The runner heartbeats that journal around
 dependency and process work. Queued runners that do not launch and running
-runners that stop heartbeating are replaced after bounded timeouts; uncertain
-prunes and activation failures retain the cold marker for recovery.
+runners that stop heartbeating are replaced after bounded timeouts. An atomic
+claim prevents duplicate runners for one operation, and a per-scope cache lock
+fences each remote side effect from stale takeover. Uncertain prunes and
+activation failures retain the cold marker for recovery.
 
 ### Service containers
 

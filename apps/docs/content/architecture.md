@@ -196,11 +196,13 @@ processes. Progress rows are derived from that operation plan: an app without a
 queue process has no queue row, and a scope with no missing JavaScript
 dependencies has no JavaScript-install row. Once activation succeeds, the
 refreshed original request passes through to the application. A failed or
-partially completed prune remains cold. Detached runners heartbeat the
-operation journal while they work; a later request replaces a queued runner
-that never launched or a running runner whose heartbeat expired. Orbit clears
-the cold marker only after dependency restoration and process startup succeed,
-so failures keep the progress page and retry path available.
+partially completed prune remains cold. Each detached runner atomically claims
+its operation once and heartbeats the operation journal while it works. A
+per-scope fence surrounds every dependency restore, process activation, and
+cold-marker transition, so a later request replaces a stale runner only when no
+old side effect is still in flight. Orbit clears the cold marker only after
+dependency restoration and process startup succeed, so failures keep the
+progress page and retry path available.
 
 Gateway Laravel/artisan/PDO work runs inside the gateway container or the
 durable update runner. Packaged node-local helpers that need host file access

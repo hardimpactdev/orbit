@@ -11,6 +11,7 @@ use Throwable;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:excessive-parameter-list
  * @mago-expect lint:kan-defect
  */
 final readonly class RuntimeActivationRunner
@@ -21,6 +22,7 @@ final readonly class RuntimeActivationRunner
         private RuntimeDependencyColdStorage $coldStorage,
         private RuntimeHibernation $hibernation,
         private OperationRunRecorder $operationRuns,
+        private RuntimeActivationFence $fence,
     ) {}
 
     public function run(string $operationRunId): void
@@ -54,18 +56,22 @@ final readonly class RuntimeActivationRunner
             return;
         }
 
-        $this->operationRuns->running($run->id);
+        if (! $this->operationRuns->claimRunning($run->id) instanceof OperationRun) {
+            return;
+        }
 
         try {
             $this->restoreDependencies($run, $scope, $plan['dependencies']);
             $this->startProcesses($run, $scope, $plan['processes']);
-            $this->heartbeat($run);
 
-            if (! $this->coldStorage->markSourceWarm($scope)) {
+            if (! $this->fence->run(
+                $run,
+                $scope,
+                fn (): bool => $this->coldStorage->markSourceWarm($scope),
+            )) {
                 throw new RuntimeException('Runtime cold state could not be cleared.');
             }
 
-            $this->heartbeat($run);
             $this->operationRuns->appendComplete($run->id, 0);
             $this->operationRuns->succeeded($run->id, result: [
                 'runtime_activation' => [
@@ -98,15 +104,16 @@ final readonly class RuntimeActivationRunner
             $key = $dependency['key'];
             $stepKey = "dependency:{$key}";
             $this->operationRuns->appendStep($run->id, $stepKey, 'active');
-            $this->heartbeat($run);
-
-            if (! $this->dependencies->restore($scope, $key)) {
+            if (! $this->fence->run(
+                $run,
+                $scope,
+                fn (): bool => $this->dependencies->restore($scope, $key),
+            )) {
                 $this->operationRuns->appendStep($run->id, $stepKey, 'failed');
 
                 throw new RuntimeException("Runtime dependency [{$key}] could not be restored.");
             }
 
-            $this->heartbeat($run);
             $this->operationRuns->appendStep($run->id, $stepKey, 'done');
         }
     }
@@ -123,19 +130,19 @@ final readonly class RuntimeActivationRunner
             $this->operationRuns->appendStep($run->id, "process:{$process['id']}", 'active');
         }
 
-        $this->heartbeat($run);
-
-        if (
-            $this->hibernation->activate($scope->type, $scope->id, $scope->node) !== RuntimeHibernation::ACTIVATED
-        ) {
+        if (! $this->fence->run(
+            $run,
+            $scope,
+            fn (): bool => (
+                $this->hibernation->activate($scope->type, $scope->id, $scope->node) === RuntimeHibernation::ACTIVATED
+            ),
+        )) {
             foreach ($processes as $process) {
                 $this->operationRuns->appendStep($run->id, "process:{$process['id']}", 'failed');
             }
 
             throw new RuntimeException('Runtime processes could not be started.');
         }
-
-        $this->heartbeat($run);
 
         foreach ($processes as $process) {
             $this->operationRuns->appendStep($run->id, "process:{$process['id']}", 'done');
@@ -261,12 +268,5 @@ final readonly class RuntimeActivationRunner
             'code' => $code,
             'message' => $message,
         ]);
-    }
-
-    private function heartbeat(OperationRun $run): void
-    {
-        if ($this->operationRuns->heartbeat($run->id)->status->isTerminal()) {
-            throw new RuntimeException('Runtime activation was superseded.');
-        }
     }
 }

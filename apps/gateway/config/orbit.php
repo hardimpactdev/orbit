@@ -110,6 +110,14 @@ return [
             key: 'ORBIT_RUNTIME_ACTIVATION_RUNNING_TIMEOUT_SECONDS',
             default: 1200,
         ),
+        'activation_fence_seconds' => (int) env(
+            key: 'ORBIT_RUNTIME_ACTIVATION_FENCE_SECONDS',
+            default: 1260,
+        ),
+        'activation_fence_wait_seconds' => (int) env(
+            key: 'ORBIT_RUNTIME_ACTIVATION_FENCE_WAIT_SECONDS',
+            default: 10,
+        ),
         'lock_seconds' => (int) env(key: 'ORBIT_RUNTIME_HIBERNATION_LOCK_SECONDS', default: 120),
         'lock_wait_seconds' => (int) env(key: 'ORBIT_RUNTIME_HIBERNATION_LOCK_WAIT_SECONDS', default: 90),
     ],

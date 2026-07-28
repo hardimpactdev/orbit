@@ -16,6 +16,7 @@ final readonly class RuntimeActivationOperations
     public function __construct(
         private OperationRunRecorder $operationRuns,
         private RuntimeActivationRunnerLauncher $launcher,
+        private RuntimeActivationFence $fence,
     ) {}
 
     /**
@@ -41,7 +42,7 @@ final readonly class RuntimeActivationOperations
                             return;
                         }
 
-                        if (! $this->failStale($current)) {
+                        if (! $this->takeOverStale($scope, $current)) {
                             $resolvedRun = $current->refresh();
 
                             return;
@@ -174,25 +175,27 @@ final readonly class RuntimeActivationOperations
         return $run->updated_at->lte(now()->subSeconds(max(1, $timeout)));
     }
 
-    private function failStale(OperationRun $run): bool
+    private function takeOverStale(RuntimeHibernationScope $scope, OperationRun $run): bool
     {
-        $run->refresh();
+        return $this->fence->attemptTakeover($scope, function () use ($run): bool {
+            $run->refresh();
 
-        if ($run->status->isTerminal() || ! $this->isStale($run)) {
-            return false;
-        }
+            if ($run->status->isTerminal() || ! $this->isStale($run)) {
+                return false;
+            }
 
-        $this->operationRuns->appendError(
-            $run->id,
-            'The activation runner stopped reporting progress.',
-            data: ['reason' => 'runtime_activation_runner_stale'],
-        );
-        $this->operationRuns->failed($run->id, error: [
-            'code' => 'runtime_activation_runner_stale',
-            'message' => 'The activation runner stopped reporting progress.',
-        ]);
+            $this->operationRuns->appendError(
+                $run->id,
+                'The activation runner stopped reporting progress.',
+                data: ['reason' => 'runtime_activation_runner_stale'],
+            );
+            $this->operationRuns->failed($run->id, error: [
+                'code' => 'runtime_activation_runner_stale',
+                'message' => 'The activation runner stopped reporting progress.',
+            ]);
 
-        return true;
+            return true;
+        });
     }
 
     private function operationId(RuntimeHibernationScope $scope): string

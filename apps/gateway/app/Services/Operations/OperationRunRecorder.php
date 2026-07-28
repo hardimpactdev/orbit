@@ -88,6 +88,23 @@ final readonly class OperationRunRecorder
         });
     }
 
+    public function claimRunning(string $id): ?OperationRun
+    {
+        return $this->databaseLockRetry->transaction(function () use ($id): ?OperationRun {
+            $now = Carbon::now();
+            $claimed = OperationRun::query()
+                ->whereKey($id)
+                ->where('status', OperationStatus::Queued->value)
+                ->update([
+                    'status' => OperationStatus::Running->value,
+                    'started_at' => $now,
+                    'updated_at' => $now,
+                ]);
+
+            return $claimed === 1 ? $this->findOrFail($id)->refresh() : null;
+        });
+    }
+
     public function heartbeat(string $id): OperationRun
     {
         return $this->databaseLockRetry->transaction(function () use ($id): OperationRun {

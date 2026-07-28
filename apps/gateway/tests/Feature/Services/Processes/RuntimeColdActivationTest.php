@@ -15,6 +15,7 @@ use App\Services\Processes\RuntimeActivationRunner;
 use App\Services\Processes\RuntimeActivationRunnerLauncher;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process as ProcessFacade;
 use Orbit\Core\Enums\OperationStatus;
 
@@ -220,6 +221,57 @@ it('replaces a running activation after its heartbeat expires', function (): voi
         ->toBe('runtime_activation_runner_stale')
         ->and(OperationRun::query()->where('operation_type', 'runtime-activation')->count())
         ->toBe(2);
+});
+
+it('does not take over a stale activation while its runner holds the side effect fence', function (): void {
+    [$node, , $instance] = create_cold_runtime_instance();
+    app()->instance(RunsInternalCommands::class, new ColdRuntimeExecutor([
+        [
+            'key' => 'composer',
+            'label' => 'Installing PHP dependencies',
+            'present' => false,
+            'reconstructable' => true,
+        ],
+    ]));
+    config()->set('orbit.runtime_hibernation.activation_running_timeout_seconds', 1200);
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+        ],
+    )->assertServiceUnavailable();
+
+    $run = OperationRun::query()->sole();
+    $run->timestamps = false;
+    $run->forceFill([
+        'status' => OperationStatus::Running,
+        'started_at' => now()->subSeconds(1201),
+        'updated_at' => now()->subSeconds(1201),
+    ])->save();
+    $fence = Cache::lock("runtime-activation-fence:app-instance-{$instance->id}", 1000);
+
+    expect($fence->get())->toBeTrue();
+
+    try {
+        $this->call(
+            'GET',
+            "/api/runtime-activations/app-instance/{$instance->id}",
+            server: [
+                'REMOTE_ADDR' => $node->wireguard_address,
+                'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+            ],
+        )->assertServiceUnavailable();
+    } finally {
+        $fence->release();
+    }
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Running)
+        ->and(OperationRun::query()->where('operation_type', 'runtime-activation')->count())
+        ->toBe(1);
 });
 
 it('keeps following a running activation while its heartbeat is current', function (): void {
@@ -503,6 +555,20 @@ it('launches the activation runner as a detached one-shot gateway container', fu
             && ! str_contains($command, '/var/run/docker.sock')
         );
     });
+});
+
+it('allows only one detached runner to claim an activation operation', function (): void {
+    $run = app(OperationRunRecorder::class)->queued(
+        operationId: 'runtime-activation:app-instance-1',
+        lane: 'gateway',
+        operationType: 'runtime-activation',
+    );
+    $recorder = app(OperationRunRecorder::class);
+
+    expect($recorder->claimRunning($run->id)?->status)
+        ->toBe(OperationStatus::Running)
+        ->and($recorder->claimRunning($run->id))
+        ->toBeNull();
 });
 
 /**
