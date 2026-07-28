@@ -814,6 +814,10 @@ final readonly class DeployManager
         $appUser = $this->appUser($app);
 
         return [
+            'app_name' => $app->name,
+            'app_instance' => $instance->name,
+            'app_path' => $appPath,
+            'app_user' => $appUser,
             'project_name' => $app->name,
             'instance' => $instance->name,
             'project_path' => $appPath,
@@ -830,6 +834,14 @@ final readonly class DeployManager
             'database_path' => "{$appPath}/database/database.sqlite",
             'project' => [
                 'name' => $app->name,
+                'path' => $appPath,
+                'user' => $appUser,
+                'domain' => $app->domain,
+                'repository' => $app->repository,
+            ],
+            'app' => [
+                'name' => $app->name,
+                'instance' => $instance->name,
                 'path' => $appPath,
                 'user' => $appUser,
                 'domain' => $app->domain,

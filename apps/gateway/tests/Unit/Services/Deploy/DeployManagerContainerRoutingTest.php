@@ -372,6 +372,35 @@ it('does not transform host paths to container paths when routing through host',
         ->not->toContain("'/app'");
 });
 
+it('preserves documented app context aliases for existing deployment steps', function (): void {
+    $app = createDeployManagerTestApp();
+    createDeployManagerTestStep($app, 'mkdir -p "{{ app_path }}/database"');
+
+    app(DeployManager::class)->run('docs.production', detach: true);
+
+    $context = DeploymentRun::query()->sole()->context;
+
+    expect($context)
+        ->toMatchArray([
+            'app_name' => 'docs',
+            'app_instance' => 'production',
+            'app_path' => '/srv/docs',
+            'app_user' => 'orbit',
+            'project_name' => 'docs',
+            'instance' => 'production',
+            'project_path' => '/srv/docs',
+            'project_user' => 'orbit',
+            'app' => [
+                'name' => 'docs',
+                'instance' => 'production',
+                'path' => '/srv/docs',
+                'user' => 'orbit',
+                'domain' => null,
+                'repository' => null,
+            ],
+        ]);
+});
+
 it('passes deploy environment variables to the host command', function (): void {
     $app = createDeployManagerTestApp();
     createDeployManagerTestStep($app, 'php artisan migrate');
