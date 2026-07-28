@@ -1,0 +1,33 @@
+On-demand development runtime hibernation blast-radius review
+Date: 2026-07-28
+Candidate commit: 973e551f54158c35804b5758fa88043b26450226
+
+Inventory commands
+- rg -n "restart_policy|Restart=|RunAtLoad|unless-stopped|restart: always|--restart" apps/gateway/app apps/cli/app packages/core apps/docs/content
+- rg -n "renderCaddySite|renderManagedPhpRuntimeIntent|ProxyRouteRenderer|runtime-activations|runtime_hibernation|app-instance-.*awake|workspace-.*awake" apps/gateway/app apps/gateway/routes apps/gateway/config apps/cli/app apps/docs/content
+- rg -n "StartProcesses|StopProcesses|lifecycleProcesses" apps/gateway/app/Services/Processes apps/gateway/app/Actions/Processes
+
+Results
+- App and workspace route registration, drift probing, and repair all render
+  through ProxyRouteRenderer; no legacy renderCaddySite implementation remains.
+- The wake endpoint is the single internal API route at
+  /api/runtime-activations/{type}/{id}.
+- The idle sweep and activation path both use ProcessOwnerContext lifecycle
+  groups through the existing StartProcesses and StopProcesses actions.
+- app-dev app runtime containers, workspace runtime containers, and Docker
+  process containers with configured always restart use unless-stopped so an
+  intentional stop remains stopped.
+- app-dev systemd/launchd app and workspace units are installed disabled and
+  with RunAtLoad false, while explicit starts still use the existing drivers.
+- Node-owned systemd, launchd, Docker, and role-baseline processes retain their
+  persistent policies.
+- app-prod runtime and process containers retain always restart behavior.
+- Caddy, gateway, VPN, DNS, websocket, S3, metrics, and analytics service
+  ownership remains outside the hibernation scope.
+- Product docs explicitly preserve Caddy and node/production persistence.
+
+Conclusion
+The repository-wide inventory found no additional app-instance/workspace
+registration renderer or development runtime restart surface requiring this
+feature. The intentionally persistent node and production surfaces remain
+separate and unchanged.

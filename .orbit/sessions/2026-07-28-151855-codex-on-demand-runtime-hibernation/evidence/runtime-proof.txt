@@ -1,0 +1,105 @@
+On-demand development runtime hibernation retained-topology proof
+Date: 2026-07-28
+Candidate commit: 973e551f54158c35804b5758fa88043b26450226
+Topology id: dev-87b371
+Topology kind: operator_gateway_app-dev
+Host: beast
+Roles:
+- operator: orbit-e2e-dev-87b371-operator, 10.6.0.3
+- gateway: orbit-e2e-dev-87b371-gateway, 10.6.0.2
+- app-dev: orbit-e2e-dev-87b371-dev, 10.6.0.4
+Runtime checkout for all roles: /home/orbit/orbit-run
+Retained terminal: Solo process 1118, hibernation-proof-dev-87b371
+
+Candidate synchronization
+Command:
+  composer e2e:incus -- --sync --id=dev-87b371
+Result:
+  Synced retained Incus topology [dev-87b371].
+  Kind: operator_gateway_app-dev
+
+Route registration and stock Caddy validation
+Action:
+  Invoked App\Actions\Apps\EnsureAppProxyRoute for app hibernation-proof
+  inside the candidate gateway checkout.
+Observed route:
+  output file /data/caddy/orbit/hibernation/app-instance-1.access.log
+  file matcher /dev/shm/orbit/hibernation/app-instance-1.awake
+  forward_auth https://10.6.0.2
+  uri /api/runtime-activations/app-instance/1
+  tls_trust_pool file /etc/orbit/ca/root.crt
+  response_header_timeout 90s
+  lb_try_duration 15s
+  lb_try_interval 250ms
+Validation:
+  /etc/orbit/ca/root.crt exists on the app-dev Caddy host.
+  docker exec orbit-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+  Valid configuration
+Container identity:
+  caddy=running image=caddy:2-alpine restart=always
+  runtime=running restart=unless-stopped
+
+Initial hibernation
+Command:
+  docker exec ... php artisan orbit-scheduler --once
+Observed:
+  Orbit Scheduler tick completed at 2026-07-28T13:13:22+00:00
+  runtime=exited restart=unless-stopped
+  /dev/shm/orbit/hibernation/app-instance-1.asleep exists inside orbit-caddy
+  caddy=running
+
+First cold request
+Command:
+  curl -skS --max-time 120 \
+    --resolve hibernation-proof.test:443:10.6.0.4 \
+    https://hibernation-proof.test/up
+Observed:
+  cold1_status=200 cold1_total=3.988449s size=1829
+  expected content "<title>Laravel</title>" was present
+  PHP warning/fatal content was absent
+  runtime=running started=2026-07-28T13:13:33.23172355Z
+  /dev/shm/orbit/hibernation/app-instance-1.awake exists
+  caddy=running image=caddy:2-alpine
+
+Idle hibernation
+Setup:
+  Set the Caddy access-log mtime to two hours before the scheduler tick.
+Command:
+  docker exec ... php artisan orbit-scheduler --once
+Observed:
+  Orbit Scheduler tick completed at 2026-07-28T13:13:54+00:00
+  runtime=exited restart=unless-stopped
+  /dev/shm/orbit/hibernation/app-instance-1.asleep exists
+  caddy=running
+
+Second cold request
+Command:
+  curl -skS --max-time 120 \
+    --resolve hibernation-proof.test:443:10.6.0.4 \
+    https://hibernation-proof.test/up
+Observed:
+  cold2_status=200 cold2_total=3.894661s size=1829
+  expected content "<title>Laravel</title>" was present
+  PHP warning/fatal content was absent
+  runtime=running started=2026-07-28T13:13:57.353178912Z
+  /dev/shm/orbit/hibernation/app-instance-1.awake exists
+  caddy=running image=caddy:2-alpine
+
+Warm request
+Command:
+  curl -skS --max-time 30 \
+    --resolve hibernation-proof.test:443:10.6.0.4 \
+    https://hibernation-proof.test/up
+Observed:
+  warm_status=200 warm_total=0.014692s size=1827
+  expected content "<title>Laravel</title>" was present
+  runtime=running started=2026-07-28T13:13:57.353178912Z
+  The start timestamp did not change, proving the awake request bypassed activation.
+
+Notes
+- The adopted candidate docs source dependencies were installed into the
+  retained overlay and its runtime container was recreated before final proof.
+- Both cold requests and the warm request returned healthy Laravel application
+  content with no PHP warning or fatal-error output.
+- Caddy remained running for every cold, warm, and idle transition.
+- No custom Caddy module or custom Caddy image was used.

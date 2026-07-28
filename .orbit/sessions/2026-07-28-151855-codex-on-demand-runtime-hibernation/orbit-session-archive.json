@@ -1,0 +1,27 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-28T13:18:56+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-on-demand-runtime-hibernation/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-28-151855-codex-on-demand-runtime-hibernation",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/blast-radius.txt",
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/profiles/2026-07-28T13-15-04Z-973e551f5415/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/blast-radius.txt": "e8a729ad3a86f5ce9374ba8b65814ed9cbb87bd91ce0a6958a4399fd603bcd26",
+        "evidence/runtime-proof.txt": "27097f35df99a481693126662dd40ce7f25fe0c8ecad95c90a930387451a59b6",
+        "loop.md": "aa0850b0b5da9a971fcac4c591acd46327eb3578725345f54f329150f9266058",
+        "quality-gates/profiles/2026-07-28T13-15-04Z-973e551f5415/gateway_pest.junit.xml": "977c638e6571c2a41d5c5e83a34fedf6eb9af94f7259f05a13760b4320f7aaf1"
+    },
+    "branch": "codex/on-demand-runtime-hibernation",
+    "candidate_commit": "973e551f54158c35804b5758fa88043b26450226",
+    "accepted_feature_tip": "973e551f54158c35804b5758fa88043b26450226",
+    "accepted_main_tip": "ac531b1843345a27354218d07ba35435105b167d",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
