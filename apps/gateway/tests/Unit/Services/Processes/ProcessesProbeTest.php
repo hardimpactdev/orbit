@@ -26,6 +26,7 @@ use App\Services\Apps\NodeRuntimeContainersProbe;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessesProbe;
+use App\Services\Processes\RemoteRuntimeHibernation;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
@@ -920,6 +921,118 @@ describe('runtime context expansion', function (): void {
 });
 
 describe('docker runtime probe scope', function (): void {
+    it('does not report an explicitly hibernated app-development Docker runtime as down', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, [
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Docker,
+            'restart_policy' => ProcessRestartPolicy::Always,
+        ]);
+        $runtimeUnit = app(ProcessDockerContainerRenderer::class)->render($app, $process)->name();
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Status' => 'exited'],
+                    'Config' => ['Labels' => [
+                        'orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)
+                            ->render($app, $process)
+                            ->specHash(),
+                    ]],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: processesProbeSuccessData([
+                    'states' => [[
+                        'key' => "app-instance-{$process->app_instance_id}",
+                        'awake' => false,
+                        'hibernated' => true,
+                        'last_activity_at' => 1_767_268_799,
+                    ]],
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
+        ]);
+        $probe = new ProcessesProbe(
+            runtimeBackendProbe: new RuntimeBackendProbe($shell),
+            runtimeHibernation: new RemoteRuntimeHibernation($shell),
+        );
+
+        $snapshot = $probe->introspect($process);
+        $drift = $probe->diff($process, $snapshot);
+
+        expect($snapshot->get('queue')['runtime_units'][$runtimeUnit])
+            ->toMatchArray([
+                'container_state' => 'exited',
+                'hibernated' => true,
+            ])
+            ->and(issue($drift, key: 'process.runtime_unit_down'))
+            ->toBeNull()
+            ->and($shell->scripts[2])
+            ->toContain("internal:caddy-config 'runtime-states'");
+    });
+
+    it('uses the owning workspace hibernation marker for a stopped Docker runtime', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-a']);
+        $process = Process::factory()
+            ->forOwner($workspace)
+            ->create([
+                'name' => 'queue',
+                'runtime' => ProcessRuntime::Docker,
+                'restart_policy' => ProcessRestartPolicy::Always,
+            ]);
+        $runtimeUnit = app(ProcessDockerContainerRenderer::class)
+            ->render($app, $process, $workspace)
+            ->name();
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Status' => 'exited'],
+                    'Config' => ['Labels' => [
+                        'orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)
+                            ->render($app, $process, $workspace)
+                            ->specHash(),
+                    ]],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: processesProbeSuccessData([
+                    'states' => [[
+                        'key' => "workspace-{$workspace->id}",
+                        'awake' => false,
+                        'hibernated' => true,
+                        'last_activity_at' => 1_767_268_799,
+                    ]],
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
+        ]);
+        $probe = new ProcessesProbe(
+            runtimeBackendProbe: new RuntimeBackendProbe($shell),
+            runtimeHibernation: new RemoteRuntimeHibernation($shell),
+        );
+
+        $snapshot = $probe->introspect($process);
+        $drift = $probe->diff($process, $snapshot);
+
+        expect($snapshot->get('queue')['runtime_units'][$runtimeUnit]['hibernated'])
+            ->toBeTrue()
+            ->and(issue($drift, key: 'process.runtime_unit_down'))
+            ->toBeNull();
+    });
+
     it('reports an always-on Docker runtime unit that is not running', function (): void {
         $app = processableApp(['name' => 'docs']);
         $process = processFor($app, [

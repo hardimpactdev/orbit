@@ -34,6 +34,7 @@ final readonly class ProcessesProbe
     public function __construct(
         private ?RuntimeBackendProbe $runtimeBackendProbe = null,
         private ?ToolScriptDispatcher $scripts = null,
+        private ?RemoteRuntimeHibernation $runtimeHibernation = null,
     ) {}
 
     public function key(): string
@@ -290,6 +291,13 @@ final readonly class ProcessesProbe
                 }
             }
         }
+
+        $runtimeUnits = $this->annotateHibernatedDockerUnits(
+            $process,
+            $node,
+            $expectedUnits,
+            $runtimeUnits,
+        );
 
         return new ProbeSnapshot([
             $process->name => [
@@ -804,6 +812,7 @@ final readonly class ProcessesProbe
                 || ($runtimeUnit['config_exists'] ?? null) !== true
                 || ! is_string($runtimeUnit['container_state'] ?? null)
                 || $runtimeUnit['container_state'] === 'running'
+                || ($runtimeUnit['hibernated'] ?? null) === true
             ) {
                 continue;
             }
@@ -821,6 +830,89 @@ final readonly class ProcessesProbe
         }
 
         return $drift;
+    }
+
+    /**
+     * @param  list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_lines: list<string>}>  $expectedUnits
+     * @param  array<string, array<string, mixed>>  $runtimeUnits
+     * @return array<string, array<string, mixed>>
+     */
+    private function annotateHibernatedDockerUnits(
+        Process $process,
+        Node $node,
+        array $expectedUnits,
+        array $runtimeUnits,
+    ): array {
+        $process->loadMissing(['owner', 'appInstance']);
+        $appInstance = $process->appInstance;
+
+        if (
+            $process->owner instanceof Node
+            || ! $appInstance instanceof AppInstance
+            || $process->restart_policy !== ProcessRestartPolicy::Always
+            || ! app(NodeRoleAssignments::class)->nodeHasActiveRole(
+                $node,
+                NodeRoleName::AppDevelopment->value,
+            )
+        ) {
+            return $runtimeUnits;
+        }
+
+        $scopeKeysByUnit = [];
+
+        foreach ($this->runtimeContexts($process) as $index => $workspace) {
+            $unitName = $expectedUnits[$index]['name'] ?? null;
+
+            if (
+                ! is_string($unitName)
+                || ! $this->runtimeUnitIsStopped($runtimeUnits[$unitName] ?? null)
+            ) {
+                continue;
+            }
+
+            $scopeKeysByUnit[$unitName] = $workspace instanceof Workspace
+                ? "workspace-{$workspace->id}"
+                : "app-instance-{$appInstance->id}";
+        }
+
+        if ($scopeKeysByUnit === []) {
+            return $runtimeUnits;
+        }
+
+        $states = $this->runtimeHibernation()->states(
+            $node,
+            array_values(array_unique($scopeKeysByUnit)),
+        );
+
+        if ($states === null) {
+            return $runtimeUnits;
+        }
+
+        $hibernatedKeys = [];
+
+        foreach ($states as $state) {
+            if ($state['hibernated']) {
+                $hibernatedKeys[] = $state['key'];
+            }
+        }
+
+        foreach ($scopeKeysByUnit as $unitName => $scopeKey) {
+            if (in_array($scopeKey, $hibernatedKeys, true)) {
+                $runtimeUnits[$unitName]['hibernated'] = true;
+            }
+        }
+
+        return $runtimeUnits;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $runtimeUnit
+     */
+    private function runtimeUnitIsStopped(?array $runtimeUnit): bool
+    {
+        $state = $runtimeUnit['container_state'] ?? null;
+
+        return ($runtimeUnit['config_exists'] ?? null) === true && is_string($state) && $state !== 'running';
     }
 
     /**
@@ -2109,6 +2201,11 @@ final readonly class ProcessesProbe
     private function runtimeBackendProbe(): RuntimeBackendProbe
     {
         return $this->runtimeBackendProbe ?? app(RuntimeBackendProbe::class);
+    }
+
+    private function runtimeHibernation(): RemoteRuntimeHibernation
+    {
+        return $this->runtimeHibernation ?? app(RemoteRuntimeHibernation::class);
     }
 
     private function scriptDispatcher(): ToolScriptDispatcher
