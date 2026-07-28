@@ -243,6 +243,33 @@ it('restores the awake marker when an idle process group cannot be stopped', fun
         ]);
 });
 
+it('leaves a partially stopped process group asleep so the next request reconciles it', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    [$node, $app] = create_runtime_hibernation_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    Process::factory()->forOwner($app, $node)->create(['name' => 'vite']);
+    $executor = new RuntimeHibernationRecordingExecutor(
+        lastActivityAt: 1_767_268_799,
+        awake: true,
+        failingAction: 'internal:process-systemd-service:stop',
+        failingActionOccurrence: 2,
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:00:00Z'));
+
+    expect($executor->actions())
+        ->toBe([
+            'internal:caddy-config:runtime-states',
+            'internal:caddy-config:runtime-asleep',
+            'internal:process-systemd-service:stop',
+            'internal:process-systemd-service:stop',
+        ]);
+});
+
 /**
  * @return array{Node, Project, AppInstance}
  */
@@ -278,11 +305,14 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
     /** @var list<array{command: string, action: string}> */
     private array $calls = [];
 
+    private int $failingActionCalls = 0;
+
     public function __construct(
         private readonly int $lastActivityAt = 1_767_272_400,
         private readonly bool $awake = false,
         private readonly bool $hibernated = false,
         private readonly ?string $failingAction = null,
+        private readonly int $failingActionOccurrence = 1,
     ) {}
 
     public function runInternal(
@@ -295,6 +325,12 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
         $action = is_string($arguments[0] ?? null) ? $arguments[0] : '';
         $this->calls[] = ['command' => $commandName, 'action' => $action];
         $call = "{$commandName}:{$action}";
+        $shouldFail = false;
+
+        if ($call === $this->failingAction) {
+            $this->failingActionCalls++;
+            $shouldFail = $this->failingActionCalls === $this->failingActionOccurrence;
+        }
 
         $data =
             $commandName === 'internal:caddy-config' && $action === 'runtime-states'
@@ -323,7 +359,7 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
         }
 
         return new RemoteShellResult(
-            exitCode: $call === $this->failingAction ? 1 : 0,
+            exitCode: $shouldFail ? 1 : 0,
             stdout: json_encode([
                 'success' => [
                     'data' => $data,

@@ -117,7 +117,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
 
     $run = ScheduleRun::query()->firstOrFail();
     $state = SchedulerState::query()->firstOrFail();
-    $payload = $localExecutor->payloads()[1];
+    $payload = $localExecutor->payloads()[0];
 
     expect($result->dueSchedules)
         ->toBe(1)
@@ -126,12 +126,12 @@ it('dispatches due app schedules with gateway authority on the instance current 
         ->and($localExecutor->nodes)
         ->toBe(['app-3', 'app-3'])
         ->and($localExecutor->commands)
-        ->toBe(['internal:caddy-config', InternalCommand::ScheduleRun->value])
-        ->and($localExecutor->transportOptions[1]['timeout'])
+        ->toBe([InternalCommand::ScheduleRun->value, 'internal:caddy-config'])
+        ->and($localExecutor->transportOptions[0]['timeout'])
         ->toBe(7215)
-        ->and($localExecutor->transportOptions[1]['strict'])
+        ->and($localExecutor->transportOptions[0]['strict'])
         ->toBeFalse()
-        ->and($localExecutor->transportOptions[1]['metadata']['ORBIT_OPERATION_ID'] ?? null)
+        ->and($localExecutor->transportOptions[0]['metadata']['ORBIT_OPERATION_ID'] ?? null)
         ->toBe('schedule.dispatch')
         ->and($payload['execution_type'] ?? null)
         ->toBe('command')
@@ -184,7 +184,7 @@ it('dispatches remote schedules through the internal schedule command without tr
         ->and($result->executedSchedules)
         ->toBe(1)
         ->and($localExecutor->commands)
-        ->toBe(['internal:caddy-config', InternalCommand::ScheduleRun->value])
+        ->toBe([InternalCommand::ScheduleRun->value, 'internal:caddy-config'])
         ->and($run->node_id)
         ->toBe($appNode->id)
         ->and($run->status)
@@ -270,19 +270,19 @@ it('dispatches multiple remote schedules through the internal schedule command',
         ->toBe(3)
         ->and($localExecutor->commands)
         ->toBe([
-            'internal:caddy-config',
-            'internal:caddy-config',
-            'internal:caddy-config',
             InternalCommand::ScheduleRun->value,
             InternalCommand::ScheduleRun->value,
             InternalCommand::ScheduleRun->value,
+            'internal:caddy-config',
+            'internal:caddy-config',
+            'internal:caddy-config',
         ])
         ->and(array_map(
             static fn (array $payload): array => [
                 'command' => $payload['execution_value'],
                 'cwd' => $payload['cwd'],
             ],
-            array_slice($localExecutor->payloads(), offset: 3),
+            array_slice($localExecutor->payloads(), offset: 0, length: 3),
         ))
         ->toBe([
             ['command' => 'echo one', 'cwd' => '/srv/one'],

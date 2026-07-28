@@ -31,7 +31,6 @@ final readonly class OrbitScheduler
         $gatewayNode = $this->gatewayNode();
 
         $this->recordHeartbeat($gatewayNode, $startedAt);
-        $this->runtimeIdleHibernation->hibernate($startedAt);
 
         $dueSchedules = $this->dueSchedules($startedAt);
         $claimedSchedules = [];
@@ -51,6 +50,8 @@ final readonly class OrbitScheduler
                 $this->releaseLock($gatewayNode, $schedule);
             }
         }
+
+        $this->runtimeIdleHibernation->hibernate($startedAt);
 
         return new SchedulerTickResult(
             startedAt: $startedAt,

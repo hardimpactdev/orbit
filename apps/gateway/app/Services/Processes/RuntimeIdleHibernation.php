@@ -98,13 +98,14 @@ final readonly class RuntimeIdleHibernation
             $result = $this->stopProcesses->handle($scope->context, null);
         } catch (Throwable $exception) {
             report($exception);
-            $this->remote->markAwake($scope->node, $scope->key());
 
             return false;
         }
 
         if ($result['failed']) {
-            $this->remote->markAwake($scope->node, $scope->key());
+            if (($result['meta']['partial_state'] ?? null) === 'none_stopped') {
+                $this->remote->markAwake($scope->node, $scope->key());
+            }
 
             return false;
         }
