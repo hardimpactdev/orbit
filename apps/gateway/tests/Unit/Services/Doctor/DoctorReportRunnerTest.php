@@ -242,6 +242,12 @@ function fakeDoctorRunnerSchedulerSwarmService(string $replicas = '1/1', ?string
         "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(
             output: "{$replicas}\n",
         ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'" => Process::result(
+            output: "{$image}\n",
+        ),
+        "docker service ls --filter 'name=orbit_orbit-runtime-hibernator' --format '{{.Replicas}}'" => Process::result(
+            output: "1/1\n",
+        ),
         "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
     ]);
 }
@@ -365,6 +371,12 @@ describe('DoctorReportRunner', function (): void {
                 output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
             ),
             "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(
+                output: "1/1\n",
+            ),
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'" => Process::result(
+                output: "{$desiredImage}\n",
+            ),
+            "docker service ls --filter 'name=orbit_orbit-runtime-hibernator' --format '{{.Replicas}}'" => Process::result(
                 output: "1/1\n",
             ),
             "docker service update --detach=true --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" =>
@@ -2094,6 +2106,12 @@ describe('DoctorReportRunner', function (): void {
             ),
             "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(
                 output: "0/1\n",
+            ),
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'" => Process::result(
+                output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+            ),
+            "docker service ls --filter 'name=orbit_orbit-runtime-hibernator' --format '{{.Replicas}}'" => Process::result(
+                output: "1/1\n",
             ),
             "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(
                 exitCode: 1,

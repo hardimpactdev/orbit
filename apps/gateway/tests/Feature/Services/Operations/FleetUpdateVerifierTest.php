@@ -636,8 +636,9 @@ function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
             output: "{$gatewayImage}\n",
         ),
-        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'" =>
-            Process::result(output: "{$gatewayImage}\n"),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'" => Process::result(
+            output: "{$gatewayImage}\n",
+        ),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
         "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=0'" => Process::result(),
         fleet_verifier_gateway_migration_command($gatewayImage) => Process::result(),

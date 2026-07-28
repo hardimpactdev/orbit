@@ -337,7 +337,7 @@ final readonly class SchedulesProbe
      */
     private function checkGatewayRuntimeAndScheduler(Node $gatewayNode, ProbeSnapshot $snapshot): array
     {
-        $observed = $snapshot->get('gateway');
+        $observed = $snapshot->get('gateway') ?? [];
 
         if (($observed['runtime_available'] ?? null) !== true) {
             return [
@@ -365,7 +365,7 @@ final readonly class SchedulesProbe
      */
     private function checkGatewaySchedulerImage(Node $gatewayNode, ProbeSnapshot $snapshot): array
     {
-        $observed = $snapshot->get('gateway');
+        $observed = $snapshot->get('gateway') ?? [];
 
         if (
             ($observed['runtime_available'] ?? null) !== true
@@ -409,7 +409,7 @@ final readonly class SchedulesProbe
     {
         return $this->checkGatewayDaemonStatus(
             $gatewayNode,
-            $snapshot->get('gateway'),
+            $snapshot->get('gateway') ?? [],
             self::RUNTIME_HIBERNATOR_DAEMON,
         );
     }
@@ -419,7 +419,7 @@ final readonly class SchedulesProbe
      */
     private function checkGatewayRuntimeHibernatorImage(Node $gatewayNode, ProbeSnapshot $snapshot): array
     {
-        $observed = $snapshot->get('gateway');
+        $observed = $snapshot->get('gateway') ?? [];
 
         if (($observed['runtime_hibernator_status'] ?? null) !== 'running') {
             return [];
@@ -437,7 +437,7 @@ final readonly class SchedulesProbe
      */
     private function checkGatewayRuntimeHibernatorReplicas(Node $gatewayNode, ProbeSnapshot $snapshot): array
     {
-        $observed = $snapshot->get('gateway');
+        $observed = $snapshot->get('gateway') ?? [];
 
         if (($observed['runtime_hibernator_status'] ?? null) !== 'running') {
             return [];
@@ -622,7 +622,7 @@ final readonly class SchedulesProbe
 
     /**
      * @param  array<string, mixed>  $observed
-     * @param  array{status: string, missing: string, stopped: string, label: string}  $daemon
+     * @param  array{status: string, image: string, desired_image: string, replicas: string, missing: string, stopped: string, image_mismatch: string, replicas_mismatch: string, label: string}  $daemon
      * @return list<DriftEntry>
      */
     private function checkGatewayDaemonStatus(
@@ -664,7 +664,7 @@ final readonly class SchedulesProbe
 
     /**
      * @param  array<string, mixed>  $observed
-     * @param  array{image: string, desired_image: string, image_mismatch: string, label: string}  $daemon
+     * @param  array{status: string, image: string, desired_image: string, replicas: string, missing: string, stopped: string, image_mismatch: string, replicas_mismatch: string, label: string}  $daemon
      * @return list<DriftEntry>
      */
     private function checkGatewayDaemonImage(
@@ -698,7 +698,7 @@ final readonly class SchedulesProbe
 
     /**
      * @param  array<string, mixed>  $observed
-     * @param  array{replicas: string, replicas_mismatch: string, label: string}  $daemon
+     * @param  array{status: string, image: string, desired_image: string, replicas: string, missing: string, stopped: string, image_mismatch: string, replicas_mismatch: string, label: string}  $daemon
      * @return list<DriftEntry>
      */
     private function checkGatewayDaemonReplicas(
