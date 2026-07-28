@@ -214,6 +214,11 @@ final readonly class LocalLaunchdServiceAction
         $plist = $this->plistPathForLabel($label);
 
         if ($action === 'start') {
+            $enable = $this->runProcess(['launchctl', 'enable', $target]);
+            if (! $enable->isSuccessful()) {
+                throw $this->failure('start', $label, $enable);
+            }
+
             // bootstrap tolerate already bootstrapped
             $bootstrap = $this->runProcess(['launchctl', 'bootstrap', $gui, $plist]);
             if (! $bootstrap->isSuccessful()) {
@@ -221,11 +226,6 @@ final readonly class LocalLaunchdServiceAction
                 if (! str_contains($err, 'already loaded') && ! str_contains($err, 'already bootstrapped')) {
                     throw $this->failure('start', $label, $bootstrap);
                 }
-            }
-
-            $enable = $this->runProcess(['launchctl', 'enable', $target]);
-            if (! $enable->isSuccessful()) {
-                throw $this->failure('start', $label, $enable);
             }
 
             $kick = $this->runProcess(['launchctl', 'kickstart', '-k', $target]);

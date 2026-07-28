@@ -156,6 +156,28 @@ describe('internal process launchd service command', function (): void {
             ]);
     });
 
+    it('enables a disabled launchd service before bootstrapping it', function (): void {
+        $bin = install_launchd_fake_bin();
+
+        [$exitCode, $output] = run_internal_process_launchd_service_command([
+            'action' => 'start',
+            'label' => 'dev.hardimpact.orbit.test-unit',
+            '--operation-token' => launchd_service_signed_operation_token(),
+            '--json' => true,
+        ]);
+
+        $calls = file_get_contents("{$bin}/calls.log");
+        $target = 'gui/'.getmyuid().'/dev.hardimpact.orbit.test-unit';
+        $plist = getenv('HOME').'/Library/LaunchAgents/dev.hardimpact.orbit.test-unit.plist';
+
+        expect($exitCode)
+            ->toBe(0, $output)
+            ->and($calls)
+            ->toBe(
+                "enable {$target}\n".'bootstrap gui/'.getmyuid()." {$plist}\n"."kickstart -k {$target}\n",
+            );
+    });
+
     it('applies development launch agents disabled and disables them again when stopped', function (): void {
         $bin = install_launchd_fake_bin();
         $home = sys_get_temp_dir().'/orbit-launchd-home-'.bin2hex(random_bytes(8));
