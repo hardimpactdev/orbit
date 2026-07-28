@@ -879,10 +879,14 @@ final readonly class ProcessesProbe
             return $runtimeUnits;
         }
 
-        $states = $this->runtimeHibernation()->states(
-            $node,
-            array_values(array_unique($scopeKeysByUnit)),
-        );
+        try {
+            $states = $this->runtimeHibernation()->states(
+                $node,
+                array_values(array_unique($scopeKeysByUnit)),
+            );
+        } catch (Throwable) {
+            return $runtimeUnits;
+        }
 
         if ($states === null) {
             return $runtimeUnits;

@@ -33,6 +33,7 @@ use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -1033,6 +1034,42 @@ describe('docker runtime probe scope', function (): void {
             ->toBeNull();
     });
 
+    it('reports a stopped runtime when the optional hibernation marker lookup throws', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $process = processFor($app, [
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Docker,
+            'restart_policy' => ProcessRestartPolicy::Always,
+        ]);
+        $shell = new ProcessesProbeRecordingRemoteShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Status' => 'exited'],
+                    'Config' => ['Labels' => [
+                        'orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)
+                            ->render($app, $process)
+                            ->specHash(),
+                    ]],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        $probe = new ProcessesProbe(
+            runtimeBackendProbe: new RuntimeBackendProbe($shell),
+            runtimeHibernation: new RemoteRuntimeHibernation(
+                new ProcessesProbeThrowingInternalExecutor,
+            ),
+        );
+
+        $drift = $probe->diff($process, $probe->introspect($process));
+
+        expect(issue($drift, key: 'process.runtime_unit_down')?->kind)
+            ->toBe(DriftKind::Divergent);
+    });
+
     it('reports an always-on Docker runtime unit that is not running', function (): void {
         $app = processableApp(['name' => 'docs']);
         $process = processFor($app, [
@@ -1792,6 +1829,19 @@ final class ProcessesProbeRecordingRemoteShell implements RemoteShell, RunsInter
         ]);
 
         return $this->run($node, $script, $transportOptions);
+    }
+}
+
+final class ProcessesProbeThrowingInternalExecutor implements RunsInternalCommands
+{
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        throw new RuntimeException('Marker transport failed.');
     }
 }
 
