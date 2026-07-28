@@ -46,15 +46,17 @@ class WorkspaceShowPayload
             'lifecycle_status' => $workspace->lifecycle_status->value,
         ];
 
-        $context =
-            $app !== null && $node !== null && $workspace->appInstance !== null
-                ? new ProcessOwnerContext(
-                    node: $node,
-                    app: $app,
-                    workspace: $workspace,
-                    owner: $workspace,
-                    appInstance: $workspace->appInstance,
-                ) : null;
+        $context = null;
+
+        if ($app !== null && $node !== null) {
+            $context = new ProcessOwnerContext(
+                node: $node,
+                app: $app,
+                workspace: $workspace,
+                owner: $workspace,
+                appInstance: $workspace->appInstance,
+            );
+        }
 
         $inheritedProcesses = array_values($context
             ?->effectiveWorkspaceProcesses()

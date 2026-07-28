@@ -251,10 +251,13 @@ final readonly class ProcessOwnerContext
      */
     private function workspaceProcessesForLifecycleWithoutRuntime(?string $name): Collection
     {
-        return $this
+        /** @var Collection<int, Process> $processes */
+        $processes = $this
             ->effectiveWorkspaceProcesses($name)
             ->reject(static fn (Process $process): bool => $process->runtime === ProcessRuntime::Docker)
             ->values();
+
+        return $processes;
     }
 
     public function runtimeWorkspaceFor(Process $process): ?Workspace
