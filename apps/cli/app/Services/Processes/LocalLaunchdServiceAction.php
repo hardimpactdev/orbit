@@ -219,13 +219,14 @@ final readonly class LocalLaunchdServiceAction
                 throw $this->failure('start', $label, $enable);
             }
 
-            // bootstrap tolerate already bootstrapped
             $bootstrap = $this->runProcess(['launchctl', 'bootstrap', $gui, $plist]);
-            if (! $bootstrap->isSuccessful()) {
-                $err = strtolower($bootstrap->getErrorOutput().' '.$bootstrap->getOutput());
-                if (! str_contains($err, 'already loaded') && ! str_contains($err, 'already bootstrapped')) {
-                    throw $this->failure('start', $label, $bootstrap);
-                }
+            if ($bootstrap->isSuccessful()) {
+                return ['action' => 'start', 'label' => $label, 'changed' => true];
+            }
+
+            $error = strtolower($bootstrap->getErrorOutput().' '.$bootstrap->getOutput());
+            if (! str_contains($error, 'already loaded') && ! str_contains($error, 'already bootstrapped')) {
+                throw $this->failure('start', $label, $bootstrap);
             }
 
             $kick = $this->runProcess(['launchctl', 'kickstart', '-k', $target]);

@@ -156,8 +156,30 @@ describe('internal process launchd service command', function (): void {
             ]);
     });
 
-    it('enables a disabled launchd service before bootstrapping it', function (): void {
+    it('bootstraps an unloaded launchd service without forcing an immediate restart', function (): void {
         $bin = install_launchd_fake_bin();
+
+        [$exitCode, $output] = run_internal_process_launchd_service_command([
+            'action' => 'start',
+            'label' => 'dev.hardimpact.orbit.test-unit',
+            '--operation-token' => launchd_service_signed_operation_token(),
+            '--json' => true,
+        ]);
+
+        $calls = file_get_contents("{$bin}/calls.log");
+        $target = 'gui/'.getmyuid().'/dev.hardimpact.orbit.test-unit';
+        $plist = getenv('HOME').'/Library/LaunchAgents/dev.hardimpact.orbit.test-unit.plist';
+
+        expect($exitCode)
+            ->toBe(0, $output)
+            ->and($calls)
+            ->toBe(
+                "enable {$target}\n".'bootstrap gui/'.getmyuid()." {$plist}\n",
+            );
+    });
+
+    it('kickstarts a launchd service when it is already loaded', function (): void {
+        $bin = install_launchd_fake_bin_with_bootstrap_already_loaded();
 
         [$exitCode, $output] = run_internal_process_launchd_service_command([
             'action' => 'start',
@@ -291,15 +313,20 @@ function run_internal_process_launchd_service_command(array $parameters = [], st
 
 function install_launchd_fake_bin(): string
 {
-    return install_launchd_fake_bin_with_enable_exit_code(enableExitCode: 0);
+    return install_launchd_fake_bin_with_exit_codes(enableExitCode: 0, bootstrapExitCode: 0);
 }
 
 function install_launchd_fake_bin_with_enable_failure(): string
 {
-    return install_launchd_fake_bin_with_enable_exit_code(enableExitCode: 42);
+    return install_launchd_fake_bin_with_exit_codes(enableExitCode: 42, bootstrapExitCode: 0);
 }
 
-function install_launchd_fake_bin_with_enable_exit_code(int $enableExitCode): string
+function install_launchd_fake_bin_with_bootstrap_already_loaded(): string
+{
+    return install_launchd_fake_bin_with_exit_codes(enableExitCode: 0, bootstrapExitCode: 37);
+}
+
+function install_launchd_fake_bin_with_exit_codes(int $enableExitCode, int $bootstrapExitCode): string
 {
     $dir = sys_get_temp_dir().'/orbit-launchd-fake-bin-'.bin2hex(random_bytes(8));
     mkdir($dir, permissions: 0o755, recursive: true);
@@ -307,6 +334,7 @@ function install_launchd_fake_bin_with_enable_exit_code(int $enableExitCode): st
     app()->instance(LocalLaunchdServiceAction::class, new LocalLaunchdServiceAction(osFamily: 'Darwin'));
 
     $enableExit = "exit({$enableExitCode});";
+    $bootstrapExit = "exit({$bootstrapExitCode});";
 
     file_put_contents("{$dir}/launchctl", <<<PHP
         #!/usr/bin/env php
@@ -325,6 +353,10 @@ function install_launchd_fake_bin_with_enable_exit_code(int $enableExitCode): st
         if (\$cmd === 'enable') {
             fwrite(STDERR, "enable failed\n");
             {$enableExit}
+        }
+        if (\$cmd === 'bootstrap' && {$bootstrapExitCode} !== 0) {
+            fwrite(STDERR, "service already loaded\n");
+            {$bootstrapExit}
         }
         exit(0);
         PHP);
