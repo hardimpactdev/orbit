@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-28T16:54:16+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-launchd-hibernation-wake/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-28-185416-codex-fix-launchd-hibernation-wake",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-28T164628Z-8121d30269fe.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "45238c73989fff4372192a0b313652e9a56046139e8a3e7a217f91fb4517f2c4",
+        "loop.md": "df036c016f0ec524a98350e462cdf9462413868aa742ccb221fdc6388f9151c3",
+        "quality-gates/quality-check-2026-07-28T164628Z-8121d30269fe.json": "9c0e43f25402046d234a38115cc2b66857a309d7e846729c33ae7db05941aac3"
+    },
+    "branch": "codex/fix-launchd-hibernation-wake",
+    "candidate_commit": "9faca7513075988eee5c3973da8cd10c3be57747",
+    "accepted_feature_tip": "9faca7513075988eee5c3973da8cd10c3be57747",
+    "accepted_main_tip": "7027446c5f5ae3d90ca7b704309601cc17778ecc",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

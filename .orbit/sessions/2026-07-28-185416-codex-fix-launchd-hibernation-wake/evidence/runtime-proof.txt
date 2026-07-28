@@ -1,0 +1,26 @@
+Orbit launchd hibernation wake host-mac acceptance
+Feature tip: 9faca7513075988eee5c3973da8cd10c3be57747
+Host: macOS, gui/501
+Label: dev.hardimpact.orbit.codex-hibernation-wake-proof
+
+Precondition:
+  launchctl print-disabled gui/501
+  "dev.hardimpact.orbit.codex-hibernation-wake-proof" => disabled
+
+Action through the committed LocalLaunchdServiceAction:
+  run("start", "dev.hardimpact.orbit.codex-hibernation-wake-proof", null)
+  {"action":"start","label":"dev.hardimpact.orbit.codex-hibernation-wake-proof","changed":true}
+
+Observed after start:
+  launchctl print gui/501/dev.hardimpact.orbit.codex-hibernation-wake-proof
+  state = running
+  program = /bin/sleep
+  pid = 20259
+
+Cleanup through the same action:
+  run("stop", "dev.hardimpact.orbit.codex-hibernation-wake-proof", null)
+  {"action":"stop","label":"dev.hardimpact.orbit.codex-hibernation-wake-proof","changed":true}
+
+Postcondition:
+  launchctl print returned non-zero because the service was booted out.
+  The temporary plist was removed.
