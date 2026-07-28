@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-28T18:23:16+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-role-image-install-order/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-28-202315-codex-fix-role-image-install-order",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/release-blocker.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/release-blocker.txt": "d0f9316e078a192058f27536ccc608a7b30bf31ee9868b422f8f1a0f36d1d375",
+        "loop.md": "a454a4fef3bc31af7da441c75b73028e7341ad2d619f70afd3ef24b3d03011fc"
+    },
+    "branch": "codex/fix-role-image-install-order",
+    "candidate_commit": "ffd4bd4b9d78af55c5bcccc5856d31fc141f276d",
+    "accepted_feature_tip": "ffd4bd4b9d78af55c5bcccc5856d31fc141f276d",
+    "accepted_main_tip": "454815d944363447363fbf7d6ea5600c58c58d8a",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

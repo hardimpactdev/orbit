@@ -1,0 +1,43 @@
+Candidate-only fleet update release blocker
+
+Feature commit:
+ffd4bd4b9d78af55c5bcccc5856d31fc141f276d
+
+Failed live candidate:
+build_id=20260728T175624Z-454815d94
+gateway_digest=sha256:764a3ded25b7db13e937ef613308a685c1f81a8398b716bfeefc2c39938e8362
+reverb_digest=sha256:964de70c034bd2d9295f9546a005a90ae825df307b8c2322f6f667a76f86545b
+operation_run_id=f8ac1ea3-b562-4a76-95b6-8fde659f081e
+activity_id=283069
+
+Live activity evidence:
+- 283023 dispatched internal:fleet-update:install-cli to services1.
+- 283024 failed with cURL error 52, Empty reply from server.
+- 283026 failed with cURL error 7, services1 Agent port 9477 unavailable.
+- 283068 reported fleet_update.required_image_missing for the exact candidate
+  Reverb image because Docker had no such image.
+- 283069 finalized update:all as failed at the verification step.
+
+Diagnosis:
+The install script scheduled the Orbit Agent self-restart immediately after
+installing the Agent artifact. The deferred restart interrupted the same
+in-flight command before the required Reverb role image archive finished
+loading. The final verifier correctly rejected the incomplete node.
+
+Executable proof:
+- The focused install and verify files passed: 25 tests, 178 assertions.
+- The isolated full CLI lane passed: 2,375 tests, 9,849 assertions.
+- The exact ordering regression asserts that load_required_image_artifacts is
+  emitted before schedule_agent_restart.
+- composer quality-check passed on the exact clean feature commit.
+- Quality profile:
+  .orbit/quality-gates/profiles/2026-07-28T18-17-44Z-ffd4bd4b9d78
+
+Post-merge live acceptance still required:
+- Build and select a fresh live-test release candidate without a version bump
+  or GitHub release.
+- update:all must complete successfully and verify the required Reverb image on
+  services1.
+- Stopping horizon-demo.development must write its asleep marker, and the first
+  ordinary request to https://horizon-demo.nmbp/ must return HTTP 200 while
+  waking its Docker and launchd processes.
