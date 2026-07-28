@@ -91,4 +91,10 @@ return [
         'lease_ttl_seconds' => env(key: 'ORBIT_UPDATE_LEASE_TTL_SECONDS', default: 300),
         'manifest_snapshot' => [],
     ],
+
+    'runtime_hibernation' => [
+        'idle_seconds' => (int) env(key: 'ORBIT_RUNTIME_HIBERNATION_IDLE_SECONDS', default: 3600),
+        'lock_seconds' => (int) env(key: 'ORBIT_RUNTIME_HIBERNATION_LOCK_SECONDS', default: 120),
+        'lock_wait_seconds' => (int) env(key: 'ORBIT_RUNTIME_HIBERNATION_LOCK_WAIT_SECONDS', default: 90),
+    ],
 ];

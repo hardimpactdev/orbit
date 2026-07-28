@@ -987,6 +987,10 @@ describe('ProxyRouteRenderer', function (): void {
     });
 
     it('renders canonical app instance primary routes to the concrete app instance runtime target', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.1',
+        ]);
         $node = createTestAppHostNode(['name' => 'nmbp', 'user' => 'nckrtl', 'tld' => 'nmbp']);
         $app = Project::factory()->for($node, 'node')->create([
             'name' => 'happie',
@@ -1033,8 +1037,20 @@ describe('ProxyRouteRenderer', function (): void {
 
         expect($content)
             ->toContain('happie.nmbp {')
+            ->toContain('output file /data/caddy/orbit/hibernation/app-instance-')
+            ->toContain('.access.log')
+            ->toContain('not file {')
+            ->toContain('root /dev/shm/orbit/hibernation')
+            ->toContain('try_files /app-instance-')
+            ->toContain('.awake')
+            ->toContain('forward_auth @orbit_runtime_asleep https://10.6.0.1')
+            ->toContain('uri /api/runtime-activations/app-instance/')
+            ->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+            ->toContain('response_header_timeout 90s')
             ->and($content)
             ->toContain('reverse_proxy https://orbit-app-happie-nmbp:8443')
+            ->toContain('lb_try_duration 15s')
+            ->toContain('lb_try_interval 250ms')
             ->and($content)
             ->toContain('tls_server_name happie.nmbp')
             ->and($content)
@@ -1052,14 +1068,20 @@ describe('ProxyRouteRenderer', function (): void {
     });
 
     it('renders workspace PHP routes as reverse_proxy to the FrankenPHP runtime container', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.1',
+        ]);
         $node = createTestAppHostNode();
         $app = Project::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'document_root' => 'public',
         ]);
+        $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
         $route = ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
+            ->for($workspace, 'workspace')
             ->create([
                 'domain' => 'feature-a.docs.test',
                 'owner_type' => 'workspace',
@@ -1079,8 +1101,15 @@ describe('ProxyRouteRenderer', function (): void {
 
         expect($content)
             ->toContain('feature-a.docs.test {')
+            ->toContain("output file /data/caddy/orbit/hibernation/workspace-{$workspace->id}.access.log")
+            ->toContain('root /dev/shm/orbit/hibernation')
+            ->toContain("try_files /workspace-{$workspace->id}.awake")
+            ->toContain('forward_auth @orbit_runtime_asleep https://10.6.0.1')
+            ->toContain("uri /api/runtime-activations/workspace/{$workspace->id}")
             ->and($content)
             ->toContain('reverse_proxy http://orbit-ws-docs-feature-a')
+            ->toContain('lb_try_duration 15s')
+            ->toContain('lb_try_interval 250ms')
             ->and($content)
             ->not->toContain('php_fastcgi')->and($content)
             ->not->toContain('file_server');
@@ -1173,6 +1202,34 @@ describe('ProxyRouteRenderer', function (): void {
             }
 
             CADDY);
+    });
+
+    it('does not render development wake directives for production backend routes', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.1',
+        ]);
+        $appNode = Node::factory()->appProd()->create(['name' => 'web-1']);
+        $app = Project::factory()->for($appNode, 'node')->create([
+            'name' => 'example',
+            'document_root' => 'public',
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'app_id' => $app->id,
+            'domain' => 'example.com',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        $content = new ProxyRouteRenderer()->renderPrivateBackend($route, [
+            'bind' => '10.6.0.21',
+            'runtime_upstream' => 'http://orbit-app-example:8080',
+        ]);
+
+        expect($content)
+            ->not->toContain('runtime-activations')
+            ->not->toContain('/data/caddy/orbit/hibernation');
     });
 
     it('renders private backend routes for static workspaces as file_server only', function (): void {

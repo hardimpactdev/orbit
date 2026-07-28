@@ -36,6 +36,7 @@ final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
                     node: $node,
                     service: $this->renderer->serviceName($this->runtimeUnitName($app, $process, $workspace)),
                     content: $this->renderer->render($node, $app, $process, $workspace),
+                    enabled: $process->owner instanceof Node || ! $node->hasActiveRole('app-dev'),
                 )
                 ->successful();
         } catch (Throwable) {

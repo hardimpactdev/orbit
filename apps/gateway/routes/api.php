@@ -88,6 +88,7 @@ use App\Http\Controllers\Api\ProcessUpdateController;
 use App\Http\Controllers\Api\ProxyRouteDestroyController;
 use App\Http\Controllers\Api\ProxyRouteListController;
 use App\Http\Controllers\Api\ProxyRouteStoreController;
+use App\Http\Controllers\Api\RuntimeActivationController;
 use App\Http\Controllers\Api\S3CredentialsController;
 use App\Http\Controllers\Api\S3PublishController;
 use App\Http\Controllers\Api\S3UnpublishController;
@@ -159,6 +160,10 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
     });
 
     Route::middleware(WireGuardIdentity::class)->group(function (): void {
+        Route::get('/runtime-activations/{type}/{id}', RuntimeActivationController::class)
+            ->whereIn('type', ['app-instance', 'workspace'])
+            ->whereNumber('id')
+            ->name('api.runtime-activations.show');
         Route::post('/operations/{operationRun}/stream/publisher-credentials', [
             OperationStreamControlPlaneController::class,
             'publisherCredentials',

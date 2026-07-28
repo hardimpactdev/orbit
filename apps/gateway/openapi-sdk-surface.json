@@ -442,6 +442,13 @@
       "reason": "Process event ingestion is node/runtime-to-gateway telemetry, not public SDK surface."
     },
     {
+      "operation": "GET /runtime-activations/{type}/{id}",
+      "operation_id": "runtime-activations.show",
+      "classification": "internal_only",
+      "group": "runtime_hibernation",
+      "reason": "Runtime activation is private Caddy-to-gateway control traffic for app-development process hibernation, not public SDK surface."
+    },
+    {
       "operation": "POST /processes/{name}/log-stream",
       "operation_id": "processes.logStream.start",
       "classification": "public_sdk",

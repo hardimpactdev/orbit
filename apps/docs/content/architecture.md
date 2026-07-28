@@ -164,6 +164,14 @@ workspaces run in dedicated FrankenPHP containers represented as process-backed
 runtime units. Orbit-defined Linux host command processes run as systemd-backed
 process units, while containerized app and workspace runtimes use Docker-backed
 process units. Host PHP-FPM is not an app or workspace runtime fallback.
+On `app-dev`, instance and workspace process groups are installed without
+boot-start intent. The always-on stock Caddy route wakes the exact owning group
+through the gateway on its first ordinary HTTP request, and the gateway
+scheduler stops it after one hour without HTTP route activity. Wake and sleep
+share one scope lock: after the scheduler removes the awake marker, later
+requests wait for the sleep transition instead of overtaking it. Node-owned
+services and every `app-prod` process remain persistent and do not participate
+in this development hibernation policy.
 Gateway Laravel/artisan/PDO work runs inside the gateway container or the
 durable update runner. Packaged node-local helpers that need host file access
 and PHP/PDO use the token-gated local executor lane. See [Runtime Execution
@@ -581,7 +589,7 @@ The gateway database is Orbit's source of truth. It stores four kinds of records
 - **Policy** — repeatable workflows (deployment step definitions).
 - **History** — what happened (deployment runs, activity logs).
 
-For standing configuration, a database row is not a cache. It describes a desired physical fact on a node — a FrankenPHP app process that should exist, a proxy route that should resolve, a systemd-backed or Docker-backed process unit that should be running. The node-side artifact is the *applied* representation of that row.
+For standing configuration, a database row is not a cache. It describes a desired physical fact on a node — a FrankenPHP app process that should exist, a proxy route that should resolve, or a systemd-backed or Docker-backed process unit that should be installed. The node-side artifact is the *applied* representation of that row. Node-owned and production process units are expected to be running; development instance and workspace units may be intentionally stopped while their scope is hibernating.
 
 The core invariant:
 

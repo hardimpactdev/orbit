@@ -123,7 +123,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
             name: $this->containerName($workspace),
             image: $policy->image,
             network: $this->names->network(),
-            restartPolicy: 'always',
+            restartPolicy: $node?->hasActiveRole('app-dev') === true ? 'unless-stopped' : 'always',
             appSlug: $app->name,
             workspaceSlug: $workspace->name,
             environment: array_merge(

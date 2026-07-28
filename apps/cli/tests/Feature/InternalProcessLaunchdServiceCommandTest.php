@@ -20,6 +20,9 @@ afterEach(function (): void {
     putenv('PATH='.launchd_service_original_path());
 });
 
+/**
+ * @mago-expect lint:halstead
+ */
 describe('internal process launchd service command', function (): void {
     beforeEach(function (): void {
         app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
@@ -152,6 +155,49 @@ describe('internal process launchd service command', function (): void {
                 'stderr' => 'enable failed',
             ]);
     });
+
+    it('applies development launch agents disabled and disables them again when stopped', function (): void {
+        $bin = install_launchd_fake_bin();
+        $home = sys_get_temp_dir().'/orbit-launchd-home-'.bin2hex(random_bytes(8));
+        mkdir($home);
+        $originalHome = getenv('HOME');
+        putenv("HOME={$home}");
+
+        try {
+            [$applyExitCode, $applyOutput] = run_internal_process_launchd_service_command(
+                [
+                    'action' => 'apply',
+                    'label' => 'dev.hardimpact.orbit.test-unit',
+                    '--operation-token' => launchd_service_signed_operation_token(id: 'launchd-apply'),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'content' => '<plist version="1.0"></plist>',
+                    'enabled' => false,
+                ], JSON_THROW_ON_ERROR),
+            );
+            [$stopExitCode] = run_internal_process_launchd_service_command([
+                'action' => 'stop',
+                'label' => 'dev.hardimpact.orbit.test-unit',
+                '--operation-token' => launchd_service_signed_operation_token(id: 'launchd-stop'),
+                '--json' => true,
+            ]);
+
+            $calls = file_get_contents("{$bin}/calls.log");
+            $target = 'gui/'.getmyuid().'/dev.hardimpact.orbit.test-unit';
+
+            expect($applyExitCode)
+                ->toBe(0, $applyOutput)
+                ->and($stopExitCode)
+                ->toBe(0)
+                ->and($calls)
+                ->toContain("disable {$target}")
+                ->toContain("bootout {$target}");
+        } finally {
+            $originalHome === false ? putenv('HOME') : putenv("HOME={$originalHome}");
+            Illuminate\Support\Facades\File::deleteDirectory($home);
+        }
+    });
 });
 
 it('accepts launchd provider for LocalRuntimeBackendProbe using launchctl help', function (): void {
@@ -199,8 +245,13 @@ function launchd_service_operation_secret(): string
  * @param  array<string, mixed>  $parameters
  * @return array{int, string}
  */
-function run_internal_process_launchd_service_command(array $parameters = []): array
+function run_internal_process_launchd_service_command(array $parameters = [], string $stdin = ''): array
 {
+    $stream = fopen(filename: 'php://temp', mode: 'r+');
+    fwrite($stream, $stdin);
+    rewind($stream);
+    $input = new ArrayInput($parameters);
+    $input->setStream($stream);
     $output = new BufferedOutput;
     /** @var mixed $command */
     $command = Artisan::all()['internal:process-launchd-service'] ?? null;
@@ -211,7 +262,7 @@ function run_internal_process_launchd_service_command(array $parameters = []): a
         throw new RuntimeException('internal:process-launchd-service not registered; list exit='.$exitCode);
     }
 
-    $exitCode = $command->run(new ArrayInput($parameters), $output);
+    $exitCode = $command->run($input, $output);
 
     return [$exitCode, $output->fetch()];
 }
@@ -248,11 +299,11 @@ function install_launchd_fake_bin_with_enable_exit_code(int $enableExitCode): st
             echo "launchctl print output\n";
             exit(0);
         }
+        file_put_contents(__DIR__.'/calls.log', implode(' ', array_slice(\$argv, 1)).PHP_EOL, FILE_APPEND);
         if (\$cmd === 'enable') {
             fwrite(STDERR, "enable failed\n");
             {$enableExit}
         }
-        file_put_contents(__DIR__.'/calls.log', implode(' ', array_slice(\$argv, 1)).PHP_EOL, FILE_APPEND);
         exit(0);
         PHP);
     chmod("{$dir}/launchctl", permissions: 0o755);

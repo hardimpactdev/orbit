@@ -20,6 +20,9 @@ final readonly class LocalCaddyConfigAction
         'read-global',
         'reload',
         'remove-site',
+        'runtime-asleep',
+        'runtime-awake',
+        'runtime-states',
         'start-container',
         'write-global',
         'write-site',
@@ -32,6 +35,10 @@ final readonly class LocalCaddyConfigAction
     private const string DEFAULT_CONTAINER = 'orbit-caddy';
 
     private const string SPEC_HASH_LABEL = 'orbit.caddy.spec_hash';
+
+    private const string RUNTIME_ACTIVITY_DIRECTORY = '/data/caddy/orbit/hibernation';
+
+    private const string RUNTIME_MARKER_DIRECTORY = '/dev/shm/orbit/hibernation';
 
     public function __construct(
         private LocalDockerCommandContext $docker,
@@ -76,6 +83,18 @@ final readonly class LocalCaddyConfigAction
             );
         }
 
+        if ($action === 'runtime-awake') {
+            return $this->markRuntimeAwake($this->runtimeKey($payload['key'] ?? null));
+        }
+
+        if ($action === 'runtime-asleep') {
+            return $this->markRuntimeAsleep($this->runtimeKey($payload['key'] ?? null));
+        }
+
+        if ($action === 'runtime-states') {
+            return $this->runtimeStates($this->runtimeKeys($payload['keys'] ?? null));
+        }
+
         if ($action === 'apply-container') {
             return $this->applyContainer(
                 spec: $this->containerSpec($payload['container'] ?? null),
@@ -88,6 +107,164 @@ final readonly class LocalCaddyConfigAction
         }
 
         return $this->reload($this->container($payload['container'] ?? null));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function markRuntimeAwake(string $key): array
+    {
+        $activityDirectory = $this->runtimeActivityHostDirectory();
+        $activity = "{$activityDirectory}/{$key}.access.log";
+        $awakeMarker = self::RUNTIME_MARKER_DIRECTORY."/{$key}.awake";
+        $asleepMarker = self::RUNTIME_MARKER_DIRECTORY."/{$key}.asleep";
+
+        $this->mustRunPrivileged(
+            ['install', '-d', '-m', '0755', $activityDirectory],
+            'caddy_runtime.directory_failed',
+        );
+        $this->mustRunPrivileged(['touch', $activity], 'caddy_runtime.awake_failed');
+        $this->mustRunPrivileged(['chmod', '0644', $activity], 'caddy_runtime.chmod_failed');
+        $this->mustRunDocker(
+            ['exec', self::DEFAULT_CONTAINER, 'mkdir', '-p', self::RUNTIME_MARKER_DIRECTORY],
+            'caddy_runtime.directory_failed',
+        );
+        $this->mustRunDocker(
+            ['exec', self::DEFAULT_CONTAINER, 'rm', '-f', $asleepMarker],
+            'caddy_runtime.awake_failed',
+        );
+        $this->mustRunDocker(
+            ['exec', self::DEFAULT_CONTAINER, 'touch', $awakeMarker],
+            'caddy_runtime.awake_failed',
+        );
+
+        return [
+            'key' => $key,
+            'awake' => true,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function markRuntimeAsleep(string $key): array
+    {
+        $awakeMarker = self::RUNTIME_MARKER_DIRECTORY."/{$key}.awake";
+        $asleepMarker = self::RUNTIME_MARKER_DIRECTORY."/{$key}.asleep";
+
+        $this->mustRunDocker(
+            ['exec', self::DEFAULT_CONTAINER, 'mkdir', '-p', self::RUNTIME_MARKER_DIRECTORY],
+            'caddy_runtime.directory_failed',
+        );
+        $this->mustRunDocker(
+            ['exec', self::DEFAULT_CONTAINER, 'rm', '-f', $awakeMarker],
+            'caddy_runtime.asleep_failed',
+        );
+        $this->mustRunDocker(
+            ['exec', self::DEFAULT_CONTAINER, 'touch', $asleepMarker],
+            'caddy_runtime.asleep_failed',
+        );
+
+        return [
+            'key' => $key,
+            'awake' => false,
+        ];
+    }
+
+    /**
+     * @param  list<string>  $keys
+     * @return array<string, mixed>
+     */
+    private function runtimeStates(array $keys): array
+    {
+        $activityDirectory = $this->runtimeActivityHostDirectory();
+        $states = [];
+
+        foreach ($keys as $key) {
+            $awakeMarker = self::RUNTIME_MARKER_DIRECTORY."/{$key}.awake";
+            $asleepMarker = self::RUNTIME_MARKER_DIRECTORY."/{$key}.asleep";
+            $activity = "{$activityDirectory}/{$key}.access.log";
+            $awake =
+                $this->runProcess(
+                    ['docker', 'exec', self::DEFAULT_CONTAINER, 'test', '-f', $awakeMarker],
+                )['exit_code'] === 0;
+            $hibernated =
+                $this->runProcess(
+                    ['docker', 'exec', self::DEFAULT_CONTAINER, 'test', '-f', $asleepMarker],
+                )['exit_code'] === 0;
+            $lastActivityAt = null;
+
+            if ($this->runPrivilegedProcess(['test', '-f', $activity])['exit_code'] === 0) {
+                $lastActivityAt = $this->fileModificationTime($activity);
+            }
+
+            $states[] = [
+                'key' => $key,
+                'awake' => $awake,
+                'hibernated' => $hibernated,
+                'last_activity_at' => $lastActivityAt,
+            ];
+        }
+
+        return ['states' => $states];
+    }
+
+    private function fileModificationTime(string $path): ?int
+    {
+        foreach ([
+            ['stat', '-c', '%Y', $path],
+            ['stat', '-f', '%m', $path],
+        ] as $command) {
+            $result = $this->runPrivilegedProcess($command);
+            $timestamp = trim($result['output']);
+
+            if ($result['exit_code'] === 0 && ctype_digit($timestamp)) {
+                return (int) $timestamp;
+            }
+        }
+
+        throw new LocalCaddyConfigFailure(
+            errorCode: 'caddy_runtime.stat_failed',
+            message: 'Caddy runtime activity state could not be inspected.',
+            meta: ['path' => $path],
+        );
+    }
+
+    private function runtimeActivityHostDirectory(): string
+    {
+        return $this->hostPathForContainerPath(self::RUNTIME_ACTIVITY_DIRECTORY, self::DEFAULT_CONTAINER);
+    }
+
+    private function runtimeKey(mixed $value): string
+    {
+        if (is_string($value) && preg_match('/\A(?:app-instance|workspace)-[1-9][0-9]*\z/', $value) === 1) {
+            return $value;
+        }
+
+        throw new LocalCaddyConfigFailure(
+            errorCode: 'validation_failed',
+            message: 'Caddy runtime key is invalid.',
+            meta: ['field' => 'key'],
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function runtimeKeys(mixed $value): array
+    {
+        if (! is_array($value) || $value === [] || count($value) > 200) {
+            throw new LocalCaddyConfigFailure(
+                errorCode: 'validation_failed',
+                message: 'Caddy runtime keys are invalid.',
+                meta: ['field' => 'keys'],
+            );
+        }
+
+        return array_values(array_unique(array_map(
+            $this->runtimeKey(...),
+            $value,
+        )));
     }
 
     /**
@@ -1154,6 +1331,23 @@ final readonly class LocalCaddyConfigAction
     private function mustRunPrivilegedWithInput(array $command, string $input, string $errorCode): void
     {
         $result = $this->runPrivilegedProcess($command, $input);
+
+        if ($result['exit_code'] === 0) {
+            return;
+        }
+
+        throw new LocalCaddyConfigFailure(errorCode: $errorCode, message: 'Caddy config command failed.', meta: [
+            'exit_code' => $result['exit_code'],
+            'output' => $result['output'],
+        ]);
+    }
+
+    /**
+     * @param  list<string>  $arguments
+     */
+    private function mustRunDocker(array $arguments, string $errorCode): void
+    {
+        $result = $this->runProcess(['docker', ...$arguments]);
 
         if ($result['exit_code'] === 0) {
             return;

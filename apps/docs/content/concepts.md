@@ -306,6 +306,7 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Runtime unit environment**
 - **Runtime backend artifact**
 - **Restart policy**
+- **Development hibernation policy**
 - **Crash notification policy**
 - **Process runtime selection**
 - **Process event**
@@ -353,6 +354,8 @@ Source: [Proxy Concepts](domains/8_proxy/proxy-concepts.md).
 - **Hostname compatibility material**
 - **Project ingress baseline**
 - **Document-root policy**
+- **Development runtime wake gate**
+- **Development runtime activity**
 - **Proxy-family boundaries**
 <!-- /concept-index -->
 

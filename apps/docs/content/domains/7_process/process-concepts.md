@@ -116,7 +116,16 @@ These terms define per-process behavioral rules that apply to every derived runt
 
 - **Restart policy:** Process-definition policy used by every derived runtime
   unit. Allowed values are `never`, `on_failure`, and `always`. Manual
-  `process:restart` actions do not change the policy.
+  `process:restart` actions do not change the policy. Restart policy governs an
+  active unit; it does not opt an app-development instance or workspace out of
+  hibernation.
+- **Development hibernation policy:** App-instance and workspace process groups
+  on `app-dev` nodes are installed without host-boot start intent. The first
+  ordinary HTTP request to any owned route wakes the full owning lifecycle
+  group. One hour without HTTP route activity makes the group eligible for an
+  automatic stop. All routes for one instance or workspace share its marker,
+  activity state, and serialization lock. Node-owned processes and all
+  `app-prod` processes remain boot-persistent and are outside this policy.
 - **Crash notification policy:** Process-definition opt-in for crash event
   delivery. When the policy is enabled, `crashed` events resolve the effective
   agent IDE and notify the active session when one is available. Units that use

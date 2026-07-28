@@ -15,6 +15,7 @@ use InvalidArgumentException;
 
 /**
  * @mago-expect lint:too-many-methods
+ * @mago-expect lint:cyclomatic-complexity
  */
 final readonly class LaunchdPlistRenderer
 {
@@ -73,6 +74,9 @@ final readonly class LaunchdPlistRenderer
         $stdout = $this->stdoutLogPath($runtimeUnit, $node);
         $stderr = $this->stderrLogPath($runtimeUnit, $node);
         $keepAlive = $process->restart_policy !== ProcessRestartPolicy::Never ? '<true/>' : '<false/>';
+        $runAtLoad = $process->owner instanceof Node || ! $node->hasActiveRole('app-dev')
+            ? '<true/>'
+            : '<false/>';
 
         $envLines = $this->environmentEntries($app, $node, $workspace, $home);
 
@@ -90,7 +94,7 @@ final readonly class LaunchdPlistRenderer
             '        <string>'.$this->xml($process->command).'</string>',
             '    </array>',
             '    <key>RunAtLoad</key>',
-            '    <true/>',
+            "    {$runAtLoad}",
             '    <key>KeepAlive</key>',
             "    {$keepAlive}",
             '    <key>WorkingDirectory</key>',

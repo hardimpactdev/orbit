@@ -85,7 +85,7 @@ it('renders a FrankenPHP app runtime container for a PHP app with deterministic 
         ->and($container->network())
         ->toBe('orbit-network')
         ->and($container->restartPolicy())
-        ->toBe('always')
+        ->toBe('unless-stopped')
         ->and($container->networkAliases())
         ->toContain('orbit-app-docs')
         ->and($container->networkAliases())
@@ -399,7 +399,9 @@ it('does not mount the packages directory for app-prod PHP app runtimes', functi
             'source' => '/home/orbit/packages',
             'target' => '/packages',
             'read_only' => false,
-        ]);
+        ])
+        ->and($container->restartPolicy())
+        ->toBe('always');
 });
 
 it('renders a production app runtime user from the app source owner but leaves development containers on the node user', function (): void {

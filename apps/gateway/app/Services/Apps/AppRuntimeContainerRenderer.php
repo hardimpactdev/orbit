@@ -145,7 +145,7 @@ final readonly class AppRuntimeContainerRenderer
             name: $this->containerNameForSlug($runtimeSlug),
             image: $policy->image,
             network: $this->names->network(),
-            restartPolicy: 'always',
+            restartPolicy: $this->restartPolicy($app),
             appSlug: $runtimeSlug,
             runtimeUser: $this->appRuntimeUser->containerUserForApp($app),
             environment: array_merge(
@@ -163,6 +163,13 @@ final readonly class AppRuntimeContainerRenderer
             ),
             extraHosts: $this->runtimeHostRouting->forApp($app),
         );
+    }
+
+    private function restartPolicy(Project $app): string
+    {
+        $app->loadMissing('node');
+
+        return $app->node?->hasActiveRole('app-dev') === true ? 'unless-stopped' : 'always';
     }
 
     public function containerName(Project $app): string

@@ -10,6 +10,7 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerSwarmProcessRuntimeDriver;
+use App\Services\Processes\ProcessRuntimeDrivers\LaunchdProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -116,6 +117,34 @@ it('applies, removes, and cleans up docker process runtime units through the doc
             'action' => 'remove',
             'container' => 'orbit_docs_development_main_queue',
         ]);
+});
+
+it('keeps stopped always-restart app containers stopped across Docker restarts', function (): void {
+    fake_docker_process_driver_agent_responses();
+
+    $node = Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.44.0.71',
+        ]);
+    $app = Project::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'path' => '/srv/docs',
+    ]);
+    $process = Process::factory()
+        ->forOwner($app)
+        ->create([
+            'name' => 'vite',
+            'runtime' => ProcessRuntime::Docker,
+            'restart_policy' => ProcessRestartPolicy::Always,
+        ]);
+
+    expect(app(DockerProcessRuntimeDriver::class)->apply($node, $app, $process))
+        ->toBeTrue()
+        ->and(docker_process_driver_agent_payloads()[0]['spec']['restart_policy'])
+        ->toBe('unless-stopped');
 });
 
 it('applies node owned docker service processes from runtime config', function (): void {
@@ -591,6 +620,128 @@ it('applies, removes, and cleans up systemd process runtime units through the sy
             ['apply', 'opencode-server.service'],
             ['remove', 'opencode-server.service', '/etc/systemd/system/opencode-server.service'],
         ]);
+});
+
+it('installs app-dev systemd units disabled while app-prod and node process units remain enabled', function (): void {
+    fake_process_driver_agent_responses();
+
+    $node = Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'name' => 'app-dev-1',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.71',
+        ]);
+    $app = Project::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'path' => '/srv/docs',
+    ]);
+    $appProcess = Process::factory()
+        ->forOwner($app)
+        ->create([
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Systemd,
+        ]);
+    $nodeProcess = Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'opencode-server',
+            'runtime' => ProcessRuntime::Systemd,
+        ]);
+    $productionNode = Node::factory()
+        ->appProd()
+        ->managed()
+        ->create([
+            'name' => 'app-prod-1',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.72',
+        ]);
+    $productionApp = Project::factory()->for($productionNode, 'node')->create([
+        'name' => 'docs-production',
+        'path' => '/srv/docs-production',
+    ]);
+    $productionProcess = Process::factory()
+        ->forOwner($productionApp)
+        ->create([
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Systemd,
+        ]);
+    $driver = app(SystemdProcessRuntimeDriver::class);
+
+    expect($driver->apply($node, $app, $appProcess))
+        ->toBeTrue()
+        ->and($driver->apply($node, $app, $nodeProcess))
+        ->toBeTrue()
+        ->and($driver->apply($productionNode, $productionApp, $productionProcess))
+        ->toBeTrue();
+
+    expect(array_column(
+        process_driver_agent_payloads('internal:process-systemd-service'),
+        'enabled',
+    ))->toBe([false, true, true]);
+});
+
+it('installs app-dev launchd units disabled while app-prod and node process units remain enabled', function (): void {
+    fake_process_driver_agent_responses();
+
+    $node = Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'name' => 'mac-app',
+            'platform' => 'macos_26',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.81',
+        ]);
+    $app = Project::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'path' => '/Users/orbit/docs',
+    ]);
+    $appProcess = Process::factory()
+        ->forOwner($app)
+        ->create([
+            'name' => 'vite',
+            'runtime' => ProcessRuntime::Launchd,
+        ]);
+    $nodeProcess = Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'opencode-server',
+            'runtime' => ProcessRuntime::Launchd,
+        ]);
+    $productionNode = Node::factory()
+        ->appProd()
+        ->managed()
+        ->create([
+            'name' => 'mac-production',
+            'platform' => 'macos_26',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.82',
+        ]);
+    $productionApp = Project::factory()->for($productionNode, 'node')->create([
+        'name' => 'docs-production',
+        'path' => '/Users/orbit/docs-production',
+    ]);
+    $productionProcess = Process::factory()
+        ->forOwner($productionApp)
+        ->create([
+            'name' => 'queue',
+            'runtime' => ProcessRuntime::Launchd,
+        ]);
+    $driver = app(LaunchdProcessRuntimeDriver::class);
+
+    expect($driver->apply($node, $app, $appProcess))
+        ->toBeTrue()
+        ->and($driver->apply($node, $app, $nodeProcess))
+        ->toBeTrue()
+        ->and($driver->apply($productionNode, $productionApp, $productionProcess))
+        ->toBeTrue();
+
+    expect(array_column(
+        process_driver_agent_payloads('internal:process-launchd-service'),
+        'enabled',
+    ))->toBe([false, true, true]);
 });
 
 function fake_docker_process_driver_agent_responses(): void

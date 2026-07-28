@@ -146,6 +146,25 @@ These terms define the ingress behavior applied to app and workspace routes.
   ingress blocks adjacent sensitive files. Public-document-root instances and
   workspaces use the lighter policy; project-root instances and workspaces use the
   stronger blocking policy.
+- **Development runtime wake gate:** App-instance and workspace routes rendered
+  on `app-dev` use only standard Caddy directives. A node-local awake marker
+  in Caddy's ephemeral shared-memory filesystem lets an active scope bypass the
+  gateway. An absent marker after a Caddy or host restart causes a bounded
+  `forward_auth` request to the private gateway activation endpoint before the
+  original browser request continues. The endpoint accepts only the exact
+  serving node's WireGuard identity, serializes against idle shutdown, and
+  returns success only after the owning process group starts. The following
+  reverse-proxy handoff retries failed upstream connections for up to 15
+  seconds so the original request can span container warm-up without requiring
+  a custom Caddy module.
+- **Development runtime activity:** Every app-development instance or workspace
+  route writes a dedicated access log whose modification time is the last HTTP
+  activity for that scope. Activity logs remain in Caddy's persistent data
+  mount, while awake and hibernated markers are ephemeral. Multiple domains
+  share the same scope identity.
+  Background HTTP polling counts as activity; a WebSocket reconnect by itself
+  is not a wake signal. The process family consumes this state to enforce the
+  one-hour idle policy.
 
 ## Boundaries
 

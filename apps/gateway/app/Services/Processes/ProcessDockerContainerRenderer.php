@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Enums\Apps\AppRuntimeKind;
+use App\Enums\ProcessRestartPolicy;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
@@ -56,7 +57,7 @@ final readonly class ProcessDockerContainerRenderer
             name: $name,
             image: $policy->image,
             network: $this->names->network(),
-            restartPolicy: $process->restart_policy->toDocker(),
+            restartPolicy: $this->restartPolicy($app, $process),
             appSlug: $app->name,
             workspaceSlug: $workspace?->name,
             processSlug: $process->name,
@@ -114,6 +115,16 @@ final readonly class ProcessDockerContainerRenderer
         }
 
         return $name;
+    }
+
+    private function restartPolicy(Project $app, Process $process): string
+    {
+        $app->loadMissing('node');
+
+        return $app->node?->hasActiveRole('app-dev') === true
+        && $process->restart_policy === ProcessRestartPolicy::Always
+            ? 'unless-stopped'
+            : $process->restart_policy->toDocker();
     }
 
     private function renderNodeProcess(Node $node, Process $process): ProcessDockerContainer

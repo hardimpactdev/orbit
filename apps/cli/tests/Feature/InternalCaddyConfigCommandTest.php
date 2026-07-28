@@ -154,6 +154,95 @@ describe('internal caddy config command', function (): void {
             ->toContain("docs.test {\n  respond ok\n}");
     });
 
+    it('manages ephemeral runtime markers and persistent activity through fixed argv commands', function (): void {
+        $bin = install_caddy_config_fake_bin();
+        caddy_config_fake_container_inspect($bin, [
+            'Mounts' => [[
+                'Source' => '/var/lib/orbit/caddy/data',
+                'Destination' => '/data/caddy',
+            ]],
+        ]);
+
+        [$awakeExitCode] = run_internal_caddy_config_command(
+            [
+                'action' => 'runtime-awake',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-runtime-awake'),
+                '--json' => true,
+            ],
+            json_encode(['key' => 'workspace-42'], JSON_THROW_ON_ERROR),
+        );
+        [$statesExitCode, $statesOutput] = run_internal_caddy_config_command(
+            [
+                'action' => 'runtime-states',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-runtime-states'),
+                '--json' => true,
+            ],
+            json_encode(['keys' => ['workspace-42']], JSON_THROW_ON_ERROR),
+        );
+        [$asleepExitCode] = run_internal_caddy_config_command(
+            [
+                'action' => 'runtime-asleep',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-runtime-asleep'),
+                '--json' => true,
+            ],
+            json_encode(['key' => 'workspace-42'], JSON_THROW_ON_ERROR),
+        );
+        [, $asleepStatesOutput] = run_internal_caddy_config_command(
+            [
+                'action' => 'runtime-states',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-runtime-states'),
+                '--json' => true,
+            ],
+            json_encode(['keys' => ['workspace-42']], JSON_THROW_ON_ERROR),
+        );
+
+        $states = json_decode($statesOutput, associative: true, flags: JSON_THROW_ON_ERROR);
+        $asleepStates = json_decode($asleepStatesOutput, associative: true, flags: JSON_THROW_ON_ERROR);
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect([$awakeExitCode, $statesExitCode, $asleepExitCode])
+            ->toBe([0, 0, 0])
+            ->and($states['success']['data']['states'][0] ?? null)
+            ->toBe([
+                'key' => 'workspace-42',
+                'awake' => true,
+                'hibernated' => false,
+                'last_activity_at' => 1_700_000_000,
+            ])
+            ->and($asleepStates['success']['data']['states'][0] ?? null)
+            ->toBe([
+                'key' => 'workspace-42',
+                'awake' => false,
+                'hibernated' => true,
+                'last_activity_at' => 1_700_000_000,
+            ])
+            ->and($calls)
+            ->toContain('install -d -m 0755 /var/lib/orbit/caddy/data/orbit/hibernation')
+            ->toContain('docker exec orbit-caddy touch /dev/shm/orbit/hibernation/workspace-42.awake')
+            ->toContain('docker exec orbit-caddy rm -f /dev/shm/orbit/hibernation/workspace-42.awake')
+            ->toContain('docker exec orbit-caddy touch /dev/shm/orbit/hibernation/workspace-42.asleep');
+    });
+
+    it('rejects unsafe runtime hibernation keys', function (): void {
+        [$exitCode, $output] = run_internal_caddy_config_command(
+            [
+                'action' => 'runtime-awake',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-runtime-invalid'),
+                '--json' => true,
+            ],
+            json_encode(['key' => '../workspace-42'], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
+                'validation_failed',
+                'Caddy runtime key is invalid.',
+                ['field' => 'key'],
+            ));
+    });
+
     it('writes and removes site material through the running orbit-caddy bind mounts', function (): void {
         $bin = install_caddy_config_fake_bin();
         caddy_config_fake_container_inspect($bin, [
@@ -791,7 +880,7 @@ function install_caddy_config_fake_bin(
             esac
         fi
         BASH, $realUtilities));
-    foreach (['cat', 'chmod', 'install', 'rm', 'tee', 'test'] as $command) {
+    foreach (['cat', 'chmod', 'install', 'rm', 'stat', 'tee', 'test', 'touch'] as $command) {
         file_put_contents("{$dir}/{$command}", strtr(<<<'BASH'
             #!/usr/bin/env bash
             dir="$(cd "$(dirname "$0")" && pwd)"
@@ -803,6 +892,10 @@ function install_caddy_config_fake_bin(
 
             if [ "$command" = cat ] && [ -f "$dir/read-global.txt" ]; then
                 __REAL_CAT__ "$dir/read-global.txt"
+            fi
+
+            if [ "$command" = stat ]; then
+                printf '1700000000\n'
             fi
 
             if [ "$command" = test ] && [ "${1:-}" = -d ]; then
@@ -852,6 +945,25 @@ function install_caddy_config_fake_bin(
 
         if [ "${1:-}" = container ] && [ "${2:-}" = inspect ] && [ -f "$dir/container-inspect.json" ]; then
             __REAL_CAT__ "$dir/container-inspect.json"
+        fi
+
+        if [ "${1:-}" = exec ] && [ "${2:-}" = orbit-caddy ]; then
+            command="${3:-}"
+            path="${@: -1}"
+            marker="$dir/runtime-marker-${path##*/}"
+
+            if [ "$command" = touch ]; then
+                : >"$marker"
+            fi
+
+            if [ "$command" = rm ]; then
+                __REAL_RM__ -f "$marker"
+            fi
+
+            if [ "$command" = test ]; then
+                [ -f "$marker" ]
+                exit $?
+            fi
         fi
         BASH, $realUtilities));
     chmod(filename: "{$dir}/sudo", permissions: 0o755);
@@ -948,8 +1060,10 @@ function delete_caddy_config_fake_bin(string $path): void
     delete_caddy_config_file("{$path}/chmod");
     delete_caddy_config_file("{$path}/install");
     delete_caddy_config_file("{$path}/rm");
+    delete_caddy_config_file("{$path}/stat");
     delete_caddy_config_file("{$path}/tee");
     delete_caddy_config_file("{$path}/test");
+    delete_caddy_config_file("{$path}/touch");
     delete_caddy_config_file("{$path}/docker");
     delete_caddy_config_file("{$path}/calls.log");
     delete_caddy_config_file("{$path}/stdin.log");
@@ -960,6 +1074,10 @@ function delete_caddy_config_fake_bin(string $path): void
     delete_caddy_config_file("{$path}/network-already-exists");
     delete_caddy_config_file("{$path}/image-missing");
     delete_caddy_config_file("{$path}/image-pulled");
+
+    foreach (glob("{$path}/runtime-marker-*") ?: [] as $runtimeMarker) {
+        delete_caddy_config_file($runtimeMarker);
+    }
 
     if (is_dir($path)) {
         rmdir($path);

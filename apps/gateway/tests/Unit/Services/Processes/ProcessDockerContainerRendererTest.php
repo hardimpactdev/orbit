@@ -23,7 +23,7 @@ uses(RefreshDatabase::class);
 
 function makeProcessRendererApp(array $overrides = []): Project
 {
-    $node = Node::factory()->create(['user' => 'orbit', 'tld' => 'beast']);
+    $node = createTestAppHostNode(['user' => 'orbit', 'tld' => 'beast']);
 
     return Project::factory()->for($node, 'node')->create(array_merge([
         'name' => 'docs',
@@ -158,8 +158,22 @@ it('maps the process restart policy to the matching docker restart policy', func
 })->with([
     'never' => [ProcessRestartPolicy::Never, 'no'],
     'on_failure' => [ProcessRestartPolicy::OnFailure, 'on-failure'],
-    'always' => [ProcessRestartPolicy::Always, 'always'],
+    'always' => [ProcessRestartPolicy::Always, 'unless-stopped'],
 ]);
+
+it('keeps always-restart docker processes persistent on app-prod nodes', function (): void {
+    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $app = Project::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'path' => '/home/orbit/apps/docs',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $process = makeProcessRendererProcess($app);
+
+    expect(processDockerRenderer()->render($app, $process)->restartPolicy())->toBe('always');
+});
 
 it('populates the runtime unit environment contract for the docker process runtime', function (): void {
     $app = makeProcessRendererApp();

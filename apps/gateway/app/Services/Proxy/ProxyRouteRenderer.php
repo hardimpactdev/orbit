@@ -12,6 +12,7 @@ use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerRenderer;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Runtime\OrbitCaddyContainer;
 use RuntimeException;
 
@@ -21,6 +22,7 @@ final readonly class ProxyRouteRenderer
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private AppProxyRouteTargetResolver $appRouteTargets = new AppProxyRouteTargetResolver,
         private AppProxyRouteRuntimeTargets $appRouteRuntimeTargets = new AppProxyRouteRuntimeTargets,
+        private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
     ) {}
 
     private const string WebSocketStreamCloseDelay = '5m';
@@ -503,6 +505,7 @@ final readonly class ProxyRouteRenderer
         $isAppOrWorkspace = in_array($route->kind, ['app', 'workspace'], true);
         $usesPhpRuntime = $isAppOrWorkspace && $route->app?->runtime === AppRuntimeKind::Php;
         $isStaticApp = $isAppOrWorkspace && $route->app?->runtime === AppRuntimeKind::Static;
+        $hibernation = $this->developmentRuntimeHibernationDirectives($route);
 
         $pathBlocking = $route->app?->document_root === '.'
             ? 'import path_blocking_project_root'
@@ -517,10 +520,14 @@ final readonly class ProxyRouteRenderer
 
             $runtimeUpstream = $this->validatedHttpUpstream($route, $runtimeUpstream);
             $transport = $this->runtimeUpstreamTransportDirectives($route, $config);
+            $warmupRetries = $hibernation !== ''
+                ? "        lb_try_duration 15s\n        lb_try_interval 250ms\n"
+                : '';
 
             return <<<CADDY
                 {$route->domain} {
                     {$tls}
+                {$hibernation}
                     encode gzip
 
                     import security_headers
@@ -533,7 +540,7 @@ final readonly class ProxyRouteRenderer
                         header_up Host {host}
                         header_up X-Forwarded-Host {host}
                         header_up X-Forwarded-Proto {scheme}
-                {$transport}    }
+                {$warmupRetries}{$transport}    }
                 }
 
                 CADDY;
@@ -547,6 +554,7 @@ final readonly class ProxyRouteRenderer
             return <<<CADDY
                 {$route->domain} {
                     {$tls}
+                {$hibernation}
                     root * {$documentRoot}
                     encode gzip
 
@@ -565,6 +573,89 @@ final readonly class ProxyRouteRenderer
         // `php` or `static`. Reaching this line means the route config is
         // malformed or the runtime is unrecognised.
         throw new RuntimeException("Proxy route '{$route->domain}' has an unresolvable runtime target.");
+    }
+
+    private function developmentRuntimeHibernationDirectives(ProxyRoute $route): string
+    {
+        $node = $route->node;
+
+        if (! $this->nodeRoleAssignments->nodeHasActiveRole($node, 'app-dev')) {
+            return '';
+        }
+
+        $scope = $this->developmentRuntimeScope($route);
+
+        if ($scope === null) {
+            return '';
+        }
+
+        $gateway = $this->nodeRoleAssignments
+            ->activeGatewayNodeQuery()
+            ->first();
+
+        if (
+            ! $gateway instanceof Node
+            || ! is_string($gateway->wireguard_address)
+            || $gateway->wireguard_address === ''
+        ) {
+            return '';
+        }
+
+        $key = "{$scope['type']}-{$scope['id']}";
+        $gatewayAddress = $this->validatedIpAddress($route, $gateway->wireguard_address);
+
+        return <<<CADDY
+                        log {
+                            output file /data/caddy/orbit/hibernation/{$key}.access.log {
+                                roll_size 1MiB
+                                roll_keep 1
+                            }
+                            format json
+                        }
+
+                        @orbit_runtime_asleep {
+                            not file {
+                                root /dev/shm/orbit/hibernation
+                                try_files /{$key}.awake
+                            }
+                        }
+                        forward_auth @orbit_runtime_asleep https://{$gatewayAddress} {
+                            uri /api/runtime-activations/{$scope['type']}/{$scope['id']}
+                            transport http {
+                                tls_trust_pool file /etc/orbit/ca/root.crt
+                                response_header_timeout 90s
+                            }
+                        }
+
+            CADDY;
+    }
+
+    /**
+     * @return array{type: 'app-instance'|'workspace', id: int}|null
+     */
+    private function developmentRuntimeScope(ProxyRoute $route): ?array
+    {
+        if ($route->kind === 'workspace' && $route->workspace instanceof Workspace) {
+            return [
+                'type' => 'workspace',
+                'id' => $route->workspace->id,
+            ];
+        }
+
+        if ($route->kind !== 'app') {
+            return null;
+        }
+
+        $instance = $this->appRouteTargets->appInstanceForRoute($route);
+
+        return (
+            $instance instanceof AppInstance
+                ? [
+                    'type' => 'app-instance',
+                    'id' => $instance->id,
+                ]
+                : null
+        );
     }
 
     private function tlsDirective(ProxyRoute $route): string

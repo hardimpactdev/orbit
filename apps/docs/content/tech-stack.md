@@ -96,7 +96,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
 | Private production routing | `orbit-caddy` on the gateway-coupled `router` role selecting private HTTP/WebSocket/S3 routes, `.orbit` service names, and backend pools |
 | Production app backend | App-role-owned `orbit-caddy` on `app-prod` nodes bound to the node's WireGuard address and forwarding to per-app FrankenPHP Docker runtime containers on internal port `8080` over the node Docker network |
-| App-dev PHP backend | `orbit-caddy` on `app-dev` nodes terminating the public site route and reverse-proxying to per-app or per-workspace FrankenPHP containers over plain HTTP by default, or over opt-in inner HTTPS on port `8443` when the app's PHP runtime config sets `proxy_transport=https` |
+| App-dev PHP backend | Unmodified official `caddy:2-alpine` in `orbit-caddy` on `app-dev` nodes, terminating the public site route, recording per-scope HTTP activity, and invoking a marker-gated private gateway wake pre-check before reverse-proxying to per-app or per-workspace FrankenPHP containers over plain HTTP by default, or over opt-in inner HTTPS on port `8443` when the app's PHP runtime config sets `proxy_transport=https` |
 | Realtime service backend | Laravel Reverb in a Docker runtime container managed by Orbit on `websocket` nodes, bound only to the node's WireGuard address and reached through router-owned WebSocket routes |
 | S3 service backend | SeaweedFS in a canonical node-owned Docker process on `s3` nodes, bound only to the node's WireGuard address and reached through router-owned S3 routes |
 | Metrics backend | Prometheus and Grafana as Docker Swarm process definitions on metrics role nodes; node-exporter as a host binary tool plus systemd process on metrics and active Ubuntu workload nodes; Grafana private route `metrics.orbit` |
@@ -429,6 +429,18 @@ Files under `/etc/caddy/orbit/*.caddy` must be reachable only through the Orbit/
 Files under `/etc/caddy/sites/*.caddy` are user-facing site routes. Project, instance, workspace, and custom proxy routes write here because they may be served on public or project domains. These files may import shared snippets from the managed `orbit-caddy` Caddyfile, but they must not define Orbit control-plane endpoints.
 
 Installer and doctor repair code must be additive: ensure required imports and managed include files exist in the `orbit-caddy` mount or managed volume, but never replace unrelated site blocks or remove existing imports.
+
+On an `app-dev` instance or workspace route, stock Caddy's file matcher bypasses
+the gateway while the scope's node-local awake marker exists. When the marker is
+absent, `forward_auth` performs a bounded TLS request to the gateway activation
+endpoint using the installed Orbit root CA; the gateway accepts only the exact
+serving node's WireGuard identity and does not require a user grant. The
+original browser request continues only after activation succeeds. A dedicated
+JSON access log in `/data/caddy/orbit/hibernation` supplies the scope's last
+HTTP activity time. Awake and hibernated markers live under Caddy's ephemeral
+`/dev/shm`, so a host or Caddy restart cannot preserve a stale awake decision.
+Caddy itself remains persistent, and this contract requires neither a custom
+module nor an Orbit-specific Caddy image.
 
 ### PHP runtime
 

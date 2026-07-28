@@ -10,6 +10,7 @@ use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Processes\RuntimeIdleHibernation;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use RuntimeException;
@@ -20,6 +21,7 @@ final readonly class OrbitScheduler
         private ScheduleDispatcher $dispatcher,
         private ScheduleInterval $interval,
         private NodeRoleAssignments $nodeRoleAssignments,
+        private RuntimeIdleHibernation $runtimeIdleHibernation,
     ) {}
 
     public function tick(?CarbonImmutable $now = null): SchedulerTickResult
@@ -29,6 +31,7 @@ final readonly class OrbitScheduler
         $gatewayNode = $this->gatewayNode();
 
         $this->recordHeartbeat($gatewayNode, $startedAt);
+        $this->runtimeIdleHibernation->hibernate($startedAt);
 
         $dueSchedules = $this->dueSchedules($startedAt);
         $claimedSchedules = [];

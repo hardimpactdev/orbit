@@ -37,6 +37,7 @@ final readonly class LocalLaunchdServiceAction
             return $this->apply(
                 label: $label,
                 content: $this->content($payload['content'] ?? null),
+                enabled: $this->enabled($payload['enabled'] ?? null),
             );
         }
 
@@ -58,12 +59,23 @@ final readonly class LocalLaunchdServiceAction
     /**
      * @return array<string, mixed>
      */
-    private function apply(string $label, string $content): array
+    private function apply(string $label, string $content, bool $enabled): array
     {
         $probe = $this->probe($label);
         $expectedHash = hash('sha256', $content);
+        $contentMatches =
+            $probe['exists'] === true && hash_equals($expectedHash, is_string($probe['hash']) ? $probe['hash'] : '');
 
-        if ($probe['exists'] === true && hash_equals($expectedHash, is_string($probe['hash']) ? $probe['hash'] : '')) {
+        if (! $contentMatches) {
+            $this->write($label, $content);
+        }
+
+        match ($enabled) {
+            true => $this->enable($label, 'apply'),
+            false => $this->disable($label, 'apply'),
+        };
+
+        if ($contentMatches) {
             return [
                 'action' => 'apply',
                 'label' => $label,
@@ -73,11 +85,10 @@ final readonly class LocalLaunchdServiceAction
                 'details' => $this->details($label, $expectedHash, [
                     'observed_hash' => $probe['hash'],
                     'observed_loaded' => $probe['loaded'],
+                    'enabled' => $enabled,
                 ]),
             ];
         }
-
-        $this->write($label, $content);
 
         return [
             'action' => 'apply',
@@ -85,7 +96,7 @@ final readonly class LocalLaunchdServiceAction
             'status' => 'changed',
             'changed' => true,
             'summary' => "Applied launchd plist for {$label}.",
-            'details' => $this->details($label, $expectedHash),
+            'details' => $this->details($label, $expectedHash, ['enabled' => $enabled]),
         ];
     }
 
@@ -226,6 +237,8 @@ final readonly class LocalLaunchdServiceAction
         }
 
         if ($action === 'stop') {
+            $this->disable($label, 'stop');
+
             $bootout = $this->runProcess(['launchctl', 'bootout', $target]);
             if (! $bootout->isSuccessful()) {
                 $combined = $bootout->getErrorOutput().' '.$bootout->getOutput();
@@ -376,6 +389,39 @@ final readonly class LocalLaunchdServiceAction
             message: 'Launchd plist content is invalid.',
             meta: ['field' => 'content'],
         );
+    }
+
+    private function enabled(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        throw new LocalLaunchdServiceFailure(
+            errorCode: 'validation_failed',
+            message: 'Launchd enabled state is invalid.',
+            meta: ['field' => 'enabled'],
+        );
+    }
+
+    private function enable(string $label, string $action): void
+    {
+        $target = 'gui/'.$this->currentUid().'/'.$label;
+        $result = $this->runProcess(['launchctl', 'enable', $target]);
+
+        if (! $result->isSuccessful()) {
+            throw $this->failure($action, $label, $result);
+        }
+    }
+
+    private function disable(string $label, string $action): void
+    {
+        $target = 'gui/'.$this->currentUid().'/'.$label;
+        $result = $this->runProcess(['launchctl', 'disable', $target]);
+
+        if (! $result->isSuccessful()) {
+            throw $this->failure($action, $label, $result);
+        }
     }
 
     private function assertMacos(string $action, string $label): void

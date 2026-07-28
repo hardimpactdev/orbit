@@ -117,21 +117,21 @@ it('dispatches due app schedules with gateway authority on the instance current 
 
     $run = ScheduleRun::query()->firstOrFail();
     $state = SchedulerState::query()->firstOrFail();
-    $payload = $localExecutor->payloads()[0];
+    $payload = $localExecutor->payloads()[1];
 
     expect($result->dueSchedules)
         ->toBe(1)
         ->and($result->executedSchedules)
         ->toBe(1)
         ->and($localExecutor->nodes)
-        ->toBe(['app-3'])
+        ->toBe(['app-3', 'app-3'])
         ->and($localExecutor->commands)
-        ->toBe([InternalCommand::ScheduleRun->value])
-        ->and($localExecutor->transportOptions[0]['timeout'])
+        ->toBe(['internal:caddy-config', InternalCommand::ScheduleRun->value])
+        ->and($localExecutor->transportOptions[1]['timeout'])
         ->toBe(7215)
-        ->and($localExecutor->transportOptions[0]['strict'])
+        ->and($localExecutor->transportOptions[1]['strict'])
         ->toBeFalse()
-        ->and($localExecutor->transportOptions[0]['metadata']['ORBIT_OPERATION_ID'] ?? null)
+        ->and($localExecutor->transportOptions[1]['metadata']['ORBIT_OPERATION_ID'] ?? null)
         ->toBe('schedule.dispatch')
         ->and($payload['execution_type'] ?? null)
         ->toBe('command')
@@ -184,7 +184,7 @@ it('dispatches remote schedules through the internal schedule command without tr
         ->and($result->executedSchedules)
         ->toBe(1)
         ->and($localExecutor->commands)
-        ->toBe([InternalCommand::ScheduleRun->value])
+        ->toBe(['internal:caddy-config', InternalCommand::ScheduleRun->value])
         ->and($run->node_id)
         ->toBe($appNode->id)
         ->and($run->status)
@@ -270,6 +270,9 @@ it('dispatches multiple remote schedules through the internal schedule command',
         ->toBe(3)
         ->and($localExecutor->commands)
         ->toBe([
+            'internal:caddy-config',
+            'internal:caddy-config',
+            'internal:caddy-config',
             InternalCommand::ScheduleRun->value,
             InternalCommand::ScheduleRun->value,
             InternalCommand::ScheduleRun->value,
@@ -279,7 +282,7 @@ it('dispatches multiple remote schedules through the internal schedule command',
                 'command' => $payload['execution_value'],
                 'cwd' => $payload['cwd'],
             ],
-            $localExecutor->payloads(),
+            array_slice($localExecutor->payloads(), offset: 3),
         ))
         ->toBe([
             ['command' => 'echo one', 'cwd' => '/srv/one'],
@@ -431,7 +434,7 @@ final class OrbitSchedulerRecordingInternalExecutor implements RunsInternalComma
      */
     public function __construct(
         private array $results = [],
-        private ?RuntimeException $throwable = null,
+        private readonly ?RuntimeException $throwable = null,
     ) {}
 
     /**
@@ -452,6 +455,15 @@ final class OrbitSchedulerRecordingInternalExecutor implements RunsInternalComma
 
         if ($this->throwable instanceof RuntimeException) {
             throw $this->throwable;
+        }
+
+        if ($commandName === 'internal:caddy-config') {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(JsonEnvelope::success(['states' => []]), JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            );
         }
 
         return array_shift($this->results) ?? self::result();

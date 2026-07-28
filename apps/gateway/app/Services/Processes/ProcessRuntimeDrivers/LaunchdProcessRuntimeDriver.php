@@ -42,6 +42,7 @@ final readonly class LaunchdProcessRuntimeDriver implements ProcessRuntimeDriver
                     node: $node,
                     label: $label,
                     content: $this->renderer->render($node, $app, $process, $workspace),
+                    enabled: $process->owner instanceof Node || ! $node->hasActiveRole('app-dev'),
                 )
                 ->successful();
         } catch (Throwable) {
