@@ -28,6 +28,30 @@ final readonly class SchedulesProbe
 
     private const string Stack = 'orbit';
 
+    private const array SCHEDULER_DAEMON = [
+        'status' => 'scheduler_status',
+        'image' => 'scheduler_image',
+        'desired_image' => 'scheduler_desired_image',
+        'replicas' => 'scheduler_replicas',
+        'missing' => 'schedule.scheduler_missing',
+        'stopped' => 'schedule.scheduler_stopped',
+        'image_mismatch' => 'schedule.scheduler_image_mismatch',
+        'replicas_mismatch' => 'schedule.scheduler_replicas_mismatch',
+        'label' => 'Orbit Scheduler',
+    ];
+
+    private const array RUNTIME_HIBERNATOR_DAEMON = [
+        'status' => 'runtime_hibernator_status',
+        'image' => 'runtime_hibernator_image',
+        'desired_image' => 'runtime_hibernator_desired_image',
+        'replicas' => 'runtime_hibernator_replicas',
+        'missing' => 'schedule.runtime_hibernator_missing',
+        'stopped' => 'schedule.runtime_hibernator_stopped',
+        'image_mismatch' => 'schedule.runtime_hibernator_image_mismatch',
+        'replicas_mismatch' => 'schedule.runtime_hibernator_replicas_mismatch',
+        'label' => 'Orbit runtime hibernator',
+    ];
+
     public function __construct(
         private RuntimeBackendProbe $_runtimeBackendProbe,
         private ?RunsInternalCommands $localExecutor = null,
@@ -51,21 +75,40 @@ final readonly class SchedulesProbe
         $schedulerService = $this->schedulerStackService();
         $schedulerImage = $this->swarm->serviceImage($schedulerService);
         $schedulerReplicas = $this->swarm->serviceReplicas($schedulerService);
+        $hibernatorService = $this->runtimeHibernatorStackService();
+        $hibernatorImage = $this->swarm->serviceImage($hibernatorService);
+        $hibernatorReplicas = $this->swarm->serviceReplicas($hibernatorService);
         $schedulerState = SchedulerState::query()->where('node_id', $gatewayNode->id)->first();
         $runtimeAvailable = $schedulerImage !== null && $schedulerReplicas !== null;
         $schedulerStatus = $runtimeAvailable
-            ? $this->schedulerStatusFromReplicas($schedulerReplicas)
+            ? $this->daemonStatusFromReplicas($schedulerReplicas)
             : null;
+        $hibernatorStatus =
+            $hibernatorImage !== null && $hibernatorReplicas !== null
+                ? $this->daemonStatusFromReplicas($hibernatorReplicas)
+                : null;
 
         return new ProbeSnapshot([
             'gateway' => [
                 'runtime_available' => $runtimeAvailable,
-                'runtime_output' => $this->runtimeOutput($schedulerService, $schedulerImage, $schedulerReplicas),
+                'runtime_output' => $this->runtimeOutput([
+                    'scheduler_service' => $schedulerService,
+                    'scheduler_image' => $schedulerImage,
+                    'scheduler_replicas' => $schedulerReplicas,
+                    'runtime_hibernator_service' => $hibernatorService,
+                    'runtime_hibernator_image' => $hibernatorImage,
+                    'runtime_hibernator_replicas' => $hibernatorReplicas,
+                ]),
                 'scheduler_service' => $schedulerService,
                 'scheduler_image' => $schedulerImage,
-                'scheduler_desired_image' => $this->desiredSchedulerImage(),
+                'scheduler_desired_image' => $this->desiredGatewayImage(),
                 'scheduler_replicas' => $schedulerReplicas,
                 'scheduler_status' => $schedulerStatus,
+                'runtime_hibernator_service' => $hibernatorService,
+                'runtime_hibernator_image' => $hibernatorImage,
+                'runtime_hibernator_desired_image' => $this->desiredGatewayImage(),
+                'runtime_hibernator_replicas' => $hibernatorReplicas,
+                'runtime_hibernator_status' => $hibernatorStatus,
                 'heartbeat_at' => $schedulerState?->heartbeat_at?->toISOString(),
             ],
         ]);
@@ -80,6 +123,9 @@ final readonly class SchedulesProbe
             ...$this->checkGatewayRuntimeAndScheduler($gatewayNode, $snapshot),
             ...$this->checkGatewaySchedulerImage($gatewayNode, $snapshot),
             ...$this->checkGatewaySchedulerReplicas($gatewayNode, $snapshot),
+            ...$this->checkGatewayRuntimeHibernator($gatewayNode, $snapshot),
+            ...$this->checkGatewayRuntimeHibernatorImage($gatewayNode, $snapshot),
+            ...$this->checkGatewayRuntimeHibernatorReplicas($gatewayNode, $snapshot),
             ...$this->checkGatewayFreshness($snapshot),
             ...$this->checkGatewayLockHealth($gatewayNode, $snapshot),
         ];
@@ -307,38 +353,11 @@ final readonly class SchedulesProbe
             ];
         }
 
-        $status = is_string($observed['scheduler_status'] ?? null) ? $observed['scheduler_status'] : null;
-
-        if ($status === null || $status === 'missing') {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'schedule.scheduler_missing',
-                    kind: DriftKind::Missing,
-                    summary: "Orbit Scheduler daemon configuration is missing from gateway node {$gatewayNode->name}.",
-                    detail: [
-                        'node' => $gatewayNode->name,
-                    ],
-                ),
-            ];
-        }
-
-        if ($status !== 'running') {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'schedule.scheduler_stopped',
-                    kind: DriftKind::Divergent,
-                    summary: "Orbit Scheduler daemon is not running on gateway node {$gatewayNode->name}.",
-                    detail: [
-                        'node' => $gatewayNode->name,
-                        'observed_status' => $status,
-                    ],
-                ),
-            ];
-        }
-
-        return [];
+        return $this->checkGatewayDaemonStatus(
+            $gatewayNode,
+            $observed,
+            self::SCHEDULER_DAEMON,
+        );
     }
 
     /**
@@ -355,28 +374,11 @@ final readonly class SchedulesProbe
             return [];
         }
 
-        $observedImage = is_string($observed['scheduler_image'] ?? null) ? trim($observed['scheduler_image']) : '';
-        $expectedImage = is_string($observed['scheduler_desired_image'] ?? null)
-            ? trim($observed['scheduler_desired_image'])
-            : '';
-
-        if ($expectedImage === '' || $observedImage === '' || $observedImage === $expectedImage) {
-            return [];
-        }
-
-        return [
-            new DriftEntry(
-                family: $this->key(),
-                key: 'schedule.scheduler_image_mismatch',
-                kind: DriftKind::Divergent,
-                summary: "Orbit Scheduler service image does not match the configured gateway image on node {$gatewayNode->name}.",
-                detail: [
-                    'node' => $gatewayNode->name,
-                    'observed_image' => $observedImage,
-                    'expected_image' => $expectedImage,
-                ],
-            ),
-        ];
+        return $this->checkGatewayDaemonImage(
+            $gatewayNode,
+            $observed,
+            self::SCHEDULER_DAEMON,
+        );
     }
 
     /**
@@ -393,25 +395,59 @@ final readonly class SchedulesProbe
             return [];
         }
 
-        $replicas = is_string($observed['scheduler_replicas'] ?? null) ? trim($observed['scheduler_replicas']) : '';
+        return $this->checkGatewayDaemonReplicas(
+            $gatewayNode,
+            $observed,
+            self::SCHEDULER_DAEMON,
+        );
+    }
 
-        if ($replicas === self::SingletonReplicas) {
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkGatewayRuntimeHibernator(Node $gatewayNode, ProbeSnapshot $snapshot): array
+    {
+        return $this->checkGatewayDaemonStatus(
+            $gatewayNode,
+            $snapshot->get('gateway'),
+            self::RUNTIME_HIBERNATOR_DAEMON,
+        );
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkGatewayRuntimeHibernatorImage(Node $gatewayNode, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get('gateway');
+
+        if (($observed['runtime_hibernator_status'] ?? null) !== 'running') {
             return [];
         }
 
-        return [
-            new DriftEntry(
-                family: $this->key(),
-                key: 'schedule.scheduler_replicas_mismatch',
-                kind: DriftKind::Divergent,
-                summary: "Orbit Scheduler service replica count is not singleton on node {$gatewayNode->name}.",
-                detail: [
-                    'node' => $gatewayNode->name,
-                    'observed_replicas' => $replicas,
-                    'expected_replicas' => self::SingletonReplicas,
-                ],
-            ),
-        ];
+        return $this->checkGatewayDaemonImage(
+            $gatewayNode,
+            $observed,
+            self::RUNTIME_HIBERNATOR_DAEMON,
+        );
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkGatewayRuntimeHibernatorReplicas(Node $gatewayNode, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get('gateway');
+
+        if (($observed['runtime_hibernator_status'] ?? null) !== 'running') {
+            return [];
+        }
+
+        return $this->checkGatewayDaemonReplicas(
+            $gatewayNode,
+            $observed,
+            self::RUNTIME_HIBERNATOR_DAEMON,
+        );
     }
 
     /**
@@ -537,7 +573,12 @@ final readonly class SchedulesProbe
         return self::Stack.'_'.GatewaySwarmStackRenderer::SchedulerService;
     }
 
-    private function schedulerStatusFromReplicas(string $replicas): string
+    private function runtimeHibernatorStackService(): string
+    {
+        return self::Stack.'_'.GatewaySwarmStackRenderer::RUNTIME_HIBERNATOR_SERVICE;
+    }
+
+    private function daemonStatusFromReplicas(string $replicas): string
     {
         if (! preg_match('/^(?<running>\d+)\/(?<desired>\d+)$/', trim($replicas), $matches)) {
             return 'stopped';
@@ -557,7 +598,7 @@ final readonly class SchedulesProbe
         return 'stopped';
     }
 
-    private function desiredSchedulerImage(): ?string
+    private function desiredGatewayImage(): ?string
     {
         $image = config('orbit.updates.gateway_image');
 
@@ -566,18 +607,124 @@ final readonly class SchedulesProbe
             : null;
     }
 
-    private function runtimeOutput(
-        string $schedulerService,
-        ?string $schedulerImage,
-        ?string $schedulerReplicas,
-    ): string {
-        return collect([
-            "scheduler_service={$schedulerService}",
-            $schedulerImage === null ? null : "scheduler_image={$schedulerImage}",
-            $schedulerReplicas === null ? null : "scheduler_replicas={$schedulerReplicas}",
-        ])
+    /**
+     * @param array<string, string|null> $values
+     */
+    private function runtimeOutput(array $values): string
+    {
+        return collect($values)
+            ->map(
+                static fn (?string $value, string $key): ?string => $value === null ? null : "{$key}={$value}",
+            )
             ->filter()
             ->implode("\n");
+    }
+
+    /**
+     * @param  array<string, mixed>  $observed
+     * @param  array{status: string, missing: string, stopped: string, label: string}  $daemon
+     * @return list<DriftEntry>
+     */
+    private function checkGatewayDaemonStatus(
+        Node $gatewayNode,
+        array $observed,
+        array $daemon,
+    ): array {
+        $status = is_string($observed[$daemon['status']] ?? null) ? $observed[$daemon['status']] : null;
+
+        if ($status === null || $status === 'missing') {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: $daemon['missing'],
+                    kind: DriftKind::Missing,
+                    summary: "{$daemon['label']} daemon configuration is missing from gateway node {$gatewayNode->name}.",
+                    detail: ['node' => $gatewayNode->name],
+                ),
+            ];
+        }
+
+        if ($status === 'running') {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: $daemon['stopped'],
+                kind: DriftKind::Divergent,
+                summary: "{$daemon['label']} daemon is not running on gateway node {$gatewayNode->name}.",
+                detail: [
+                    'node' => $gatewayNode->name,
+                    'observed_status' => $status,
+                ],
+            ),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $observed
+     * @param  array{image: string, desired_image: string, image_mismatch: string, label: string}  $daemon
+     * @return list<DriftEntry>
+     */
+    private function checkGatewayDaemonImage(
+        Node $gatewayNode,
+        array $observed,
+        array $daemon,
+    ): array {
+        $observedImage = is_string($observed[$daemon['image']] ?? null) ? trim($observed[$daemon['image']]) : '';
+        $expectedImage = is_string($observed[$daemon['desired_image']] ?? null)
+            ? trim($observed[$daemon['desired_image']])
+            : '';
+
+        if ($expectedImage === '' || $observedImage === '' || $observedImage === $expectedImage) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: $daemon['image_mismatch'],
+                kind: DriftKind::Divergent,
+                summary: "{$daemon['label']} service image does not match the configured gateway image on node {$gatewayNode->name}.",
+                detail: [
+                    'node' => $gatewayNode->name,
+                    'observed_image' => $observedImage,
+                    'expected_image' => $expectedImage,
+                ],
+            ),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $observed
+     * @param  array{replicas: string, replicas_mismatch: string, label: string}  $daemon
+     * @return list<DriftEntry>
+     */
+    private function checkGatewayDaemonReplicas(
+        Node $gatewayNode,
+        array $observed,
+        array $daemon,
+    ): array {
+        $replicas = is_string($observed[$daemon['replicas']] ?? null) ? trim($observed[$daemon['replicas']]) : '';
+
+        if ($replicas === self::SingletonReplicas) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: $daemon['replicas_mismatch'],
+                kind: DriftKind::Divergent,
+                summary: "{$daemon['label']} service replica count is not singleton on node {$gatewayNode->name}.",
+                detail: [
+                    'node' => $gatewayNode->name,
+                    'observed_replicas' => $replicas,
+                    'expected_replicas' => self::SingletonReplicas,
+                ],
+            ),
+        ];
     }
 
     private function dateValue(mixed $value): ?CarbonInterface

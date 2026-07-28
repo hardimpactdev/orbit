@@ -220,11 +220,13 @@ The expected target shape per calling context:
   immutable update plan. No-source production gateway hosts acquire the image by
   loading `ORBIT_GATEWAY_IMAGE_ARCHIVE` or pulling the digest-pinned
   `ORBIT_GATEWAY_IMAGE` before deploy commands that use `--pull never`.
-- The scheduler update is stop-first: scale `orbit-scheduler` to zero, run
-  migrations through the target gateway image, verify `orbit-gateway`, then
-  start `orbit-scheduler` on the matching image.
-- If migrations or gateway health fail, restore `orbit-scheduler` to one
-  replica on the previous known-good image when possible. If scheduler recovery
+- Gateway database daemons update stop-first. Scale `orbit-scheduler` and an
+  existing `orbit-runtime-hibernator` to zero, run migrations through the
+  target gateway image, verify `orbit-gateway`, then start both daemons on the
+  matching image. The stack convergence step creates the hibernator during an
+  upgrade from a release that does not have that service yet.
+- If migrations or gateway health fail, restore both stopped daemons to one
+  replica on their previous known-good images when possible. If either recovery
   also fails, emit an explicit terminal failure event and name the recovery
   command the operator should run.
 - After the gateway phase succeeds, selected remote app/workload-role
@@ -348,9 +350,10 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Update lease conflict | Another active update lease owns the same fleet, gateway, scheduler, or node resource. | Failure before conflicting side effects |
 | Gateway update failed | The gateway service update, migration, or health verification fails. | Terminal operation failure; local and workload-role targets are not started |
 | Scheduler recovery failed | The scheduler could not be restored after failed migrations or gateway health. | Terminal operation failure with explicit recovery metadata |
+| Runtime hibernator recovery failed | The runtime hibernator could not be restored after failed migrations or gateway health. | Terminal operation failure with explicit recovery metadata |
 | Agent service missing | An Agent artifact is selected, but the target has neither an existing managed Agent service nor an unmanaged Agent listener to replace. | The target fails closed and requires bootstrap to create the first Agent service; `update:all` does not create it. |
 | Workload update failed | One or more selected role-bearing workload installations fail to update. | Failure with partial target results |
-| Final verification failed | Gateway, scheduler, CLI, or required image verification fails after updates. | Terminal operation failure with partial target results |
+| Final verification failed | Gateway, scheduler, runtime hibernator, CLI, or required image verification fails after updates. | Terminal operation failure with partial target results |
 
 The shared [Exit Status](../../../README.md#exit-status) policy applies. Partial
 fleet failures are Orbit-handled command failures.

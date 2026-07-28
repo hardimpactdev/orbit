@@ -68,13 +68,17 @@ it('updates gateway and scheduler services to the plan image after target image 
     expect($operations)
         ->toBe([
             "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'",
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'",
             "docker service scale --detach=true 'orbit_orbit-scheduler=0'",
+            "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=0'",
             gateway_service_updater_migration_command($plan),
             gateway_service_updater_host_cli_command($plan),
             "docker service update --detach=true --force --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
             "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'",
             "docker service scale --detach=true 'orbit_orbit-scheduler=1'",
+            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-runtime-hibernator'",
+            "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'",
             'bash -s',
             gateway_service_updater_stack_deploy_command(),
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
@@ -369,7 +373,7 @@ it('fails gateway host CLI install when the local Docker helper fails', function
         );
 });
 
-it('restores the scheduler previous image and replica when gateway migrations fail', function (): void {
+it('restores both gateway daemon images and replicas when gateway migrations fail', function (): void {
     $run = gatewayServiceUpdaterRun();
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
@@ -378,7 +382,11 @@ it('restores the scheduler previous image and replica when gateway migrations fa
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
             output: "{$previousImage}\n",
         ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'" => Process::result(
+            output: "{$previousImage}\n",
+        ),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
+        "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=0'" => Process::result(),
         gateway_service_updater_migration_command($plan) => Process::result(
             exitCode: 1,
             errorOutput: "migration failed\n",
@@ -386,6 +394,9 @@ it('restores the scheduler previous image and replica when gateway migrations fa
         "docker service update --detach=true --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" =>
             Process::result(),
         "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
+        "docker service update --detach=true --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-runtime-hibernator'" =>
+            Process::result(),
+        "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'" => Process::result(),
     ]);
 
     expect(fn () => app(GatewayServiceUpdater::class)->update($run, $plan))
@@ -396,6 +407,11 @@ it('restores the scheduler previous image and replica when gateway migrations fa
         "docker service update --detach=true --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'",
     );
     Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
+    Process::assertRan("docker service scale --detach=true 'orbit_orbit-runtime-hibernator=0'");
+    Process::assertRan(
+        "docker service update --detach=true --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-runtime-hibernator'",
+    );
+    Process::assertRan("docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'");
     Process::assertNotRan(
         fn ($process): bool => (
             str_contains((string) $process->command, $plan->gateway_image)
@@ -489,7 +505,9 @@ it('treats a same-image gateway service update with no Docker update status as h
 
     expect($operations)->toBe([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'",
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'",
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'",
+        "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=0'",
         gateway_service_updater_migration_command($plan),
         "docker service update --detach=true --force --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
         "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
@@ -497,6 +515,8 @@ it('treats a same-image gateway service update with no Docker update status as h
         "docker service ls --filter 'name=orbit_orbit-gateway' --format '{{.Replicas}}'",
         "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'",
         "docker service scale --detach=true 'orbit_orbit-scheduler=1'",
+        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-runtime-hibernator'",
+        "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'",
         gateway_service_updater_stack_deploy_command(),
         "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'",
@@ -518,6 +538,8 @@ it('restores the scheduler previous image and replica when the updated gateway f
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
             output: "{$previousImage}\n",
         ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'" =>
+            Process::result(exitCode: 1),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
         gateway_service_updater_migration_command($plan) => Process::result(),
         "docker service update --detach=true --force --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" =>
@@ -552,6 +574,8 @@ it('records a recovery failed event when the scheduler cannot be scaled back to 
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
             output: "{$previousImage}\n",
         ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'" =>
+            Process::result(exitCode: 1),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
         gateway_service_updater_migration_command($plan) => Process::result(
             exitCode: 1,
@@ -737,12 +761,18 @@ function gateway_service_updater_common_process_result(
     return match ($command) {
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
             => Process::result(output: "{$previousImage}\n"),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'"
+            => Process::result(output: "{$previousImage}\n"),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
+        "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=0'" => Process::result(),
         "docker service update --detach=true --force --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'"
             => Process::result(),
         "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
             => Process::result(),
         "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
+        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-runtime-hibernator'"
+            => Process::result(),
+        "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'" => Process::result(),
         'bash -s' => Process::result(),
         gateway_service_updater_stack_deploy_command() => Process::result(),
         "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(

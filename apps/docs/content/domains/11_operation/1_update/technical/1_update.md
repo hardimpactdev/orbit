@@ -129,8 +129,8 @@ but the public `Replacing binary` row still runs and settles as `Done`.
 ### Gateway-Service Boundary
 
 - `orbit update` does not replace `orbit-gateway`, update
-  `orbit-scheduler`, run gateway migrations, or install gateway Composer
-  dependencies.
+  `orbit-scheduler` or `orbit-runtime-hibernator`, run gateway migrations, or
+  install gateway Composer dependencies.
 - Gateway service replacement and migrations belong to the durable
   [`orbit update:all`](../../2_update-all/technical/1_update-all.md) runner.
 - Source-dev shells may run gateway maintenance commands explicitly, but that

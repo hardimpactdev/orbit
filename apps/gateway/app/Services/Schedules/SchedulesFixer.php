@@ -48,44 +48,61 @@ final readonly class SchedulesFixer
         }
 
         if ($entry->key === 'schedule.scheduler_image_mismatch') {
-            $this->restoreGatewaySchedulerImage($entry);
+            $this->restoreGatewayDaemonImage($this->schedulerStackService(), $entry, 'scheduler');
 
             return $this->action($gatewayNode, $entry, $schedule);
         }
 
-        if (! in_array(
-            $entry->key,
-            ['schedule.scheduler_missing', 'schedule.scheduler_stopped', 'schedule.scheduler_replicas_mismatch'],
-            true,
-        )) {
-            return null;
+        if ($entry->key === 'schedule.runtime_hibernator_image_mismatch') {
+            $this->restoreGatewayDaemonImage($this->runtimeHibernatorStackService(), $entry, 'runtime hibernator');
+
+            return $this->action($gatewayNode, $entry, $schedule);
         }
 
-        $this->restoreGatewayScheduler();
+        if (in_array(
+            $entry->key,
+            ['schedule.scheduler_missing', 'schedule.scheduler_stopped', 'schedule.scheduler_replicas_mismatch'],
+            strict: true,
+        )) {
+            $this->restoreGatewayDaemon($this->schedulerStackService(), 'scheduler');
 
-        return $this->action($gatewayNode, $entry, $schedule);
+            return $this->action($gatewayNode, $entry, $schedule);
+        }
+
+        if (in_array(
+            $entry->key,
+            [
+                'schedule.runtime_hibernator_missing',
+                'schedule.runtime_hibernator_stopped',
+                'schedule.runtime_hibernator_replicas_mismatch',
+            ],
+            strict: true,
+        )) {
+            $this->restoreGatewayDaemon($this->runtimeHibernatorStackService(), 'runtime hibernator');
+
+            return $this->action($gatewayNode, $entry, $schedule);
+        }
+
+        return null;
     }
 
-    private function restoreGatewayScheduler(): void
+    private function restoreGatewayDaemon(string $service, string $label): void
     {
-        $service = $this->schedulerStackService();
-
         if ($this->swarm->serviceImage($service) === null) {
-            throw new RuntimeException("Gateway scheduler Swarm service [{$service}] is missing.");
+            throw new RuntimeException("Gateway {$label} Swarm service [{$service}] is missing.");
         }
 
         $this->swarm->scaleService($service, 1);
     }
 
-    private function restoreGatewaySchedulerImage(DriftEntry $entry): void
+    private function restoreGatewayDaemonImage(string $service, DriftEntry $entry, string $label): void
     {
-        $service = $this->schedulerStackService();
         $expectedImage = is_string($entry->detail['expected_image'] ?? null)
             ? $entry->detail['expected_image']
             : config('orbit.updates.gateway_image');
 
         if (! is_string($expectedImage) || trim($expectedImage) === '') {
-            throw new RuntimeException('Configured gateway image is unavailable for scheduler image repair.');
+            throw new RuntimeException("Configured gateway image is unavailable for {$label} image repair.");
         }
 
         $this->swarm->updateServiceImage($service, GatewayImageReference::fromString($expectedImage), 'stop-first');
@@ -163,5 +180,10 @@ final readonly class SchedulesFixer
     private function schedulerStackService(): string
     {
         return self::Stack.'_'.GatewaySwarmStackRenderer::SchedulerService;
+    }
+
+    private function runtimeHibernatorStackService(): string
+    {
+        return self::Stack.'_'.GatewaySwarmStackRenderer::RUNTIME_HIBERNATOR_SERVICE;
     }
 }

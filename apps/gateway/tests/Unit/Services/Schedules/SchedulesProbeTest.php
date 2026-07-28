@@ -39,8 +39,15 @@ function scheduleProbeIssue(array $drift, string $key): mixed
     return collect($drift)->first(fn ($entry): bool => $entry->key === $key);
 }
 
-function fakeSchedulerSwarmService(?string $image = null, ?string $replicas = null): void
-{
+function fakeSchedulerSwarmService(
+    ?string $image = null,
+    ?string $replicas = null,
+    string|false|null $hibernatorImage = false,
+    string|false|null $hibernatorReplicas = false,
+): void {
+    $hibernatorImage = $hibernatorImage === false ? $image : $hibernatorImage;
+    $hibernatorReplicas = $hibernatorReplicas === false ? $replicas : $hibernatorReplicas;
+
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => $image
         === null
@@ -49,6 +56,14 @@ function fakeSchedulerSwarmService(?string $image = null, ?string $replicas = nu
         "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => $replicas === null
             ? Process::result(exitCode: 1, errorOutput: "no such service: orbit_orbit-scheduler\n")
             : Process::result(output: "{$replicas}\n"),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'" =>
+            $hibernatorImage === null
+                ? Process::result(exitCode: 1, errorOutput: "no such service: orbit_orbit-runtime-hibernator\n")
+                : Process::result(output: "{$hibernatorImage}\n"),
+        "docker service ls --filter 'name=orbit_orbit-runtime-hibernator' --format '{{.Replicas}}'" =>
+            $hibernatorReplicas === null
+                ? Process::result(exitCode: 1, errorOutput: "no such service: orbit_orbit-runtime-hibernator\n")
+                : Process::result(output: "{$hibernatorReplicas}\n"),
     ]);
 }
 
@@ -264,6 +279,79 @@ describe('SchedulesProbe', function (): void {
             ->toHaveKey('observed_replicas', '2/2')
             ->and(scheduleProbeIssue($drift, 'schedule.scheduler_stopped'))
             ->toBeNull();
+    });
+
+    it('detects missing runtime hibernator configuration', function (): void {
+        $gateway = createSchedulesProbeGatewayNode();
+        $image = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell));
+        fakeSchedulerSwarmService(
+            image: $image,
+            replicas: '1/1',
+            hibernatorImage: null,
+            hibernatorReplicas: null,
+        );
+
+        $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
+
+        expect(scheduleProbeIssue($drift, key: 'schedule.runtime_hibernator_missing')?->kind)
+            ->toBe(DriftKind::Missing);
+    });
+
+    it('detects stopped runtime hibernator replicas', function (): void {
+        $gateway = createSchedulesProbeGatewayNode();
+        $image = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell));
+        fakeSchedulerSwarmService(
+            image: $image,
+            replicas: '1/1',
+            hibernatorImage: $image,
+            hibernatorReplicas: '0/1',
+        );
+
+        $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
+
+        expect(scheduleProbeIssue($drift, key: 'schedule.runtime_hibernator_stopped')?->kind)
+            ->toBe(DriftKind::Divergent);
+    });
+
+    it('detects runtime hibernator image drift', function (): void {
+        $gateway = createSchedulesProbeGatewayNode();
+        $observedImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        $expectedImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.4@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        config()->set('orbit.updates.gateway_image', $expectedImage);
+        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell));
+        fakeSchedulerSwarmService(
+            image: $expectedImage,
+            replicas: '1/1',
+            hibernatorImage: $observedImage,
+            hibernatorReplicas: '1/1',
+        );
+
+        $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
+
+        expect(scheduleProbeIssue($drift, key: 'schedule.runtime_hibernator_image_mismatch')?->detail)
+            ->toMatchArray([
+                'observed_image' => $observedImage,
+                'expected_image' => $expectedImage,
+            ]);
+    });
+
+    it('detects runtime hibernator replica drift', function (): void {
+        $gateway = createSchedulesProbeGatewayNode();
+        $image = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell));
+        fakeSchedulerSwarmService(
+            image: $image,
+            replicas: '1/1',
+            hibernatorImage: $image,
+            hibernatorReplicas: '2/2',
+        );
+
+        $drift = $probe->diffGateway($gateway, $probe->introspectGateway($gateway));
+
+        expect(scheduleProbeIssue($drift, key: 'schedule.runtime_hibernator_replicas_mismatch')?->detail)
+            ->toHaveKey('observed_replicas', '2/2');
     });
 
     it('detects stale gateway heartbeat', function (): void {

@@ -38,6 +38,55 @@ function createSchedulesFixerGatewayNode(): Node
 }
 
 describe('SchedulesFixer', function (): void {
+    it('scales the runtime hibernator Swarm service when it is stopped', function (): void {
+        $gateway = createSchedulesFixerGatewayNode();
+        Process::fake([
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-runtime-hibernator'" => Process::result(
+                output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+            ),
+            "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'" => Process::result(),
+        ]);
+
+        $action = new SchedulesFixer()->fixGateway($gateway, new DriftEntry(
+            family: 'schedule',
+            key: 'schedule.runtime_hibernator_stopped',
+            kind: DriftKind::Divergent,
+            summary: 'Runtime hibernator is stopped.',
+        ));
+
+        expect($action)->toMatchArray([
+            'key' => 'schedule.runtime_hibernator_stopped',
+            'status' => 'completed',
+        ]);
+        Process::assertRan("docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'");
+    });
+
+    it('updates and scales the runtime hibernator when its image drifts', function (): void {
+        $gateway = createSchedulesFixerGatewayNode();
+        $desiredImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.4@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        Process::fake([
+            "docker service update --detach=true --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-runtime-hibernator'" =>
+                Process::result(),
+            "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'" => Process::result(),
+        ]);
+
+        $action = new SchedulesFixer()->fixGateway($gateway, new DriftEntry(
+            family: 'schedule',
+            key: 'schedule.runtime_hibernator_image_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'Runtime hibernator image drifted.',
+            detail: ['expected_image' => $desiredImage],
+        ));
+
+        expect($action)->toMatchArray([
+            'key' => 'schedule.runtime_hibernator_image_mismatch',
+            'status' => 'completed',
+        ]);
+        Process::assertRan(
+            "docker service update --detach=true --image '{$desiredImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-runtime-hibernator'",
+        );
+    });
+
     it('scales the gateway orbit-scheduler Swarm service when scheduler configuration is missing', function (): void {
         $gateway = createSchedulesFixerGatewayNode();
         $shell = new SchedulesFixerRemoteShell;

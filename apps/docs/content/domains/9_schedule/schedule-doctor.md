@@ -43,15 +43,19 @@ The schedule probe reads gateway schedule configuration and checks these layers:
 4. **Orbit Scheduler desired state:** the service uses the configured
    `orbit-gateway` image and has exactly one desired/running replica.
 5. **Orbit Scheduler liveness:** the scheduler service is in a running state.
-6. **Heartbeat freshness:** the most recent scheduler heartbeat is within the configured threshold.
-7. **Schedule lock health:** no schedule lock in `schedule_locks` exceeds the configured stale-lock threshold.
+6. **Runtime hibernator liveness:** the development runtime hibernator is a
+   running singleton on the configured gateway image.
+7. **Heartbeat freshness:** the most recent scheduler heartbeat is within the configured threshold.
+8. **Schedule lock health:** no schedule lock in `schedule_locks` exceeds the configured stale-lock threshold.
 
-If any of layers 3–7 fail, the corresponding issue code is emitted and downstream per-target dispatch checks are still attempted (so the operator sees both the scheduler-side problem and any reachability problems).
+If any of layers 3–8 fail, the corresponding issue code is emitted and
+downstream per-target dispatch checks are still attempted, so the operator sees
+both the gateway-daemon problem and any reachability problems.
 
 **Per-target dispatch layers** (one set per schedule whose target is not the gateway):
 
-8. **Target local-executor reachability:** the gateway can run `internal:executor:verify` on the target node through the local executor. Required for the gateway to dispatch the scheduled command.
-9. **Recent run health:** recent `schedule_runs` rows exist for enabled schedules and the latest status is healthy. Failures and stuck runs beyond the configured threshold surface as drift.
+9. **Target local-executor reachability:** the gateway can run `internal:executor:verify` on the target node through the local executor. Required for the gateway to dispatch the scheduled command.
+10. **Recent run health:** recent `schedule_runs` rows exist for enabled schedules and the latest status is healthy. Failures and stuck runs beyond the configured threshold surface as drift.
 
 ## Schedule Issue Codes
 
@@ -66,6 +70,10 @@ The table below lists every issue code the schedule probe may emit and the condi
 | `schedule.scheduler_stopped` | The `orbit_orbit-scheduler` Swarm service is configured but not running. |
 | `schedule.scheduler_image_mismatch` | The scheduler service image differs from the configured `orbit-gateway` image. |
 | `schedule.scheduler_replicas_mismatch` | The scheduler service is running but is not a singleton `1/1` service. |
+| `schedule.runtime_hibernator_missing` | The `orbit_orbit-runtime-hibernator` Swarm service has no desired replica. |
+| `schedule.runtime_hibernator_stopped` | The runtime hibernator service is configured but not running. |
+| `schedule.runtime_hibernator_image_mismatch` | The runtime hibernator image differs from the configured `orbit-gateway` image. |
+| `schedule.runtime_hibernator_replicas_mismatch` | The runtime hibernator is running but is not a singleton `1/1` service. |
 | `schedule.heartbeat_stale` | The most recent scheduler heartbeat is older than the configured threshold. |
 | `schedule.lock_stuck` | A row in `schedule_locks` exceeds the configured stale-lock threshold. |
 | `schedule.target_unreachable` | The gateway cannot reach the schedule's target node through agent-push/local-executor verification. Dispatch will fail until reachability is restored. |
@@ -82,6 +90,10 @@ The table below lists what `doctor --restore` does for each issue code.
 | `schedule.scheduler_stopped` | Scale `orbit_orbit-scheduler` to one replica. |
 | `schedule.scheduler_image_mismatch` | Update `orbit_orbit-scheduler` to the configured gateway image with stop-first order, then scale it to one replica. |
 | `schedule.scheduler_replicas_mismatch` | Scale `orbit_orbit-scheduler` back to one replica. |
+| `schedule.runtime_hibernator_missing` | Scale `orbit_orbit-runtime-hibernator` to one replica. |
+| `schedule.runtime_hibernator_stopped` | Scale `orbit_orbit-runtime-hibernator` to one replica. |
+| `schedule.runtime_hibernator_image_mismatch` | Update `orbit_orbit-runtime-hibernator` to the configured gateway image with stop-first order, then scale it to one replica. |
+| `schedule.runtime_hibernator_replicas_mismatch` | Scale `orbit_orbit-runtime-hibernator` back to one replica. |
 | `schedule.heartbeat_stale` | No `doctor --restore` action. Stale heartbeat is a runtime symptom; restart the scheduler daemon or investigate the gateway service. |
 | `schedule.lock_stuck` | Release the stale lock row in `schedule_locks` and record the affected run as `failed`. |
 
