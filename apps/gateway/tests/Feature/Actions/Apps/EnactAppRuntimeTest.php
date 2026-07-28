@@ -428,22 +428,51 @@ it('seeds one FrankenPHP process definition per concrete app instance', function
 
 it('keeps logical app runtime enactment safe after the app gains multiple instances', function (): void {
     $app = makeAppOnDevNode(AppRuntimeKind::Static);
-    $productionNode = createTestAppHostNode(['name' => 'app-production']);
-    AppInstance::factory()->for($app)->create([
-        'name' => 'production',
+    $nmbpNode = createTestAppHostNode([
+        'name' => 'nmbp',
+        'tld' => 'nmbp',
+    ]);
+    $nmbp = AppInstance::factory()->for($app)->create([
+        'name' => 'nmbp',
         'driver_config' => new OrbitAppInstanceDriverConfigData(
-            node_id: $productionNode->id,
-            node: $productionNode->name,
-            path: '/srv/docs-production',
+            node_id: $nmbpNode->id,
+            node: $nmbpNode->name,
+            path: '/Users/nckrtl/apps/docs',
             document_root: 'public',
-            domain: 'docs.example.com',
+            domain: 'docs.nmbp',
         ),
+    ]);
+    ProxyRoute::factory()->create([
+        'node_id' => $nmbpNode->id,
+        'domain' => 'docs.nmbp',
+        'app_id' => null,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['upstream' => 'https://docs.nmbp:8443'],
     ]);
     app()->instance(RemoteShell::class, new EnactAppRuntimeRecordingShell);
     Http::preventStrayRequests();
     Http::fake(['*' => enact_app_runtime_caddy_sequence('docs.test')]);
 
     expect(app(EnactAppRuntime::class)->handle($app))->toBe([]);
+
+    $routes = ProxyRoute::query()
+        ->where('app_id', $app->id)
+        ->orderBy('domain')
+        ->get();
+
+    expect($routes)
+        ->toHaveCount(2)
+        ->and($routes->pluck('domain')->all())
+        ->toBe(['docs.nmbp', 'docs.test'])
+        ->and($routes->firstWhere('domain', 'docs.nmbp')?->owner_type)
+        ->toBe('app')
+        ->and($routes->firstWhere('domain', 'docs.nmbp')?->kind)
+        ->toBe('app')
+        ->and($routes->firstWhere('domain', 'docs.nmbp')?->config['app_instance']['id'] ?? null)
+        ->toBe($nmbp->id)
+        ->and($routes->firstWhere('domain', 'docs.nmbp')?->config['runtime_upstream'])
+        ->toBeNull();
 });
 
 it('returns app.php_version_unavailable when the selected FrankenPHP image is missing on the owning node', function (): void {

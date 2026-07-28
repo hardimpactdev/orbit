@@ -485,15 +485,48 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('retries the complete app route enactment before clearing partial state', function (): void {
-        $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = Project::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'app_id' => $app->id,
+        $defaultNode = createTestAppHostNode(['name' => 'app-1', 'tld' => 'test']);
+        $nmbpNode = createTestAppHostNode(['name' => 'nmbp', 'tld' => 'nmbp']);
+        $app = Project::factory()->create([
+            'node_id' => $defaultNode->id,
+            'name' => 'docs',
             'domain' => 'docs.test',
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $defaultNode->id,
+                node: $defaultNode->name,
+                path: '/srv/docs',
+                document_root: 'public',
+                domain: 'docs.test',
+            ),
+        ]);
+        $nmbp = AppInstance::factory()->for($app)->create([
+            'name' => 'nmbp',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $nmbpNode->id,
+                node: $nmbpNode->name,
+                path: '/Users/nckrtl/apps/docs',
+                document_root: 'public',
+                domain: 'docs.nmbp',
+            ),
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $nmbpNode->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.nmbp',
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => [
+                'app_instance' => [
+                    'id' => $nmbp->id,
+                    'name' => 'nmbp',
+                    'selector' => 'docs.nmbp',
+                    'domain' => 'docs.nmbp',
+                    'node' => 'nmbp',
+                    'node_id' => $nmbpNode->id,
+                ],
                 'enactment' => [
                     'status' => 'partial',
                     'planned_operations' => [],
@@ -512,8 +545,12 @@ describe('ProxyRouteFixer', function (): void {
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
-            appRouteEnactor: function (Project $target) use ($route, &$reenacted): void {
-                $reenacted[] = $target->name;
+            appRouteEnactor: function (Project $target, ?AppInstance $instance) use ($route, &$reenacted): void {
+                $reenacted[] = [
+                    'app' => $target->name,
+                    'domain' => $target->domain,
+                    'instance_id' => $instance?->id,
+                ];
                 $config = is_array($route->config) ? $route->config : [];
                 $route->forceFill(['config' => ProxyRouteEnactment::converged($config)])->save();
             },
@@ -525,11 +562,15 @@ describe('ProxyRouteFixer', function (): void {
         ));
 
         expect($reenacted)
-            ->toBe(['docs'])
+            ->toBe([[
+                'app' => 'docs',
+                'domain' => 'docs.nmbp',
+                'instance_id' => $nmbp->id,
+            ]])
             ->and($action)
             ->toMatchArray([
                 'family' => 'proxy',
-                'node' => 'app-1',
+                'node' => 'nmbp',
                 'key' => 'proxy.enactment_incomplete',
                 'status' => 'completed',
             ])

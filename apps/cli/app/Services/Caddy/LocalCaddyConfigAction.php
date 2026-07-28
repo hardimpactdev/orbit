@@ -329,11 +329,13 @@ final readonly class LocalCaddyConfigAction
     {
         $domain = $this->domain($domain);
         $sitePath = $this->hostPathForContainerPath($this->sitePath($domain, ''), $container);
+        $backendSitePath = $this->hostPathForContainerPath($this->sitePath($domain, '.backend'), $container);
 
         $this->mustRunPrivileged([
             'rm',
             '-f',
             $sitePath,
+            $backendSitePath,
             $this->hostPathForContainerPath("/etc/orbit/certs/{$domain}.crt", $container),
             $this->hostPathForContainerPath("/etc/orbit/certs/{$domain}.key", $container),
         ], 'caddy_config.remove_failed');

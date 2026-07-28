@@ -48,6 +48,15 @@ final readonly class AppProxyRouteCaddyInstaller
         return $this->caddyConfig->reload($node, $container);
     }
 
+    public function removeRouteConfig(Node $node, string $domain): RemoteShellResult
+    {
+        return $this->caddyConfig->removeSite(
+            $node,
+            $domain,
+            $this->containerName($node),
+        );
+    }
+
     public function ensureGlobalCaddyfile(Node $node): void
     {
         $contents = $this->caddyConfig->readGlobal($node);
@@ -103,5 +112,17 @@ final readonly class AppProxyRouteCaddyInstaller
         }
 
         return $normalized;
+    }
+
+    private function containerName(Node $node): string
+    {
+        $container = OrbitContainerNames::forNodeScope(NodeContainerScope::forNode($node))->caddy();
+        $caddyToolConfig = $this->caddyToolConfig($node);
+
+        if ($caddyToolConfig === null) {
+            return $container;
+        }
+
+        return OrbitCaddyContainer::fromConfig($this->containerConfig($caddyToolConfig))->name();
     }
 }

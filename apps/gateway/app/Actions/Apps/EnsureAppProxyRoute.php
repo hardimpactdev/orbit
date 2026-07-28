@@ -48,12 +48,13 @@ final readonly class EnsureAppProxyRoute
     /**
      * @return list<array<string, string>>
      */
-    public function handle(Project $app): array
+    public function handle(Project $app, ?AppInstance $instance = null): array
     {
+        $instance ??= $this->routeInstance($app);
         $owningNode = $this->appOwningNodeResolver->resolve($app);
 
         $domain = $this->domain($app, $owningNode);
-        [$servingNode, $config, $content] = $this->routeArtifact($app, $owningNode, $domain);
+        [$servingNode, $config, $content] = $this->routeArtifact($app, $instance, $owningNode, $domain);
 
         $route = ProxyRoute::query()->updateOrCreate(
             ['domain' => $domain],
@@ -69,12 +70,11 @@ final readonly class EnsureAppProxyRoute
                 'source_hash' => hash('sha256', $content),
             ],
         );
-        ProxyRoute::query()
-            ->where('app_id', $app->id)
-            ->where('owner_type', 'app')
-            ->where('kind', 'app')
-            ->where('domain', '!=', $domain)
-            ->delete();
+        $warning = $this->removeStaleInstanceRoutes($route, $app, $instance, $domain);
+
+        if ($warning !== null) {
+            return [$warning];
+        }
 
         if (($config['placement'] ?? null) !== 'ingress') {
             $content = $this->proxyRouteRenderer->render($route);
@@ -107,7 +107,7 @@ final readonly class EnsureAppProxyRoute
 
         $this->storeConfig($route, ProxyRouteEnactment::converged($this->routeConfig($route)));
 
-        return $this->productionActivationWarnings($app);
+        return $this->productionActivationWarnings($app, $instance);
     }
 
     /**
@@ -526,17 +526,25 @@ final readonly class EnsureAppProxyRoute
     /**
      * @return list<array<string, string>>
      */
-    private function productionActivationWarnings(Project $app): array
+    private function productionActivationWarnings(Project $app, ?AppInstance $instance): array
     {
-        if (! is_string($app->domain) || $app->domain === '') {
+        if (
+            $app->environment !== 'production'
+            || ! is_string($app->domain)
+            || $app->domain === ''
+        ) {
             return [];
         }
+
+        $selector = $instance instanceof AppInstance
+            ? "{$app->name}.{$instance->name}"
+            : $app->name;
 
         return [[
             'code' => 'proxy.domain_inactive',
             'family' => 'proxy',
-            'message' => "Production domain '{$app->domain}' is not yet active. Retry with 'orbit instance:register {$app->name} --domain={$app->domain}' once DNS has propagated.",
-            'next_command' => "instance:register {$app->name} --domain={$app->domain}",
+            'message' => "Production domain '{$app->domain}' is not yet active. Retry with 'orbit instance:register {$selector} --domain={$app->domain}' once DNS has propagated.",
+            'next_command' => "instance:register {$selector} --domain={$app->domain}",
         ]];
     }
 
@@ -595,10 +603,13 @@ final readonly class EnsureAppProxyRoute
     /**
      * @return array{0: Node, 1: array<string, mixed>, 2: string}
      */
-    private function routeArtifact(Project $app, Node $owningNode, string $domain): array
-    {
+    private function routeArtifact(
+        Project $app,
+        ?AppInstance $instance,
+        Node $owningNode,
+        string $domain,
+    ): array {
         $isPhp = $app->runtimeKind() === AppRuntimeKind::Php;
-        $instance = $this->routeInstance($app);
         $runtimeUpstream = $isPhp ? $this->runtimeUpstream($app, $instance) : null;
         $appInstanceConfig = $instance instanceof AppInstance
             ? $this->appRouteRuntimeTargets->appInstanceConfig($app, $instance, $domain)
@@ -714,11 +725,97 @@ final readonly class EnsureAppProxyRoute
         return [$ingressNode, $config, $content];
     }
 
+    /**
+     * @return array<string, string>|null
+     */
+    private function removeStaleInstanceRoutes(
+        ProxyRoute $currentRoute,
+        Project $app,
+        ?AppInstance $instance,
+        string $domain,
+    ): ?array {
+        $staleRoutes = ProxyRoute::query()
+            ->where('app_id', $app->id)
+            ->where('owner_type', 'app')
+            ->where('kind', 'app')
+            ->where('domain', '!=', $domain)
+            ->get();
+
+        if ($instance instanceof AppInstance) {
+            $staleRoutes = $staleRoutes->filter(static function (ProxyRoute $route) use ($instance): bool {
+                $config = is_array($route->config) ? $route->config : [];
+                $appInstance = is_array($config['app_instance'] ?? null)
+                    ? $config['app_instance']
+                    : [];
+
+                return ($appInstance['id'] ?? null) === $instance->id;
+            });
+        }
+
+        foreach ($staleRoutes as $staleRoute) {
+            if (! $staleRoute instanceof ProxyRoute) {
+                continue;
+            }
+
+            foreach ($this->staleRouteNodes($staleRoute) as $node) {
+                $warning = $this->performOperation(
+                    route: $currentRoute,
+                    node: $node,
+                    layer: 'route',
+                    operation: 'caddy.stale_route.remove',
+                    callback: fn (): bool => $this->caddyInstaller
+                        ->removeRouteConfig($node, $staleRoute->domain)
+                        ->successful(),
+                );
+
+                if ($warning !== null) {
+                    return $warning;
+                }
+            }
+
+            $staleRoute->delete();
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<Node>
+     */
+    private function staleRouteNodes(ProxyRoute $route): array
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $nodeIds = [$route->node_id];
+        $routerArtifact = is_array($config['router_artifact'] ?? null)
+            ? $config['router_artifact']
+            : [];
+
+        if (is_int($routerArtifact['node_id'] ?? null)) {
+            $nodeIds[] = $routerArtifact['node_id'];
+        }
+
+        /** @var list<array<string, mixed>> $backendArtifacts */
+        $backendArtifacts = is_array($config['backend_artifacts'] ?? null)
+            ? $config['backend_artifacts']
+            : [];
+
+        foreach ($backendArtifacts as $artifact) {
+            if (is_int($artifact['node_id'] ?? null)) {
+                $nodeIds[] = $artifact['node_id'];
+            }
+        }
+
+        /** @var \Illuminate\Database\Eloquent\Collection<int, Node> $nodes */
+        $nodes = Node::query()->findMany(array_values(array_unique($nodeIds)));
+
+        return array_values($nodes->all());
+    }
+
     private function routeInstance(Project $app): ?AppInstance
     {
         $app->loadMissing('instances');
         $instance = $app->instances->first(
-            fn (AppInstance $instance): bool => (
+            static fn (AppInstance $instance): bool => (
                 $instance->name === $app->environment
                 && $instance->driver === AppInstanceDriver::Orbit
             ),
