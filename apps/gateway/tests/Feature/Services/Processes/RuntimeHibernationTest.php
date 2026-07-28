@@ -78,6 +78,54 @@ it('does not stop a development process group when its asleep marker cannot be w
         ->toBe(['internal:caddy-config:runtime-asleep']);
 });
 
+it('keeps a development process group asleep when its bulk stop fails', function (): void {
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    $executor = new RuntimeHibernationRecordingExecutor(
+        failingAction: 'internal:process-systemd-service:stop',
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $result = app(ProcessLifecycle::class)->stop(
+        runtime_hibernation_context($node, $app, $instance),
+        null,
+    );
+
+    expect($result['failed'])
+        ->toBeTrue()
+        ->and($result['meta']['partial_state'])
+        ->toBe('none_stopped')
+        ->and($executor->actions())
+        ->toBe([
+            'internal:caddy-config:runtime-asleep',
+            'internal:process-systemd-service:stop',
+        ]);
+});
+
+it('keeps a development process group asleep when its bulk restart fails', function (): void {
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    $executor = new RuntimeHibernationRecordingExecutor(
+        failingAction: 'internal:process-systemd-service:restart',
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $result = app(ProcessLifecycle::class)->restart(
+        runtime_hibernation_context($node, $app, $instance),
+        null,
+    );
+
+    expect($result['failed'])
+        ->toBeTrue()
+        ->and($result['meta']['partial_state'])
+        ->toBe('none_restarted')
+        ->and($executor->actions())
+        ->toBe([
+            'internal:caddy-config:runtime-asleep',
+            'internal:process-systemd-service:restart',
+        ]);
+});
+
 it('keeps production process groups outside development hibernation markers', function (): void {
     $node = createTestAppHostNode([
         'name' => 'app-prod-1',

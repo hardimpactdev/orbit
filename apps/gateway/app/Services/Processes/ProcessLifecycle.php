@@ -171,13 +171,7 @@ final readonly class ProcessLifecycle
             return $this->failure('stopped', 'none_stopped', 'runtime_asleep_marker_failed');
         }
 
-        $result = $this->stopProcesses->handle($scope->context, null);
-
-        if ($result['failed'] && ($result['meta']['partial_state'] ?? null) === 'none_stopped') {
-            $this->remote->markAwake($scope->node, $scope->key());
-        }
-
-        return $result;
+        return $this->stopProcesses->handle($scope->context, null);
     }
 
     /**
@@ -192,10 +186,6 @@ final readonly class ProcessLifecycle
         $result = $this->restartProcesses->handle($scope->context, null);
 
         if ($result['failed']) {
-            if (($result['meta']['partial_state'] ?? null) === 'none_restarted') {
-                $this->remote->markAwake($scope->node, $scope->key());
-            }
-
             return $result;
         }
 

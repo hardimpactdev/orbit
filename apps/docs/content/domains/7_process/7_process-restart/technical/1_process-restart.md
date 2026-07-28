@@ -50,8 +50,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 6. Restart each runtime unit through the gateway on the resolved node or instance serving node.
 7. Record and publish lifecycle events for each successful stopped and started runtime transition.
 8. After a successful bulk development restart, mark the group awake before
-   releasing the hibernation lock. A partially restarted group remains asleep
-   so its next HTTP request reconciles the group. Named, node-owned, and
+   releasing the hibernation lock. A failed restart remains asleep so its next
+   HTTP request reconciles uncertain backend state. Named, node-owned, and
    `app-prod` actions do not change a group-level hibernation marker.
 9. Render the selected output.
 

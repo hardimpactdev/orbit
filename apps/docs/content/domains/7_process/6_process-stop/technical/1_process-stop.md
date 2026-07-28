@@ -49,10 +49,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    the scope's hibernation lock and mark the group asleep before stopping it.
 6. Stop each runtime unit through the gateway on the resolved node or instance serving node.
 7. Record and publish a durable `stopped` process event after each successful stop.
-8. Keep the group asleep after a successful or partial bulk development stop
-   so its next HTTP request runs activation. Restore the awake marker only when
-   no runtime unit was stopped. Named, node-owned, and `app-prod` actions do not
-   change a group-level hibernation marker.
+8. Keep the group asleep after a successful or failed bulk development stop
+   so its next HTTP request runs activation and reconciles uncertain backend
+   state. Named, node-owned, and `app-prod` actions do not change a group-level
+   hibernation marker.
 9. Render the selected output.
 
 `process:stop` does not change process configuration and does not remove the runtime unit artifact. In bulk mode, successful stops are not rolled back when a later process fails; the failure renderer reports partial runtime results.
