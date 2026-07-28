@@ -266,7 +266,7 @@ final readonly class ProcessOwnerContext
             return null;
         }
 
-        return $process->owner instanceof Workspace ? $this->workspace : $this->workspace;
+        return $this->workspace;
     }
 
     public function eventApp(): ?Project
