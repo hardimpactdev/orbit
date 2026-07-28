@@ -294,7 +294,7 @@ describe('internal caddy config command', function (): void {
             ->toContain('docker container inspect --format {{json .}} orbit-caddy')
             ->toContain('tee /Users/nckrtl/.config/orbit/agent/caddy/sites/paseo.nmbp.caddy')
             ->toContain(
-                'rm -f /Users/nckrtl/.config/orbit/agent/caddy/sites/paseo.nmbp.caddy /Users/nckrtl/.config/orbit/certs/paseo.nmbp.crt /Users/nckrtl/.config/orbit/certs/paseo.nmbp.key',
+                'rm -f /Users/nckrtl/.config/orbit/agent/caddy/sites/paseo.nmbp.caddy /Users/nckrtl/.config/orbit/agent/caddy/sites/paseo.nmbp.backend.caddy /Users/nckrtl/.config/orbit/certs/paseo.nmbp.crt /Users/nckrtl/.config/orbit/certs/paseo.nmbp.key',
             );
     });
 
@@ -417,7 +417,7 @@ describe('internal caddy config command', function (): void {
             ->toBe('/etc/caddy/sites/docs.test.caddy')
             ->and($calls)
             ->toContain(
-                'rm -f /etc/caddy/sites/docs.test.caddy /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key',
+                'rm -f /etc/caddy/sites/docs.test.caddy /etc/caddy/sites/docs.test.backend.caddy /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key',
             )
             ->toContain(
                 'docker exec orbit-caddy caddy reload --force --config /etc/caddy/Caddyfile --adapter caddyfile --address localhost:2019',

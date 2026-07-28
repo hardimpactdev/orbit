@@ -398,6 +398,16 @@ it('removes stale app-owned proxy routes for the same app when its domain change
         'domain' => 'happie.nmbp',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'nmbp',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: $app->domain,
+        ),
+    ]);
 
     ProxyRoute::factory()->create([
         'node_id' => $node->id,
@@ -405,17 +415,33 @@ it('removes stale app-owned proxy routes for the same app when its domain change
         'owner_type' => 'app',
         'kind' => 'app',
         'domain' => 'happie-nmbp.nmbp',
+        'config' => [
+            'app_instance' => [
+                'id' => $instance->id,
+                'name' => $instance->name,
+                'selector' => 'happie-nmbp.nmbp',
+                'domain' => 'happie-nmbp.nmbp',
+                'node' => $node->name,
+                'node_id' => $node->id,
+            ],
+        ],
     ]);
 
     $shell = new EnsureAppProxyRouteTestShell;
     $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
+    $executor = new EnsureAppProxyRouteTestInternalExecutor;
     app()->instance(RemoteShell::class, $shell);
     app()->instance(SiteCertificateInstaller::class, $certificates);
+    app()->instance(RemoteCaddyConfig::class, new RemoteCaddyConfig($executor));
 
-    app(EnsureAppProxyRoute::class)->handle($app);
+    app(EnsureAppProxyRoute::class)->handle($app, $instance);
 
     expect(ProxyRoute::query()->where('app_id', $app->id)->pluck('domain')->all())
-        ->toBe(['happie.nmbp']);
+        ->toBe(['happie.nmbp'])
+        ->and(array_column($executor->calls, 'action'))
+        ->toContain('remove-site')
+        ->and(collect($executor->calls)->firstWhere('action', 'remove-site')['payload'])
+        ->toMatchArray(['domain' => 'happie-nmbp.nmbp']);
 });
 
 it('converges production proxy artifacts in backend router ingress order', function (): void {
@@ -466,7 +492,12 @@ it('converges production proxy artifacts in backend router ingress order', funct
         ->and(collect($warnings)->contains(
             fn (array $warning): bool => ($warning['code'] ?? null) === 'proxy.enactment_failed',
         ))
-        ->toBeFalse();
+        ->toBeFalse()
+        ->and(collect($warnings)->firstWhere('code', 'proxy.domain_inactive'))
+        ->toMatchArray([
+            'message' => "Production domain 'hauzer.app' is not yet active. Retry with 'orbit instance:register hauzer.production --domain=hauzer.app' once DNS has propagated.",
+            'next_command' => 'instance:register hauzer.production --domain=hauzer.app',
+        ]);
 });
 
 it('records partial production enactment and identifies the failed node and operation', function (): void {

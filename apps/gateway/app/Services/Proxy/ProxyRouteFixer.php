@@ -9,11 +9,13 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\Project;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
+use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
 use App\Services\Gateway\CaddyGlobalConfig;
@@ -192,7 +194,12 @@ final readonly class ProxyRouteFixer
             return null;
         }
 
-        $this->executeAppRouteEnactment($app);
+        $instance = $this->appRouteTargets()->appInstanceForRoute($route);
+        $runtimeApp = $instance instanceof AppInstance
+            ? $this->appRuntimeRenderer()->runtimeAppForInstance($app, $instance)
+            : $app;
+
+        $this->executeAppRouteEnactment($runtimeApp, $instance);
 
         $route->refresh();
         $config = is_array($route->config) ? $route->config : [];
@@ -215,15 +222,25 @@ final readonly class ProxyRouteFixer
         ];
     }
 
-    private function executeAppRouteEnactment(Project $app): void
+    private function executeAppRouteEnactment(Project $app, ?AppInstance $instance): void
     {
         if ($this->appRouteEnactor instanceof Closure) {
-            ($this->appRouteEnactor)($app);
+            ($this->appRouteEnactor)($app, $instance);
 
             return;
         }
 
-        app(EnsureAppProxyRoute::class)->handle($app);
+        app(EnsureAppProxyRoute::class)->handle($app, $instance);
+    }
+
+    private function appRouteTargets(): AppProxyRouteTargetResolver
+    {
+        return app(AppProxyRouteTargetResolver::class);
+    }
+
+    private function appRuntimeRenderer(): AppRuntimeContainerRenderer
+    {
+        return app(AppRuntimeContainerRenderer::class);
     }
 
     /**
