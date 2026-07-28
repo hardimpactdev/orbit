@@ -7,10 +7,14 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\ProcessEvent;
 use App\Models\Project;
 use App\Models\Workspace;
 use App\Services\Processes\ProcessLifecycle;
 use App\Services\Processes\ProcessOwnerContext;
+use App\Services\Processes\RuntimeDependencyColdStorage;
+use App\Services\Processes\RuntimeHibernationScope;
+use App\Services\Processes\RuntimeHibernationScopes;
 use App\Services\Processes\RuntimeIdleHibernation;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Schedules\OrbitScheduler;
@@ -227,7 +231,10 @@ it('wakes an app instance on an exact serving-node request and marks it awake af
     $response = $this->call(
         'GET',
         "/api/runtime-activations/app-instance/{$instance->id}",
-        server: ['REMOTE_ADDR' => $node->wireguard_address],
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+        ],
     );
 
     $response->assertNoContent();
@@ -257,7 +264,10 @@ it('rejects runtime activation from a node other than the exact serving node', f
         ->call(
             'GET',
             "/api/runtime-activations/app-instance/{$instance->id}",
-            server: ['REMOTE_ADDR' => $otherNode->wireguard_address],
+            server: [
+                'REMOTE_ADDR' => $otherNode->wireguard_address,
+                'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+            ],
         )
         ->assertForbidden()
         ->assertJsonPath('error.code', 'authorization_failed');
@@ -277,7 +287,10 @@ it('marks an instance with no configured processes awake without reporting a sta
     $this->call(
         'GET',
         "/api/runtime-activations/app-instance/{$instance->id}",
-        server: ['REMOTE_ADDR' => $node->wireguard_address],
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+        ],
     )->assertNoContent();
 
     expect($executor->actions())
@@ -300,7 +313,10 @@ it('does not restart a process group that is already marked awake', function ():
     $this->call(
         'GET',
         "/api/runtime-activations/app-instance/{$instance->id}",
-        server: ['REMOTE_ADDR' => $node->wireguard_address],
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+        ],
     )->assertNoContent();
 
     expect($executor->actions())
@@ -325,7 +341,10 @@ it('wakes inherited instance and workspace processes as one workspace lifecycle 
     $this->call(
         'GET',
         "/api/runtime-activations/workspace/{$workspace->id}",
-        server: ['REMOTE_ADDR' => $node->wireguard_address],
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '0',
+        ],
     )->assertNoContent();
 
     expect($executor->actions())
@@ -466,6 +485,168 @@ it('does not repeatedly stop a scope that is already marked hibernated', functio
         ->toBe(['internal:caddy-config:runtime-states']);
 });
 
+it('prunes reconstructable dependencies after seven days while a scope is hibernated', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    create_runtime_hibernation_instance();
+    config()->set('orbit.runtime_hibernation.dependency_idle_seconds', 604_800);
+    $executor = new RuntimeHibernationRecordingExecutor(
+        lastActivityAt: 1_766_664_000,
+        hibernated: true,
+        sourceActivityAt: 1_766_664_000,
+        dependencies: [[
+            'key' => 'composer',
+            'label' => 'Installing PHP dependencies',
+            'present' => true,
+            'reconstructable' => true,
+        ]],
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    app(RuntimeIdleHibernation::class)->hibernate(CarbonImmutable::parse('2026-01-08T13:00:01Z'));
+
+    expect($executor->actions())
+        ->toBe([
+            'internal:caddy-config:runtime-states',
+            'internal:runtime-dependencies:inspect',
+            'internal:caddy-config:runtime-cold',
+            'internal:runtime-dependencies:prune',
+        ]);
+});
+
+it('coordinates cold and warm markers across scopes that share one source path', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    $sibling = AppInstance::factory()->for($app)->create([
+        'name' => 'preview',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: 'preview.docs.test',
+        ),
+    ]);
+    $executor = new RuntimeHibernationRecordingExecutor(
+        lastActivityAt: 1_767_272_400,
+        hibernated: true,
+        sourceActivityAt: 1_766_664_000,
+        dependencies: [[
+            'key' => 'composer',
+            'label' => 'Installing PHP dependencies',
+            'present' => true,
+            'reconstructable' => true,
+        ]],
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+    $scope = app(RuntimeHibernationScopes::class)->resolve('app-instance', $instance->id);
+
+    expect($scope)->toBeInstanceOf(RuntimeHibernationScope::class);
+
+    app(RuntimeDependencyColdStorage::class)->pruneIfEligible(
+        $scope,
+        [
+            'key' => $scope->key(),
+            'awake' => false,
+            'hibernated' => true,
+            'cold' => false,
+            'last_activity_at' => 1_767_272_400,
+        ],
+        1_767_272_401,
+    );
+    app(RuntimeDependencyColdStorage::class)->markSourceWarm($scope);
+
+    expect($executor->actions())
+        ->toBe([
+            'internal:caddy-config:runtime-states',
+            'internal:runtime-dependencies:inspect',
+            'internal:caddy-config:runtime-cold',
+            'internal:caddy-config:runtime-cold',
+            'internal:runtime-dependencies:prune',
+            'internal:caddy-config:runtime-warm',
+            'internal:caddy-config:runtime-warm',
+        ])
+        ->and($executor->runtimeColdMarkerKeys())
+        ->toBe([
+            "app-instance-{$instance->id}",
+            "app-instance-{$sibling->id}",
+        ])
+        ->and($executor->runtimeWarmMarkerKeys())
+        ->toBe([
+            "app-instance-{$instance->id}",
+            "app-instance-{$sibling->id}",
+        ]);
+});
+
+it('keeps dependencies when source activity is newer than the seven day threshold', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    create_runtime_hibernation_instance();
+    config()->set('orbit.runtime_hibernation.dependency_idle_seconds', 604_800);
+    $executor = new RuntimeHibernationRecordingExecutor(
+        lastActivityAt: 1_766_664_000,
+        hibernated: true,
+        sourceActivityAt: 1_767_354_000,
+        dependencies: [[
+            'key' => 'composer',
+            'label' => 'Installing PHP dependencies',
+            'present' => true,
+            'reconstructable' => true,
+        ]],
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    app(RuntimeIdleHibernation::class)->hibernate(CarbonImmutable::parse('2026-01-08T13:00:01Z'));
+
+    expect($executor->actions())
+        ->toBe([
+            'internal:caddy-config:runtime-states',
+            'internal:runtime-dependencies:inspect',
+        ]);
+});
+
+it('keeps dependencies when process lifecycle activity is newer than the seven day threshold', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    [$node, $app, $instance] = create_runtime_hibernation_instance();
+    $process = Process::factory()->forOwner($app, $node)->create(['name' => 'queue']);
+    ProcessEvent::factory()->create([
+        'process_id' => $process->id,
+        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
+        'workspace_id' => null,
+        'node_id' => $node->id,
+        'recorded_at' => CarbonImmutable::parse('2026-01-08T12:00:00Z'),
+    ]);
+    config()->set('orbit.runtime_hibernation.dependency_idle_seconds', 604_800);
+    $executor = new RuntimeHibernationRecordingExecutor(
+        lastActivityAt: 1_766_664_000,
+        hibernated: true,
+        sourceActivityAt: 1_766_664_000,
+        dependencies: [[
+            'key' => 'composer',
+            'label' => 'Installing PHP dependencies',
+            'present' => true,
+            'reconstructable' => true,
+        ]],
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    app(RuntimeIdleHibernation::class)->hibernate(CarbonImmutable::parse('2026-01-08T13:00:01Z'));
+
+    expect($executor->actions())
+        ->toBe(['internal:caddy-config:runtime-states']);
+});
+
 it('restores the awake marker when an idle process group cannot be stopped', function (): void {
     createTestGatewayNode([
         'name' => 'gateway-1',
@@ -567,12 +748,15 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
 
     private int $failingActionCalls = 0;
 
+    /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
         private readonly int $lastActivityAt = 1_767_272_400,
         private readonly bool $awake = false,
         private readonly bool $hibernated = false,
         private readonly ?string $failingAction = null,
         private readonly int $failingActionOccurrence = 1,
+        private readonly int $sourceActivityAt = 1_767_272_400,
+        private readonly array $dependencies = [],
     ) {}
 
     public function runInternal(
@@ -613,10 +797,17 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
             $keys = is_array($decoded) && is_array($decoded['keys'] ?? null) ? $decoded['keys'] : [];
             $data['states'] = array_map(fn (string $key): array => [
                 'key' => $key,
-                'awake' => $this->awake || $this->lastActivityAt < 1_767_272_400,
+                'awake' => $this->awake,
                 'hibernated' => $this->hibernated,
                 'last_activity_at' => $this->lastActivityAt,
             ], $keys);
+        }
+
+        if ($commandName === 'internal:runtime-dependencies' && $action === 'inspect') {
+            $data = [
+                'source_activity_at' => $this->sourceActivityAt,
+                'dependencies' => $this->dependencies,
+            ];
         }
 
         return new RemoteShellResult(
@@ -654,6 +845,46 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
                 if (
                     $call['command'] !== 'internal:caddy-config'
                     || ! in_array($call['action'], ['runtime-asleep', 'runtime-awake'], strict: true)
+                    || ! is_string($call['input'])
+                ) {
+                    return null;
+                }
+
+                $payload = json_decode($call['input'], associative: true, flags: JSON_THROW_ON_ERROR);
+                $key = is_array($payload) ? $payload['key'] ?? null : null;
+
+                return is_string($key) ? $key : null;
+            },
+            $this->calls,
+        )));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function runtimeColdMarkerKeys(): array
+    {
+        return $this->runtimeMarkerKeysForAction('runtime-cold');
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function runtimeWarmMarkerKeys(): array
+    {
+        return $this->runtimeMarkerKeysForAction('runtime-warm');
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function runtimeMarkerKeysForAction(string $action): array
+    {
+        return array_values(array_filter(array_map(
+            static function (array $call) use ($action): ?string {
+                if (
+                    $call['command'] !== 'internal:caddy-config'
+                    || $call['action'] !== $action
                     || ! is_string($call['input'])
                 ) {
                     return null;

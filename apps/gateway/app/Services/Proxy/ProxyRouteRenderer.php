@@ -619,8 +619,27 @@ final readonly class ProxyRouteRenderer
                                 try_files /{$key}.awake
                             }
                         }
+                        @orbit_runtime_cold {
+                            not file {
+                                root /dev/shm/orbit/hibernation
+                                try_files /{$key}.awake
+                            }
+                            file {
+                                root /data/caddy/orbit/hibernation
+                                try_files /{$key}.cold
+                            }
+                        }
+                        forward_auth @orbit_runtime_cold https://{$gatewayAddress} {
+                            uri /api/runtime-activations/{$scope['type']}/{$scope['id']}
+                            header_up X-Orbit-Runtime-Cold 1
+                            transport http {
+                                tls_trust_pool file /etc/orbit/ca/root.crt
+                                response_header_timeout 90s
+                            }
+                        }
                         forward_auth @orbit_runtime_asleep https://{$gatewayAddress} {
                             uri /api/runtime-activations/{$scope['type']}/{$scope['id']}
+                            header_up X-Orbit-Runtime-Cold 0
                             transport http {
                                 tls_trust_pool file /etc/orbit/ca/root.crt
                                 response_header_timeout 90s

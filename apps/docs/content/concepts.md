@@ -307,6 +307,7 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Runtime backend artifact**
 - **Restart policy**
 - **Development hibernation policy**
+- **Development cold-dependency policy**
 - **Crash notification policy**
 - **Process runtime selection**
 - **Process event**

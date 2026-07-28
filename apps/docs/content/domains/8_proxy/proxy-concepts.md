@@ -156,7 +156,12 @@ These terms define the ingress behavior applied to app and workspace routes.
   returns success only after the owning process group starts. The following
   reverse-proxy handoff retries failed upstream connections for up to 15
   seconds so the original request can span container warm-up without requiring
-  a custom Caddy module.
+  a custom Caddy module. When the scope is cold, the same pre-check starts or
+  follows its serialized restore-and-wake operation and returns a minimal
+  no-store HTML response immediately. That response auto-refreshes the original
+  URL until the pre-check succeeds. Its checklist contains only the planned
+  dependency restores and the scope's actual configured processes; it exposes
+  no commands, filesystem paths, environment values, or raw logs.
 - **Development runtime activity:** Every app-development instance or workspace
   route writes a dedicated access log whose modification time is the last HTTP
   activity for that scope. Activity logs remain in Caddy's persistent data
@@ -164,7 +169,8 @@ These terms define the ingress behavior applied to app and workspace routes.
   share the same scope identity.
   Background HTTP polling counts as activity; a WebSocket reconnect by itself
   is not a wake signal. The process family consumes this state in a ten-minute
-  sweep to enforce the one-hour idle policy.
+  sweep to enforce the one-hour idle policy and combines it with lifecycle and
+  source-tree activity before applying the seven-day cold-dependency policy.
 
 ## Boundaries
 

@@ -128,6 +128,16 @@ These terms define per-process behavioral rules that apply to every derived runt
   that lock and align the marker with the group state; named actions do not
   change it. Node-owned and `app-prod` processes remain boot-persistent and are
   outside this policy.
+- **Development cold-dependency policy:** An already-hibernated app-instance or
+  workspace group becomes eligible for dependency pruning after seven days
+  without HTTP, process-lifecycle, or source-tree activity. Shared source paths
+  use their newest owning-scope activity. Orbit removes only contained,
+  non-symlink Composer or JavaScript dependency directories backed by a
+  deterministic lockfile; it retains lockfiles, build artifacts, and
+  package-manager caches. The next HTTP activation restores only the missing
+  dependency families before starting the group. The activation plan enumerates
+  the scope's effective configured processes dynamically rather than assuming
+  fixed roles such as a queue worker.
 - **Crash notification policy:** Process-definition opt-in for crash event
   delivery. When the policy is enabled, `crashed` events resolve the effective
   agent IDE and notify the active session when one is available. Units that use

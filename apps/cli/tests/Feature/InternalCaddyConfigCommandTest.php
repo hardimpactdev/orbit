@@ -162,7 +162,6 @@ describe('internal caddy config command', function (): void {
                 'Destination' => '/data/caddy',
             ]],
         ]);
-
         [$awakeExitCode] = run_internal_caddy_config_command(
             [
                 'action' => 'runtime-awake',
@@ -207,6 +206,7 @@ describe('internal caddy config command', function (): void {
                 'key' => 'workspace-42',
                 'awake' => true,
                 'hibernated' => false,
+                'cold' => true,
                 'last_activity_at' => 1_700_000_000,
             ])
             ->and($asleepStates['success']['data']['states'][0] ?? null)
@@ -214,6 +214,7 @@ describe('internal caddy config command', function (): void {
                 'key' => 'workspace-42',
                 'awake' => false,
                 'hibernated' => true,
+                'cold' => true,
                 'last_activity_at' => 1_700_000_000,
             ])
             ->and($calls)
@@ -221,6 +222,39 @@ describe('internal caddy config command', function (): void {
             ->toContain('docker exec orbit-caddy touch /dev/shm/orbit/hibernation/workspace-42.awake')
             ->toContain('docker exec orbit-caddy rm -f /dev/shm/orbit/hibernation/workspace-42.awake')
             ->toContain('docker exec orbit-caddy touch /dev/shm/orbit/hibernation/workspace-42.asleep');
+    });
+
+    it('manages persistent cold runtime markers through fixed argv commands', function (): void {
+        $bin = install_caddy_config_fake_bin();
+        caddy_config_fake_container_inspect($bin, [
+            'Mounts' => [[
+                'Source' => '/var/lib/orbit/caddy/data',
+                'Destination' => '/data/caddy',
+            ]],
+        ]);
+
+        [$coldExitCode] = run_internal_caddy_config_command(
+            [
+                'action' => 'runtime-cold',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-runtime-cold'),
+                '--json' => true,
+            ],
+            json_encode(['key' => 'workspace-42'], JSON_THROW_ON_ERROR),
+        );
+        [$warmExitCode] = run_internal_caddy_config_command(
+            [
+                'action' => 'runtime-warm',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-runtime-warm'),
+                '--json' => true,
+            ],
+            json_encode(['key' => 'workspace-42'], JSON_THROW_ON_ERROR),
+        );
+
+        expect([$coldExitCode, $warmExitCode])
+            ->toBe([0, 0])
+            ->and(file_get_contents("{$bin}/calls.log"))
+            ->toContain('touch /var/lib/orbit/caddy/data/orbit/hibernation/workspace-42.cold')
+            ->toContain('rm -f /var/lib/orbit/caddy/data/orbit/hibernation/workspace-42.cold');
     });
 
     it('rejects unsafe runtime hibernation keys', function (): void {
@@ -1053,6 +1087,7 @@ function caddy_config_restore_home(?string $home, ?string $serverHome, ?string $
     }
 }
 
+/** @mago-expect lint:halstead */
 function delete_caddy_config_fake_bin(string $path): void
 {
     delete_caddy_config_file("{$path}/sudo");
@@ -1075,7 +1110,9 @@ function delete_caddy_config_fake_bin(string $path): void
     delete_caddy_config_file("{$path}/image-missing");
     delete_caddy_config_file("{$path}/image-pulled");
 
-    foreach (glob("{$path}/runtime-marker-*") ?: [] as $runtimeMarker) {
+    $runtimeMarkers = glob("{$path}/runtime-marker-*");
+
+    foreach ($runtimeMarkers === false ? [] : $runtimeMarkers as $runtimeMarker) {
         delete_caddy_config_file($runtimeMarker);
     }
 

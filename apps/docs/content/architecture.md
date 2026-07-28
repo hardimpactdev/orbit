@@ -178,6 +178,25 @@ in this development hibernation policy. Bulk process lifecycle commands for a
 development instance or workspace use the same lock and marker transition, so
 a manual group stop cannot leave Caddy bypassing request-driven activation.
 Named process lifecycle commands do not change the group marker.
+
+After seven days without HTTP route activity, process-lifecycle activity, or a
+source-tree change, an already-hibernated development instance or workspace may
+enter a cold state. Orbit removes only generated Composer or JavaScript
+dependency directories that are inside the source root, are not symlinks, and
+have a deterministic lockfile from which they can be reconstructed. Lockfiles,
+build artifacts, and package-manager caches remain. Shared source paths use the
+newest activity across every owning scope so one active owner protects the
+dependencies for all of them.
+
+A request for a cold scope creates or follows one serialized activation
+operation. The gateway returns a minimal auto-refreshing progress response
+through the existing stock-Caddy wake pre-check while the operation restores
+only the missing dependency families and starts the scope's configured
+processes. Progress rows are derived from that operation plan: an app without a
+queue process has no queue row, and a scope with no missing JavaScript
+dependencies has no JavaScript-install row. Once activation succeeds, the
+refreshed original request passes through to the application.
+
 Gateway Laravel/artisan/PDO work runs inside the gateway container or the
 durable update runner. Packaged node-local helpers that need host file access
 and PHP/PDO use the token-gated local executor lane. See [Runtime Execution

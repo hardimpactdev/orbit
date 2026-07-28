@@ -768,7 +768,15 @@ finishes, and repeats. This elapsed-time loop avoids skipped wall-clock
 boundaries and prevents slow node scans from delaying minute-level schedule
 evaluation. `ORBIT_RUNTIME_HIBERNATION_SWEEP_INTERVAL_MINUTES` overrides the
 default ten-minute interval; the one-hour idle threshold remains controlled by
-`ORBIT_RUNTIME_HIBERNATION_IDLE_SECONDS`.
+`ORBIT_RUNTIME_HIBERNATION_IDLE_SECONDS`. The same sweep evaluates the
+seven-day cold-dependency threshold, controlled by
+`ORBIT_RUNTIME_DEPENDENCY_IDLE_SECONDS`, only for already-hibernated
+app-development instance and workspace scopes. Node-local dependency inspection,
+pruning, and restoration run through the authenticated local executor so the
+gateway never requires a workload source-tree mount. Cold activation uses a
+detached gateway runner and the existing operation journal; the stock Caddy
+pre-check renders the journal as a small server-generated HTML response until
+the original request may proceed.
 
 ### Service containers
 

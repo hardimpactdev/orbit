@@ -539,6 +539,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 'metrics',
                 'analytics',
             ],
+            'internal:runtime-dependencies' => ['app-dev'],
             'internal:s3-runtime:probe' => ['s3'],
             'internal:schedule:run' => [
                 'gateway',
@@ -725,6 +726,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         'process logs' => ['internal:process-logs', ['ingress'], []],
         'process systemd service' => ['internal:process-systemd-service', ['app-dev'], []],
         'runtime backend probe' => ['internal:runtime-backend:probe', ['ingress'], ['gateway']],
+        'runtime dependencies' => ['internal:runtime-dependencies', ['app-dev'], ['app-prod']],
         's3 runtime probe' => ['internal:s3-runtime:probe', ['s3'], ['app-dev']],
         'schedule run' => ['internal:schedule:run', ['app-dev'], ['operator']],
         'tool run script' => ['internal:tool:run-script', ['app-dev'], ['gateway']],

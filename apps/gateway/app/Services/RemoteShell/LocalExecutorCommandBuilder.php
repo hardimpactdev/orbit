@@ -253,6 +253,7 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
             NodeRoleName::Metrics,
             NodeRoleName::Analytics,
         ],
+        InternalCommand::RuntimeDependencies->value => [NodeRoleName::AppDevelopment],
         InternalCommand::S3RuntimeProbe->value => [NodeRoleName::S3],
         InternalCommand::ScheduleRun->value => [
             NodeRoleName::Gateway,

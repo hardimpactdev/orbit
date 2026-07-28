@@ -26,9 +26,19 @@ final readonly class RemoteRuntimeHibernation
         return $this->run($node, 'runtime-asleep', ['key' => $key]);
     }
 
+    public function markCold(Node $node, string $key): RemoteShellResult
+    {
+        return $this->run($node, 'runtime-cold', ['key' => $key]);
+    }
+
+    public function markWarm(Node $node, string $key): RemoteShellResult
+    {
+        return $this->run($node, 'runtime-warm', ['key' => $key]);
+    }
+
     /**
      * @param  list<string>  $keys
-     * @return list<array{key: string, awake: bool, hibernated: bool, last_activity_at: int|null}>|null
+     * @return list<array{key: string, awake: bool, hibernated: bool, cold: bool, last_activity_at: int|null}>|null
      */
     public function states(Node $node, array $keys): ?array
     {

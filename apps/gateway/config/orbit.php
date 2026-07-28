@@ -94,6 +94,10 @@ return [
 
     'runtime_hibernation' => [
         'idle_seconds' => (int) env(key: 'ORBIT_RUNTIME_HIBERNATION_IDLE_SECONDS', default: 3600),
+        'dependency_idle_seconds' => (int) env(
+            key: 'ORBIT_RUNTIME_DEPENDENCY_IDLE_SECONDS',
+            default: 604_800,
+        ),
         'sweep_interval_minutes' => (int) env(
             key: 'ORBIT_RUNTIME_HIBERNATION_SWEEP_INTERVAL_MINUTES',
             default: 10,

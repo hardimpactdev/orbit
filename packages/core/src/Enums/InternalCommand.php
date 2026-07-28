@@ -44,6 +44,7 @@ enum InternalCommand: string
     case ProcessLogs = 'internal:process-logs';
     case ProcessSystemdService = 'internal:process-systemd-service';
     case RuntimeBackendProbe = 'internal:runtime-backend:probe';
+    case RuntimeDependencies = 'internal:runtime-dependencies';
     case S3RuntimeProbe = 'internal:s3-runtime:probe';
     case ScheduleRun = 'internal:schedule:run';
     case SecretFile = 'internal:secret-file';

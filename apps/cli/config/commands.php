@@ -108,6 +108,7 @@ use App\Commands\Internal\ProcessLaunchdServiceCommand;
 use App\Commands\Internal\ProcessLogsCommand as InternalProcessLogsCommand;
 use App\Commands\Internal\ProcessSystemdServiceCommand;
 use App\Commands\Internal\RuntimeBackendProbeCommand;
+use App\Commands\Internal\RuntimeDependenciesCommand;
 use App\Commands\Internal\S3RuntimeProbeCommand;
 use App\Commands\Internal\ScheduleRunCommand as InternalScheduleRunCommand;
 use App\Commands\Internal\SecretFileCommand;
@@ -437,6 +438,7 @@ return [
         ProcessSystemdServiceCommand::class,
         ProcessLaunchdServiceCommand::class,
         RuntimeBackendProbeCommand::class,
+        RuntimeDependenciesCommand::class,
         S3RuntimeProbeCommand::class,
         InternalScheduleRunCommand::class,
         ToolRunScriptCommand::class,

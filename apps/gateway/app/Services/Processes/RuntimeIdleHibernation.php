@@ -9,6 +9,10 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
+ */
 final readonly class RuntimeIdleHibernation
 {
     private const int STATE_BATCH_SIZE = 200;
@@ -17,6 +21,7 @@ final readonly class RuntimeIdleHibernation
         private StopProcesses $stopProcesses,
         private RemoteRuntimeHibernation $remote,
         private RuntimeHibernationScopes $scopes,
+        private RuntimeDependencyColdStorage $coldStorage,
     ) {}
 
     public function hibernate(?CarbonImmutable $now = null): void
@@ -24,11 +29,16 @@ final readonly class RuntimeIdleHibernation
         $now ??= CarbonImmutable::now();
         $idleSeconds = (int) config('orbit.runtime_hibernation.idle_seconds', default: 3600);
         $cutoff = $now->subSeconds($idleSeconds)->getTimestamp();
+        $dependencyIdleSeconds = (int) config(
+            'orbit.runtime_hibernation.dependency_idle_seconds',
+            default: 604_800,
+        );
+        $dependencyCutoff = $now->subSeconds($dependencyIdleSeconds)->getTimestamp();
 
         foreach ($this->scopes->byNode() as $nodeScopes) {
             foreach (array_chunk($nodeScopes, self::STATE_BATCH_SIZE) as $batch) {
                 try {
-                    $this->hibernateBatch($batch, $cutoff);
+                    $this->hibernateBatch($batch, $cutoff, $dependencyCutoff);
                 } catch (Throwable $exception) {
                     report($exception);
                 }
@@ -39,7 +49,7 @@ final readonly class RuntimeIdleHibernation
     /**
      * @param  list<RuntimeHibernationScope>  $scopes
      */
-    private function hibernateBatch(array $scopes, int $cutoff): void
+    private function hibernateBatch(array $scopes, int $cutoff, int $dependencyCutoff): void
     {
         $node = $scopes[0]->node;
         $states = $this->remote->states(
@@ -60,18 +70,29 @@ final readonly class RuntimeIdleHibernation
         foreach ($scopes as $scope) {
             $state = $statesByKey[$scope->key()] ?? null;
 
-            if (! $this->shouldHibernate($state, $cutoff)) {
-                continue;
+            $hibernated = $state['hibernated'] ?? false;
+
+            if ($this->shouldHibernate($state, $cutoff)) {
+                $lockSeconds = (int) config('orbit.runtime_hibernation.lock_seconds', default: 120);
+                $hibernated = false;
+                Cache::lock($scope->lockKey(), $lockSeconds)
+                    ->get(function () use ($scope, &$hibernated): void {
+                        $hibernated = $this->hibernateLocked($scope);
+                    });
             }
 
-            $lockSeconds = (int) config('orbit.runtime_hibernation.lock_seconds', default: 120);
-            Cache::lock($scope->lockKey(), $lockSeconds)
-                ->get(fn (): bool => $this->hibernateLocked($scope));
+            if ($hibernated && is_array($state)) {
+                $this->coldStorage->pruneIfEligible(
+                    $scope,
+                    [...$state, 'hibernated' => true],
+                    $dependencyCutoff,
+                );
+            }
         }
     }
 
     /**
-     * @param  array{key: string, awake: bool, hibernated: bool, last_activity_at: int|null}|null  $state
+     * @param  array{key: string, awake: bool, hibernated: bool, cold: bool, last_activity_at: int|null}|null  $state
      */
     private function shouldHibernate(?array $state, int $cutoff): bool
     {

@@ -22,7 +22,9 @@ final readonly class LocalCaddyConfigAction
         'remove-site',
         'runtime-asleep',
         'runtime-awake',
+        'runtime-cold',
         'runtime-states',
+        'runtime-warm',
         'start-container',
         'write-global',
         'write-site',
@@ -89,6 +91,14 @@ final readonly class LocalCaddyConfigAction
 
         if ($action === 'runtime-asleep') {
             return $this->markRuntimeAsleep($this->runtimeKey($payload['key'] ?? null));
+        }
+
+        if ($action === 'runtime-cold') {
+            return $this->markRuntimeCold($this->runtimeKey($payload['key'] ?? null));
+        }
+
+        if ($action === 'runtime-warm') {
+            return $this->markRuntimeWarm($this->runtimeKey($payload['key'] ?? null));
         }
 
         if ($action === 'runtime-states') {
@@ -172,6 +182,42 @@ final readonly class LocalCaddyConfigAction
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    private function markRuntimeCold(string $key): array
+    {
+        $activityDirectory = $this->runtimeActivityHostDirectory();
+        $marker = "{$activityDirectory}/{$key}.cold";
+
+        $this->mustRunPrivileged(
+            ['install', '-d', '-m', '0755', $activityDirectory],
+            'caddy_runtime.directory_failed',
+        );
+        $this->mustRunPrivileged(['touch', $marker], 'caddy_runtime.cold_failed');
+        $this->mustRunPrivileged(['chmod', '0644', $marker], 'caddy_runtime.chmod_failed');
+
+        return [
+            'key' => $key,
+            'cold' => true,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function markRuntimeWarm(string $key): array
+    {
+        $marker = $this->runtimeActivityHostDirectory()."/{$key}.cold";
+
+        $this->mustRunPrivileged(['rm', '-f', $marker], 'caddy_runtime.warm_failed');
+
+        return [
+            'key' => $key,
+            'cold' => false,
+        ];
+    }
+
+    /**
      * @param  list<string>  $keys
      * @return array<string, mixed>
      */
@@ -184,6 +230,7 @@ final readonly class LocalCaddyConfigAction
             $awakeMarker = self::RUNTIME_MARKER_DIRECTORY."/{$key}.awake";
             $asleepMarker = self::RUNTIME_MARKER_DIRECTORY."/{$key}.asleep";
             $activity = "{$activityDirectory}/{$key}.access.log";
+            $coldMarker = "{$activityDirectory}/{$key}.cold";
             $awake =
                 $this->runProcess(
                     ['docker', 'exec', self::DEFAULT_CONTAINER, 'test', '-f', $awakeMarker],
@@ -193,6 +240,7 @@ final readonly class LocalCaddyConfigAction
                     ['docker', 'exec', self::DEFAULT_CONTAINER, 'test', '-f', $asleepMarker],
                 )['exit_code'] === 0;
             $lastActivityAt = null;
+            $cold = $this->runPrivilegedProcess(['test', '-f', $coldMarker])['exit_code'] === 0;
 
             if ($this->runPrivilegedProcess(['test', '-f', $activity])['exit_code'] === 0) {
                 $lastActivityAt = $this->fileModificationTime($activity);
@@ -202,6 +250,7 @@ final readonly class LocalCaddyConfigAction
                 'key' => $key,
                 'awake' => $awake,
                 'hibernated' => $hibernated,
+                'cold' => $cold,
                 'last_activity_at' => $lastActivityAt,
             ];
         }
