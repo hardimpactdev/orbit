@@ -139,9 +139,9 @@ These terms define per-process behavioral rules that apply to every derived runt
   the scope's effective configured processes dynamically rather than assuming
   fixed roles such as a queue worker. Failed or uncertain pruning leaves the
   source cold, and Orbit clears that state only after dependency restoration
-  and process startup both succeed. A per-scope activation fence prevents a
-  stale replacement from overlapping any dependency or process side effect
-  still running for its predecessor.
+  and process startup both succeed. Dependencies are single-flight across
+  scopes sharing a node and source path, while process startup and warm markers
+  remain scope-owned. Stale takeover must acquire both fences.
 - **Crash notification policy:** Process-definition opt-in for crash event
   delivery. When the policy is enabled, `crashed` events resolve the effective
   agent IDE and notify the active session when one is available. Units that use

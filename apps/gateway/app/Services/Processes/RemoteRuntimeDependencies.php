@@ -93,6 +93,42 @@ final readonly class RemoteRuntimeDependencies
         return $path !== null && $this->run($scope, 'restore', $path, $family)->successful();
     }
 
+    public function restoreIfMissing(RuntimeHibernationScope $scope, string $family): bool
+    {
+        $state = $this->inspect($scope);
+
+        if (! is_array($state)) {
+            return false;
+        }
+
+        foreach ($state['dependencies'] as $dependency) {
+            if ($dependency['key'] !== $family) {
+                continue;
+            }
+
+            if ($dependency['present']) {
+                return true;
+            }
+
+            return $dependency['reconstructable'] && $this->restore($scope, $family);
+        }
+
+        return false;
+    }
+
+    public function ready(RuntimeHibernationScope $scope): bool
+    {
+        $state = $this->inspect($scope);
+
+        return (
+            is_array($state)
+            && array_all(
+                $state['dependencies'],
+                static fn (array $dependency): bool => $dependency['present'] || ! $dependency['reconstructable'],
+            )
+        );
+    }
+
     private function run(
         RuntimeHibernationScope $scope,
         string $action,

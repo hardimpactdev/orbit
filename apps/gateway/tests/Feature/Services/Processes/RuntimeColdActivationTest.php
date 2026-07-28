@@ -392,6 +392,41 @@ it('keeps the transparent fast wake when no dependencies need restoration', func
         ->toContain('internal:caddy-config:runtime-awake');
 });
 
+it('keeps a cold sibling in activation until its already restored source is ready', function (): void {
+    [$node, $app, $instance] = create_cold_runtime_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'horizon']);
+    $executor = new ColdRuntimeExecutor([[
+        'key' => 'composer',
+        'label' => 'Installing PHP dependencies',
+        'present' => true,
+        'reconstructable' => true,
+    ]]);
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $this
+        ->call(
+            'GET',
+            "/api/runtime-activations/app-instance/{$instance->id}",
+            server: [
+                'REMOTE_ADDR' => $node->wireguard_address,
+                'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+            ],
+        )
+        ->assertServiceUnavailable()
+        ->assertSee('Starting horizon')
+        ->assertDontSee('Installing PHP dependencies');
+
+    $run = OperationRun::query()->sole();
+    app(RuntimeActivationRunner::class)->run($run->id);
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Succeeded)
+        ->and($executor->actions())
+        ->not
+        ->toContain('internal:runtime-dependencies:restore')
+        ->toContain('internal:process-systemd-service:start');
+});
+
 it('uses the workspace source and its inherited dynamic process plan', function (): void {
     [$node, $app, $instance] = create_cold_runtime_instance();
     $workspace = Workspace::factory()->for($app, 'app')->create([
@@ -479,6 +514,71 @@ it('restores dependencies before starting the planned processes and clearing col
         ->toMatchArray([
             'dependency:composer' => 'done',
             'process:1' => 'done',
+        ]);
+});
+
+it('single-flights dependency restoration across simultaneous scopes that share one source', function (): void {
+    [$node, $app, $instance] = create_cold_runtime_instance();
+    $sibling = AppInstance::factory()->for($app)->create([
+        'name' => 'preview',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+            domain: 'preview.docs.test',
+        ),
+    ]);
+    Process::factory()->forOwner($app, $node)->create(['name' => 'horizon']);
+    Process::factory()
+        ->forOwner($app, $node)
+        ->create([
+            'app_instance_id' => $sibling->id,
+            'name' => 'horizon-preview',
+        ]);
+    $executor = new ColdRuntimeExecutor([[
+        'key' => 'composer',
+        'label' => 'Installing PHP dependencies',
+        'present' => false,
+        'reconstructable' => true,
+    ]]);
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    foreach ([$instance, $sibling] as $scopeInstance) {
+        $this->call(
+            'GET',
+            "/api/runtime-activations/app-instance/{$scopeInstance->id}",
+            server: [
+                'REMOTE_ADDR' => $node->wireguard_address,
+                'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+            ],
+        )->assertServiceUnavailable();
+    }
+
+    $firstRun = OperationRun::query()
+        ->where('operation_id', "runtime-activation:app-instance-{$instance->id}")
+        ->sole();
+    $siblingRun = OperationRun::query()
+        ->where('operation_id', "runtime-activation:app-instance-{$sibling->id}")
+        ->sole();
+
+    app(RuntimeActivationRunner::class)->run($firstRun->id);
+    app(RuntimeActivationRunner::class)->run($siblingRun->id);
+
+    $actionCounts = array_count_values($executor->actions());
+
+    expect($firstRun->refresh()->status)
+        ->toBe(OperationStatus::Succeeded)
+        ->and($siblingRun->refresh()->status)
+        ->toBe(OperationStatus::Succeeded)
+        ->and($actionCounts['internal:runtime-dependencies:restore'] ?? 0)
+        ->toBe(1)
+        ->and($actionCounts['internal:process-systemd-service:start'] ?? 0)
+        ->toBe(2)
+        ->and($executor->runtimeWarmMarkerKeys())
+        ->toBe([
+            "app-instance-{$instance->id}",
+            "app-instance-{$sibling->id}",
         ]);
 });
 
@@ -599,6 +699,7 @@ function create_cold_runtime_instance(): array
 }
 
 /**
+ * @mago-expect lint:cyclomatic-complexity
  * @mago-expect lint:file-name
  */
 final class ColdRuntimeExecutor implements RunsInternalCommands
@@ -609,14 +710,18 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
     /** @var list<string> */
     private array $runtimeDependencyPaths = [];
 
+    /** @var list<string> */
+    private array $runtimeWarmMarkerKeys = [];
+
     /**
      * @param  list<array{key: string, label: string, present: bool, reconstructable: bool}>  $dependencies
      */
     public function __construct(
-        private readonly array $dependencies,
+        private array $dependencies,
         private readonly ?string $failingAction = null,
     ) {}
 
+    /** @mago-expect lint:halstead */
     public function runInternal(
         Node $node,
         string $commandName,
@@ -627,12 +732,42 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
         $action = is_string($arguments[0] ?? null) ? $arguments[0] : '';
         $call = $action === '' ? $commandName : "{$commandName}:{$action}";
         $this->actions[] = $call;
+        $shouldFail = $call === $this->failingAction;
 
         if (
             $commandName === 'internal:runtime-dependencies'
             && is_string($arguments[1] ?? null)
         ) {
             $this->runtimeDependencyPaths[] = $arguments[1];
+        }
+
+        if (
+            ! $shouldFail
+            && $commandName === 'internal:runtime-dependencies'
+            && $action === 'restore'
+            && is_string($arguments[2] ?? null)
+        ) {
+            $family = $arguments[2];
+            $this->dependencies = array_map(
+                static fn (array $dependency): array => (
+                    $dependency['key'] === $family
+                        ? [...$dependency, 'present' => true]
+                        : $dependency
+                ),
+                $this->dependencies,
+            );
+        }
+
+        if ($commandName === 'internal:caddy-config' && $action === 'runtime-warm') {
+            $input = $transportOptions['input'] ?? null;
+            $decoded = is_string($input)
+                ? json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR)
+                : [];
+            $key = is_array($decoded) ? $decoded['key'] ?? null : null;
+
+            if (is_string($key)) {
+                $this->runtimeWarmMarkerKeys[] = $key;
+            }
         }
 
         $data = match ([$commandName, $action]) {
@@ -668,7 +803,7 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
         }
 
         return new RemoteShellResult(
-            exitCode: $call === $this->failingAction ? 1 : 0,
+            exitCode: $shouldFail ? 1 : 0,
             stdout: json_encode([
                 'success' => [
                     'data' => $data,
@@ -695,5 +830,13 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
     public function runtimeDependencyPaths(): array
     {
         return $this->runtimeDependencyPaths;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function runtimeWarmMarkerKeys(): array
+    {
+        return $this->runtimeWarmMarkerKeys;
     }
 }

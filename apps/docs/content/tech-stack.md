@@ -779,9 +779,11 @@ pre-check renders the journal as a small server-generated HTML response until
 the original request may proceed. The runner heartbeats that journal around
 dependency and process work. Queued runners that do not launch and running
 runners that stop heartbeating are replaced after bounded timeouts. An atomic
-claim prevents duplicate runners for one operation, and a per-scope cache lock
-fences each remote side effect from stale takeover. Uncertain prunes and
-activation failures retain the cold marker for recovery.
+claim prevents duplicate runners for one operation. A node-and-source-path
+cache lock single-flights dependency work across sibling scopes, while a
+scope-keyed lock fences process and marker effects; stale takeover requires
+both. Uncertain prunes and activation failures retain the scope's cold marker
+for recovery.
 
 ### Service containers
 

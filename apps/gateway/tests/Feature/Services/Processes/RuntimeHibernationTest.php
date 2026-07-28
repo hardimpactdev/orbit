@@ -548,7 +548,7 @@ it('keeps the cold marker when dependency pruning fails after it may have partia
         ]);
 });
 
-it('coordinates cold and warm markers across scopes that share one source path', function (): void {
+it('coordinates cold markers across shared sources and warms only the activated scope', function (): void {
     createTestGatewayNode([
         'name' => 'gateway-1',
         'wireguard_address' => '10.6.0.1',
@@ -591,7 +591,7 @@ it('coordinates cold and warm markers across scopes that share one source path',
         ],
         1_767_272_401,
     );
-    app(RuntimeDependencyColdStorage::class)->markSourceWarm($scope);
+    app(RuntimeDependencyColdStorage::class)->markScopeWarm($scope);
 
     expect($executor->actions())
         ->toBe([
@@ -601,7 +601,6 @@ it('coordinates cold and warm markers across scopes that share one source path',
             'internal:caddy-config:runtime-cold',
             'internal:runtime-dependencies:prune',
             'internal:caddy-config:runtime-warm',
-            'internal:caddy-config:runtime-warm',
         ])
         ->and($executor->runtimeColdMarkerKeys())
         ->toBe([
@@ -609,10 +608,7 @@ it('coordinates cold and warm markers across scopes that share one source path',
             "app-instance-{$sibling->id}",
         ])
         ->and($executor->runtimeWarmMarkerKeys())
-        ->toBe([
-            "app-instance-{$instance->id}",
-            "app-instance-{$sibling->id}",
-        ]);
+        ->toBe(["app-instance-{$instance->id}"]);
 });
 
 it('keeps dependencies when source activity is newer than the seven day threshold', function (): void {

@@ -34,6 +34,17 @@ final readonly class RuntimeHibernationScope
         return "runtime-activation-fence:{$this->key()}";
     }
 
+    public function dependencyFenceKey(): string
+    {
+        $path = $this->sourcePath();
+
+        if ($path === null) {
+            return "runtime-dependency-fence:{$this->key()}";
+        }
+
+        return "runtime-dependency-fence:node-{$this->node->id}:".hash('sha256', $path);
+    }
+
     public function activationFenceSeconds(): int
     {
         $runningTimeout = (int) config(

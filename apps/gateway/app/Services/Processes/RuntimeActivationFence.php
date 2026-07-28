@@ -20,13 +20,69 @@ final readonly class RuntimeActivationFence
     /**
      * @param  Closure(): bool  $effect
      */
-    public function run(
+    public function runDependency(
         OperationRun $run,
         RuntimeHibernationScope $scope,
         Closure $effect,
     ): bool {
-        $lock = Cache::lock(
+        return $this->runWithKey($run, $scope, $scope->dependencyFenceKey(), $effect);
+    }
+
+    /**
+     * @param  Closure(): bool  $effect
+     */
+    public function runScope(
+        OperationRun $run,
+        RuntimeHibernationScope $scope,
+        Closure $effect,
+    ): bool {
+        return $this->runWithKey($run, $scope, $scope->activationFenceKey(), $effect);
+    }
+
+    /**
+     * @param  Closure(): bool  $takeover
+     */
+    public function attemptTakeover(RuntimeHibernationScope $scope, Closure $takeover): bool
+    {
+        $dependencyLock = Cache::lock(
+            $scope->dependencyFenceKey(),
+            $scope->activationFenceSeconds(),
+        );
+
+        if (! $dependencyLock->get()) {
+            return false;
+        }
+
+        $scopeLock = Cache::lock(
             $scope->activationFenceKey(),
+            $scope->activationFenceSeconds(),
+        );
+
+        if (! $scopeLock->get()) {
+            $dependencyLock->release();
+
+            return false;
+        }
+
+        try {
+            return $takeover();
+        } finally {
+            $scopeLock->release();
+            $dependencyLock->release();
+        }
+    }
+
+    /**
+     * @param  Closure(): bool  $effect
+     */
+    private function runWithKey(
+        OperationRun $run,
+        RuntimeHibernationScope $scope,
+        string $key,
+        Closure $effect,
+    ): bool {
+        $lock = Cache::lock(
+            $key,
             $scope->activationFenceSeconds(),
         );
 
@@ -46,27 +102,6 @@ final readonly class RuntimeActivationFence
         }
 
         return $result === true;
-    }
-
-    /**
-     * @param  Closure(): bool  $takeover
-     */
-    public function attemptTakeover(RuntimeHibernationScope $scope, Closure $takeover): bool
-    {
-        $lock = Cache::lock(
-            $scope->activationFenceKey(),
-            $scope->activationFenceSeconds(),
-        );
-
-        if (! $lock->get()) {
-            return false;
-        }
-
-        try {
-            return $takeover();
-        } finally {
-            $lock->release();
-        }
     }
 
     private function heartbeat(OperationRun $run): void

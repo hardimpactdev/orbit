@@ -197,12 +197,14 @@ queue process has no queue row, and a scope with no missing JavaScript
 dependencies has no JavaScript-install row. Once activation succeeds, the
 refreshed original request passes through to the application. A failed or
 partially completed prune remains cold. Each detached runner atomically claims
-its operation once and heartbeats the operation journal while it works. A
-per-scope fence surrounds every dependency restore, process activation, and
-cold-marker transition, so a later request replaces a stale runner only when no
-old side effect is still in flight. Orbit clears the cold marker only after
-dependency restoration and process startup succeed, so failures keep the
-progress page and retry path available.
+its operation once and heartbeats the operation journal while it works.
+Dependency restores use a node-and-source-path fence and re-inspect inside that
+fence, so sibling scopes that planned the same missing family install it only
+once. Process activation and cold-marker transitions remain fenced per scope.
+Stale takeover acquires both fences before replacing a runner, and each scope
+clears only its own cold marker after dependency restoration and process
+startup succeed. Failures therefore keep that scope's progress page and retry
+path available.
 
 Gateway Laravel/artisan/PDO work runs inside the gateway container or the
 durable update runner. Packaged node-local helpers that need host file access

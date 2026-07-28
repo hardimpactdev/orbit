@@ -62,12 +62,13 @@ final readonly class RuntimeActivationRunner
 
         try {
             $this->restoreDependencies($run, $scope, $plan['dependencies']);
+            $this->ensureDependenciesReady($run, $scope);
             $this->startProcesses($run, $scope, $plan['processes']);
 
-            if (! $this->fence->run(
+            if (! $this->fence->runScope(
                 $run,
                 $scope,
-                fn (): bool => $this->coldStorage->markSourceWarm($scope),
+                fn (): bool => $this->coldStorage->markScopeWarm($scope),
             )) {
                 throw new RuntimeException('Runtime cold state could not be cleared.');
             }
@@ -104,10 +105,10 @@ final readonly class RuntimeActivationRunner
             $key = $dependency['key'];
             $stepKey = "dependency:{$key}";
             $this->operationRuns->appendStep($run->id, $stepKey, 'active');
-            if (! $this->fence->run(
+            if (! $this->fence->runDependency(
                 $run,
                 $scope,
-                fn (): bool => $this->dependencies->restore($scope, $key),
+                fn (): bool => $this->dependencies->restoreIfMissing($scope, $key),
             )) {
                 $this->operationRuns->appendStep($run->id, $stepKey, 'failed');
 
@@ -130,7 +131,7 @@ final readonly class RuntimeActivationRunner
             $this->operationRuns->appendStep($run->id, "process:{$process['id']}", 'active');
         }
 
-        if (! $this->fence->run(
+        if (! $this->fence->runScope(
             $run,
             $scope,
             fn (): bool => (
@@ -146,6 +147,17 @@ final readonly class RuntimeActivationRunner
 
         foreach ($processes as $process) {
             $this->operationRuns->appendStep($run->id, "process:{$process['id']}", 'done');
+        }
+    }
+
+    private function ensureDependenciesReady(OperationRun $run, RuntimeHibernationScope $scope): void
+    {
+        if (! $this->fence->runDependency(
+            $run,
+            $scope,
+            fn (): bool => $this->dependencies->ready($scope),
+        )) {
+            throw new RuntimeException('Runtime dependencies are not ready.');
         }
     }
 

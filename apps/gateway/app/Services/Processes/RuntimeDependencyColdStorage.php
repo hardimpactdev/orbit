@@ -71,19 +71,9 @@ final readonly class RuntimeDependencyColdStorage
         $this->dependencies->prune($scope);
     }
 
-    public function markSourceWarm(RuntimeHibernationScope $scope): bool
+    public function markScopeWarm(RuntimeHibernationScope $scope): bool
     {
-        $successful = true;
-
-        foreach ($this->sourceSiblings($scope) as $sibling) {
-            if ($this->hibernation->markWarm($sibling->node, $sibling->key())->successful()) {
-                continue;
-            }
-
-            $successful = false;
-        }
-
-        return $successful;
+        return $this->hibernation->markWarm($scope->node, $scope->key())->successful();
     }
 
     public function isCold(RuntimeHibernationScope $scope): ?bool

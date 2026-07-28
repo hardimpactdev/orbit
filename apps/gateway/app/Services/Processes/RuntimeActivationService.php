@@ -65,7 +65,8 @@ final readonly class RuntimeActivationService
             : [];
         $currentRun = $cold ? $this->operations->latest($scope) : null;
         $requiresOperation =
-            $missingDependencies !== []
+            $cold
+            || $missingDependencies !== []
             || $currentRun instanceof OperationRun
             && (! $currentRun->status->isTerminal() || $currentRun->status === OperationStatus::Failed);
 
@@ -83,10 +84,6 @@ final readonly class RuntimeActivationService
                 $scope,
                 $run,
             );
-        }
-
-        if ($cold && ! $this->coldStorage->markSourceWarm($scope)) {
-            return new RuntimeActivationOutcome(RuntimeActivationOutcome::FAILED, $scope);
         }
 
         $status = match ($this->hibernation->activate($type, $id, $caller)) {
