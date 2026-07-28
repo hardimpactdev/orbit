@@ -186,7 +186,8 @@ dependency directories that are inside the source root, are not symlinks, and
 have a deterministic lockfile from which they can be reconstructed. Lockfiles,
 build artifacts, and package-manager caches remain. Shared source paths use the
 newest activity across every owning scope so one active owner protects the
-dependencies for all of them.
+dependencies for all of them. Once a scope is marked cold, later hibernation
+sweeps do not inspect or prune it again; only activation may change that state.
 
 A request for a cold scope creates or follows one serialized activation
 operation. The gateway returns a minimal auto-refreshing progress response

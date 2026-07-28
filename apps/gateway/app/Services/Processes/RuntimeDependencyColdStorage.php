@@ -30,6 +30,7 @@ final readonly class RuntimeDependencyColdStorage
         if (
             $state['awake']
             || ! $state['hibernated']
+            || $state['cold']
             || $state['last_activity_at'] !== null
             && $state['last_activity_at'] > $cutoff
         ) {

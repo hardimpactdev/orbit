@@ -516,6 +516,33 @@ it('prunes reconstructable dependencies after seven days while a scope is hibern
         ]);
 });
 
+it('does not re-prune a cold scope while its dependencies may be restoring', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    create_runtime_hibernation_instance();
+    config()->set('orbit.runtime_hibernation.dependency_idle_seconds', 604_800);
+    $executor = new RuntimeHibernationRecordingExecutor(
+        lastActivityAt: 1_766_664_000,
+        hibernated: true,
+        cold: true,
+        sourceActivityAt: 1_766_664_000,
+        dependencies: [[
+            'key' => 'composer',
+            'label' => 'Installing PHP dependencies',
+            'present' => true,
+            'reconstructable' => true,
+        ]],
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    app(RuntimeIdleHibernation::class)->hibernate(CarbonImmutable::parse('2026-01-08T13:00:01Z'));
+
+    expect($executor->actions())
+        ->toBe(['internal:caddy-config:runtime-states']);
+});
+
 it('keeps the cold marker when dependency pruning fails after it may have partially completed', function (): void {
     createTestGatewayNode([
         'name' => 'gateway-1',
@@ -781,6 +808,7 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
         private readonly int $lastActivityAt = 1_767_272_400,
         private readonly bool $awake = false,
         private readonly bool $hibernated = false,
+        private readonly bool $cold = false,
         private readonly ?string $failingAction = null,
         private readonly int $failingActionOccurrence = 1,
         private readonly int $sourceActivityAt = 1_767_272_400,
@@ -812,6 +840,7 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
                         'key' => 'app-instance-1',
                         'awake' => false,
                         'hibernated' => false,
+                        'cold' => false,
                         'last_activity_at' => $this->lastActivityAt,
                     ]],
                 ]
@@ -827,6 +856,7 @@ final class RuntimeHibernationRecordingExecutor implements RunsInternalCommands
                 'key' => $key,
                 'awake' => $this->awake,
                 'hibernated' => $this->hibernated,
+                'cold' => $this->cold,
                 'last_activity_at' => $this->lastActivityAt,
             ], $keys);
         }
