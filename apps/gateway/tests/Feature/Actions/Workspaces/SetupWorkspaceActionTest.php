@@ -263,6 +263,7 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
         ->update([
             'wireguard_address' => '10.47.0.41',
         ]);
+    Node::factory()->gateway()->create(['wireguard_address' => '10.47.0.2']);
 
     $workspace = Workspace::create([
         'app_id' => 1,
@@ -320,7 +321,11 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
         ->and($caddySite)
         ->toContain('reverse_proxy http://orbit-ws-demo-feature-a')
         ->and($caddySite)
-        ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')->and($caddySite)
+        ->toContain("uri /api/runtime-activations/workspace/{$workspace->id}")
+        ->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+        ->toContain('lb_try_duration 15s')
+        ->toContain('lb_try_interval 250ms')
+        ->and($caddySite)
         ->not->toContain('tls_server_name feature-a.demo.beast')->and($caddySite)
         ->not->toContain('php_fastcgi')->and($route?->config['runtime_upstream'])->toBe(
             'http://orbit-ws-demo-feature-a',

@@ -15,6 +15,7 @@ use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppOwningNodeResolver;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\AppProxyRouteCaddyInstaller;
 use App\Services\Proxy\AppProxyRouteRuntimeTargets;
 use App\Services\Proxy\CaddyContainerHostPathResolver;
@@ -39,6 +40,7 @@ final readonly class EnsureAppProxyRoute
         private AppProxyRouteRuntimeTargets $appRouteRuntimeTargets,
         private OrbitCaService $ca,
         private AppOwningNodeResolver $appOwningNodeResolver,
+        private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private ?CaddyContainerHostPathResolver $caddyHostPathResolver = null,
     ) {}
@@ -73,6 +75,11 @@ final readonly class EnsureAppProxyRoute
             ->where('kind', 'app')
             ->where('domain', '!=', $domain)
             ->delete();
+
+        if (($config['placement'] ?? null) !== 'ingress') {
+            $content = $this->proxyRouteRenderer->render($route);
+            $route->forceFill(['source_hash' => hash('sha256', $content)])->save();
+        }
 
         if (($config['placement'] ?? null) === 'ingress') {
             $warning = $this->enactProductionRoute(
@@ -357,7 +364,17 @@ final readonly class EnsureAppProxyRoute
      */
     private function requiresRuntimeTrustPool(Node $node, array $config): bool
     {
-        if ($node->hasActiveRole('app-dev')) {
+        $appInstance = $config['app_instance'] ?? null;
+
+        if (
+            $node->hasActiveRole('app-dev')
+            && is_array($appInstance)
+            && is_int($appInstance['id'] ?? null)
+            && $this->nodeRoleAssignments
+                ->activeGatewayNodeQuery()
+                ->whereNotNull('wireguard_address')
+                ->exists()
+        ) {
             return true;
         }
 
@@ -524,67 +541,6 @@ final readonly class EnsureAppProxyRoute
     }
 
     /**
-     * @param  array{
-     *     document_root: string,
-     *     runtime_upstream?: string|null,
-     *     php_socket?: string|null,
-     *     tls: array{cert_path: string, key_path: string},
-     * }  $config
-     */
-    private function renderCaddySite(Project $app, string $domain, array $config): string
-    {
-        $pathBlocking = $app->document_root === '.'
-            ? 'import path_blocking_project_root'
-            : 'import path_blocking_public_root';
-
-        if ($app->runtimeKind() === AppRuntimeKind::Php) {
-            $upstream = $config['runtime_upstream'] ?? null;
-
-            if (! is_string($upstream) || $upstream === '') {
-                throw new RuntimeException("App '{$app->name}' route is missing a runtime container upstream.");
-            }
-
-            $transport = $this->runtimeUpstreamTransportDirectives($config);
-
-            return <<<CADDY
-                {$domain} {
-                    tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
-                    encode gzip
-
-                    import security_headers
-                    import profiling_headers
-                    {$pathBlocking}
-                    import security_txt
-                    import cache_headers
-
-                    reverse_proxy {$upstream} {
-                        header_up Host {host}
-                        header_up X-Forwarded-Host {host}
-                        header_up X-Forwarded-Proto {scheme}
-                {$transport}    }
-                }
-
-                CADDY;
-        }
-
-        return <<<CADDY
-            {$domain} {
-                tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
-                root * {$config['document_root']}
-                encode gzip
-
-                import security_headers
-                import profiling_headers
-                {$pathBlocking}
-                import security_txt
-                import cache_headers
-                file_server
-            }
-
-            CADDY;
-    }
-
-    /**
      * @param  array<string, mixed>  $config
      */
     private function ensureRuntimeTrustPool(Node $node, array $config): void
@@ -674,7 +630,16 @@ final readonly class EnsureAppProxyRoute
                 $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig($owningNode, $domain);
             }
 
-            return [$owningNode, $config, $this->renderCaddySite($app, $domain, $config)];
+            $content = $this->proxyRouteRenderer->render(new ProxyRoute([
+                'node_id' => $owningNode->id,
+                'domain' => $domain,
+                'app_id' => $app->id,
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => $config,
+            ]));
+
+            return [$owningNode, $config, $content];
         }
 
         $ingressNode = $this->ingressResolver->forAppNode($owningNode);
@@ -777,19 +742,5 @@ final readonly class EnsureAppProxyRoute
     private function siteCertificatePaths(Node $node, string $domain): array
     {
         return $this->siteCertificateInstaller->expectedPathsFor($node, $domain);
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private function runtimeUpstreamTransportDirectives(array $config): string
-    {
-        $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
-
-        if (! is_array($runtimeUpstreamTls)) {
-            return '';
-        }
-
-        return $this->innerTlsPolicy->runtimeUpstreamTransportDirectives($runtimeUpstreamTls);
     }
 }

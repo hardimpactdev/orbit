@@ -136,6 +136,7 @@ final class EnsureAppProxyRouteTestInternalExecutor implements RunsInternalComma
 }
 
 it('creates a PHP app proxy route targeting the FrankenPHP runtime container', function (): void {
+    Node::factory()->gateway()->create(['wireguard_address' => '10.47.0.2']);
     $node = Node::factory()
         ->appDev()
         ->managed()
@@ -148,6 +149,7 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
         'document_root' => 'public',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    $instance = AppInstance::factory()->for($app)->create();
 
     $shell = new EnsureAppProxyRouteTestShell;
     $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
@@ -192,7 +194,7 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
     expect($route->domain)
         ->toBe('docs.test')
         ->and($route->config['runtime_upstream'])
-        ->toBe('http://orbit-app-docs:8080')
+        ->toBe('http://orbit-app-docs-development:8080')
         ->and($route->config['runtime_upstream_tls'] ?? null)
         ->toBeNull()
         ->and($route->config['php_socket'])
@@ -205,9 +207,13 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
         ->and($caddySite)
         ->toContain('tls /home/orbit/.config/orbit/certs/docs.test.crt /home/orbit/.config/orbit/certs/docs.test.key')
         ->and($caddySite)
-        ->toContain('reverse_proxy http://orbit-app-docs:8080')
+        ->toContain('reverse_proxy http://orbit-app-docs-development:8080')
         ->and($caddySite)
-        ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')->and($caddySite)
+        ->toContain("uri /api/runtime-activations/app-instance/{$instance->id}")
+        ->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+        ->toContain('lb_try_duration 15s')
+        ->toContain('lb_try_interval 250ms')
+        ->and($caddySite)
         ->not->toContain('tls_server_name docs.test')->and($caddySite)
         ->not->toContain('php_fastcgi')->and($caddySite)
         ->not->toContain('file_server');
@@ -235,6 +241,7 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
 });
 
 it('creates a static app proxy route with file_server', function (): void {
+    Node::factory()->gateway()->create(['wireguard_address' => '10.47.0.2']);
     $node = Node::factory()
         ->appDev()
         ->managed()
@@ -249,6 +256,7 @@ it('creates a static app proxy route with file_server', function (): void {
             'name' => 'marketing',
             'document_root' => 'public',
         ]);
+    $instance = AppInstance::factory()->for($app)->create();
 
     $shell = new EnsureAppProxyRouteTestShell;
     $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
@@ -295,6 +303,9 @@ it('creates a static app proxy route with file_server', function (): void {
         ->toContain('file_server')
         ->and($caddySite)
         ->toContain("root * {$app->path}/public")
+        ->and($caddySite)
+        ->toContain("uri /api/runtime-activations/app-instance/{$instance->id}")
+        ->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
         ->and($caddySite)
         ->not->toContain('php_fastcgi')->and($caddySite)
         ->not->toContain('reverse_proxy');

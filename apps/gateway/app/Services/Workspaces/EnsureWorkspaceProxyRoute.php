@@ -13,8 +13,10 @@ use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\AppProxyRouteCaddyInstaller;
 use App\Services\Proxy\CaddyContainerHostPathResolver;
+use App\Services\Proxy\ProxyRouteRenderer;
 use RuntimeException;
 use Throwable;
 
@@ -24,9 +26,11 @@ final readonly class EnsureWorkspaceProxyRoute
         private WorkspaceRuntimeContainerRenderer $runtimeContainerRenderer,
         private SiteCertificateInstaller $siteCertificateInstaller,
         private AppProxyRouteCaddyInstaller $caddyInstaller,
+        private ProxyRouteRenderer $proxyRouteRenderer,
         private OrbitCaService $ca,
         private WorkspaceRoleGuard $roleGuard,
         private WorkspacePlacement $placement = new WorkspacePlacement,
+        private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private ?CaddyContainerHostPathResolver $caddyHostPathResolver = null,
     ) {}
@@ -55,7 +59,7 @@ final readonly class EnsureWorkspaceProxyRoute
         $domain = $this->domain($workspace);
         [$servingNode, $config, $content] = $this->routeArtifact($workspace, $app, $node, $domain);
 
-        ProxyRoute::query()->updateOrCreate(
+        $route = ProxyRoute::query()->updateOrCreate(
             ['domain' => $domain],
             [
                 'node_id' => $servingNode->id,
@@ -67,6 +71,8 @@ final readonly class EnsureWorkspaceProxyRoute
                 'source_hash' => hash('sha256', $content),
             ],
         );
+        $content = $this->proxyRouteRenderer->render($route);
+        $route->forceFill(['source_hash' => hash('sha256', $content)])->save();
 
         try {
             $this->siteCertificateInstaller->ensureFor($servingNode, $domain);
@@ -96,77 +102,18 @@ final readonly class EnsureWorkspaceProxyRoute
     }
 
     /**
-     * @param  array{
-     *     document_root: string,
-     *     runtime_upstream?: string|null,
-     *     php_socket?: string|null,
-     *     tls: array{cert_path: string, key_path: string},
-     * }  $config
-     */
-    private function renderCaddySite(Workspace $workspace, Project $app, string $domain, array $config): string
-    {
-        $pathBlocking = $app->document_root === '.'
-            ? 'import path_blocking_project_root'
-            : 'import path_blocking_public_root';
-
-        if ($app->runtimeKind() === AppRuntimeKind::Php) {
-            $upstream = $config['runtime_upstream'] ?? null;
-
-            if (! is_string($upstream) || $upstream === '') {
-                throw new RuntimeException(
-                    "Workspace '{$workspace->name}' route is missing a runtime container upstream.",
-                );
-            }
-
-            $transport = $this->runtimeUpstreamTransportDirectives($config);
-
-            return <<<CADDY
-                {$domain} {
-                    tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
-                    encode gzip
-
-                    import security_headers
-                    import profiling_headers
-                    {$pathBlocking}
-                    import security_txt
-                    import cache_headers
-
-                    reverse_proxy {$upstream} {
-                        header_up Host {host}
-                        header_up X-Forwarded-Host {host}
-                        header_up X-Forwarded-Proto {scheme}
-                {$transport}    }
-                }
-
-                CADDY;
-        }
-
-        return <<<CADDY
-            {$domain} {
-                tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
-                root * {$config['document_root']}
-                encode gzip
-
-                import security_headers
-                import profiling_headers
-                {$pathBlocking}
-                import security_txt
-                import cache_headers
-                file_server
-            }
-
-            CADDY;
-    }
-
-    /**
      * @param  array<string, mixed>  $config
      */
     private function ensureRuntimeTrustPool(Node $node, array $config): void
     {
         $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
+        $hasDevelopmentActivation = $node->hasActiveRole('app-dev') && $this->nodeRoleAssignments
+            ->activeGatewayNodeQuery()
+            ->whereNotNull('wireguard_address')
+            ->exists();
 
         if (
-            ! $node->hasActiveRole('app-dev')
+            ! $hasDevelopmentActivation
             && (! is_array($runtimeUpstreamTls)
             || ($runtimeUpstreamTls['trusted_by_gateway_ca'] ?? null) !== true)
         ) {
@@ -237,7 +184,17 @@ final readonly class EnsureWorkspaceProxyRoute
             $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig($node, $domain);
         }
 
-        return [$node, $config, $this->renderCaddySite($workspace, $app, $domain, $config)];
+        $content = $this->proxyRouteRenderer->render(new ProxyRoute([
+            'node_id' => $node->id,
+            'domain' => $domain,
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+            'config' => $config,
+        ]));
+
+        return [$node, $config, $content];
     }
 
     /**
@@ -246,19 +203,5 @@ final readonly class EnsureWorkspaceProxyRoute
     private function siteCertificatePaths(Node $node, string $domain): array
     {
         return $this->siteCertificateInstaller->expectedPathsFor($node, $domain);
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private function runtimeUpstreamTransportDirectives(array $config): string
-    {
-        $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
-
-        if (! is_array($runtimeUpstreamTls)) {
-            return '';
-        }
-
-        return $this->innerTlsPolicy->runtimeUpstreamTransportDirectives($runtimeUpstreamTls);
     }
 }
