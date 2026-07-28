@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-28T19:44:54+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-instance-route-convergence/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-28-214453-codex-fix-instance-route-convergence",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "40a78146b930380442256464fc2f56d9c7d76db615aa95851c818f4a495840ef",
+        "loop.md": "cebb7568935d5d5d5431368f3e859fa5eae72b22384ef431471e340595a77ff3"
+    },
+    "branch": "codex/fix-instance-route-convergence",
+    "candidate_commit": "d6933487eb90f85fd69f18c9d989c730ad0c52d2",
+    "accepted_feature_tip": "d6933487eb90f85fd69f18c9d989c730ad0c52d2",
+    "accepted_main_tip": "b00eaa36f54caa40ce98fabe96a8c807a48bb38b",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

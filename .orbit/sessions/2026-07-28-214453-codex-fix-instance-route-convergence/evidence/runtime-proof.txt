@@ -1,0 +1,85 @@
+Retained topology runtime proof
+
+Topology id: dev-a6ff68
+Topology kind: operator_gateway_app-dev
+Provider: Incus
+Host: beast
+Source checkout: /Users/nckrtl/orbit/.worktrees/codex-fix-instance-route-convergence
+Source commit: d6933487eb90f85fd69f18c9d989c730ad0c52d2
+Operator VM: orbit-e2e-dev-a6ff68-operator
+Gateway VM: orbit-e2e-dev-a6ff68-gateway
+App VM: orbit-e2e-dev-a6ff68-dev
+App node: app-dev-1 (10.6.0.4)
+Gateway API: 10.6.0.2
+
+Fixture:
+- selector: wake-proof-clean.development
+- URL: https://wake-proof-clean.test
+- runtime process: frankenphp-wake-proof-clean
+- runtime unit: orbit-app-wake-proof-clean-development
+- document root response: orbit-wake-proof
+
+Generated Caddy route:
+- host: wake-proof-clean.test
+- asleep matcher: /dev/shm/orbit/hibernation/app-instance-2.awake
+- activation URI: /api/runtime-activations/app-instance/2
+- activation target: https://10.6.0.2
+- backend: http://orbit-app-wake-proof-clean-development:8080
+
+Cold request:
+- process:stop result: stopped
+- container state before request: exited
+- request: curl -k --resolve wake-proof-clean.test:443:10.6.0.4 https://wake-proof-clean.test/
+- response: HTTP 200
+- response body: orbit-wake-proof
+- first-request duration: 3.446242 seconds
+- container state after request: running
+
+Conclusion:
+The exact candidate source generated a hibernation-aware per-instance route.
+The first HTTPS request activated the stopped runtime and returned the backend
+response successfully.
+
+Live topology release-candidate proof
+
+Source and release candidate:
+- landed commit: d6933487eb90f85fd69f18c9d989c730ad0c52d2
+- build id: 20260728T193459Z-d6933487e
+- version: 0.1.190 (unchanged)
+- gateway digest: sha256:6103ee8915a6658e5bca5e581ba96dfe638ef26566bcc844a401156306ff34a6
+- channel: live-test
+- operation run: 9a8af149-d8d9-4f33-b2b2-77c1869d6d1d
+- update activity: 289760
+- update result: completed
+- fleet verification: passed
+
+Exact live instance:
+- selector: nckrtl.nmbp
+- URL: https://nckrtl.nmbp/
+- node: NMBP
+- runtime process: frankenphp-nckrtl
+- runtime unit: orbit-app-nckrtl-nmbp
+- route activation URI: /api/runtime-activations/app-instance/33
+- route backend: http://orbit-app-nckrtl-nmbp:8080
+
+Live cold request:
+- process:stop event: 1225
+- container state before request: exited
+- request: curl https://nckrtl.nmbp/
+- response: HTTP 200
+- first-request duration: 2.033316 seconds
+- container state after request: running
+
+Browser confirmation:
+- URL: https://nckrtl.nmbp/
+- title: Nick Retel — Design Engineer & Laravel Developer
+- response page loaded successfully in the in-app browser
+
+Post-deployment route health:
+- command: orbit doctor --instance=nckrtl.nmbp --family=proxy --json
+- result: healthy
+- proxy issues: 0
+
+Release boundary:
+- no GitHub release created
+- no version bump or release tag created
