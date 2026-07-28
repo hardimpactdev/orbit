@@ -102,6 +102,14 @@ return [
             key: 'ORBIT_RUNTIME_HIBERNATION_SWEEP_INTERVAL_MINUTES',
             default: 10,
         ),
+        'activation_queued_timeout_seconds' => (int) env(
+            key: 'ORBIT_RUNTIME_ACTIVATION_QUEUED_TIMEOUT_SECONDS',
+            default: 30,
+        ),
+        'activation_running_timeout_seconds' => (int) env(
+            key: 'ORBIT_RUNTIME_ACTIVATION_RUNNING_TIMEOUT_SECONDS',
+            default: 1200,
+        ),
         'lock_seconds' => (int) env(key: 'ORBIT_RUNTIME_HIBERNATION_LOCK_SECONDS', default: 120),
         'lock_wait_seconds' => (int) env(key: 'ORBIT_RUNTIME_HIBERNATION_LOCK_WAIT_SECONDS', default: 90),
     ],

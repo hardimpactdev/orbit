@@ -32,6 +32,8 @@ use Orbit\Core\Enums\OperationStatus;
  * @property array<string, mixed>|null $error
  * @property string|null $stdout_summary
  * @property string|null $stderr_summary
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
  * @property-read Node|null $callerNode
  * @property-read Node|null $targetNode
  * @property-read Collection<int, OperationEvent> $events

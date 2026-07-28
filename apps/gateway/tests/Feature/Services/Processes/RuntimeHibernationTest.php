@@ -516,6 +516,38 @@ it('prunes reconstructable dependencies after seven days while a scope is hibern
         ]);
 });
 
+it('keeps the cold marker when dependency pruning fails after it may have partially completed', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+    create_runtime_hibernation_instance();
+    config()->set('orbit.runtime_hibernation.dependency_idle_seconds', 604_800);
+    $executor = new RuntimeHibernationRecordingExecutor(
+        lastActivityAt: 1_766_664_000,
+        hibernated: true,
+        failingAction: 'internal:runtime-dependencies:prune',
+        sourceActivityAt: 1_766_664_000,
+        dependencies: [[
+            'key' => 'composer',
+            'label' => 'Installing PHP dependencies',
+            'present' => true,
+            'reconstructable' => true,
+        ]],
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    app(RuntimeIdleHibernation::class)->hibernate(CarbonImmutable::parse('2026-01-08T13:00:01Z'));
+
+    expect($executor->actions())
+        ->toBe([
+            'internal:caddy-config:runtime-states',
+            'internal:runtime-dependencies:inspect',
+            'internal:caddy-config:runtime-cold',
+            'internal:runtime-dependencies:prune',
+        ]);
+});
+
 it('coordinates cold and warm markers across scopes that share one source path', function (): void {
     createTestGatewayNode([
         'name' => 'gateway-1',

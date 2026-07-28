@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Models\Node;
+use App\Models\OperationRun;
 use Orbit\Core\Enums\OperationStatus;
 use RuntimeException;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class RuntimeActivationService
 {
     public function __construct(
@@ -48,14 +52,24 @@ final readonly class RuntimeActivationService
         }
 
         $state = $cold ? $this->dependencies->inspect($scope) : null;
+
+        if ($cold && ! is_array($state)) {
+            return new RuntimeActivationOutcome(RuntimeActivationOutcome::FAILED, $scope);
+        }
+
         $missingDependencies = is_array($state)
             ? array_values(array_filter(
                 $state['dependencies'],
                 static fn (array $dependency): bool => ! $dependency['present'] && $dependency['reconstructable'],
             ))
             : [];
+        $currentRun = $cold ? $this->operations->latest($scope) : null;
+        $requiresOperation =
+            $missingDependencies !== []
+            || $currentRun instanceof OperationRun
+            && (! $currentRun->status->isTerminal() || $currentRun->status === OperationStatus::Failed);
 
-        if ($missingDependencies !== []) {
+        if ($requiresOperation) {
             try {
                 $run = $this->operations->currentOrBegin($scope, $missingDependencies, $retry);
             } catch (RuntimeException) {

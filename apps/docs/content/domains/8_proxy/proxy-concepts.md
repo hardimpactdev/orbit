@@ -161,7 +161,9 @@ These terms define the ingress behavior applied to app and workspace routes.
   no-store HTML response immediately. That response auto-refreshes the original
   URL until the pre-check succeeds. Its checklist contains only the planned
   dependency restores and the scope's actual configured processes; it exposes
-  no commands, filesystem paths, environment values, or raw logs.
+  no commands, filesystem paths, environment values, or raw logs. Failed
+  activation retains the cold gate and presents a retry action; a later request
+  replaces a detached activation runner after its progress heartbeat expires.
 - **Development runtime activity:** Every app-development instance or workspace
   route writes a dedicated access log whose modification time is the last HTTP
   activity for that scope. Activity logs remain in Caddy's persistent data

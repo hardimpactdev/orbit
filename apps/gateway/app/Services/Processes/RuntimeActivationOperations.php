@@ -34,11 +34,24 @@ final readonly class RuntimeActivationOperations
                 ->block(10, function () use ($scope, $dependencies, $retry, &$resolvedRun): void {
                     $current = $this->latest($scope);
 
+                    if ($current instanceof OperationRun && ! $current->status->isTerminal()) {
+                        if (! $this->isStale($current)) {
+                            $resolvedRun = $current;
+
+                            return;
+                        }
+
+                        if (! $this->failStale($current)) {
+                            $resolvedRun = $current->refresh();
+
+                            return;
+                        }
+                    }
+
                     if (
                         $current instanceof OperationRun
-                        && (! $current->status->isTerminal()
-                        || $current->status === OperationStatus::Failed
-                        && ! $retry)
+                        && $current->status === OperationStatus::Failed
+                        && ! $retry
                     ) {
                         $resolvedRun = $current;
 
@@ -142,6 +155,44 @@ final readonly class RuntimeActivationOperations
                 'message' => $exception->getMessage(),
             ]);
         }
+    }
+
+    private function isStale(OperationRun $run): bool
+    {
+        $timeout = match ($run->status) {
+            OperationStatus::Queued => (int) config(
+                'orbit.runtime_hibernation.activation_queued_timeout_seconds',
+                default: 30,
+            ),
+            OperationStatus::Running => (int) config(
+                'orbit.runtime_hibernation.activation_running_timeout_seconds',
+                default: 1200,
+            ),
+            default => 0,
+        };
+
+        return $run->updated_at->lte(now()->subSeconds(max(1, $timeout)));
+    }
+
+    private function failStale(OperationRun $run): bool
+    {
+        $run->refresh();
+
+        if ($run->status->isTerminal() || ! $this->isStale($run)) {
+            return false;
+        }
+
+        $this->operationRuns->appendError(
+            $run->id,
+            'The activation runner stopped reporting progress.',
+            data: ['reason' => 'runtime_activation_runner_stale'],
+        );
+        $this->operationRuns->failed($run->id, error: [
+            'code' => 'runtime_activation_runner_stale',
+            'message' => 'The activation runner stopped reporting progress.',
+        ]);
+
+        return true;
     }
 
     private function operationId(RuntimeHibernationScope $scope): string

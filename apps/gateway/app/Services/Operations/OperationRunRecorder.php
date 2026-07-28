@@ -88,6 +88,21 @@ final readonly class OperationRunRecorder
         });
     }
 
+    public function heartbeat(string $id): OperationRun
+    {
+        return $this->databaseLockRetry->transaction(function () use ($id): OperationRun {
+            $run = $this->findOrFail($id);
+
+            if ($run->status->isTerminal()) {
+                return $run;
+            }
+
+            $run->touch();
+
+            return $run->refresh();
+        });
+    }
+
     /**
      * @param  array<string, mixed>|null  $result
      */

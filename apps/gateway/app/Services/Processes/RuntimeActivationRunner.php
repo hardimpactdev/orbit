@@ -58,12 +58,14 @@ final readonly class RuntimeActivationRunner
 
         try {
             $this->restoreDependencies($run, $scope, $plan['dependencies']);
+            $this->startProcesses($run, $scope, $plan['processes']);
+            $this->heartbeat($run);
 
             if (! $this->coldStorage->markSourceWarm($scope)) {
                 throw new RuntimeException('Runtime cold state could not be cleared.');
             }
 
-            $this->startProcesses($run, $scope, $plan['processes']);
+            $this->heartbeat($run);
             $this->operationRuns->appendComplete($run->id, 0);
             $this->operationRuns->succeeded($run->id, result: [
                 'runtime_activation' => [
@@ -71,6 +73,10 @@ final readonly class RuntimeActivationRunner
                 ],
             ]);
         } catch (Throwable $exception) {
+            if ($run->refresh()->status->isTerminal()) {
+                return;
+            }
+
             report($exception);
             $this->fail(
                 $run,
@@ -92,6 +98,7 @@ final readonly class RuntimeActivationRunner
             $key = $dependency['key'];
             $stepKey = "dependency:{$key}";
             $this->operationRuns->appendStep($run->id, $stepKey, 'active');
+            $this->heartbeat($run);
 
             if (! $this->dependencies->restore($scope, $key)) {
                 $this->operationRuns->appendStep($run->id, $stepKey, 'failed');
@@ -99,6 +106,7 @@ final readonly class RuntimeActivationRunner
                 throw new RuntimeException("Runtime dependency [{$key}] could not be restored.");
             }
 
+            $this->heartbeat($run);
             $this->operationRuns->appendStep($run->id, $stepKey, 'done');
         }
     }
@@ -115,6 +123,8 @@ final readonly class RuntimeActivationRunner
             $this->operationRuns->appendStep($run->id, "process:{$process['id']}", 'active');
         }
 
+        $this->heartbeat($run);
+
         if (
             $this->hibernation->activate($scope->type, $scope->id, $scope->node) !== RuntimeHibernation::ACTIVATED
         ) {
@@ -124,6 +134,8 @@ final readonly class RuntimeActivationRunner
 
             throw new RuntimeException('Runtime processes could not be started.');
         }
+
+        $this->heartbeat($run);
 
         foreach ($processes as $process) {
             $this->operationRuns->appendStep($run->id, "process:{$process['id']}", 'done');
@@ -249,5 +261,12 @@ final readonly class RuntimeActivationRunner
             'code' => $code,
             'message' => $message,
         ]);
+    }
+
+    private function heartbeat(OperationRun $run): void
+    {
+        if ($this->operationRuns->heartbeat($run->id)->status->isTerminal()) {
+            throw new RuntimeException('Runtime activation was superseded.');
+        }
     }
 }

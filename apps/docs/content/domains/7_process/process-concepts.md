@@ -137,7 +137,9 @@ These terms define per-process behavioral rules that apply to every derived runt
   package-manager caches. The next HTTP activation restores only the missing
   dependency families before starting the group. The activation plan enumerates
   the scope's effective configured processes dynamically rather than assuming
-  fixed roles such as a queue worker.
+  fixed roles such as a queue worker. Failed or uncertain pruning leaves the
+  source cold, and Orbit clears that state only after dependency restoration
+  and process startup both succeed.
 - **Crash notification policy:** Process-definition opt-in for crash event
   delivery. When the policy is enabled, `crashed` events resolve the effective
   agent IDE and notify the active session when one is available. Units that use

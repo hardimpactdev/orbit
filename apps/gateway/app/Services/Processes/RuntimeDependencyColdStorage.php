@@ -68,9 +68,7 @@ final readonly class RuntimeDependencyColdStorage
             $markedCold[] = $sibling;
         }
 
-        if (! $this->dependencies->prune($scope)) {
-            $this->markScopesWarm($markedCold);
-        }
+        $this->dependencies->prune($scope);
     }
 
     public function markSourceWarm(RuntimeHibernationScope $scope): bool

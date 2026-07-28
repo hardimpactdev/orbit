@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Services\Processes\LocalRuntimeDependencies;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Orbit\Core\Http\JsonEnvelope;
 
@@ -118,6 +120,36 @@ describe('internal runtime dependencies command', function (): void {
             ->and(is_file($this->path.'/composer.lock'))
             ->toBeTrue()
             ->and(is_file($this->path.'/package-lock.json'))
+            ->toBeTrue();
+    });
+
+    it('reports failure after preserving a partially pruned dependency state', function (): void {
+        file_put_contents(filename: $this->path.'/composer.json', data: '{}');
+        file_put_contents(filename: $this->path.'/composer.lock', data: '{}');
+        file_put_contents(filename: $this->path.'/package.json', data: '{}');
+        file_put_contents(filename: $this->path.'/package-lock.json', data: '{}');
+        mkdir($this->path.'/vendor/package', recursive: true);
+        mkdir($this->path.'/node_modules/package', recursive: true);
+        $calls = 0;
+        File::shouldReceive('deleteDirectory')
+            ->twice()
+            ->andReturnUsing(function (string $path) use (&$calls): bool {
+                $calls++;
+
+                return $calls === 1
+                    ? new Filesystem()->deleteDirectory($path)
+                    : false;
+            });
+
+        expect(fn () => app(LocalRuntimeDependencies::class)->prune($this->path))
+            ->toThrow(
+                exception: \App\Services\Processes\LocalRuntimeDependenciesFailure::class,
+                exceptionMessage: 'A generated dependency directory could not be removed.',
+            );
+
+        expect(is_dir($this->path.'/vendor'))
+            ->toBeFalse()
+            ->and(is_dir($this->path.'/node_modules'))
             ->toBeTrue();
     });
 

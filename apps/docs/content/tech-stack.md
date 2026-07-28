@@ -776,7 +776,10 @@ pruning, and restoration run through the authenticated local executor so the
 gateway never requires a workload source-tree mount. Cold activation uses a
 detached gateway runner and the existing operation journal; the stock Caddy
 pre-check renders the journal as a small server-generated HTML response until
-the original request may proceed.
+the original request may proceed. The runner heartbeats that journal around
+dependency and process work. Queued runners that do not launch and running
+runners that stop heartbeating are replaced after bounded timeouts; uncertain
+prunes and activation failures retain the cold marker for recovery.
 
 ### Service containers
 

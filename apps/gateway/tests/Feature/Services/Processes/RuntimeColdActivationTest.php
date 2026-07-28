@@ -16,6 +16,7 @@ use App\Services\Processes\RuntimeActivationRunnerLauncher;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Process as ProcessFacade;
+use Orbit\Core\Enums\OperationStatus;
 
 uses(RefreshDatabase::class);
 
@@ -128,6 +129,137 @@ it('follows one in-flight activation instead of creating duplicate operations', 
         ->toBe(1);
 });
 
+it('replaces a queued activation whose detached runner never started', function (): void {
+    [$node, , $instance] = create_cold_runtime_instance();
+    app()->instance(RunsInternalCommands::class, new ColdRuntimeExecutor([
+        [
+            'key' => 'composer',
+            'label' => 'Installing PHP dependencies',
+            'present' => false,
+            'reconstructable' => true,
+        ],
+    ]));
+    config()->set('orbit.runtime_hibernation.activation_queued_timeout_seconds', 30);
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+        ],
+    )->assertServiceUnavailable();
+
+    $staleRun = OperationRun::query()->sole();
+    $staleRun->timestamps = false;
+    $staleRun->forceFill([
+        'created_at' => now()->subSeconds(31),
+        'updated_at' => now()->subSeconds(31),
+    ])->save();
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+        ],
+    )->assertServiceUnavailable();
+
+    expect($staleRun->refresh()->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($staleRun->error['code'] ?? null)
+        ->toBe('runtime_activation_runner_stale')
+        ->and(OperationRun::query()->where('operation_type', 'runtime-activation')->count())
+        ->toBe(2)
+        ->and(OperationRun::query()->latest('created_at')->first()?->id)
+        ->not->toBe($staleRun->id);
+});
+
+it('replaces a running activation after its heartbeat expires', function (): void {
+    [$node, , $instance] = create_cold_runtime_instance();
+    app()->instance(RunsInternalCommands::class, new ColdRuntimeExecutor([
+        [
+            'key' => 'composer',
+            'label' => 'Installing PHP dependencies',
+            'present' => false,
+            'reconstructable' => true,
+        ],
+    ]));
+    config()->set('orbit.runtime_hibernation.activation_running_timeout_seconds', 1200);
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+        ],
+    )->assertServiceUnavailable();
+
+    $staleRun = OperationRun::query()->sole();
+    $staleRun->timestamps = false;
+    $staleRun->forceFill([
+        'status' => OperationStatus::Running,
+        'started_at' => now()->subSeconds(1201),
+        'updated_at' => now()->subSeconds(1201),
+    ])->save();
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+        ],
+    )->assertServiceUnavailable();
+
+    expect($staleRun->refresh()->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($staleRun->error['code'] ?? null)
+        ->toBe('runtime_activation_runner_stale')
+        ->and(OperationRun::query()->where('operation_type', 'runtime-activation')->count())
+        ->toBe(2);
+});
+
+it('keeps following a running activation while its heartbeat is current', function (): void {
+    [$node, , $instance] = create_cold_runtime_instance();
+    app()->instance(RunsInternalCommands::class, new ColdRuntimeExecutor([
+        [
+            'key' => 'composer',
+            'label' => 'Installing PHP dependencies',
+            'present' => false,
+            'reconstructable' => true,
+        ],
+    ]));
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+        ],
+    )->assertServiceUnavailable();
+
+    $run = OperationRun::query()->sole();
+    app(OperationRunRecorder::class)->running($run->id);
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+        ],
+    )->assertServiceUnavailable();
+
+    expect(OperationRun::query()->where('operation_type', 'runtime-activation')->count())
+        ->toBe(1)
+        ->and($run->refresh()->status)
+        ->toBe(OperationStatus::Running);
+});
+
 it('detects persistent cold state for a legacy route that does not send the rollout header', function (): void {
     [$node, , $instance] = create_cold_runtime_instance();
     $executor = new ColdRuntimeExecutor([
@@ -154,6 +286,29 @@ it('detects persistent cold state for a legacy route that does not send the roll
             'internal:caddy-config:runtime-states',
             'internal:runtime-dependencies:inspect',
         ]);
+});
+
+it('keeps the cold gate when dependency inspection fails', function (): void {
+    [$node, , $instance] = create_cold_runtime_instance();
+    $executor = new ColdRuntimeExecutor(
+        dependencies: [],
+        failingAction: 'internal:runtime-dependencies:inspect',
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+        ],
+    )->assertServiceUnavailable();
+
+    expect($executor->actions())
+        ->toBe(['internal:runtime-dependencies:inspect'])
+        ->not->toContain('internal:caddy-config:runtime-warm')
+        ->not->toContain('internal:process-systemd-service:start');
 });
 
 it('keeps the transparent fast wake when no dependencies need restoration', function (): void {
@@ -275,6 +430,53 @@ it('restores dependencies before starting the planned processes and clearing col
         ]);
 });
 
+it('keeps the cold marker and failed progress page when a process cannot start', function (): void {
+    [$node, $app, $instance] = create_cold_runtime_instance();
+    Process::factory()->forOwner($app, $node)->create(['name' => 'horizon']);
+    $executor = new ColdRuntimeExecutor(
+        dependencies: [[
+            'key' => 'composer',
+            'label' => 'Installing PHP dependencies',
+            'present' => false,
+            'reconstructable' => true,
+        ]],
+        failingAction: 'internal:process-systemd-service:start',
+    );
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    $this->call(
+        'GET',
+        "/api/runtime-activations/app-instance/{$instance->id}",
+        server: [
+            'REMOTE_ADDR' => $node->wireguard_address,
+            'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+        ],
+    )->assertServiceUnavailable();
+
+    $run = OperationRun::query()->sole();
+    app(RuntimeActivationRunner::class)->run($run->id);
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($executor->actions())
+        ->toContain('internal:runtime-dependencies:restore')
+        ->toContain('internal:process-systemd-service:start')
+        ->not->toContain('internal:caddy-config:runtime-warm');
+
+    $this
+        ->call(
+            'GET',
+            "/api/runtime-activations/app-instance/{$instance->id}",
+            server: [
+                'REMOTE_ADDR' => $node->wireguard_address,
+                'HTTP_X_ORBIT_RUNTIME_COLD' => '1',
+            ],
+        )
+        ->assertServiceUnavailable()
+        ->assertSee('Wake-up paused')
+        ->assertSee('Try again');
+});
+
 it('launches the activation runner as a detached one-shot gateway container', function (): void {
     $run = app(OperationRunRecorder::class)->queued(
         operationId: 'runtime-activation:app-instance-1',
@@ -346,6 +548,7 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
      */
     public function __construct(
         private readonly array $dependencies,
+        private readonly ?string $failingAction = null,
     ) {}
 
     public function runInternal(
@@ -356,7 +559,8 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
         array $transportOptions = [],
     ): RemoteShellResult {
         $action = is_string($arguments[0] ?? null) ? $arguments[0] : '';
-        $this->actions[] = $action === '' ? $commandName : "{$commandName}:{$action}";
+        $call = $action === '' ? $commandName : "{$commandName}:{$action}";
+        $this->actions[] = $call;
 
         if (
             $commandName === 'internal:runtime-dependencies'
@@ -398,7 +602,7 @@ final class ColdRuntimeExecutor implements RunsInternalCommands
         }
 
         return new RemoteShellResult(
-            exitCode: 0,
+            exitCode: $call === $this->failingAction ? 1 : 0,
             stdout: json_encode([
                 'success' => [
                     'data' => $data,
