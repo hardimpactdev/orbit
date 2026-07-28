@@ -1,0 +1,33 @@
+Orbit runtime hibernation pre-RC acceptance proof
+Timestamp: 2026-07-28T17:52:33Z through 2026-07-28T17:53:31Z
+Checkout: /Users/nckrtl/orbit/.worktrees/codex-fix-runtime-marker-drift
+Candidate: 7474cf173eef854a2060331d4bb173e5e199bfbb
+Live release before candidate deployment: Orbit 0.1.190 / build 20260728T165500Z-bf660de08
+Node: NMBP (host macOS)
+Scope: horizon-demo.development / app-instance-50
+URL: https://horizon-demo.nmbp/
+
+Healthy baseline:
+- bulk process list reported the Docker frankenphp process and launchd Horizon process.
+- app-instance-50.awake was present and app-instance-50.asleep was absent.
+- orbit-app-horizon-demo-development was running and healthy.
+- URL returned HTTP 200 in 0.048899 seconds.
+
+Old-live failure reproduced:
+- `orbit process:stop --instance=horizon-demo.development --json` stopped both processes.
+- the old gateway left app-instance-50.awake present and app-instance-50.asleep absent.
+- orbit-app-horizon-demo-development was exited and the launchd unit was unloaded.
+- the ordinary browser URL path returned HTTP 502 in 15.226356 seconds.
+
+Stock-Caddy cold wake isolated:
+- the awake marker was removed and the asleep marker was created manually.
+- the first ordinary request to https://horizon-demo.nmbp/ returned HTTP 200 in 12.076475 seconds.
+- the Docker application container returned to running, the launchd Horizon unit loaded, and Caddy replaced the asleep marker with the awake marker.
+- a warm request returned HTTP 200 in 0.114745 seconds.
+
+Candidate-source proof:
+- focused gateway tests passed 48 tests and 204 assertions, including the bulk-stop call order `runtime-asleep` before both runtime stops and failure cases that never restore `runtime-awake`.
+- `composer quality-check` passed on the exact candidate with profile `.orbit/quality-gates/profiles/2026-07-28T17-49-39Z-7474cf173eef`.
+
+Conclusion:
+The exact reported 502 is caused by the stale awake marker after the old bulk-stop path. Stock Caddy already cold-wakes the exact app and both process runtimes when the scope is asleep. The candidate aligns bulk lifecycle marker state before the raw runtime action; an RC deployment must repeat this proof without the manual marker step.

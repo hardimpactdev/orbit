@@ -1,0 +1,9 @@
+Orbit feature quality receipt
+Candidate: 7474cf173eef854a2060331d4bb173e5e199bfbb
+Command: composer quality-check
+Result: exit 0
+Profile: .orbit/quality-gates/profiles/2026-07-28T17-49-39Z-7474cf173eef
+
+Focused gateway verification:
+Command: bin/orbit-gateway-pest --compact tests/Feature/Actions/Processes tests/Feature/Services/Processes tests/Unit/Services/Tools/ToolProcessBoundaryTest.php tests/Feature/Http/Api/ProcessStartControllerTest.php tests/Feature/Http/Api/ProcessStopControllerTest.php tests/Feature/Http/Api/ProcessRestartControllerTest.php
+Result: 48 tests passed, 204 assertions
