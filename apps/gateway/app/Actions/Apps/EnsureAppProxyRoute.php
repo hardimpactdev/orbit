@@ -48,12 +48,13 @@ final readonly class EnsureAppProxyRoute
     /**
      * @return list<array<string, string>>
      */
-    public function handle(Project $app): array
+    public function handle(Project $app, ?AppInstance $instance = null): array
     {
+        $instance ??= $this->routeInstance($app);
         $owningNode = $this->appOwningNodeResolver->resolve($app);
 
         $domain = $this->domain($app, $owningNode);
-        [$servingNode, $config, $content] = $this->routeArtifact($app, $owningNode, $domain);
+        [$servingNode, $config, $content] = $this->routeArtifact($app, $instance, $owningNode, $domain);
 
         $route = ProxyRoute::query()->updateOrCreate(
             ['domain' => $domain],
@@ -69,12 +70,7 @@ final readonly class EnsureAppProxyRoute
                 'source_hash' => hash('sha256', $content),
             ],
         );
-        ProxyRoute::query()
-            ->where('app_id', $app->id)
-            ->where('owner_type', 'app')
-            ->where('kind', 'app')
-            ->where('domain', '!=', $domain)
-            ->delete();
+        $this->deleteStaleInstanceRoutes($app, $instance, $domain);
 
         if (($config['placement'] ?? null) !== 'ingress') {
             $content = $this->proxyRouteRenderer->render($route);
@@ -528,7 +524,11 @@ final readonly class EnsureAppProxyRoute
      */
     private function productionActivationWarnings(Project $app): array
     {
-        if (! is_string($app->domain) || $app->domain === '') {
+        if (
+            $app->environment !== 'production'
+            || ! is_string($app->domain)
+            || $app->domain === ''
+        ) {
             return [];
         }
 
@@ -595,10 +595,13 @@ final readonly class EnsureAppProxyRoute
     /**
      * @return array{0: Node, 1: array<string, mixed>, 2: string}
      */
-    private function routeArtifact(Project $app, Node $owningNode, string $domain): array
-    {
+    private function routeArtifact(
+        Project $app,
+        ?AppInstance $instance,
+        Node $owningNode,
+        string $domain,
+    ): array {
         $isPhp = $app->runtimeKind() === AppRuntimeKind::Php;
-        $instance = $this->routeInstance($app);
         $runtimeUpstream = $isPhp ? $this->runtimeUpstream($app, $instance) : null;
         $appInstanceConfig = $instance instanceof AppInstance
             ? $this->appRouteRuntimeTargets->appInstanceConfig($app, $instance, $domain)
@@ -712,6 +715,39 @@ final readonly class EnsureAppProxyRoute
         $config['backend_artifacts'] = [$backendArtifact];
 
         return [$ingressNode, $config, $content];
+    }
+
+    private function deleteStaleInstanceRoutes(
+        Project $app,
+        ?AppInstance $instance,
+        string $domain,
+    ): void {
+        if (! $instance instanceof AppInstance) {
+            ProxyRoute::query()
+                ->where('app_id', $app->id)
+                ->where('owner_type', 'app')
+                ->where('kind', 'app')
+                ->where('domain', '!=', $domain)
+                ->delete();
+
+            return;
+        }
+
+        ProxyRoute::query()
+            ->where('app_id', $app->id)
+            ->where('owner_type', 'app')
+            ->where('kind', 'app')
+            ->where('domain', '!=', $domain)
+            ->get()
+            ->filter(function (ProxyRoute $route) use ($instance): bool {
+                $config = is_array($route->config) ? $route->config : [];
+                $appInstance = is_array($config['app_instance'] ?? null)
+                    ? $config['app_instance']
+                    : [];
+
+                return ($appInstance['id'] ?? null) === $instance->id;
+            })
+            ->each->delete();
     }
 
     private function routeInstance(Project $app): ?AppInstance

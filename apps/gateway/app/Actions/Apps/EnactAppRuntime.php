@@ -88,22 +88,11 @@ final readonly class EnactAppRuntime
             $warnings = [
                 ...$warnings,
                 ...$this->ensureAppProcessRuntimeUnits->handle($app, $instance),
+                ...$this->ensureAppProxyRoute->handle($runtimeApp, $instance),
             ];
         }
 
-        // Always record gateway-side intent for app-owned proxy routes and
-        // process units, even when the runtime container apply hit a
-        // retryable warning (image-unavailable, container apply failure).
-        // Without this, the warning tells the user to run
-        // `doctor --family=instance --restore` but instance doctor cannot create
-        // a missing proxy route — proxy/process is the gateway's
-        // responsibility, not instance doctor's. Static projects skip the runtime
-        // container apply path entirely; their file_server-only route is
-        // still recorded here.
-        return [
-            ...$warnings,
-            ...$this->ensureAppProxyRoute->handle($app),
-        ];
+        return $warnings;
     }
 
     private function ensureRuntimeTlsMaterial(Project $app, Node $owningNode): void
