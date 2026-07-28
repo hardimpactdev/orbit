@@ -19,6 +19,11 @@ final readonly class SchedulesFixer
 {
     private const string Stack = 'orbit';
 
+    private const string SCHEDULER_SERVICE = self::Stack.'_'.GatewaySwarmStackRenderer::SchedulerService;
+
+    private const string RUNTIME_HIBERNATOR_SERVICE =
+        self::Stack.'_'.GatewaySwarmStackRenderer::RUNTIME_HIBERNATOR_SERVICE;
+
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
         private GatewaySwarmManager $swarm = new GatewaySwarmManager,
@@ -48,25 +53,25 @@ final readonly class SchedulesFixer
         }
 
         if ($entry->key === 'schedule.scheduler_image_mismatch') {
-            $this->restoreGatewayDaemonImage($this->schedulerStackService(), $entry, 'scheduler');
+            $this->restoreGatewayDaemonImage(self::SCHEDULER_SERVICE, $entry, 'scheduler');
 
             return $this->action($gatewayNode, $entry, $schedule);
         }
 
         if ($entry->key === 'schedule.runtime_hibernator_image_mismatch') {
-            $this->restoreGatewayDaemonImage($this->runtimeHibernatorStackService(), $entry, 'runtime hibernator');
+            $this->restoreGatewayDaemonImage(self::RUNTIME_HIBERNATOR_SERVICE, $entry, 'runtime hibernator');
 
             return $this->action($gatewayNode, $entry, $schedule);
         }
 
         if ($entry->key === 'schedule.scheduler_missing') {
-            $this->restoreMissingGatewayDaemon($this->schedulerStackService());
+            $this->restoreMissingGatewayDaemon(self::SCHEDULER_SERVICE);
 
             return $this->action($gatewayNode, $entry, $schedule);
         }
 
         if ($entry->key === 'schedule.runtime_hibernator_missing') {
-            $this->restoreMissingGatewayDaemon($this->runtimeHibernatorStackService());
+            $this->restoreMissingGatewayDaemon(self::RUNTIME_HIBERNATOR_SERVICE);
 
             return $this->action($gatewayNode, $entry, $schedule);
         }
@@ -76,7 +81,7 @@ final readonly class SchedulesFixer
             ['schedule.scheduler_stopped', 'schedule.scheduler_replicas_mismatch'],
             strict: true,
         )) {
-            $this->restoreGatewayDaemon($this->schedulerStackService(), 'scheduler');
+            $this->restoreGatewayDaemon(self::SCHEDULER_SERVICE, 'scheduler');
 
             return $this->action($gatewayNode, $entry, $schedule);
         }
@@ -89,7 +94,7 @@ final readonly class SchedulesFixer
             ],
             strict: true,
         )) {
-            $this->restoreGatewayDaemon($this->runtimeHibernatorStackService(), 'runtime hibernator');
+            $this->restoreGatewayDaemon(self::RUNTIME_HIBERNATOR_SERVICE, 'runtime hibernator');
 
             return $this->action($gatewayNode, $entry, $schedule);
         }
@@ -117,7 +122,7 @@ final readonly class SchedulesFixer
         }
 
         $this->swarm->deployStack(
-            rtrim($configRoot, '/').'/swarm/'.GatewaySwarmManager::StackFile,
+            rtrim($configRoot, characters: '/').'/swarm/'.GatewaySwarmManager::StackFile,
             self::Stack,
         );
     }
@@ -211,15 +216,5 @@ final readonly class SchedulesFixer
         return $this->nodeRoleAssignments
             ->activeGatewayNodeQuery()
             ->first();
-    }
-
-    private function schedulerStackService(): string
-    {
-        return self::Stack.'_'.GatewaySwarmStackRenderer::SchedulerService;
-    }
-
-    private function runtimeHibernatorStackService(): string
-    {
-        return self::Stack.'_'.GatewaySwarmStackRenderer::RUNTIME_HIBERNATOR_SERVICE;
     }
 }
