@@ -10,7 +10,7 @@ use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\Processes\RuntimeIdleHibernation;
+use App\Services\Processes\RuntimeHibernationSweep;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use RuntimeException;
@@ -21,7 +21,7 @@ final readonly class OrbitScheduler
         private ScheduleDispatcher $dispatcher,
         private ScheduleInterval $interval,
         private NodeRoleAssignments $nodeRoleAssignments,
-        private RuntimeIdleHibernation $runtimeIdleHibernation,
+        private RuntimeHibernationSweep $runtimeHibernationSweep,
     ) {}
 
     public function tick(?CarbonImmutable $now = null): SchedulerTickResult
@@ -51,7 +51,7 @@ final readonly class OrbitScheduler
             }
         }
 
-        $this->runtimeIdleHibernation->hibernate($startedAt);
+        $this->runtimeHibernationSweep->run($startedAt);
 
         return new SchedulerTickResult(
             startedAt: $startedAt,

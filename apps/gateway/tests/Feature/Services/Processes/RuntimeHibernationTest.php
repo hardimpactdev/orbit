@@ -175,7 +175,7 @@ it('checks idle runtimes only on the default ten-minute boundaries', function ()
 
     app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:01:00Z'));
 
-    expect($executor->actions())->toBe([]);
+    expect($executor->actions())->toBeEmpty();
 
     app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-01-01T13:10:00Z'));
 
