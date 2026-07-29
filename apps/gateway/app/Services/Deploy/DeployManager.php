@@ -152,7 +152,7 @@ final readonly class DeployManager
             );
         }
 
-        $progress?->tree('Running Deployment', $this->progressSteps($steps, $detach));
+        $progress?->tree('Running Deployment', $this->progressSteps($model, $steps, $detach));
         $progress?->stepStart('resolve-instance');
         $progress?->stepDone('resolve-instance', $this->targetName($instance));
 
@@ -512,10 +512,10 @@ final readonly class DeployManager
     }
 
     /**
-     * @param  Collection<int, DeployStep>  $steps
+     * @param  iterable<array-key, object>  $steps
      * @return list<array{key: string, label: string, doneLabel?: string}>
      */
-    private function progressSteps(Collection $steps, bool $detach): array
+    private function progressSteps(Project $app, iterable $steps, bool $detach): array
     {
         $progressSteps = [
             [
@@ -535,6 +535,10 @@ final readonly class DeployManager
         }
 
         foreach ($steps as $step) {
+            if (! $step instanceof DeployStep) {
+                continue;
+            }
+
             $progressSteps[] = [
                 'key' => $this->progressKey($step),
                 'label' => $step->title,
@@ -542,7 +546,7 @@ final readonly class DeployManager
             ];
         }
 
-        if ($this->usesLivePath($steps)) {
+        if ($app->runtimeKind() === AppRuntimeKind::Php && $this->usesLivePath($steps)) {
             $progressSteps[] = [
                 'key' => 'activate-runtime',
                 'label' => 'Activate release runtime',

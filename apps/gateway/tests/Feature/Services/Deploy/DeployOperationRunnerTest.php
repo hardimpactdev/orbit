@@ -39,8 +39,8 @@ it('persists deploy progress frames before WebSocket publication and supports jo
     ]);
     DeployStep::query()->create([
         'app_instance_id' => $instance->id,
-        'title' => 'Pull source',
-        'command' => 'git pull origin main',
+        'title' => 'Activate release',
+        'command' => 'ln -sfn "{{ release_path }}" "{{ live_path }}"',
         'sort_order' => 1,
         'timeout_seconds' => 120,
     ]);
@@ -98,6 +98,10 @@ it('persists deploy progress frames before WebSocket publication and supports jo
     $frameTypes = $events
         ->map(fn (OperationEvent $event): mixed => data_get($event->payload, 'frame.type'))
         ->all();
+    $treeStepKeys = $events
+        ->first(fn (OperationEvent $event): bool => data_get($event->payload, 'frame.type') === 'tree')
+        ?->payload['frame']['payload']['steps'] ?? [];
+    $treeStepKeys = array_column($treeStepKeys, 'key');
 
     expect($run->status->value)
         ->toBe('succeeded')
@@ -105,6 +109,9 @@ it('persists deploy progress frames before WebSocket publication and supports jo
         ->toBe(['operation_stream.frame'])
         ->and($frameTypes)
         ->toContain('tree', 'step', 'complete')
+        ->and($treeStepKeys)
+        ->not
+        ->toContain('activate-runtime')
         ->and($broadcaster->frames)
         ->toHaveCount($events->count());
 });
