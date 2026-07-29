@@ -43,9 +43,9 @@ These rules define what PHP runtime commands own and how they operate.
   verifies that digest and aliases the exact local image ID to the catalog's
   stable PHP 8.5 reference. This exercises the candidate without moving the
   stable registry tag before acceptance. After live acceptance,
-  `orbit-release-candidate promote-runtime --accepted` moves that recorded
-  digest to the stable runtime-family tag and verifies the resulting digest;
-  it does not create a GitHub release.
+  `orbit-release-candidate promote-runtime --build-id=<accepted-id> --accepted`
+  moves that accepted build's recorded digest to the stable runtime-family tag
+  and verifies the resulting digest; it does not create a GitHub release.
 - Node CLI PHP selection is only supported for PHP 8.5. This matches the
   production native Orbit CLI binary artifact's embedded PHP version and does
   not limit app or workspace FrankenPHP runtime versions. Source-mounted

@@ -220,7 +220,8 @@ manifests.
     its stable runtime-family tag without rebuilding:
 
    ```bash
-   bin/orbit-release-candidate promote-runtime --accepted
+   eval "$(bin/orbit-release-candidate env)"
+   bin/orbit-release-candidate promote-runtime --build-id="$build_id" --accepted
    ```
 
    This promotion does not create a GitHub release, move a gateway version tag,

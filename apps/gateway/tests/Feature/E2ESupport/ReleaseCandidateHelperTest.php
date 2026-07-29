@@ -176,13 +176,23 @@ it('promotes the accepted FrankenPHP candidate digest without creating a GitHub 
         $env = release_candidate_process_env(root: $root);
         $buildId = '20260701T000000Z-abcdef12';
         $stateDir = release_candidate_write_state(root: $root, buildId: $buildId, pointLatest: true);
+        $latestBuildId = '20260702T000000Z-bbbbbbbb';
+        release_candidate_write_state(root: $root, buildId: $latestBuildId, pointLatest: true);
 
-        $withoutAcceptance = release_candidate_process(arguments: ['promote-runtime'], env: $env);
+        $withoutAcceptance = release_candidate_process(
+            arguments: ['promote-runtime', "--build-id={$buildId}"],
+            env: $env,
+        );
+        $withoutIdentity = release_candidate_process(arguments: ['promote-runtime', '--accepted'], env: $env);
 
         expect($withoutAcceptance->getExitCode())
             ->toBe(1)
             ->and($withoutAcceptance->getErrorOutput())
-            ->toContain('--accepted');
+            ->toContain('--accepted')
+            ->and($withoutIdentity->getExitCode())
+            ->toBe(1)
+            ->and($withoutIdentity->getErrorOutput())
+            ->toContain('--build-id=<accepted-id>');
 
         $process = release_candidate_process(
             arguments: ['promote-runtime', "--build-id={$buildId}", '--accepted'],
@@ -200,13 +210,14 @@ it('promotes the accepted FrankenPHP candidate digest without creating a GitHub 
 
         expect($stubLog)
             ->toContain(
-                'docker buildx imagetools create --tag ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm '
+                'docker buildx imagetools create --prefer-index=false --tag ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm '
                     ."ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-{$buildId}@sha256:"
                     .str_repeat('ef', times: 32),
             )
             ->toContain(
                 'docker buildx imagetools inspect ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
             )
+            ->not->toContain("orbit-frankenphp:2-php8.5-bookworm-candidate-{$latestBuildId}@sha256:")
             ->not->toContain('release create')
             ->not->toContain('push origin');
     } finally {

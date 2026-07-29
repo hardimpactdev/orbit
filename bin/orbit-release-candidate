@@ -26,7 +26,7 @@ usage() {
 Usage:
   bin/orbit-release-candidate build
   bin/orbit-release-candidate env [--build-id=<id>]
-  bin/orbit-release-candidate promote-runtime [--build-id=<id>] --accepted
+  bin/orbit-release-candidate promote-runtime --build-id=<accepted-id> --accepted
   bin/orbit-release-candidate verify [--build-id=<id>] [--release-image=<ref>]
 
 Formalizes the release-candidate publication flow from step 7 of
@@ -437,12 +437,13 @@ cmd_promote_runtime() {
                 accepted=1
                 ;;
             *)
-                fail "unknown promote-runtime option: ${arg}. Usage: bin/orbit-release-candidate promote-runtime [--build-id=<id>] --accepted"
+                fail "unknown promote-runtime option: ${arg}. Usage: bin/orbit-release-candidate promote-runtime --build-id=<accepted-id> --accepted"
                 ;;
         esac
     done
 
     [ "$accepted" -eq 1 ] || fail "promote-runtime requires --accepted after live candidate acceptance."
+    [ -n "$build_id" ] || fail "promote-runtime requires --build-id=<accepted-id>; the latest pointer is not an acceptance identity."
 
     local state_dir state_file recorded_build_id candidate_image stable_image expected_digest expected_candidate
     state_dir="$(resolve_state_dir "$build_id")"
@@ -468,6 +469,7 @@ cmd_promote_runtime() {
     unset ghcr_auth
 
     DOCKER_CONFIG="$ghcr_docker_config" docker buildx imagetools create \
+        --prefer-index=false \
         --tag "$stable_image" \
         "${candidate_image}@${expected_digest}"
 
