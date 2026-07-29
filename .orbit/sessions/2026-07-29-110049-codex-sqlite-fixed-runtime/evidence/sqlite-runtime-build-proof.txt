@@ -1,0 +1,30 @@
+Orbit PHP 8.5 fixed-SQLite runtime build proof
+Captured: 2026-07-29
+
+Official SQLite source
+- Version: 3.44.6
+- Fossil check-in: 863c171b76cd36e0c71662d4a50d84da531cc7fbead893d02459577febdf6396
+- Archive SHA-256: c25cd42f803d5fb0af5f1a2863c9f529a8fd35177cb24b0f6e970b1cc96f00f0
+- Source is used unmodified.
+
+Orbit PHP CLI artifacts
+- linux-x86_64 SHA-256: 305f0a3d80907c72a5d7e2ce4b78e120a2bc53848b809fb16fb7511c1b00b828
+  PHP=8.5.8 SQLite3=3.44.6 PDO=3.44.6
+- macos-aarch64 SHA-256: fbd88fc83c699e2f65030f314937ec05edba41209bd38c8baa11b86f224a9329
+  PHP=8.5.8 SQLite3=3.44.6 PDO=3.44.6
+- Public artifact URLs streamed and rehashed to the same values:
+  https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6/php-8.5.8-cli-linux-x86_64.tar.gz
+  https://s3.hardimpact.dev/orbit/runtimes/php-cli/sqlite-3.44.6/php-8.5.8-cli-macos-aarch64.tar.gz
+
+Orbit FrankenPHP proof image
+- Local image: orbit-frankenphp:sqlite-3446-proof
+- PHP=8.5.7 SQLite3=3.44.6 PDO=3.44.6
+- /usr/local/bin/php links libsqlite3.so.0 from /usr/local/lib/libsqlite3.so.0
+- /usr/local/bin/frankenphp links libsqlite3.so.0 from /usr/local/lib/libsqlite3.so.0
+
+Repository verification
+- Focused: 74 tests, 573 assertions, passed.
+- Docs: composer docs-lint passed with zero errors.
+- Broader: composer quality-check passed.
+- Quality profile:
+  .orbit/quality-gates/profiles/2026-07-29T08-56-03Z-293dd7e252cd

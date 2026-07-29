@@ -1,0 +1,29 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-29T09:00:49+00:00",
+    "mode": "created",
+    "archive_mode": "full",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-sqlite-fixed-runtime/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-29-110049-codex-sqlite-fixed-runtime",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-29-110049-codex-sqlite-fixed-runtime/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "evidence",
+        "loop.md",
+        "php-cli-runtime",
+        "quality-gates"
+    ],
+    "entry_digests": {
+        "agent-sessions": "321cb365c4c243a5af0bfb1ed568005ad94e14b674a8e2c44a12dd8a8205abe9",
+        "evidence": "319a49a072fad1549b3caff4068585e511a0f1f07e3bd8a053a342c5a54ec8e6",
+        "loop.md": "7f07f8ca46354992bf181f967d0ff451c4e30e60ae8b785fb57f13161ff08548",
+        "php-cli-runtime": "cff378a578a7e9f3740d22f6afda24c5e4500201fc181866bff13fffdfe4ccb0",
+        "quality-gates": "656f7b4e5113d75ea2c780cbb79400ed96569c32be22f5b48de968f833138bbf"
+    },
+    "branch": "codex/sqlite-fixed-runtime",
+    "candidate_commit": "293dd7e252cddcdda396be973a1b664a7d9cc80c",
+    "accepted_feature_tip": "293dd7e252cddcdda396be973a1b664a7d9cc80c",
+    "accepted_main_tip": "0c0de11df0e1d9bbf19a318d286c9f67172d382a",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "producer": "quality-gate-run",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-29T08:55:10Z",
+    "ended_at": "2026-07-29T08:55:20Z",
+    "duration_seconds": 10,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/sqlite-fixed-runtime",
+        "commit": "3811382d5efad75f275f30f711dfd9c44d5b3ed5",
+        "dirty": true
+    },
+    "subgates": []
+}
