@@ -50,31 +50,6 @@ describe('internal tool run script command', function (): void {
             ->toBe('validation_failed');
     });
 
-    it('accepts probe-php-cli and returns multi-minor probe stdout', function (): void {
-        [$exitCode, $output] = run_internal_tool_run_script_command(
-            [
-                '--operation-token' => tool_run_script_signed_operation_token(),
-                '--json' => true,
-            ],
-            stdin: json_encode([
-                'tool' => 'php-cli',
-                'action' => 'probe-php-cli',
-                'script' => "printf '%s\\n' '8.5|8.5.8|1|8.5.8|1|1|1|1' '8.4|8.4.21|1|8.4.21|1|1|1|1' '8.3|8.3.31|1|8.3.31|1|1|1|1'",
-            ], JSON_THROW_ON_ERROR),
-        );
-
-        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)
-            ->toBe(0)
-            ->and($payload['success']['data']['exit_code'] ?? null)
-            ->toBe(0)
-            ->and($payload['success']['data']['stdout'] ?? null)
-            ->toContain('8.5|8.5.8|1|8.5.8|1|1|1|1')
-            ->toContain('8.4|8.4.21|1|8.4.21|1|1|1|1')
-            ->toContain('8.3|8.3.31|1|8.3.31|1|1|1|1');
-    });
-
     it('rejects payloads missing required tool metadata', function (): void {
         [$exitCode, $output] = run_internal_tool_run_script_command(
             [
@@ -231,6 +206,41 @@ describe('internal tool run script command', function (): void {
                 unlink($scriptPath);
             }
         }
+    });
+});
+
+// Kept outside the main describe so that closure stays under cyclomatic threshold.
+describe('internal tool run script command probe-php-cli', function (): void {
+    beforeEach(function (): void {
+        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
+    });
+
+    it('accepts probe-php-cli and returns multi-minor probe stdout', function (): void {
+        [$exitCode, $output] = run_internal_tool_run_script_command(
+            [
+                '--operation-token' => tool_run_script_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'tool' => 'php-cli',
+                'action' => 'probe-php-cli',
+                'script' => "printf '%s\\n' '8.5|8.5.8|1|8.5.8|1|1|1|1' '8.4|8.4.21|1|8.4.21|1|1|1|1' '8.3|8.3.31|1|8.3.31|1|1|1|1'",
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['exit_code'] ?? null)
+            ->toBe(0)
+            ->and($payload['success']['data']['stdout'] ?? null)
+            ->toContain('8.5|8.5.8|1|8.5.8|1|1|1|1')
+            ->toContain('8.4|8.4.21|1|8.4.21|1|1|1|1')
+            ->toContain('8.3|8.3.31|1|8.3.31|1|1|1|1');
     });
 });
 

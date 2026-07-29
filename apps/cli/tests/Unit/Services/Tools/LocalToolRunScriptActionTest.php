@@ -56,7 +56,7 @@ it('accepts and executes gateway php-cli multi-minor probe-php-cli action', func
         ->toContain('8.4|8.4.21|1|8.4.21|1|1|1|1')
         ->toContain('8.3|8.3.31|1|8.3.31|1|1|1|1')
         ->and($result['stderr'])
-        ->toBe('');
+        ->toBeEmpty();
 });
 
 it('rejects unsupported tool run actions including unknown probe variants', function (): void {
