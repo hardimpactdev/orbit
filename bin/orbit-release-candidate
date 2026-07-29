@@ -134,7 +134,7 @@ cmd_build() {
     candidate_tag="${version}-candidate-${build_id}"
     candidate_image="ghcr.io/hardimpactdev/orbit-gateway:${candidate_tag}"
     candidate_reverb_image="ghcr.io/hardimpactdev/orbit-reverb:${candidate_tag}"
-    candidate_frankenphp_image="ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm"
+    candidate_frankenphp_image="ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-${build_id}"
     candidate_prefix="candidates/${build_id}"
     candidate_channel="${ORBIT_RELEASE_CANDIDATE_CHANNEL:-live-test}"
 

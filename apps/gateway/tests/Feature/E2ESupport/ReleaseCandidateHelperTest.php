@@ -18,7 +18,7 @@ it('fails build preflight when HEAD does not match origin main', function (): vo
         );
 
         expect($process->getExitCode())
-            ->toBe(1, $process->getOutput().$process->getErrorOutput())
+            ->toBe(1, $process->getOutput() . $process->getErrorOutput())
             ->and($process->getErrorOutput())
             ->toContain('Candidate artifacts must be built from the pushed origin/main commit.')
             ->and("{$root}/.orbit/release-candidates/latest")
@@ -42,7 +42,7 @@ it('fails build preflight when the tracked tree is dirty', function (): void {
         );
 
         expect($process->getExitCode())
-            ->toBe(1, $process->getOutput().$process->getErrorOutput())
+            ->toBe(1, $process->getOutput() . $process->getErrorOutput())
             ->and($process->getErrorOutput())
             ->toContain('clean checkout')
             ->and("{$root}/.orbit/release-candidates/latest")
@@ -65,7 +65,7 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             ]),
         );
 
-        expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
+        expect($process->getExitCode())->toBe(0, $process->getOutput() . $process->getErrorOutput());
 
         $latestPointer = "{$root}/.orbit/release-candidates/latest";
 
@@ -103,11 +103,11 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             'candidate_prefix' => "candidates/{$buildId}",
             'candidate_channel' => 'live-test',
             'candidate_asset_base_url' => "https://s3.example.test/orbit/candidates/{$buildId}",
-            'gateway_digest' => 'sha256:'.str_repeat('ab', times: 32),
+            'gateway_digest' => 'sha256:' . str_repeat('ab', times: 32),
             'candidate_reverb_image' => "ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-{$buildId}",
-            'reverb_digest' => 'sha256:'.str_repeat('cd', times: 32),
-            'candidate_frankenphp_image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
-            'frankenphp_digest' => 'sha256:'.str_repeat('ef', times: 32),
+            'reverb_digest' => 'sha256:' . str_repeat('cd', times: 32),
+            'candidate_frankenphp_image' => "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-{$buildId}",
+            'frankenphp_digest' => 'sha256:' . str_repeat('ef', times: 32),
             'candidate_channel_manifest_url' => 'https://s3.example.test/orbit/channels/live-test/orbit-release-manifest.json',
             'sha256_linux_amd64' => hash_file('sha256', "{$stateDir}/orbit-linux-x64"),
             'sha256_darwin_arm64' => hash_file('sha256', "{$stateDir}/orbit-macos-arm64"),
@@ -134,19 +134,21 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             ->toContain('orbit-build-agent-binary mac arm')
             ->toContain('-f docker/orbit-reverb/Dockerfile')
             ->toContain('-f docker/orbit-frankenphp/Dockerfile')
-            ->toContain('--tag ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm')
+            ->toContain('--tag ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-' . $buildId)
             ->toContain(
-                '--role-image=orbit-websocket=ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'.$buildId.'@sha256:'
-                    .str_repeat('cd', times: 32),
+                '--role-image=orbit-websocket=ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'
+                    . $buildId
+                    . '@sha256:'
+                    . str_repeat('cd', times: 32),
             )
+            ->toContain('--role-image-artifact=orbit-websocket=orbit-reverb-linux-amd64.tar=')
             ->toContain(
-                '--role-image-artifact=orbit-websocket=orbit-reverb-linux-amd64.tar=',
+                '--role-image=orbit-frankenphp=ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-'
+                    . $buildId
+                    . '@sha256:'
+                    . str_repeat('ef', times: 32),
             )
-            ->toContain(
-                '--role-image=orbit-frankenphp=ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:'
-                    .str_repeat('ef', times: 32),
-            )
-            ->toContain('docker save ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'.$buildId.' -o ')
+            ->toContain('docker save ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-' . $buildId . ' -o ')
             ->toContain('docker context show')
             ->toContain('docker context inspect orbstack --format {{ (index .Endpoints "docker").Host }}')
             ->toContain('docker-push-host=unix:///Users/nckrtl/.orbstack/run/docker.sock')
@@ -188,7 +190,7 @@ it('prints eval-able exports for candidate state and fails cleanly with no state
         $process = release_candidate_process(arguments: ['env'], env: $env);
 
         expect($process->getExitCode())
-            ->toBe(0, $process->getOutput().$process->getErrorOutput())
+            ->toBe(0, $process->getOutput() . $process->getErrorOutput())
             ->and($process->getOutput())
             ->toContain('export version=9.9.9')
             ->toContain("export build_id={$buildId}")
@@ -211,7 +213,7 @@ it('prints eval-able exports for candidate state and fails cleanly with no state
         $eval->run();
 
         expect($eval->getExitCode())
-            ->toBe(0, $eval->getOutput().$eval->getErrorOutput())
+            ->toBe(0, $eval->getOutput() . $eval->getErrorOutput())
             ->and($eval->getOutput())
             ->toBe("ghcr.io/hardimpactdev/orbit-gateway:9.9.9-candidate-{$buildId}");
     } finally {
@@ -234,7 +236,7 @@ it('verifies intact artifacts and fails naming the tampered sha256 key', functio
         );
 
         expect($pass->getExitCode())
-            ->toBe(0, $pass->getOutput().$pass->getErrorOutput())
+            ->toBe(0, $pass->getOutput() . $pass->getErrorOutput())
             ->and($pass->getOutput())
             ->toContain('PASS sha256_linux_amd64')
             ->toContain('PASS sha256_darwin_arm64')
@@ -275,7 +277,7 @@ it('reports an imagetools inspect failure as a gateway_digest mismatch without a
         );
 
         expect($process->getExitCode())
-            ->toBe(1, $process->getOutput().$process->getErrorOutput())
+            ->toBe(1, $process->getOutput() . $process->getErrorOutput())
             ->and($process->getOutput())
             ->toContain('PASS sha256_linux_amd64')
             ->toContain('PASS sha256_darwin_arm64')
@@ -304,7 +306,7 @@ it('rejects --build-id values that do not match the build id pattern', function 
         $traversalVerify = release_candidate_process(arguments: ['verify', '--build-id=../../evil'], env: $env);
 
         expect($traversalEnv->getExitCode())
-            ->toBe(1, $traversalEnv->getOutput().$traversalEnv->getErrorOutput())
+            ->toBe(1, $traversalEnv->getOutput() . $traversalEnv->getErrorOutput())
             ->and($traversalEnv->getOutput())
             ->not
             ->toContain('6.6.6')
@@ -312,7 +314,7 @@ it('rejects --build-id values that do not match the build id pattern', function 
             ->toContain('../../evil')
             ->toContain('[0-9]{8}T[0-9]{6}Z-[0-9a-f]+')
             ->and($traversalVerify->getExitCode())
-            ->toBe(1, $traversalVerify->getOutput().$traversalVerify->getErrorOutput())
+            ->toBe(1, $traversalVerify->getOutput() . $traversalVerify->getErrorOutput())
             ->and($traversalVerify->getErrorOutput())
             ->toContain('[0-9]{8}T[0-9]{6}Z-[0-9a-f]+');
     } finally {
@@ -333,28 +335,20 @@ it('resolves --build-id ahead of the latest pointer', function (): void {
             overrides: ['version' => '1.1.1'],
             pointLatest: true,
         );
-        release_candidate_write_state(
-            root: $root,
-            buildId: '20260702T000000Z-bbbbbbbb',
-            overrides: ['version' => '2.2.2'],
-        );
+        release_candidate_write_state(root: $root, buildId: '20260702T000000Z-bbbbbbbb', overrides: [
+            'version' => '2.2.2',
+        ]);
 
         $latest = release_candidate_process(arguments: ['env'], env: $env);
-        $named = release_candidate_process(
-            arguments: ['env', '--build-id=20260702T000000Z-bbbbbbbb'],
-            env: $env,
-        );
-        $unknown = release_candidate_process(
-            arguments: ['env', '--build-id=20990101T000000Z-ffffffff'],
-            env: $env,
-        );
+        $named = release_candidate_process(arguments: ['env', '--build-id=20260702T000000Z-bbbbbbbb'], env: $env);
+        $unknown = release_candidate_process(arguments: ['env', '--build-id=20990101T000000Z-ffffffff'], env: $env);
 
         expect($latest->getExitCode())
-            ->toBe(0, $latest->getOutput().$latest->getErrorOutput())
+            ->toBe(0, $latest->getOutput() . $latest->getErrorOutput())
             ->and($latest->getOutput())
             ->toContain('export version=1.1.1')
             ->and($named->getExitCode())
-            ->toBe(0, $named->getOutput().$named->getErrorOutput())
+            ->toBe(0, $named->getOutput() . $named->getErrorOutput())
             ->and($named->getOutput())
             ->toContain('export version=2.2.2')
             ->toContain('export build_id=20260702T000000Z-bbbbbbbb')
@@ -370,7 +364,7 @@ it('resolves --build-id ahead of the latest pointer', function (): void {
 
 function release_candidate_make_temp_dir(string $suffix): string
 {
-    $temp = sys_get_temp_dir().'/orbit-release-candidate-'.$suffix.'-'.bin2hex(random_bytes(6));
+    $temp = sys_get_temp_dir() . '/orbit-release-candidate-' . $suffix . '-' . bin2hex(random_bytes(6));
 
     mkdir($temp, recursive: true);
 
@@ -379,7 +373,7 @@ function release_candidate_make_temp_dir(string $suffix): string
 
 function release_candidate_remove_temp_dir(string $path): void
 {
-    if ($path === '' || ! str_contains($path, '/orbit-release-candidate-')) {
+    if ($path === '' || !str_contains($path, '/orbit-release-candidate-')) {
         return;
     }
 
@@ -565,7 +559,7 @@ function release_candidate_write_stub(string $binDir, string $name, string $body
 function release_candidate_process_env(string $root, array $overrides = []): array
 {
     return array_merge([
-        'PATH' => "{$root}/bin:".getenv('PATH'),
+        'PATH' => "{$root}/bin:" . getenv('PATH'),
         'ORBIT_RELEASE_CANDIDATE_ROOT' => $root,
         'ORBIT_RELEASE_ENV_FILE' => "{$root}/release.env",
         'ORBIT_PRIMARY_CHECKOUT' => $root,
@@ -573,9 +567,9 @@ function release_candidate_process_env(string $root, array $overrides = []): arr
         'STUB_LOG' => "{$root}/stub.log",
         'ORBIT_TEST_HEAD_COMMIT' => str_repeat('a', 40),
         'ORBIT_TEST_ORIGIN_MAIN_COMMIT' => str_repeat('a', 40),
-        'ORBIT_TEST_GATEWAY_DIGEST' => 'sha256:'.str_repeat('ab', times: 32),
-        'ORBIT_TEST_REVERB_DIGEST' => 'sha256:'.str_repeat('cd', times: 32),
-        'ORBIT_TEST_FRANKENPHP_DIGEST' => 'sha256:'.str_repeat('ef', times: 32),
+        'ORBIT_TEST_GATEWAY_DIGEST' => 'sha256:' . str_repeat('ab', times: 32),
+        'ORBIT_TEST_REVERB_DIGEST' => 'sha256:' . str_repeat('cd', times: 32),
+        'ORBIT_TEST_FRANKENPHP_DIGEST' => 'sha256:' . str_repeat('ef', times: 32),
         'ORBIT_RELEASE_CANDIDATE_CHANNEL' => false,
     ], $overrides);
 }
@@ -586,11 +580,7 @@ function release_candidate_process_env(string $root, array $overrides = []): arr
  */
 function release_candidate_process(array $arguments, array $env): Process
 {
-    $process = new Process(
-        [repo_path('bin/orbit-release-candidate'), ...$arguments],
-        repo_path(),
-        $env,
-    );
+    $process = new Process([repo_path('bin/orbit-release-candidate'), ...$arguments], repo_path(), $env);
 
     $process->run();
 
@@ -630,9 +620,9 @@ function release_candidate_write_state(
         'candidate_prefix' => "candidates/{$buildId}",
         'candidate_channel' => 'live-test',
         'candidate_asset_base_url' => "https://s3.example.test/orbit/candidates/{$buildId}",
-        'gateway_digest' => 'sha256:'.str_repeat('ab', times: 32),
+        'gateway_digest' => 'sha256:' . str_repeat('ab', times: 32),
         'candidate_reverb_image' => "ghcr.io/hardimpactdev/orbit-reverb:9.9.9-candidate-{$buildId}",
-        'reverb_digest' => 'sha256:'.str_repeat('cd', times: 32),
+        'reverb_digest' => 'sha256:' . str_repeat('cd', times: 32),
         'candidate_channel_manifest_url' => 'https://s3.example.test/orbit/channels/live-test/orbit-release-manifest.json',
         'sha256_linux_amd64' => (string) hash_file('sha256', "{$stateDir}/orbit-linux-x64"),
         'sha256_darwin_arm64' => (string) hash_file('sha256', "{$stateDir}/orbit-macos-arm64"),
