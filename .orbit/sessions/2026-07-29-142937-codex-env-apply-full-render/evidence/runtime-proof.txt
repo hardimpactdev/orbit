@@ -1,0 +1,36 @@
+Feature: complete instance environment apply
+Feature tip: 297c8785d73a4bdf32240402781ddc1dee277218
+Date: 2026-07-29
+
+Acceptance venue:
+- Retained topology: dev-f33849
+- Kind: operator_gateway_app-dev_app-prod
+- Provider: Incus
+- Host: Beast
+- Production-style fixture: env-proof.production
+- Production node: app-prod-1
+- Remote application path: /home/envproof/app
+- Runtime user: envproof
+- Solo terminal: solo://proj/4/process/env-apply-full-render-proof--1141
+
+Commands exercised through the exact candidate checkout:
+- orbit instance:env set env-proof.production --key=ORBIT_ENV_PROOF_ALPHA --value=alpha --apply --json
+- orbit instance:env set env-proof.production --key=ORBIT_ENV_PROOF_BETA --value=beta --apply --json
+
+Results:
+- Both commands reported applied=true and cache_cleared=true.
+- Both commands reported runtime_outcome=unchanged.
+- The second full render retained both ORBIT_ENV_PROOF_ALPHA and ORBIT_ENV_PROOF_BETA.
+- Existing fixture environment keys remained present after the consecutive applies.
+- Remote .env ownership remained envproof:envproof.
+- Remote .env mode remained 0644.
+- Uppercase environment key count after the second apply: 50.
+- Sorted key-name SHA-256 after the second apply:
+  1c88cead164be2fc82f02508a720c7f13a06ca5bba79b1459fc1b5e7a92657f7
+- No secret values were emitted or retained in this evidence.
+
+Repository-wide verification:
+- composer quality-check
+- Receipt: .orbit/quality-gates/quality-check-2026-07-29T121512Z-d66b38924d5a.json
+- Exit code: 0
+- Receipt commit: 297c8785d73a4bdf32240402781ddc1dee277218

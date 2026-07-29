@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-29T12:29:38+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-env-apply-full-render/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-29-142937-codex-env-apply-full-render",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-29T121512Z-d66b38924d5a.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "f6aa7a0f1bfa4074dfdeb5b786445d5939b0a0e0d981d924df8fcf111bc1f4f3",
+        "loop.md": "8c341eb132cdfc7be38e88cdd7cd0acea43efaa6772963a1cc8c2a0a00352f5d",
+        "quality-gates/quality-check-2026-07-29T121512Z-d66b38924d5a.json": "f10de4dee246b0fd4582c4af1756af3a653163b296a080e1a091df59a5e73788"
+    },
+    "branch": "codex/env-apply-full-render",
+    "candidate_commit": "297c8785d73a4bdf32240402781ddc1dee277218",
+    "accepted_feature_tip": "297c8785d73a4bdf32240402781ddc1dee277218",
+    "accepted_main_tip": "00589f2cde140a9edf891e6ac8b3d5c74a042dce",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

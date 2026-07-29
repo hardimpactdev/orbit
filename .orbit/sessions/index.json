@@ -1,7 +1,7 @@
 {
     "schema_version": 2,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 165,
+    "record_count": 166,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -4712,6 +4712,28 @@
             "archive": "2026-07-29-133010-codex-cache-clear-runtime-user",
             "slug": "codex-cache-clear-runtime-user",
             "timestamp": "2026-07-29-133010",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-07-29-142937-codex-env-apply-full-render",
+            "slug": "codex-env-apply-full-render",
+            "timestamp": "2026-07-29-142937",
             "schema": "compact-v1",
             "archive_mode": "compact",
             "state": "accepted",
