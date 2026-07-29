@@ -9,6 +9,7 @@ use App\Models\AppInstanceEnvVariable;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
+use App\Services\Workspaces\WorkspacePlacement;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
@@ -19,6 +20,7 @@ final readonly class AppInstanceEnvRenderer
     public function __construct(
         private LaravelViteDevServerEnvironment $vite,
         private AppRuntimeContainerRenderer $runtimeRenderer,
+        private WorkspacePlacement $placement,
     ) {}
 
     /**
@@ -87,7 +89,14 @@ final readonly class AppInstanceEnvRenderer
         $instance->loadMissing(['app.node', 'envVariables', 'databaseConnectionTargets.connection']);
 
         $env = [];
-        $app = $this->runtimeRenderer->runtimeAppForInstance($instance->app, $instance);
+        $sourceApp = $instance->app;
+        $app = $this->runtimeRenderer->runtimeAppForInstance($sourceApp, $instance);
+        $domain = $this->placement->instanceUrlHost($instance, $sourceApp);
+
+        if ($domain !== '') {
+            $app->domain = $domain;
+        }
+
         $node = $app->node ?? null;
 
         if ($node instanceof Node) {

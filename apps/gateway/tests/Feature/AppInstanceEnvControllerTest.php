@@ -342,6 +342,81 @@ it('applies set env values to the remote app runtime when apply is requested', f
     expect($response->getContent())->not->toContain($databaseCredential);
 });
 
+it('derives applied Orbit values from the instance node when its domain is implicit', function (): void {
+    $caller = createAppInstanceEnvApiCaller();
+    $projectNode = Node::factory()
+        ->appProd()
+        ->create([
+            'name' => 'project-app-prod',
+            'user' => 'project-runtime',
+            'tld' => 'production',
+        ]);
+    $instanceNode = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'instance-app-dev',
+            'user' => 'instance-runtime',
+            'tld' => 'development',
+        ]);
+    grantAppInstanceEnvApiAccess($caller, $instanceNode);
+    $app = Project::factory()->for($projectNode, 'node')->create([
+        'name' => 'billing',
+        'path' => '/home/project-runtime/apps/billing',
+        'domain' => 'billing.example.com',
+        'runtime' => 'php',
+        'php_version' => '8.5',
+    ]);
+    AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $instanceNode->id,
+            path: '/home/instance-runtime/apps/billing',
+            document_root: $app->document_root,
+            domain: null,
+        ),
+    ]);
+
+    $shell = new AppInstanceEnvControllerRecordingRemoteShell;
+    app()->instance(RemoteShell::class, $shell);
+    app()->instance(OrbitCaService::class, new readonly class extends OrbitCaService {
+        public function rootCert(): string
+        {
+            return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
+        }
+    });
+
+    appInstanceEnvApiJson(
+        'POST',
+        '/api/projects/billing/instances/development/env',
+        [
+            'key' => 'APP_NAME',
+            'value' => 'Billing',
+            'apply' => true,
+        ],
+    )->assertOk();
+
+    $writePayload = collect($shell->options)
+        ->pluck('input')
+        ->filter()
+        ->map(fn (string $input): array => json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR))
+        ->firstWhere('action', 'write');
+    $contents = is_array($writePayload) ? $writePayload['contents'] ?? null : null;
+
+    expect($contents)
+        ->toBeString()
+        ->toContain('APP_URL=https://billing.development')
+        ->toContain('VITE_APP_URL=https://billing.development')
+        ->toContain('VITE_VALET_HOST=billing.development')
+        ->toContain(
+            'VITE_DEV_SERVER_KEY=/home/instance-runtime/.config/orbit/certs/billing.development.key',
+        )
+        ->toContain(
+            'VITE_DEV_SERVER_CERT=/home/instance-runtime/.config/orbit/certs/billing.development.crt',
+        )
+        ->not->toContain('billing.example.com')
+        ->not->toContain('/home/project-runtime/.config/orbit/certs/');
+});
+
 it('rejects secret env writes until secret storage is designed', function (): void {
     $caller = createAppInstanceEnvApiCaller();
     $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
