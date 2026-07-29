@@ -207,8 +207,10 @@ it('promotes the accepted FrankenPHP candidate digest without creating a GitHub 
             arguments: ['promote-runtime', "--build-id={$buildId}", '--accepted'],
             env: [
                 ...$env,
+                'DOCKER_CONFIG' => 'home/.docker',
                 'ORBIT_TEST_REQUIRE_BUILDX_PLUGIN' => '1',
             ],
+            cwd: $root,
         );
 
         expect($process->getExitCode())
@@ -670,9 +672,13 @@ function release_candidate_process_env(string $root, array $overrides = []): arr
  * @param  list<string>  $arguments
  * @param  array<string, string|false>  $env
  */
-function release_candidate_process(array $arguments, array $env): Process
+function release_candidate_process(array $arguments, array $env, ?string $cwd = null): Process
 {
-    $process = new Process([repo_path('bin/orbit-release-candidate'), ...$arguments], repo_path(), $env);
+    $process = new Process(
+        [repo_path('bin/orbit-release-candidate'), ...$arguments],
+        $cwd ?? repo_path(),
+        $env,
+    );
 
     $process->run();
 
