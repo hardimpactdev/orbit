@@ -17,7 +17,7 @@
         "hardimpactdev/opencode-sdk-laravel": "^0.0.7",
         "hardimpactdev/orbit-core": "dev-main",
         "hardimpactdev/orbit-sdk-laravel": "dev-main",
-        "laravel/framework": "^13.0",
+        "laravel/framework": "^13.20",
         "laravel/tinker": "^3.0",
         "league/flysystem-aws-s3-v3": "^3.0",
         "spatie/laravel-activitylog": "^4.0"
@@ -31,9 +31,9 @@
         "laravel/pao": "^1.0.6",
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.6",
-        "pestphp/pest": "^4.6",
-        "pestphp/pest-plugin-laravel": "^4.1",
-        "phpunit/phpunit": "^12.5.12",
+        "pestphp/pest": "^5.0",
+        "pestphp/pest-plugin-laravel": "^5.0",
+        "phpunit/phpunit": "^13.2.4",
         "rector/rector": "^2.3",
         "spatie/guidelines-skills": "dev-main"
     },
