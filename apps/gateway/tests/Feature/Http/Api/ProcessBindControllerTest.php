@@ -295,9 +295,27 @@ describe('process managed service binds', function (): void {
                         ],
                     ],
                     'service_name' => 'orbit-postgres',
+                    'command_mode' => 'image_entrypoint',
+                    'credential_hash' => 'preserved-hash',
+                    'operator_note' => 'keep-me',
                     'environment' => [
                         'POSTGRES_DB' => 'plausible_db',
                         'POSTGRES_USER' => 'orbit',
+                    ],
+                    'volumes' => [
+                        [
+                            'name' => 'orbit-postgres',
+                            'target' => '/var/lib/postgresql/data',
+                        ],
+                    ],
+                    'labels' => [
+                        'orbit.managed' => 'true',
+                        'orbit.process' => 'postgres',
+                        'orbit.process.service' => 'postgres',
+                        'orbit.process.version_family' => '16',
+                        'orbit.process.version' => '16-alpine',
+                        'orbit.process.spec_hash' => 'oldhash',
+                        'custom.label' => 'retained',
                     ],
                 ],
             ]);
@@ -322,24 +340,30 @@ describe('process managed service binds', function (): void {
 
         expect($process->credentials['password'])
             ->toBe(str_repeat('p', 32))
-            ->and($process->runtime_config['image'])
-            ->toBe('postgres:16-alpine')
-            ->and($process->runtime_config['service_options']['published_port'])
-            ->toBe(5432)
-            ->and($process->runtime_config['binds'])
-            ->toBe(['wireguard'])
-            ->and($process->runtime_config['endpoint']['host'])
-            ->toBe('10.6.0.44')
-            ->and($process->runtime_config['ports'])
-            ->toBe([
+            ->and($process->getRawOriginal('credentials'))
+            ->not->toBeNull()->and($process->runtime_config['image'])->toBe('postgres:16-alpine')->and(
+                $process->runtime_config['service_options']['published_port'],
+            )->toBe(5432)->and($process->runtime_config['command_mode'])->toBe('image_entrypoint')->and(
+                $process->runtime_config['credential_hash'],
+            )->toBe('preserved-hash')->and($process->runtime_config['operator_note'])->toBe('keep-me')->and(
+                $process->runtime_config['volumes'],
+            )->toBe([
+                [
+                    'name' => 'orbit-postgres',
+                    'target' => '/var/lib/postgresql/data',
+                ],
+            ])->and($process->runtime_config['labels']['custom.label'] ?? null)->toBe('retained')->and(
+                $process->runtime_config['binds'],
+            )->toBe(['wireguard'])->and($process->runtime_config['endpoint']['host'])->toBe('10.6.0.44')->and(
+                $process->runtime_config['ports'],
+            )->toBe([
                 [
                     'host' => '10.6.0.44',
                     'published' => 5432,
                     'target' => 5432,
                     'protocol' => 'tcp',
                 ],
-            ])
-            ->and(collect($process->runtime_config['ports'])->pluck('host')->all())
+            ])->and(collect($process->runtime_config['ports'])->pluck('host')->all())
             ->not->toContain('127.0.0.1');
     });
 

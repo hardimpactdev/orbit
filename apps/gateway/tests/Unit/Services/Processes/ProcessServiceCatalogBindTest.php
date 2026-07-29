@@ -146,6 +146,31 @@ it('rejects empty and unsupported bind selectors', function (array $binds, strin
     'interface name' => [['eth0'], 'unsupported_value'],
 ]);
 
+it('keeps docker swarm managed services valid when binds are omitted', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'database-1',
+        'wireguard_address' => '10.6.0.44',
+        'platform' => 'linux',
+    ]);
+
+    $descriptor = app(ProcessServiceCatalog::class)->resolve(
+        service: 'valkey',
+        version: '8',
+        runtime: ProcessRuntime::DockerSwarm,
+        node: $node,
+        processName: 'valkey',
+    );
+
+    expect($descriptor->runtimeConfig)
+        ->not->toHaveKey('binds')->and($descriptor->runtimeConfig['endpoint']['host'])->toBe('10.6.0.44')->and(
+            $descriptor->runtimeConfig['ports'][0] ?? null,
+        )->toMatchArray([
+            'published' => 6379,
+            'target' => 6379,
+        ])->and($descriptor->runtimeConfig['ports'][0] ?? [])
+        ->not->toHaveKey('host');
+});
+
 it('rejects bind selectors for docker swarm managed services', function (): void {
     $node = Node::factory()->create([
         'name' => 'database-1',

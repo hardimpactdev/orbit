@@ -241,11 +241,13 @@ final readonly class EditProcess
             );
         }
 
+        // Explicit list only — never treat omission as the update path.
         $normalized = $this->serviceCatalog->normalizeBinds($binds, $process->runtime);
         $currentRawBinds = $config['binds'] ?? null;
+        // Legacy rows without stored bind intent infer WireGuard-only.
         $currentBinds = is_array($currentRawBinds)
             ? $this->serviceCatalog->normalizeBinds($this->stringList($currentRawBinds), $process->runtime)
-            : ['wireguard'];
+            : $this->serviceCatalog->normalizeBinds(null, $process->runtime);
 
         if ($normalized === $currentBinds) {
             return;
@@ -255,6 +257,8 @@ final readonly class EditProcess
         $image = is_string($config['image'] ?? null) ? $config['image'] : null;
         $serviceOptions = $this->stringKeyedArray($config['service_options'] ?? null);
 
+        // Resolve only to recompute the publish surface. Credentials on the
+        // process model and unrelated runtime_config keys stay as-is.
         $descriptor = $this->serviceCatalog->resolve(
             service: $service,
             version: $version,
@@ -266,29 +270,31 @@ final readonly class EditProcess
             binds: $normalized,
         );
 
-        $runtimeConfig = $descriptor->runtimeConfig;
+        $resolved = $descriptor->runtimeConfig;
+        $runtimeConfig = $config;
+        $runtimeConfig['binds'] = $resolved['binds'] ?? $normalized;
+        $runtimeConfig['endpoint'] = $resolved['endpoint'] ?? $runtimeConfig['endpoint'] ?? null;
+        $runtimeConfig['endpoints'] = $resolved['endpoints'] ?? $runtimeConfig['endpoints'] ?? [];
 
-        // Preserve non-regenerated process credentials and any catalog fields that
-        // should not flip merely because publish hosts changed.
-        $existingCredentials = $config['credentials'] ?? null;
-
-        if (is_array($existingCredentials)) {
-            $runtimeConfig['credentials'] = $existingCredentials;
+        if (is_array($resolved['ports'] ?? null)) {
+            $runtimeConfig['ports'] = $resolved['ports'];
         }
 
-        if (is_string($config['credential_hash'] ?? null) && $config['credential_hash'] !== '') {
-            $runtimeConfig['credential_hash'] = $config['credential_hash'];
-        }
+        $labels = $this->stringKeyedArray($runtimeConfig['labels'] ?? null);
+        unset($runtimeConfig['labels'], $runtimeConfig['spec_hash']);
 
-        $existingLabels = $this->stringKeyedArray($config['labels'] ?? null);
-        $resolvedLabels = $this->stringKeyedArray($runtimeConfig['labels'] ?? null);
-
-        if ($existingLabels !== [] || $resolvedLabels !== []) {
-            $runtimeConfig['labels'] = [
-                ...$existingLabels,
-                ...$resolvedLabels,
-            ];
-        }
+        $specHash = substr(
+            string: hash('sha256', json_encode([
+                ...$runtimeConfig,
+                'runtime' => $process->runtime->value,
+                'process' => $process->name,
+            ], JSON_THROW_ON_ERROR)),
+            offset: 0,
+            length: 16,
+        );
+        $runtimeConfig['spec_hash'] = $specHash;
+        $labels['orbit.process.spec_hash'] = $specHash;
+        $runtimeConfig['labels'] = $labels;
 
         $this->resourceGuard->assertNoConflicts(
             context: $context,
@@ -297,6 +303,7 @@ final readonly class EditProcess
             ignoreProcessId: $process->id,
         );
 
+        // Bind updates never regenerate or clear process credentials.
         $process->runtime_config = $runtimeConfig;
         $changed[] = 'binds';
     }

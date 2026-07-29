@@ -91,6 +91,8 @@ final readonly class ProcessServiceCatalog
             ? $serviceOptions['published_port']
             : $resolved['published_port'];
         $this->assertImageMatchesVersionFamily($service, $resolved['family'], $imageOverride);
+        // null keeps the WireGuard-only default without rejecting Docker Swarm or
+        // other non-Docker managed runtimes. Only an explicit bind list is gated.
         $normalizedBinds = $this->normalizeBinds($binds, $runtime);
         $bindHosts = $this->bindHosts($node, $normalizedBinds);
         $serviceName = "orbit-{$processName}";
@@ -103,7 +105,6 @@ final readonly class ProcessServiceCatalog
             'service' => $service,
             'version_family' => $resolved['family'],
             'version' => $resolved['version'],
-            'binds' => $normalizedBinds,
             'endpoint' => $servicePorts['endpoint'],
             'endpoints' => $servicePorts['endpoints'],
             'service_name' => $serviceName,
@@ -115,6 +116,13 @@ final readonly class ProcessServiceCatalog
                 'parallelism' => 1,
             ],
         ];
+
+        // Persist bind intent only for Docker managed services. Swarm and other
+        // admitted service runtimes keep WireGuard endpoint hosts without a
+        // stored bind selector when the public flag is omitted.
+        if ($runtime === ProcessRuntime::Docker) {
+            $runtimeConfig['binds'] = $normalizedBinds;
+        }
 
         if ($serviceOptions !== []) {
             $runtimeConfig['service_options'] = $serviceOptions;
@@ -700,6 +708,12 @@ final readonly class ProcessServiceCatalog
     }
 
     /**
+     * Normalize publish bind selectors.
+     *
+     * Omitted binds (`null`) always resolve to WireGuard-only and do not reject
+     * Docker Swarm or other non-Docker runtimes. An explicit list is validated
+     * and only admitted for Docker managed services.
+     *
      * @param  list<string>|null  $binds
      * @return list<string>
      */
