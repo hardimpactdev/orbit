@@ -239,8 +239,9 @@ final readonly class EditProcess
         }
 
         $normalized = $this->serviceCatalog->normalizeBinds($binds, $process->runtime);
-        $currentBinds = is_array($config['binds'] ?? null)
-            ? $this->serviceCatalog->normalizeBinds($config['binds'], $process->runtime)
+        $currentRawBinds = $config['binds'] ?? null;
+        $currentBinds = is_array($currentRawBinds)
+            ? $this->serviceCatalog->normalizeBinds($this->stringList($currentRawBinds), $process->runtime)
             : ['wireguard'];
 
         if ($normalized === $currentBinds) {
@@ -249,7 +250,7 @@ final readonly class EditProcess
 
         $version = is_string($config['version'] ?? null) ? $config['version'] : null;
         $image = is_string($config['image'] ?? null) ? $config['image'] : null;
-        $serviceOptions = is_array($config['service_options'] ?? null) ? $config['service_options'] : [];
+        $serviceOptions = $this->stringKeyedArray($config['service_options'] ?? null);
 
         $descriptor = $this->serviceCatalog->resolve(
             service: $service,
@@ -266,18 +267,23 @@ final readonly class EditProcess
 
         // Preserve non-regenerated process credentials and any catalog fields that
         // should not flip merely because publish hosts changed.
-        if (is_array($config['credentials'] ?? null)) {
-            $runtimeConfig['credentials'] = $config['credentials'];
+        $existingCredentials = $config['credentials'] ?? null;
+
+        if (is_array($existingCredentials)) {
+            $runtimeConfig['credentials'] = $existingCredentials;
         }
 
         if (is_string($config['credential_hash'] ?? null) && $config['credential_hash'] !== '') {
             $runtimeConfig['credential_hash'] = $config['credential_hash'];
         }
 
-        if (is_array($config['labels'] ?? null)) {
+        $existingLabels = $this->stringKeyedArray($config['labels'] ?? null);
+        $resolvedLabels = $this->stringKeyedArray($runtimeConfig['labels'] ?? null);
+
+        if ($existingLabels !== [] || $resolvedLabels !== []) {
             $runtimeConfig['labels'] = [
-                ...$config['labels'],
-                ...($runtimeConfig['labels'] ?? []),
+                ...$existingLabels,
+                ...$resolvedLabels,
             ];
         }
 
@@ -290,5 +296,42 @@ final readonly class EditProcess
 
         $process->runtime_config = $runtimeConfig;
         $changed[] = 'binds';
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $values
+     * @return list<string>
+     */
+    private function stringList(array $values): array
+    {
+        $strings = [];
+
+        foreach ($values as $value) {
+            if (is_string($value)) {
+                $strings[] = $value;
+            }
+        }
+
+        return $strings;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function stringKeyedArray(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $result = [];
+
+        foreach ($value as $key => $item) {
+            if (is_string($key)) {
+                $result[$key] = $item;
+            }
+        }
+
+        return $result;
     }
 }
