@@ -1,0 +1,29 @@
+Retained topology: dev-7105ed
+Kind: operator_gateway
+Provider: incus
+Host: beast
+Inspected role: gateway
+Runtime checkout: /home/orbit/orbit-run
+
+Exact source identity:
+  FleetUpdateNodeInstaller.php
+  local:   39bb669df557c98c8f6315a686d59c2a2b4bcd8e08cdfb1986270b57d7a8c711
+  runtime: 39bb669df557c98c8f6315a686d59c2a2b4bcd8e08cdfb1986270b57d7a8c711
+
+  WorkloadNodeUpdaterTest.php
+  local:   2fa271ab1c4133d29a2e81d198b01e045fdd81cb191fce7adeff61fc2fef0033
+  runtime: 2fa271ab1c4133d29a2e81d198b01e045fdd81cb191fce7adeff61fc2fef0033
+
+Runtime:
+  PHP 8.5.6 (cli)
+
+Exact command:
+  ssh beast "incus exec orbit-e2e-dev-7105ed-gateway -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-run && bin/orbit-gateway-pest --compact --filter=preserves tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php'"
+
+Result:
+  PASS
+  Tests: 1 passed (7 assertions)
+  Duration: 2.00s
+  The real WorkloadNodeUpdater boundary preserved the non-zero installer stderr
+  "required image load failed" in both its returned failure payload and the
+  recorded workload event.
