@@ -133,6 +133,48 @@ it('reports all current when the gateway digest and workload hashes match', func
     expect($report->outdatedCount)->toBe(0)->and($report->allCurrent())->toBeTrue();
 });
 
+it('updates app nodes for a new topology candidate build when CLI hashes are unchanged', function (): void {
+    $run = fleetVersionProbeRun();
+    $node = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'ubuntu_24-04',
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(
+                identity: ['source' => 'topology-candidate', 'build_id' => 'previous-build'],
+            ),
+        ]);
+    $candidateImage =
+        'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-next-build@sha256:'
+        .str_repeat('e', times: 64);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        fleetVersionProbeSnapshot(
+            '2.0.0',
+            options: [
+                'manifest_source' => 'topology-candidate',
+                'build_id' => 'next-build',
+                'role_images' => [
+                    'orbit-caddy' => 'caddy:2-alpine',
+                    'orbit-frankenphp' => $candidateImage,
+                ],
+            ],
+        ),
+    );
+
+    $probe = app(FleetVersionProbe::class);
+
+    expect($probe->nodeNeedsUpdate($node, $plan))->toBeTrue();
+
+    $node->forceFill([
+        'installed_cli' => fleetVersionProbeInstalledCliArtifact(
+            identity: ['source' => 'topology-candidate', 'build_id' => 'next-build'],
+        ),
+    ])->save();
+
+    expect($probe->nodeNeedsUpdate($node->fresh(), $plan))->toBeFalse();
+});
+
 it('counts the gateway as outdated when matching artifacts came from a failed update run', function (): void {
     $run = fleetVersionProbeRun();
     $failedRun = fleetVersionProbeRun();
@@ -367,11 +409,13 @@ function fleetVersionProbeRun(): OperationRun
 /**
  * @param  array<string, array{url: string, sha256: string}>|null  $cliArtifacts
  * @param  array<string, array{url: string, sha256: string}>  $agentArtifacts
+ * @param  array{manifest_source?: string, build_id?: string, role_images?: array<string, string>}  $options
  */
 function fleetVersionProbeSnapshot(
     string $targetVersion,
     ?array $cliArtifacts = null,
     array $agentArtifacts = [],
+    array $options = [],
 ): OperationUpdatePlanSnapshot {
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:'.$targetVersion.'@sha256:'.str_repeat('a', times: 64);
 
@@ -381,7 +425,9 @@ function fleetVersionProbeSnapshot(
             'sha256' => str_repeat('b', times: 64),
         ],
     ];
-    $roleImages = [
+    $manifestSource = $options['manifest_source'] ?? 'github-release';
+    $buildId = $options['build_id'] ?? null;
+    $roleImages = $options['role_images'] ?? [
         'orbit-caddy' => 'caddy:2-alpine',
         'orbit-websocket' => 'hardimpact/orbit-reverb:'.$targetVersion.'@sha256:'.str_repeat('d', times: 64),
     ];
@@ -389,11 +435,12 @@ function fleetVersionProbeSnapshot(
     return new OperationUpdatePlanSnapshot(
         targetVersion: $targetVersion,
         gatewayImage: $gatewayImage,
-        manifestSource: 'github-release',
+        manifestSource: $manifestSource,
         manifestVersion: $targetVersion,
         manifestSnapshot: [
             'version' => $targetVersion,
-            'source' => 'github-release',
+            'source' => $manifestSource,
+            ...($buildId !== null ? ['build_id' => $buildId] : []),
             'images' => ['gateway' => $gatewayImage],
             'cli_artifacts' => $cliArtifacts,
             'agent_artifacts' => $agentArtifacts,
@@ -405,18 +452,22 @@ function fleetVersionProbeSnapshot(
     );
 }
 
+/**
+ * @param  array{source?: string, build_id?: string}  $identity
+ */
 function fleetVersionProbeInstalledCliArtifact(
     string $sha256 = '',
     string $platform = 'linux-amd64',
     string $artifactUrl = 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64',
     ?string $operationRunId = null,
+    array $identity = [],
 ): InstalledCliArtifact {
     return InstalledCliArtifact::record(
         version: '2.0.0',
         platform: $platform,
         sha256: $sha256 !== '' ? $sha256 : str_repeat('b', times: 64),
-        source: 'github-release',
-        buildId: null,
+        source: $identity['source'] ?? 'github-release',
+        buildId: $identity['build_id'] ?? null,
         artifactUrl: $artifactUrl,
         installedPath: '/home/orbit/orbit/bin/orbit-binary',
         operationRunId: $operationRunId ?? (string) Str::uuid(),

@@ -26,6 +26,7 @@ usage() {
 Usage:
   bin/orbit-release-candidate build
   bin/orbit-release-candidate env [--build-id=<id>]
+  bin/orbit-release-candidate promote-runtime [--build-id=<id>] --accepted
   bin/orbit-release-candidate verify [--build-id=<id>] [--release-image=<ref>]
 
 Formalizes the release-candidate publication flow from step 7 of
@@ -41,13 +42,18 @@ Formalizes the release-candidate publication flow from step 7 of
           .orbit/release-candidates/latest pointer file.
   env     Print eval-able `export key=value` lines from the recorded
           candidate.env of the latest (or --build-id) candidate.
+  promote-runtime
+          After live candidate acceptance, promote the recorded FrankenPHP
+          digest to its stable runtime-family tag and verify exact digest
+          equality. This does not create a GitHub release.
   verify  Recompute sha256 hashes of the stored CLI and Agent artifacts against
           candidate.env, and with --release-image compare the image digest
           from `docker buildx imagetools inspect` against gateway_digest.
 
-This helper never creates GitHub releases, never pushes tags, and never
-promotes images. `build` ends at candidate channel publication; GitHub
-promotion stays a human-approved step in the release skill.
+This helper never creates GitHub releases or pushes Git tags. `build` ends at
+candidate channel publication. Runtime-family promotion is a separate,
+acceptance-gated action; GitHub promotion stays human-approved in the release
+skill.
 EOF
 }
 
@@ -129,12 +135,13 @@ cmd_build() {
         exit 1
     fi
 
-    local build_id candidate_tag candidate_image candidate_reverb_image candidate_frankenphp_image candidate_prefix candidate_channel
+    local build_id candidate_tag candidate_image candidate_reverb_image candidate_frankenphp_image stable_frankenphp_image candidate_prefix candidate_channel
     build_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)"
     candidate_tag="${version}-candidate-${build_id}"
     candidate_image="ghcr.io/hardimpactdev/orbit-gateway:${candidate_tag}"
     candidate_reverb_image="ghcr.io/hardimpactdev/orbit-reverb:${candidate_tag}"
-    candidate_frankenphp_image="ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-${build_id}"
+    stable_frankenphp_image="ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm"
+    candidate_frankenphp_image="${stable_frankenphp_image}-candidate-${build_id}"
     candidate_prefix="candidates/${build_id}"
     candidate_channel="${ORBIT_RELEASE_CANDIDATE_CHANNEL:-live-test}"
 
@@ -400,6 +407,7 @@ cmd_build() {
         printf 'candidate_reverb_image=%s\n' "$candidate_reverb_image"
         printf 'reverb_digest=%s\n' "$reverb_digest"
         printf 'candidate_frankenphp_image=%s\n' "$candidate_frankenphp_image"
+        printf 'stable_frankenphp_image=%s\n' "$stable_frankenphp_image"
         printf 'frankenphp_digest=%s\n' "$frankenphp_digest"
         printf 'candidate_channel_manifest_url=%s\n' "$candidate_channel_manifest_url"
         printf 'sha256_linux_amd64=%s\n' "$sha256_linux_amd64"
@@ -413,6 +421,74 @@ cmd_build() {
 
     echo "Candidate channel manifest: ${candidate_channel_manifest_url}"
     echo "Release candidate state: ${state_dir}"
+}
+
+cmd_promote_runtime() {
+    local build_id=""
+    local accepted=0
+    local arg
+
+    for arg in "$@"; do
+        case "$arg" in
+            --build-id=*)
+                build_id="${arg#--build-id=}"
+                ;;
+            --accepted)
+                accepted=1
+                ;;
+            *)
+                fail "unknown promote-runtime option: ${arg}. Usage: bin/orbit-release-candidate promote-runtime [--build-id=<id>] --accepted"
+                ;;
+        esac
+    done
+
+    [ "$accepted" -eq 1 ] || fail "promote-runtime requires --accepted after live candidate acceptance."
+
+    local state_dir state_file recorded_build_id candidate_image stable_image expected_digest expected_candidate
+    state_dir="$(resolve_state_dir "$build_id")"
+    state_file="${state_dir}/candidate.env"
+    recorded_build_id="$(state_value build_id "$state_file")"
+    candidate_image="$(state_value candidate_frankenphp_image "$state_file")"
+    stable_image="$(state_value stable_frankenphp_image "$state_file")"
+    expected_digest="$(state_value frankenphp_digest "$state_file")"
+    expected_candidate="${stable_image}-candidate-${recorded_build_id}"
+
+    [ -n "$recorded_build_id" ] || fail "build_id is missing from ${state_file}."
+    [ "$candidate_image" = "$expected_candidate" ] || fail "candidate FrankenPHP image does not match the recorded build id."
+    [[ "$stable_image" =~ ^ghcr\.io/hardimpactdev/orbit-frankenphp:[^@[:space:]]+$ ]] || fail "stable FrankenPHP image is invalid."
+    [[ "$expected_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "FrankenPHP digest is invalid."
+
+    gh auth status -h github.com
+
+    ghcr_docker_config="$(mktemp -d)"
+    local ghcr_user ghcr_auth
+    ghcr_user="$(gh api user -q .login)"
+    ghcr_auth="$(printf '%s:%s' "$ghcr_user" "$(gh auth token)" | base64 | tr -d '\n')"
+    (umask 077 && printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$ghcr_auth" > "${ghcr_docker_config}/config.json")
+    unset ghcr_auth
+
+    DOCKER_CONFIG="$ghcr_docker_config" docker buildx imagetools create \
+        --tag "$stable_image" \
+        "${candidate_image}@${expected_digest}"
+
+    local inspect_output actual_digest
+    inspect_output="$(DOCKER_CONFIG="$ghcr_docker_config" docker buildx imagetools inspect "$stable_image")"
+    actual_digest="$(awk '/^Digest:/ { print $2; exit }' <<< "$inspect_output")"
+
+    if [ "$actual_digest" != "$expected_digest" ]; then
+        fail "promoted FrankenPHP digest mismatch: expected ${expected_digest}, got ${actual_digest:-missing}."
+    fi
+
+    {
+        printf 'build_id=%s\n' "$recorded_build_id"
+        printf 'candidate_image=%s\n' "$candidate_image"
+        printf 'stable_image=%s\n' "$stable_image"
+        printf 'digest=%s\n' "$actual_digest"
+        printf 'promoted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } > "${state_dir}/frankenphp-promotion.log"
+
+    printf 'PASS frankenphp_digest %s\n' "$actual_digest"
+    printf 'Runtime promotion evidence: %s\n' "${state_dir}/frankenphp-promotion.log"
 }
 
 cmd_env() {
@@ -544,6 +620,10 @@ case "$subcommand" in
     env)
         shift
         cmd_env "$@"
+        ;;
+    promote-runtime)
+        shift
+        cmd_promote_runtime "$@"
         ;;
     verify)
         shift

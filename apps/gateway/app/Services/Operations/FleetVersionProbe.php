@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Services\Operations;
 
 use App\Data\Operations\FleetVersionReport;
+use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Gateway\GatewayImageReference;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use RuntimeException;
 
 /**
@@ -24,6 +26,7 @@ final readonly class FleetVersionProbe
         private FleetUpdateTargetSelector $targets,
         private FleetAgentArtifactProbe $agentArtifacts,
         private InstalledArtifactRunStatus $installedArtifactRuns,
+        private NodeRoleAssignments $roles,
     ) {}
 
     public function probe(OperationRun $operationRun, OperationUpdatePlan $plan): FleetVersionReport
@@ -119,7 +122,31 @@ final readonly class FleetVersionProbe
 
     public function nodeNeedsUpdate(Node $node, OperationUpdatePlan $plan): bool
     {
-        return $this->nodeNeedsCliUpdate($node, $plan) || $this->agentArtifacts->nodeNeedsUpdate($node, $plan);
+        return (
+            $this->nodeNeedsCliUpdate($node, $plan)
+            || $this->agentArtifacts->nodeNeedsUpdate($node, $plan)
+            || $this->candidateRuntimeNeedsUpdate($node, $plan)
+        );
+    }
+
+    private function candidateRuntimeNeedsUpdate(Node $node, OperationUpdatePlan $plan): bool
+    {
+        if (
+            $plan->manifest_source !== 'topology-candidate'
+            || ! is_string($plan->role_images['orbit-frankenphp'] ?? null)
+            || ! $this->roles->nodeHasActiveRole($node, NodeRoleName::AppDevelopment->value)
+            && ! $this->roles->nodeHasActiveRole($node, NodeRoleName::AppProduction->value)
+        ) {
+            return false;
+        }
+
+        $buildId = $plan->manifest_snapshot['build_id'] ?? null;
+
+        if (! is_string($buildId) || $buildId === '') {
+            throw new RuntimeException('Topology candidate update plan is missing its build id.');
+        }
+
+        return $node->installed_cli?->source !== 'topology-candidate' || $node->installed_cli?->buildId !== $buildId;
     }
 
     public function nodeNeedsCliUpdate(Node $node, OperationUpdatePlan $plan): bool

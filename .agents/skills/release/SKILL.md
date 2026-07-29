@@ -216,8 +216,21 @@ manifests.
       pre-release baseline;
     - `orbit node:list` succeeds after the update.
 
-11. If the user requested no GitHub release, stop here after recording the live
-    acceptance evidence. Otherwise, stop and ask for explicit human approval to
+11. After live acceptance, promote the accepted FrankenPHP candidate digest to
+    its stable runtime-family tag without rebuilding:
+
+   ```bash
+   bin/orbit-release-candidate promote-runtime --accepted
+   ```
+
+   This promotion does not create a GitHub release, move a gateway version tag,
+   or publish CLI assets. It records the promoted source, target, and verified
+   digest in the candidate state. Before acceptance, do not run it: leaving a
+   candidate unpromoted keeps the stable runtime tag unchanged.
+
+   If the user requested no GitHub release, stop here after recording the live
+   acceptance and runtime-promotion evidence. Otherwise, stop and ask for
+   explicit human approval to
     publish the accepted candidate to GitHub. Do not create a GitHub release,
     push a `v<VERSION>` tag, upload GitHub release assets, or move the final
     GHCR version tag until approval is given for the candidate identified by
@@ -266,6 +279,7 @@ manifests.
      --cli-artifact="linux-amd64=orbit-linux-x64=orbit-linux-x64" \
      --cli-artifact="darwin-arm64=orbit-macos-arm64=orbit-macos-arm64" \
      --role-image="orbit-caddy=caddy:2-alpine" \
+     --role-image="orbit-frankenphp=${stable_frankenphp_image}@${frankenphp_digest}" \
      --role-image="orbit-websocket=ghcr.io/hardimpactdev/orbit-websocket:${version}" \
      --output="orbit-release-manifest.json"
    ```

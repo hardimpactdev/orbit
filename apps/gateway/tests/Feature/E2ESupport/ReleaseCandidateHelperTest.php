@@ -107,6 +107,7 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             'candidate_reverb_image' => "ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-{$buildId}",
             'reverb_digest' => 'sha256:'.str_repeat('cd', times: 32),
             'candidate_frankenphp_image' => "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-{$buildId}",
+            'stable_frankenphp_image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
             'frankenphp_digest' => 'sha256:'.str_repeat('ef', times: 32),
             'candidate_channel_manifest_url' => 'https://s3.example.test/orbit/channels/live-test/orbit-release-manifest.json',
             'sha256_linux_amd64' => hash_file('sha256', "{$stateDir}/orbit-linux-x64"),
@@ -162,6 +163,52 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
                 "{$stateDir}/frankenphp-image-push.log",
             ))
             ->not->toContain('stub-ghcr-token');
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+});
+
+it('promotes the accepted FrankenPHP candidate digest without creating a GitHub release', function (): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'promote-runtime');
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $env = release_candidate_process_env(root: $root);
+        $buildId = '20260701T000000Z-abcdef12';
+        $stateDir = release_candidate_write_state(root: $root, buildId: $buildId, pointLatest: true);
+
+        $withoutAcceptance = release_candidate_process(arguments: ['promote-runtime'], env: $env);
+
+        expect($withoutAcceptance->getExitCode())
+            ->toBe(1)
+            ->and($withoutAcceptance->getErrorOutput())
+            ->toContain('--accepted');
+
+        $process = release_candidate_process(
+            arguments: ['promote-runtime', "--build-id={$buildId}", '--accepted'],
+            env: $env,
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getOutput().$process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('PASS frankenphp_digest sha256:'.str_repeat('ef', times: 32))
+            ->and("{$stateDir}/frankenphp-promotion.log")
+            ->toBeFile();
+
+        $stubLog = (string) file_get_contents("{$root}/stub.log");
+
+        expect($stubLog)
+            ->toContain(
+                'docker buildx imagetools create --tag ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm '
+                    ."ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-{$buildId}@sha256:"
+                    .str_repeat('ef', times: 32),
+            )
+            ->toContain(
+                'docker buildx imagetools inspect ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
+            )
+            ->not->toContain('release create')
+            ->not->toContain('push origin');
     } finally {
         release_candidate_remove_temp_dir(path: $temp);
     }
@@ -420,7 +467,14 @@ function release_candidate_prepare_root(string $temp): string
             fi
             printf 'Name:      %s\n' "$4"
             printf 'MediaType: application/vnd.oci.image.index.v1+json\n'
-            printf 'Digest:    %s\n' "${ORBIT_TEST_GATEWAY_DIGEST}"
+            case "$4" in
+                *orbit-frankenphp*) digest="${ORBIT_TEST_FRANKENPHP_DIGEST}" ;;
+                *) digest="${ORBIT_TEST_GATEWAY_DIGEST}" ;;
+            esac
+            printf 'Digest:    %s\n' "$digest"
+            exit 0
+        fi
+        if [ "$1" = 'buildx' ] && [ "$2" = 'imagetools' ] && [ "$3" = 'create' ]; then
             exit 0
         fi
         if [ "$1" = 'buildx' ] && [ "$2" = 'build' ]; then
@@ -621,6 +675,9 @@ function release_candidate_write_state(
         'gateway_digest' => 'sha256:'.str_repeat('ab', times: 32),
         'candidate_reverb_image' => "ghcr.io/hardimpactdev/orbit-reverb:9.9.9-candidate-{$buildId}",
         'reverb_digest' => 'sha256:'.str_repeat('cd', times: 32),
+        'candidate_frankenphp_image' => "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-{$buildId}",
+        'stable_frankenphp_image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
+        'frankenphp_digest' => 'sha256:'.str_repeat('ef', times: 32),
         'candidate_channel_manifest_url' => 'https://s3.example.test/orbit/channels/live-test/orbit-release-manifest.json',
         'sha256_linux_amd64' => (string) hash_file('sha256', "{$stateDir}/orbit-linux-x64"),
         'sha256_darwin_arm64' => (string) hash_file('sha256', "{$stateDir}/orbit-macos-arm64"),
