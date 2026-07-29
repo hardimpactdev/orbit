@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Commands\Process;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:too-many-properties
+ */
 final readonly class ProcessUpdateInput
 {
     public ?string $node;
@@ -24,6 +28,9 @@ final readonly class ProcessUpdateInput
 
     public ?string $runtime;
 
+    /** @var list<string> */
+    public array $binds;
+
     public bool $restart;
 
     /**
@@ -37,6 +44,7 @@ final readonly class ProcessUpdateInput
      *     restart_policy?: ?string,
      *     crash_notification?: ?string,
      *     runtime?: ?string,
+     *     binds?: list<string>,
      *     restart?: bool,
      * }  $values
      */
@@ -51,6 +59,7 @@ final readonly class ProcessUpdateInput
         $this->restartPolicy = $this->stringValue($values, 'restart_policy');
         $this->crashNotification = $this->stringValue($values, 'crash_notification');
         $this->runtime = $this->stringValue($values, 'runtime');
+        $this->binds = $this->bindValues($values);
         $this->restart = ($values['restart'] ?? false) === true;
     }
 
@@ -65,6 +74,7 @@ final readonly class ProcessUpdateInput
      *     restart_policy?: ?string,
      *     crash_notification?: ?string,
      *     runtime?: ?string,
+     *     binds?: list<string>,
      *     restart?: bool,
      * }  $values
      */
@@ -88,9 +98,18 @@ final readonly class ProcessUpdateInput
             $payload[$field] = $value;
         }
 
+        if ($this->binds !== []) {
+            $payload['binds'] = ProcessBindOption::normalize($this->binds);
+        }
+
         $payload['restart'] = $this->restart;
 
         return $payload;
+    }
+
+    public function hasBinds(): bool
+    {
+        return $this->binds !== [];
     }
 
     /**
@@ -121,6 +140,7 @@ final readonly class ProcessUpdateInput
      *     restart_policy?: ?string,
      *     crash_notification?: ?string,
      *     runtime?: ?string,
+     *     binds?: list<string>,
      *     restart?: bool,
      * }  $values
      */
@@ -138,5 +158,26 @@ final readonly class ProcessUpdateInput
             'runtime' => $values['runtime'] ?? null,
             default => null,
         };
+    }
+
+    /**
+     * @param  array{
+     *     node?: ?string,
+     *     instance?: ?string,
+     *     workspace?: ?string,
+     *     name?: ?string,
+     *     new_name?: ?string,
+     *     command?: ?string,
+     *     restart_policy?: ?string,
+     *     crash_notification?: ?string,
+     *     runtime?: ?string,
+     *     binds?: list<string>,
+     *     restart?: bool,
+     * }  $values
+     * @return list<string>
+     */
+    private function bindValues(array $values): array
+    {
+        return ProcessBindOption::fromOption($values['binds'] ?? []);
     }
 }

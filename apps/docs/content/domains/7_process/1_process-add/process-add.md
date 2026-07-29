@@ -20,6 +20,7 @@ orbit process:add opencode-server "opencode serve -a" --node=app-dev-1 --runtime
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3 --image=docker.io/library/mysql:8.3
 orbit process:add valkey --node=database-1 --service=valkey --runtime=docker --version=8
+orbit process:add valkey --node=database-1 --service=valkey --runtime=docker --version=8 --bind=wireguard --bind=loopback
 orbit process:add postgres-food --node=database-1 --service=postgres --version=18 --database=mealou_food_catalog --username=mealou_food_catalog --published-port=5433 --restart-policy=always
 orbit process:add mailpit --node=beast --service=mailpit --runtime=docker
 orbit process:add mailpit --node=beast --service=mailpit --runtime=docker --replace-container=dngdmt-mailpit-1 --force
@@ -61,6 +62,15 @@ Use this command to define a managed process for a node, instance, or workspace.
   so PostgreSQL 16 on `5432` and PostgreSQL 18 on `5433` may coexist on one
   node. Orbit generates and encrypts a distinct password for each process and
   never renders it in command output, process metadata, activity, or scripts.
+- **Publish binds**: Repeatable `--bind=<wireguard|loopback>` selects where
+  node-owned Docker managed services publish target ports. Omission defaults to
+  WireGuard-only. Explicit selectors replace that default, duplicates normalize,
+  and both selectors publish every target port on both hosts at the same
+  published port. `loopback` resolves to host-local `127.0.0.1` and is not
+  reachable as `127.0.0.1` from another container. `wireguard` resolves to the
+  node's WireGuard service address. Host-command processes, instance/workspace
+  ownership, Docker Swarm, empty values, unsupported selectors, and arbitrary
+  IP/interface values are rejected with `validation_failed` before effects.
 - **Replacement Containers**: `--replace-container=<name>` is an explicit
   migration escape hatch for node-owned Docker managed services. It removes the
   named Docker container on the target node before creating the Orbit-managed

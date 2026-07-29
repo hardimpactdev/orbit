@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit process:update [name] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--name=<new-name>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--restart] [--json]
+orbit process:update [name] [--instance=<project.instance>] [--workspace=<workspace>] [--node=<node>] [--name=<new-name>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--bind=<wireguard|loopback>] [--restart] [--json]
 ```
 
 ## Input Contract
@@ -33,7 +33,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `restart_policy` | `--restart-policy` | Optional. At least one editable field is required. | Never. | Current value. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. At least one editable field is required. | Never. | Current value. | One of `none`, `agent_ide`. |
 | `runtime` | `--runtime` | Optional. At least one editable field is required. | Never. | Current value. | One of `docker`, `docker-swarm`, `systemd`, `launchd`. See runtime selection below. |
-| `restart` | `--restart` | Optional. | Never. | `false`. | Boolean flag. Restarts affected running runtime units after applying when true. |
+| `binds` | repeated `--bind` | Optional. Counts as an editable field when supplied. | Host-command processes; instance/workspace ownership; Docker Swarm; non-managed-service processes. | Current normalized bind intent when omitted. | Each value must be exactly `wireguard` or `loopback`. Empty strings and unsupported values fail with `validation_failed` (`field=bind`). Duplicates normalize. Explicit selectors replace the entire bind list and re-render publish hosts while preserving unrelated service/version/image/options/credentials/volumes/labels/runtime config. Arbitrary IP addresses or interface names are never accepted. |
+| `restart` | `--restart` | Optional. | Never. | `false`. | Boolean flag. Restarts affected running runtime units after applying when true. Existing `--restart` behavior is unchanged by bind updates. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 `command` is an option here because it is one optional editable field. Omitted editable fields preserve their current values. The sibling `process:add` command accepts `[command]` positionally because command is required to create a process definition.
@@ -71,6 +72,13 @@ commands.
 5. Update gateway-owned process configuration. Rename updates are atomic at the
    gateway state layer: either the process row has the new identity and
    dependent gateway records point at it, or the previous identity remains active.
+   When `binds` is supplied for a node-owned Docker managed service, replace the
+   persisted normalized bind intent, recompute published hosts/ports and
+   endpoint metadata for every selected bind, and re-validate host/port conflicts
+   before effects. Omitted binds preserve existing intent; rows without stored
+   bind intent infer WireGuard-only. The primary `endpoint` prefers WireGuard
+   when selected, otherwise loopback, and `endpoints` expose every selected bind
+   deterministically.
 6. Re-render the runtime units that the process definition produces on the
    resolved node or instance serving node. Node-owned and workspace-owned
    processes normally derive one unit. Instance-owned processes derive one

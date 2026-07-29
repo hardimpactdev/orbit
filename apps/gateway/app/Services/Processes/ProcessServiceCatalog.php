@@ -32,7 +32,10 @@ final readonly class ProcessServiceCatalog
         return array_key_exists($service, $this->services());
     }
 
-    /** @param array<string, mixed> $serviceOptions */
+    /**
+     * @param  array<string, mixed>  $serviceOptions
+     * @param  list<string>|null  $binds
+     */
     public function resolve(
         string $service,
         ?string $version,
@@ -41,6 +44,7 @@ final readonly class ProcessServiceCatalog
         string $processName,
         ?string $imageOverride = null,
         array $serviceOptions = [],
+        ?array $binds = null,
     ): ProcessServiceDescriptor {
         $catalog = $this->services();
         $entry = $catalog[$service] ?? null;
@@ -87,17 +91,19 @@ final readonly class ProcessServiceCatalog
             ? $serviceOptions['published_port']
             : $resolved['published_port'];
         $this->assertImageMatchesVersionFamily($service, $resolved['family'], $imageOverride);
-        $host = $this->serviceHost($node);
+        $normalizedBinds = $this->normalizeBinds($binds, $runtime);
+        $bindHosts = $this->bindHosts($node, $normalizedBinds);
         $serviceName = "orbit-{$processName}";
         $volumeName = "orbit-{$processName}";
         $dataPath = $this->hostPaths->processDataRoot($node, $processName);
-        $servicePorts = $this->servicePorts($entry, $host, $publishedPort, $processName, $runtime);
+        $servicePorts = $this->servicePorts($entry, $bindHosts, $publishedPort, $processName, $runtime);
         $credentials = $this->encryptedCredentials($service, $entry);
 
         $runtimeConfig = [
             'service' => $service,
             'version_family' => $resolved['family'],
             'version' => $resolved['version'],
+            'binds' => $normalizedBinds,
             'endpoint' => $servicePorts['endpoint'],
             'endpoints' => $servicePorts['endpoints'],
             'service_name' => $serviceName,
@@ -142,14 +148,13 @@ final readonly class ProcessServiceCatalog
         if ($servicePorts['ports'] !== []) {
             $runtimeConfig['ports'] = $servicePorts['ports'];
         } elseif (is_int($entry['target_port'] ?? null)) {
-            $runtimeConfig['ports'] = [
-                [
-                    ...($runtime === ProcessRuntime::Docker ? ['host' => $host] : []),
-                    'published' => $resolved['published_port'],
-                    'target' => $entry['target_port'],
-                    'protocol' => 'tcp',
-                ],
-            ];
+            $runtimeConfig['ports'] = $this->publishPortsForHosts(
+                hosts: $bindHosts,
+                published: $resolved['published_port'],
+                target: $entry['target_port'],
+                protocol: 'tcp',
+                runtime: $runtime,
+            );
         }
 
         if (is_string($entry['data_path'] ?? null) && $entry['data_path'] !== '') {
@@ -695,7 +700,126 @@ final readonly class ProcessServiceCatalog
     }
 
     /**
+     * @param  list<string>|null  $binds
+     * @return list<string>
+     */
+    public function normalizeBinds(?array $binds, ProcessRuntime $runtime = ProcessRuntime::Docker): array
+    {
+        if ($binds === null) {
+            return ['wireguard'];
+        }
+
+        if ($binds === []) {
+            throw new GatewayApiException(
+                'At least one publish bind is required.',
+                'validation_failed',
+                [
+                    'field' => 'bind',
+                    'reason' => 'required',
+                    'allowed' => ['wireguard', 'loopback'],
+                ],
+            );
+        }
+
+        if ($runtime === ProcessRuntime::DockerSwarm) {
+            throw new GatewayApiException(
+                'Publish binds are only supported for Docker managed services.',
+                'validation_failed',
+                [
+                    'field' => 'bind',
+                    'reason' => 'process_bind_requires_docker_runtime',
+                    'allowed' => ['wireguard', 'loopback'],
+                ],
+            );
+        }
+
+        if ($runtime !== ProcessRuntime::Docker) {
+            throw new GatewayApiException(
+                'Publish binds are only supported for node-owned Docker managed services.',
+                'validation_failed',
+                [
+                    'field' => 'bind',
+                    'reason' => 'process_bind_requires_node_docker_service',
+                    'allowed' => ['wireguard', 'loopback'],
+                ],
+            );
+        }
+
+        $normalized = [];
+
+        foreach ($binds as $bind) {
+            if (! is_string($bind) || trim($bind) === '') {
+                throw new GatewayApiException(
+                    'Publish bind selectors cannot be empty.',
+                    'validation_failed',
+                    [
+                        'field' => 'bind',
+                        'reason' => 'required',
+                        'allowed' => ['wireguard', 'loopback'],
+                    ],
+                );
+            }
+
+            $bind = trim($bind);
+
+            if (! in_array($bind, ['wireguard', 'loopback'], true)) {
+                throw new GatewayApiException(
+                    "Publish bind '{$bind}' is not supported.",
+                    'validation_failed',
+                    [
+                        'field' => 'bind',
+                        'value' => $bind,
+                        'reason' => 'unsupported_value',
+                        'allowed' => ['wireguard', 'loopback'],
+                    ],
+                );
+            }
+
+            $normalized[] = $bind;
+        }
+
+        $ordered = [];
+
+        foreach (['wireguard', 'loopback'] as $selector) {
+            if (in_array($selector, $normalized, true)) {
+                $ordered[] = $selector;
+            }
+        }
+
+        return $ordered;
+    }
+
+    /**
+     * @param  list<string>  $binds
+     * @return list<string>
+     */
+    private function bindHosts(Node $node, array $binds): array
+    {
+        $hosts = [];
+
+        foreach ($binds as $bind) {
+            $hosts[] = match ($bind) {
+                'wireguard' => $this->serviceHost($node),
+                'loopback' => '127.0.0.1',
+                default => throw new GatewayApiException(
+                    "Publish bind '{$bind}' is not supported.",
+                    'validation_failed',
+                    [
+                        'field' => 'bind',
+                        'value' => $bind,
+                        'reason' => 'unsupported_value',
+                        'allowed' => ['wireguard', 'loopback'],
+                    ],
+                ),
+            };
+        }
+
+        return $hosts;
+    }
+
+    /**
      * @param  array<string, mixed>  $entry
+     * @param  list<string>  $hosts
      * @return array{
      *     endpoint: array{name: string, kind: string, host: string, port: int},
      *     endpoints: list<array{name: string, kind: string, host: string, port: int}>,
@@ -706,38 +830,28 @@ final readonly class ProcessServiceCatalog
      */
     private function servicePorts(
         array $entry,
-        string $host,
+        array $hosts,
         int $defaultPublishedPort,
         string $processName,
         ProcessRuntime $runtime,
     ): array {
+        $primaryHost = $hosts[0] ?? $this->serviceHostPlaceholder();
         $rawPorts = $entry['service_ports'] ?? null;
 
         if (! is_array($rawPorts) || $rawPorts === []) {
+            $endpoints = $this->endpointsForHosts($processName, $hosts, $defaultPublishedPort);
+
             return [
-                'endpoint' => [
-                    'name' => $processName,
-                    'kind' => 'tcp',
-                    'host' => $host,
-                    'port' => $defaultPublishedPort,
-                ],
-                'endpoints' => [
-                    [
-                        'name' => $processName,
-                        'kind' => 'tcp',
-                        'host' => $host,
-                        'port' => $defaultPublishedPort,
-                    ],
-                ],
+                'endpoint' => $endpoints[0],
+                'endpoints' => $endpoints,
                 'ports' => is_int($entry['target_port'] ?? null)
-                    ? [
-                        [
-                            ...($runtime === ProcessRuntime::Docker ? ['host' => $host] : []),
-                            'published' => $defaultPublishedPort,
-                            'target' => $entry['target_port'],
-                            'protocol' => 'tcp',
-                        ],
-                    ]
+                    ? $this->publishPortsForHosts(
+                        hosts: $hosts,
+                        published: $defaultPublishedPort,
+                        target: $entry['target_port'],
+                        protocol: 'tcp',
+                        runtime: $runtime,
+                    )
                     : [],
             ];
         }
@@ -763,48 +877,30 @@ final readonly class ProcessServiceCatalog
             }
 
             if ($exposesEndpoint && $published > 0) {
-                $endpoint = [
-                    'name' => $name,
-                    'kind' => 'tcp',
-                    'host' => $host,
-                    'port' => $published,
-                ];
+                $portEndpoints = $this->endpointsForHosts($name, $hosts, $published);
+                $endpoints = [...$endpoints, ...$portEndpoints];
 
-                $endpoints[] = $endpoint;
-
-                if (($rawPort['primary'] ?? false) === true) {
-                    $primaryEndpoint = $endpoint;
+                if (($rawPort['primary'] ?? false) === true && $primaryEndpoint === null) {
+                    $primaryEndpoint = $portEndpoints[0];
                 }
             }
 
             if ($publishesPort && $published > 0) {
-                $ports[] = [
-                    ...($runtime === ProcessRuntime::Docker ? ['host' => $host] : []),
-                    'published' => $published,
-                    'target' => $target,
-                    'protocol' => $protocol !== '' ? $protocol : 'tcp',
+                $ports = [
+                    ...$ports,
+                    ...$this->publishPortsForHosts(
+                        hosts: $hosts,
+                        published: $published,
+                        target: $target,
+                        protocol: $protocol !== '' ? $protocol : 'tcp',
+                        runtime: $runtime,
+                    ),
                 ];
             }
         }
 
         if ($endpoints === []) {
-            return [
-                'endpoint' => [
-                    'name' => $processName,
-                    'kind' => 'tcp',
-                    'host' => $host,
-                    'port' => $defaultPublishedPort,
-                ],
-                'endpoints' => [
-                    [
-                        'name' => $processName,
-                        'kind' => 'tcp',
-                        'host' => $host,
-                        'port' => $defaultPublishedPort,
-                    ],
-                ],
-                'ports' => [],
-            ];
+            $endpoints = $this->endpointsForHosts($processName, $hosts, $defaultPublishedPort);
         }
 
         return [
@@ -812,6 +908,66 @@ final readonly class ProcessServiceCatalog
             'endpoints' => $endpoints,
             'ports' => $ports,
         ];
+    }
+
+    /**
+     * @param  list<string>  $hosts
+     * @return list<array{name: string, kind: string, host: string, port: int}>
+     */
+    private function endpointsForHosts(string $name, array $hosts, int $port): array
+    {
+        $endpoints = [];
+
+        foreach ($hosts as $host) {
+            $endpoints[] = [
+                'name' => $name,
+                'kind' => 'tcp',
+                'host' => $host,
+                'port' => $port,
+            ];
+        }
+
+        return $endpoints;
+    }
+
+    /**
+     * @param  list<string>  $hosts
+     * @return list<array{host?: string, published: int, target: int, protocol: string}>
+     */
+    private function publishPortsForHosts(
+        array $hosts,
+        int $published,
+        int $target,
+        string $protocol,
+        ProcessRuntime $runtime,
+    ): array {
+        if ($runtime !== ProcessRuntime::Docker) {
+            return [
+                [
+                    'published' => $published,
+                    'target' => $target,
+                    'protocol' => $protocol,
+                ],
+            ];
+        }
+
+        $ports = [];
+
+        foreach ($hosts as $host) {
+            $ports[] = [
+                'host' => $host,
+                'published' => $published,
+                'target' => $target,
+                'protocol' => $protocol,
+            ];
+        }
+
+        return $ports;
+    }
+
+    private function serviceHostPlaceholder(): string
+    {
+        return '127.0.0.1';
     }
 
     /**

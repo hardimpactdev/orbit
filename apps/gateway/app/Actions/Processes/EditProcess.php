@@ -12,6 +12,8 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
+use App\Services\Processes\ProcessServiceCatalog;
+use App\Services\Processes\ProcessServiceResourceGuard;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class EditProcess
@@ -20,10 +22,12 @@ final readonly class EditProcess
         private EnsureAppProcessRuntimeUnits $ensureRuntimeUnits,
         private EditProcessRuntimeUnits $runtimeUnits,
         private ProcessRuntimeUnitPayload $runtimeUnitPayload,
+        private ProcessServiceCatalog $serviceCatalog,
+        private ProcessServiceResourceGuard $resourceGuard,
     ) {}
 
     /**
-     * @param  array{name?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}  $changes
+     * @param  array{name?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime, binds?: list<string>}  $changes
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
     public function handle(
@@ -121,6 +125,10 @@ final readonly class EditProcess
             $changed[] = 'runtime';
         }
 
+        if (array_key_exists('binds', $changes)) {
+            $this->applyBinds($context, $process, $changes['binds'], $changed);
+        }
+
         $effectiveRuntime = $changes['runtime'] ?? $process->runtime;
         $effectiveCrashNotification = $changes['crash_notification'] ?? $process->crash_notification;
 
@@ -203,5 +211,84 @@ final readonly class EditProcess
             ],
             'warnings' => $warnings,
         ];
+    }
+
+    /**
+     * @param  list<string>  $binds
+     * @param  list<string>  $changed
+     */
+    private function applyBinds(
+        ProcessOwnerContext $context,
+        Process $process,
+        array $binds,
+        array &$changed,
+    ): void {
+        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $service = is_string($config['service'] ?? null) ? trim($config['service']) : '';
+
+        if ($service === '' || ! $context->owner instanceof Node || $process->runtime !== ProcessRuntime::Docker) {
+            throw new GatewayApiException(
+                'Publish binds are only supported for node-owned Docker managed services.',
+                'validation_failed',
+                [
+                    'field' => 'bind',
+                    'reason' => 'process_bind_requires_node_docker_service',
+                    'allowed' => ['wireguard', 'loopback'],
+                ],
+            );
+        }
+
+        $normalized = $this->serviceCatalog->normalizeBinds($binds, $process->runtime);
+        $currentBinds = is_array($config['binds'] ?? null)
+            ? $this->serviceCatalog->normalizeBinds($config['binds'], $process->runtime)
+            : ['wireguard'];
+
+        if ($normalized === $currentBinds) {
+            return;
+        }
+
+        $version = is_string($config['version'] ?? null) ? $config['version'] : null;
+        $image = is_string($config['image'] ?? null) ? $config['image'] : null;
+        $serviceOptions = is_array($config['service_options'] ?? null) ? $config['service_options'] : [];
+
+        $descriptor = $this->serviceCatalog->resolve(
+            service: $service,
+            version: $version,
+            runtime: $process->runtime,
+            node: $context->node,
+            processName: $process->name,
+            imageOverride: $image,
+            serviceOptions: $serviceOptions,
+            binds: $normalized,
+        );
+
+        $runtimeConfig = $descriptor->runtimeConfig;
+
+        // Preserve non-regenerated process credentials and any catalog fields that
+        // should not flip merely because publish hosts changed.
+        if (is_array($config['credentials'] ?? null)) {
+            $runtimeConfig['credentials'] = $config['credentials'];
+        }
+
+        if (is_string($config['credential_hash'] ?? null) && $config['credential_hash'] !== '') {
+            $runtimeConfig['credential_hash'] = $config['credential_hash'];
+        }
+
+        if (is_array($config['labels'] ?? null)) {
+            $runtimeConfig['labels'] = [
+                ...$config['labels'],
+                ...($runtimeConfig['labels'] ?? []),
+            ];
+        }
+
+        $this->resourceGuard->assertNoConflicts(
+            context: $context,
+            name: $process->name,
+            runtimeConfig: $runtimeConfig,
+            ignoreProcessId: $process->id,
+        );
+
+        $process->runtime_config = $runtimeConfig;
+        $changed[] = 'binds';
     }
 }

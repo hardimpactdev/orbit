@@ -6288,6 +6288,7 @@
                 "username",
                 "published-port",
                 "image",
+                "bind",
                 "restart-policy",
                 "crash-notification",
                 "runtime",
@@ -6316,8 +6317,10 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Process/ProcessAddServiceSelectorContractTest.php",
+                "apps/cli/tests/Feature/Commands/Process/ProcessBindContractTest.php",
                 "apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/ProcessStoreControllerTest.php"
+                "apps/gateway/tests/Feature/Http/Api/ProcessStoreControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Processes/ProcessServiceCatalogBindTest.php"
             ],
             "verification_hints": [
                 {
@@ -6326,6 +6329,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Process/ProcessAddServiceSelectorContractTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Process/ProcessAddServiceSelectorContractTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Process/ProcessBindContractTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Process/ProcessBindContractTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Process/ProcessBindContractTest.php"
                 },
                 {
                     "repo_test_path": "apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php",
@@ -6340,6 +6350,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/ProcessStoreControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ProcessStoreControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Processes/ProcessServiceCatalogBindTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Processes/ProcessServiceCatalogBindTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Processes/ProcessServiceCatalogBindTest.php"
                 }
             ],
             "p4_mapping": {
@@ -6772,6 +6789,7 @@
                 "restart-policy",
                 "crash-notification",
                 "runtime",
+                "bind",
                 "restart",
                 "json"
             ],

@@ -18,6 +18,8 @@ orbit process:update horizon --instance=docs.development --workspace=feature-doc
 orbit process:update opencode-server --node=app-dev-1 --command="opencode serve -a" --runtime=systemd
 orbit process:update watcher --instance=docs.production --runtime=systemd
 orbit process:update worker --instance=feedback.development --runtime=launchd --restart
+orbit process:update valkey --node=database-1 --bind=wireguard --bind=loopback
+orbit process:update valkey --node=database-1 --bind=wireguard --restart
 orbit process:update mysql --node=database-1 --name=app-mysql --json
 orbit process:update vite --instance=docs.production --command="npm run dev" --json
 ```
@@ -43,6 +45,15 @@ slug, and re-render its runtime units.
   catalog entry and Linux node platform admit `docker-swarm`.
 - **Unsupported Rename Boundary**: Backends that cannot safely replace derived
   unit identity reject `--name` before changing gateway state.
+- **Publish binds**: Repeatable `--bind=<wireguard|loopback>` updates the
+  publish hosts for an existing node-owned Docker managed service. Omitting
+  `--bind` preserves the current normalized bind intent. Supplying one or more
+  selectors replaces the entire bind list, re-renders the Docker runtime unit,
+  and preserves unrelated service/version/image/options/credentials/volumes/
+  labels/runtime configuration. Host-command, instance/workspace, Docker Swarm,
+  empty, and unsupported values fail with `validation_failed` before effects.
+  `loopback` remains host-local `127.0.0.1` and is not reachable as
+  `127.0.0.1` from another container.
 - **Restart Behavior**: Does not restart running runtime units unless `--restart` is supplied.
 - **Drift Reporting**: Reports repairable runtime-unit apply drift after successful configuration changes.
 

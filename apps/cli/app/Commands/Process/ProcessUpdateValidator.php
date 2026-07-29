@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Commands\Process;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class ProcessUpdateValidator
 {
     public const array RESTART_POLICIES = ['never', 'on_failure', 'always'];
@@ -21,7 +24,11 @@ final readonly class ProcessUpdateValidator
                 $input,
             ) ?? $this->validateOptionalProcessName($input->newName) ?? new ProcessUpdateAllowedValueValidator()->validate(
                 $input,
-            ) ?? new ProcessUpdateRuntimeScopeValidator()->validate($input)
+            ) ?? new ProcessUpdateRuntimeScopeValidator()->validate(
+                $input,
+            ) ?? new ProcessUpdateBindValidator()->validate(
+                $input,
+            )
         );
     }
 
@@ -48,7 +55,12 @@ final readonly class ProcessUpdateValidator
             return null;
         }
 
-        if ($input->command !== null || $input->restartPolicy !== null || $input->crashNotification !== null) {
+        if (
+            $input->command !== null
+            || $input->restartPolicy !== null
+            || $input->crashNotification !== null
+            || $input->hasBinds()
+        ) {
             return null;
         }
 
@@ -156,5 +168,25 @@ final readonly class ProcessUpdateRuntimeScopeValidator
             ),
             default => null,
         };
+    }
+}
+
+final readonly class ProcessUpdateBindValidator
+{
+    public function validate(ProcessUpdateInput $input): ?ProcessUpdateValidationFailure
+    {
+        $failure = ProcessBindOption::validate(
+            binds: $input->binds,
+            node: $input->node,
+            service: null,
+            runtime: $input->runtime,
+            requireService: false,
+        );
+
+        if ($failure === null) {
+            return null;
+        }
+
+        return new ProcessUpdateValidationFailure($failure->field, $failure->message, $failure->meta);
     }
 }

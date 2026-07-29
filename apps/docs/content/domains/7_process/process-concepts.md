@@ -38,17 +38,25 @@ These terms define how process definitions are identified, scoped, and ordered.
   SeaweedFS is the named exception: its credentials belong only to the
   `seaweedfs` tool row and the process renderer consumes them without storing a
   second credential source. The process name does not imply the managed service
-  identifier. The service endpoint host is the owning node's WireGuard service
-  address. Consumers on the same node rely on the provisioning-owned WireGuard
-  self-route, not on loopback or Docker aliases.
+  identifier.
+- **Managed service publish binds:** Node-owned Docker managed services publish
+  target ports according to a normalized bind intent of `wireguard` and/or
+  `loopback`. Omission on add defaults to WireGuard-only; existing rows without
+  bind intent infer WireGuard-only. `wireguard` resolves to the owning node's
+  WireGuard service address. `loopback` resolves to host-local `127.0.0.1` and
+  is not reachable as `127.0.0.1` from another container. Consumers on the same
+  node rely on the provisioning-owned WireGuard self-route, not on Docker
+  aliases. Host-command processes, instance/workspace ownership, Docker Swarm,
+  empty selectors, unsupported values, and arbitrary IPs are rejected.
 - **PostgreSQL service process:** Managed service whose identifier is always
   `postgres`, regardless of major version or consumer. Each process records an
   explicit version family and concrete image version, initial database and
-  username, and a WireGuard-bound published port. Its container target remains
-  `5432`. Process-derived container name, service name, host data path, and
-  volume keep multiple PostgreSQL processes independent on one node. PostgreSQL
-  16 mounts its volume at `/var/lib/postgresql/data`; PostgreSQL 18 mounts at
-  `/var/lib/postgresql` to retain the image's major-version data layout.
+  username, and a published port bound to every selected publish host. Its
+  container target remains `5432`. Process-derived container name, service name,
+  host data path, and volume keep multiple PostgreSQL processes independent on
+  one node. PostgreSQL 16 mounts its volume at `/var/lib/postgresql/data`;
+  PostgreSQL 18 mounts at `/var/lib/postgresql` to retain the image's
+  major-version data layout.
 - **Process order:** Stable order of process definitions inside their owning
   scope. Read and bulk lifecycle commands use that order.
 

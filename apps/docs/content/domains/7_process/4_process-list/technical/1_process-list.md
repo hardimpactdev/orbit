@@ -40,7 +40,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 2. Send the request to the gateway, which validates the authenticated peer's authorization.
 3. Read process definitions from gateway configuration in process order. An instance context includes only definitions owned by that instance. A workspace context includes workspace-owned definitions and instance-owned definitions inherited by that workspace.
 4. Derive expected runtime-unit identities for the selected context.
-5. For service process definitions, include process-owned connection metadata: definition name, version, service name, endpoint, and credential field names. Credential values are excluded.
+5. For service process definitions, include process-owned connection metadata: definition name, version, service name, normalized binds, primary endpoint, every selected endpoint bind, and credential field names. Rows without stored bind intent infer WireGuard-only. Credential values are excluded.
 6. Read latest durable lifecycle events for the selected runtime context when events exist.
 7. Render the selected output.
 

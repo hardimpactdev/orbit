@@ -37,6 +37,14 @@ direction.
 ## Decisions
 
 <!-- newest first; add new entries directly under this comment -->
+- 2026-07-29 — Node-owned Docker managed-service processes accept a repeatable
+  public `--bind=<wireguard|loopback>` selector on `process:add` and
+  `process:update` instead of WireGuard-only published ports: omission on add
+  still defaults to WireGuard-only, explicit selectors replace that default,
+  loopback publishes only `127.0.0.1`, both selectors publish every service
+  target port on both hosts with the same published port, host-command /
+  instance / workspace / docker-swarm binds are rejected, and existing rows
+  without bind intent continue to infer WireGuard-only.
 
 - 2026-07-29 — Orbit-owned PHP 8.5 host artifacts and the PHP 8.5 FrankenPHP image pin a checksum-verified official SQLite release containing the WAL-reset fix, verify both the SQLite3 extension and SQL query version before publication or installation, and use a new immutable runtime-image family whenever that embedded SQLite contract changes so cached nodes cannot retain an unsafe image.
 - 2026-07-28 — Development runtime hibernation has a seven-day cold tier for app instances and workspaces: after the latest HTTP, process-lifecycle, and source-tree activity is old enough, Orbit may remove safely reconstructable Composer and JavaScript dependency directories while retaining lockfiles and caches; the next request starts one serialized restore-and-wake operation and the stock Caddy pre-check immediately returns a minimal auto-refreshing page with the Orbit mark and one aggregate progress bar that smoothly advances through the work required for that scope. A failed or uncertain prune remains cold, each runner is claimed once, dependency restoration is single-flight per node and source path, process activation remains scope-fenced, and each scope clears its own cold marker only after its dependencies and configured processes are ready. Production and node-owned runtimes remain outside this policy.
