@@ -1,0 +1,25 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-29T11:30:10+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-cache-clear-runtime-user/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-29-133010-codex-cache-clear-runtime-user",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-07-29T112707Z-e8d09947fbff.json"
+    ],
+    "entry_digests": {
+        "evidence/runtime-proof.txt": "31f409b5ad72272a172495a5a1933e3e1da36e6dd69ef8788651277b63d1ee40",
+        "loop.md": "7061c23841e20f2b6ab046c515c89ea5d57c07a1d800705a3a14a2624519fab4",
+        "quality-gates/quality-check-2026-07-29T112707Z-e8d09947fbff.json": "b64b4410378ac6c6c5fdc8447328f6d8fc0a16da76b60142d8b3cf8637aa3d5a"
+    },
+    "branch": "codex/cache-clear-runtime-user",
+    "candidate_commit": "f94cdba778f46f7228c7223d1326cebbb160dade",
+    "accepted_feature_tip": "f94cdba778f46f7228c7223d1326cebbb160dade",
+    "accepted_main_tip": "21c2cb47fa2e4f7cca24a62b4b2319d8951729db",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

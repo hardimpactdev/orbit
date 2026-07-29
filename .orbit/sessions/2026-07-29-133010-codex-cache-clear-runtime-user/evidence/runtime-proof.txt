@@ -1,0 +1,77 @@
+Retained topology production cache-clear proof
+================================================
+
+Topology id: dev-3b1d54
+Topology kind: operator_gateway_app-dev_app-prod
+Provider: Incus
+Host: beast
+Feature tip: f94cdba778f46f7228c7223d1326cebbb160dade
+Solo terminal: solo://proj/4/process/cache-clear-runtime-proof--1136
+Runtime checkout: /home/orbit/orbit-run
+Launcher: /home/orbit/orbit-run/apps/cli/orbit
+
+Purpose
+-------
+
+Prove that production `instance:env set --apply` writes the `.env`, clears
+Laravel config, and deletes an app-user-owned generated bootstrap cache file as
+the derived runtime user without deleting `.gitignore`.
+
+Fixture
+-------
+
+- Registered `cache-proof.production` on `app-prod-1`.
+- App path: `/home/cacheproof/app`.
+- Runtime user: `cacheproof`.
+- The app path, `.env`, generated `bootstrap/cache/config.php`, and
+  `bootstrap/cache/.gitignore` were owned by `cacheproof:cacheproof`.
+- The already-built stable PHP 8.5 runtime image was loaded into the isolated
+  production VM so the instance runtime convergence could complete.
+
+Command
+-------
+
+From the source-mounted operator checkout:
+
+    ./apps/cli/orbit instance:env set cache-proof.production \
+      --key=ORBIT_CACHE_PROOF \
+      --value=runtime-user-ok \
+      --apply \
+      --json
+
+Result
+------
+
+The command exited successfully and returned:
+
+- scope: instance
+- project: cache-proof
+- instance: production
+- path: /home/cacheproof/app/.env
+- stored: true
+- applied: true
+- cache_cleared: true
+- runtime_outcome: unchanged
+
+Production-node verification
+----------------------------
+
+The production-node bootstrap cache directory contained only:
+
+    .gitignore
+
+The generated `config.php` was deleted. The preserved `.gitignore` remained
+owned by `cacheproof:cacheproof`.
+
+The applied env file reported:
+
+    env_owner=cacheproof:cacheproof_mode=644
+    ORBIT_CACHE_PROOF=runtime-user-ok
+
+Conclusion
+----------
+
+PASS: the public production instance env apply path completed through the
+source-mounted gateway-to-node Agent Push transport, deleted the generated
+cache file as the runtime user, preserved `.gitignore`, retained app-user file
+ownership, and completed runtime convergence.
